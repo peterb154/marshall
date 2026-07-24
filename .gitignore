@@ -19,3 +19,7 @@ __pycache__/
 .vscode/
 .DS_Store
 desktop.ini
+
+# Claude Code local settings (per-machine) and its transient temp files
+.claude/settings.local.json
+.claude/*.tmp*

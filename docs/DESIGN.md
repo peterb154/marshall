@@ -88,19 +88,24 @@ structured output so it emits an Intent, never free speech.
 ## Topology
 
 ```
-marshall.epetersons.com  (LXC, public :443, Caddy auto-TLS)
-  ├─ kneeboard + flight-planning (HTTPS)
+external Nginx Proxy Manager  (public :443, terminates TLS)
+        │ reverse-proxy -> http://<lxc>:80
+   marshall LXC  (plain HTTP :80 -> app :8362)
+  ├─ kneeboard + flight-planning (FastAPI)
   └─ SRS client / ATC (outbound to the SRS server)
         │ ssh
    dcsserver.epetersons.com        gaming rig (Windows)
    (runs missions, dcs.log)        (DCS client; Edge render; DCS files)
 ```
 
-Develop on the LXC; deploy with `docker compose`; test on the DCS server; fly
-from the gaming rig. GitHub is the sync hub. Public exposure: static charts are
-safe to serve; the flight-planning app (it shells out to pydcs and deploys
-files) must be behind auth before it faces the internet. The SRS client is
-outbound-only and exposes no public port.
+Marshall stays deliberately simple: plain HTTP, no TLS or front-door proxy in
+this repo. An external Nginx Proxy Manager owns the public name and cert and
+proxies to the LXC on :80. Develop on the LXC; deploy with `docker compose`;
+test on the DCS server; fly from the gaming rig. GitHub is the sync hub. Public
+exposure: static charts under `/kneeboard/` are safe to serve; the
+flight-planning app at `/` (it shells out to pydcs and deploys files) must be
+behind auth before it faces the internet. The SRS client is outbound-only and
+exposes no public port.
 
 ## Open questions (need the cockpit)
 

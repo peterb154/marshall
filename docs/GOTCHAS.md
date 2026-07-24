@@ -93,8 +93,24 @@ first, to prove the receive chain before suspecting your own transmitter.
 
 - **PDFs** (AIP plates): `uv run --with pymupdf python` renders pages to PNG.
   No poppler/cairo on the boxes.
-- **HTML charts**: `tools/render.sh` screenshots via headless **Windows Edge**.
-  From the LXC, ssh to the gaming rig to run it, or install headless chromium.
+- **HTML charts**: `tools/render.sh` picks a backend by platform. On the **LXC**
+  it runs a one-shot headless-**chromium** container (`marshall-render`, built
+  from `deploy/render.Dockerfile`; the image self-builds on first use) — no
+  browser on the host. On **WSL** (the gaming rig) it drives **Windows Edge**.
+  It takes a local HTML file *or* a served URL, so the live kneeboard is
+  inspectable directly:
+
+  ```sh
+  ./tools/render.sh http://localhost/kneeboard/ 800 1400   # the live page (--network host)
+  ./tools/render.sh path/to/plate.html 800 1400       # a local file (mounted read-only)
+  ```
+
+  Output lands in `tools/shots/<name>.png` (gitignored). In plain chromium the
+  page shows a `window.OpenKneeboard absent` banner and falls back to on-screen
+  tab buttons — that is the `site.py` fallback working, not a bug.
+- Container chromium needs `--no-sandbox` (runs as root) and
+  `--disable-dev-shm-usage` (the default `/dev/shm` is tiny and crashes it);
+  both are baked into `render.sh`.
 
 ## Environment
 

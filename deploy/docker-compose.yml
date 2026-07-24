@@ -4,6 +4,21 @@
 #
 # Today: the kneeboard chart server. The ATC (SRS client) and the telemetry map
 # drop in as further services as they are built.
+#
+# Public access is handled OFF this host by an external Nginx Proxy Manager,
+# which terminates TLS and reverse-proxies to this LXC on port 80. Marshall
+# itself stays plain HTTP -- no TLS, no front-door proxy in this repo.
+#
+#   NPM proxy host:  marshall.epetersons.com  ->  http://<lxc-ip>:80
+#   OpenKneeboard Web Dashboard:  http://<lxc-ip>/kneeboard/
+#                          (or)   https://marshall.epetersons.com/kneeboard/
+#
+# SECURITY (carried over from the old Caddyfile): the static charts under
+# /kneeboard/ are safe to serve openly. The flight-planning app being added at /
+# is NOT -- it shells out to pydcs and deploys files, so an open mutating
+# endpoint is remote code execution. Its write routes MUST be behind auth (a
+# FastAPI dependency, or an NPM access list) before marshall.epetersons.com is
+# reachable from the internet.
 
 services:
   kneeboard:
@@ -13,31 +28,7 @@ services:
     image: marshall-kneeboard
     container_name: marshall-kneeboard
     restart: unless-stopped
+    # Host 80 -> container 8362 (the app's port). NPM forwards to <lxc-ip>:80.
     ports:
-      - "8362:8362"
+      - "80:8362"
     # Charts are generated inside the container at startup; nothing to mount.
-    # Point OpenKneeboard's Web Dashboard at  http://<lxc-ip>:8362/  directly,
-    # or at  https://marshall.epetersons.com/  through the caddy service below.
-
-  # Public HTTPS front door. Only starts with the "public" profile, so the
-  # default `up` stays kneeboard-only until DNS points marshall.epetersons.com
-  # at this host and 443 is forwarded:
-  #     docker compose --profile public up -d
-  caddy:
-    profiles: ["public"]
-    image: caddy:2
-    container_name: marshall-caddy
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - kneeboard
-
-volumes:
-  caddy_data:
-  caddy_config:

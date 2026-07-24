@@ -5,7 +5,8 @@ FROM python:3.12-slim
 WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY src ./src
-RUN pip install --no-cache-dir .
+# [server] pulls FastAPI + uvicorn; the chart generators themselves are stdlib.
+RUN pip install --no-cache-dir ".[server]"
 
 ENV MARSHALL_BUILD=/data \
     KNEEBOARD_PORT=8362

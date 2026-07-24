@@ -6,13 +6,17 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "peterb154" }]
-# core / kneeboard / atc are pure-Python (stdlib only), so the servers stay
-# tiny. Only the mission generator needs pydcs -- install marshall[mission].
+# core / atc and the chart *generators* are pure-Python (stdlib only), so the
+# brain stays testable in plain text with no install. Only two things pull deps:
+# the HTTP server (marshall[server]) and the mission generator (marshall[mission]).
 dependencies = []
 
 [project.optional-dependencies]
+# The kneeboard / flight-planning web server. uvicorn gives the per-connection
+# concurrency OpenKneeboard's keep-alive Chromium needs (see docs/GOTCHAS.md).
+server = ["fastapi>=0.110", "uvicorn[standard]>=0.29"]
 mission = ["pydcs>=0.15.0"]
-dev = ["pydcs>=0.15.0", "luaparser>=3.2"]
+dev = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "pydcs>=0.15.0", "luaparser>=3.2"]
 
 # Entry points are run as modules (python -m marshall.<pkg>.<mod>); no console
 # scripts yet.
