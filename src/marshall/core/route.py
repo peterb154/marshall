@@ -143,6 +143,15 @@ class ApproachProfile:
         return self.speed_kt / 60 * minutes
 
     @property
+    def final_approach_sec(self) -> float:
+        """Seconds from established inbound on the beam to station passage -- the
+        missed approach point. DCS produces no usable cone of silence, so the MAP
+        is flown on a WATCH from beacon-inbound: the pilot times it (this goes on
+        the plate) and ATC times the same number to call the missed as backup.
+        One value, both readers, so the watch and the controller never disagree."""
+        return self.inbound_descent_nm / self.speed_kt * 3600
+
+    @property
     def top_ft(self) -> int:
         return self.stack_ft[-1]
 

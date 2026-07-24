@@ -63,6 +63,7 @@ class Aircraft:
     assigned_ft: int | None = None
     last_report_t: float = 0.0
     approaches: int = 0
+    map_t: float | None = None       # computed station-passage (missed approach point) time
 
 
 @dataclass
@@ -91,6 +92,15 @@ def spell_time(t: float) -> str:
     d = {c: w for c, w in zip("0123456789",
          "zero one two three four five six seven eight nine".split())}
     return " ".join(d[c] for c in f"{(int(t) // 60) % 60:02d}")
+
+
+def spell_dur(sec: float) -> str:
+    """A duration as aviation timing: 204 -> 'three plus two four'."""
+    d = {c: w for c, w in zip("0123456789",
+         "zero one two three four five six seven eight nine".split())}
+    m, s = divmod(int(round(sec)), 60)
+    minutes = d[str(m)] if m < 10 else str(m)
+    return f"{minutes} plus " + " ".join(d[c] for c in f"{s:02d}")
 
 
 @dataclass
@@ -144,32 +154,59 @@ class Controller:
             self.say(cs, f"{cs}, hold at {self.profile.beacon.name} as published, "
                          f"maintain {spell_alt(slot)}.")
             self._try_clear()
+        elif ac.phase == Phase.CLEARED:
+            # Established inbound on the beam: start the station-passage clock.
+            # The pilot flies the MAP on a watch; ATC times the same number and
+            # calls it as backup (aural station passage does not read in the sim).
+            ac.map_t = self.t + self.profile.final_approach_sec
+            self.say(cs, f"{cs}, roger, station passage {spell_dur(self.profile.final_approach_sec)}, "
+                         f"report field in sight or missed approach.")
         else:
             self.say(cs, f"{cs} roger, {spell_alt(altitude_ft or ac.assigned_ft or 0)}.")
 
-    def report_missed(self, cs: str) -> None:
-        ac = self.get(cs)
+    def _do_missed(self, ac: Aircraft) -> bool:
+        """Missed-approach state transition. Returns True if banished (2nd miss)."""
         ac.approaches += 1
         ac.last_report_t = self.t
-        if self._letdown == cs:
+        ac.map_t = None
+        if self._letdown == ac.callsign:
             self._letdown = None
-
         if ac.approaches >= MAX_APPROACHES:
-            ac.phase = Phase.BANISHED
-            ac.assigned_ft = self.profile.top_ft
-            self.say(cs, f"{cs}, climb {spell_alt(self.profile.top_ft)}, proceed "
-                         f"{self.profile.outer_hold.name} "
-                         f"{self.profile.outer_hold.freq_mhz:.3f}, hold, expect "
-                         f"re-sequence. Traffic holding.")
-        else:
-            ac.phase, ac.assigned_ft = Phase.MISSED, self.profile.missed_ft
-            self.say(cs, f"{cs} roger, climb {spell_alt(self.profile.missed_ft)}, "
-                         f"return to the beacon. You are number one for the approach.")
+            ac.phase, ac.assigned_ft = Phase.BANISHED, self.profile.top_ft
+            return True
+        ac.phase, ac.assigned_ft = Phase.MISSED, self.profile.missed_ft
+        return False
+
+    def _missed_instruction(self, banished: bool) -> str:
+        if banished:
+            return (f"climb {spell_alt(self.profile.top_ft)}, proceed "
+                    f"{self.profile.outer_hold.name} "
+                    f"{self.profile.outer_hold.freq_mhz:.3f}, hold, expect "
+                    f"re-sequence. Traffic holding.")
+        return (f"climb {spell_alt(self.profile.missed_ft)}, "
+                f"return to the beacon. You are number one for the approach.")
+
+    def report_missed(self, cs: str) -> None:
+        ac = self.get(cs)
+        banished = self._do_missed(ac)
+        prefix = f"{cs}, " if banished else f"{cs} roger, "
+        self.say(cs, prefix + self._missed_instruction(banished))
+        self._try_clear()
+
+    def _station_passage(self, ac: Aircraft) -> None:
+        """Beam time up with no landing: ATC hears it overhead and calls the
+        missed. The pilot's own watch should already be prompting this -- the
+        cone of silence is unreliable in the sim, so ATC backs the timing up."""
+        banished = self._do_missed(ac)
+        inst = self._missed_instruction(banished)
+        self.say(ac.callsign, f"{ac.callsign}, heard a Mustang overhead, field is "
+                              f"beneath you, go missed. " + inst[0].upper() + inst[1:])
         self._try_clear()
 
     def report_landed(self, cs: str) -> None:
         ac = self.get(cs)
         ac.phase, ac.last_report_t = Phase.LANDED, self.t
+        ac.map_t = None
         if self._letdown == cs:
             self._letdown = None
         self.say(cs, f"{cs}, roger, landing assured. Good day.")
@@ -223,6 +260,14 @@ class Controller:
         """Advance the clock. Two time-based safety nets:
         prompt a quiet holder, and break a deadlock if the letdown goes silent."""
         self.t += seconds
+
+        # Missed approach point, timed. The pilot flies this on a watch; ATC
+        # backs it up -- when the beam clock runs out with the aircraft still in
+        # the letdown and no landing reported, the controller calls the missed.
+        if self._letdown:
+            ac = self.aircraft.get(self._letdown)
+            if ac and ac.map_t is not None and self.t >= ac.map_t:
+                self._station_passage(ac)
 
         if self._letdown and self.t - self._letdown_since > CLEARANCE_TIMEOUT_SEC:
             cs = self._letdown
@@ -279,16 +324,21 @@ if __name__ == "__main__":
         (15,  "Pony 2 beacon 5000"),      # stacks on top
         (15,  "Pony 3 beacon 6000"),
         (15,  "Pony 4 beacon 7000"),
-        (240, "Pony 1 missed"),           # go-around: front of line, number one
-        (200, "Pony 1 landed"),           # second try sticks; stack steps up
-        (30,  "Pony 2 request approach"),
-        (260, "Pony 2 landed"),
+        (150, "Pony 1 beacon inbound"),   # established -> ATC starts the MAP clock
+        (210, None),                      # beam time runs out, no landing reported
+        (10,  "Pony 1 beacon inbound"),   # go-around re-cleared, established again
+        (120, "Pony 1 landed"),           # runway there this time; stack steps up
+        (30,  "Pony 2 beacon inbound"),
+        (120, "Pony 2 landed"),
         (260, "Pony 3 landed"),
     ]
     for dt, line in script:
         ctl.tick(dt)
-        print(f"\n>>> {line}")
-        feed(ctl, line)
+        if line:
+            print(f"\n>>> {line}")
+            feed(ctl, line)
+        else:
+            print(f"\n>>> ...{int(dt)}s pass, no landing reported...")
         for tx in ctl.out:
             print("    " + str(tx))
         ctl.out.clear()
