@@ -241,9 +241,10 @@ class SRSClient:
         return packets, samples
 
     def recv_utterance(self, max_wait: float = 60.0, silence: float = 1.2):
-        """Block until a transmission is heard, then return its decoded int16 PCM
-        once the talker stops (a `silence`-second gap). None if nothing arrives
-        within `max_wait`. This is one pilot 'over' -- ready for Whisper.
+        """Block until a transmission is heard, then return (int16 PCM, freq_hz)
+        once the talker stops (a `silence`-second gap). (None, None) if nothing
+        arrives within `max_wait`. One pilot 'over', tagged with the channel it
+        came in on -- ready for Whisper.
         """
         import numpy as np
         import opuslib
@@ -251,13 +252,14 @@ class SRSClient:
         dec = opuslib.Decoder(tts.SRS_SAMPLE_RATE, tts.SRS_CHANNELS)
         self.udp.settimeout(0.3)
         frames: list = []
+        freq_hz: float | None = None
         started = False
         t0 = time.monotonic()
         last = 0.0
         while True:
             now = time.monotonic()
             if not started and now - t0 > max_wait:
-                return None
+                return None, None
             if started and now - last > silence:
                 break
             try:
@@ -265,18 +267,20 @@ class SRSClient:
             except socket.timeout:
                 continue
             except OSError:
-                return None
+                return None, None
             if len(data) <= GUID_LEN:
                 continue
-            _plen, audio_len, _freq_len = struct.unpack("<HHH", data[:6])
+            _plen, audio_len, freq_len = struct.unpack("<HHH", data[:6])
             try:
                 pcm = dec.decode(data[6:6 + audio_len], tts.SAMPLES_PER_FRAME)
                 frames.append(np.frombuffer(pcm, dtype="<i2"))
+                if freq_hz is None and freq_len >= 8:      # first freq block
+                    (freq_hz,) = struct.unpack("<d", data[6 + audio_len:6 + audio_len + 8])
                 started = True
                 last = now
             except Exception:
                 pass
-        return np.concatenate(frames) if frames else None
+        return (np.concatenate(frames) if frames else None), freq_hz
 
     def close(self) -> None:
         self._stop.set()

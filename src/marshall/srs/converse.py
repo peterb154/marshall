@@ -36,7 +36,7 @@ def main() -> int:
     say(f"This is Marshall on {freq_hz/1e6:.3f}, radio check, go ahead.")
 
     for _ in range(exchanges):
-        pcm = c.recv_utterance(max_wait=45)
+        pcm, _freq = c.recv_utterance(max_wait=45)
         if pcm is None or not pcm.size:
             say("Marshall, nothing heard, standing by.")
             continue
