@@ -2,6 +2,41 @@
 
 Deferred work, captured so it isn't lost. Not a promise of order.
 
+## Flight-test debrief — 2026-07-24 (first live voice ATC + beacon approach)
+
+1. **No cone of silence, confirmed.** DCS produces no detectable station-passage
+   null. The timed MAP (ApproachProfile.final_approach_sec, pilot flies a watch +
+   ATC backup) is THE mechanism, not a fallback. Settled.
+
+2. **Crosswind breaks beacon-homing alignment (the big one).** The ARA-8 *homes*
+   -- it points the nose AT the beacon. In no wind that also lines the nose up
+   with the runway, which is the whole premise. But in a crosswind, homing gives a
+   *curved* ground track (you get blown downwind and keep turning in), so you
+   arrive over the station NOT aligned with the runway -- and at MDA the runway
+   isn't in front of you. To fly a straight track you must CRAB, but then the
+   homing needle isn't centred and the ARA-8 doesn't show you the track. So the
+   approach as designed is really only valid in light/aligned wind. Options: brief
+   a wind-corrected inbound course; make the first mission light-wind and treat
+   crosswind as an advanced condition; or accept it as brutally realistic. This
+   also compounds #3 below (wind entry) -- the 270/20 both floats the landing AND
+   crabs the tracking.
+
+3. **Latency is the top system problem.** Agent-in-the-loop responses ran 20-30s.
+   Fix is the core design: the deterministic state machine (atc/controller.py)
+   must answer the routine 95% *instantly* (intent -> clearance -> TTS, no LLM),
+   and the LLM/agent is invoked only for the unusual calls. Wire the intent seam
+   -> controller -> TTS as the fast path; converse.py's readback and atc_session's
+   hand-flying were the slow stand-in.
+
+4. **Mission SCR-522 presets did not match the ATC/route frequencies.** The pilot
+   came up on 105 MHz, not A/B/C = 124/128/132. Verify the loaded .miz actually
+   carries the route.py freqs as its SCR-522 channel presets (write_presets), and
+   that ATC, plate, and the in-cockpit radio all read the one source of truth.
+
+5. **Single-radio homing (already captured above):** confirmed in flight -- can't
+   switch stations independently, so the letdown controller lives on the beacon
+   frequency.
+
 ## Wind favors the reciprocal of the approach runway
 
 Surfaced by flying (2026-07-24): briefed wind is `WIND_FROM_DEG 270 / WIND_MPH 20`
