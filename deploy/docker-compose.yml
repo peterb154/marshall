@@ -16,4 +16,28 @@ services:
     ports:
       - "8362:8362"
     # Charts are generated inside the container at startup; nothing to mount.
-    # Point OpenKneeboard's Web Dashboard at  http://<lxc-ip>:8362/
+    # Point OpenKneeboard's Web Dashboard at  http://<lxc-ip>:8362/  directly,
+    # or at  https://marshall.epetersons.com/  through the caddy service below.
+
+  # Public HTTPS front door. Only starts with the "public" profile, so the
+  # default `up` stays kneeboard-only until DNS points marshall.epetersons.com
+  # at this host and 443 is forwarded:
+  #     docker compose --profile public up -d
+  caddy:
+    profiles: ["public"]
+    image: caddy:2
+    container_name: marshall-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - kneeboard
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -50,6 +50,11 @@ mission generator all run and are testable in plain text. The SRS voice bridge
 (fork of [SkyEye](https://github.com/dharmab/skyeye)'s client), Whisper STT and
 TTS are next. See `deploy/` for how the pieces run beside a sim server.
 
+## Docs
+
+- [`docs/DESIGN.md`](docs/DESIGN.md) — architecture, the ATC stack, the approach mechanic
+- [`docs/GOTCHAS.md`](docs/GOTCHAS.md) — hard-won, mostly-undocumented traps (pydcs, DCS radio, OpenKneeboard)
+
 ## Quick start
 
 ```sh

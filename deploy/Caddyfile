@@ -1,0 +1,13 @@
+# Public front door for Marshall. Caddy fetches and renews a Let's Encrypt cert
+# automatically once marshall.epetersons.com resolves to this host and 443 is
+# reachable.
+#
+# The kneeboard charts are static and safe to serve openly. When the
+# flight-planning app is added it MUST be behind auth before it is exposed here:
+# it shells out to pydcs and deploys files, so an open endpoint is remote code
+# execution. Add a matcher + basic_auth (or forward_auth) for those paths then.
+
+marshall.epetersons.com {
+	encode gzip
+	reverse_proxy kneeboard:8362
+}
