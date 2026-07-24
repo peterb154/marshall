@@ -50,10 +50,22 @@ terrain are the *plate's* business, not ATC's — it is blind.
 
 ## The intent seam (`atc/intents.py`)
 
-Everything upstream — Whisper, a regex grammar, Haiku, Nova Sonic — produces one
+Everything upstream — Whisper, Haiku, Nova Sonic — produces one
 `Intent{kind, callsign, altitude_ft}`; `dispatch(controller, intent)` drives the
 brain. Swap STT or parser without touching `atc/controller.py`; test the brain
-in plain text. Regex first (free, offline); Haiku only on the sloppy cases.
+in plain text.
+
+**Haiku is the intent parser, for every call — no regex grammar.** Decided after
+the first live flight: real pilot speech (free-form, half-garbled proper nouns,
+numbers as words) is far too varied for a regex grammar to catch most of it, and
+Haiku is <1s, costs a fraction of a cent, and does the thing regex cannot —
+*normalise* ("But to me approach" → Batumi Approach, "one one" → 11) before the
+Intent reaches the brain. Regex-first was a premature optimisation for a
+cost/offline problem we do not have. The invariant is untouched: Haiku is still
+only ears — constrained structured output (kind is an enum, altitude a number),
+validated before dispatch — and the deterministic state machine decides every
+clearance. It never invents an altitude, and separation is by *assigned*
+altitude, so a misread *reported* altitude cannot compromise it.
 
 ## The approach — a no-DME beacon letdown
 
