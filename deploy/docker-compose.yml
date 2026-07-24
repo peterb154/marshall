@@ -1,0 +1,19 @@
+# Marshall services, to run on the LXC beside the sim server.
+#
+#   docker compose -f deploy/docker-compose.yml up -d --build
+#
+# Today: the kneeboard chart server. The ATC (SRS client) and the telemetry map
+# drop in as further services as they are built.
+
+services:
+  kneeboard:
+    build:
+      context: ..
+      dockerfile: deploy/kneeboard.Dockerfile
+    image: marshall-kneeboard
+    container_name: marshall-kneeboard
+    restart: unless-stopped
+    ports:
+      - "8362:8362"
+    # Charts are generated inside the container at startup; nothing to mount.
+    # Point OpenKneeboard's Web Dashboard at  http://<lxc-ip>:8362/

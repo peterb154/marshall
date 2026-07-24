@@ -6,17 +6,16 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "peterb154" }]
-dependencies = [
-    "pydcs>=0.15.0",
-]
+# core / kneeboard / atc are pure-Python (stdlib only), so the servers stay
+# tiny. Only the mission generator needs pydcs -- install marshall[mission].
+dependencies = []
 
 [project.optional-dependencies]
-dev = ["luaparser>=3.2"]
+mission = ["pydcs>=0.15.0"]
+dev = ["pydcs>=0.15.0", "luaparser>=3.2"]
 
-[project.scripts]
-marshall-kneeboard = "marshall.kneeboard.site:main"
-marshall-serve = "marshall.kneeboard.serve:main"
-marshall-atc = "marshall.atc.controller:main"
+# Entry points are run as modules (python -m marshall.<pkg>.<mod>); no console
+# scripts yet.
 
 [build-system]
 requires = ["hatchling"]

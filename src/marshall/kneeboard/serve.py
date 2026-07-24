@@ -16,7 +16,7 @@ from pathlib import Path
 from marshall import config
 
 ROOT = config.KNEEBOARD_OUT
-PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8362
+PORT = int(sys.argv[1]) if len(sys.argv) > 1 else config.KNEEBOARD_PORT
 
 
 class NoCache(http.server.SimpleHTTPRequestHandler):
