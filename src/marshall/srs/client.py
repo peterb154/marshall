@@ -38,6 +38,7 @@ PING_INTERVAL = 15.0
 # MessageType enum (types/message.go)
 MSG_PING = 1
 MSG_SYNC = 2
+MSG_RADIO_UPDATE = 3
 MSG_EAM_PASSWORD = 7
 
 # Modulation (types/radio.go)
@@ -66,35 +67,60 @@ class SRSClient:
         self.name, self.coalition = name, coalition
         self.eam_password = eam_password
         self.guid = new_guid()
+        # A unique unit id per client -- reusing one id makes the server collide
+        # stale clients and drop radio registrations.
+        self.unit_id = UNIT_ID + secrets.randbelow(1_000_000)
         self.radios: list[dict] = []
         self.packet_id = 1
         self.tcp: socket.socket | None = None
         self.udp: socket.socket | None = None
+        self.server = (host, port)
         self._stop = threading.Event()
 
     # --- registration ---------------------------------------------------
     def connect(self, radios: list[dict]) -> "SRSClient":
         self.radios = radios
         self.tcp = socket.create_connection((self.host, self.port), timeout=10)
+        # Unconnected UDP: the server relays voice from its own socket, which may
+        # not be the same source port we send to -- a connect()ed socket would
+        # drop those. Bind an ephemeral port and accept from any source.
         self.udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.udp.connect((self.host, self.port))
+        self.udp.bind(("0.0.0.0", 0))
 
         self._send_tcp(MSG_SYNC)
         if self.eam_password is not None:
             self._send_tcp(MSG_EAM_PASSWORD, ExternalAWACSModePassword=self.eam_password)
+        # The server registers our radios from a RadioUpdate, NOT from the Sync.
+        # Without this our client shows radios=[] server-side and no voice is ever
+        # relayed to us -- we appear tuned to nothing.
+        self._send_tcp(MSG_RADIO_UPDATE)
         self._udp_ping()            # registers our UDP source with the server
         self._send_tcp(MSG_PING)
 
         threading.Thread(target=self._drain_tcp, daemon=True).start()
         threading.Thread(target=self._ping_loop, daemon=True).start()
+        threading.Thread(target=self._warmup, daemon=True).start()
         return self
+
+    def _warmup(self) -> None:
+        # Re-assert the radio + UDP registration a few times over the first
+        # seconds. A single RadioUpdate can land before the server has finished
+        # setting the client up, and then the first transmission is dropped.
+        for _ in range(4):
+            if self._stop.wait(0.8):
+                return
+            try:
+                self._send_tcp(MSG_RADIO_UPDATE)
+                self._udp_ping()
+            except OSError:
+                return
 
     def _client_info(self) -> dict:
         return {
             "ClientGuid": self.guid, "Name": self.name, "Seat": 0,
             "Coalition": self.coalition, "AllowRecord": True,
             "RadioInfo": {
-                "radios": self.radios, "unit": "External AWACS", "unitId": UNIT_ID,
+                "radios": self.radios, "unit": "External AWACS", "unitId": self.unit_id,
                 "iff": {"control": 2, "status": 0, "mode1": -1, "mode2": -1,
                         "mode3": -1, "mode4": False, "mic": -1},
                 "ambient": {"vol": 1.0, "abType": ""},
@@ -108,7 +134,7 @@ class SRSClient:
         self.tcp.sendall(json.dumps(msg).encode("utf-8") + b"\n")
 
     def _udp_ping(self) -> None:
-        self.udp.send(self.guid.encode("ascii"))   # bare 22-byte GUID
+        self.udp.sendto(self.guid.encode("ascii"), self.server)   # bare 22-byte GUID
 
     def _ping_loop(self) -> None:
         while not self._stop.wait(PING_INTERVAL):
@@ -136,7 +162,7 @@ class SRSClient:
         time.sleep(settle)          # let the server register our UDP source
         start = time.monotonic()
         for i, frame in enumerate(opus_frames):
-            self.udp.send(self._voice_packet(frame, freqs))
+            self.udp.sendto(self._voice_packet(frame, freqs), self.server)
             self.packet_id += 1
             nxt = start + (i + 1) * (tts.FRAME_MS / 1000)
             dt = nxt - time.monotonic()
@@ -150,7 +176,7 @@ class SRSClient:
         header = struct.pack("<HHH", packet_len, len(audio), len(freq_seg))
         guid = self.guid.encode("ascii")
         fixed = (b"\x00"                              # leading pad byte of fixed seg
-                 + struct.pack("<I", UNIT_ID)
+                 + struct.pack("<I", self.unit_id)
                  + struct.pack("<Q", self.packet_id)
                  + struct.pack("<B", 0)               # hops
                  + guid                               # relay GUID
@@ -169,7 +195,7 @@ class SRSClient:
         packets = total = 0
         while time.monotonic() < end:
             try:
-                data = self.udp.recv(1500)
+                data, _src = self.udp.recvfrom(1500)
             except socket.timeout:
                 continue
             except OSError:
@@ -178,6 +204,79 @@ class SRSClient:
                 packets += 1
                 total += len(data)
         return packets, total
+
+    def receive(self, duration: float):
+        """Receive relayed voice, decode each packet's Opus frame to PCM.
+
+        Returns (packet_count, int16 PCM samples). The ears half: this PCM is
+        what Whisper will later transcribe. Each UDP voice packet carries one
+        40 ms Opus frame right after the 6-byte length header.
+        """
+        import numpy as np
+        import opuslib
+
+        dec = opuslib.Decoder(tts.SRS_SAMPLE_RATE, tts.SRS_CHANNELS)
+        self.udp.settimeout(0.5)
+        end = time.monotonic() + duration
+        packets = 0
+        pcm: list = []
+        while time.monotonic() < end:
+            try:
+                data, _src = self.udp.recvfrom(1500)
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+            if len(data) <= GUID_LEN:
+                continue                      # a ping, not voice
+            _plen, audio_len, _freq_len = struct.unpack("<HHH", data[:6])
+            audio = data[6:6 + audio_len]
+            try:
+                frame = dec.decode(audio, tts.SAMPLES_PER_FRAME)
+                pcm.append(np.frombuffer(frame, dtype="<i2"))
+                packets += 1
+            except Exception:
+                pass
+        samples = np.concatenate(pcm) if pcm else np.zeros(0, dtype="<i2")
+        return packets, samples
+
+    def recv_utterance(self, max_wait: float = 60.0, silence: float = 1.2):
+        """Block until a transmission is heard, then return its decoded int16 PCM
+        once the talker stops (a `silence`-second gap). None if nothing arrives
+        within `max_wait`. This is one pilot 'over' -- ready for Whisper.
+        """
+        import numpy as np
+        import opuslib
+
+        dec = opuslib.Decoder(tts.SRS_SAMPLE_RATE, tts.SRS_CHANNELS)
+        self.udp.settimeout(0.3)
+        frames: list = []
+        started = False
+        t0 = time.monotonic()
+        last = 0.0
+        while True:
+            now = time.monotonic()
+            if not started and now - t0 > max_wait:
+                return None
+            if started and now - last > silence:
+                break
+            try:
+                data, _src = self.udp.recvfrom(1500)
+            except socket.timeout:
+                continue
+            except OSError:
+                return None
+            if len(data) <= GUID_LEN:
+                continue
+            _plen, audio_len, _freq_len = struct.unpack("<HHH", data[:6])
+            try:
+                pcm = dec.decode(data[6:6 + audio_len], tts.SAMPLES_PER_FRAME)
+                frames.append(np.frombuffer(pcm, dtype="<i2"))
+                started = True
+                last = now
+            except Exception:
+                pass
+        return np.concatenate(frames) if frames else None
 
     def close(self) -> None:
         self._stop.set()
