@@ -90,21 +90,31 @@ def make_ident_audio(ident: str, seconds: float = 10.0) -> Path:
     return path
 
 
-def build(hard: bool) -> tuple[Mission, list[int]]:
+def build(weather: str = "light") -> tuple[Mission, list[int]]:
     m = Mission(terrain=Caucasus())
     m.set_sortie_text("362nd - Blind Flying")
     m.start_time = m.start_time.replace(hour=9, minute=0)
 
-    # The cloud base is the SAME ceiling the plate's MDA is derived from, so the
-    # sim can never contradict the chart: level at MDA and you break out just
-    # below the overcast with the runway there. "hard" flies the briefed
-    # minimums; otherwise lift the base for a gentler first look.
+    # Weather modes:
+    #   clear -- CAVOK. A first VMC look to fly the geometry and find where the
+    #            beacon null and runway actually are, before trusting them blind.
+    #   light -- overcast, base lifted 1500 ft above the briefed ceiling: IMC but
+    #            a gentle break-out well above MDA.
+    #   hard  -- overcast at the briefed ceiling itself: real minimums.
+    # For light/hard the cloud base is the SAME ceiling the plate's MDA is derived
+    # from, so the sim can never contradict the chart: level at MDA and you break
+    # out just below the overcast with the runway there.
     P = R.BATUMI_APPROACH
-    ceiling_ft = P.ceiling_ft if hard else P.ceiling_ft + 1500
-    m.weather.clouds_base = int(ceiling_ft * 0.3048)   # ft -> m
-    m.weather.clouds_thickness = 2000
-    m.weather.clouds_density = 9
-    m.weather.visibility_distance = 4000 if hard else 8000
+    if weather == "clear":
+        m.weather.clouds_density = 0            # no overcast
+        m.weather.clouds_thickness = 0
+        m.weather.visibility_distance = 80000
+    else:
+        ceiling_ft = P.ceiling_ft if weather == "hard" else P.ceiling_ft + 1500
+        m.weather.clouds_base = int(ceiling_ft * 0.3048)   # ft -> m
+        m.weather.clouds_thickness = 2000
+        m.weather.clouds_density = 9
+        m.weather.visibility_distance = 4000 if weather == "hard" else 8000
     for w in (m.weather.wind_at_ground, m.weather.wind_at_2000,
               m.weather.wind_at_8000):
         # Wind is what makes timed legs hard; it must match the briefed value
@@ -214,18 +224,25 @@ def deploy(miz: Path) -> None:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--hard", action="store_true",
-                    help="ceiling near minimums instead of a gentle first look")
+    g = ap.add_mutually_exclusive_group()
+    g.add_argument("--hard", action="store_true",
+                   help="overcast at the briefed ceiling -- real minimums")
+    g.add_argument("--clear", action="store_true",
+                   help="CAVOK -- clear skies for a first VMC look")
     args = ap.parse_args()
+    weather = "hard" if args.hard else "clear" if args.clear else "light"
 
-    mission, ids = build(args.hard)
+    mission, ids = build(weather)
     mission.save(str(OUT))
     write_presets(OUT, ids)
     deploy(OUT)
 
+    wx = {"clear": "CAVOK (clear)",
+          "light": "overcast, base 1500 ft above ceiling",
+          "hard": "overcast at ceiling (minimums)"}[weather]
     print(f"\n{FLIGHT_SIZE} x P-51D-30, airborne over {R.KOBULETI.name} "
           f"at {R.CRUISE_ALT_FT:,} ft")
-    print(f"MDA {R.BATUMI_APPROACH.mda_ft}, ceiling coupled"
+    print(f"MDA {R.BATUMI_APPROACH.mda_ft}, weather: {wx}"
           f", wind {R.WIND_FROM_DEG:.0f}/{R.WIND_MPH:.0f}\n")
     for i, f in enumerate(R.FIXES):
         print(f"  ch {'ABCD'[i]}  {f.freq_mhz:7.3f}  {f.ident:3} {f.name:9} "
