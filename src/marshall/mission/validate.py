@@ -13,8 +13,9 @@ import zipfile
 from pathlib import Path
 
 from marshall.core import route as R
+from marshall import config
 
-MIZ = Path(__file__).parent / "362nd-Blind-Flying.miz"
+MIZ = config.MISSION_OUT / "362nd-Blind-Flying.miz"
 
 problems: list[str] = []
 notes: list[str] = []

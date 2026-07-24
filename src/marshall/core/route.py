@@ -93,15 +93,54 @@ class ApproachProfile:
     controller: str                 # radio callsign, e.g. "Batumi Approach"
     beacon: Fix                     # the approach beacon (ident + freq)
     stack_ft: list[int]             # holding stack, bottom first
-    missed_ft: int                  # missed climbs here, below the stack
     outer_hold: Fix                 # escape-valve fix for repeated misses
 
     # Used only by the plate, not by ATC (it is blind and cannot see the field).
     final_crs: int = 0              # inbound = runway heading
     hold_turns: str = "RIGHT"
-    mda_ft: int = 0
     field_elev_ft: int = 0
     runway: str = ""
+
+    # --- the letdown, no DME. -------------------------------------------
+    # Cleared, you descend to the platform on the reversal (out over water),
+    # then -- only while established on the beam (steady tone) -- down to MDA.
+    # Station passage (the cone of silence over the field beacon) is the missed
+    # approach point: no DME, no timing. Because the field is coastal and at sea
+    # level, the altimeter reads a true height and there is nothing but water
+    # under the whole approach, so MDA can sit low.
+    platform_ft: int = 2000         # level here on the reversal before the beam
+    speed_kt: int = 240             # pattern speed (4 nm/min)
+    descent_fpm: int = 500          # never steeper than this
+
+    # MDA is not chosen freely: it must sit just below the briefed cloud base so
+    # that levelling at minimums actually reveals the runway. Ceiling and MDA
+    # move together -- the mission generator reads the same ceiling for weather.
+    ceiling_ft: int = 400           # briefed cloud base for this mission
+    breakout_ft: int = 100          # MDA this far below the ceiling
+    min_hat_ft: int = 150           # but never lower than field + this
+
+    # Missed approach (Batumi real AIP: straight to 800', LEFT to 330', 3000').
+    missed_straight_ft: int = 800
+    missed_turn: str = "LEFT"
+    missed_hdg: int = 330
+    missed_climb_ft: int = 3000     # below the stack; ATC re-sequences from here
+
+    @property
+    def mda_ft(self) -> int:
+        return max(self.field_elev_ft + self.min_hat_ft,
+                   self.ceiling_ft - self.breakout_ft)
+
+    @property
+    def missed_ft(self) -> int:     # what ATC assigns a go-around
+        return self.missed_climb_ft
+
+    @property
+    def inbound_descent_nm(self) -> float:
+        """Track needed to lose platform->MDA at the descent limit. The inbound
+        beam must be at least this long or you cannot be down by station
+        passage -- which is the plate's constraint on the racetrack size."""
+        minutes = (self.platform_ft - self.mda_ft) / self.descent_fpm
+        return self.speed_kt / 60 * minutes
 
     @property
     def top_ft(self) -> int:
@@ -116,17 +155,22 @@ class ApproachProfile:
 # the rest is for the plate. Outer hold is Kobuleti -- the departure beacon,
 # on land up the coast, whose job is done by the time the flight is on approach,
 # so a repeatedly-missing aircraft can be banished there without a spare channel.
+# Values anchored to the real Batumi (UGSB) ILS RWY 12 plate: inbound 124,
+# missed straight to 800' then LEFT to 330' climbing 3000', reversal to 2000'
+# over the water. We fly the same geometry with a scripted VHF homing beacon
+# (the real LU is a 430 kHz LF NDB the ARA-8 cannot steer on) and station
+# passage in lieu of the DME the P-51 does not carry.
 BATUMI_APPROACH = ApproachProfile(
     controller="Batumi Approach",
     beacon=BATUMI,
     stack_ft=[4000, 5000, 6000, 7000],
-    missed_ft=3000,
     outer_hold=KOBULETI,
-    final_crs=130,
+    final_crs=124,
     hold_turns="RIGHT",
-    mda_ft=600,
-    field_elev_ft=32,
-    runway="13",
+    field_elev_ft=37,
+    runway="12",
+    platform_ft=2000,
+    ceiling_ft=400,
 )
 
 

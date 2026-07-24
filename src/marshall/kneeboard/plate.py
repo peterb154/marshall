@@ -15,40 +15,34 @@ from marshall.core import route as R
 
 HERE = Path(__file__).parent
 
-# A single-beacon letdown, forced by the terrain: the NW quadrant is open sea
-# and the only place a descent below 7,000 ft survives, so the hold, the
-# procedure turn and the missed all live out over the water.
+# Everything comes from the field's ApproachProfile -- the single source shared
+# with ATC and the mission generator. The plate cannot disagree with the sim.
 #
-# One beacon does everything. You hold at it (inbound on the runway heading, in
-# lieu of a procedure turn) and you let down from it. To land: cross the beacon,
-# start the clock, descend. To hold: cross the beacon, standard-rate 180 onto
-# outbound, ~2 min, standard-rate 180 back inbound.
-BEACON = R.BATUMI           # the approach beacon, at the field
-FINAL_CRS = 130             # inbound = runway 13 heading
-HOLD_TURNS = "RIGHT"        # keeps the whole pattern NW, over water
+# The procedure (a no-DME beacon letdown to a coastal, sea-level field):
+# hold over the field beacon with the racetrack out over the water; cleared, you
+# descend to the platform on the reversal, then -- only while established on the
+# beam -- down to MDA; station passage (the cone of silence overhead) is the
+# missed approach point. No DME, no timing: the null over the beacon IS the fix,
+# and because the field is at sea level with water underneath, the altimeter
+# reads a true height so MDA can sit low, just under the briefed cloud base.
+P = R.BATUMI_APPROACH
 
-# Descent geometry: a P-51 in the pattern makes ~240 kt =
-# 4 nm/min and must not exceed 500 ft/min down. So a 2-minute outbound leg is
-# 8 nm, and one full descending lap (outbound + reversal + inbound ~= 6 min)
-# sheds ~3,000 ft. The letdown therefore happens IN the pattern, over the water,
-# not on a short final -- the beacon is at the field, so there is no long final.
-SPEED_KT = 240
-DESCENT_FPM = 500
-OUTBOUND_MIN = 2
-OUTBOUND_NM = SPEED_KT / 60 * OUTBOUND_MIN     # 8 nm
-
-# Held over water (NW quadrant MSA is only 1,000), but the stack sits at
-# 4,000+ so arrivals from the enroute structure step down into it cleanly.
-STACK_FT = [4000, 5000, 6000, 7000]            # bottom first
-MDA_FT = 600                # minimum descent altitude; field elev 32
-# Missed returns BELOW the stack so the aircraft that went around is vertically
-# clear of everyone holding and is re-sequenced from underneath.
-MISSED_ALT_FT = 3000
-
-# From the bottom of the stack to MDA, in descending laps.
-_DESC_FT = STACK_FT[0] - MDA_FT
-_LAP_MIN = OUTBOUND_MIN * 2 + 2                # two legs + two ~1-min turns
-DESC_LAPS = _DESC_FT / (DESCENT_FPM * _LAP_MIN)
+BEACON = P.beacon
+FINAL_CRS = P.final_crs
+HOLD_TURNS = P.hold_turns
+SPEED_KT = P.speed_kt
+DESCENT_FPM = P.descent_fpm
+STACK_FT = P.stack_ft
+PLATFORM_FT = P.platform_ft
+MDA_FT = P.mda_ft
+CEILING_FT = P.ceiling_ft
+MISSED_ALT_FT = P.missed_ft
+MISSED_TURN = P.missed_turn
+MISSED_HDG = P.missed_hdg
+MISSED_STRAIGHT_FT = P.missed_straight_ft
+# The inbound beam must be at least this long or you cannot be down by station
+# passage -- it sizes the racetrack, and it lands near the real plate's D13.5.
+INBOUND_NM = P.inbound_descent_nm
 
 STYLE = """
   /* Portrait proportions with no JavaScript and nothing that can measure zero.
@@ -190,15 +184,15 @@ def plan_view() -> str:
   <text class="m" x="{CX + rx*58:.0f}" y="{CY + ry*58:.0f}" font-size="11"
         text-anchor="middle">HOLD</text>
   <text class="m" x="{CX + rx*58:.0f}" y="{CY + ry*58 + 14:.0f}" font-size="9"
-        text-anchor="middle">{HOLD_TURNS} &middot; {OUTBOUND_MIN} MIN</text>
+        text-anchor="middle">{HOLD_TURNS} &middot; {PLATFORM_FT:,}</text>
 
-  <!-- missed approach, back out to sea and around -->
+  <!-- missed: straight ahead climbing, then LEFT back out to sea -->
   <path d="M {CX} {CY} Q {ma_out[0]:.0f} {ma_out[1]:.0f} {ma_end[0]:.0f} {ma_end[1]:.0f}"
         fill="none" stroke="#7a2318" stroke-width="2.2" stroke-dasharray="7 4"/>
   <polygon points="{ma_end[0]:.0f},{ma_end[1]:.0f} {ma_end[0]+14:.0f},{ma_end[1]+2:.0f}
                    {ma_end[0]+5:.0f},{ma_end[1]+13:.0f}" fill="#7a2318"/>
   <text class="m" x="{ma_out[0]:.0f}" y="{ma_out[1]-8:.0f}" font-size="10"
-        fill="#7a2318" text-anchor="middle" letter-spacing="1">MISSED {MISSED_ALT_FT:,}</text>
+        fill="#7a2318" text-anchor="middle" letter-spacing="1">MISSED {MISSED_TURN} {MISSED_HDG:03d} &middot; {MISSED_ALT_FT:,}</text>
 
   <!-- runway stub, into the land -->
   <line x1="{CX}" y1="{CY}" x2="{rwx:.0f}" y2="{rwy_:.0f}"
@@ -209,7 +203,7 @@ def plan_view() -> str:
   <circle cx="{CX}" cy="{CY}" r="2.5" fill="#241f18"/>
   <text class="m" x="{CX+11}" y="{CY-8}" font-size="13"
         font-weight="bold">{BEACON.ident} {BEACON.freq_mhz:.3f}</text>
-  <text class="m" x="{CX+11}" y="{CY+6}" font-size="9">RWY 13 &middot; ELEV 32</text>
+  <text class="m" x="{CX+11}" y="{CY+6}" font-size="9">RWY {P.runway} &middot; ELEV {P.field_elev_ft}</text>
 
   <text class="m" x="12" y="{H-14}" font-size="9">NORTH UP &middot; NOT TO SCALE</text>
 </svg>"""
@@ -223,11 +217,11 @@ def build() -> str:
     msa = "".join(f"<td>{q}<br><b>{v:,}</b></td>"
                   for q, v in R.BATUMI_FIELD.msa.items())
 
-    return f"""<title>Batumi RWY 13 - Beacon Approach</title>
+    return f"""<title>Batumi RWY {P.runway} - Beacon Approach</title>
 <style>{STYLE}</style>
 <div class="sheet">
-  <h1>Batumi &mdash; Runway 13</h1>
-  <div class="sub">Beacon Approach &middot; 362nd FS &middot; P-51D-30</div>
+  <h1>Batumi &mdash; Runway {P.runway}</h1>
+  <div class="sub">Beacon Approach &middot; P-51D-30 &middot; No DME</div>
 
   {plan_view()}
 
@@ -236,10 +230,9 @@ def build() -> str:
 
   <h2>Holding &amp; Letdown &mdash; over {BEACON.ident} {BEACON.freq_mhz:.3f} (the field)</h2>
   <table>
-    <tr><th>Inbound</th><th>Turns</th><th>Outbound</th><th>Pattern</th></tr>
+    <tr><th>Inbound</th><th>Turns</th><th>Platform</th><th>MDA</th></tr>
     <tr><td><b>{FINAL_CRS:03d}&deg;T</b></td><td>{HOLD_TURNS}</td>
-        <td>{OUTBOUND_MIN} min ({OUTBOUND_NM:.0f} nm)</td>
-        <td>Extends NW, over water</td></tr>
+        <td>{PLATFORM_FT:,} ft</td><td><b>{MDA_FT} ft</b></td></tr>
   </table>
   <table style="margin-top:6px">
     <tr><th>Aircraft</th><th>Altitude</th><th>Sequence</th></tr>
@@ -248,24 +241,23 @@ def build() -> str:
 
   <h2>Approach</h2>
   <ol class="steps">
-    <li>Hold over <b>{BEACON.ident}</b> as assigned &mdash; cross the beacon,
-        turn {HOLD_TURNS.lower()} onto <b>{(FINAL_CRS+180)%360:03d}&deg;</b>
-        outbound over the sea, {OUTBOUND_MIN} min, turn back inbound.</li>
-    <li>Cleared for the approach: descend <b>in the pattern</b> at no more than
-        <b>{DESCENT_FPM} ft/min</b> &mdash; about {DESC_LAPS:.0f} laps from the
-        bottom of the stack &mdash; reaching <b>MDA {MDA_FT} ft</b> over the water.
-        There is no long final: the beacon is at the field.</li>
-    <li>Roll out on the final inbound leg, <b>{FINAL_CRS:03d}&deg;T</b> to the
-        beacon at MDA. Steady tone on course; letters mean you are off it.</li>
-    <li>Beacon passage is the missed approach point. Runway 13 ahead, field
-        elevation 32 ft. Not visual &mdash; go around. Never below MDA to look.</li>
+    <li>Hold over <b>{BEACON.ident}</b> as assigned. Cleared, descend on the
+        reversal to <b>{PLATFORM_FT:,} ft</b>, out over the water.</li>
+    <li>Established inbound <b>{FINAL_CRS:03d}&deg;T</b> &mdash; steady tone,
+        on the beam &mdash; descend to <b>MDA {MDA_FT} ft</b> at no more than
+        <b>{DESCENT_FPM} ft/min</b>. Descend <u>only</u> while the tone holds: a
+        broken tone means you are not established. Do not descend to look.</li>
+    <li>Hold MDA to the field. <b>Station passage</b> &mdash; the beacon goes
+        silent overhead (cone of silence) &mdash; is the missed approach point.</li>
+    <li>Runway {P.runway} in sight at station passage &mdash; land, field
+        elevation {P.field_elev_ft} ft. Not in sight &mdash; go around.</li>
   </ol>
 
   <div class="warn">
-    MISSED APPROACH &mdash; CLIMB, TURN {HOLD_TURNS} TO SEAWARD<br>
-    Climb to <b>{MISSED_ALT_FT:,} ft</b> &mdash; below the stack &mdash; return to
-    {BEACON.ident}, hold, await re-sequence.<br>
-    Do not continue on runway heading: rising ground south-east.
+    MISSED APPROACH &mdash; STRAIGHT AHEAD TO {MISSED_STRAIGHT_FT}',
+    THEN <u>{MISSED_TURN}</u> {MISSED_HDG:03d}&deg;, CLIMB {MISSED_ALT_FT:,}'<br>
+    Return to {BEACON.ident}, hold below the stack, await re-sequence.<br>
+    Do not press on past the field: rising ground south-east.
   </div>
 
   <div style="font-size:11px;margin-top:8px">

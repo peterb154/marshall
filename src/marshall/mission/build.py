@@ -95,9 +95,13 @@ def build(hard: bool) -> tuple[Mission, list[int]]:
     m.set_sortie_text("362nd - Blind Flying")
     m.start_time = m.start_time.replace(hour=9, minute=0)
 
-    # Overcast with a base you must descend into. "Hard" puts the base near
-    # approach minimums so the field appears late or not at all.
-    m.weather.clouds_base = 300 if hard else 900       # metres
+    # The cloud base is the SAME ceiling the plate's MDA is derived from, so the
+    # sim can never contradict the chart: level at MDA and you break out just
+    # below the overcast with the runway there. "hard" flies the briefed
+    # minimums; otherwise lift the base for a gentler first look.
+    P = R.BATUMI_APPROACH
+    ceiling_ft = P.ceiling_ft if hard else P.ceiling_ft + 1500
+    m.weather.clouds_base = int(ceiling_ft * 0.3048)   # ft -> m
     m.weather.clouds_thickness = 2000
     m.weather.clouds_density = 9
     m.weather.visibility_distance = 4000 if hard else 8000
@@ -192,6 +196,14 @@ def write_presets(miz: Path, unit_ids: list[int]) -> None:
 
 def deploy(miz: Path) -> None:
     dest = MISSIONS / miz.name
+    # When DCS_MISSIONS is unset it defaults to the build dir -- the same place
+    # the .miz was just written -- so there is nothing to copy. Guard against
+    # unlinking the source and destroying it.
+    if dest.resolve() == miz.resolve():
+        print(f"  built -> {miz} ({miz.stat().st_size} B); DCS_MISSIONS unset, "
+              f"not deployed")
+        return
+    dest.parent.mkdir(parents=True, exist_ok=True)
     if dest.exists():
         dest.unlink()
     shutil.copy2(miz, dest)
@@ -213,7 +225,7 @@ if __name__ == "__main__":
 
     print(f"\n{FLIGHT_SIZE} x P-51D-30, airborne over {R.KOBULETI.name} "
           f"at {R.CRUISE_ALT_FT:,} ft")
-    print(f"ceiling {'300 m (minimums)' if args.hard else '900 m (first look)'}"
+    print(f"MDA {R.BATUMI_APPROACH.mda_ft}, ceiling coupled"
           f", wind {R.WIND_FROM_DEG:.0f}/{R.WIND_MPH:.0f}\n")
     for i, f in enumerate(R.FIXES):
         print(f"  ch {'ABCD'[i]}  {f.freq_mhz:7.3f}  {f.ident:3} {f.name:9} "
