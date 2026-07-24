@@ -1,0 +1,21 @@
+# Generated output -- charts, missions, audio, screenshots
+/build/
+*.miz
+*.wav
+*.ogg
+shots/
+
+# Generated HTML lives in build/; never commit rendered pages
+/src/marshall/**/*.html
+
+# Local environment
+.env
+.venv/
+__pycache__/
+*.pyc
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+desktop.ini
