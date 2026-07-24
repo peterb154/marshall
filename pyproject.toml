@@ -15,6 +15,8 @@ dependencies = []
 # The kneeboard / flight-planning web server. uvicorn gives the per-connection
 # concurrency OpenKneeboard's keep-alive Chromium needs (see docs/GOTCHAS.md).
 server = ["fastapi>=0.110", "uvicorn[standard]>=0.29"]
+# The SRS voice bridge: TTS -> Opus -> SRS transmit. boto3 drives Polly.
+voice = ["opuslib>=3.0", "numpy>=1.26", "soxr>=0.5", "boto3>=1.34"]
 mission = ["pydcs>=0.15.0"]
 dev = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "pydcs>=0.15.0", "luaparser>=3.2"]
 
