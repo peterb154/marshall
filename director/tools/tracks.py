@@ -199,10 +199,75 @@ def radar_cached(bindings: dict | None = None) -> list[str] | None:
     except Exception as e:
         log.warning("radar_cached failed: %s", e)
         return None
+    return _render(rows, bindings)
+
+
+# A formation is tight: line abreast or trail, inside a couple of miles and a
+# few hundred feet, all pointing the same way. Loose enough to survive AI
+# station-keeping wobble, tight enough that two aircraft genuinely working the
+# approach separately never merge.
+#
+# FORM_FT must stay well UNDER the holding stack's step (1,000 ft), or the
+# detector eats the stack: four aircraft correctly separated by 1,000 ft over
+# the same beacon would read as a formation, and the controller would be told
+# that four aeroplanes he has just separated are one contact.
+FORM_NM = 2.0
+FORM_FT = 500
+FORM_HDG = 40
+
+
+def _clusters(rows: list) -> list[list]:
+    """Group contacts that are flying as a formation.
+
+    Four aeroplanes in close formation are four blips a mile apart at the same
+    altitude on the same heading, and presenting them as four independent
+    contacts is actively harmful: the controller's own rule is that an ambiguous
+    match must not be identified, so a four-ship could never be radar identified
+    at all -- the more aircraft in the formation, the less he can see it. A real
+    controller reads that picture as ONE thing.
+    """
+    import math
+
+    def xy(nm, radial):
+        r = math.radians(radial)
+        return nm * math.sin(r), nm * math.cos(r)
+
+    def near(a, b) -> bool:
+        _, _, a_alt, a_hdg, a_nm, a_radial = a
+        _, _, b_alt, b_hdg, b_nm, b_radial = b
+        ax, ay = xy(a_nm, a_radial)
+        bx, by = xy(b_nm, b_radial)
+        return (math.hypot(ax - bx, ay - by) <= FORM_NM
+                and abs(a_alt - b_alt) < FORM_FT
+                and abs((a_hdg - b_hdg + 180) % 360 - 180) <= FORM_HDG)
+
+    groups: list[list] = []
+    for row in rows:
+        # Chain against ANY member, not just the leader: a four-ship in trail is
+        # strung out over more than the pairwise threshold end to end, so
+        # comparing everyone to the lead alone drops the tail of the formation.
+        for g in groups:
+            if any(near(row, other) for other in g):
+                g.append(row)
+                break
+        else:
+            groups.append([row])
+    return groups
+
+
+def _render(rows: list, bindings: dict) -> list[str]:
     lines = []
-    for label, typ, alt_ft, heading, nm, radial in rows:
+    for group in _clusters(rows):
+        label, typ, alt_ft, heading, nm, radial = group[0]
         tag = f" [{bindings[label]}]" if label in bindings else ""
-        lines.append(
-            f"{label}{tag} ({typ}): {nm:.1f} nm on the {radial:03.0f} radial, "
-            f"{alt_ft:,.0f} ft, heading {heading:03.0f}")
+        if len(group) > 1:
+            others = ", ".join(r[0] for r in group[1:])
+            lines.append(
+                f"{label}{tag} ({typ}) IN FORMATION with {others} — "
+                f"{len(group)} ships, lead {nm:.1f} nm on the {radial:03.0f} "
+                f"radial, {alt_ft:,.0f} ft, heading {heading:03.0f}")
+        else:
+            lines.append(
+                f"{label}{tag} ({typ}): {nm:.1f} nm on the {radial:03.0f} radial, "
+                f"{alt_ft:,.0f} ft, heading {heading:03.0f}")
     return lines

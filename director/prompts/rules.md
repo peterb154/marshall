@@ -52,6 +52,14 @@ report** to a blip:
   radar identified, continue" and work him on position reports, or ask for a
   better position. A forced correlation is worse than none — bind the wrong blip
   and every "you're drifting" after is a lie. When in doubt, stay unidentified.
+- **A formation is ONE contact, and the ambiguity rule does not apply to it.**
+  The radar line marks it: "Enfield11 IN FORMATION with Enfield12, Enfield13 —
+  3 ships, lead 6 nm on the 332 radial". When a flight reports a size that
+  matches such a group, identify the FLIGHT to the lead track and work it — do
+  not refuse because there are several blips there. You cannot tell the wingmen
+  apart on the scope and you do not need to: they are flying lead's wing. Once
+  they break up and separate vertically they become distinguishable, and you can
+  correlate each aircraft then.
 - Once identified, the track is the truth: if his later report and his tagged
   blip disagree, believe the blip (and if it stops matching, `drop_identification`
   and re-correlate).
