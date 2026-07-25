@@ -449,6 +449,11 @@ def profile_from_dict(d: dict) -> ApproachProfile:
     for key in ("beacon", "outer_hold", "arrival_fix"):
         if isinstance(d.get(key), dict):
             d[key] = Fix(**d[key])
+    # Same trap one level down: a list of dicts passes every check and fails at
+    # the moment somebody asks a Station for its name -- which, for a stored
+    # profile, is while the bridge is starting up in front of a waiting pilot.
+    d["stations"] = [s if isinstance(s, Station) else Station(**s)
+                     for s in (d.get("stations") or [])]
     d["atc"] = AtcCapability(**d.get("atc", {}))
 
     # stack_ft used to be a stored list; it is now derived from base/step/ceiling.

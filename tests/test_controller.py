@@ -261,6 +261,17 @@ class TestProfileRoundTrip(unittest.TestCase):
         for key in ("beacon", "outer_hold", "arrival_fix"):
             self.assertIsInstance(getattr(rt, key), R.Fix, key)
 
+    def test_stations_survive_the_round_trip(self):
+        # A list of dicts passes every check and fails only when something asks
+        # a Station for its name -- which for a stored profile is during bridge
+        # start-up, in front of a waiting pilot. It did exactly that.
+        rt = R.profile_from_dict(R.profile_to_dict(R.BATUMI_ASR))
+        self.assertTrue(rt.stations)
+        for s in rt.stations:
+            self.assertIsInstance(s, R.Station)
+        self.assertEqual(rt.station(), ("Batumi Tower", 131.0))
+        self.assertEqual(rt.station(enroute=True), ("Batumi Center", 119.0))
+
     def test_a_round_tripped_profile_can_still_pick_a_channel(self):
         # The failure this guards: a dict left in arrival_fix passes every other
         # check and only breaks when the controller asks which frequency to use.
