@@ -140,24 +140,31 @@ DEFENDED = [
     ("Kutaisi",  -284887, 683859, 6.0),
 ]
 
-# A turning point that keeps the transit out of the guns. The direct line to
-# Tsutsnvati goes straight over Kutaisi, which is a short conversation with an
-# 8.8 cm battery.
+# The sortie, routed round the guns rather than through them.
 #
-# The valley is the only low ground between here and the target, and all three
-# defended fields sit in it -- searching every bearing and range around Kutaisi,
-# with terrain capped at 4,500 ft, this was the best available: 6.9 nm from
-# Kutaisi's guns, 9.6 from Kobuleti's, over 3,100 ft of ridge. Going south-east
-# instead buys more clearance and puts eight thousand feet of mountain under a
-# five thousand foot cruise; going out to sea first is longer AND closer.
+# The direct line to the target flies straight over Kutaisi, which is a short
+# conversation with an 8.8 cm battery, and the valley is the only low ground
+# going east -- all three defended fields sit in it. So the outbound leg does
+# not use the valley at all: off runway 31 to the west, climb over the sea,
+# turn north and run up the coast well offshore, and come at the target from
+# the north where nobody is shooting. Sampled the whole way: water under the
+# entire northbound leg, and 1,652 ft of ground on the run east.
 #
-# It is a plan, not a promise. Sentry knows where the flight is going and Center
-# has radar -- ask for vectors and they will take you round.
-WAYPOINT = Fix("RIONI", "", -280384, 709393, None,
-               note="Transit turning point, 14 nm east of Kutaisi. Keeps the "
-                    "run-in clear of the defended fields.")
+# Home is the other way, over the high ground south-east of Kutaisi, which
+# trades a climb for fifteen miles of clearance. Coming back the way we came is
+# thirty miles longer and the direct line passes 4.4 nm from Kutaisi's guns --
+# inside their reach.
+FEET_WET = Fix("FEET WET", "", -355811, 595162, None,
+               note="Off 31 to the west, over water. Climb here.")
+NORTH = Fix("NORTH", "", -259507, 595162, None,
+            note="52 nm north of Batumi, 12 nm offshore -- water the whole way, "
+                 "and north of Kutaisi. Turn east for the target from here.")
+HOMEBOUND = Fix("RIDGE", "", -318936, 712429, None,
+                note="Return turning point, 24 nm south-east of Kutaisi. Over "
+                     "the high ground: a climb in exchange for 15 nm of "
+                     "clearance from every battery.")
 
-SORTIE = [BATUMI, WAYPOINT, TARGET_AREA, WAYPOINT, BATUMI]
+SORTIE = [BATUMI, FEET_WET, NORTH, TARGET_AREA, HOMEBOUND, BATUMI]
 SORTIE_LEGS = list(zip(SORTIE, SORTIE[1:]))
 
 # The route, in order. INITIAL to BATUMI is deliberately runway heading, so

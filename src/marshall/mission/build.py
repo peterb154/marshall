@@ -362,8 +362,6 @@ def build(weather: str = "light", traffic: bool = False,
             client_slots.append((unit.id, kind.id))
         set_channels(sq)
 
-    draw_plan(m)
-
     if traffic:
         add_traffic(m, usa)
     if formation:
@@ -421,59 +419,15 @@ def build(weather: str = "light", traffic: bool = False,
 PRESET_PATHS = {P_51D_30_NA.id: "VHF_RADIO", P_47D_30.id: "VHF_RADIO"}
 
 
-def draw_plan(m: Mission) -> None:
-    """Put the flight plan on the F10 map.
-
-    The brief has the route in numbers and the nav log has it in headings, but
-    neither answers "where am I relative to the plan" while airborne -- and on
-    this map the answer matters, because three of the fields between here and
-    the target have 88s round them. A line you can see beats a heading you have
-    to hold.
-
-    Drawn on the Blue layer so only our side sees it, which is both correct and
-    free: the red coalition has no business reading our route.
-    """
-    from dcs.drawing import LineStyle, Rgba
-    from dcs.mapping import Point
-
-    blue = next(layer for layer in m.drawings.layers if layer.name == "Blue")
-    ink = Rgba(r=30, g=60, b=200, a=220)
-    warn = Rgba(r=200, g=40, b=30, a=230)
-
-    def pt(fix) -> Point:
-        return Point(fix.x, fix.z, m.terrain)
-
-    # The route itself. Given as offsets from the first point, which is how the
-    # drawing layer wants them -- absolute coordinates here put the whole plan
-    # in the sea off Turkey the first time.
-    # pydcs Point is (x, y) where y IS the sim's z -- east. Mixing the two
-    # naming schemes is how a route ends up rotated ninety degrees.
-    origin = R.SORTIE[0]
-    blue.add_line_segments(
-        pt(origin),
-        [Point(f.x - origin.x, f.z - origin.z, m.terrain) for f in R.SORTIE],
-        color=ink, line_thickness=6, line_style=LineStyle.Solid)
-
-    # The target area: a circle you can fly to rather than a coordinate you have
-    # to find. Five miles, which is about what "the town on the west shore of
-    # the lake" means in practice.
-    blue.add_circle(pt(R.TARGET_AREA), radius=5 * 1852,
-                    color=warn, fill=Rgba(r=200, g=40, b=30, a=40),
-                    line_thickness=6)
-    blue.add_text_box(pt(R.TARGET_AREA), R.TARGET_AREA.name,
-                      color=warn, fill=Rgba(r=0, g=0, b=0, a=0), font_size=22)
-
-    # And the guns, because a route drawn without them is only half the picture.
-    # Radius is the heavy flak's reach, not the ring the guns sit on -- what a
-    # pilot needs to see is where it becomes unwise, not where the barrels are.
-    for label, x, z, reach_nm in R.DEFENDED:
-        here = Point(x, z, m.terrain)
-        blue.add_circle(here, radius=reach_nm * 1852, color=warn,
-                        fill=Rgba(r=200, g=40, b=30, a=25), line_thickness=4,
-                        line_style=LineStyle.Dash)
-        blue.add_text_box(here, f"{label.upper()} - AAA", color=warn,
-                          fill=Rgba(r=0, g=0, b=0, a=0), font_size=18)
-
+# (draw_plan lived here. The route is drawn on the LIVE map now by
+# tools/draw.py, over DCS-gRPC, which needs no rebuild and no restart -- and
+# baking a copy into the .miz as well just draws every route twice, the current
+# one on top of whichever one was current when the mission was last built.
+#
+# Live is also the right shape for the job. Tonight the plan went from straight
+# over Kutaisi to out-to-sea-and-round-the-top in three iterations, argued
+# about while people sat on the ramp; each version baked in would have cost a
+# rebuild, a deploy and a server restart.)
 
 def _brief_text() -> str:
     """The mission brief as DCS shows it: plain text, no markup.
