@@ -325,5 +325,44 @@ class TestStations(unittest.TestCase):
     def test_an_unmanned_frequency_hands_off_to_nobody(self):
         self.assertIsNone(self.p.handoff_from(124.0, 10))
 
+class TestTerrain(unittest.TestCase):
+    """Vectoring on geometry alone will fly an aircraft into a mountain.
+
+    Batumi has 1,000 ft of sea to the north-west and between seven and eleven
+    thousand feet of Caucasus everywhere else. The whole beacon procedure lived
+    north-west for that reason; the radar vectoring did not know terrain existed
+    and was caught in the air turning a pilot over the ranges at two thousand.
+    """
+
+    def setUp(self):
+        self.p = R.BATUMI_ASR
+
+    def test_quadrants_run_from_north(self):
+        # An offset version put 330 -- the sea, the one quadrant it is safe to
+        # be low in -- into the north-east bucket and its 8,400 ft of mountain.
+        self.assertEqual(R._quadrant(330), "NW")
+        self.assertEqual(R._quadrant(20), "NE")
+        self.assertEqual(R._quadrant(120), "SE")
+        self.assertEqual(R._quadrant(230), "SW")
+
+    def test_vectoring_over_terrain_is_above_the_msa(self):
+        for radial, quadrant in ((20, "NE"), (120, "SE"), (230, "SW")):
+            with self.subTest(radial=radial):
+                g = asr.guide(asr.Position(15, radial, 5000, 200), self.p)
+                self.assertGreaterEqual(g.altitude_ft, self.p.msa[quadrant])
+
+    def test_over_the_sea_he_may_come_down_to_platform(self):
+        g = asr.guide(asr.Position(15, 330, 5000, 200), self.p)
+        self.assertEqual(g.altitude_ft, self.p.platform_ft)
+
+    def test_the_final_is_flown_over_water(self):
+        # The approach course itself lies north-west, which is why the descent
+        # to minimums is safe at all.
+        self.assertEqual(R._quadrant((self.p.final_crs + 180) % 360), "NW")
+
+    def test_a_profile_with_no_msa_still_works(self):
+        bare = dataclasses.replace(self.p, msa={})
+        self.assertEqual(bare.min_safe_ft(20), bare.platform_ft)
+
 if __name__ == "__main__":
     unittest.main()

@@ -318,6 +318,12 @@ def radar_fix(scope: str, cs: str) -> "object | None":
 # frequent enough to catch each mile boundary without the controller ever
 # talking twice about the same one.
 ASR_POLL_SEC = 4.0
+# A new vector goes out only when the required heading has genuinely moved, and
+# never more often than this. Without the first he is corrected by a degree at a
+# time; without the second, a turning aircraft is nagged every few seconds while
+# it is already doing what was asked.
+VECTOR_CHANGE_DEG = 12
+VECTOR_MIN_SEC = 20.0
 
 
 def radar_fixes(scope: str) -> list[tuple[str, "object"]]:
@@ -360,6 +366,16 @@ def asr_call(cs: str, g) -> str:
                 f"should be {alt}.")
     return (f"{who}, {rng} miles from the runway, on course, altitude should be "
             f"{alt}.")
+
+
+def vector_call(cs: str, g) -> str:
+    """An unprompted turn, issued because he has reached the point -- not
+    because he said something."""
+    from marshall.atc import callsign as C, controller as ctl
+    who = C.parse(cs).spoken
+    turn = f"turn {g.turn} " if g.turn else "fly "
+    alt = f", maintain {ctl.spell_alt(g.altitude_ft)}" if g.altitude_ft else ""
+    return f"{who}, {turn}heading {ctl.spell_hdg(g.heading)}{alt}."
 
 
 def asr_context(profile, scope: str, cs: str) -> str:
@@ -587,6 +603,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 if hasattr(profile, "station_for") else None)
         final_hz = (_twr.freq_mhz * 1_000_000) if _twr else freq_hz
         called: dict[str, int] = {}
+        vectored: dict[str, int] = {}      # last heading issued, per aircraft
+        vec_at: dict[str, float] = {}      # and when, so he is not nagged
         while True:
             time.sleep(ASR_POLL_SEC)
             if not (radar_on and getattr(profile, "vectored", False)):
@@ -595,11 +613,36 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 scope = fetch_radar(session_id)
                 for cs, pos in radar_fixes(scope):
                     g = asr.guide(pos, profile)
+
+                    # Being VECTORED. The controller has to turn him when he
+                    # reaches the point, not when he next happens to transmit --
+                    # a real sortie flew twenty miles between calls, sailed past
+                    # the intercept on a heading that had been right when it was
+                    # issued, and ended up on the far side of the field with the
+                    # controller none the wiser. Watching the scope is the job.
+                    if g.phase == "vector":
+                        called.pop(cs, None)
+                        want = g.heading
+                        last = vectored.get(cs)
+                        drifted = last is None or abs(
+                            asr.angle_diff(want, last)) >= VECTOR_CHANGE_DEG
+                        if not drifted or time.time() - vec_at.get(cs, 0) < VECTOR_MIN_SEC:
+                            continue
+                        vectored[cs], vec_at[cs] = want, time.time()
+                        text = for_voice(vector_call(cs, g))
+                        with radio_lock:
+                            print(f"  ATC[vec] {text}", flush=True)
+                            record(session_id, kind="atc/vector", callsign=cs,
+                                   range_nm=round(g.range_nm, 2),
+                                   heading=want, alt=g.altitude_ft, text=text)
+                            client.transmit(voice_for(final_hz).frames(text),
+                                            final_hz, AM)
+                        continue
+
                     if g.phase not in ("final", "map"):
-                        # Left the final -- forget him, so a go-around and a
-                        # second approach get their range calls too.
                         called.pop(cs, None)
                         continue
+                    vectored.pop(cs, None)
                     mile = 0 if g.phase == "map" else int(round(g.range_nm))
                     if called.get(cs) == mile:
                         continue

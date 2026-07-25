@@ -190,6 +190,18 @@ def advisory_altitude(range_nm: float, profile) -> int:
     return max(profile.mda_ft, min(profile.platform_ft, int(round(want / 100) * 100)))
 
 
+def safe_alt(pos: Position, profile) -> int:
+    """The lowest altitude that may be assigned where he currently is.
+
+    Vectoring happens at platform, and platform is only safe over low ground. At
+    Batumi that is the sea to the north-west; the other three quadrants hold
+    between seven and eleven thousand feet of Caucasus. Geometry alone will
+    cheerfully turn an aircraft over a mountain at two thousand feet, and did.
+    """
+    fn = getattr(profile, "min_safe_ft", None)
+    return fn(pos.radial_deg) if fn else profile.platform_ft
+
+
 def guide(pos: Position, profile) -> Guidance:
     """One radar look -> the next instruction.
 
@@ -233,7 +245,7 @@ def guide(pos: Position, profile) -> Guidance:
         h = intercept_heading(profile.final_crs, xtk)
         inside = pos.range_nm <= profile.final_intercept_nm
         alt = (advisory_altitude(pos.range_nm, profile) if inside
-               else profile.platform_ft)
+               else safe_alt(pos, profile))
         return Guidance("final" if inside else "vector", h, alt,
                         pos.range_nm, xtk, deviation,
                         turn_direction(pos.heading_deg, h))
@@ -258,7 +270,7 @@ def guide(pos: Position, profile) -> Guidance:
     # on, and circles it indefinitely. Which is exactly what happened.
     if on_centreline:
         h = round(profile.final_crs)
-        return Guidance("vector", h, profile.platform_ft, pos.range_nm, xtk,
+        return Guidance("vector", h, safe_alt(pos, profile), pos.range_nm, xtk,
                         deviation, turn_direction(pos.heading_deg, h))
 
     # Well off the centreline: aim at the JOIN POINT -- the place on the
@@ -278,7 +290,7 @@ def guide(pos: Position, profile) -> Guidance:
     join = profile.final_intercept_nm + JOIN_MARGIN_NM
     h = round(bearing_between(pos.range_nm, pos.radial_deg, join,
                               inbound_radial)) % 360
-    return Guidance("vector", h, profile.platform_ft, pos.range_nm, xtk,
+    return Guidance("vector", h, safe_alt(pos, profile), pos.range_nm, xtk,
                     deviation, turn_direction(pos.heading_deg, h))
 
 

@@ -229,6 +229,7 @@ def build(weather: str = "light", traffic: bool = False,
     for unit in flight.units:
         unit.speed = cruise_ms
         unit.alt = alt_m
+    set_channels(flight)
 
     # A hot-ramp P-51 at Batumi: a listening station. Sit in it to hear ATC on
     # the SRS radios (SCR-522 button A = Kobuleti Departure, 124.000) without
@@ -239,6 +240,7 @@ def build(weather: str = "light", traffic: bool = False,
     listen.frequency = R.APPROACH.freq_mhz        # start tuned to button B
     for unit in listen.units:
         unit.set_client()
+    set_channels(listen)
 
     # A flight of Thunderbolts, airborne alongside the Mustangs. The whole point
     # of moving to a radar approach is that it needs nothing in the cockpit but
@@ -257,6 +259,7 @@ def build(weather: str = "light", traffic: bool = False,
         unit.alt, unit.speed = alt_m, cruise_ms
         unit.name = f"Hammer 1-{n}"
         unit.set_client()
+    set_channels(jugs)
 
     if traffic:
         add_traffic(m, usa)
@@ -302,10 +305,32 @@ def build(weather: str = "light", traffic: bool = False,
     return m, slots
 
 
-# Aircraft whose VHF preset file we know how to write. Anything else gets its
-# starting frequency from the group and the pilot tunes by hand -- better than
-# injecting a settings file into a radio that does not read it.
+# Aircraft whose VHF preset FILE we know how to write. The Avionics override is
+# the belt; panel_radio below is the braces, and it is the one that works for
+# every airframe.
 PRESET_PATHS = {P_51D_30_NA.id: "VHF_RADIO"}
+
+
+def set_channels(group) -> None:
+    """Write the controller frequencies into a group's radio presets.
+
+    pydcs models the four-channel WW2 set natively as `panel_radio`, and both
+    the Mustang and the Thunderbolt expose the same shape -- so this is the way
+    to give ANY aeroplane the same card, rather than injecting an Avionics file
+    per airframe and silently doing nothing for the ones not listed. That is
+    what left the Jugs with the stock 105/124/139/131 presets while the
+    kneeboard said 119/120/131.
+    """
+    freqs = [s.freq_mhz for s in R.STATIONS[:4]]
+    while len(freqs) < 4:                       # pad the unused buttons
+        freqs.append(freqs[-1])
+    for unit in group.units:
+        unit.set_radio_preset()                 # start from the airframe default
+        for ch, mhz in enumerate(freqs, start=1):
+            try:
+                unit.set_radio_channel_preset(1, ch, mhz)
+            except (TypeError, KeyError):
+                break                           # no configurable radio; leave it
 
 
 def write_presets(miz: Path, slots: list[tuple[int, str]]) -> None:

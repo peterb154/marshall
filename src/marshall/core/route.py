@@ -71,6 +71,17 @@ FIXES = [KOBULETI, INITIAL, BATUMI]
 LEGS = [(KOBULETI, INITIAL), (INITIAL, BATUMI)]
 
 
+def _quadrant(bearing_deg: float) -> str:
+    """Which MSA quadrant a bearing points into.
+
+    The four sectors run from north: 0-90 NE, 90-180 SE, 180-270 SW, 270-360 NW.
+    An earlier version offset them by 45 degrees, which put 330 -- the sea, the
+    only quadrant it is safe to be low in -- into the north-east bucket and its
+    8,400 ft of mountain.
+    """
+    return ("NE", "SE", "SW", "NW")[int((bearing_deg % 360) // 90)]
+
+
 @dataclass
 class Station:
     """A controller: a name, a frequency, and the phase of flight he owns.
@@ -120,6 +131,12 @@ class Field_:
     runway: int             # landing heading, magnetic
     msa: dict[str, int] = field(default_factory=dict)
     note: str = ""
+
+    def msa_for(self, bearing_deg: float) -> int:
+        """Minimum safe altitude in the quadrant this bearing points into."""
+        if not self.msa:
+            return 0
+        return self.msa.get(_quadrant(bearing_deg), max(self.msa.values()))
 
 
 # MSAs measured by the terrain survey, 2026-07-24: highest ground per quadrant
@@ -202,6 +219,20 @@ class ApproachProfile:
     final_intercept_nm: float = 8.0  # rolled out on final by here
     map_nm: float = 0.6             # missed approach point, range from the field
     approach_hands_over_nm: float = 20.0   # Center gives him to Approach here
+    # Minimum safe altitude per quadrant around the field. Vectoring is done at
+    # platform, and platform is only safe where the ground is low -- at Batumi
+    # that is the sea to the north-west and nowhere else. A controller who
+    # vectors on geometry alone will happily turn an aircraft over eleven
+    # thousand feet of Caucasus at two thousand, which is exactly what a pilot
+    # caught in flight: "he's going to fly me into the mountains here, if I were
+    # IMC right now."
+    msa: dict[str, int] = field(default_factory=dict)
+
+    def min_safe_ft(self, bearing_deg: float) -> int:
+        """The lowest altitude that may be assigned out on this bearing."""
+        if not self.msa:
+            return self.platform_ft
+        return max(self.platform_ft, self.msa.get(_quadrant(bearing_deg), 0))
     # The controllers who work this approach, enroute inwards. Empty falls back
     # to the beacon-derived stations the NDB letdown uses.
     stations: list[Station] = field(default_factory=list)
@@ -430,6 +461,7 @@ BATUMI_ASR = ApproachProfile(
     ceiling_ft=400,
     final_intercept_nm=8.0,
     map_nm=0.6,
+    msa=dict(BATUMI_FIELD.msa),
     # Radar-equipped and radar-separated: the handicaps that defined the beacon
     # letdown do not apply to a procedure the controller flies for you.
     atc=AtcCapability(radar=True, dme=False, separation="radar", era="ww2"),
