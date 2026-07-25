@@ -161,7 +161,7 @@ def main() -> int:
             activate(ch, args.group)
             time.sleep(3)
         set_flag(ch, "ai_grp", grp_flag)
-        set_flag(ch, "ai_kts", int(profile.speed_kt))
+        last_kts = 0
 
         while time.time() < deadline:
             unit = lead_of(ch, args.group)
@@ -177,13 +177,16 @@ def main() -> int:
             turned = last_hdg is None or abs(asr.angle_diff(g.heading, last_hdg)) >= MIN_TURN_DEG
             climbed = (last_alt is None or g.altitude_ft is None
                        or abs(g.altitude_ft - last_alt) >= MIN_ALT_FT)
-            if turned or climbed:
+            kts = int(g.speed_kt or profile.speed_kt)
+            slowed = kts != last_kts
+            if turned or climbed or slowed:
                 hdg = g.heading if turned else last_hdg
                 alt = g.altitude_ft if climbed else last_alt
                 set_flag(ch, "ai_hdg", int(hdg))
                 set_flag(ch, "ai_alt", int((alt or profile.platform_ft) / 100))
+                set_flag(ch, "ai_kts", kts)
                 set_flag(ch, "ai_vector", 1)
-                last_hdg, last_alt = hdg, alt
+                last_hdg, last_alt, last_kts = hdg, alt, kts
                 mark = "<<"
             else:
                 mark = "  "
@@ -193,7 +196,7 @@ def main() -> int:
                   f"{unit.position.alt * 3.28084:5.0f} ft hdg {pos.heading_deg:03.0f}"
                   f"   ->  {g.phase:6s} heading {g.heading:03d}"
                   f"{f', {g.altitude_ft} ft' if g.altitude_ft else ''}"
-                  f"  [{g.deviation}]")
+                  f"  {kts:3d} kt  [{g.deviation}]")
 
             # What a controller would actually say, and when he would say it: a
             # turn as it is given, and otherwise one call per mile on final. Not

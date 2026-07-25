@@ -351,6 +351,15 @@ class ApproachProfile:
     # which stretched every derived distance by 15% -- the same trap solve_route
     # already carries a comment about.
     speed_mph: int = 240
+    # Approach speed, flown from the final approach point in. It is a separate
+    # number because the descent rate falls out of it and nothing else: a three
+    # degree path at 240 mph is eleven hundred feet a minute, which is a dive,
+    # not an approach -- unflyable in cloud in a WW2 fighter and not what any
+    # pilot would choose. At 150 it is a shade under seven hundred, which is
+    # what a human actually flies. The vectoring speed stays high because the
+    # positioning is where the time goes; the reduction belongs on final, which
+    # is where a real controller asks for it.
+    final_speed_mph: int = 150
     descent_fpm: int = 500          # never steeper than this
 
     @property
@@ -358,6 +367,29 @@ class ApproachProfile:
         """Pattern speed in knots -- i.e. nautical miles per hour, which is what
         every distance here is measured in."""
         return self.speed_mph / MPH_PER_KT
+
+    @property
+    def final_speed_kt(self) -> float:
+        """Approach speed in knots, for the same reason."""
+        return self.final_speed_mph / MPH_PER_KT
+
+    def speed_kt_at(self, along_nm: float) -> float:
+        """The speed he should be doing this far down the approach.
+
+        One place to ask, so the descent gradient, the mission's AI tasking and
+        anything a controller says about speed cannot drift apart. The
+        reduction is asked for a little before the final approach point rather
+        than at it -- an aeroplane does not slow down instantly, and arriving at
+        the point where the descent starts still doing pattern speed is how the
+        descent becomes a dive.
+        """
+        # Inbound only. A negative along-track means he is PAST the field, and
+        # an aircraft being repositioned from the far side wants pattern speed,
+        # not approach speed -- slowing him down out there just makes the trip
+        # round longer.
+        if 0 < along_nm <= self.fap_nm + 2.0:
+            return self.final_speed_kt
+        return self.speed_kt
 
     # MDA is not chosen freely: it must sit just below the briefed cloud base so
     # that levelling at minimums actually reveals the runway. Ceiling and MDA

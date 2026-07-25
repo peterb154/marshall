@@ -156,11 +156,34 @@ class TestGuide(unittest.TestCase):
     def test_the_missed_approach_point(self):
         self.assertEqual(self.at(0.4).phase, "map")
 
-    def test_the_far_side_of_the_field_is_vectored_back(self):
-        # He has genuinely flown through: vector him round to the join point,
-        # which means turning him AWAY from the field first.
+    def test_off_the_departure_end_gets_the_published_missed_approach(self):
+        # Lined up, low, past the threshold: he has just flown the approach and
+        # not landed. The plate answers this and we fly the plate -- 330,
+        # climbing three thousand, which tracks out over the water. Vectoring
+        # him instead floors his altitude at the minimum vectoring altitude for
+        # the ground below, which off this departure end is thirteen thousand
+        # feet of Caucasus. It was flown live: an aircraft at six hundred feet
+        # was sent to climb thirteen thousand into the mountains, and did.
         g = self.at(4, radial=self.p.final_crs)
+        self.assertEqual(g.phase, "missed")
+        self.assertEqual(g.heading, self.p.missed_hdg)
+        self.assertEqual(g.altitude_ft, self.p.missed_climb_ft)
+        self.assertFalse(g.established)
+
+    def test_below_the_turn_altitude_he_climbs_straight_ahead_first(self):
+        # "At 800 turn left 330" -- so at 500 he is still going straight.
+        g = asr.guide(asr.Position(1.0, self.p.final_crs, 500,
+                                   self.p.final_crs), self.p)
+        self.assertEqual(g.phase, "missed")
+        self.assertEqual(g.heading, self.p.final_crs)
+
+    def test_the_far_side_of_the_field_is_vectored_back(self):
+        # Past the field but NOT off the departure end -- an arrival from the
+        # north-east that has flown nothing. It gets an ordinary vector and the
+        # mountain minimum, not a missed approach it never started.
+        g = self.at(8, radial=45, hdg=45)
         self.assertIn(g.phase, self.VECTORING)
+        self.assertNotEqual(g.phase, "missed")
         self.assertFalse(g.established)
 
     def test_bearing_is_not_progress(self):

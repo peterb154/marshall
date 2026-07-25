@@ -151,6 +151,7 @@ class Guidance:
     xtk_nm: float               # cross-track: +right of course, -left of course
     deviation: str              # "on course" | "left of course" | "right of course"
     turn: str = ""              # "left" | "right", the short way round
+    speed_kt: float = 0.0       # the speed this leg should be flown at
 
     @property
     def off_course(self) -> bool:
@@ -407,8 +408,10 @@ def guide(pos: Position, profile) -> Guidance:
 
     def out(phase, heading, alt):
         h = round(heading) % 360
+        speed = (profile.speed_kt_at(along)
+                 if hasattr(profile, "speed_kt_at") else 0.0)
         return Guidance(phase, h, alt, pos.range_nm, xtk, deviation,
-                        turn_direction(pos.heading_deg, h))
+                        turn_direction(pos.heading_deg, h), speed)
 
     # Established: on the course and pointing down it. The heading check is not
     # pedantry -- a go-around tracking outbound sits on the centreline with a
@@ -463,6 +466,34 @@ def guide(pos: Position, profile) -> Guidance:
         # arrives at the fix at the fix altitude rather than being dropped to
         # it in one instruction on short final.
         return out("vector", heading, safe_alt(pos, profile))
+
+    # Past the field and low: he has just flown the approach and missed it, and
+    # what he needs is the PUBLISHED missed approach, not a vector. The
+    # difference is not cosmetic. Repositioning treats him like any other
+    # out-of-position aircraft and floors his altitude at the minimum vectoring
+    # altitude for the ground beneath him -- which, off the departure end at
+    # Batumi, is thirteen thousand feet of Caucasus. Flown live, an aircraft
+    # over the threshold at six hundred feet was told to climb to thirteen
+    # thousand on a heading into the mountains, and it went into them.
+    #
+    # The plate has the answer and we already carry it: straight ahead, and at
+    # eight hundred feet turn left onto 330 climbing three thousand -- a track
+    # that runs out over the water, which is exactly why it is charted that way.
+    # Only once he is up at the missed approach altitude is he an ordinary
+    # repositioning problem again.
+    # Narrowly: just off the departure end, lined up, low. An aircraft merely on
+    # the far side of the field -- arriving from the north-east, say -- has not
+    # flown anything and must NOT be given the missed approach; it needs the
+    # ordinary vector, and the minimum vectoring altitude for the mountains it
+    # is actually over. The two cases look alike in along-track alone, which is
+    # why all three conditions are here.
+    if (along <= 0 and abs(xtk) <= TURN_IN_NM
+            and pos.range_nm <= profile.final_intercept_nm
+            and pos.alt_ft < profile.missed_climb_ft):
+        straight_ft = getattr(profile, "missed_straight_ft", 0)
+        heading = (profile.final_crs if pos.alt_ft < straight_ft
+                   else profile.missed_hdg)
+        return out("missed", heading, profile.missed_climb_ft)
 
     # Not in position: send him to a fixed point that puts him in position. A
     # real place on the ground, so the track to it does not move under him --
