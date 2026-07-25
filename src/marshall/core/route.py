@@ -92,7 +92,23 @@ BATUMI = Fix("BATUMI", "OS", -355811, 617386, 132.000,
              "Field elevation 32 ft. Landing runway 12 (charted 13/31 today -- "
              "magnetic drift renamed it; we fly the period AIP designation).")
 
+KUTAISI = Fix("KUTAISI", "KT", -284887, 683859, None,
+              note="Red field. The transit turning point, not a diversion -- "
+                   "Batumi is the only blue aerodrome on the map.")
+
+# Where the work is. Not an aerodrome and not a beacon: a point on the ground
+# with a name, which is what a target area actually is.
+TARGET_AREA = Fix("VALLEY", "", -284887, 720899, None,
+                  note="CAS area, 20 nm east of Kutaisi. Hostile ground.")
+
 FIXES = [KOBULETI, INITIAL, BATUMI]
+
+# The sortie, as planned rather than as flown: out from Batumi, across to
+# Kutaisi, east into the target area, and home. Everything but Batumi is
+# hostile, so the route is a there-and-back with no alternate -- which is the
+# point of the scenario and the reason fuel is a real number.
+SORTIE = [BATUMI, KUTAISI, TARGET_AREA, KUTAISI, BATUMI]
+SORTIE_LEGS = list(zip(SORTIE, SORTIE[1:]))
 
 # The route, in order. INITIAL to BATUMI is deliberately runway heading, so
 # rolling out of the turn inbound puts you on the approach course already.
@@ -1011,9 +1027,15 @@ class LegSolution:
 
 
 def solve_route(tas: float = CRUISE_TAS_MPH, wind_from: float = WIND_FROM_DEG,
-                wind_speed: float = WIND_MPH) -> list[LegSolution]:
+                wind_speed: float = WIND_MPH, legs=None) -> list[LegSolution]:
+    """Wind-corrected headings and timings for a route.
+
+    Defaults to the approach's own legs so nothing that already called this
+    changes, but takes any list of (from, to) pairs -- which is what lets the
+    nav log carry an actual sortie rather than the letdown it grew out of.
+    """
     out = []
-    for frm, to in LEGS:
+    for frm, to in (legs if legs is not None else LEGS):
         course, dist = bearing_distance(frm, to)
         wca, hdg, gs = wind_triangle(course, tas, wind_from, wind_speed)
         # Distance is nautical, speed is statute per hour -- convert or every

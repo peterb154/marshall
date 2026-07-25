@@ -86,16 +86,22 @@ def morse(ident: str) -> str:
 
 
 def build() -> str:
-    legs = R.solve_route()
+    # The SORTIE, not the letdown. This page used to show the three beacon legs
+    # of the approach, which stopped being a flight plan the moment the approach
+    # went to radar -- it was a nav log for a journey nobody makes. What a pilot
+    # actually needs is the trip: out to the work, and home.
+    legs = R.solve_route(legs=R.SORTIE_LEGS)
     total_nm = sum(l.distance_nm for l in legs)
     total_min = sum(l.minutes for l in legs)
 
     rows = []
     elapsed = 0.0
     # The first line is the departure point itself: no leg flown to reach it.
+    start = R.SORTIE[0]
     rows.append(
-        f'<tr><td class="fix">{R.KOBULETI.name}</td>'
-        f'<td>{R.KOBULETI.ident}</td><td>{R.KOBULETI.freq_mhz:.3f}</td>'
+        f'<tr><td class="fix">{start.name}</td>'
+        f'<td>{start.ident or "&mdash;"}</td>'
+        f'<td>{f"{start.freq_mhz:.3f}" if start.freq_mhz else "&mdash;"}</td>'
         f'<td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td>'
         f'<td>&mdash;</td><td>&mdash;</td><td class="blank"></td></tr>')
 
@@ -104,8 +110,8 @@ def build() -> str:
         eta = f"{int(elapsed)}:{round((elapsed % 1) * 60):02d}"
         rows.append(
             f'<tr><td class="fix">{leg.to.name}</td>'
-            f'<td>{leg.to.ident}</td>'
-            f'<td>{leg.to.freq_mhz:.3f}</td>'
+            f'<td>{leg.to.ident or "&mdash;"}</td>'
+            f'<td>{f"{leg.to.freq_mhz:.3f}" if leg.to.freq_mhz else "&mdash;"}</td>'
             f'<td>{leg.course_true:03.0f}</td>'
             f'<td>{leg.wca:+.0f}</td>'
             f'<td><b>{leg.heading_mag:03.0f}</b></td>'
