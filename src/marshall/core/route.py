@@ -122,6 +122,15 @@ FIXES = [KOBULETI, INITIAL, BATUMI]
 # Kutaisi, east into the target area, and home. Everything but Batumi is
 # hostile, so the route is a there-and-back with no alternate -- which is the
 # point of the scenario and the reason fuel is a real number.
+# Where the rehearsal flights spawn airborne. Fifteen miles south-west of
+# Batumi, which is open sea and thirty-seven miles from Kobuleti -- they used to
+# appear directly over the Kobuleti beacon, which was harmless right up until
+# that field acquired a battery of 88s. An aeroplane that is shot down while the
+# pilot is still finding the throttle is not a test of anything.
+AIR_START = Fix("REHEARSAL", "", -375454, 597742, None,
+                note="Air-start point for rapid testing: 15 nm south-west of "
+                     "Batumi, over water, well clear of the defended fields.")
+
 SORTIE = [BATUMI, KUTAISI, TARGET_AREA, KUTAISI, BATUMI]
 SORTIE_LEGS = list(zip(SORTIE, SORTIE[1:]))
 

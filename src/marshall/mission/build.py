@@ -218,7 +218,13 @@ def add_formation(m: Mission, country, size: int = R.FLIGHT_SIZE) -> None:
 def build(weather: str = "light", traffic: bool = False,
           formation: bool = False) -> tuple[Mission, list[int]]:
     m = Mission(terrain=Caucasus())
-    m.set_sortie_text("362nd - Blind Flying")
+    # The brief goes IN the mission as well as on the kneeboard. A pilot who
+    # joins without OpenKneeboard, or who wants to read it while the aeroplane
+    # is still cold, should not have to be told where it lives -- DCS shows
+    # this on the slot screen before anyone spawns.
+    m.set_sortie_text("Operation Samovar")
+    m.set_description_text(_brief_text())
+    m.set_description_bluetask_text(_brief_text())
     m.start_time = m.start_time.replace(hour=9, minute=0)
 
     # Weather modes:
@@ -267,7 +273,10 @@ def build(weather: str = "light", traffic: bool = False,
 
     # Airborne over the departure beacon, already at cruise. Getting four
     # Mustangs off a wet runway in formation is a different mission.
-    start = Point(R.KOBULETI.x, R.KOBULETI.z, m.terrain)
+    # Airborne over the sea south-west of Batumi, not over Kobuleti -- that
+    # field now has 88s, and spawning inside their envelope means the rehearsal
+    # flight is under fire before anyone has hands on the throttle.
+    start = Point(R.AIR_START.x, R.AIR_START.z, m.terrain)
     alt_m = R.CRUISE_ALT_FT * 0.3048
     flight = m.flight_group(
         country=usa, name="Pony", aircraft_type=P_51D_30_NA,
@@ -314,7 +323,7 @@ def build(weather: str = "light", traffic: bool = False,
     jug_ms = JUG_CRUISE_MPH * 0.44704
     jugs = m.flight_group(
         country=usa, name="Hammer", aircraft_type=P_47D_30, airport=None,
-        position=Point(R.KOBULETI.x - 4000, R.KOBULETI.z - 4000, m.terrain),
+        position=Point(R.AIR_START.x - 4000, R.AIR_START.z - 4000, m.terrain),
         altitude=alt_m, speed=jug_ms, maintask=CAP,
         start_type=StartType.Runway, group_size=2)
     jugs.frequency = R.APPROACH.freq_mhz
@@ -352,6 +361,8 @@ def build(weather: str = "light", traffic: bool = False,
             unit.set_client()
             client_slots.append((unit.id, kind.id))
         set_channels(sq)
+
+    draw_plan(m)
 
     if traffic:
         add_traffic(m, usa)
@@ -408,6 +419,133 @@ def build(weather: str = "light", traffic: bool = False,
 # is the problem: nothing anywhere reported that a listed aircraft had been
 # skipped.
 PRESET_PATHS = {P_51D_30_NA.id: "VHF_RADIO", P_47D_30.id: "VHF_RADIO"}
+
+
+def draw_plan(m: Mission) -> None:
+    """Put the flight plan on the F10 map.
+
+    The brief has the route in numbers and the nav log has it in headings, but
+    neither answers "where am I relative to the plan" while airborne -- and on
+    this map the answer matters, because three of the fields between here and
+    the target have 88s round them. A line you can see beats a heading you have
+    to hold.
+
+    Drawn on the Blue layer so only our side sees it, which is both correct and
+    free: the red coalition has no business reading our route.
+    """
+    from dcs.drawing import LineStyle, Rgba
+    from dcs.mapping import Point
+
+    blue = next(layer for layer in m.drawings.layers if layer.name == "Blue")
+    ink = Rgba(r=30, g=60, b=200, a=220)
+    warn = Rgba(r=200, g=40, b=30, a=230)
+
+    def pt(fix) -> Point:
+        return Point(fix.x, fix.z, m.terrain)
+
+    # The route itself. Given as offsets from the first point, which is how the
+    # drawing layer wants them -- absolute coordinates here put the whole plan
+    # in the sea off Turkey the first time.
+    # pydcs Point is (x, y) where y IS the sim's z -- east. Mixing the two
+    # naming schemes is how a route ends up rotated ninety degrees.
+    origin = R.SORTIE[0]
+    blue.add_line_segments(
+        pt(origin),
+        [Point(f.x - origin.x, f.z - origin.z, m.terrain) for f in R.SORTIE],
+        color=ink, line_thickness=6, line_style=LineStyle.Solid)
+
+    # The target area: a circle you can fly to rather than a coordinate you have
+    # to find. Five miles, which is about what "the town on the west shore of
+    # the lake" means in practice.
+    blue.add_circle(pt(R.TARGET_AREA), radius=5 * 1852,
+                    color=warn, fill=Rgba(r=200, g=40, b=30, a=40),
+                    line_thickness=6)
+    blue.add_text_box(pt(R.TARGET_AREA), R.TARGET_AREA.name,
+                      color=warn, fill=Rgba(r=0, g=0, b=0, a=0), font_size=22)
+
+    # And the guns, because a route drawn without them is only half the picture.
+    # Radius is the heavy flak's reach, not the ring the guns sit on -- what a
+    # pilot needs to see is where it becomes unwise, not where the barrels are.
+    for x, z, label in DEFENDED:
+        here = Point(x, z, m.terrain)
+        blue.add_circle(here, radius=6 * 1852, color=warn,
+                        fill=Rgba(r=200, g=40, b=30, a=25), line_thickness=4,
+                        line_style=LineStyle.Dash)
+        blue.add_text_box(here, f"{label} - AAA", color=warn,
+                          fill=Rgba(r=0, g=0, b=0, a=0), font_size=18)
+
+
+# The defended red fields, as (x, z, label). Kept beside the drawing rather than
+# imported from tools/defend.py because that is a live-world tool and this is a
+# mission builder -- but they must not drift, so both name the same three.
+DEFENDED = [
+    (-317962, 635633, "KOBULETI"),
+    (-281782, 647279, "SENAKI"),
+    (-284887, 683859, "KUTAISI"),
+]
+
+
+def _brief_text() -> str:
+    """The mission brief as DCS shows it: plain text, no markup.
+
+    The same words as the kneeboard page, because two briefs that drift apart
+    are worse than one -- but rendered for a slot screen rather than a chart, so
+    the tables become lines and the frequencies stay where a pilot can find them
+    before he has a kneeboard open.
+    """
+    legs = R.solve_route(legs=R.SORTIE_LEGS)
+    route = "\n".join(
+        f"    {l.frm.name:<11s} -> {l.to.name:<11s}  hdg {l.heading_mag:03.0f}   "
+        f"{l.distance_nm:5.1f} nm   {l.time_str}" for l in legs)
+    total_nm = sum(l.distance_nm for l in legs)
+    p = R.BATUMI_ASR
+    chans = "\n".join(
+        f"    {'ABCD'[i]}   {s.freq_mhz:7.3f}   {s.name}"
+        for i, s in enumerate(p.stations[:4]))
+    return f"""OPERATION SAMOVAR
+362nd Fighter Squadron - Batumi - Autumn 1945
+
+SITUATION
+The war has been over for months. Nobody appears to have circulated the
+memorandum east of Kutaisi, where our former allies have developed a sudden
+and enthusiastic interest in the refugee columns coming down out of the
+mountains - on the grounds, we are told, of "escorting them to safety",
+which is a novel use of armour.
+
+Batumi is the only field on this coast still flying our colours. Every other
+strip within reach has changed hands, changed flags, or changed its mind.
+There is nowhere to divert to. If you cannot get in here, you come round and
+get in here again.
+
+Kobuleti, Senaki and Kutaisi are defended. They have 88s. Do not overfly them
+and do not cut the corner; the route below goes where it goes for a reason.
+
+MISSION
+Depart Batumi, transit to Tsutsnvati - the town on the western shore of the
+lake east of Kutaisi - and hold for tasking from Sentry. Targets are passed in
+the air. Do not go hunting on your own; the refugees are down there too.
+
+ROUTE
+{route}
+    TOTAL {total_nm:.1f} nm
+
+LOADOUT
+    500 lb bombs and/or rockets. You are being sent to discourage tanks.
+    Guns alone will annoy a T-55 and little else.
+
+RECOVERY
+    Batumi runway {p.runway}, radar approach. The controller navigates; you fly
+    the headings he gives you. Minimums {p.mda_ft:,} ft.
+    Missed approach: straight ahead, at {p.missed_straight_ft:,} turn
+    {p.missed_turn} heading {p.missed_hdg:03d}, climb {p.missed_climb_ft:,}.
+    That takes you over water. Everything else takes you into a mountain.
+
+RADIO - four presets
+{chans}
+
+    Altimeter {R.altimeter_spoken(R.qfe_inhg(p.field_elev_ft))} ({p.altimeter_datum}).
+    Wind {int(R.WIND_FROM_DEG):03d} at {int(R.WIND_MPH)}.
+    Bring the aeroplane back; there is a shortage."""
 
 
 def channels_for(profile=None) -> list[tuple[int, float]]:
@@ -527,7 +665,7 @@ if __name__ == "__main__":
           "hard": "overcast at ceiling (minimums)"}[weather]
     P = R.BATUMI_ASR
     print(f"\n{FLIGHT_SIZE} x P-51D-30 + 2 x P-47D-30, airborne over "
-          f"{R.KOBULETI.name} at {R.CRUISE_ALT_FT:,} ft")
+          f"{R.AIR_START.name} at {R.CRUISE_ALT_FT:,} ft")
     print(f"{P.kind.upper()} approach runway {P.runway}, final course "
           f"{P.final_crs:03d}M, MDA {P.mda_ft}")
     print(f"weather: {wx}, wind {R.WIND_FROM_DEG:.0f}/{R.WIND_MPH:.0f}\n")
