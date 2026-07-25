@@ -91,7 +91,14 @@ class Station:
 # actually uses, so Tower gets it. Center and Approach take free slots in the
 # SCR-522's 100-156 AM band: every Caucasus airfield occupies 121-141 at 1 MHz
 # spacing, and 121.500 is guard, so the clear air is below 121.
-CENTER = Station("Batumi Center", 119.000, "center")
+#
+# CENTER IS NOT A FIELD'S CONTROLLER. Approach and Tower belong to an aerodrome;
+# a Center owns a region and hands you between aerodromes, so there is one of
+# them for the whole theatre rather than one per airfield. Every field's profile
+# points at this same station -- which is also what makes an enroute handoff
+# mean something later: leaving Batumi's airspace gives you back to the same man
+# who will pass you to Kobuleti.
+CENTER = Station("Georgia Center", 119.000, "center")
 APPROACH = Station("Batumi Approach", 120.000, "approach")
 TOWER = Station("Batumi Tower", 131.000, "tower")
 

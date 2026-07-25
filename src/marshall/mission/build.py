@@ -107,7 +107,7 @@ def add_traffic(m: Mission, country) -> None:
         country=country, name="Traffic", aircraft_type=P_51D_30_NA,
         airport=None, position=start, altitude=alt_m, speed=spd_ms,
         maintask=CAP, start_type=StartType.Runway, group_size=1)
-    ai.frequency = int(R.BATUMI.freq_mhz)                     # not 251 UHF (rejected)
+    ai.frequency = R.APPROACH.freq_mhz        # in-band VHF; 251 UHF is rejected
     # Dormant until called in: the sky stays empty until group.Activate("Traffic")
     # over gRPC spawns them -- traffic on cue, not a fixture.
     ai.late_activation = True
@@ -146,7 +146,7 @@ def add_formation(m: Mission, country, size: int = R.FLIGHT_SIZE) -> None:
         aircraft_type=P_51D_30_NA, airport=None, position=start,
         altitude=alt_m, speed=spd_ms, maintask=CAP,
         start_type=StartType.Runway, group_size=size)
-    flight.frequency = int(R.BATUMI.freq_mhz)
+    flight.frequency = R.APPROACH.freq_mhz
     flight.late_activation = True
     flight.points[0].tasks.append(
         OrbitAction(altitude=alt_m, speed=spd_ms,
@@ -209,7 +209,10 @@ def build(weather: str = "light", traffic: bool = False,
         start_type=StartType.Runway, group_size=FLIGHT_SIZE)
 
     # 251 MHz (pydcs's default) is UHF and DCS rejects the mission outright.
-    flight.frequency = int(R.KOBULETI.freq_mhz)
+    # Start on APPROACH, not on a beacon. The beacons are still transmitting
+    # but nobody is listening on one -- a radio that boots onto a dead frequency
+    # is indistinguishable from an ATC that is not answering.
+    flight.frequency = R.APPROACH.freq_mhz
     for unit in flight.units:
         unit.set_client()
 
@@ -233,7 +236,7 @@ def build(weather: str = "light", traffic: bool = False,
     listen = m.flight_group_from_airport(
         country=usa, name="Sockeye", aircraft_type=P_51D_30_NA,
         airport=m.terrain.airports["Batumi"], start_type=StartType.Warm)
-    listen.frequency = int(R.KOBULETI.freq_mhz)   # start tuned to button A
+    listen.frequency = R.APPROACH.freq_mhz        # start tuned to button B
     for unit in listen.units:
         unit.set_client()
 
@@ -247,7 +250,7 @@ def build(weather: str = "light", traffic: bool = False,
         position=Point(R.KOBULETI.x - 4000, R.KOBULETI.z - 4000, m.terrain),
         altitude=alt_m, speed=cruise_ms, maintask=CAP,
         start_type=StartType.Runway, group_size=2)
-    jugs.frequency = int(R.APPROACH.freq_mhz)
+    jugs.frequency = R.APPROACH.freq_mhz
     for p in jugs.points:
         p.alt, p.speed = alt_m, cruise_ms
     for n, unit in enumerate(jugs.units, start=1):

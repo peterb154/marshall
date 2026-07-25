@@ -442,18 +442,28 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
     # the arrival fix, in the letdown it is the approach beacon, and a banished
     # aircraft is out at the outer hold. A controller sitting on one frequency
     # is simply not audible for two thirds of the arrival.
-    channels = []
-    for fix in (profile.arrival_fix, profile.beacon, profile.outer_hold):
-        if fix is not None and fix.freq_mhz and fix.freq_mhz not in channels:
-            channels.append(fix.freq_mhz)
+    # Where the controllers actually are. On a vectored approach that is the
+    # STATION list -- Center, Approach, Tower -- and deriving it from the beacon
+    # fixes instead put the controller on 132 and 124 while the pilot's radio
+    # card said 119, 120 and 131: two of the three channels on his kneeboard had
+    # nobody on them, and the failure is silent from both ends. He calls into an
+    # empty frequency; we hear nothing and assume he has not called.
+    channels: list[float] = []
+    if getattr(profile, "stations", None):
+        channels = [s.freq_mhz for s in profile.stations if s.freq_mhz]
+    else:
+        for fix in (profile.arrival_fix, profile.beacon, profile.outer_hold):
+            if fix is not None and fix.freq_mhz and fix.freq_mhz not in channels:
+                channels.append(fix.freq_mhz)
     if freq_mhz not in channels:
         channels.insert(0, freq_mhz)
     client = SRSClient(host, name=profile.controller,
                        eam_password=config.SRS_EAM_PASSWORD).connect(
                            [radio(mhz * 1_000_000, AM) for mhz in channels])
     ctl = controller.Controller(profile)  # deterministic separation, seeded from the approach
-    print(f"agent ATC live on {freq_mhz:.3f} as {profile.controller} "
-          f"(voice {voice_id}, session {session_id})", flush=True)
+    print(f"agent ATC live as {profile.controller} (voice {voice_id}, "
+          f"session {session_id})", flush=True)
+    print("  monitoring " + ", ".join(f"{c:.3f}" for c in channels), flush=True)
 
     # One lock over the whole exchange (POST /chat + transmit). The pilot loop and
     # the hook scheduler both drive the same agent session and the same radio, so
