@@ -28,6 +28,7 @@ from dcs.task import CAP, OrbitAction
 from dcs.terrain import Caucasus
 from dcs.triggers import TriggerStart
 
+from marshall.atc import callsign as C
 from marshall.core import route as R
 from marshall import config
 
@@ -119,7 +120,51 @@ def add_traffic(m: Mission, country) -> None:
         u.alt, u.speed = alt_m, spd_ms
 
 
-def build(weather: str = "light", traffic: bool = False) -> tuple[Mission, list[int]]:
+def add_formation(m: Mission, country, size: int = R.FLIGHT_SIZE) -> None:
+    """A late-activated AI four-ship, for testing formation handling.
+
+    Named for the FLIGHT ("Pony 1"), because DCS names a group's units
+    "<group>-<n>" -- so a group called "Pony 1" produces exactly the callsigns the
+    controller expects: Pony 1-1 through Pony 1-4, lead first. Radar labels then
+    correlate to spoken callsigns for free.
+
+    The AI flies this as a real formation (wingmen on lead's wing, one cluster on
+    the scope), which is what we want to exercise: the radar picture of a
+    four-ship, and the controller working them as one entity. The AI will NOT
+    actually split up and fly four individual approaches -- a DCS group is tasked
+    as a whole and wingmen follow lead -- so the break-up is driven from the radio
+    by synthetic pilots. That is the right split anyway: the thing under test is
+    the controller, not the autopilot.
+    """
+    # The GROUP is named for the flight, so DCS's "<group>-<n>" unit naming
+    # produces the member callsigns: "Pony 1" -> Pony 1-1 .. Pony 1-4.
+    group_name = C.parse(R.FLIGHT_CALLSIGN).flight
+    start = Point(R.INITIAL.x + 6000, R.INITIAL.z + 6000, m.terrain)
+    alt_m, spd_ms = 6000 * 0.3048, 200 * 0.44704
+    flight = m.flight_group(
+        country=country, name=group_name,
+        aircraft_type=P_51D_30_NA, airport=None, position=start,
+        altitude=alt_m, speed=spd_ms, maintask=CAP,
+        start_type=StartType.Runway, group_size=size)
+    flight.frequency = int(R.BATUMI.freq_mhz)
+    flight.late_activation = True
+    flight.points[0].tasks.append(
+        OrbitAction(altitude=alt_m, speed=spd_ms,
+                    pattern=OrbitAction.OrbitPattern.Circle))
+    for p in flight.points:
+        p.alt, p.speed = alt_m, spd_ms
+    # pydcs names units "<group> Pilot #n" -- rename them to the member
+    # callsigns so the tracks table reads the way the radio does. The DCS
+    # CALLSIGN (Enfield11, ...) is deliberately left alone: radar labels are
+    # supposed to disagree with what the pilot calls himself, and correlating
+    # the two from a position report is the machinery under test.
+    for n, u in enumerate(flight.units, start=1):
+        u.alt, u.speed = alt_m, spd_ms
+        u.name = f"{group_name}-{n}"
+
+
+def build(weather: str = "light", traffic: bool = False,
+          formation: bool = False) -> tuple[Mission, list[int]]:
     m = Mission(terrain=Caucasus())
     m.set_sortie_text("362nd - Blind Flying")
     m.start_time = m.start_time.replace(hour=9, minute=0)
@@ -194,6 +239,8 @@ def build(weather: str = "light", traffic: bool = False) -> tuple[Mission, list[
 
     if traffic:
         add_traffic(m, usa)
+    if formation:
+        add_formation(m, usa)
 
     beacon_lua = []
     for fix in R.FIXES:
@@ -277,10 +324,14 @@ if __name__ == "__main__":
     ap.add_argument("--traffic", action="store_true",
                     help="add a late-activated AI contact off Batumi (call in "
                          "with group.Activate('Traffic') over gRPC)")
+    ap.add_argument("--formation", action="store_true",
+                    help="add a late-activated AI four-ship 'Pony 1' for "
+                         "formation testing (units Pony 1-1 .. Pony 1-4)")
     args = ap.parse_args()
     weather = "hard" if args.hard else "clear" if args.clear else "light"
 
-    mission, ids = build(weather, traffic=args.traffic)
+    mission, ids = build(weather, traffic=args.traffic,
+                        formation=args.formation)
     mission.save(str(OUT))
     write_presets(OUT, ids)
     deploy(OUT)

@@ -46,6 +46,21 @@ local MANEUVERS = {
   ai_inbound = function()
     if BAT then flyTo('Traffic', BAT.x, BAT.y or BAT.z, 300, 90) end
   end,
+
+  -- The four-ship, inbound to the beacon as a FORMATION. A DCS group is tasked
+  -- as a whole and the wingmen fly lead's wing, so this is one cluster on the
+  -- scope -- which is the point: it is the radar picture of a formation, and
+  -- what the controller has to work as a single entity.
+  ai_flight_inbound = function()
+    if BAT then flyTo('Pony 1', BAT.x, BAT.y or BAT.z, 1830, 90) end
+  end,
+
+  -- Send the formation back out to hold, so a run can be repeated without
+  -- reloading the mission.
+  ai_flight_outbound = function()
+    local INI = fixByName('INITIAL')
+    if INI then flyTo('Pony 1', INI.x, INI.y or INI.z, 1830, 90) end
+  end,
 }
 
 local function poll()

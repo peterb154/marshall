@@ -85,9 +85,22 @@ NO_CALL = {"(no call)", "no call", "(none)", "standby."}
 
 
 def for_voice(text: str) -> str:
-    """Strip markdown the model sometimes emits (**bold**, `code`, #, bullets)
-    before it hits Polly -- a radio doesn't speak asterisks. The controller is
-    told to write radio-plain; this is the safety net."""
+    """Reduce the agent's reply to the words that actually go over the air.
+
+    Two problems, both seen live:
+
+    * The model narrates. With extended thinking disabled it reasons in the
+      OUTPUT instead, and Polly reads every word of it -- a real run transmitted
+      "This is a different transmitter, a wingman, reporting his level. He's
+      holding, not yet identified individually. Since the flight isn't broken up
+      on radar... Pony one two, roger, level four thousand." The pilot hears the
+      controller's inner monologue. Telling it not to in the prompt helps and
+      does not hold, so the reply carries an explicit RADIO: marker and
+      everything before the last one is thinking, not talking.
+    * It emits markdown. A radio does not speak asterisks.
+    """
+    if "RADIO:" in text:
+        text = text.rsplit("RADIO:", 1)[1]
     text = re.sub(r"[*_`#>]+", "", text)          # emphasis / code / heading marks
     text = re.sub(r"(?m)^\s*[-•]\s+", "", text)    # list bullets
     text = re.sub(r"\s*\n+\s*", " ", text)          # collapse newlines to one line

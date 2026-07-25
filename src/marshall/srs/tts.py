@@ -38,16 +38,34 @@ class Voice:
 
     voice_id: str = "Joanna"
     region: str = "us-east-1"
+    engine: str = ""            # "" = pick whatever this voice supports
 
     def pcm16k(self, text: str) -> np.ndarray:
-        """Render `text` to mono 16-bit PCM at 16 kHz (int16 array)."""
+        """Render `text` to mono 16-bit PCM at 16 kHz (int16 array).
+
+        Polly's newer voices are neural-only and reject the standard engine with
+        a ValidationException -- which, mid-rehearsal, kills the run at whichever
+        pilot happened to draw that voice. Try standard, fall back to neural, and
+        remember which worked so it costs one extra call per voice at most.
+        """
         import boto3
+        from botocore.exceptions import ClientError
 
         polly = boto3.client("polly", region_name=self.region)
-        resp = polly.synthesize_speech(
-            Text=text, OutputFormat="pcm",
-            SampleRate=str(_POLLY_RATE), VoiceId=self.voice_id)
-        return np.frombuffer(resp["AudioStream"].read(), dtype="<i2")
+        engines = [self.engine] if self.engine else ["standard", "neural"]
+        last: Exception | None = None
+        for engine in engines:
+            try:
+                resp = polly.synthesize_speech(
+                    Text=text, OutputFormat="pcm",
+                    SampleRate=str(_POLLY_RATE), VoiceId=self.voice_id,
+                    Engine=engine)
+            except ClientError as e:
+                last = e
+                continue
+            self.engine = engine
+            return np.frombuffer(resp["AudioStream"].read(), dtype="<i2")
+        raise last
 
     def frames(self, text: str) -> list[bytes]:
         """Render `text` and return a list of Opus frames ready for SRS."""

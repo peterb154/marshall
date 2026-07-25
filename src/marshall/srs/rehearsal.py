@@ -26,6 +26,23 @@ SCRIPT = [
     ("Bandit", "Justin", "Pony two, request approach."),
 ]
 
+# A four-ship recovery. Lead does the talking while they are together, then each
+# wingman speaks for himself once they are broken up -- from his OWN SRS client,
+# because four aeroplanes are four radios. That is deliberately the case that
+# used to make the controller challenge a wingman as an impostor.
+FORMATION = [
+    ("Sockeye", "Joey",    "Batumi Approach, Pony one one, flight of four, checking in."),
+    ("Sockeye", "Joey",    "Pony one one, flight of four, over the beacon, six thousand, inbound."),
+    ("Bandit",  "Justin",  "Pony one two, level four thousand."),
+    ("Ranger",  "Stephen", "Pony one three, level five thousand."),
+    ("Sockeye", "Joey",    "Pony one one, established inbound on the beam, starting my clock."),
+    ("Sockeye", "Joey",    "Pony one one has the field, runway in sight."),
+    ("Bandit",  "Justin",  "Pony one two, request approach."),
+    ("Ranger",  "Stephen", "Pony one three, say my altitude."),
+]
+
+SCRIPTS = {"pair": SCRIPT, "formation": FORMATION}
+
 
 def run(host: str, freq_mhz: float, script=None, reply_wait: float = 30.0) -> None:
     from marshall.srs import stt, tts
@@ -73,6 +90,7 @@ if __name__ == "__main__":
     import sys
 
     if len(sys.argv) > 1 and sys.argv[1] == "--srs":
-        run(sys.argv[2], float(sys.argv[3]))
+        which = sys.argv[4] if len(sys.argv) > 4 else "pair"
+        run(sys.argv[2], float(sys.argv[3]), SCRIPTS[which])
     else:
-        print("usage: rehearsal.py --srs <host> <freq_mhz>")
+        print("usage: rehearsal.py --srs <host> <freq_mhz> [pair|formation]")

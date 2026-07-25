@@ -163,20 +163,38 @@ class SRSClient:
                 buf += chunk
                 while b"\n" in buf:
                     line, buf = buf.split(b"\n", 1)
-                    self._harvest_roster(line)
+                    # One unparseable message must never end roster tracking for
+                    # the rest of the session. It did: a live sortie logged two
+                    # wingmen as raw GUID stubs because this thread had already
+                    # died on some earlier line, and the failure is silent -- the
+                    # socket keeps draining, calls keep working, and the SRS
+                    # identity anchor is just quietly gone.
+                    try:
+                        self._harvest_roster(line)
+                    except Exception:
+                        continue
         except OSError:
             pass
 
     def _harvest_roster(self, line: bytes) -> None:
-        """Pull {GUID: Name} out of any client records in one TCP message."""
+        """Pull {GUID: Name} out of any client records in one TCP message.
+
+        The server sends the full roster (MsgType 2) to everyone whenever anyone
+        joins, plus per-client updates (3 / 0) -- so a client that connects late,
+        like a wingman keying up mid-approach, still resolves.
+        """
         try:
             msg = json.loads(line)
         except (ValueError, UnicodeDecodeError):
             return
-        records = msg.get("Clients") or []
+        if not isinstance(msg, dict):
+            return
+        records = list(msg.get("Clients") or [])
         if msg.get("Client"):
-            records = list(records) + [msg["Client"]]
+            records.append(msg["Client"])
         for c in records:
+            if not isinstance(c, dict):
+                continue
             guid, name = c.get("ClientGuid"), c.get("Name")
             if guid and name:
                 self.roster[guid] = name
