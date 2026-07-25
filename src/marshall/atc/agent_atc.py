@@ -356,8 +356,8 @@ def asr_call(cs: str, g) -> str:
                 f"if not, execute missed approach.")
     if g.off_course:
         return (f"{who}, {rng} miles from the runway, {g.deviation}, "
-                f"turn heading {g.heading:03d}, altitude should be "
-                f"{alt}.")
+                f"turn heading {ctl.spell_hdg(g.heading)}, altitude "
+                f"should be {alt}.")
     return (f"{who}, {rng} miles from the runway, on course, altitude should be "
             f"{alt}.")
 

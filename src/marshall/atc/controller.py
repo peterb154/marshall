@@ -123,12 +123,26 @@ def spell_alt(ft: int) -> str:
     words = {0: "", 1: "one", 2: "two", 3: "three", 4: "four", 5: "five",
              6: "six", 7: "seven", 8: "eight", 9: "nine"}
     th, hu = divmod(ft, 1000)
-    thousands = (words.get(th) if th < 10
+    # Under a thousand there is no "thousand" to say. This used to emit a
+    # leading empty word -- " thousand seven hundred" for 700 -- which was
+    # unreachable while every altitude in the system was a stack level, and
+    # appeared the moment the approach started advising heights on final.
+    if th == 0:
+        return f"{words[hu // 100]} hundred" if hu else "zero"
+    thousands = (words[th] if th < 10
                  else " ".join(words[int(c)] or "zero" for c in str(th)))
     out = f"{thousands} thousand"
     if hu:
         out += f" {words[hu // 100]} hundred"
     return out
+
+
+def spell_hdg(deg: float) -> str:
+    """A heading, digit by digit: 127 -> 'one two seven'. Polly reads a bare
+    127 as 'one hundred twenty seven', which is not a heading."""
+    d = {c: w for c, w in zip("0123456789",
+         "zero one two three four five six seven eight nine".split())}
+    return " ".join(d[c] for c in f"{int(round(deg)) % 360:03d}")
 
 
 def spell_time(t: float) -> str:

@@ -359,10 +359,21 @@ class TestAsrRangeCall(unittest.TestCase):
         self.assertIn("missed approach point", out)
 
     def test_no_digits_reach_polly(self):
-        for nm in (1, 4, 6, 8):
-            out = agent_atc.asr_call("Pony 1-1", self.g(nm))
-            digits = [c for c in out if c.isdigit()]
-            self.assertEqual(digits, [], out)
+        # Every branch, not just the tidy one: the off-course call carries a
+        # heading and both carry an advisory altitude, and each arrived as bare
+        # digits at some point. "127" is read as "one hundred twenty seven".
+        for nm in (1, 2, 3, 4, 6, 8):
+            for radial in (None, 296, 312):
+                out = agent_atc.asr_call("Pony 1-1", self.g(nm, radial))
+                with self.subTest(nm=nm, radial=radial):
+                    self.assertEqual([c for c in out if c.isdigit()], [], out)
+
+    def test_altitudes_below_a_thousand_are_spoken_properly(self):
+        from marshall.atc import controller as ctl
+        self.assertEqual(ctl.spell_alt(700), "seven hundred")
+        self.assertEqual(ctl.spell_alt(400), "four hundred")
+        self.assertEqual(ctl.spell_alt(300), "three hundred")
+        self.assertEqual(ctl.spell_alt(1900), "one thousand nine hundred")
 
     def test_the_callsign_is_spoken_not_written(self):
         self.assertNotIn("1-1", agent_atc.asr_call("Pony 1-1", self.g(6)))
