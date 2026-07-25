@@ -3,6 +3,45 @@
 Hard-won, mostly undocumented. Each cost real time; several present as silent
 failures with nothing useful in a log.
 
+## DCS-gRPC LoadMission does not tell the multiplayer layer
+
+`LoadMission` swaps the **sim** and leaves **ASYNCNET** -- the multiplayer layer
+-- serving whatever mission the server booted with. The sim runs the new one,
+clients are offered the old one, and a connecting pilot sits on the loading
+screen forever. There is no error: `get_current_mission` reports the new file,
+the server log looks healthy, the beacons come up, and the only symptom is a
+progress bar that never moves.
+
+Diagnose it by comparing two lines:
+
+```sh
+grep "ASYNCNET.*Loading mission" dcs.log | tail -1   # what clients are offered
+# vs gRPC get_current_mission()                      # what the sim is running
+```
+
+**So: to change the mission for a human, write it into `serverSettings.lua`'s
+`missionList` and RESTART.** `tools/deploy_mission.sh` does this and refuses to
+succeed unless ASYNCNET names the file. Hot-loading is only safe when nobody is
+going to connect -- for AI-only test runs it is fine.
+
+This bit twice. After the first time it was wrongly concluded that the problem
+was hot-loading *during boot* rather than hot-loading *at all*.
+
+## Editing serverSettings.lua: no BOM
+
+PowerShell 5's `Set-Content -Encoding UTF8` writes a UTF-8 **BOM**. DCS then
+cannot parse `serverSettings.lua` and hangs on boot at
+`EDCORE (dDispatcher)enterToState_:3` -- process alive, responding to Windows,
+log frozen, no error. Check the first bytes: `63 66 67` (`cfg`) is good,
+`EF BB BF` is the BOM. Write with
+`[System.IO.File]::WriteAllText($p, $t, (New-Object System.Text.UTF8Encoding($false)))`.
+
+## A server restart does not preserve a hot-loaded mission
+
+The restart script resumes the mission in `missionList`, not whatever was
+hot-loaded over the top of it -- so a bounce silently reverts to the last
+*booted* mission. Another reason the mission belongs in `missionList`.
+
 ## pydcs (0.15) writes several fields wrong by default
 
 DCS reports a malformed mission as a bare "load failed". `mission/validate.py`
