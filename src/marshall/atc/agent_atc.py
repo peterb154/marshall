@@ -200,6 +200,33 @@ def _post_json(url: str, obj: dict, timeout: float = 6.0) -> dict:
 MISSION = os.environ.get("MARSHALL_MISSION", "default")
 APPROACH_NAME = ""              # set when the active flight plan is loaded
 
+# What a mission commander is, as opposed to an air traffic controller. Handed
+# to the agent only when it answers on the overlord's frequency, because the two
+# jobs share a voice pipeline and nothing else: one owns separation and the
+# runway, the other owns the war.
+OVERLORD_BRIEF = """OVERLORD ROLE — you are the mission commander, not an air
+traffic controller. You do not own runways, approaches, separation or the
+holding stack, and you must never issue an approach clearance or vector anyone
+onto a final; if a pilot wants to recover, send him to the appropriate
+controller.
+
+What you own is the JOB:
+- **Tasking.** Give a flight something to do and where: a target area, what is
+  believed to be there, and any time on station. Say it the way a controller
+  actually would — "armour reported in the town at the north end of the valley,
+  two miles east of your present position" — and expect a readback of the
+  essentials.
+- **The picture.** You have the same radar the controllers do. Use it for
+  threat calls, bearing and range to a contact, and to answer "where am I".
+- **Check-in and check-out.** A flight checks in with fuel and weapons and you
+  acknowledge; when it is done or bingo, you release it and send it home.
+- **Honesty about what you do not know.** You know what was reported, not what
+  is there. "Reported" and "believed" are the right words for intelligence that
+  came from somewhere else, and inventing a target that has not been given to
+  you is worse than admitting the frag is thin.
+
+Keep transmissions short. You are talking to somebody flying an aeroplane."""
+
 # The separation engine's own phase names, mapped onto the official phase list
 # in atc/phases.py. Two vocabularies for one idea is how three components ended
 # up disagreeing about what was happening; this is the seam where the older one
@@ -1025,6 +1052,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 f"YOU ARE: {me.name} on {me.freq_mhz:.1f}. Identify as that and "
                 "nothing else — he called this frequency and does not know one "
                 "controller is covering several.")
+            if getattr(me, "role", "") == "overlord":
+                parts.append(OVERLORD_BRIEF)
         if nxt:
             parts.append(
                 f"HANDOFF: he is {fix.range_nm:.0f} miles out and past your "

@@ -446,3 +446,29 @@ class TestHeadingsAreSpokenLikeHeadings(unittest.TestCase):
         hold = c._hold_phrase(8000)
         self.assertIn("one eight zero outbound", hold)
         self.assertIn("three six zero inbound", hold)
+
+
+class TestStationsAreChosenByRole(unittest.TestCase):
+    """Who works an arrival is a fact about their job, not their list index.
+
+    Picking the last station was correct while the list happened to end at
+    Tower. Appending a mission commander made it silently wrong -- a landing
+    aircraft would have been sent to the overlord's frequency -- and nothing
+    about the change looked like it touched approaches.
+    """
+
+    def test_the_landing_goes_to_tower_not_to_whoever_is_last(self):
+        self.assertEqual(R.BATUMI_ASR.station(), (R.TOWER.name, R.TOWER.freq_mhz))
+
+    def test_enroute_goes_to_center(self):
+        self.assertEqual(R.BATUMI_ASR.station(enroute=True),
+                         (R.CENTER.name, R.CENTER.freq_mhz))
+
+    def test_the_overlord_is_never_an_arrival_station(self):
+        for kwargs in ({}, {"enroute": True}, {"banished": True}):
+            self.assertNotEqual(R.BATUMI_ASR.station(**kwargs)[0], R.OVERLORD.name)
+
+    def test_a_field_with_no_tower_falls_back_to_approach(self):
+        no_twr = dataclasses.replace(
+            R.BATUMI_ASR, stations=[R.CENTER, R.APPROACH, R.OVERLORD])
+        self.assertEqual(no_twr.station()[0], R.APPROACH.name)

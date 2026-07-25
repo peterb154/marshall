@@ -272,7 +272,18 @@ CENTER = Station("Georgia Center", 139.000, "center", voice="Brian")
 APPROACH = Station("Batumi Approach", 124.000, "approach", voice="Matthew")
 TOWER = Station("Batumi Tower", 118.000, "tower", voice="Joey")
 
-STATIONS = [CENTER, APPROACH, TOWER]
+# The mission commander. Not a new kind of machine -- a controller with a wider
+# scope, which is why it is a Station like the others: it has a frequency, a
+# voice, and aircraft it works. What it does differently is give a flight a JOB
+# rather than a heading, and it is the only one here that does not care where
+# the runway is.
+#
+# Fourth preset deliberately. A period set has four buttons and the other three
+# are spoken for, so this is the last one available -- which is also true of a
+# real WW2 cockpit and is a reasonable constraint to design inside.
+OVERLORD = Station("Sentry", 131.000, "overlord", voice="Kimberly")
+
+STATIONS = [CENTER, APPROACH, TOWER, OVERLORD]
 
 
 @dataclass
@@ -658,8 +669,16 @@ class ApproachProfile:
         that phase, and the "station" is derived from the fix instead.
         """
         if self.stations:
-            first, last = self.stations[0], self.stations[-1]
-            s = first if (enroute or banished) else last
+            # By ROLE, not by position in the list. Picking the last one was
+            # fine while the list ended at Tower, and quietly wrong the moment a
+            # mission commander was appended -- it would have sent a pilot to
+            # land on the overlord's frequency. A list order is not a fact about
+            # who works an arrival.
+            if enroute or banished:
+                s = self.station_for("center") or self.stations[0]
+            else:
+                s = (self.station_for("tower") or self.station_for("approach")
+                     or self.stations[0])
             return s.name, s.freq_mhz
         if banished:
             fix = self.outer_hold

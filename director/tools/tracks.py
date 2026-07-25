@@ -125,8 +125,16 @@ def start_streamer() -> None:
             return
         _ensure_table()
         stop = threading.Event()
+        # Ground and ships too, not just aircraft. This is a combat sim and the
+        # world was aeroplanes only, so an overlord could task a flight against
+        # armour that existed in the sim and nowhere the ATC side could see it.
+        # With them in the cache, "is the target still alive" is a lookup: the
+        # row stops being there, and that IS the answer -- nobody has to model
+        # destruction.
         for cat in (common_pb2.GROUP_CATEGORY_AIRPLANE,
-                    common_pb2.GROUP_CATEGORY_HELICOPTER):
+                    common_pb2.GROUP_CATEGORY_HELICOPTER,
+                    common_pb2.GROUP_CATEGORY_GROUND,
+                    common_pb2.GROUP_CATEGORY_SHIP):
             threading.Thread(target=_stream_category, args=(cat, stop),
                              daemon=True).start()
         _started = True
