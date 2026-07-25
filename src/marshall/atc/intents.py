@@ -30,7 +30,24 @@ class IntentKind(str, Enum):
     REPORT_MISSED = "report_missed"  # "Pony 1 going around"
     REPORT_LANDED = "report_landed"  # "Pony 1 field in sight, landing"
     REQUEST_APPROACH = "request_approach"
+    REQUEST_BREAKUP = "request_breakup"   # "Pony 1 requesting break-up"
     UNKNOWN = "unknown"             # hand to the LLM fallback, or ask again
+
+    @classmethod
+    def coerce(cls, value: str) -> "IntentKind":
+        """A model's answer -> a kind, without ever raising.
+
+        Structured output is not a guarantee: given an enum of seven values,
+        Sonnet still returns 'report_approach' (a plausible blend of two real
+        ones) often enough to matter. Raising there costs the whole transmission
+        -- the bridge catches it and the controller falls silent with an empty
+        directive -- when the honest answer is simply 'I did not understand',
+        which the caller already knows how to handle by asking him to say again.
+        """
+        try:
+            return cls(value)
+        except ValueError:
+            return cls.UNKNOWN
 
 
 @dataclass
@@ -40,6 +57,12 @@ class Intent:
     altitude_ft: int | None = None
     confidence: float = 1.0
     transcript: str = ""
+    # How many aircraft are in this flight, when the pilot says so ("flight of
+    # four"). 1 means a single ship -- or that he did not say, which the
+    # controller treats the same way until told otherwise. This is the ONLY way
+    # the controller learns a formation is a formation, so a classifier that
+    # misses it turns a four-ship into one aeroplane that never breaks up.
+    flight_size: int = 1
 
 
 # JSON schema for a structured-output parser (Haiku today, Nova Sonic later).
@@ -48,20 +71,48 @@ class Intent:
 INTENT_SCHEMA = {
     "type": "object",
     "properties": {
-        "kind": {"type": "string",
-                 "enum": [k.value for k in IntentKind]},
+        "kind": {
+            "type": "string",
+            "enum": [k.value for k in IntentKind],
+            # Spell the taxonomy out. Benching showed both Haiku and Sonnet
+            # reading "level five thousand" as a check-in, because the enum NAME
+            # says beacon and nothing told them a bare level report is the same
+            # kind of thing. The names are for us; the model only sees this.
+            "description": (
+                "check_in: first contact on this frequency, a radio check, or "
+                "'with you' -- he is announcing himself, not reporting a "
+                "position.\n"
+                "report_beacon: ANY position, altitude or progress report from an "
+                "aircraft already working this controller -- 'over the beacon', "
+                "'level five thousand', 'established inbound', 'turning "
+                "outbound', 'passing four thousand', 'platform'. If he is telling "
+                "you where he is or what he is doing, it is this one.\n"
+                "report_missed: going around, overshooting, missed approach.\n"
+                "report_landed: field or runway in sight, landing, down.\n"
+                "request_approach: asking for the approach or to commence.\n"
+                "request_breakup: asking to split a formation into individual "
+                "aircraft.\n"
+                "unknown: unintelligible, or none of the above. Use it rather "
+                "than inventing a value -- the enum above is exhaustive."),
+        },
         "callsign": {"type": "string",
                      "description": "flight name plus its number as spoken digits, "
                      "dash-separated: 'Pony one one' -> 'Pony 1-1', 'Pony two' -> "
                      "'Pony 2'. Never merge digits into one number (not 'Pony 11')."},
         "altitude_ft": {"type": ["integer", "null"],
                         "description": "reported altitude in feet, or null"},
+        "flight_size": {"type": "integer",
+                        "description": "how many aircraft are in this flight, if "
+                        "the pilot says so: 'flight of four' -> 4, 'Pony one "
+                        "flight, three ship' -> 3, 'as a section' -> 2. Use 1 when "
+                        "he does not say a number -- never guess a formation size "
+                        "from the callsign alone."},
     },
     "required": ["kind", "callsign"],
 }
 
 LLM_SYSTEM = (
-    "You are the ears of a radar-less approach controller, not the controller. "
+    "You are the ears of an approach controller, not the controller. "
     "Classify one pilot radio transmission into exactly one intent. Never invent "
     "a clearance, altitude, or instruction -- only report what the pilot said. "
     "Altitudes: 'four thousand' -> 4000, 'niner thousand' -> 9000. A callsign is "
@@ -69,7 +120,17 @@ LLM_SYSTEM = (
     "like 'Pony 2'. Use it EXACTLY as spoken -- never add a number the pilot did "
     "not say (do not turn 'Sockeye, do you copy' into 'Sockeye 2'). A pilot asking "
     "for something (approach, a DME, a frequency) is request_approach if it is the "
-    "approach, otherwise the closest report; a bare radio check is check_in."
+    "approach, otherwise the closest report; a bare radio check is check_in.\n"
+    "\n"
+    "FORMATIONS. Military aircraft arrive in flights of up to four. 'Pony one "
+    "one' is the LEAD of the flight 'Pony 1'; 'Pony one two' is his number two. "
+    "'Pony one flight' addresses all of them -- report that as callsign 'Pony 1' "
+    "with no member number. If the pilot states how many aircraft he has ('flight "
+    "of four', 'three ship', 'a section'), put that in flight_size; it is how the "
+    "controller learns to work them as one formation, so do not miss it and do "
+    "not invent it. A pilot asking to split the formation into individual "
+    "aircraft ('request break-up', 'we'd like to split up for individual "
+    "approaches', 'breaking up now') is request_breakup, NOT request_approach."
 )
 
 
@@ -178,15 +239,17 @@ def dispatch(ctl: atc.Controller, intent: Intent) -> bool:
         return False
     match intent.kind:
         case IntentKind.CHECK_IN:
-            ctl.check_in(cs)
+            ctl.check_in(cs, intent.flight_size)
         case IntentKind.REPORT_BEACON:
-            ctl.report_beacon(cs, intent.altitude_ft)
+            ctl.report_beacon(cs, intent.altitude_ft, intent.flight_size)
         case IntentKind.REPORT_MISSED:
             ctl.report_missed(cs)
         case IntentKind.REPORT_LANDED:
             ctl.report_landed(cs)
         case IntentKind.REQUEST_APPROACH:
             ctl.request_approach(cs)
+        case IntentKind.REQUEST_BREAKUP:
+            ctl.request_breakup(cs)
         case _:
             return False
     return True

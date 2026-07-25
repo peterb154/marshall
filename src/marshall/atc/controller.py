@@ -378,6 +378,11 @@ class Controller:
         # or beacon report) should still be worked, not ignored. Enter a new
         # arrival into the stack bottom-up, then let the sequencer clear them.
         ac = self.get(cs)
+        if ac.is_flight:
+            # A formation asking for the approach is asking to be broken up,
+            # whether or not it uses the word: four ships cannot fly one letdown.
+            self._break_up(ac)
+            return
         if ac.phase == Phase.CLEARED:
             # Already cleared (e.g. the aircraft ahead just landed and freed the
             # letdown for him) -- re-affirm, don't send him back to the hold.

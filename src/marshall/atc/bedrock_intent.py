@@ -14,8 +14,19 @@ import os
 
 from marshall.atc import intents
 
+# Sonnet, not Haiku. This classifier is separation-critical -- it decides which
+# leg of the approach a call belongs to and whether a flight is a formation, and
+# the deterministic controller acts on the answer. Benched over the phrasing
+# pilots actually use (tools/classify_bench.py): Sonnet 17/17 at 2.2s, Haiku
+# 16/17 at 1.0s. The one Haiku misses is a transmission that genuinely says two
+# things at once, and it resolves it as a request rather than a position report
+# -- which would skip a leg of the letdown.
+#
+# The latency is only paid when there is traffic: the bridge runs the classifier
+# only once the separation engine is engaged (>=2 contacts), so a single ship
+# never sees it. Slower exactly when accuracy matters is the right trade.
 MODEL_ID = os.environ.get(
-    "MARSHALL_INTENT_MODEL", "us.anthropic.claude-haiku-4-5-20251001-v1:0")
+    "MARSHALL_INTENT_MODEL", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
 REGION = os.environ.get("AWS_REGION", "us-east-1")
 
 _client = None
@@ -59,11 +70,14 @@ def classify(transcript: str) -> intents.Intent:
     """Transcription -> Intent, Haiku for every call (no regex)."""
     data = bedrock_llm(transcript, intents.LLM_SYSTEM, intents.INTENT_SCHEMA)
     return intents.Intent(
-        intents.IntentKind(data["kind"]),
+        intents.IntentKind.coerce(data.get("kind", "")),
         intents.normalize_callsign(data.get("callsign", "")),
         data.get("altitude_ft"),
         confidence=0.9,
         transcript=transcript,
+        # Clamp: a formation is four ships at most, and a model that hallucinates
+        # a size would otherwise fabricate wingmen the controller then separates.
+        flight_size=max(1, min(4, int(data.get("flight_size") or 1))),
     )
 
 
