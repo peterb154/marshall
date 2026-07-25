@@ -290,3 +290,92 @@ class TestProfileRoundTrip(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestApproachVocabulary(unittest.TestCase):
+    """The words have to match the procedure, not the one it grew out of.
+
+    Every clearance, hold and report used to be the beacon letdown's literal
+    text. Flown on the radar approach, a pilot was cleared for a "beacon
+    approach", told he was "not at the beacon" and asked to "report beacon
+    inbound" -- on a procedure with no beacon, in an aircraft with no receiver
+    to find one. Naming a fix the aeroplane cannot navigate to is worse than
+    saying nothing: it sounds like an instruction.
+    """
+
+    def setUp(self):
+        self.asr = atc.Controller(R.BATUMI_ASR)
+        self.ndb = atc.Controller(R.BATUMI_APPROACH)
+
+    def test_the_radar_approach_is_not_called_a_beacon_approach(self):
+        self.assertIn("radar", self.asr._approach_name())
+        self.assertNotIn("beacon", self.asr._approach_name())
+        self.assertIn("beacon", self.ndb._approach_name())
+
+    def test_vectored_holding_is_an_altitude_not_a_fix(self):
+        hold = self.asr._hold_phrase(6000)
+        self.assertNotIn(R.BATUMI_ASR.beacon.name.lower(), hold.lower())
+        self.assertIn("six thousand", hold)
+        # and he is told the wait ends with a call from the controller, since
+        # there is no fix for him to arrive at and report
+        self.assertIn("call you", hold)
+
+    def test_the_letdown_still_holds_at_its_beacon(self):
+        hold = self.ndb._hold_phrase(6000)
+        self.assertIn(R.BATUMI_APPROACH.beacon.name, hold)
+
+    def test_no_beacon_report_is_ever_asked_for_on_a_radar_approach(self):
+        self.assertNotIn("beacon", self.asr._report_phrase().lower())
+        self.assertIn("final approach course", self.asr._report_phrase())
+
+    def test_nothing_the_vectored_controller_says_names_the_beacon(self):
+        # The belt-and-braces check: drive a whole arrival and read every
+        # transmission. A single leftover literal is a fix named to an aircraft
+        # that cannot find it.
+        c = atc.Controller(R.BATUMI_ASR)
+        said = []
+        c.say = lambda cs, text: said.append(text)
+        c.check_in("Pony 1-1")
+        c.request_approach("Pony 1-1")
+        c.report_conditions("Pony 1-1", visual=True)
+        # The controller is CALLED "Batumi Approach", so the bare word proves
+        # nothing -- what must not appear is the beacon used as a place: a fix
+        # to fly to, hold at, or report over. Strip his own name, then look.
+        beacon = R.BATUMI_ASR.beacon.name.lower()
+        for line in said:
+            bare = line.lower().replace(R.BATUMI_ASR.controller.lower(), "")
+            self.assertNotIn("beacon", bare, line)
+            self.assertNotIn(beacon, bare, line)
+
+
+class TestVectoredHoldingIsVisual(unittest.TestCase):
+    """Without a beacon, a hold is only real if the pilot can see.
+
+    The letdown held everyone over one fix, and the fix was the separation:
+    a published pattern, a level each. A radar approach has no fix, and most of
+    these aircraft have no receiver to find one with, so the hold becomes "stay
+    where you are" -- which in cloud is not an instruction, it is a hope. The
+    levels still keep them apart; being in clear air is what makes each level
+    holdable.
+    """
+
+    def test_the_vectored_stack_starts_above_the_cloud_tops(self):
+        p = R.BATUMI_ASR
+        self.assertGreater(p.stack_ft[0], p.tops_ft,
+                           "aircraft told to hold present position inside cloud")
+        self.assertGreaterEqual(p.stack_ft[0] - p.tops_ft, p.vmc_margin_ft)
+
+    def test_the_beacon_letdown_may_hold_lower(self):
+        # It has a fix to hold over, so cloud does not stop it.
+        self.assertLess(R.BATUMI_APPROACH.stack_ft[0], R.BATUMI_ASR.stack_ft[0])
+
+    def test_a_higher_ceiling_pushes_the_vectored_stack_up(self):
+        low = dataclasses.replace(R.BATUMI_ASR, ceiling_ft=400)
+        high = dataclasses.replace(R.BATUMI_ASR, ceiling_ft=6000)
+        self.assertGreater(high.stack_ft[0], low.stack_ft[0])
+        self.assertGreater(high.stack_ft[0], high.tops_ft)
+
+    def test_the_levels_still_separate(self):
+        p = R.BATUMI_ASR
+        gaps = {b - a for a, b in zip(p.stack_ft, p.stack_ft[1:])}
+        self.assertEqual(gaps, {p.hold_step_ft})

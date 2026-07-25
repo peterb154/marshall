@@ -186,6 +186,42 @@ class Controller:
     _letdown_since: float = 0.0
 
     # -- plumbing ----------------------------------------------------------
+    # -- phraseology that follows the approach type ------------------------
+    #
+    # These used to be literals, and they were the beacon letdown's: "cleared
+    # beacon approach", "hold at BATUMI as published", "report beacon inbound".
+    # On a radar approach every one of them is wrong, and wrong in the worst
+    # way -- it names a fix the aeroplane may have no receiver for. A pilot
+    # heard the controller clear him for a beacon approach and report a beacon
+    # inbound on a procedure that has neither, in an aircraft with no ADF.
+    #
+    # A vectored approach holds on ALTITUDE, not on a fix: stack them above the
+    # weather where they can hold visually on a heading, and call them in one at
+    # a time. That is what a controller with radar and a pilot with no navaid
+    # actually do, and it is the only thing they CAN do.
+
+    @property
+    def _vectored(self) -> bool:
+        return bool(getattr(self.profile, "vectored", False)
+                    or getattr(self.profile, "kind", "") == "asr")
+
+    def _approach_name(self) -> str:
+        return "radar approach" if self._vectored else "beacon approach"
+
+    def _hold_phrase(self, alt_ft: int) -> str:
+        """Where to wait. A place if he can find one, otherwise a height."""
+        if self._vectored:
+            return (f"hold present position, maintain {spell_alt(alt_ft)}, "
+                    "expect vectors for the approach, I will call you")
+        return (f"hold at {self.profile.beacon.name} as published, "
+                f"maintain {spell_alt(alt_ft)}")
+
+    def _report_phrase(self) -> str:
+        """What he should call next. Never a fix he cannot navigate to."""
+        if self._vectored:
+            return "report established on the final approach course"
+        return f"report {self.profile.beacon.name} inbound"
+
     def say(self, to: str, text: str, ref: Aircraft | None = None) -> None:
         """Queue a transmission on the channel this aircraft is actually on.
 
@@ -294,8 +330,8 @@ class Controller:
                     f"{spell_freq(tower_freq)} -- you will be homing "
                     f"{self.profile.beacon.name} from there.")
         else:
-            call = (f"{self._addr(ac)}, {here}, radar not available, "
-                    f"report {self.profile.beacon.name} inbound.")
+            call = (f"{self._addr(ac)}, {here}, "
+                    f"{self._report_phrase()}.")
         self.say(ac.callsign, call)
 
     # -- formations --------------------------------------------------------
@@ -321,9 +357,8 @@ class Controller:
                 ac.assigned_ft = self._free_slot() or self.profile.bottom_ft
             ac.phase, ac.last_report_t = Phase.HOLDING, self.t
             self.say(ac.callsign,
-                     f"{self._addr(ac)}, hold at {self.profile.beacon.name} as "
-                     f"published, maintain {spell_alt(ac.assigned_ft)}. Can you "
-                     f"maintain visual separation between your aircraft?")
+                     f"{self._addr(ac)}, {self._hold_phrase(ac.assigned_ft)}. "
+                     "Can you maintain visual separation between your aircraft?")
             return
 
         members = list(ac.members)
@@ -531,7 +566,7 @@ class Controller:
             # Already cleared (e.g. the aircraft ahead just landed and freed the
             # letdown for him) -- re-affirm, don't send him back to the hold.
             self.say(ac.callsign,
-                     f"{self._addr(ac)}, cleared beacon approach runway "
+                     f"{self._addr(ac)}, cleared {self._approach_name()} runway "
                      f"{self.profile.runway or 'in use'}, continue.")
             return
         if ac.phase in (Phase.UNKNOWN, Phase.ENROUTE):
@@ -539,9 +574,8 @@ class Controller:
             if slot is not None:
                 ac.phase, ac.assigned_ft, ac.last_report_t = Phase.HOLDING, slot, self.t
                 self.say(ac.callsign,
-                         f"{self._addr(ac)}, {self.profile.controller}, radar not "
-                         f"available, hold at {self.profile.beacon.name} as "
-                         f"published, maintain {spell_alt(slot)}.")
+                         f"{self._addr(ac)}, {self.profile.controller}, "
+                         f"{self._hold_phrase(slot)}.")
         self._try_clear(requested_by=ac.callsign)
 
     # -- the sequencing core ----------------------------------------------
@@ -570,8 +604,8 @@ class Controller:
         ac.last_report_t = self.t
         self._letdown, self._letdown_since = ac.callsign, self.t
         self.say(ac.callsign,
-                 f"{self._addr(ac)}, cleared beacon approach runway "
-                 f"{self.profile.runway or 'in use'}, report beacon inbound. "
+                 f"{self._addr(ac)}, cleared {self._approach_name()} runway "
+                 f"{self.profile.runway or 'in use'}, {self._report_phrase()}. "
                  f"Report missed approach or landing.")
         if was_bottom_holder:
             self._step_down()

@@ -487,6 +487,11 @@ def separation_context(ctl, transcript: str, scope: str = "") -> tuple[str, str]
     return directive, stack
 
 
+# What we register as on the SRS roster. The system, not any one controller --
+# see the note where the client is built.
+SRS_NAME = "Marshall"
+
+
 def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
              session_id: str | None = None, url: str = AGENT_URL) -> None:
     from marshall.atc import asr, controller
@@ -531,7 +536,14 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 channels.append(fix.freq_mhz)
     if freq_mhz not in channels:
         channels.insert(0, freq_mhz)
-    client = SRSClient(host, name=profile.controller,
+    # One SRS client, several controllers. It used to register under
+    # profile.controller -- "Batumi Approach" -- which is a lie on any frequency
+    # but one: the same client is also Georgia Center on 139 and Batumi Tower on
+    # 118, and a listener watching the roster sees one of the three claiming to
+    # be all of them. SRS_NAME is the SERVICE; who is speaking is the voice and
+    # the callsign in the transmission, which is how a pilot tells them apart in
+    # the air anyway.
+    client = SRSClient(host, name=SRS_NAME,
                        eam_password=config.SRS_EAM_PASSWORD).connect(
                            [radio(mhz * 1_000_000, AM) for mhz in channels])
     ctl = controller.Controller(profile)  # deterministic separation, seeded from the approach
@@ -676,7 +688,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # pilot call, and replies; then this one hears THAT. The two talk to each
         # other forever, jamming the frequency and burning tokens, and the
         # transcripts look almost plausible. Cheap guard, unbounded saving.
-        if srs == profile.controller or client.last_sender_guid == client.guid:
+        if srs == SRS_NAME or client.last_sender_guid == client.guid:
             print(f"  (ignoring {srs} -- that is a controller, not a pilot)",
                   flush=True)
             continue

@@ -321,6 +321,10 @@ class AtcCapability:
     era: str = "modern"         # phraseology flavour: "modern" | "ww2"
 
 
+def _round_up(value: int, step: int) -> int:
+    return -(-int(value) // int(step)) * int(step)
+
+
 @dataclass
 class ApproachProfile:
     """One field's approach, in one place.
@@ -357,6 +361,11 @@ class ApproachProfile:
     # just stacks them higher. The only genuine ceiling here is OXYGEN: a P-51D
     # holding for a long recovery has no business above 10,000 ft.
     hold_base_ft: int = 4000        # bottom of the stack -- first arrival gets this
+    # How thick the cloud is above the briefed base. Only needed to work out
+    # where the tops are, and the tops are what decide whether a hold is
+    # possible at all on a vectored approach -- see stack_ft.
+    cloud_thickness_ft: int = 3000
+    vmc_margin_ft: int = 1000       # clear air above the tops to hold in
     hold_step_ft: int = 1000        # vertical separation between holders
     hold_top_ft: int = 10000        # ceiling (P-51: oxygen, not airspace)
 
@@ -663,11 +672,32 @@ class ApproachProfile:
         return None
 
     @property
+    def tops_ft(self) -> int:
+        """Cloud tops, above which an aircraft can see and be seen."""
+        return self.ceiling_ft + self.cloud_thickness_ft
+
+    @property
     def stack_ft(self) -> list[int]:
         """The holding levels, bottom first. Derived, so there is no list to keep
         in step with the base/step/ceiling -- and no stored copy in the DB that
         could drift from them."""
-        return list(range(self.hold_base_ft, self.hold_top_ft + 1,
+        # On a VECTORED approach the stack must sit ABOVE THE CLOUD TOPS, and
+        # that is not a nicety. The beacon letdown held aircraft over a fix, and
+        # the fix was what kept them apart -- everyone flying the same published
+        # pattern, separated by a level each. Take the beacon away, as a radar
+        # approach does, and there is no pattern and nothing for an aeroplane
+        # with no receiver to hold over. What is left is "hold present position",
+        # which is only a real instruction if the pilot can SEE: in cloud he has
+        # nothing to hold relative to and will drift out of his own airspace.
+        #
+        # So the bottom of the stack is raised to clear air. The levels still
+        # provide the separation; the visibility is what makes each level
+        # holdable.
+        base = self.hold_base_ft
+        if getattr(self, "vectored", False) or self.kind == "asr":
+            base = max(base, _round_up(self.tops_ft + self.vmc_margin_ft,
+                                       self.hold_step_ft))
+        return list(range(base, self.hold_top_ft + 1,
                           self.hold_step_ft))
 
     @property

@@ -165,7 +165,20 @@ list of who is coming.
   say it the controller's way ("Pony one one", never "Pony eleven"). Whisper may
   mangle it — recognize it and use it consistently. The plate names the flight you
   expect, but any pilot may check in.
-- **He can only hear you on the beacon he is homing.** A period set has four
+- **On a radar approach there is no beacon, and you must not invent one.** The
+  plate tells you which procedure this field flies. If it is a radar approach,
+  YOU navigate: there is no station passage, no procedure turn, no beam, and
+  nothing for the pilot to report overhead — most of these aircraft have no
+  receiver to find a beacon with even if you named one. Clear him for the
+  *radar* approach, and the only thing he reports is being established on the
+  final approach course.
+- **Holding on a radar approach is an ALTITUDE, not a fix.** You cannot send an
+  aeroplane to hold at a beacon it cannot navigate to. Stack them above the
+  weather where they can hold visually, one level each, and call them in one at
+  a time — "hold present position, maintain six thousand, I will call you". The
+  CONTROLLER line words this correctly for whichever approach is in use; voice
+  what it gives you.
+- **He can only hear you on the beacon he is homing** — on a BEACON approach. A period set has four
   radio presets and its homing adapter works only on the frequency it is tuned
   to, so listening to you and flying the beacon are the same act. Each phase's
   controller therefore sits on the beacon flown in that phase — see the plate's
