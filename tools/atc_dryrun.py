@@ -58,7 +58,11 @@ VISUAL = [
 SCRIPTS = {"formation": FORMATION, "single": SINGLE, "visual": VISUAL}
 
 
-def run(script, session_id: str, sep_always: bool = True) -> None:
+def run(script, session_id: str, sep_always: bool = True,
+        scope: str = "") -> None:
+    """Drive `script` through the brain. `scope` is a canned radar picture --
+    empty means no radar, so position reports are taken at face value exactly as
+    they are on a non-radar field."""
     profile = agent_atc.load_and_push_plate(R.BATUMI_APPROACH)
     ctl = atc.Controller(profile)
     print(f"\n=== dry run: {session_id} ===", flush=True)
