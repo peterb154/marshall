@@ -70,17 +70,20 @@ the runs actually taught us, worst first:
    stop a bridge, kill the `marshall.atc.agent_atc` python PID, not the
    launcher** — and `pkill -f agent_atc` matches your own shell and kills it.
 
-### Still open: wingmen's SRS names do not resolve
+### RESOLVED (reframed): wingmen's SRS names do not resolve
 
 Late-joining clients still log as raw GUID stubs (`Ma6rcq`) rather than their
 SRS names, so the free identity anchor is degraded exactly for wingmen. The
 roster thread was hardened (finding 3) and a standalone reproduction *does*
 resolve a late joiner from an already-connected client — so the hardening was
-necessary but is not the whole story. Not blocking (the agent works from the
-callsign), but the three-way correlation is running on two legs. Next step:
-instrument the bridge's roster directly rather than inferring it from the log.
+necessary but is not the whole story. Reframed rather than fixed, and correctly: **the SRS name does not matter.**
+What matters is that the GUID is a stable per-transmitter key, so once the
+controller knows this radio calls itself Rifle 1-1 and has correlated that to a
+track, every later call from it is Rifle 1-1 — regardless of what the client is
+registered as. The bridge now learns GUID → callsign and injects who the radio
+HAS BEEN. The unresolved name is cosmetic.
 
-### Open, and the interesting one: radar vs. the blind engine
+### RESOLVED: radar vs. the blind engine
 
 A pilot reported "over the beacon" while radar showed him **eight miles out**.
 The agent correctly refused — *"negative, radar shows you eight miles northwest
@@ -89,11 +92,12 @@ acted on the false report and **broken the flight up**. The two brains now
 disagree about the world: the engine thinks four aircraft are stacked, the agent
 told them to keep coming.
 
-The engine is blind by design, so it cannot catch this itself. The fix belongs
-in the bridge: **validate a position report against radar before feeding it to
-the controller**, and drop or flag the ones the scope contradicts. Until then a
-lying (or lost, or garbled-by-Whisper) position report silently corrupts the
-separation state. This is the most important thing left open from tonight.
+The engine is blind by design, so it could not catch this itself. Fixed in the
+bridge: a claimed station passage is now checked against the range of the track
+bound to that callsign, and a report the scope contradicts never reaches the
+engine — the agent gets `POSITION REJECTED` and corrects him instead. Only
+radar-identified tracks count, and with no radar the report is believed, which
+is the pre-radar behaviour.
 
 ### Also deferred
 

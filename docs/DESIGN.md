@@ -122,8 +122,18 @@ singles.
 **They break up at the holding fix, always.** You do not hold four ships in
 formation through a letdown — a holding pattern is minutes of turning in cloud
 with three wingmen welded to lead's wing, exactly when lead's attention is on
-the plate and the clock. Lead takes the lowest level so he lands first, and the
-break-up is announced once, with the levels they will actually fly.
+the plate and the clock.
+
+**How they are separated depends on whether they can see each other.** In VMC a
+flight breaks up inside ONE holding level, in trail: the pilots accept visual
+separation and keep themselves apart, which is quicker than laddering four
+aeroplanes up the stack. In cloud that is not available and the controller
+separates them himself, a level each, lead lowest so he lands first. He cannot
+see their conditions from the ground, so he **asks** — "can you maintain visual
+separation between your aircraft?" — and holds them together until they answer.
+The tri-state matters: *not asked* and *said no* give the same separation but
+very different transmissions, and defaulting an unasked flight to yes would put
+four aeroplanes on one level in cloud.
 
 Three consequences worth knowing:
 
@@ -138,6 +148,36 @@ Three consequences worth knowing:
 - **A formation is several SRS transmitters.** Four aeroplanes are four radios,
   so an unfamiliar transmitter claiming a member of a known flight is a wingman
   keying up, not an impostor.
+
+## Channels: the aircraft decides who talks
+
+A period set has **four radio presets**, and the ARA-8 homes only on the
+frequency it is tuned to. Listening to a controller and flying a beacon are
+therefore *the same act*, and a phase's controller must live on the beacon flown
+in that phase — enroute that is the arrival fix (INITIAL, 128), the letdown is
+flown homing the approach beacon (BATUMI, 132 = Tower), and a banished aircraft
+works the outer hold (KOBULETI, 124). Get it wrong and the clearance is not
+merely missed, it is **inaudible**.
+
+So `ApproachProfile.station()` answers "which controller, which frequency" for a
+phase, every `Tx` carries the channel it must go out on, check-in hands the
+pilot over explicitly, and the bridge monitors every channel the approach uses —
+answering on the one the call arrived on, which is by definition the beacon he
+is flying.
+
+## Two brains, one world
+
+The agent sees radar; the deterministic engine is blind and believes what pilots
+report. That gap is real: a flight once called "over the beacon" at eight miles,
+the agent refused it correctly on the scope, but the engine had **already** acted
+on the report and broken the formation up — and nothing could notice, because the
+engine cannot see and the agent cannot retract.
+
+The bridge is where the two are reconciled: a claimed station passage is checked
+against the range of the track bound to that callsign, and a report the scope
+flatly contradicts never reaches the engine. Only *identified* tracks count — an
+unidentified blip near the beacon proves nothing about who is talking — and with
+no radar the report is believed, which is the pre-radar behaviour and correct.
 
 ## The approach — a no-DME beacon letdown
 
