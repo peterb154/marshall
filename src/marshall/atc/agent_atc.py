@@ -442,6 +442,64 @@ def radar_range_for(scope: str, cs: str) -> float | None:
     return None
 
 
+def reconcile(directive: str, stack: str, vectoring: str,
+              g=None) -> tuple[str, str, str, str]:
+    """Decide which authority owns this aeroplane, and silence the others.
+
+    Three things have an opinion about what happens next. The separation engine
+    owns the queue and cannot see. The vectoring owns the geometry and cannot
+    remember. The agent owns the words. Until now all three were appended to the
+    agent's context side by side, each labelled authoritative, and the agent was
+    left to work out which applied.
+
+    It does not work it out. Asked to arbitrate between two confident and
+    contradictory instructions, a model says both -- and a pilot established on
+    the final approach course at ten miles was told, in one transmission, that
+    he was on final AND to climb to five thousand and hold. Neither half was
+    wrong about its own job. The bridge was wrong to ask the question.
+
+    So the bridge answers it here, from the geometry, because the geometry is
+    the only one of the three that can actually see where he is:
+
+      flying the missed approach   the published missed approach is the whole
+                                   instruction. He is deliberately leaving the
+                                   final approach course and he is not in the
+                                   queue -- a holding clearance now is noise at
+                                   the busiest moment of his sortie.
+
+      on the approach              the talk-down owns him. Any holding
+                                   instruction is stale by definition: you
+                                   cannot both be on final and be waiting to
+                                   start. The stack still goes, because it is
+                                   about the OTHER aircraft.
+
+      anything else                the separation engine owns him -- hold,
+                                   sequence, wait -- and the vector is only how
+                                   he reaches the gate. If he has been told to
+                                   hold, the vector is suppressed too: two
+                                   altitudes in one transmission is how this
+                                   started.
+
+    Returns the three parts as they should be used, plus a note of what was
+    dropped and why, so a suppression is visible in the log rather than silent.
+    """
+    if g is None:
+        return directive, stack, vectoring, ""
+    if g.phase == "missed":
+        dropped = "holding/vector suppressed: he is flying the missed approach"
+        return "", stack, vectoring, dropped if (directive or stack) else ""
+    if g.established or g.phase in ("final", "map"):
+        if directive and "hold" in directive.lower():
+            return "", stack, vectoring, ("holding clearance suppressed: radar "
+                                          "shows him established on the approach")
+        return directive, stack, vectoring, ""
+    if directive and "hold" in directive.lower():
+        return directive, stack, "", ("vector suppressed: he has been told to "
+                                      "hold, and two altitudes in one "
+                                      "transmission is the bug this prevents")
+    return directive, stack, vectoring, ""
+
+
 def separation_context(ctl, transcript: str, scope: str = "") -> tuple[str, str]:
     """The two-brain seam. Advance the deterministic Controller from the call and
     return its authoritative (next-step directive, holding stack).
@@ -747,6 +805,16 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # runs for a single ship too -- which is the case that was flying with
         # no deterministic picture at all.
         vectoring = asr_context(profile, scope, known)
+
+        # One aeroplane, one instruction. Decide here which authority owns him
+        # rather than handing the agent three and hoping -- see reconcile().
+        _fix = radar_fix(scope, known) if known else None
+        _g = asr.guide(_fix, profile) if _fix is not None else None
+        directive, stack, vectoring, dropped = reconcile(
+            directive, stack, vectoring, _g)
+        if dropped:
+            print(f"  .. {dropped}", flush=True)
+
         if vectoring:
             print(f"  {vectoring}", flush=True)
             record(session_id, kind="asr", callsign=known, text=vectoring)

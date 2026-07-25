@@ -512,6 +512,11 @@ class ApproachProfile:
     # Used only by the plate, not by ATC (it is blind and cannot see the field).
     final_crs: int = 0              # inbound = runway heading
     hold_turns: str = "RIGHT"
+    # The racetrack a holding aircraft flies when it has nothing to hold OVER.
+    # Given as two headings because headings are the one thing every aeroplane
+    # can fly, navaid or not. Aligned with the approach so that leaving the hold
+    # points him roughly the right way; the inbound leg is the reciprocal.
+    hold_outbound_hdg: int = 180
     field_elev_ft: int = 0
     runway: str = ""
 

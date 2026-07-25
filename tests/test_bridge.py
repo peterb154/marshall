@@ -493,3 +493,69 @@ class TestCourseTalkOnlyWhenOnCourse(unittest.TestCase):
         g = self.g(6, 296, 124, alt=1500)
         self.assertTrue(g.off_course)
         self.assertIn("of course", agent_atc.asr_call("Pony 1-1", g))
+
+
+class TestOneAircraftOneInstruction(unittest.TestCase):
+    """The bridge must not ask the agent to arbitrate.
+
+    Three things have an opinion: the separation engine owns the queue and
+    cannot see, the vectoring owns the geometry and cannot remember, the agent
+    owns the words. All three used to be appended to the agent's context side
+    by side, each labelled authoritative.
+
+    A model asked to choose between two confident contradictory instructions
+    says both. Heard on the radio, in one transmission: a flight established on
+    the final approach course at ten miles was told it was on final AND to climb
+    to five thousand and hold. Neither half was wrong about its own job; the
+    bridge was wrong to ask the question.
+    """
+
+    def setUp(self):
+        from marshall.atc import asr
+        from marshall.core import route as R
+        self.asr, self.p = asr, R.BATUMI_ASR
+
+    def g(self, nm, radial, hdg, alt=2000):
+        return self.asr.guide(self.asr.Position(nm, radial, alt, hdg), self.p)
+
+    HOLD = "Pony 1-1, hold present position, maintain five thousand."
+    VEC = "ASR: vectoring, eight miles. Fly heading 120."
+
+    def test_a_hold_is_suppressed_for_an_aircraft_on_the_approach(self):
+        g = self.g(8, 304, 124)          # established, inbound
+        self.assertTrue(g.established or g.phase in ("final", "map"))
+        directive, _, vectoring, dropped = agent_atc.reconcile(
+            self.HOLD, "", self.VEC, g)
+        self.assertEqual(directive, "", "he was told to hold while on final")
+        self.assertTrue(vectoring, "the talk-down was dropped instead")
+        self.assertIn("suppressed", dropped)
+
+    def test_the_missed_approach_owns_him_completely(self):
+        g = self.g(5, 120, 330, alt=1600)
+        self.assertEqual(g.phase, "missed")
+        directive, _, _, dropped = agent_atc.reconcile(self.HOLD, "", self.VEC, g)
+        self.assertEqual(directive, "")
+        self.assertIn("missed", dropped)
+
+    def test_holding_suppresses_the_vector_not_the_other_way_round(self):
+        # Out of position and told to wait: the vector would be a second
+        # altitude in the same transmission, which is how this started.
+        g = self.g(20, 60, 60)
+        self.assertFalse(g.established)
+        directive, _, vectoring, dropped = agent_atc.reconcile(
+            self.HOLD, "", self.VEC, g)
+        self.assertTrue(directive, "the holding clearance was lost")
+        self.assertEqual(vectoring, "")
+        self.assertIn("two altitudes", dropped)
+
+    def test_the_stack_always_survives(self):
+        # It is about the OTHER aircraft, so no state of this one silences it.
+        for g in (self.g(8, 304, 124), self.g(5, 120, 330, 1600),
+                  self.g(20, 60, 60)):
+            _, stack, _, _ = agent_atc.reconcile(self.HOLD, "STACK: two", self.VEC, g)
+            self.assertEqual(stack, "STACK: two")
+
+    def test_with_no_radar_nothing_is_suppressed(self):
+        # Blind, we have no grounds to overrule anyone.
+        d, s, v, dropped = agent_atc.reconcile(self.HOLD, "S", self.VEC, None)
+        self.assertEqual((d, s, v, dropped), (self.HOLD, "S", self.VEC, ""))

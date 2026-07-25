@@ -139,10 +139,15 @@ def spell_alt(ft: int) -> str:
 
 def spell_hdg(deg: float) -> str:
     """A heading, digit by digit: 127 -> 'one two seven'. Polly reads a bare
-    127 as 'one hundred twenty seven', which is not a heading."""
+    127 as 'one hundred twenty seven', which is not a heading.
+
+    North is THREE SIX ZERO. No controller says "zero zero zero" -- it is not a
+    heading anyone flies, and a pilot hearing it wonders what was garbled.
+    """
     d = {c: w for c, w in zip("0123456789",
          "zero one two three four five six seven eight nine".split())}
-    return " ".join(d[c] for c in f"{int(round(deg)) % 360:03d}")
+    hdg = int(round(deg)) % 360 or 360
+    return " ".join(d[c] for c in f"{hdg:03d}")
 
 
 def spell_time(t: float) -> str:
@@ -209,12 +214,30 @@ class Controller:
         return "radar approach" if self._vectored else "beacon approach"
 
     def _hold_phrase(self, alt_ft: int) -> str:
-        """Where to wait. A place if he can find one, otherwise a height."""
-        if self._vectored:
-            return (f"hold present position, maintain {spell_alt(alt_ft)}, "
-                    "expect vectors for the approach, I will call you")
-        return (f"hold at {self.profile.beacon.name} as published, "
-                f"maintain {spell_alt(alt_ft)}")
+        """Where to wait, said in a way he can actually fly.
+
+        Three cases, and the aircraft decides which:
+
+        A navaid and a fix -- hold as published. He can find the place.
+
+        No navaid -- the controller describes a racetrack in headings, because
+        headings are the one thing every aeroplane can fly: "hold at eight
+        thousand, one eight zero outbound, three six zero inbound". He will
+        drift; without a fix to hold over he cannot not drift. It does not
+        matter. The levels are what keep him off the others, the clear air is
+        what lets him see them, and the drift is a mile or two of empty sky.
+
+        Precision here was the over-engineering. What has to be right is the
+        SEQUENCING -- peeling one off at a time and vectoring him to the fix --
+        and that is not made better by a tidier hold.
+        """
+        if not self._vectored:
+            return (f"hold at {self.profile.beacon.name} as published, "
+                    f"maintain {spell_alt(alt_ft)}")
+        out = self.profile.hold_outbound_hdg
+        return (f"hold at {spell_alt(alt_ft)}, {spell_hdg(out)} outbound, "
+                f"{spell_hdg((out + 180) % 360)} inbound, expect vectors for "
+                "the approach, I will call you")
 
     def _report_phrase(self) -> str:
         """What he should call next. Never a fix he cannot navigate to."""

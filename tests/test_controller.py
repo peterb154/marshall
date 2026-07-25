@@ -427,3 +427,22 @@ class TestTheBlindEngineIsToldWhatRadarSees(unittest.TestCase):
         self.c.request_approach("Viper 2-1")
         self.assertTrue(any("hold" in l.lower() for l in self.said),
                         "the following aircraft was not separated")
+
+
+class TestHeadingsAreSpokenLikeHeadings(unittest.TestCase):
+    def test_north_is_three_six_zero(self):
+        # "Zero zero zero" is not a heading anyone flies, and a pilot hearing it
+        # wonders what was garbled. It reached the air in a holding clearance:
+        # "one eight zero outbound, zero zero zero inbound".
+        self.assertEqual(atc.spell_hdg(0), "three six zero")
+        self.assertEqual(atc.spell_hdg(360), "three six zero")
+
+    def test_ordinary_headings_are_unchanged(self):
+        self.assertEqual(atc.spell_hdg(127), "one two seven")
+        self.assertEqual(atc.spell_hdg(90), "zero nine zero")
+
+    def test_the_holding_racetrack_reads_back_sensibly(self):
+        c = atc.Controller(R.BATUMI_ASR)
+        hold = c._hold_phrase(8000)
+        self.assertIn("one eight zero outbound", hold)
+        self.assertIn("three six zero inbound", hold)
