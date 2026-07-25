@@ -346,16 +346,20 @@ def asr_call(cs: str, g) -> str:
     agent still handles everything a pilot actually says; this is the metronome
     underneath.
     """
-    from marshall.atc import asr, callsign as C
+    from marshall.atc import asr, callsign as C, controller as ctl
     who = C.parse(cs).spoken
     rng = asr.spoken_range(g.range_nm)
+    # Spelled, not printed: "1900" reaches Polly as digits.
+    alt = ctl.spell_alt(g.altitude_ft) if g.altitude_ft else ""
     if g.phase == "map":
         return (f"{who}, over the missed approach point. Runway in sight, land; "
                 f"if not, execute missed approach.")
     if g.off_course:
         return (f"{who}, {rng} miles from the runway, {g.deviation}, "
-                f"turn heading {g.heading:03d}.")
-    return f"{who}, {rng} miles from the runway, on course."
+                f"turn heading {g.heading:03d}, altitude should be "
+                f"{alt}.")
+    return (f"{who}, {rng} miles from the runway, on course, altitude should be "
+            f"{alt}.")
 
 
 def asr_context(profile, scope: str, cs: str) -> str:
@@ -383,9 +387,19 @@ def asr_context(profile, scope: str, cs: str) -> str:
     turn = "" if not g.off_course else f", {g.deviation}"
     swing = f" Turn {g.turn}." if g.turn else ""
     if g.phase == "final":
-        return (f"ASR: {rng} miles from the runway{turn}. Fly heading "
-                f"{g.heading:03d}, descend and maintain {g.altitude_ft}. "
-                f"Call his range every mile.")
+        # The mile calls are already going out automatically, every mile. If the
+        # agent ALSO reports range and heading on each transmission the pilot
+        # hears the same numbers twice from the same controller -- which is what
+        # "too chatty on final" meant. Acknowledge and get off the air.
+        return (f"ASR: he is on final, {rng} miles, {g.deviation}. The talk-down "
+                f"is being transmitted automatically every mile — do NOT repeat "
+                f"his range, heading or altitude. Acknowledge what he said in a "
+                f"few words and stop.")
+    if g.phase == "downwind":
+        return (f"ASR: {rng} miles, {g.deviation}, and no room to turn him in "
+                f"yet.{swing} Fly heading {g.heading:03d}, maintain "
+                f"{g.altitude_ft} — he is going downwind to make room for the "
+                f"intercept.")
     return (f"ASR: vectoring, {rng} miles{turn}.{swing} Fly heading "
             f"{g.heading:03d}, maintain {g.altitude_ft} until established on the "
             f"final approach course.")

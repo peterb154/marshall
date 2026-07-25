@@ -89,19 +89,48 @@ class TestGuide(unittest.TestCase):
         self.p = profile()
         self.inbound = (self.p.final_crs + 180) % 360
 
-    def at(self, nm, radial=None, alt=2000):
-        return asr.guide(asr.Position(nm, radial if radial is not None
-                                      else self.inbound, alt), self.p)
+    def at(self, nm, radial=None, alt=2000, hdg=None):
+        # Default to flying the approach course: an aeroplane being talked down
+        # is pointing down the centreline, and "established" now checks heading
+        # as well as position -- a go-around tracking OUTBOUND used to be called
+        # established and told to descend to minimums.
+        return asr.guide(
+            asr.Position(nm, radial if radial is not None else self.inbound,
+                         alt, self.p.final_crs if hdg is None else hdg), self.p)
+
+    VECTORING = ("vector", "downwind")
 
     def test_far_out_is_vectoring_at_platform(self):
         g = self.at(12)
         self.assertEqual(g.phase, "vector")
         self.assertEqual(g.altitude_ft, self.p.platform_ft)
 
-    def test_inside_the_intercept_range_is_final_at_minimums(self):
+    def test_inside_the_intercept_range_is_final_on_the_step_down(self):
+        # Not straight to minimums: "descend and maintain three hundred" at
+        # eight miles is a seventeen-hundred-foot drop as one instruction, and a
+        # pilot flying it arrives low and level miles out.
         g = self.at(6)
         self.assertEqual(g.phase, "final")
-        self.assertEqual(g.altitude_ft, self.p.mda_ft)
+        self.assertGreater(g.altitude_ft, self.p.mda_ft)
+        self.assertLessEqual(g.altitude_ft, self.p.platform_ft)
+
+    def test_the_step_down_descends_as_he_closes(self):
+        alts = [self.at(nm).altitude_ft for nm in (6, 4, 2, 1)]
+        self.assertEqual(alts, sorted(alts, reverse=True))
+        self.assertGreaterEqual(alts[-1], self.p.mda_ft)
+
+    def test_never_below_minimums(self):
+        for nm in (2, 1, 0.7):
+            self.assertGreaterEqual(self.at(nm).altitude_ft, self.p.mda_ft)
+
+    def test_on_course_tightens_as_he_closes(self):
+        # A quarter mile off is fine at eight miles and is a missed runway at
+        # one. Judged as a fixed distance it was called "lined up" on short
+        # final while the pilot was a quarter mile south of the threshold.
+        self.assertGreater(asr.on_course_tolerance(8),
+                           asr.on_course_tolerance(1))
+        g = self.at(1.0, radial=(self.inbound + 14) % 360)
+        self.assertTrue(g.off_course)
 
     def test_the_missed_approach_point(self):
         self.assertEqual(self.at(0.4).phase, "map")
@@ -110,18 +139,16 @@ class TestGuide(unittest.TestCase):
         # He has genuinely flown through: vector him round to the join point,
         # which means turning him AWAY from the field first.
         g = self.at(4, radial=self.p.final_crs)
-        self.assertEqual(g.phase, "vector")
-        inbound = (self.p.final_crs + 180) % 360
-        # The heading must point back toward the inbound side, not at the field.
-        self.assertLess(abs(asr.angle_diff(g.heading, inbound)), 90)
+        self.assertIn(g.phase, self.VECTORING)
+        self.assertFalse(g.established)
 
     def test_bearing_is_not_progress(self):
         # A man due north of the field is ninety-odd degrees off the inbound
         # radial and has passed NOTHING. Treating that as an overshoot flew a
         # real pilot straight at the field and then told him he had gone past.
         g = self.at(12, radial=14)
-        self.assertEqual(g.phase, "vector")
-        self.assertNotEqual(g.heading, self.p.final_crs)
+        self.assertIn(g.phase, self.VECTORING)
+        self.assertFalse(g.established)
 
     def test_on_the_centreline_outside_the_turn_on_continues_inbound(self):
         # It must not send him back OUT to the join point: he is already on the
@@ -134,7 +161,7 @@ class TestGuide(unittest.TestCase):
     def test_well_off_the_inbound_sector_is_still_vectoring(self):
         # Close in range but 60 degrees off: he has not intercepted yet.
         g = self.at(6, radial=(self.inbound + 60) % 360)
-        self.assertEqual(g.phase, "vector")
+        self.assertIn(g.phase, self.VECTORING)
 
     def test_deviation_wording(self):
         self.assertEqual(self.at(6).deviation, "on course")
@@ -149,15 +176,30 @@ class TestGuide(unittest.TestCase):
         self.assertFalse(g.off_course)
 
     def test_a_closing_aircraft_is_steered_back_to_the_course(self):
-        # The loop must converge: each correction reduces the error.
-        p, xtk = self.p, 1.5
-        radial = self.inbound
-        pos = asr.Position(8, radial, 2000)
-        first = asr.guide(pos, p)
-        self.assertEqual(first.heading, p.final_crs)     # already on it
-        off = asr.guide(asr.Position(8, self.inbound + 8, 2000), p)
+        self.assertEqual(self.at(8).heading, self.p.final_crs)   # already on it
+        off = self.at(8, radial=self.inbound + 8)
         self.assertTrue(off.off_course)
-        self.assertNotEqual(off.heading, p.final_crs)
+        self.assertNotEqual(off.heading, self.p.final_crs)
+
+    def test_tracking_outbound_is_not_established(self):
+        # A go-around on the centreline heading AWAY was called established and
+        # told to descend to minimums. Position is not enough.
+        g = self.at(4, hdg=(self.p.final_crs + 180) % 360)
+        self.assertFalse(g.established)
+
+    def test_no_room_to_intercept_means_downwind(self):
+        # Six miles off with two miles of centreline left cannot be turned in:
+        # closing that at thirty degrees needs about eleven. Trying anyway is
+        # what produced an impossible intercept and a sequence of reversals.
+        g = self.at(11.4, radial=271, hdg=214)
+        self.assertEqual(g.phase, "downwind")
+        self.assertEqual(g.heading, round(self.inbound))
+
+    def test_room_to_intercept_cuts_across_at_the_intercept_angle(self):
+        g = self.at(10.9, radial=310, hdg=33)
+        self.assertIn(g.phase, self.VECTORING)
+        self.assertLessEqual(abs(asr.angle_diff(g.heading, self.p.final_crs)),
+                             asr.INTERCEPT_ANGLE + 1)
 
 
 class TestVectoredFlag(unittest.TestCase):

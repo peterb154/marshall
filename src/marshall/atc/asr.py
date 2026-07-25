@@ -35,17 +35,31 @@ from dataclasses import dataclass
 # gentle six and a two-mile error at the cap.
 DEG_PER_NM = 12.0
 MAX_INTERCEPT = 30
-ON_COURSE_NM = 0.3          # inside this he is simply "on course"
+# "On course" is an ANGLE, not a distance. A fixed 0.3 nm looks reasonable at
+# six miles and is nonsense at one: a pilot a quarter-mile south of the runway on
+# short final was being told he was lined up, because a quarter mile still fitted
+# inside the tolerance. Judged as an angle off the centreline it tightens on its
+# own -- about 950 ft at six miles, about 160 ft at one.
+ON_COURSE_DEG = 1.5
+ON_COURSE_FLOOR_NM = 0.02   # radar noise; below this nobody can fly the difference
+
+
+def on_course_tolerance(range_nm: float) -> float:
+    """How far off the centreline still counts as on course, at this range."""
+    return max(ON_COURSE_FLOOR_NM,
+               range_nm * math.tan(math.radians(ON_COURSE_DEG)))
 
 # Wind is absorbed by watching the ground track rather than by computing it, so
 # corrections are re-issued as he drifts. This is how a real ASR works: the
 # controller does not know the wind either, he just keeps him on the line.
 
 
-# How far outside the turn-on range the join point sits. He has to roll out on
-# the centreline with room left to settle before the descent, so the vector aims
-# at a point beyond the turn-on, not at the turn-on itself.
-JOIN_MARGIN_NM = 4.0
+# The angle at which a vector cuts across to the final approach course. Thirty
+# degrees is the usual figure: shallow enough to roll out cleanly, steep enough
+# not to spend ten miles converging. It also sets how much centreline an
+# intercept COSTS -- xtk / tan(30) -- which is what decides whether he can be
+# turned in at all or has to go downwind first.
+INTERCEPT_ANGLE = 30.0
 
 
 def angle_diff(a: float, b: float) -> float:
@@ -132,28 +146,62 @@ def intercept_heading(final_crs: float, xtk_nm: float) -> int:
     return round((final_crs + correction) % 360)
 
 
+def along_track(pos: Position, final_crs: float) -> float:
+    """How far he still has to run along the course, in miles.
+
+    Positive means the field is ahead of him down the centreline; negative means
+    he is past it. Measured along the course rather than as slant range, because
+    the question that matters for an intercept is how much RUNWAY of centreline
+    is left, not how far away the field is.
+    """
+    inbound_radial = (final_crs + 180) % 360
+    ae, an = _en(pos.range_nm, pos.radial_deg)
+    ie, i_n = _en(1.0, inbound_radial)      # unit vector out along the centreline
+    return ae * ie + an * i_n
+
+
+# Nominal descent gradient for the advisory altitudes, in feet per mile. Three
+# degrees is the standard approach slope; 318 ft/nm is its gradient.
+FT_PER_NM = 318.0
+
+
+def advisory_altitude(range_nm: float, profile) -> int:
+    """The height he SHOULD be at, this far out.
+
+    An ASR has no glidepath, so this is advice rather than guidance -- but
+    "descend and maintain three hundred" at eight miles is a seventeen-hundred
+    foot drop given as one instruction, and a pilot flying it arrives low and
+    level miles out. Real controllers read a recommended altitude with each mile
+    call. Never below minimums, and never above the altitude he was vectored at.
+    """
+    want = profile.field_elev_ft + round(range_nm * FT_PER_NM)
+    return max(profile.mda_ft, min(profile.platform_ft, int(round(want / 100) * 100)))
+
+
 def guide(pos: Position, profile) -> Guidance:
     """One radar look -> the next instruction.
 
-    Two regimes, and confusing them is what makes a vectored approach useless:
+    Four states, and the whole difficulty is telling them apart:
 
-    **Established** -- on the final approach course, inside the turn-on range.
-    Now the job is course-KEEPING, so the heading is the course plus a small
-    correction, and he descends.
+    **final**    -- on the course, pointing down it: keep the course, descend.
+    **vector**   -- off it with room to converge: cut across at INTERCEPT_ANGLE.
+    **downwind** -- off it WITHOUT room: parallel the course outbound until
+                    there is some.
+    **map**      -- over the missed approach point.
 
-    **Not established** -- anywhere else, at any bearing. The job is to take him
-    to the extended centreline, so the heading is the bearing to a JOIN POINT
-    out along it, which for an aircraft north of a north-west-facing approach
-    means turning him away from the field before turning him back in.
-
-    An earlier version treated "more than ninety degrees off the inbound radial"
-    as having flown PAST the field, which is not what it means at all -- a man
-    sitting due north of the field is ninety-odd degrees off the inbound radial
-    and has passed nothing. It flew a pilot straight at the field from the north
-    and then told him he had overshot. Bearing is not progress.
+    Two things this has been got wrong on real sorties, both worth keeping in
+    view. Treating "more than ninety degrees off the inbound radial" as having
+    flown PAST the field: a man due north of a field is ninety-odd degrees off
+    the inbound radial and has passed nothing, and that reading flew a pilot
+    straight at the field and then told him he had overshot. And vectoring at a
+    fixed JOIN POINT: the bearing to a point swings harder the closer you get
+    and reverses once you pass it, so the pilot S-turned across the centreline
+    and was turned back through it again. A controller converges at an angle; he
+    does not chase a spot on the map.
     """
     xtk = cross_track(pos, profile.final_crs)
-    deviation = ("on course" if abs(xtk) <= ON_COURSE_NM
+    tol = on_course_tolerance(pos.range_nm)
+    deviation = ("on course" if abs(xtk) <= tol
                  else "right of course" if xtk > 0 else "left of course")
     inbound_radial = (profile.final_crs + 180) % 360
     off_radial = abs(angle_diff(pos.radial_deg, inbound_radial))
@@ -163,25 +211,52 @@ def guide(pos: Position, profile) -> Guidance:
         return Guidance("map", h, profile.mda_ft, pos.range_nm, xtk, deviation,
                         turn_direction(pos.heading_deg, h))
 
-    # On the centreline and on the inbound side: keep the course. Note this does
-    # NOT require him to be inside the turn-on range -- that range is where he
-    # should be established BY, not a condition of being established. Treating
-    # it as one sent a man already tracking the centreline at ten miles back
-    # OUTBOUND to a join point at twelve, a 180 for no reason.
+    # Established: on the centreline AND pointing down it. The heading check is
+    # not pedantry -- a go-around tracking OUTBOUND sits on the centreline with a
+    # small cross-track and was called established, then told to descend to
+    # minimums while flying away from the field.
+    tracking_in = abs(angle_diff(pos.heading_deg, profile.final_crs)) <= 45
     on_centreline = off_radial <= 30 and abs(xtk) <= profile.final_intercept_nm / 4
-    if on_centreline:
+    if on_centreline and tracking_in:
         h = intercept_heading(profile.final_crs, xtk)
-        # He only comes down once he is inside the turn-on range.
         inside = pos.range_nm <= profile.final_intercept_nm
-        return Guidance("final" if inside else "vector", h,
-                        profile.mda_ft if inside else profile.platform_ft,
+        alt = (advisory_altitude(pos.range_nm, profile) if inside
+               else profile.platform_ft)
+        return Guidance("final" if inside else "vector", h, alt,
                         pos.range_nm, xtk, deviation,
                         turn_direction(pos.heading_deg, h))
 
-    # Off the centreline: fly him to the join point out along it.
-    join_nm = profile.final_intercept_nm + JOIN_MARGIN_NM
-    h = round(bearing_between(pos.range_nm, pos.radial_deg,
-                              join_nm, inbound_radial)) % 360
+    # Otherwise vector him onto the course. NOT by flying at a point on it: that
+    # is pure pursuit, and the bearing to a fixed point swings harder the closer
+    # you get and reverses once you pass it -- which is exactly the S-turning a
+    # real flight produced, crossing the centreline and being turned back
+    # through it again.
+    #
+    # A controller converges on the extended centreline at a fixed angle and
+    # rolls out. The only real decision is whether there is ROOM left to do it:
+    # closing 6 miles of cross-track at 30 degrees needs about 11 miles of
+    # centreline, and if he does not have that he must be taken downwind to make
+    # some. Trying anyway is what produced an impossible intercept and then a
+    # sequence of contradictory turns.
+    # Already on the centreline but pointing across it -- a turn onto the course
+    # is the whole instruction. Sending him downwind here would take a man who
+    # is a mile off the line and fly him away from it.
+    if on_centreline:
+        h = round(profile.final_crs)
+        return Guidance("vector", h, profile.platform_ft, pos.range_nm, xtk,
+                        deviation, turn_direction(pos.heading_deg, h))
+
+    ahead = along_track(pos, profile.final_crs) - profile.final_intercept_nm
+    needed = abs(xtk) / math.tan(math.radians(INTERCEPT_ANGLE))
+    if ahead < needed:
+        # No room: parallel the course outbound, on his side, until there is.
+        h = round(inbound_radial)
+        return Guidance("downwind", h, profile.platform_ft, pos.range_nm, xtk,
+                        deviation, turn_direction(pos.heading_deg, h))
+
+    # Room to converge: cut across at the intercept angle, from his side.
+    cut = INTERCEPT_ANGLE if xtk > 0 else -INTERCEPT_ANGLE
+    h = round((profile.final_crs - cut) % 360)
     return Guidance("vector", h, profile.platform_ft, pos.range_nm, xtk,
                     deviation, turn_direction(pos.heading_deg, h))
 

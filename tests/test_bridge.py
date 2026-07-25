@@ -302,11 +302,13 @@ class TestAsrContext(unittest.TestCase):
         self.assertIn("vectoring", out)
         self.assertIn(str(self.asr.platform_ft), out)
 
-    def test_on_final_gives_range_and_minimums(self):
+    def test_on_final_the_agent_is_told_to_stop_repeating(self):
+        # The mile calls already go out automatically; the agent reporting range
+        # and heading too meant the pilot heard the same numbers twice from the
+        # same controller. That is what "too chatty on final" meant.
         out = agent_atc.asr_context(self.asr, self.scope(6, 304), "Pony 1-1")
-        self.assertIn("six miles from the runway", out)
-        self.assertIn(str(self.asr.mda_ft), out)
-        self.assertIn("every mile", out)
+        self.assertIn("on final", out)
+        self.assertIn("do NOT repeat", out)
 
     def test_off_course_is_named(self):
         right = agent_atc.asr_context(self.asr, self.scope(6, 296), "Pony 1-1")
@@ -318,9 +320,9 @@ class TestAsrContext(unittest.TestCase):
         out = agent_atc.asr_context(self.asr, self.scope(0.4, 304), "Pony 1-1")
         self.assertIn("missed approach point", out)
 
-    def test_past_the_field_is_vectored_back_to_the_join(self):
+    def test_past_the_field_is_vectored_back(self):
         out = agent_atc.asr_context(self.asr, self.scope(4, 124), "Pony 1-1")
-        self.assertIn("vectoring", out)
+        self.assertTrue("vectoring" in out or "downwind" in out, out)
 
     def test_no_bare_digits_in_the_range_call(self):
         # Range reaches Polly as words; a bare "6" would be read as a digit.
@@ -344,7 +346,8 @@ class TestAsrRangeCall(unittest.TestCase):
 
     def test_on_course_call(self):
         out = agent_atc.asr_call("Pony 1-1", self.g(6))
-        self.assertEqual(out, "Pony one one, six miles from the runway, on course.")
+        self.assertIn("six miles from the runway, on course", out)
+        self.assertIn("altitude should be", out)
 
     def test_off_course_call_carries_a_heading(self):
         out = agent_atc.asr_call("Pony 1-1", self.g(6, 296))
