@@ -70,18 +70,27 @@ the runs actually taught us, worst first:
    stop a bridge, kill the `marshall.atc.agent_atc` python PID, not the
    launcher** — and `pkill -f agent_atc` matches your own shell and kills it.
 
-### RESOLVED (reframed): wingmen's SRS names do not resolve
+### RESOLVED by reframing: wingmen's SRS names do not resolve
 
-Late-joining clients still log as raw GUID stubs (`Ma6rcq`) rather than their
-SRS names, so the free identity anchor is degraded exactly for wingmen. The
-roster thread was hardened (finding 3) and a standalone reproduction *does*
-resolve a late joiner from an already-connected client — so the hardening was
-necessary but is not the whole story. Reframed rather than fixed, and correctly: **the SRS name does not matter.**
-What matters is that the GUID is a stable per-transmitter key, so once the
-controller knows this radio calls itself Rifle 1-1 and has correlated that to a
-track, every later call from it is Rifle 1-1 — regardless of what the client is
-registered as. The bridge now learns GUID → callsign and injects who the radio
-HAS BEEN. The unresolved name is cosmetic.
+Late-joining clients log as raw GUID stubs (`Ma6rcq`) rather than their SRS
+names. The roster thread was hardened (finding 3) and a standalone reproduction
+*does* resolve a late joiner from an already-connected client, so the hardening
+was necessary but is not the whole story — and chasing the rest turned out to be
+the wrong question.
+
+**The SRS name does not matter.** What matters is that the GUID is a stable
+per-transmitter key: once the controller knows this radio calls itself Rifle 1-1,
+and has correlated Rifle 1-1 to a track, every later call from that radio is
+Rifle 1-1 — whatever the client happens to be registered as. The bridge learns
+GUID → callsign from what the pilot says and injects who the radio *has been*, so
+a garbled or omitted callsign no longer loses the thread. The unresolved display
+name is now cosmetic.
+
+That extractor has to be conservative: the first version had no stopwords and
+read "level four thousand" as an aircraft called **Level 4**, so one numbered
+phrase would silently reassign a transmitter to an aircraft that does not exist.
+A miss just means "you are still who you were last time"; a false positive
+corrupts the anchor.
 
 ### RESOLVED: radar vs. the blind engine
 
