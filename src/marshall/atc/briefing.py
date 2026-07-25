@@ -150,8 +150,33 @@ def _asr_plate(profile: R.ApproachProfile, flight: str, size: int) -> str:
         "flare: \"cleared to land, wind two seven zero at two zero\".",
         f"- Assignable altitudes: **{profile.platform_ft}** vectoring, "
         f"**{profile.mda_ft}** MDA, **{profile.missed_ft}** missed. Nothing else.",
+        *_threats(),
         *_formation(flight, size, profile),
     ])
+
+
+def _threats() -> list[str]:
+    """What is shooting, and how far it reaches.
+
+    The controller has radar and the pilot has a chart, and only one of them can
+    see where the aeroplane actually is relative to a battery. A pilot asking to
+    be kept clear of Kutaisi is asking a reasonable thing; without this the
+    controller has never heard of Kutaisi's guns and says something reassuring
+    and useless.
+    """
+    if not getattr(R, "DEFENDED", None):
+        return []
+    fields = "; ".join(f"**{n}** ({r:.0f} nm)" for n, _, _, r in R.DEFENDED)
+    return [
+        f"- **Defended enemy fields**: {fields}. Heavy anti-aircraft guns that "
+        "reach well above transit altitude. Everything outside Batumi is "
+        "hostile, and these three are the ones that shoot back.",
+        "- **Keep him clear of them, and say so when you do.** If his track is "
+        "closing on one, turn him — \"come left twenty degrees, you are "
+        "closing on the Kutaisi defences\" — and if he asks to be routed round "
+        "them, do it. You can see his position against them; he is looking at a "
+        "chart and guessing.",
+    ]
 
 
 def plate(profile: R.ApproachProfile = R.BATUMI_ASR,

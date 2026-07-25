@@ -466,23 +466,13 @@ def draw_plan(m: Mission) -> None:
     # And the guns, because a route drawn without them is only half the picture.
     # Radius is the heavy flak's reach, not the ring the guns sit on -- what a
     # pilot needs to see is where it becomes unwise, not where the barrels are.
-    for x, z, label in DEFENDED:
+    for label, x, z, reach_nm in R.DEFENDED:
         here = Point(x, z, m.terrain)
-        blue.add_circle(here, radius=6 * 1852, color=warn,
+        blue.add_circle(here, radius=reach_nm * 1852, color=warn,
                         fill=Rgba(r=200, g=40, b=30, a=25), line_thickness=4,
                         line_style=LineStyle.Dash)
-        blue.add_text_box(here, f"{label} - AAA", color=warn,
+        blue.add_text_box(here, f"{label.upper()} - AAA", color=warn,
                           fill=Rgba(r=0, g=0, b=0, a=0), font_size=18)
-
-
-# The defended red fields, as (x, z, label). Kept beside the drawing rather than
-# imported from tools/defend.py because that is a live-world tool and this is a
-# mission builder -- but they must not drift, so both name the same three.
-DEFENDED = [
-    (-317962, 635633, "KOBULETI"),
-    (-281782, 647279, "SENAKI"),
-    (-284887, 683859, "KUTAISI"),
-]
 
 
 def _brief_text() -> str:
@@ -517,8 +507,13 @@ strip within reach has changed hands, changed flags, or changed its mind.
 There is nowhere to divert to. If you cannot get in here, you come round and
 get in here again.
 
-Kobuleti, Senaki and Kutaisi are defended. They have 88s. Do not overfly them
-and do not cut the corner; the route below goes where it goes for a reason.
+Kobuleti, Senaki and Kutaisi are defended. They have 88s, and the route below
+goes where it goes because of them -- the direct line to the target flies
+straight over Kutaisi, which is a short conversation with a heavy battery.
+
+The valley is the only low ground going east and all three fields sit in it, so
+the margins are thinner than anyone would like. Georgia Center has you on radar
+and knows where the guns are: if you want to be taken round them, ask.
 
 MISSION
 Depart Batumi, transit to Tsutsnvati - the town on the western shore of the

@@ -131,7 +131,33 @@ AIR_START = Fix("REHEARSAL", "", -375454, 597742, None,
                 note="Air-start point for rapid testing: 15 nm south-west of "
                      "Batumi, over water, well clear of the defended fields.")
 
-SORTIE = [BATUMI, KUTAISI, TARGET_AREA, KUTAISI, BATUMI]
+# The defended fields, and how far out their heavy flak reaches. Data, because
+# the controllers need it as much as the chart does: a pilot can ask Center to
+# keep him clear, and Center can only do that if it knows they are there.
+DEFENDED = [
+    ("Kobuleti", -317962, 635633, 6.0),
+    ("Senaki",   -281782, 647279, 6.0),
+    ("Kutaisi",  -284887, 683859, 6.0),
+]
+
+# A turning point that keeps the transit out of the guns. The direct line to
+# Tsutsnvati goes straight over Kutaisi, which is a short conversation with an
+# 8.8 cm battery.
+#
+# The valley is the only low ground between here and the target, and all three
+# defended fields sit in it -- searching every bearing and range around Kutaisi,
+# with terrain capped at 4,500 ft, this was the best available: 6.9 nm from
+# Kutaisi's guns, 9.6 from Kobuleti's, over 3,100 ft of ridge. Going south-east
+# instead buys more clearance and puts eight thousand feet of mountain under a
+# five thousand foot cruise; going out to sea first is longer AND closer.
+#
+# It is a plan, not a promise. Sentry knows where the flight is going and Center
+# has radar -- ask for vectors and they will take you round.
+WAYPOINT = Fix("RIONI", "", -280384, 709393, None,
+               note="Transit turning point, 14 nm east of Kutaisi. Keeps the "
+                    "run-in clear of the defended fields.")
+
+SORTIE = [BATUMI, WAYPOINT, TARGET_AREA, WAYPOINT, BATUMI]
 SORTIE_LEGS = list(zip(SORTIE, SORTIE[1:]))
 
 # The route, in order. INITIAL to BATUMI is deliberately runway heading, so
