@@ -67,11 +67,25 @@ def on_course_tolerance(range_nm: float) -> float:
 # not to spend ten miles converging. It also sets how much centreline an
 # intercept COSTS -- xtk / tan(30) -- which is what decides whether he can be
 # turned in at all or has to go downwind first.
-INTERCEPT_ANGLE = 30.0
+# The procedure, as a controller flies it. Positioning happens OUTSIDE the
+# initial approach fix, so that by the IAF he is established, on course and at
+# the IAF altitude -- the fix is a gate, not a target to be chased.
+#
+#   outbound   too close in, or badly placed: gain room along the centreline
+#   base       perpendicular to the course, closing on it
+#   intercept  45 degrees, turned when TURN_IN_NM from the centreline
+#   final      established; course keeping, descent, mile calls
+#
+# 45 rather than 30: a standard-rate turn takes 15 seconds through 45 degrees
+# and the roll-out has to be gentle enough to blend on rather than snap on.
+INTERCEPT_ANGLE = 45.0
 
-# Where the join point sits: a little outside the turn-on range, so he rolls out
-# on the centreline with room left to settle before the descent begins.
-JOIN_MARGIN_NM = 2.0
+# How far off the centreline to turn off base onto the intercept. At 240 mph the
+# standard-rate radius is 1.11 nm, and the two turns -- base to 45, then 45 to
+# the course -- eat 0.78 and 0.32 nm of lateral distance between them. Turning in
+# at one mile therefore overshoots; two gives room to roll out on the course
+# instead of through it.
+TURN_IN_NM = 2.0
 
 
 def angle_diff(a: float, b: float) -> float:
@@ -180,14 +194,22 @@ FT_PER_NM = 318.0
 def advisory_altitude(range_nm: float, profile) -> int:
     """The height he SHOULD be at, this far out.
 
-    An ASR has no glidepath, so this is advice rather than guidance -- but
-    "descend and maintain three hundred" at eight miles is a seventeen-hundred
-    foot drop given as one instruction, and a pilot flying it arrives low and
-    level miles out. Real controllers read a recommended altitude with each mile
-    call. Never below minimums, and never above the altitude he was vectored at.
+    Two segments, per the plate, and the level one matters. From the IF to the
+    FAP he stays at 2,000: that is the intermediate segment, and it is what
+    makes the approach flyable -- a single gradient from the gate has him
+    descending the entire way in, arriving low and level miles out. Only at the
+    FAP does the three-degree path begin.
+
+    Checked against the AIP's own table (1,355 / 708 / 387 ft at 4 / 2 / 1 nm);
+    this lands within about fifty feet the whole way down.
     """
-    want = profile.field_elev_ft + round(range_nm * FT_PER_NM)
-    return max(profile.mda_ft, min(profile.platform_ft, int(round(want / 100) * 100)))
+    fap = getattr(profile, "fap_nm", 0) or profile.final_intercept_nm
+    if range_nm >= fap:
+        return profile.platform_ft                    # level intermediate
+    thr = getattr(profile, "field_thr_elev_ft", 0) or profile.field_elev_ft
+    want = thr + round(range_nm * FT_PER_NM)
+    return max(profile.mda_ft, min(profile.platform_ft,
+                                   int(round(want / 100) * 100)))
 
 
 def _round_to(ft: float, step: int) -> int:
@@ -222,101 +244,89 @@ def safe_alt(pos: Position, profile) -> int:
     return max(msa, min(on_profile, here) if here else on_profile)
 
 
+def iaf_nm(profile) -> float:
+    """How far out the initial approach fix sits, along the centreline."""
+    iaf = getattr(profile, "iaf", None)
+    if iaf is None:
+        return profile.final_intercept_nm + 4.0
+    import math as _m
+    dx, dz = iaf.x - profile.beacon.x, iaf.z - profile.beacon.z
+    return _m.hypot(dx, dz) / 1852.0
+
+
 def guide(pos: Position, profile) -> Guidance:
     """One radar look -> the next instruction.
 
-    Four states, and the whole difficulty is telling them apart:
+    The procedure a controller actually flies, and the reason it is staged this
+    way rather than computed as one heading: every leg has a different JOB.
 
-    **final**    -- on the course, pointing down it: keep the course, descend.
-    **vector**   -- off it with room to converge: cut across at INTERCEPT_ANGLE.
-    **downwind** -- off it WITHOUT room: parallel the course outbound until
-                    there is some.
-    **map**      -- over the missed approach point.
+      final      established on the course -- keep it, and come down
+      intercept  45 degrees onto the course, turned TURN_IN_NM off it
+      base       perpendicular, closing the centreline
+      outbound   not enough centreline left to work with; go and get some
 
-    Two things this has been got wrong on real sorties, both worth keeping in
-    view. Treating "more than ninety degrees off the inbound radial" as having
-    flown PAST the field: a man due north of a field is ninety-odd degrees off
-    the inbound radial and has passed nothing, and that reading flew a pilot
-    straight at the field and then told him he had overshot. And vectoring at a
-    fixed JOIN POINT: the bearing to a point swings harder the closer you get
-    and reverses once you pass it, so the pilot S-turned across the centreline
-    and was turned back through it again. A controller converges at an angle; he
-    does not chase a spot on the map.
+    All of the positioning happens OUTSIDE the initial approach fix, so that by
+    the IAF he is established, on course and at the IAF altitude. The fix is a
+    gate he passes through, not a point to be chased -- three sorties were lost
+    to vectoring that aimed at an invented point which moved, and variously
+    turned him away from the field, orbited, and flew him out to sea.
     """
     xtk = cross_track(pos, profile.final_crs)
     tol = on_course_tolerance(pos.range_nm)
     deviation = ("on course" if abs(xtk) <= tol
                  else "right of course" if xtk > 0 else "left of course")
     inbound_radial = (profile.final_crs + 180) % 360
-    off_radial = abs(angle_diff(pos.radial_deg, inbound_radial))
+    outbound = inbound_radial
+    along = along_track(pos, profile.final_crs)
+    gate = iaf_nm(profile)
 
-    if pos.range_nm <= profile.map_nm:
-        h = intercept_heading(profile.final_crs, xtk)
-        return Guidance("map", h, profile.mda_ft, pos.range_nm, xtk, deviation,
+    def out(phase, heading, alt):
+        h = round(heading) % 360
+        return Guidance(phase, h, alt, pos.range_nm, xtk, deviation,
                         turn_direction(pos.heading_deg, h))
 
-    # Established: on the centreline AND pointing down it. The heading check is
-    # not pedantry -- a go-around tracking OUTBOUND sits on the centreline with a
-    # small cross-track and was called established, then told to descend to
+    if pos.range_nm <= profile.map_nm:
+        return out("map", intercept_heading(profile.final_crs, xtk),
+                   profile.mda_ft)
+
+    # Established: on the course AND pointing down it. The heading check is not
+    # pedantry -- a go-around tracking outbound sits on the centreline with a
+    # small cross-track, and was called established and told to descend to
     # minimums while flying away from the field.
     tracking_in = abs(angle_diff(pos.heading_deg, profile.final_crs)) <= 45
-    on_centreline = off_radial <= 30 and abs(xtk) <= profile.final_intercept_nm / 4
-    if on_centreline and tracking_in:
-        h = intercept_heading(profile.final_crs, xtk)
+    if abs(xtk) <= max(tol, TURN_IN_NM / 4) and tracking_in:
         inside = pos.range_nm <= profile.final_intercept_nm
         alt = (advisory_altitude(pos.range_nm, profile) if inside
                else safe_alt(pos, profile))
-        return Guidance("final" if inside else "vector", h, alt,
-                        pos.range_nm, xtk, deviation,
-                        turn_direction(pos.heading_deg, h))
+        return out("final" if inside else "vector",
+                   intercept_heading(profile.final_crs, xtk), alt)
 
-    # Otherwise vector him onto the course. NOT by flying at a point on it: that
-    # is pure pursuit, and the bearing to a fixed point swings harder the closer
-    # you get and reverses once you pass it -- which is exactly the S-turning a
-    # real flight produced, crossing the centreline and being turned back
-    # through it again.
-    #
-    # A controller converges on the extended centreline at a fixed angle and
-    # rolls out. The only real decision is whether there is ROOM left to do it:
-    # closing 6 miles of cross-track at 30 degrees needs about 11 miles of
-    # centreline, and if he does not have that he must be taken downwind to make
-    # some. Trying anyway is what produced an impossible intercept and then a
-    # sequence of contradictory turns.
-    # On the centreline but pointing across it: turn him ONTO the course. This
-    # branch is the difference between an approach and an orbit -- "established"
-    # requires him to be tracking inbound, so without it a man who arrives on the
-    # centreline pointing the wrong way can never become established, falls
-    # through to the pursuit below, aims at the join point he is already sitting
-    # on, and circles it indefinitely. Which is exactly what happened.
-    if on_centreline:
-        h = round(profile.final_crs)
-        return Guidance("vector", h, safe_alt(pos, profile), pos.range_nm, xtk,
-                        deviation, turn_direction(pos.heading_deg, h))
+    # Inside the gate but not established: there is no approach left to fly from
+    # here, so route him to the initial approach fix and start again from there.
+    # DIRECT TO THE FIX, not on a computed reciprocal: "fly outbound, angled
+    # toward the centreline" is a heuristic, and from due east it points
+    # straight across the airfield -- the simulation flew a man over the runway
+    # and called it a missed approach. A real fix fifteen miles out is a real
+    # place to send him, and the track to it clears the field on its own.
+    if along < gate:
+        return out("to the fix",
+                   bearing_between(pos.range_nm, pos.radial_deg,
+                                   gate, inbound_radial),
+                   safe_alt(pos, profile))
 
-    # Well off the centreline: aim at the JOIN POINT -- the place on the
-    # extended centreline where he should roll out, at the turn-on range. Aiming
-    # at a point rather than just closing the offset matters because closing it
-    # alone walks him toward the field as well, and he arrives on the course a
-    # mile out with no final left to fly.
-    #
-    # The join point is FIXED -- a little outside the turn-on range, on the
-    # centreline. Two earlier versions moved it and both failed in the air: one
-    # sat close enough that he overflew it, and the bearing to a point you are
-    # passing swings and then reverses, so he S-turned across the course; the
-    # other kept it ahead of him, which meant it receded as he chased it and
-    # walked him steadily outbound. A fixed point cannot recede, and once he is
-    # near the centreline the on-course branch above takes over before the
-    # pursuit gets close enough to be unstable.
-    join = profile.final_intercept_nm + JOIN_MARGIN_NM
-    h = round(bearing_between(pos.range_nm, pos.radial_deg, join,
-                              inbound_radial)) % 360
-    return Guidance("vector", h, safe_alt(pos, profile), pos.range_nm, xtk,
-                    deviation, turn_direction(pos.heading_deg, h))
+    # Outside the gate: close the centreline square, then turn 45 onto it.
+    if abs(xtk) > TURN_IN_NM:
+        return out("base", profile.final_crs - 90 * (1 if xtk > 0 else -1),
+                   safe_alt(pos, profile))
+    return out("intercept",
+               profile.final_crs - INTERCEPT_ANGLE * (1 if xtk > 0 else -1),
+               profile.iaf_alt_ft if getattr(profile, "iaf_alt_ft", 0)
+               else profile.platform_ft)
 
 
 def spoken_range(nm: float) -> str:
     """Range calls are whole miles on final -- 'six miles from the runway'."""
     words = ["zero", "one", "two", "three", "four", "five", "six", "seven",
-             "eight", "nine", "one zero"]
+             "eight", "nine", "one zero", "one one", "one two"]
     n = int(round(nm))
     return words[n] if n < len(words) else str(n)

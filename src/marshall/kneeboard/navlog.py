@@ -130,8 +130,10 @@ def build() -> str:
         f'<td style="text-align:left">{s.role.title()}</td></tr>'
         for i, s in enumerate(R.STATIONS))
 
-    msa = "".join(f"<td>{q}<br><b>{v:,}</b></td>"
-                  for q, v in R.BATUMI_FIELD.msa.items())
+    # The PUBLISHED sectors, which is what belongs on a chart the pilot reads.
+    # The lower vectoring minima are the controller's and are not briefed.
+    msa = "".join(f"<td>{int(lo):03d}&ndash;{int(hi):03d}<br><b>{v:,}</b></td>"
+                  for lo, hi, v in R.BATUMI_FIELD.msa_sectors)
 
     return f"""<title>362nd Nav Log</title>
 <style>{STYLE}</style>

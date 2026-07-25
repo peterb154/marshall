@@ -294,36 +294,62 @@ class TestStations(unittest.TestCase):
     def setUp(self):
         self.p = R.BATUMI_ASR
 
+    # Read the frequencies off the stations rather than hardcoding them: these
+    # tests broke the moment the numbers moved, which is noise, not signal.
+    def freq(self, role):
+        return self.p.station_for(role).freq_mhz
+
     def test_identity_by_frequency(self):
         # The bridge listens on every channel at once; the pilot must never be
         # able to hear that.
-        self.assertEqual(self.p.station_on(119.0).name, "Georgia Center")
-        self.assertEqual(self.p.station_on(120.0).name, "Batumi Approach")
-        self.assertEqual(self.p.station_on(131.0).name, "Batumi Tower")
+        for role in ("center", "approach", "tower"):
+            s = self.p.station_for(role)
+            self.assertEqual(self.p.station_on(s.freq_mhz).name, s.name)
 
     def test_an_unmanned_frequency_has_nobody_on_it(self):
-        # 124 is a leftover beacon, not a controller.
-        self.assertIsNone(self.p.station_on(124.0))
+        unused = 118.25
+        self.assertNotIn(unused, [s.freq_mhz for s in self.p.stations])
+        self.assertIsNone(self.p.station_on(unused))
+
+    def test_every_controller_is_tunable_by_a_period_set(self):
+        # These are the field's real published frequencies, not the airframe's
+        # stock buttons, so every one of them has to be WRITTEN into the
+        # mission's presets -- a period set has four buttons and no way to dial
+        # a frequency in the air. A preset write that silently fails leaves the
+        # aircraft unable to talk to anybody, which is how the Jugs spent a
+        # sortie mute. The band check is what keeps an untunable number out.
+        for s in self.p.stations:
+            self.assertGreaterEqual(s.freq_mhz, 100.0, s.name)   # SCR-522 VHF AM
+            self.assertLessEqual(s.freq_mhz, 156.0, s.name)
+            self.assertEqual(s.freq_mhz, round(s.freq_mhz, 3), s.name)
+
+    def test_the_mission_writes_a_preset_for_every_controller(self):
+        from marshall.mission import build as mb
+        presets = {mhz for _, mhz in mb.channels_for(self.p)}
+        for s in self.p.stations:
+            self.assertIn(s.freq_mhz, presets, f"{s.name} has no radio button")
 
     def test_center_keeps_him_while_he_is_far_out(self):
-        self.assertIsNone(self.p.handoff_from(119.0, 40))
+        self.assertIsNone(self.p.handoff_from(self.freq("center"), 40))
 
     def test_center_gives_him_to_approach_inside_the_boundary(self):
-        nxt = self.p.handoff_from(119.0, self.p.approach_hands_over_nm - 2)
+        nxt = self.p.handoff_from(self.freq("center"),
+                                  self.p.approach_hands_over_nm - 2)
         self.assertEqual(nxt.role, "approach")
 
     def test_approach_gives_him_to_tower_on_final(self):
-        nxt = self.p.handoff_from(120.0, self.p.final_intercept_nm - 2)
+        nxt = self.p.handoff_from(self.freq("approach"),
+                                  self.p.final_intercept_nm - 2)
         self.assertEqual(nxt.role, "tower")
 
     def test_approach_keeps_him_before_final(self):
-        self.assertIsNone(self.p.handoff_from(120.0, 25))
+        self.assertIsNone(self.p.handoff_from(self.freq("approach"), 25))
 
     def test_tower_hands_off_to_nobody(self):
-        self.assertIsNone(self.p.handoff_from(131.0, 3))
+        self.assertIsNone(self.p.handoff_from(self.freq("tower"), 3))
 
     def test_an_unmanned_frequency_hands_off_to_nobody(self):
-        self.assertIsNone(self.p.handoff_from(124.0, 10))
+        self.assertIsNone(self.p.handoff_from(118.25, 10))
 
 class TestTerrain(unittest.TestCase):
     """Vectoring on geometry alone will fly an aircraft into a mountain.
@@ -337,25 +363,35 @@ class TestTerrain(unittest.TestCase):
     def setUp(self):
         self.p = R.BATUMI_ASR
 
-    def test_quadrants_run_from_north(self):
-        # An offset version put 330 -- the sea, the one quadrant it is safe to
-        # be low in -- into the north-east bucket and its 8,400 ft of mountain.
-        self.assertEqual(R._quadrant(330), "NW")
-        self.assertEqual(R._quadrant(20), "NE")
-        self.assertEqual(R._quadrant(120), "SE")
-        self.assertEqual(R._quadrant(230), "SW")
+    def test_published_sectors_match_the_plate(self):
+        # AD 2.UGSB-IAC-12-ILSy: 7,000 from 217 clockwise through north to 038,
+        # 13,600 for the rest. An offset lookup put 330 -- the sea, the one
+        # bearing it is safe to be low on -- into the mountain bucket.
+        self.assertEqual(R.msa_for(330), 7000)
+        self.assertEqual(R.msa_for(20), 7000)
+        self.assertEqual(R.msa_for(120), 13600)
+        self.assertEqual(R.msa_for(230), 7000)
+
+    def test_vectoring_minima_are_below_the_published_msa(self):
+        # The published MSA is the pilot's lost-comms figure and is far too
+        # blunt to vector to: over the sea it is still 7,000, so honouring it
+        # would hold him four thousand feet above platform to the threshold.
+        for bearing in (300, 330, 350):
+            with self.subTest(bearing=bearing):
+                self.assertLess(R.mva_for(bearing), R.msa_for(bearing))
+        self.assertEqual(R.mva_for(330), 2000)   # open water
 
     def test_vectoring_over_terrain_is_above_the_msa(self):
-        for radial, quadrant in ((20, "NE"), (120, "SE"), (230, "SW")):
+        for radial in (20, 120, 230):
             with self.subTest(radial=radial):
                 g = asr.guide(asr.Position(15, radial, 5000, 200), self.p)
-                self.assertGreaterEqual(g.altitude_ft, self.p.msa[quadrant])
+                self.assertGreaterEqual(g.altitude_ft, R.mva_for(radial))
 
     def test_over_the_sea_he_is_not_held_high_by_terrain(self):
         # Nothing under him but water, so the only thing holding him up is the
         # descent profile, not the MSA.
         g = asr.guide(asr.Position(15, 330, 5000, 200), self.p)
-        self.assertLess(g.altitude_ft, self.p.msa["NE"])
+        self.assertLess(g.altitude_ft, R.mva_for(20))
 
     def test_he_reaches_platform_at_the_turn_on_and_not_before(self):
         # "No sense descending so early": platform at twenty miles means flying
@@ -387,10 +423,10 @@ class TestTerrain(unittest.TestCase):
     def test_the_final_is_flown_over_water(self):
         # The approach course itself lies north-west, which is why the descent
         # to minimums is safe at all.
-        self.assertEqual(R._quadrant((self.p.final_crs + 180) % 360), "NW")
+        self.assertEqual(R.mva_for((self.p.final_crs + 180) % 360), 2000)
 
     def test_a_profile_with_no_msa_still_works(self):
-        bare = dataclasses.replace(self.p, msa={})
+        bare = dataclasses.replace(self.p, msa_sectors=[], mva_sectors=[])
         self.assertEqual(bare.min_safe_ft(20), bare.platform_ft)
 
 if __name__ == "__main__":

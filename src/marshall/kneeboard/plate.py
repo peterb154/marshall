@@ -214,8 +214,10 @@ def build() -> str:
         f"<tr><td>Pony {i+1}</td><td><b>{ft:,}</b></td>"
         f"<td class='l'>{'first to approach' if i == 0 else f'step down as {i} vacates'}</td></tr>"
         for i, ft in enumerate(STACK_FT))
-    msa = "".join(f"<td>{q}<br><b>{v:,}</b></td>"
-                  for q, v in R.BATUMI_FIELD.msa.items())
+    # The PUBLISHED sectors, which is what belongs on a chart the pilot reads.
+    # The lower vectoring minima are the controller's and are not briefed.
+    msa = "".join(f"<td>{int(lo):03d}&ndash;{int(hi):03d}<br><b>{v:,}</b></td>"
+                  for lo, hi, v in R.BATUMI_FIELD.msa_sectors)
 
     return f"""<title>Batumi RWY {P.runway} - Beacon Approach</title>
 <style>{STYLE}</style>

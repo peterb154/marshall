@@ -38,6 +38,7 @@ OUT = config.MISSION_OUT / "362nd-Blind-Flying.miz"
 MISSIONS = config.DCS_MISSIONS
 
 FLIGHT_SIZE = 4
+JUG_CRUISE_MPH = 265        # the Thunderbolt is heavy; 220 stalls it
 RATE = 22050
 TONE_HZ = 1020.0
 DOT = 0.09
@@ -247,16 +248,23 @@ def build(weather: str = "light", traffic: bool = False,
     # a radio -- the beacon letdown was locked to the P-51D-30 because the ARA-8
     # homing adapter exists on no other airframe. These are here to fly the
     # approach and prove that.
+    # The Thunderbolt is a much heavier aeroplane than the Mustang, and spawning
+    # it at the Mustang's cruise put it on the edge of the stall. Give it its own
+    # number rather than sharing one that only suits the lighter airframe.
+    jug_ms = JUG_CRUISE_MPH * 0.44704
     jugs = m.flight_group(
         country=usa, name="Hammer", aircraft_type=P_47D_30, airport=None,
         position=Point(R.KOBULETI.x - 4000, R.KOBULETI.z - 4000, m.terrain),
-        altitude=alt_m, speed=cruise_ms, maintask=CAP,
+        altitude=alt_m, speed=jug_ms, maintask=CAP,
         start_type=StartType.Runway, group_size=2)
     jugs.frequency = R.APPROACH.freq_mhz
+    # Both places, every time: pydcs defaults route waypoints to 25 m/s and the
+    # unit's own spawn speed separately, and a Mustang -- or a Jug -- stalls off
+    # the spawn if either is left alone.
     for p in jugs.points:
-        p.alt, p.speed = alt_m, cruise_ms
+        p.alt, p.speed = alt_m, jug_ms
     for n, unit in enumerate(jugs.units, start=1):
-        unit.alt, unit.speed = alt_m, cruise_ms
+        unit.alt, unit.speed = alt_m, jug_ms
         unit.name = f"Hammer 1-{n}"
         unit.set_client()
     set_channels(jugs)
@@ -316,6 +324,22 @@ def build(weather: str = "light", traffic: bool = False,
 PRESET_PATHS = {P_51D_30_NA.id: "VHF_RADIO", P_47D_30.id: "VHF_RADIO"}
 
 
+def channels_for(profile=None) -> list[tuple[int, float]]:
+    """The radio card: (button, frequency) for this approach's controllers.
+
+    One function so the mission, the kneeboard and the tests cannot disagree
+    about what is on button two -- a mismatch there is a pilot transmitting to
+    nobody, and it has happened. Derived from the profile's own station list,
+    so a different field simply produces a different card.
+    """
+    profile = profile or R.BATUMI_ASR
+    stations = list(getattr(profile, "stations", None) or R.STATIONS)
+    freqs = [s.freq_mhz for s in stations[:4]]
+    while len(freqs) < 4:                       # pad the unused buttons
+        freqs.append(freqs[-1] if freqs else 124.0)
+    return list(enumerate(freqs, start=1))
+
+
 def set_channels(group) -> None:
     """Write the controller frequencies into a group's radio presets.
 
@@ -326,12 +350,9 @@ def set_channels(group) -> None:
     what left the Jugs with the stock 105/124/139/131 presets while the
     kneeboard said 119/120/131.
     """
-    freqs = [s.freq_mhz for s in R.STATIONS[:4]]
-    while len(freqs) < 4:                       # pad the unused buttons
-        freqs.append(freqs[-1])
     for unit in group.units:
         unit.set_radio_preset()                 # start from the airframe default
-        for ch, mhz in enumerate(freqs, start=1):
+        for ch, mhz in channels_for():
             try:
                 unit.set_radio_channel_preset(1, ch, mhz)
             except (TypeError, KeyError):

@@ -71,15 +71,58 @@ FIXES = [KOBULETI, INITIAL, BATUMI]
 LEGS = [(KOBULETI, INITIAL), (INITIAL, BATUMI)]
 
 
-def _quadrant(bearing_deg: float) -> str:
-    """Which MSA quadrant a bearing points into.
+# The AIP publishes minimum safe altitude as TWO sectors around the LU NDB, not
+# four quadrants: 7,000 ft from 217 degrees round through north to 038, and
+# 13,600 ft from 038 round through south to 217. Published and conservative, and
+# two sectors removes a whole class of bug -- a 45-degree error in a four-
+# quadrant lookup once put 330 (the sea, the one place it is safe to be low)
+# into the mountain sector.
+# Two different minimum altitudes, and conflating them grounds the approach.
+#
+# **MSA** is published, on the plate, and is the PILOT's number: the lowest he
+# may descend to inside 25 nm if he loses everything. Batumi's is 7,000 to the
+# north through west and 13,600 the rest of the way round. It is deliberately
+# blunt -- one figure for a whole sector of a 25-mile circle, sized by the
+# highest thing in it.
+#
+# **MVA** is the CONTROLLER's number: the lowest he may ASSIGN while vectoring.
+# It is lower, because he knows exactly where the aircraft is and only has to
+# clear the ground actually underneath it. Vectoring to the published MSA
+# instead reads as safety and is not: Batumi's final is flown over open water
+# where the MSA is still 7,000, so honouring it holds the aircraft four
+# thousand feet above the platform until it is over the threshold. An earlier
+# build did exactly that and assigned 11,700 to an aeroplane at 250 feet.
+#
+# Sectors are (from_bearing, to_bearing, altitude), clockwise, and may wrap.
+MSA_SECTORS = [(217.0, 38.0, 7000), (38.0, 217.0, 13600)]
 
-    The four sectors run from north: 0-90 NE, 90-180 SE, 180-270 SW, 270-360 NW.
-    An earlier version offset them by 45 degrees, which put 330 -- the sea, the
-    only quadrant it is safe to be low in -- into the north-east bucket and its
-    8,400 ft of mountain.
-    """
-    return ("NE", "SE", "SW", "NW")[int((bearing_deg % 360) // 90)]
+# Surveyed 2026-07-24: highest ground per quadrant, plus a thousand feet of
+# buffer, rounded up. North-west is open sea, so vectoring there is limited by
+# the descent profile and nothing else.
+MVA_SECTORS = [(0.0, 90.0, 9500),     # 8,400 of Caucasus
+               (90.0, 180.0, 13000),  # 11,700 -- the high ground
+               (180.0, 270.0, 8500),  # 7,500
+               (270.0, 360.0, 2000)]  # the sea
+
+
+def alt_for(bearing_deg: float, sectors) -> int:
+    """Look a bearing up in a sector table. Sectors may wrap through north."""
+    b = bearing_deg % 360
+    for lo, hi, alt in sectors:
+        inside = (lo <= b < hi) if lo < hi else (b >= lo or b < hi)
+        if inside:
+            return alt
+    return max(a for _, _, a in sectors)
+
+
+def msa_for(bearing_deg: float, sectors=None) -> int:
+    """Published minimum sector altitude -- what the PILOT is briefed."""
+    return alt_for(bearing_deg, sectors or MSA_SECTORS)
+
+
+def mva_for(bearing_deg: float, sectors=None) -> int:
+    """Minimum vectoring altitude -- the lowest a CONTROLLER may assign."""
+    return alt_for(bearing_deg, sectors or MVA_SECTORS)
 
 
 @dataclass
@@ -104,20 +147,21 @@ class Station:
     voice: str = "Matthew"
 
 
-# Batumi's VHF-high is 131.000 in DCS -- the frequency the in-game field ATC
-# actually uses, so Tower gets it. Center and Approach take free slots in the
-# SCR-522's 100-156 AM band: every Caucasus airfield occupies 121-141 at 1 MHz
-# spacing, and 121.500 is guard, so the clear air is below 121.
+# From the Batumi AIP (AD 2.UGSB-IAC-12-ILSy): APP 124.425, TWR 118.600 --
+# rounded to whole megahertz, because a WW2 set tunes crystal channels and
+# quarter-megahertz spacing is a jet-age convention. Approach lands on 124.000,
+# which is also one of the stock preset channels both WW2 airframes ship with,
+# so it works even where a preset override does not apply.
+#
+# There is no published Center for the region, so Georgia Center keeps a stock
+# channel and is the one frankly invented number here.
 #
 # CENTER IS NOT A FIELD'S CONTROLLER. Approach and Tower belong to an aerodrome;
-# a Center owns a region and hands you between aerodromes, so there is one of
-# them for the whole theatre rather than one per airfield. Every field's profile
-# points at this same station -- which is also what makes an enroute handoff
-# mean something later: leaving Batumi's airspace gives you back to the same man
-# who will pass you to Kobuleti.
-CENTER = Station("Georgia Center", 119.000, "center", voice="Brian")
-APPROACH = Station("Batumi Approach", 120.000, "approach", voice="Matthew")
-TOWER = Station("Batumi Tower", 131.000, "tower", voice="Joey")
+# a Center owns a region and hands you between aerodromes, so there is one for
+# the whole theatre rather than one per airfield.
+CENTER = Station("Georgia Center", 139.000, "center", voice="Brian")
+APPROACH = Station("Batumi Approach", 124.000, "approach", voice="Matthew")
+TOWER = Station("Batumi Tower", 118.000, "tower", voice="Joey")
 
 STATIONS = [CENTER, APPROACH, TOWER]
 
@@ -129,22 +173,23 @@ class Field_:
     z: float
     elevation_ft: int
     runway: int             # landing heading, magnetic
-    msa: dict[str, int] = field(default_factory=dict)
+    msa_sectors: list = field(default_factory=list)   # published, the pilot's
+    mva_sectors: list = field(default_factory=list)   # surveyed, the controller's
     note: str = ""
 
     def msa_for(self, bearing_deg: float) -> int:
-        """Minimum safe altitude in the quadrant this bearing points into."""
-        if not self.msa:
-            return 0
-        return self.msa.get(_quadrant(bearing_deg), max(self.msa.values()))
+        """Published MSA -- briefed, charted, and not for vectoring."""
+        return msa_for(bearing_deg, self.msa_sectors or None)
+
+    def mva_for(self, bearing_deg: float) -> int:
+        """The lowest a controller may assign an aircraft on this bearing."""
+        return mva_for(bearing_deg, self.mva_sectors or None)
 
 
-# MSAs measured by the terrain survey, 2026-07-24: highest ground per quadrant
-# within 25 nm, plus 1000 ft. The NW quadrant is open sea, which is why the
-# entire procedure lives there.
 BATUMI_FIELD = Field_(
     "Batumi", -355811, 617386, 32, 124,
-    msa={"NW": 1000, "NE": 8400, "SE": 11700, "SW": 7500},
+    msa_sectors=list(MSA_SECTORS),
+    mva_sectors=list(MVA_SECTORS),
     note="Highest terrain 10,623 ft at 23 nm SE. Missed approach turns LEFT.")
 
 
@@ -216,9 +261,29 @@ class ApproachProfile:
     # nothing in the cockpit but a radio, so it works in any aeroplane -- unlike
     # the beacon letdown, which needs the ARA-8 and therefore a P-51D-30.
     kind: str = "ndb"               # "ndb" (pilot navigates) | "asr" (ATC does)
-    final_intercept_nm: float = 8.0  # rolled out on final by here
+    # From the AIP plate. IF: established on the course, level, by 11 nm. FAP:
+    # 6 nm, still 2,000 -- the descent begins HERE, not at the IF. The segment
+    # between them is deliberately level, which is what makes the approach
+    # flyable; a single gradient from the gate has him descending the whole way.
+    final_intercept_nm: float = 11.0     # the IF -- established by here
+    fap_nm: float = 6.0                  # descent begins
     map_nm: float = 0.6             # missed approach point, range from the field
-    approach_hands_over_nm: float = 20.0   # Center gives him to Approach here
+    approach_hands_over_nm: float = 25.0   # Center gives him to Approach here
+    # The initial approach fix: where he must be established, on course and at
+    # iaf_alt_ft, before the approach proper begins. A published fix rather than
+    # a computed one -- the vectoring used to aim at a "join point" it invented
+    # and moved, which is how a pilot ended up being turned away from the field,
+    # orbiting, and vectored out to sea on three separate sorties.
+    iaf: Fix | None = None
+    iaf_alt_ft: int = 2000
+    field_thr_elev_ft: int = 0   # runway threshold, which is lower than the ARP
+
+    # The real published chart this profile is transcribed from, if we have it.
+    # Scanned plate under kneeboard/plates/, and the chart's own name so a
+    # disagreement can be traced back to a page of a real document. Optional:
+    # a field with no scan still flies, it just has no scan on the kneeboard.
+    plate_png: str = ""
+    chart_name: str = ""
     # Minimum safe altitude per quadrant around the field. Vectoring is done at
     # platform, and platform is only safe where the ground is low -- at Batumi
     # that is the sea to the north-west and nowhere else. A controller who
@@ -226,13 +291,20 @@ class ApproachProfile:
     # thousand feet of Caucasus at two thousand, which is exactly what a pilot
     # caught in flight: "he's going to fly me into the mountains here, if I were
     # IMC right now."
-    msa: dict[str, int] = field(default_factory=dict)
+    msa_sectors: list = field(default_factory=list)
+    mva_sectors: list = field(default_factory=list)
 
     def min_safe_ft(self, bearing_deg: float) -> int:
-        """The lowest altitude that may be assigned out on this bearing."""
-        if not self.msa:
-            return self.platform_ft
-        return max(self.platform_ft, self.msa.get(_quadrant(bearing_deg), 0))
+        """The lowest altitude that may be ASSIGNED out on this bearing.
+
+        The MVA, not the published MSA -- see the note on the two tables above.
+        Never below platform, since platform is the approach's own floor.
+        """
+        return max(self.platform_ft, mva_for(bearing_deg, self.mva_sectors or None))
+
+    def briefed_msa_ft(self, bearing_deg: float) -> int:
+        """The published figure, for the plate and for what the pilot is told."""
+        return msa_for(bearing_deg, self.msa_sectors or None)
     # The controllers who work this approach, enroute inwards. Empty falls back
     # to the beacon-derived stations the NDB letdown uses.
     stations: list[Station] = field(default_factory=list)
@@ -459,9 +531,24 @@ BATUMI_ASR = ApproachProfile(
     runway="13",
     platform_ft=2000,
     ceiling_ft=400,
-    final_intercept_nm=8.0,
+    final_intercept_nm=11.0,     # IF, per the AIP plate
+    fap_nm=6.0,                  # FAP -- descent begins
     map_nm=0.6,
-    msa=dict(BATUMI_FIELD.msa),
+    msa_sectors=list(BATUMI_FIELD.msa_sectors),
+    mva_sectors=list(BATUMI_FIELD.mva_sectors),
+    # The vectoring gate. NOT the published IAF: the real plate's IAF is the LU
+    # NDB *overhead the field* at 7,000, from which the pilot flies a racetrack
+    # reversal outbound on 304 and comes back inbound on 124. Under radar
+    # nobody flies that reversal -- the controller's whole job is to replace it,
+    # putting the aircraft on the 124 inbound already established. So the gate
+    # we vector to is a point on that inbound course, 15.0 nm out on the 304
+    # radial: four miles beyond the published IF, over open water, which is the
+    # roll-out room a standard-rate turn needs to be steady by the IF.
+    iaf=INITIAL,
+    iaf_alt_ft=2000,
+    plate_png="ugsb-ils-12.png",
+    chart_name="AD 2.UGSB-IAC-12-ILSy, AIRAC AMDT 02/2023",
+    field_thr_elev_ft=17,        # threshold elevation, per the plate
     # Radar-equipped and radar-separated: the handicaps that defined the beacon
     # letdown do not apply to a procedure the controller flies for you.
     atc=AtcCapability(radar=True, dme=False, separation="radar", era="ww2"),

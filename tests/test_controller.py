@@ -269,8 +269,9 @@ class TestProfileRoundTrip(unittest.TestCase):
         self.assertTrue(rt.stations)
         for s in rt.stations:
             self.assertIsInstance(s, R.Station)
-        self.assertEqual(rt.station(), ("Batumi Tower", 131.0))
-        self.assertEqual(rt.station(enroute=True), ("Georgia Center", 119.0))
+        twr, ctr = R.TOWER, R.CENTER
+        self.assertEqual(rt.station(), (twr.name, twr.freq_mhz))
+        self.assertEqual(rt.station(enroute=True), (ctr.name, ctr.freq_mhz))
 
     def test_a_round_tripped_profile_can_still_pick_a_channel(self):
         # The failure this guards: a dict left in arrival_fix passes every other

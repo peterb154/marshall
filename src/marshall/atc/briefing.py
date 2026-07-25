@@ -70,45 +70,29 @@ def _channels(profile: R.ApproachProfile) -> list[str]:
 
 
 def _formation(flight: str, size: int, profile: R.ApproachProfile) -> list[str]:
-    """The formation block: who is expected, and how a flight gets handled.
+    """How to handle a formation. Deliberately says nothing about WHICH one.
 
-    Generated rather than written into the prompt, because the break-up levels
-    are the stack's business and the stack is data. If the hold base moves, this
-    moves with it, and the controller never briefs a level the engine will not
-    assign."""
-    from marshall.atc import callsign as C
-
-    lead = C.parse(flight)
-    if size <= 1:
-        return [f"- Expected inbound: **{lead.spoken}**, single ship (any pilot "
-                "may call with his own callsign; correlate by position)."]
-    members = lead.members(size)
-    ladder = ", ".join(
-        f"{C.parse(m).spoken} {ft}"
-        for m, ft in zip(members, profile.stack_ft))
-    # The FLIGHT is addressed without a member number: lead is "Pony one one",
-    # but all four of them together are "Pony one flight".
-    as_flight = C.Callsign(lead.flight).spoken_flight
+    This block used to name the flight the mission expected -- callsign, size,
+    every member -- which reads as "this is who is coming" and taught the
+    controller to expect one aeroplane in particular. A pilot noticed the
+    consequence immediately: Center greeted him already knowing where he was
+    going. The plate describes the FIELD and its procedures; who turns up, in
+    what, going where, is theirs to say and the controller's to ask.
+    """
+    ladder = ", ".join(f"{ft}" for ft in profile.stack_ft[:4])
     return [
-        f"- Expected inbound: **{as_flight}**, a **{size}-ship** "
-        f"({', '.join(C.parse(m).spoken for m in members)}). Any pilot may call "
-        "with his own callsign; correlate by position, don't assume this one.",
-        f"- **Work a formation as ONE aircraft** while it is together: one "
-        f"clearance, one altitude, lead answers for all of them. Address it "
-        f"\"{as_flight}\". A wingman who transmits is the flight talking "
-        "— do not start a second conversation with him.",
-        f"- **Break them up at the holding fix**, into individually-sequenced "
-        "singles. You do not hold a formation through a letdown. After the "
-        "break-up they are ordinary singles and you use their own callsigns.",
-        "- **Ask first: \"can you maintain visual separation between your "
-        "aircraft?\"** In visual conditions they may break up inside ONE holding "
-        f"level, in trail — all {size} at {profile.hold_base_ft} — because the "
-        "pilots can see each other and keep themselves apart. That is quicker "
-        "and it is what they will usually want.",
-        f"- **In cloud, you separate them yourself** — a level each, lead lowest "
-        f"so he lands first: {ladder}.",
+        "- **A formation is ONE aircraft to you while it is together**: one "
+        "clearance, one altitude, lead answers for all of them. Address it as "
+        "a flight. A wingman who transmits is the flight talking — do not open "
+        "a second conversation with him.",
+        "- **Break a flight up before the approach**, into individually-"
+        "sequenced singles. Ask first whether they can maintain visual "
+        "separation: in visual conditions they may split inside ONE level, in "
+        "trail; in cloud you separate them yourself, a level each, lead lowest "
+        f"so he lands first (the ladder is {ladder}). Never assume — assuming "
+        "they can see each other puts several aeroplanes on one level in cloud.",
+        "- After the break-up they are ordinary singles on their own callsigns.",
     ]
-
 
 def _asr_plate(profile: R.ApproachProfile, flight: str, size: int) -> str:
     """The facts for a surveillance-radar approach.
