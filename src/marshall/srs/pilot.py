@@ -56,10 +56,9 @@ def run(host: str, freq_mhz: float, voice_id: str = "Joey",
         if pcm is None or not pcm.size:
             print("  ATC(heard): <no reply>", flush=True)
         else:
-            segs, _ = model.transcribe(pcm.astype(np.float32) / 32768.0,
-                                       language="en")
-            heard = " ".join(s.text for s in segs).strip()
-            print(f"  ATC(heard): {heard}", flush=True)
+            # stt.transcribe, not a hand-rolled call: it carries the domain prompt
+            # that keeps Whisper from turning "Batumi" into "But to me".
+            print(f"  ATC(heard): {stt.transcribe(model, pcm)}", flush=True)
         time.sleep(1.5)                                   # brief beat between calls
     print("synthetic pilot: script complete", flush=True)
 
