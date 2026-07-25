@@ -308,7 +308,12 @@ def build(weather: str = "light", traffic: bool = False,
 # Aircraft whose VHF preset FILE we know how to write. The Avionics override is
 # the belt; panel_radio below is the braces, and it is the one that works for
 # every airframe.
-PRESET_PATHS = {P_51D_30_NA.id: "VHF_RADIO"}
+# Both are four-channel WW2 VHF sets and DCS reads the same per-unit override
+# path for each. The Jug was missing from this map, so it silently kept the
+# stock 105/124/139/131 while the kneeboard said 119/120/131 -- and "silently"
+# is the problem: nothing anywhere reported that a listed aircraft had been
+# skipped.
+PRESET_PATHS = {P_51D_30_NA.id: "VHF_RADIO", P_47D_30.id: "VHF_RADIO"}
 
 
 def set_channels(group) -> None:
@@ -352,10 +357,19 @@ def write_presets(miz: Path, slots: list[tuple[int, str]]) -> None:
     with zipfile.ZipFile(miz) as zf:
         blobs = {n: zf.read(n) for n in zf.namelist()}
     blobs.setdefault("theatre", b"Caucasus")     # pydcs omits it
+    wrote, skipped = {}, {}
     for uid, kind in slots:
         radio = PRESET_PATHS.get(kind)
         if radio:
             blobs[f"Avionics/{kind}/{uid}/{radio}/SETTINGS.lua"] = body.encode("utf-8")
+            wrote[kind] = wrote.get(kind, 0) + 1
+        else:
+            skipped[kind] = skipped.get(kind, 0) + 1
+    for kind, n in wrote.items():
+        print(f"  presets written for {n} x {kind}")
+    for kind, n in skipped.items():
+        print(f"  !! NO preset file for {n} x {kind} -- it will fly on the "
+              f"airframe defaults")
     with zipfile.ZipFile(miz, "w", zipfile.ZIP_DEFLATED) as zf:
         for n, data in blobs.items():
             zf.writestr(n, data)
