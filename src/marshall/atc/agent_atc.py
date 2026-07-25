@@ -179,6 +179,96 @@ def _get_json(url: str, timeout: float = 6.0) -> dict:
         return json.load(resp)
 
 
+def _post_json(url: str, obj: dict, timeout: float = 6.0) -> dict:
+    req = urllib.request.Request(url, data=json.dumps(obj).encode(), method="POST",
+                                 headers={"content-type": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.load(resp)
+
+
+# ---- the one aircraft state -------------------------------------------------
+#
+# Every write here is something a controller and a pilot AGREED. Nothing in this
+# section may write a position: that is what the radar is for, and keeping a
+# second copy of it is the bug the table exists to kill.
+#
+# Failures are swallowed on purpose. The state store makes the controller
+# better, and it must never make him mute -- an aeroplane on final does not care
+# that Postgres is unreachable, and a bridge that raises here would stop talking
+# at the worst possible moment.
+
+MISSION = os.environ.get("MARSHALL_MISSION", "default")
+APPROACH_NAME = ""              # set when the active flight plan is loaded
+
+# The separation engine's own phase names, mapped onto the official phase list
+# in atc/phases.py. Two vocabularies for one idea is how three components ended
+# up disagreeing about what was happening; this is the seam where the older one
+# is translated rather than allowed to spread.
+_PHASE_OF = {
+    "UNKNOWN": "unknown", "ENROUTE": "enroute", "HOLDING": "holding",
+    "CLEARED": "approach", "MISSED": "missed", "BANISHED": "holding",
+    "LANDED": "landed",
+}
+
+
+def flight_bind(base: str = BASE_URL, **names) -> dict:
+    """Attach a name to an aeroplane; create the row if it is the first one."""
+    try:
+        return _post_json(f"{base}/flights/bind", {"mission": MISSION, **names})
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
+        print(f"  !! flight bind failed: {e}", flush=True)
+        return {}
+
+
+def flight_agree(flight_id: int, base: str = BASE_URL, **fields) -> dict:
+    """Record what was agreed: a clearance, a level, a place in the queue."""
+    if not flight_id:
+        return {}
+    try:
+        return _post_json(f"{base}/flights/{flight_id}/agree", fields)
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
+        print(f"  !! flight agree failed: {e}", flush=True)
+        return {}
+
+
+def flight_handoff(flight_id: int, to: str, base: str = BASE_URL) -> dict:
+    """Give him to the next controller, with everything we know attached."""
+    if not flight_id:
+        return {}
+    try:
+        return _post_json(f"{base}/flights/{flight_id}/handoff", {"to": to})
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
+        print(f"  !! flight handoff failed: {e}", flush=True)
+        return {}
+
+
+def flight_strip(f: dict) -> str:
+    """The row as a controller would read a paper strip.
+
+    This is what a handoff actually delivers, and the reason the table earns its
+    place: the next controller starts knowing where he is going and what he was
+    cleared to, instead of interrogating a pilot who has already answered.
+    """
+    if not f:
+        return ""
+    bits = [f.get("callsign") or "unidentified"]
+    if f.get("claimed_size", 1) and f["claimed_size"] > 1:
+        bits.append(f"flight of {f['claimed_size']}")
+    if f.get("intent") or f.get("destination"):
+        bits.append(f"{f.get('intent') or 'inbound'} "
+                    f"{f.get('destination') or ''}".strip())
+    if f.get("procedure"):
+        bits.append(f"on the {f['procedure']}"
+                    + (f" runway {f['runway']}" if f.get("runway") else ""))
+    if f.get("cleared") and f["cleared"] != "unknown":
+        bits.append(f"cleared: {f['cleared']}")
+    if f.get("assigned_ft"):
+        bits.append(f"assigned {f['assigned_ft']:,} ft")
+    if f.get("promised"):
+        bits.append(f"we promised: {f['promised']}")
+    return "STRIP: " + ", ".join(b for b in bits if b) + "."
+
+
 def load_and_push_plate(profile, base: str = BASE_URL):
     """Seed this field's approach + a flight plan that flies it from route.py
     (idempotent bootstrap), then generate the plate from the ACTIVE flight plan's
@@ -197,6 +287,10 @@ def load_and_push_plate(profile, base: str = BASE_URL):
                    "active": True})
         fp = _get_json(f"{base}/flightplan/active")
         if fp.get("approach"):
+            # Remember which procedure this is, so a flight's row can say what
+            # it was cleared FOR and not merely that it was cleared.
+            global APPROACH_NAME
+            APPROACH_NAME = fp["approach"].get("name") or APPROACH_NAME
             profile = R.profile_from_dict(fp["approach"]["data"])
             print(f"  loaded flight plan '{fp['name']}' -> approach "
                   f"'{fp['approach']['name']}'", flush=True)
@@ -817,9 +911,25 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # no deterministic picture at all.
         vectoring = asr_context(profile, scope, known)
 
+        # The one aircraft state. Bind whatever names we have -- the radio GUID
+        # always, the callsign once he says it, the track once radar ties them
+        # together -- and remember the row so what is agreed can be written
+        # against it. Identity arrives in pieces and this is where they are
+        # joined.
+        # The track name only goes in once radar has actually tied the callsign
+        # to a blip -- binding a guess would attach one aeroplane's history to
+        # another's, which is worse than being unidentified.
+        _fix = radar_fix(scope, known) if known else None
+        _flight = flight_bind(
+            srs_guid=client.last_sender_guid or None,
+            srs_name=srs or None,
+            callsign=known or None,
+            track_name=known if _fix is not None else None,
+        ) if (client.last_sender_guid or known) else {}
+        _fid = _flight.get("id")
+
         # One aeroplane, one instruction. Decide here which authority owns him
         # rather than handing the agent three and hoping -- see reconcile().
-        _fix = radar_fix(scope, known) if known else None
         _g = asr.guide(_fix, profile) if _fix is not None else None
         directive, stack, vectoring, dropped = reconcile(
             directive, stack, vectoring, _g)
@@ -831,6 +941,30 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             record(session_id, kind="asr", callsign=known, text=vectoring)
         if directive:
             record(session_id, kind="controller", text=directive)
+
+        # Write down what was AGREED, so the next controller inherits it and so
+        # the gap between it and the scope can be seen. Read off the engine that
+        # made the decision rather than parsed back out of English -- the words
+        # are for the pilot, the row is for us, and re-reading our own prose
+        # would be a second chance to get it wrong.
+        if _fid:
+            _ac = ctl.get(known) if known else None
+            _agreed = {}
+            if _ac is not None:
+                _agreed["cleared"] = _PHASE_OF.get(_ac.phase.name, "unknown")
+                if _ac.assigned_ft:
+                    _agreed["assigned_ft"] = int(_ac.assigned_ft)
+                if getattr(_ac, "size", 1) > 1:
+                    _agreed["claimed_size"] = int(_ac.size)
+            if _g is not None and _g.phase in ("final", "map"):
+                _agreed["cleared"] = "approach"
+            elif _g is not None and _g.phase == "missed":
+                _agreed["cleared"] = "missed"
+            if APPROACH_NAME:
+                _agreed.setdefault("procedure", APPROACH_NAME)
+                _agreed.setdefault("runway", profile.runway or None)
+            if _agreed:
+                flight_agree(_fid, **_agreed)
 
         # A debug note: record it and stay off the air entirely. The pilot is
         # talking to the project, not to the controller.
@@ -869,6 +1003,12 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             f"every other call from {known} -- keep them together."
             if known else
             "TRANSMITTER: a radio you have not identified yet.")
+        _strip = flight_strip(_flight)
+        if _strip:
+            parts.append(
+                _strip + " This is what is already known about him and it "
+                "carries across a handoff -- do not ask him again for anything "
+                "in it.")
         if directive:
             parts.append("CONTROLLER (deterministic next step of the approach — "
                          "voice its altitudes, headings and sequence exactly, add "

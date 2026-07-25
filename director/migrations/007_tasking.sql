@@ -89,7 +89,12 @@ COMMENT ON COLUMN flights.cleared IS
 -- rather than false when no specific target was named, because "no target" and
 -- "target destroyed" are different answers and collapsing them would let an
 -- overlord congratulate a flight for a kill nobody made.
-CREATE OR REPLACE VIEW tasking_state AS
+-- Dropped and recreated rather than REPLACEd: a later migration adds columns
+-- to the underlying table, and `SELECT f.*` then changes this view's column
+-- ORDER, which CREATE OR REPLACE refuses. Migrations have to be replayable
+-- from nothing in sequence, and this one was not.
+DROP VIEW IF EXISTS tasking_state;
+CREATE VIEW tasking_state AS
 SELECT k.*,
        f.callsign,
        f.controller,

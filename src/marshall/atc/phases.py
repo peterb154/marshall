@@ -42,6 +42,17 @@ class Phase:
 
 # The order is the order a sortie happens in, which is the order to read it.
 PHASES: dict[str, Phase] = {p.name: p for p in (
+    # There are two ways into the system and this is the other one. A pilot may
+    # simply call up, with no plan filed and nothing known about him -- which is
+    # how every sortie has begun so far. Declaring it keeps it an honest state
+    # rather than a gap: he exists, he is on the radio, and we have not yet
+    # learned what he wants.
+    Phase("unknown", owner="", aims_at="none",
+          follows=("enroute", "clearance", "taxi", "arrival", "holding",
+                   "approach"),
+          note="Heard on the radio and nothing more. Ask his intentions; never "
+               "assume them."),
+
     Phase("filed", owner="", aims_at="none",
           follows=("clearance", "taxi", "enroute"),
           note="A plan exists and there is no aeroplane yet. Nobody works him."),

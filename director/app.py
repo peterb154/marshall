@@ -191,6 +191,52 @@ def put_flightplan_endpoint(name: str, body: dict) -> dict:
     return {"ok": True, "name": name}
 
 
+# The one aircraft state. Who he is, what he wants, what he is doing -- and
+# deliberately never where he is, which is what `tracks` is for. See
+# tools/flights.py and migrations/004_flights.sql.
+@app.get("/flights")
+def flights_endpoint(mission: str = "default",
+                     controller: str = "") -> dict:
+    from tools import flights as F
+    return {"flights": F.working(mission, controller or None)}
+
+
+@app.post("/flights/bind")
+def flights_bind_endpoint(body: dict) -> dict:
+    """Attach a name to an aeroplane. Safe to call with partial information and
+    safe to repeat -- which is how identity actually arrives."""
+    from tools import flights as F
+    mission = body.pop("mission", "default")
+    return F.bind(mission, **body)
+
+
+@app.post("/flights/{flight_id}/agree")
+def flights_agree_endpoint(flight_id: int, body: dict) -> dict:
+    """Record something that was AGREED. The only way state changes."""
+    from tools import flights as F
+    return F.agree(flight_id, **body) or {}
+
+
+@app.post("/flights/{flight_id}/handoff")
+def flights_handoff_endpoint(flight_id: int, body: dict) -> dict:
+    from tools import flights as F
+    return F.hand_off(flight_id, body["to"]) or {}
+
+
+@app.get("/flights/due-handoff")
+def flights_due_handoff_endpoint(mission: str = "default") -> dict:
+    """Inside one controller's airspace, on another's frequency."""
+    from tools import flights as F
+    return {"due": F.due_handoff(mission)}
+
+
+@app.delete("/flights")
+def flights_clear_endpoint(mission: str = "default") -> dict:
+    """Forget the last sortie. Stale aircraft are worse than none."""
+    from tools import flights as F
+    return {"deleted": F.clear_mission(mission)}
+
+
 @app.get("/flightplan/active")
 def active_flightplan_endpoint() -> dict:
     return active_flight_plan() or {}

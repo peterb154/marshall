@@ -140,7 +140,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS flights_track
 -- Agreed and observed, side by side, which is the whole point. A flight with no
 -- radar track still appears: on the radio and unidentified is a real state, and
 -- it must not vanish from the picture just because we cannot see him.
-CREATE OR REPLACE VIEW flight_state AS
+-- Dropped and recreated rather than REPLACEd: a later migration adds columns
+-- to the underlying table, and `SELECT f.*` then changes this view's column
+-- ORDER, which CREATE OR REPLACE refuses. Migrations have to be replayable
+-- from nothing in sequence, and this one was not.
+DROP VIEW IF EXISTS flight_state;
+CREATE VIEW flight_state AS
 SELECT f.*,
        t.geog,
        t.alt_ft    AS observed_alt_ft,

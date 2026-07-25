@@ -68,7 +68,12 @@ CREATE INDEX IF NOT EXISTS flights_sector ON flights (mission, controller);
 -- from `controller`, a handoff is due -- that comparison is the whole point and
 -- it is deliberately not made here, because whether to act on it is a
 -- controller's judgement and not a view's.
-CREATE OR REPLACE VIEW flight_airspace AS
+-- Dropped and recreated rather than REPLACEd: a later migration adds columns
+-- to the underlying table, and `SELECT f.*` then changes this view's column
+-- ORDER, which CREATE OR REPLACE refuses. Migrations have to be replayable
+-- from nothing in sequence, and this one was not.
+DROP VIEW IF EXISTS flight_airspace;
+CREATE VIEW flight_airspace AS
 SELECT f.id,
        f.mission,
        f.callsign,

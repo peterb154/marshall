@@ -26,9 +26,11 @@ class TestTheTableIsCoherent(unittest.TestCase):
         for name in ("filed", "clearance", "taxi", "landed"):
             self.assertEqual(phases.get(name).aims_at, "none")
 
-    def test_the_whole_sortie_is_reachable_from_filed(self):
-        # Nothing stranded: a sortie can get from a filed plan to landed.
-        seen, stack = set(), ["filed"]
+    def test_the_whole_sortie_is_reachable_from_an_entry_point(self):
+        # Two ways in, both real: a plan is filed before the aeroplane exists,
+        # or a pilot simply calls up and we know nothing. Nothing stranded from
+        # either.
+        seen, stack = set(), ["filed", "unknown"]
         while stack:
             cur = stack.pop()
             if cur in seen:
