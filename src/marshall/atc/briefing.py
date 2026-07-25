@@ -47,8 +47,44 @@ def _mmss(sec: float) -> str:
     return f"{m} minutes {s} seconds"
 
 
+def _formation(flight: str, size: int, profile: R.ApproachProfile) -> list[str]:
+    """The formation block: who is expected, and how a flight gets handled.
+
+    Generated rather than written into the prompt, because the break-up levels
+    are the stack's business and the stack is data. If the hold base moves, this
+    moves with it, and the controller never briefs a level the engine will not
+    assign."""
+    from marshall.atc import callsign as C
+
+    lead = C.parse(flight)
+    if size <= 1:
+        return [f"- Expected inbound: **{lead.spoken}**, single ship (any pilot "
+                "may call with his own callsign; correlate by position)."]
+    members = lead.members(size)
+    ladder = ", ".join(
+        f"{C.parse(m).spoken} {ft}"
+        for m, ft in zip(members, profile.stack_ft))
+    # The FLIGHT is addressed without a member number: lead is "Pony one one",
+    # but all four of them together are "Pony one flight".
+    as_flight = C.Callsign(lead.flight).spoken_flight
+    return [
+        f"- Expected inbound: **{as_flight}**, a **{size}-ship** "
+        f"({', '.join(C.parse(m).spoken for m in members)}). Any pilot may call "
+        "with his own callsign; correlate by position, don't assume this one.",
+        f"- **Work a formation as ONE aircraft** while it is together: one "
+        f"clearance, one altitude, lead answers for all of them. Address it "
+        f"\"{as_flight}\". A wingman who transmits is the flight talking "
+        "— do not start a second conversation with him.",
+        f"- **Break them up at the holding fix**, into individually-sequenced "
+        f"singles, lead lowest so he lands first — for a {size}-ship that is "
+        f"{ladder}. You do not hold a formation through a letdown. After the "
+        "break-up they are ordinary singles and you use their own callsigns.",
+    ]
+
+
 def plate(profile: R.ApproachProfile = R.BATUMI_APPROACH,
-          flight: str = R.FLIGHT_CALLSIGN) -> str:
+          flight: str = R.FLIGHT_CALLSIGN,
+          size: int = R.FLIGHT_SIZE) -> str:
     """The field-specific facts, as the markdown 'plate' prompt part."""
     cap = profile.atc
     b = profile.beacon
@@ -82,10 +118,10 @@ def plate(profile: R.ApproachProfile = R.BATUMI_APPROACH,
         "inbound to the threshold — flown on a watch (no cone of silence).",
         f"- Wind **{int(R.WIND_FROM_DEG):03d} at {int(R.WIND_MPH)}** — expect a "
         f"tailwind float on {rwy}; plant it early.",
-        f"- Expected inbound flight: **{flight}** (any pilot may call with his own "
-        "callsign; correlate by position, don't assume this one).",
-        f"- Assignable levels: **{hold}, platform {platform}, MDA {mda}, missed "
-        f"{missed}** — and headings **{outbound:03d} out / {inbound:03d} in**. "
+        *_formation(flight, size, profile),
+        f"- Assignable levels: holding **{', '.join(str(f) for f in profile.stack_ft)}** "
+        f"(bottom first), platform **{platform}**, MDA **{mda}**, missed "
+        f"**{missed}** — and headings **{outbound:03d} out / {inbound:03d} in**. "
         "Nothing else.",
     ])
 

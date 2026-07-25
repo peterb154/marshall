@@ -320,6 +320,17 @@ class Controller:
                      f"{self._addr(ac)}, roger, station passage "
                      f"{spell_dur(self.profile.final_approach_sec)}, "
                      f"report field in sight or missed approach.")
+        elif (altitude_ft and ac.assigned_ft
+              and altitude_ft != ac.assigned_ft):
+            # He is not where he was put. Reading his own number back to him is
+            # how two aeroplanes end up at the same level in cloud -- especially
+            # just after a break-up, when three wingmen have all just been given
+            # a new altitude and one of them heard someone else's.
+            verb = "descend and maintain" if altitude_ft > ac.assigned_ft else "climb and maintain"
+            self.say(ac.callsign,
+                     f"{self._addr(ac)}, negative, you are assigned "
+                     f"{spell_alt(ac.assigned_ft)}, {verb} "
+                     f"{spell_alt(ac.assigned_ft)}.")
         else:
             self.say(ac.callsign, f"{self._addr(ac)} roger, "
                                   f"{spell_alt(altitude_ft or ac.assigned_ft or 0)}.")

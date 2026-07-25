@@ -31,6 +31,10 @@ WIND_MPH = 20.0
 # controller correlates by position, not by expecting this one. build.py names the
 # flight group from the leading word.
 FLIGHT_CALLSIGN = "Pony 1-1"
+# How many aircraft that flight brings. A formation is worked as ONE entity
+# until it reaches the holding fix, then broken up into individually-sequenced
+# singles -- so this number decides how many levels the stack has to give away.
+FLIGHT_SIZE = 4
 
 
 @dataclass
