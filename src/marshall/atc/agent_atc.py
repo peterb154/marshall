@@ -599,6 +599,16 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         vectoring = asr_context(profile, scope, known)
         if vectoring:
             print(f"  {vectoring}", flush=True)
+
+        # Which controller answered. The bridge monitors every channel at once,
+        # which is an implementation convenience the pilot must never be able to
+        # hear -- without this the same voice answers as "Batumi Approach" on
+        # Center's frequency and the sector split is decoration.
+        on_mhz = (heard_hz or freq_hz) / 1_000_000
+        me = profile.station_on(on_mhz) if hasattr(profile, "station_on") else None
+        fix = radar_fix(scope, known)
+        nxt = (profile.handoff_from(on_mhz, fix.range_nm)
+               if me and fix is not None else None)
         if directive:
             print(f"  CONTROLLER: {directive}", flush=True)
         if stack:
@@ -622,6 +632,16 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 "ASR (radar guidance, computed from the scope — voice these "
                 "numbers exactly; you are navigating for him and he has no "
                 f"approach aid of his own): {vectoring}")
+        if me:
+            parts.append(
+                f"YOU ARE: {me.name} on {me.freq_mhz:.1f}. Identify as that and "
+                "nothing else — he called this frequency and does not know one "
+                "controller is covering several.")
+        if nxt:
+            parts.append(
+                f"HANDOFF: he is {fix.range_nm:.0f} miles out and past your "
+                f"boundary — hand him to {nxt.name} on "
+                f"{controller.spell_freq(nxt.freq_mhz)} and say goodbye.")
         parts.append(f"PILOT: {transcript}")
         interact("\n".join(parts), "pilot", route_tier(transcript),
                  on_hz=heard_hz)

@@ -195,6 +195,7 @@ class ApproachProfile:
     kind: str = "ndb"               # "ndb" (pilot navigates) | "asr" (ATC does)
     final_intercept_nm: float = 8.0  # rolled out on final by here
     map_nm: float = 0.6             # missed approach point, range from the field
+    approach_hands_over_nm: float = 20.0   # Center gives him to Approach here
     # The controllers who work this approach, enroute inwards. Empty falls back
     # to the beacon-derived stations the NDB letdown uses.
     stations: list[Station] = field(default_factory=list)
@@ -306,6 +307,36 @@ class ApproachProfile:
         for s in self.stations:
             if s.role == role:
                 return s
+        return None
+
+    def station_on(self, freq_mhz: float) -> Station | None:
+        """Who the controller IS on this frequency.
+
+        The bridge listens on every channel at once, which is a convenience of
+        the implementation and not something the pilot should ever be able to
+        hear. Without this the same voice answers as "Batumi Approach" on
+        Center's frequency, and the sector split is decoration.
+        """
+        for s in self.stations:
+            if abs(s.freq_mhz - freq_mhz) < 0.001:
+                return s
+        return None
+
+    def handoff_from(self, freq_mhz: float, range_nm: float) -> Station | None:
+        """The next controller, when this one is done with him.
+
+        Range-based because that is what a radar handoff actually keys on: a
+        Center works the enroute leg and gives him to Approach when he is close
+        enough to be worked into the pattern; Approach turns him over to Tower
+        once he is on final and the landing is the only thing left.
+        """
+        here = self.station_on(freq_mhz)
+        if here is None:
+            return None
+        if here.role == "center" and range_nm <= self.approach_hands_over_nm:
+            return self.station_for("approach")
+        if here.role == "approach" and range_nm <= self.final_intercept_nm:
+            return self.station_for("tower")
         return None
 
     @property

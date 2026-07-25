@@ -160,6 +160,42 @@ class TestSpokenRange(unittest.TestCase):
         for nm in (1, 3.4, 7.8, 10):
             self.assertFalse(any(c.isdigit() for c in asr.spoken_range(nm)))
 
+class TestStations(unittest.TestCase):
+    """Who the controller is, and when he lets go."""
+
+    def setUp(self):
+        self.p = R.BATUMI_ASR
+
+    def test_identity_by_frequency(self):
+        # The bridge listens on every channel at once; the pilot must never be
+        # able to hear that.
+        self.assertEqual(self.p.station_on(119.0).name, "Georgia Center")
+        self.assertEqual(self.p.station_on(120.0).name, "Batumi Approach")
+        self.assertEqual(self.p.station_on(131.0).name, "Batumi Tower")
+
+    def test_an_unmanned_frequency_has_nobody_on_it(self):
+        # 124 is a leftover beacon, not a controller.
+        self.assertIsNone(self.p.station_on(124.0))
+
+    def test_center_keeps_him_while_he_is_far_out(self):
+        self.assertIsNone(self.p.handoff_from(119.0, 40))
+
+    def test_center_gives_him_to_approach_inside_the_boundary(self):
+        nxt = self.p.handoff_from(119.0, self.p.approach_hands_over_nm - 2)
+        self.assertEqual(nxt.role, "approach")
+
+    def test_approach_gives_him_to_tower_on_final(self):
+        nxt = self.p.handoff_from(120.0, self.p.final_intercept_nm - 2)
+        self.assertEqual(nxt.role, "tower")
+
+    def test_approach_keeps_him_before_final(self):
+        self.assertIsNone(self.p.handoff_from(120.0, 25))
+
+    def test_tower_hands_off_to_nobody(self):
+        self.assertIsNone(self.p.handoff_from(131.0, 3))
+
+    def test_an_unmanned_frequency_hands_off_to_nobody(self):
+        self.assertIsNone(self.p.handoff_from(124.0, 10))
 
 if __name__ == "__main__":
     unittest.main()
