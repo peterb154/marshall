@@ -1,3 +1,10 @@
+# Pinned so the project name does not follow the directory name. This stack was
+# born in its own repo (/opt/marshall-director) and its Postgres volume is
+# marshall-director_pgdata; after the move under marshall/director/ compose would
+# otherwise derive the project from the folder ("director"), mount a brand-new
+# empty volume, and silently come up with no contacts, sessions or approaches.
+name: marshall-director
+
 services:
   db:
     build:

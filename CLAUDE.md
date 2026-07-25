@@ -21,17 +21,29 @@ the mission builder, the chart, and the ATC all read it, so they can't disagree.
   is traffic. **An LLM never invents separation between aircraft.**
 
 ## Shape
-- **`marshall/`** (this repo): `core/route.py` (truth), `atc/` (the SRS bridge
+One repo, two deployables. They are a single system with a contract between them,
+so a change that spans the seam (a new clearance the agent must voice, say) lands
+as one commit.
+
+- **`src/marshall/`** — `core/route.py` (truth), `atc/` (the SRS bridge
   `agent_atc.py`, the deterministic `controller.py`, `intents`/`bedrock_intent`,
   `briefing.py` which generates the plate), `srs/` (two-way SRS voice client, STT,
   TTS, plus the synthetic-pilot + multi-ship rehearsal test harness), `mission/`
   (pydcs `.miz` builder + `ai_control.lua`), `kneeboard/` (charts).
-- **`marshall-director/`** (separate repo/container): the Bedrock agent on
-  strands-pg (Postgres + PostGIS + pgvector). Holds the prompts (`soul`/`plate`/
-  `rules`, `plate` generated from `route.py` and pushed by the bridge), the
-  identity graph (`contacts`), the live PostGIS track cache (`tracks`), the
-  `approaches` + `flight_plans` tables, and the DCS-gRPC tools. The bridge talks
-  to it over HTTP (`/atc`, `/radar`, `/hooks/due`, `/prompts`, ...).
+- **`director/`** (its own container stack) — the Bedrock agent on strands-pg
+  (Postgres + PostGIS + pgvector). Holds the prompts (`soul`/`plate`/`rules`,
+  `plate` generated from `route.py` and pushed by the bridge), the identity graph
+  (`contacts`), the live PostGIS track cache (`tracks`), the `approaches` +
+  `flight_plans` tables, and the DCS-gRPC tools. The bridge talks to it over HTTP
+  (`/atc`, `/radar`, `/hooks/due`, `/prompts`, ...). Run it with
+  `cd director && docker compose up -d`.
+
+  Its compose project name is **pinned to `marshall-director`** — it predates the
+  merge and its Postgres volume is `marshall-director_pgdata`. Don't let compose
+  derive the project from the folder or it mounts an empty volume and the agent
+  comes up with no contacts, sessions or approaches. It is also a stamp of
+  `strands-pgsql-agent-framework`; `diff -r /tmp/fresh-stamp director/` still
+  works for pulling upstream changes.
 
 ## How it runs
 The **SRS bridge** (`python -m marshall.atc.agent_atc --srs <host> <freq> <voice>
