@@ -218,9 +218,18 @@ class TestChannels(unittest.TestCase):
         self.ctl.check_in("Pony 1-1")
         self.assertEqual(self.ctl.out[0].freq_mhz, R.INITIAL.freq_mhz)
 
-    def test_check_in_hands_him_over_to_the_beacon_frequency(self):
+    def test_the_handoff_happens_AT_the_arrival_fix_not_immediately(self):
+        # Switching to Tower on check-in takes him off the frequency of the fix
+        # he is still navigating to -- the set homes whatever it is tuned to, so
+        # an early switch removes the needle he is steering on.
         self.ctl.check_in("Pony 1-1")
-        self.assertTrue(said(self.ctl, "contact", "one three two"))
+        spoken = " ".join(texts(self.ctl)).lower()
+        self.assertIn("report initial", spoken)
+        self.assertIn("at initial contact batumi tower one three two", spoken)
+
+    def test_he_is_not_told_to_report_the_beacon_he_cannot_yet_home(self):
+        self.ctl.check_in("Pony 1-1")
+        self.assertNotIn("report batumi", " ".join(texts(self.ctl)).lower())
 
     def test_the_letdown_is_worked_on_the_beacon(self):
         self.ctl.check_in("Pony 1-1")

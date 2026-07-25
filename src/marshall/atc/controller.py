@@ -267,14 +267,21 @@ class Controller:
         ac.phase, ac.last_report_t = Phase.ENROUTE, self.t
         here, here_freq = self.profile.station(enroute=True)
         tower, tower_freq = self.profile.station()
-        call = (f"{self._addr(ac)}, {here}, radar not available, "
-                f"report {self.profile.beacon.name} inbound.")
-        if tower_freq and tower_freq != here_freq:
-            # He has to change channel to fly the letdown at all: the ARA-8
-            # homes on whatever the set is tuned to, so working the beacon and
-            # listening to this controller are the same act.
-            call += (f" Contact {tower} {spell_freq(tower_freq)} -- you will be "
-                     f"homing {self.profile.beacon.name} on that channel.")
+        fix = self.profile.arrival_fix
+        if fix is not None and tower_freq and tower_freq != here_freq:
+            # Report the fix he is CURRENTLY homing, and change channel when he
+            # gets there. Telling him to contact Tower now would take him off
+            # the arrival fix's frequency while he is still navigating to it --
+            # the set homes whatever it is tuned to, so switching early does not
+            # just change who he is talking to, it removes the needle he is
+            # steering on. The handoff is a trigger he owns and flies to.
+            call = (f"{self._addr(ac)}, {here}, radar not available, "
+                    f"report {fix.name}. At {fix.name} contact {tower} "
+                    f"{spell_freq(tower_freq)} -- you will be homing "
+                    f"{self.profile.beacon.name} from there.")
+        else:
+            call = (f"{self._addr(ac)}, {here}, radar not available, "
+                    f"report {self.profile.beacon.name} inbound.")
         self.say(ac.callsign, call)
 
     # -- formations --------------------------------------------------------
