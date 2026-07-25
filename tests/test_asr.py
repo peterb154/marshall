@@ -80,8 +80,16 @@ class TestInterceptHeading(unittest.TestCase):
             self.assertLessEqual(abs(asr.angle_diff(h, 124)), asr.MAX_INTERCEPT)
 
     def test_heading_wraps(self):
-        self.assertEqual(asr.intercept_heading(5, -1.0), 17)
-        self.assertEqual(asr.intercept_heading(355, -1.0), 7)
+        self.assertEqual(asr.intercept_heading(5, -1.0), (5 + asr.DEG_PER_NM) % 360)
+        self.assertEqual(asr.intercept_heading(355, -1.0),
+                         (355 + asr.DEG_PER_NM) % 360)
+
+    def test_the_cap_allows_a_perpendicular_turn(self):
+        # It used to cap at thirty degrees, which cannot close a large offset --
+        # so a separate case flew the aircraft PARALLEL to the course to buy
+        # room, and parallel never reduces an offset. A pilot seventeen miles
+        # off was sent out to sea at a constant seventeen miles off.
+        self.assertGreaterEqual(asr.MAX_INTERCEPT, 90)
 
 
 class TestGuide(unittest.TestCase):
@@ -98,7 +106,14 @@ class TestGuide(unittest.TestCase):
             asr.Position(nm, radial if radial is not None else self.inbound,
                          alt, self.p.final_crs if hdg is None else hdg), self.p)
 
-    VECTORING = ("vector", "downwind")
+    VECTORING = ("vector",)
+
+    @staticmethod
+    def step(nm, radial, heading, dist):
+        """Move an aircraft `dist` miles on `heading`; returns (range, radial)."""
+        e = nm * math.sin(math.radians(radial)) + dist * math.sin(math.radians(heading))
+        n = nm * math.cos(math.radians(radial)) + dist * math.cos(math.radians(heading))
+        return math.hypot(e, n), math.degrees(math.atan2(e, n)) % 360
 
     def test_far_out_is_vectoring_at_platform(self):
         g = self.at(12)
@@ -187,19 +202,71 @@ class TestGuide(unittest.TestCase):
         g = self.at(4, hdg=(self.p.final_crs + 180) % 360)
         self.assertFalse(g.established)
 
-    def test_no_room_to_intercept_means_downwind(self):
-        # Six miles off with two miles of centreline left cannot be turned in:
-        # closing that at thirty degrees needs about eleven. Trying anyway is
-        # what produced an impossible intercept and a sequence of reversals.
-        g = self.at(11.4, radial=271, hdg=214)
-        self.assertEqual(g.phase, "downwind")
-        self.assertEqual(g.heading, round(self.inbound))
+    def test_a_large_offset_is_never_flown_away_from_the_course(self):
+        # The heading must reduce the cross-track, at every offset. There is no
+        # case where turning away from the centreline is the answer.
+        for radial in (14, 45, 90, 180, 200, 271):
+            for rng in (8, 14, 20):
+                with self.subTest(radial=radial, rng=rng):
+                    a = self.at(rng, radial=radial, hdg=radial)
+                    if a.established:
+                        continue
+                    moved = self.step(rng, radial, a.heading, 1.0)
+                    b = asr.guide(asr.Position(*moved, 2000, a.heading), self.p)
+                    self.assertLess(abs(b.xtk_nm), abs(a.xtk_nm) + 0.01,
+                                    f"heading {a.heading} did not close "
+                                    f"{a.xtk_nm:+.1f} nm of cross-track")
 
     def test_room_to_intercept_cuts_across_at_the_intercept_angle(self):
         g = self.at(10.9, radial=310, hdg=33)
         self.assertIn(g.phase, self.VECTORING)
         self.assertLessEqual(abs(asr.angle_diff(g.heading, self.p.final_crs)),
                              asr.INTERCEPT_ANGLE + 1)
+
+
+class TestConvergence(unittest.TestCase):
+    """Fly the guidance and check it actually gets there.
+
+    The unit tests all passed while the vectoring was flying a pilot out to sea,
+    because each one checked a single look in isolation and the failure was in
+    what the looks did in SEQUENCE. Simulating the whole approach is the only
+    thing that catches a controller who is individually reasonable and
+    collectively useless.
+    """
+
+    def setUp(self):
+        self.p = R.BATUMI_ASR
+
+    def flies_to_the_field(self, nm, radial, heading, limit=80):
+        for _ in range(limit):
+            g = asr.guide(asr.Position(nm, radial, 2000, heading), self.p)
+            if g.phase == "map":
+                return True
+            heading = g.heading
+            d = 240 / 1.15078 / 240          # miles per 15 s at pattern speed
+            e = nm * math.sin(math.radians(radial)) + d * math.sin(math.radians(heading))
+            n = nm * math.cos(math.radians(radial)) + d * math.cos(math.radians(heading))
+            nm, radial = math.hypot(e, n), math.degrees(math.atan2(e, n)) % 360
+        return False
+
+    def test_arrives_from_every_direction(self):
+        for radial in range(0, 360, 30):
+            for rng in (8, 15, 22):
+                with self.subTest(radial=radial, rng=rng):
+                    self.assertTrue(
+                        self.flies_to_the_field(rng, radial, radial),
+                        f"never reached the field from {rng} nm on the "
+                        f"{radial:03d} radial")
+
+    def test_arrives_from_where_the_pilot_abandoned_it(self):
+        # 18 nm north, 17.5 nm off course: the run that was flown out to sea.
+        self.assertTrue(self.flies_to_the_field(18.1, 19, 246))
+
+    def test_does_not_orbit_the_join_point(self):
+        # Arriving on the centreline pointing across it must turn him ONTO the
+        # course; without that he can never become established, falls through to
+        # the pursuit, aims at the point he is sitting on, and circles it.
+        self.assertTrue(self.flies_to_the_field(10, 304, 55))
 
 
 class TestVectoredFlag(unittest.TestCase):

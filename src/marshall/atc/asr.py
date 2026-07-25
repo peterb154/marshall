@@ -29,12 +29,20 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-# Course-keeping. A proportional correction: the further off the centreline, the
-# larger the intercept angle, capped so the controller never turns a man onto a
-# heading that loses the field. 12 degrees per mile puts a half-mile error at a
-# gentle six and a two-mile error at the cap.
-DEG_PER_NM = 12.0
-MAX_INTERCEPT = 30
+# One rule for closing the centreline, at every distance: turn toward it by an
+# angle proportional to how far off it you are, capped at ninety degrees --
+# straight at it. Fifteen degrees per mile puts a half-mile error at a gentle
+# eight, two miles at thirty, and six miles or more at the cap.
+#
+# The cap matters more than the gain. It used to be thirty degrees, which cannot
+# close a large offset at all, so a separate "no room to intercept" case flew the
+# aircraft PARALLEL to the course to buy distance -- and parallel never reduces
+# an offset. A pilot seventeen miles off the centreline was sent north-west at a
+# constant seventeen miles off, out to sea, until he abandoned the approach.
+# There is no case where turning away from the centreline is the answer; there is
+# only turning toward it harder.
+DEG_PER_NM = 15.0
+MAX_INTERCEPT = 90
 # "On course" is an ANGLE, not a distance. A fixed 0.3 nm looks reasonable at
 # six miles and is nonsense at one: a pilot a quarter-mile south of the runway on
 # short final was being told he was lined up, because a quarter mile still fitted
@@ -60,6 +68,10 @@ def on_course_tolerance(range_nm: float) -> float:
 # intercept COSTS -- xtk / tan(30) -- which is what decides whether he can be
 # turned in at all or has to go downwind first.
 INTERCEPT_ANGLE = 30.0
+
+# Where the join point sits: a little outside the turn-on range, so he rolls out
+# on the centreline with room left to settle before the descent begins.
+JOIN_MARGIN_NM = 2.0
 
 
 def angle_diff(a: float, b: float) -> float:
@@ -238,25 +250,34 @@ def guide(pos: Position, profile) -> Guidance:
     # centreline, and if he does not have that he must be taken downwind to make
     # some. Trying anyway is what produced an impossible intercept and then a
     # sequence of contradictory turns.
-    # Already on the centreline but pointing across it -- a turn onto the course
-    # is the whole instruction. Sending him downwind here would take a man who
-    # is a mile off the line and fly him away from it.
+    # On the centreline but pointing across it: turn him ONTO the course. This
+    # branch is the difference between an approach and an orbit -- "established"
+    # requires him to be tracking inbound, so without it a man who arrives on the
+    # centreline pointing the wrong way can never become established, falls
+    # through to the pursuit below, aims at the join point he is already sitting
+    # on, and circles it indefinitely. Which is exactly what happened.
     if on_centreline:
         h = round(profile.final_crs)
         return Guidance("vector", h, profile.platform_ft, pos.range_nm, xtk,
                         deviation, turn_direction(pos.heading_deg, h))
 
-    ahead = along_track(pos, profile.final_crs) - profile.final_intercept_nm
-    needed = abs(xtk) / math.tan(math.radians(INTERCEPT_ANGLE))
-    if ahead < needed:
-        # No room: parallel the course outbound, on his side, until there is.
-        h = round(inbound_radial)
-        return Guidance("downwind", h, profile.platform_ft, pos.range_nm, xtk,
-                        deviation, turn_direction(pos.heading_deg, h))
-
-    # Room to converge: cut across at the intercept angle, from his side.
-    cut = INTERCEPT_ANGLE if xtk > 0 else -INTERCEPT_ANGLE
-    h = round((profile.final_crs - cut) % 360)
+    # Well off the centreline: aim at the JOIN POINT -- the place on the
+    # extended centreline where he should roll out, at the turn-on range. Aiming
+    # at a point rather than just closing the offset matters because closing it
+    # alone walks him toward the field as well, and he arrives on the course a
+    # mile out with no final left to fly.
+    #
+    # The join point is FIXED -- a little outside the turn-on range, on the
+    # centreline. Two earlier versions moved it and both failed in the air: one
+    # sat close enough that he overflew it, and the bearing to a point you are
+    # passing swings and then reverses, so he S-turned across the course; the
+    # other kept it ahead of him, which meant it receded as he chased it and
+    # walked him steadily outbound. A fixed point cannot recede, and once he is
+    # near the centreline the on-course branch above takes over before the
+    # pursuit gets close enough to be unstable.
+    join = profile.final_intercept_nm + JOIN_MARGIN_NM
+    h = round(bearing_between(pos.range_nm, pos.radial_deg, join,
+                              inbound_radial)) % 360
     return Guidance("vector", h, profile.platform_ft, pos.range_nm, xtk,
                     deviation, turn_direction(pos.heading_deg, h))
 
