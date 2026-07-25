@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import re
+
 import numpy as np
 import opuslib
 import soxr
@@ -30,6 +32,46 @@ FRAME_MS = 40
 SAMPLES_PER_FRAME = SRS_SAMPLE_RATE * FRAME_MS // 1000  # 640
 
 _POLLY_RATE = 16000  # Polly PCM tops out here -- and matches SRS, so no resample
+
+
+# Words Polly gets wrong, respelled the way it should say them.
+#
+# Plain respelling rather than SSML <phoneme> tags on purpose: it needs no
+# change to how we call synthesize_speech, it cannot produce malformed markup
+# mid-transmission, and anyone can add a line after hearing a word come out
+# wrong. The cost is that the fix lives in the audio and not in the transcript,
+# which is the right trade for a radio.
+#
+# "readback" is the one that started this: Polly reads it as the past tense --
+# "RED-back" -- because that is the commoner English word. A controller says
+# "REED-back".
+SAY_AS = {
+    "readback": "reed back",
+    "readbacks": "reed backs",
+    "Batumi": "Bah too mee",
+    "Kobuleti": "Koh boo LEH tee",
+    "Senaki": "Seh NAH kee",
+    "Kutaisi": "Koo tah EE see",
+    "Sukhumi": "Soo KHOO mee",
+    "Vaziani": "Vah zee AH nee",
+}
+# Only words actually heard to come out wrong go in here. Guessing at
+# pronunciations Polly already gets right is how you end up "fixing" roger into
+# something worse.
+
+_SAY_AS_RE = re.compile(
+    r"\b(" + "|".join(sorted(SAY_AS, key=len, reverse=True)) + r")\b", re.I)
+
+
+def pronounce(text: str) -> str:
+    """Respell the handful of words Polly mangles, preserving capitalisation."""
+    def sub(m):
+        word = m.group(1)
+        said = SAY_AS.get(word) or SAY_AS.get(word.lower()) or word
+        if word[:1].isupper():
+            return said[:1].upper() + said[1:]
+        return said[:1].lower() + said[1:]
+    return _SAY_AS_RE.sub(sub, text or "")
 
 
 @dataclass
@@ -52,6 +94,7 @@ class Voice:
         from botocore.exceptions import ClientError
 
         polly = boto3.client("polly", region_name=self.region)
+        text = pronounce(text)
         engines = [self.engine] if self.engine else ["standard", "neural"]
         last: Exception | None = None
         for engine in engines:

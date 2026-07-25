@@ -418,5 +418,33 @@ class TestDebugNote(unittest.TestCase):
             with self.subTest(said=said):
                 self.assertIsNone(agent_atc.debug_note(said))
 
+class TestPronunciation(unittest.TestCase):
+    """Polly reads "readback" as the past tense -- RED-back -- because that is
+    the commoner English word. A controller says REED-back."""
+
+    def setUp(self):
+        from marshall.srs import tts
+        self.say = tts.pronounce
+
+    def test_readback(self):
+        self.assertEqual(self.say("Pony one one, readback correct."),
+                         "Pony one one, reed back correct.")
+
+    def test_capitalisation_is_preserved(self):
+        self.assertTrue(self.say("Readback correct.").startswith("Reed"))
+
+    def test_field_names(self):
+        self.assertNotIn("Batumi", self.say("Batumi Approach, radar contact."))
+        self.assertNotIn("Kobuleti", self.say("Contact Kobuleti Departure."))
+
+    def test_ordinary_words_are_untouched(self):
+        for said in ("Pony one one, cleared to land runway one three.",
+                     "turn left heading one two four, maintain two thousand"):
+            self.assertEqual(self.say(said), said)
+
+    def test_empty(self):
+        self.assertEqual(self.say(""), "")
+        self.assertEqual(self.say(None), "")
+
 if __name__ == "__main__":
     unittest.main()
