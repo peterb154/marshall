@@ -85,6 +85,12 @@ class Station:
     name: str
     freq_mhz: float
     role: str = ""              # "center" | "approach" | "tower"
+    # The Polly voice this controller speaks with. On the STATION rather than
+    # passed to the bridge, because a voice handed in separately drifts from the
+    # identity it belongs to -- you end up with Tower's manner in Center's voice
+    # and no single place that says which is which. Changing sector should sound
+    # like meeting a different person, which is the point of splitting them.
+    voice: str = "Matthew"
 
 
 # Batumi's VHF-high is 131.000 in DCS -- the frequency the in-game field ATC
@@ -98,9 +104,9 @@ class Station:
 # points at this same station -- which is also what makes an enroute handoff
 # mean something later: leaving Batumi's airspace gives you back to the same man
 # who will pass you to Kobuleti.
-CENTER = Station("Georgia Center", 119.000, "center")
-APPROACH = Station("Batumi Approach", 120.000, "approach")
-TOWER = Station("Batumi Tower", 131.000, "tower")
+CENTER = Station("Georgia Center", 119.000, "center", voice="Brian")
+APPROACH = Station("Batumi Approach", 120.000, "approach", voice="Matthew")
+TOWER = Station("Batumi Tower", 131.000, "tower", voice="Joey")
 
 STATIONS = [CENTER, APPROACH, TOWER]
 

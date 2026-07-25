@@ -482,7 +482,17 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
     session_id = session_id or f"batumi-approach:{freq_mhz:.3f}"
     profile = load_and_push_plate(R.BATUMI_ASR)       # DB is the source of truth
     radar_on = profile.atc.radar          # a no-radar mission works purely procedural
+    # One voice per controller. Changing frequency should sound like meeting a
+    # different person -- that is most of what makes a sector split feel real,
+    # and it costs nothing but picking the right Voice before transmitting.
     voice = tts.Voice(voice_id=voice_id)
+    voices: dict[float, "tts.Voice"] = {}
+    for _s in getattr(profile, "stations", None) or []:
+        voices[round(_s.freq_mhz, 3)] = tts.Voice(voice_id=_s.voice)
+
+    def voice_for(hz: float | None):
+        """The voice of whoever owns this channel, falling back to the default."""
+        return voices.get(round((hz or freq_hz) / 1_000_000, 3), voice)
     model = stt.load_model()
     # Monitor EVERY channel this approach uses, not just one. A WW2 set has
     # four presets and the ARA-8 homes on whatever it is tuned to, so the pilot
@@ -538,7 +548,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                    freq_mhz=(on_hz or freq_hz) / 1_000_000, text=reply)
             # Answer on the channel he called from -- that is the beacon he is
             # homing, and therefore the only one he can hear.
-            client.transmit(voice.frames(reply), on_hz or freq_hz, AM)
+            client.transmit(voice_for(on_hz).frames(reply),
+                            on_hz or freq_hz, AM)
 
     def scheduler() -> None:
         # Fire the agent's own wake-up hooks: when a timer expires, re-invoke it
@@ -569,6 +580,12 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         under the same radio lock as everything else so it can never talk over
         the pilot or over the agent mid-sentence.
         """
+        # The talk-down is the final controller's job, so it goes out in his
+        # voice on his frequency rather than on whichever channel the bridge
+        # happened to be started with.
+        _twr = (profile.station_for("tower")
+                if hasattr(profile, "station_for") else None)
+        final_hz = (_twr.freq_mhz * 1_000_000) if _twr else freq_hz
         called: dict[str, int] = {}
         while True:
             time.sleep(ASR_POLL_SEC)
@@ -593,7 +610,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                         record(session_id, kind="atc/range", callsign=cs,
                                range_nm=round(g.range_nm, 2), phase=g.phase,
                                heading=g.heading, text=text)
-                        client.transmit(voice.frames(text), freq_hz, AM)
+                        client.transmit(voice_for(final_hz).frames(text),
+                                        final_hz, AM)
             except Exception as e:                 # never kill the metronome
                 print(f"  !! asr monitor: {e}", flush=True)
 
@@ -649,7 +667,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             canned = for_voice(canned)
             print(f"  ATC[simple] (0.0s): {canned}", flush=True)
             with radio_lock:
-                client.transmit(voice.frames(canned), heard_hz or freq_hz, AM)
+                client.transmit(voice_for(heard_hz).frames(canned),
+                                heard_hz or freq_hz, AM)
             continue
 
         directive, stack = (separation_context(ctl, transcript, scope) if engaged
