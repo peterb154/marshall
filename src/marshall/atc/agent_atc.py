@@ -277,6 +277,51 @@ def radar_fix(scope: str, cs: str) -> "object | None":
     return None
 
 
+# How often the scope is re-read while somebody is on final. A Mustang at
+# pattern speed covers a mile in about fifteen seconds, so four seconds is
+# frequent enough to catch each mile boundary without the controller ever
+# talking twice about the same one.
+ASR_POLL_SEC = 4.0
+
+
+def radar_fixes(scope: str) -> list[tuple[str, "object"]]:
+    """Every radar-IDENTIFIED contact as (callsign, Position).
+
+    Untagged blips are deliberately skipped: an unidentified aircraft on final
+    is not somebody we can talk to, and guessing produces a confident call to
+    the wrong man.
+    """
+    from marshall.atc import asr
+    out = []
+    for tag, nm, radial, alt, hdg in _FIX.findall(scope or ""):
+        out.append((tag, asr.Position(float(nm), float(radial),
+                                      int(alt.replace(",", "")),
+                                      float(hdg) if hdg else 0.0)))
+    return out
+
+
+def asr_call(cs: str, g) -> str:
+    """The controller's spoken range call. Deterministic on purpose.
+
+    A talk-down is the most rote transmission in aviation -- "six miles from the
+    runway, on course" -- and it has to arrive every mile, on time, with the
+    right number. Routing that through a model would add a second of latency and
+    a chance of drift to a sentence that has no judgement in it at all. The
+    agent still handles everything a pilot actually says; this is the metronome
+    underneath.
+    """
+    from marshall.atc import asr, callsign as C
+    who = C.parse(cs).spoken
+    rng = asr.spoken_range(g.range_nm)
+    if g.phase == "map":
+        return (f"{who}, over the missed approach point. Runway in sight, land; "
+                f"if not, execute missed approach.")
+    if g.off_course:
+        return (f"{who}, {rng} miles from the runway, {g.deviation}, "
+                f"turn heading {g.heading:03d}.")
+    return f"{who}, {rng} miles from the runway, on course."
+
+
 def asr_context(profile, scope: str, cs: str) -> str:
     """Radar guidance for a vectored approach -- the controller's next call.
 
@@ -380,7 +425,7 @@ def separation_context(ctl, transcript: str, scope: str = "") -> tuple[str, str]
 
 def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
              session_id: str | None = None, url: str = AGENT_URL) -> None:
-    from marshall.atc import controller
+    from marshall.atc import asr, controller
     from marshall.core import route as R
     from marshall.srs import stt, tts
     from marshall.srs.client import AM, SRSClient, radio
@@ -450,7 +495,46 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     f"needed, reply exactly: (no call).",
                     "hook")
 
+    def asr_monitor() -> None:
+        """Talk him down: a range call every mile while he is on final.
+
+        This is the first thing the controller says because of where an
+        aeroplane IS rather than because somebody keyed a mic, and it is what
+        makes a radar approach a radar approach -- a pilot descending on a
+        surveillance approach expects to hear a mile call every mile, and
+        silence is indistinguishable from having been forgotten.
+
+        Deterministic and un-modelled: one call per whole mile, transmitted
+        under the same radio lock as everything else so it can never talk over
+        the pilot or over the agent mid-sentence.
+        """
+        called: dict[str, int] = {}
+        while True:
+            time.sleep(ASR_POLL_SEC)
+            if not (radar_on and getattr(profile, "vectored", False)):
+                continue
+            try:
+                scope = fetch_radar(session_id)
+                for cs, pos in radar_fixes(scope):
+                    g = asr.guide(pos, profile)
+                    if g.phase not in ("final", "map"):
+                        # Left the final -- forget him, so a go-around and a
+                        # second approach get their range calls too.
+                        called.pop(cs, None)
+                        continue
+                    mile = 0 if g.phase == "map" else int(round(g.range_nm))
+                    if called.get(cs) == mile:
+                        continue
+                    called[cs] = mile
+                    text = for_voice(asr_call(cs, g))
+                    with radio_lock:
+                        print(f"  ATC[asr] {text}", flush=True)
+                        client.transmit(voice.frames(text), freq_hz, AM)
+            except Exception as e:                 # never kill the metronome
+                print(f"  !! asr monitor: {e}", flush=True)
+
     threading.Thread(target=scheduler, daemon=True).start()
+    threading.Thread(target=asr_monitor, daemon=True).start()
 
     while True:
         pcm, heard_hz = client.recv_utterance(max_wait=3600)

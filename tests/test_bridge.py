@@ -328,6 +328,58 @@ class TestAsrContext(unittest.TestCase):
         self.assertIn("six miles", out)
 
 
+class TestAsrRangeCall(unittest.TestCase):
+    """The metronome underneath a talk-down. Deterministic on purpose: it must
+    arrive every mile, on time, with the right number, and there is no judgement
+    in the sentence to justify a model call."""
+
+    def setUp(self):
+        from marshall.atc import asr
+        from marshall.core import route as R
+        self.asr, self.p = asr, R.BATUMI_ASR
+
+    def g(self, nm, radial=None):
+        radial = radial if radial is not None else (self.p.final_crs + 180) % 360
+        return self.asr.guide(self.asr.Position(nm, radial, 500), self.p)
+
+    def test_on_course_call(self):
+        out = agent_atc.asr_call("Pony 1-1", self.g(6))
+        self.assertEqual(out, "Pony one one, six miles from the runway, on course.")
+
+    def test_off_course_call_carries_a_heading(self):
+        out = agent_atc.asr_call("Pony 1-1", self.g(6, 296))
+        self.assertIn("right of course", out)
+        self.assertIn("turn heading", out)
+
+    def test_missed_approach_point_call(self):
+        out = agent_atc.asr_call("Pony 1-1", self.g(0.4))
+        self.assertIn("missed approach point", out)
+
+    def test_no_digits_reach_polly(self):
+        for nm in (1, 4, 6, 8):
+            out = agent_atc.asr_call("Pony 1-1", self.g(nm))
+            digits = [c for c in out if c.isdigit()]
+            self.assertEqual(digits, [], out)
+
+    def test_the_callsign_is_spoken_not_written(self):
+        self.assertNotIn("1-1", agent_atc.asr_call("Pony 1-1", self.g(6)))
+
+
+class TestRadarFixes(unittest.TestCase):
+    def test_lists_only_identified_contacts(self):
+        scope = ("E11 [Pony one one] (P-51D): 6.0 nm on the 304 radial, "
+                 "500 ft, heading 124 | "
+                 "Bogey (P-51D): 3.0 nm on the 310 radial, 900 ft, heading 100 | "
+                 "E12 [Hawk one] (P-51D): 9.0 nm on the 300 radial, 2,000 ft, "
+                 "heading 130")
+        got = agent_atc.radar_fixes(scope)
+        self.assertEqual([cs for cs, _ in got], ["Pony one one", "Hawk one"])
+
+    def test_empty_scope(self):
+        self.assertEqual(agent_atc.radar_fixes(""), [])
+        self.assertEqual(agent_atc.radar_fixes("no contacts"), [])
+
+
 
 if __name__ == "__main__":
     unittest.main()
