@@ -133,8 +133,18 @@ def main() -> int:
     # Transmit-only: this opens a radio to talk on and never listens. The
     # bridge is already on these frequencies, and two clients that both hear
     # and answer on one channel spent an evening talking to each other.
+    #
+    # The client is registered for teardown before anything can fail, and the
+    # signals are caught, because an abandoned run does not just waste a socket
+    # -- it leaves a SECOND Batumi Approach on the frequency, transmitting its
+    # own aircraft's vectors over the top of the live one. Three of them were
+    # heard talking simultaneously before this was here.
     say = None
+    srs = None
     if args.srs:
+        import atexit
+        import signal
+
         from marshall.atc import agent_atc
         from marshall.srs import tts
         from marshall.srs.client import AM, SRSClient, radio
@@ -146,6 +156,16 @@ def main() -> int:
         voice = tts.Voice(voice_id=station.voice)
         print(f"transmitting as {station.name} on {station.freq_mhz:.3f} "
               f"in {station.voice}'s voice\n")
+
+        def hang_up(*_):
+            try:
+                srs.close()
+            except Exception:
+                pass
+
+        atexit.register(hang_up)
+        for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+            signal.signal(sig, lambda s, f: sys.exit(0))    # runs atexit
 
         def say(text: str) -> None:
             try:
