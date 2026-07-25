@@ -66,8 +66,8 @@ def run(script, session_id: str, sep_always: bool = True) -> None:
     for srs, text in script:
         print(f"\nPILOT [SRS:{srs}]: {text}", flush=True)
         engaged = sep_always or len(ctl.aircraft) >= 2
-        directive, stack = (agent_atc.separation_context(ctl, text) if engaged
-                            else ("", ""))
+        directive, stack = (agent_atc.separation_context(ctl, text, scope)
+                            if engaged else ("", ""))
         if directive:
             print(f"  CONTROLLER: {directive}", flush=True)
         if stack:

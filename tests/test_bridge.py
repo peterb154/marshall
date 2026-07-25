@@ -179,5 +179,85 @@ class TestTransmitterIdentity(unittest.TestCase):
     def test_no_guid_is_harmless(self):
         self.assertEqual(agent_atc.transmitter_callsign(None, "Pony one one"), "")
 
+
+class TestRadarRange(unittest.TestCase):
+    SCOPE = ("Enfield11 [Pony one flight] (P-51D) IN FORMATION with Enfield12 "
+             "— 2 ships, lead 8.2 nm on the 332 radial, 6,004 ft, heading 151 | "
+             "Hawk9 [Hawk one] (P-51D): 2.0 nm on the 300 radial, 4,000 ft, "
+             "heading 120 | Bogey (P-51D): 0.3 nm on the 010 radial, 4,000 ft, "
+             "heading 090")
+
+    def test_reads_the_range_of_a_tagged_track(self):
+        self.assertEqual(agent_atc.radar_range_for(self.SCOPE, "Pony 1-1"), 8.2)
+        self.assertEqual(agent_atc.radar_range_for(self.SCOPE, "Hawk 1"), 2.0)
+
+    def test_a_wingman_resolves_to_his_flights_track(self):
+        self.assertEqual(agent_atc.radar_range_for(self.SCOPE, "Pony 1-3"), 8.2)
+
+    def test_untagged_contacts_are_ignored(self):
+        # An unidentified blip over the beacon proves nothing about who is
+        # talking; guessing is how a truthful report gets rejected.
+        self.assertIsNone(agent_atc.radar_range_for(self.SCOPE, "Bogey"))
+
+    def test_unknown_callsign(self):
+        self.assertIsNone(agent_atc.radar_range_for(self.SCOPE, "Nobody 1"))
+
+    def test_no_radar_is_not_an_opinion(self):
+        self.assertIsNone(agent_atc.radar_range_for("", "Pony 1-1"))
+        self.assertIsNone(agent_atc.radar_range_for("no contacts", "Pony 1-1"))
+        self.assertIsNone(agent_atc.radar_range_for(self.SCOPE, ""))
+
+
+class TestPositionRejection(unittest.TestCase):
+    """The blind engine believes position reports. The bridge must not let it
+    act on one the scope flatly contradicts."""
+
+    def setUp(self):
+        from marshall.atc import bedrock_intent, controller as atc, intents
+        from marshall.core import route as R
+        self.intents, self.bedrock = intents, bedrock_intent
+        self.ctl = atc.Controller(R.BATUMI_APPROACH)
+        self._real = bedrock_intent.classify
+
+    def tearDown(self):
+        self.bedrock.classify = self._real
+
+    def fake(self, kind, cs, **kw):
+        self.bedrock.classify = lambda _t: self.intents.Intent(kind, cs, **kw)
+
+    def scope(self, nm):
+        return (f"E11 [Pony one flight] (P-51D): {nm} nm on the 332 radial, "
+                f"6,004 ft, heading 151")
+
+    def test_a_beacon_report_from_eight_miles_is_rejected(self):
+        self.fake(self.intents.IntentKind.REPORT_BEACON, "Pony 1-1")
+        directive, _ = agent_atc.separation_context(
+            self.ctl, "over the beacon", self.scope(8.2))
+        self.assertIn("POSITION REJECTED", directive)
+        # And crucially the engine never saw it.
+        self.assertEqual(self.ctl.aircraft, {})
+
+    def test_a_beacon_report_from_overhead_is_accepted(self):
+        self.fake(self.intents.IntentKind.REPORT_BEACON, "Pony 1-1")
+        directive, _ = agent_atc.separation_context(
+            self.ctl, "over the beacon", self.scope(1.2))
+        self.assertNotIn("POSITION REJECTED", directive)
+        self.assertIn("Pony 1-1", self.ctl.aircraft)
+
+    def test_without_radar_the_report_is_believed(self):
+        # No scope, or an unidentified aircraft: the blind procedure is all we
+        # have, and refusing every report would ground the whole approach.
+        self.fake(self.intents.IntentKind.REPORT_BEACON, "Pony 1-1")
+        directive, _ = agent_atc.separation_context(self.ctl, "over the beacon", "")
+        self.assertNotIn("POSITION REJECTED", directive)
+
+    def test_other_intents_are_untouched_by_range(self):
+        self.fake(self.intents.IntentKind.REPORT_MISSED, "Pony 1-1")
+        directive, _ = agent_atc.separation_context(
+            self.ctl, "going around", self.scope(8.2))
+        self.assertNotIn("POSITION REJECTED", directive)
+
+
+
 if __name__ == "__main__":
     unittest.main()

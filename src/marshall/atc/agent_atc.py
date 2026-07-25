@@ -245,8 +245,32 @@ def _stack_summary(ctl) -> str:
 
 _RESOLVED = ("LANDED", "BANISHED", "UNKNOWN")
 
+# How far off the beacon a "I am over the beacon" report may be before the scope
+# is believed instead. Generous: a Mustang at pattern speed covers a mile in
+# fifteen seconds, and the report, the transcription and the radar sample are
+# never quite simultaneous.
+OVERHEAD_NM = 4.0
+_RANGE = re.compile(r"\[([^\]]+)\][^|]*?(\d+(?:\.\d+)?)\s*nm", re.I)
 
-def separation_context(ctl, transcript: str) -> tuple[str, str]:
+
+def radar_range_for(scope: str, cs: str) -> float | None:
+    """Range from the beacon of the track bound to this callsign, if any.
+
+    Only reads contacts the controller has already radar-identified (the [tagged]
+    ones). An unidentified blip near the beacon proves nothing about who is
+    talking, and guessing is how you end up rejecting a truthful report.
+    """
+    if not scope or not cs:
+        return None
+    from marshall.atc import callsign as C
+    want = C.parse(cs).flight.lower()
+    for tag, nm in _RANGE.findall(scope):
+        if C.parse(tag).flight.lower() == want:
+            return float(nm)
+    return None
+
+
+def separation_context(ctl, transcript: str, scope: str = "") -> tuple[str, str]:
     """The two-brain seam. Advance the deterministic Controller from the call and
     return its authoritative (next-step directive, holding stack).
 
@@ -260,6 +284,23 @@ def separation_context(ctl, transcript: str) -> tuple[str, str]:
     directive = ""
     try:
         intent = bedrock_intent.classify(transcript)
+
+        # The engine is blind: it believes position reports, and it has no way
+        # to notice a wrong one. Seen live -- a flight called "over the beacon"
+        # at eight miles, the agent correctly refused on radar, but the engine
+        # had ALREADY broken the formation up on the strength of the report. The
+        # two brains then disagreed about where four aeroplanes were. So when
+        # the scope contradicts a claimed station passage, the report never
+        # reaches the engine at all.
+        nm = radar_range_for(scope, intent.callsign)
+        if (intent.kind is intents.IntentKind.REPORT_BEACON
+                and nm is not None and nm > OVERHEAD_NM):
+            print(f"  !! rejected: claims the beacon, radar shows {nm:.1f} nm",
+                  flush=True)
+            return (f"POSITION REJECTED: he reports over the beacon but radar "
+                    f"shows him {nm:.0f} miles out. Correct him and have him "
+                    f"continue inbound; he has NOT reached the fix.", "")
+
         if intents.dispatch(ctl, intent):
             directive = " | ".join(tx.text for tx in ctl.out)
             ctl.out.clear()
@@ -397,7 +438,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 client.transmit(voice.frames(canned), heard_hz or freq_hz, AM)
             continue
 
-        directive, stack = separation_context(ctl, transcript) if engaged else ("", "")
+        directive, stack = (separation_context(ctl, transcript, scope) if engaged
+                            else ("", ""))
         if directive:
             print(f"  CONTROLLER: {directive}", flush=True)
         if stack:
