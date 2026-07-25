@@ -326,3 +326,27 @@ So these belong on **separate pages** with different cursor-events modes — the
 E6B can't share a doodle-enabled sheet. `kneeboard/site.py` builds the multi-page
 tab; the mode would be set per section when that section is shown. Note the
 `SetCursorEventsMode` version stamp differs from `PageBasedContent`.
+
+## One frequency, one voice — nothing enforces it
+
+Two processes can hold the same SRS channel and neither knows the other is
+there. The bridge (`atc/agent_atc.py`) opens a client as "Batumi Approach" and
+waits for a pilot; `tools/asr_autopilot.py --srs` opens its own to talk an AI
+down. Both are Batumi Approach, both transmit, and a listener hears them
+overlap. It was heard live with three at once — two of them abandoned runs that
+had never hung up.
+
+The teardown leak is fixed (atexit plus SIGTERM/SIGINT/SIGHUP). The structural
+problem is not: **the frequency has no owner.**
+
+What it should be: the bridge owns the microphone for every channel in
+`profile.stations`, and anything else with something to say hands it text and
+lets it queue. That is already the shape of the agent path — the agent returns
+words, the bridge transmits them — so this is extending an existing seam rather
+than inventing one, probably a small local endpoint on the bridge. It also buys
+transmission queueing, which we do not have either: two calls that coincide
+today simply talk over each other.
+
+Until then the operational rule is one at a time — stop the bridge before an
+autopilot run with `--srs`, and restart it before flying. That rule is easy to
+forget and produced this bug twice, which is the argument for fixing it.
