@@ -40,9 +40,72 @@ local function flyTo(groupName, x, y, altM, speedMs)
   trigger.action.outText('AICTRL: ' .. groupName .. ' tasked', 10)
 end
 
+-- Fly a HEADING, not a place. A radar approach is nothing but a sequence of
+-- headings, so testing one against AI traffic needs the aircraft to accept an
+-- arbitrary heading on command -- which the DCS AI has no direct task for. The
+-- way to say it is a waypoint far enough down that heading that the leg IS the
+-- heading: at sixty miles the track is straight for as long as anyone cares,
+-- and the next instruction replaces it long before it arrives.
+--
+-- Headings and altitudes arrive as user flags because flags are the only thing
+-- gRPC can push into the mission environment. ai_hdg is degrees magnetic,
+-- ai_alt is hundreds of feet -- flags are integers.
+-- The leg has to be long enough that flying to its end IS flying the heading,
+-- and short enough that the altitude on it is a real instruction. DCS spreads
+-- a climb or descent across the whole leg, so a sixty-mile waypoint at two
+-- thousand feet is a gradient of thirty feet a mile -- the aircraft nods and
+-- does almost nothing. Flown live, that arrived over the threshold twelve
+-- hundred feet high while tracking the centreline to within a hundred yards:
+-- the vectoring was right and the descent was decorative. Ten miles is still
+-- straight for far longer than the four seconds between radar looks, and it
+-- makes "descend to two thousand" mean it.
+local LEG_M = 10 * 1852
+
+local function flyHeading(groupName, hdgDeg, altFt, speedMs)
+  local grp = Group.getByName(groupName)
+  if not grp then
+    trigger.action.outText('AICTRL: no group ' .. tostring(groupName), 10)
+    return
+  end
+  local u = grp:getUnit(1)
+  if not u then return end
+  local p = u:getPoint()
+  -- Mission-env x is NORTH and y is EAST, so a compass heading resolves the
+  -- ordinary way round: north by cos, east by sin. Getting this pair the wrong
+  -- way round mirrors every vector about the 045 line and looks almost right.
+  local r = math.rad(hdgDeg)
+  grp:getController():setTask({
+    id = 'Mission',
+    params = {
+      airborne = true,
+      route = { points = { [1] = {
+        type = 'Turning Point', action = 'Turning Point',
+        x = p.x + LEG_M * math.cos(r),
+        y = p.z + LEG_M * math.sin(r),
+        alt = altFt * 0.3048, alt_type = 'BARO', speed = speedMs,
+        task = { id = 'ComboTask', params = { tasks = {} } },
+      } } },
+    },
+  })
+  trigger.action.outText(
+    string.format('AICTRL: %s heading %03d, %d ft', groupName, hdgDeg, altFt), 10)
+end
+
 -- Maneuvers keyed to flag NAMES. Extend this table as tests need more (orbit a
 -- fix, go missed, hold). Each runs once when its flag goes to 1, then resets.
 local MANEUVERS = {
+  -- The controller's vector, applied to whichever group ai_grp selects: 1 is
+  -- the single, 2 the four-ship. One flag per number because that is the whole
+  -- vocabulary a user flag has.
+  ai_vector = function()
+    local grp = (trigger.misc.getUserFlag('ai_grp') == 2) and 'Pony 1' or 'Traffic'
+    local hdg = trigger.misc.getUserFlag('ai_hdg')
+    local alt = trigger.misc.getUserFlag('ai_alt') * 100
+    local kts = trigger.misc.getUserFlag('ai_kts')
+    if kts == 0 then kts = 210 end
+    flyHeading(grp, hdg, alt, kts * 0.514444)
+  end,
+
   ai_inbound = function()
     if BAT then flyTo('Traffic', BAT.x, BAT.y or BAT.z, 300, 90) end
   end,
