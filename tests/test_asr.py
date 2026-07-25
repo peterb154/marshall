@@ -407,20 +407,20 @@ class TestTerrain(unittest.TestCase):
         # would hold him four thousand feet above platform to the threshold.
         for bearing in (300, 330, 350):
             with self.subTest(bearing=bearing):
-                self.assertLess(R.mva_for(bearing), R.msa_for(bearing))
-        self.assertEqual(R.mva_for(330), 2000)   # open water
+                self.assertLess(R.mva_for(bearing, 15), R.msa_for(bearing))
+        self.assertLessEqual(R.mva_for(330, 15), 2000)   # open water
 
     def test_vectoring_over_terrain_is_above_the_msa(self):
         for radial in (20, 120, 230):
             with self.subTest(radial=radial):
                 g = asr.guide(asr.Position(15, radial, 5000, 200), self.p)
-                self.assertGreaterEqual(g.altitude_ft, R.mva_for(radial))
+                self.assertGreaterEqual(g.altitude_ft, R.mva_for(radial, 15))
 
     def test_over_the_sea_he_is_not_held_high_by_terrain(self):
         # Nothing under him but water, so the only thing holding him up is the
         # descent profile, not the MSA.
         g = asr.guide(asr.Position(15, 330, 5000, 200), self.p)
-        self.assertLess(g.altitude_ft, R.mva_for(20))
+        self.assertLess(g.altitude_ft, R.mva_for(75, 20))
 
     def test_he_reaches_platform_at_the_turn_on_and_not_before(self):
         # "No sense descending so early": platform at twenty miles means flying
@@ -452,10 +452,10 @@ class TestTerrain(unittest.TestCase):
     def test_the_final_is_flown_over_water(self):
         # The approach course itself lies north-west, which is why the descent
         # to minimums is safe at all.
-        self.assertEqual(R.mva_for((self.p.final_crs + 180) % 360), 2000)
+        self.assertLessEqual(R.mva_for((self.p.final_crs + 180) % 360, 15), 2000)
 
     def test_a_profile_with_no_terrain_data_still_works(self):
-        bare = dataclasses.replace(self.p, msa_sectors=[], mva_sectors=[])
+        bare = dataclasses.replace(self.p, msa_sectors=[], mva_cells=[])
         self.assertEqual(bare.min_safe_ft(20), bare.platform_ft)
 
     def test_no_survey_falls_back_to_the_published_msa_not_to_batumi(self):
@@ -463,7 +463,7 @@ class TestTerrain(unittest.TestCase):
         # survey the published figure is the only defensible floor; borrowing
         # the module default would vector an aircraft over flat ground at
         # thirteen thousand feet for terrain a hundred miles away.
-        flat = dataclasses.replace(self.p, mva_sectors=[],
+        flat = dataclasses.replace(self.p, mva_cells=[],
                                    msa_sectors=[(0.0, 360.0, 3000)])
         self.assertEqual(flat.min_safe_ft(120), 3000)
         self.assertEqual(flat.min_safe_ft(330), 3000)

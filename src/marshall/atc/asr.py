@@ -260,7 +260,11 @@ def safe_alt(pos: Position, profile) -> int:
     **Where he already is.** If he is below the profile there is no point
     telling him to climb back onto it; keep him where he is if that is safe.
     """
-    msa = (profile.min_safe_ft(pos.radial_deg)
+    # Range matters as much as bearing: the mountains east of Batumi are
+    # twenty miles out, and the ground four miles out on the same radial is a
+    # beach. Asking by bearing alone assigns the mountain's altitude to an
+    # aircraft over the beach.
+    msa = (profile.min_safe_ft(pos.radial_deg, pos.range_nm)
            if hasattr(profile, "min_safe_ft") else profile.platform_ft)
     to_go = max(0.0, pos.range_nm - profile.final_intercept_nm)
     # Rounded to five hundred: a controller assigns "four thousand five
@@ -408,7 +412,8 @@ def guide(pos: Position, profile) -> Guidance:
 
     def out(phase, heading, alt):
         h = round(heading) % 360
-        speed = (profile.speed_kt_at(along)
+        on_approach = phase in ("final", "map")
+        speed = (profile.speed_kt_at(along, on_approach)
                  if hasattr(profile, "speed_kt_at") else 0.0)
         return Guidance(phase, h, alt, pos.range_nm, xtk, deviation,
                         turn_direction(pos.heading_deg, h), speed)

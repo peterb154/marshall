@@ -96,13 +96,71 @@ LEGS = [(KOBULETI, INITIAL), (INITIAL, BATUMI)]
 # Sectors are (from_bearing, to_bearing, altitude), clockwise, and may wrap.
 MSA_SECTORS = [(217.0, 38.0, 7000), (38.0, 217.0, 13600)]
 
-# Surveyed 2026-07-24: highest ground per quadrant, plus a thousand feet of
-# buffer, rounded up. North-west is open sea, so vectoring there is limited by
-# the descent profile and nothing else.
-MVA_SECTORS = [(0.0, 90.0, 9500),     # 8,400 of Caucasus
-               (90.0, 180.0, 13000),  # 11,700 -- the high ground
-               (180.0, 270.0, 8500),  # 7,500
-               (270.0, 360.0, 2000)]  # the sea
+# Minimum vectoring altitudes, surveyed out of the sim itself by
+# tools/survey_terrain.py -- `land.getHeight` over a polar grid, then the
+# highest ground in each cell plus a thousand feet of clearance, rounded up.
+#
+# Cells, not quadrants, and the difference is not academic. The predecessor was
+# four 90-degree buckets each holding the highest ground within 25 nm, which
+# says 9,500 ft for everything north-east of Batumi -- including the coastal
+# plain four miles out, where the survey says thirty-six feet. Flown live that
+# rule climbed an aircraft repositioning at four miles to 9,500 and then, one
+# bucket boundary later, told it to descend to 2,000: seven thousand feet of
+# climb for nothing. The same coarseness off the departure end, where the
+# buckets said 13,000, had already flown an aeroplane into the Caucasus.
+#
+# (bearing_from, bearing_to, out_to_nm, altitude_ft). Rings as well as spokes,
+# which is the shape a real MVA chart has and for exactly this reason.
+MVA_CELLS = [
+    (  0.0,  30.0,   5.0,   1500),
+    (  0.0,  30.0,  10.0,   1000),
+    (  0.0,  30.0,  15.0,   1500),
+    (  0.0,  30.0,  25.0,   1500),
+    ( 30.0,  60.0,   5.0,   1500),
+    ( 30.0,  60.0,  10.0,   3000),
+    ( 30.0,  60.0,  15.0,   5500),
+    ( 30.0,  60.0,  25.0,   8000),
+    ( 60.0,  90.0,   5.0,   3000),
+    ( 60.0,  90.0,  10.0,   5500),
+    ( 60.0,  90.0,  15.0,   6000),
+    ( 60.0,  90.0,  25.0,   9000),
+    ( 90.0, 120.0,   5.0,   3000),
+    ( 90.0, 120.0,  10.0,   5000),
+    ( 90.0, 120.0,  15.0,   6500),
+    ( 90.0, 120.0,  25.0,  11000),
+    (120.0, 150.0,   5.0,   3000),
+    (120.0, 150.0,  10.0,   5000),
+    (120.0, 150.0,  15.0,   8000),
+    (120.0, 150.0,  25.0,  12000),
+    (150.0, 180.0,   5.0,   4000),
+    (150.0, 180.0,  10.0,   6000),
+    (150.0, 180.0,  15.0,   5500),
+    (150.0, 180.0,  25.0,   9500),
+    (180.0, 210.0,   5.0,   3000),
+    (180.0, 210.0,  10.0,   4000),
+    (180.0, 210.0,  15.0,   6000),
+    (180.0, 210.0,  25.0,   9000),
+    (210.0, 240.0,   5.0,   1500),
+    (210.0, 240.0,  10.0,   1000),
+    (210.0, 240.0,  15.0,   1000),
+    (210.0, 240.0,  25.0,   3500),
+    (240.0, 270.0,   5.0,   1500),
+    (240.0, 270.0,  10.0,   1000),
+    (240.0, 270.0,  15.0,   1000),
+    (240.0, 270.0,  25.0,   1000),
+    (270.0, 300.0,   5.0,   1500),
+    (270.0, 300.0,  10.0,   1000),
+    (270.0, 300.0,  15.0,   1000),
+    (270.0, 300.0,  25.0,   1000),
+    (300.0, 330.0,   5.0,   1500),
+    (300.0, 330.0,  10.0,   1000),
+    (300.0, 330.0,  15.0,   1000),
+    (300.0, 330.0,  25.0,   1000),
+    (330.0, 360.0,   5.0,   1500),
+    (330.0, 360.0,  10.0,   1000),
+    (330.0, 360.0,  15.0,   1000),
+    (330.0, 360.0,  25.0,   1000),
+]
 
 
 def alt_for(bearing_deg: float, sectors) -> int:
@@ -120,9 +178,32 @@ def msa_for(bearing_deg: float, sectors=None) -> int:
     return alt_for(bearing_deg, sectors or MSA_SECTORS)
 
 
-def mva_for(bearing_deg: float, sectors=None) -> int:
-    """Minimum vectoring altitude -- the lowest a CONTROLLER may assign."""
-    return alt_for(bearing_deg, sectors or MVA_SECTORS)
+def mva_for(bearing_deg: float, range_nm: float | None = None, cells=None) -> int:
+    """Minimum vectoring altitude -- the lowest a CONTROLLER may assign.
+
+    Looked up by bearing AND range, because terrain has both. With no range
+    given, answer for the outermost ring, which is the conservative reading and
+    the only safe default when the caller does not know where the aircraft is.
+
+    This is the altitude for where he is NOW. A vector whose track crosses
+    higher ground on the way is not caught here; at Batumi every repositioning
+    track runs out to the north-west over open water, so the case does not
+    arise, but it is a real limit and not a solved problem.
+    """
+    cells = cells or MVA_CELLS
+    b = bearing_deg % 360
+    best = None
+    for lo, hi, out_to, alt in cells:
+        inside = (lo <= b < hi) if lo < hi else (b >= lo or b < hi)
+        if not inside:
+            continue
+        if range_nm is None:
+            best = max(best or 0, alt)
+        elif range_nm <= out_to and (best is None or out_to < best[0]):
+            best = (out_to, alt)
+    if best is None:
+        return max(a for *_, a in cells)
+    return best if isinstance(best, int) else best[1]
 
 
 @dataclass
@@ -174,22 +255,22 @@ class Field_:
     elevation_ft: int
     runway: int             # landing heading, magnetic
     msa_sectors: list = field(default_factory=list)   # published, the pilot's
-    mva_sectors: list = field(default_factory=list)   # surveyed, the controller's
+    mva_cells: list = field(default_factory=list)     # surveyed, the controller's
     note: str = ""
 
     def msa_for(self, bearing_deg: float) -> int:
         """Published MSA -- briefed, charted, and not for vectoring."""
         return msa_for(bearing_deg, self.msa_sectors or None)
 
-    def mva_for(self, bearing_deg: float) -> int:
-        """The lowest a controller may assign an aircraft on this bearing."""
-        return mva_for(bearing_deg, self.mva_sectors or None)
+    def mva_for(self, bearing_deg: float, range_nm: float | None = None) -> int:
+        """The lowest a controller may assign an aircraft here."""
+        return mva_for(bearing_deg, range_nm, self.mva_cells or None)
 
 
 BATUMI_FIELD = Field_(
     "Batumi", -355811, 617386, 32, 124,
     msa_sectors=list(MSA_SECTORS),
-    mva_sectors=list(MVA_SECTORS),
+    mva_cells=list(MVA_CELLS),
     note="Highest terrain 10,623 ft at 23 nm SE. Missed approach turns LEFT.")
 
 
@@ -292,9 +373,10 @@ class ApproachProfile:
     # caught in flight: "he's going to fly me into the mountains here, if I were
     # IMC right now."
     msa_sectors: list = field(default_factory=list)
-    mva_sectors: list = field(default_factory=list)
+    mva_cells: list = field(default_factory=list)
 
-    def min_safe_ft(self, bearing_deg: float) -> int:
+    def min_safe_ft(self, bearing_deg: float,
+                    range_nm: float | None = None) -> int:
         """The lowest altitude that may be ASSIGNED out on this bearing.
 
         The MVA, not the published MSA -- see the note on the two tables above.
@@ -307,8 +389,9 @@ class ApproachProfile:
         and a field on flat ground would be vectored eleven thousand feet up
         for terrain a hundred miles away.
         """
-        if self.mva_sectors:
-            return max(self.platform_ft, mva_for(bearing_deg, self.mva_sectors))
+        if self.mva_cells:
+            return max(self.platform_ft,
+                       mva_for(bearing_deg, range_nm, self.mva_cells))
         if self.msa_sectors:
             return max(self.platform_ft, msa_for(bearing_deg, self.msa_sectors))
         return self.platform_ft
@@ -373,7 +456,7 @@ class ApproachProfile:
         """Approach speed in knots, for the same reason."""
         return self.final_speed_mph / MPH_PER_KT
 
-    def speed_kt_at(self, along_nm: float) -> float:
+    def speed_kt_at(self, along_nm: float, established: bool = True) -> float:
         """The speed he should be doing this far down the approach.
 
         One place to ask, so the descent gradient, the mission's AI tasking and
@@ -383,11 +466,12 @@ class ApproachProfile:
         the point where the descent starts still doing pattern speed is how the
         descent becomes a dive.
         """
-        # Inbound only. A negative along-track means he is PAST the field, and
-        # an aircraft being repositioned from the far side wants pattern speed,
-        # not approach speed -- slowing him down out there just makes the trip
-        # round longer.
-        if 0 < along_nm <= self.fap_nm + 2.0:
+        # Inbound, and actually ON the approach. Along-track alone is not
+        # enough: an aircraft abeam the field four miles off the centreline has
+        # a small along-track and is nowhere near final, and slowing it to
+        # approach speed just makes the trip round the pattern longer. A
+        # negative along-track means past the field, same answer.
+        if established and 0 < along_nm <= self.fap_nm + 2.0:
             return self.final_speed_kt
         return self.speed_kt
 
@@ -578,7 +662,7 @@ BATUMI_ASR = ApproachProfile(
     fap_nm=6.0,                  # FAP -- descent begins
     map_nm=0.6,
     msa_sectors=list(BATUMI_FIELD.msa_sectors),
-    mva_sectors=list(BATUMI_FIELD.mva_sectors),
+    mva_cells=list(BATUMI_FIELD.mva_cells),
     # The vectoring gate. NOT the published IAF: the real plate's IAF is the LU
     # NDB *overhead the field* at 7,000, from which the pilot flies a racetrack
     # reversal outbound on 304 and comes back inbound on 124. Under radar
