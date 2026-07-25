@@ -17,6 +17,7 @@ import numpy as np
 
 from marshall.srs import tts
 from marshall.srs.client import AM, SRSClient, radio
+from marshall import config
 
 PHRASES = [
     "Marshall, Pony one one, ten miles south, request the approach.",
@@ -26,11 +27,11 @@ PHRASES = [
 
 
 def main() -> int:
-    host = sys.argv[1] if len(sys.argv) > 1 else "192.168.0.35"
+    host = sys.argv[1] if len(sys.argv) > 1 else config.SRS_HOST
     freq_hz = (float(sys.argv[2]) if len(sys.argv) > 2 else 251.0) * 1_000_000
 
-    ears = SRSClient(host, name="Marshall-Ears", eam_password="362").connect([radio(freq_hz, AM)])
-    mouth = SRSClient(host, name="Marshall-Mouth", eam_password="362").connect([radio(freq_hz, AM)])
+    ears = SRSClient(host, name="Marshall-Ears", eam_password=config.SRS_EAM_PASSWORD).connect([radio(freq_hz, AM)])
+    mouth = SRSClient(host, name="Marshall-Mouth", eam_password=config.SRS_EAM_PASSWORD).connect([radio(freq_hz, AM)])
     time.sleep(2.5)  # let both radios register server-side
 
     from faster_whisper import WhisperModel

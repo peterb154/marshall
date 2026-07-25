@@ -15,16 +15,17 @@ import time
 
 import numpy as np
 
+from marshall import config
 from marshall.srs import tts
 from marshall.srs.client import AM, SRSClient, radio
 
 
 def main() -> int:
-    host = sys.argv[1] if len(sys.argv) > 1 else "192.168.0.35"
+    host = sys.argv[1] if len(sys.argv) > 1 else config.SRS_HOST
     freq_hz = (float(sys.argv[2]) if len(sys.argv) > 2 else 251.0) * 1_000_000
     exchanges = int(sys.argv[3]) if len(sys.argv) > 3 else 5
 
-    c = SRSClient(host, name="Marshall", eam_password="362").connect([radio(freq_hz, AM)])
+    c = SRSClient(host, name="Marshall", eam_password=config.SRS_EAM_PASSWORD).connect([radio(freq_hz, AM)])
     from faster_whisper import WhisperModel
     model = WhisperModel("base.en", device="cpu", compute_type="int8")
 

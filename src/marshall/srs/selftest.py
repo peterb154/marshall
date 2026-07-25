@@ -15,14 +15,15 @@ import time
 
 from marshall.srs import tts
 from marshall.srs.client import AM, SRSClient, radio
+from marshall import config
 
 
 def main() -> int:
-    host = sys.argv[1] if len(sys.argv) > 1 else "192.168.0.35"
+    host = sys.argv[1] if len(sys.argv) > 1 else config.SRS_HOST
     freq_hz = (float(sys.argv[2]) if len(sys.argv) > 2 else 124.0) * 1_000_000
 
     # External clients must authenticate via External AWACS Mode to be relayed.
-    eam = "362"
+    eam = config.SRS_EAM_PASSWORD
     rx = SRSClient(host, name="Marshall-RX", eam_password=eam).connect([radio(freq_hz, AM)])
     tx = SRSClient(host, name="Marshall-TX", eam_password=eam).connect([radio(freq_hz, AM)])
     print(f"RX guid {rx.guid}, TX guid {tx.guid}, freq {freq_hz/1e6:.3f} MHz AM")

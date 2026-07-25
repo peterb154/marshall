@@ -14,7 +14,7 @@ the published plate. Separation-critical sequencing across multiple aircraft is
 still the deterministic controller's job (exposed to the agent as a tool, later);
 for a single ship in the letdown the plate levels are the whole story.
 
-    uv run --extra voice python -m marshall.atc.agent_atc --srs 192.168.0.35 132.0 Matthew
+    uv run --extra voice python -m marshall.atc.agent_atc --srs $SRS_HOST 132.0 Matthew
 """
 
 from __future__ import annotations
@@ -27,6 +27,8 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+
+from marshall import config
 
 BASE_URL = "http://localhost:8000"
 AGENT_URL = f"{BASE_URL}/atc"          # two-tier routed turn (tier picks the model)
@@ -229,7 +231,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
     voice = tts.Voice(voice_id=voice_id)
     model = stt.load_model()
     client = SRSClient(host, name=profile.controller,
-                       eam_password="362").connect([radio(freq_hz, AM)])
+                       eam_password=config.SRS_EAM_PASSWORD).connect([radio(freq_hz, AM)])
     ctl = controller.Controller(profile)  # deterministic separation, seeded from the approach
     print(f"agent ATC live on {freq_mhz:.3f} as {profile.controller} "
           f"(voice {voice_id}, session {session_id})", flush=True)

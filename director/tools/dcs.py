@@ -26,7 +26,9 @@ from dcs.common.v0 import common_pb2
 from dcs.group.v0 import group_pb2, group_pb2_grpc
 from dcs.hook.v0 import hook_pb2, hook_pb2_grpc
 
-DCS_GRPC_ADDR = os.environ.get("DCS_GRPC_ADDR", "192.168.0.35:50051")
+# Your DCS server's gRPC endpoint. LAN-only, never public -- and this repo is,
+# so the address belongs in the environment (see director/.env), not here.
+DCS_GRPC_ADDR = os.environ.get("DCS_GRPC_ADDR", "127.0.0.1:50051")
 _TIMEOUT = 8.0
 
 

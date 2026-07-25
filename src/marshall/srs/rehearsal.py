@@ -6,12 +6,14 @@ controller's reply. This exercises the two-brain separation end to end — the
 deterministic engine sequences the holding stack, the agent voices it — the way a
 real two-ship arrival would.
 
-    uv run --extra voice python -m marshall.srs.rehearsal --srs 192.168.0.35 132.0
+    uv run --extra voice python -m marshall.srs.rehearsal --srs $SRS_HOST 132.0
 """
 
 from __future__ import annotations
 
 import time
+
+from marshall import config
 
 # (SRS identity, Polly voice, spoken line). Two ships arrive: Pony 1-1 lands
 # while Pony 2 holds behind it, then Pony 2 is cleared once the letdown frees.
@@ -38,7 +40,7 @@ def run(host: str, freq_mhz: float, script=None, reply_wait: float = 30.0) -> No
     def pilot(name: str, voice_id: str):
         if name not in clients:
             voices[name] = tts.Voice(voice_id=voice_id)
-            clients[name] = SRSClient(host, name=name, eam_password="362").connect(
+            clients[name] = SRSClient(host, name=name, eam_password=config.SRS_EAM_PASSWORD).connect(
                 [radio(freq_hz, AM)])
             print(f"[{name}] up ({voice_id})", flush=True)
             time.sleep(1.5)

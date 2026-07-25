@@ -16,16 +16,17 @@ import numpy as np
 
 from marshall.srs import tts
 from marshall.srs.client import AM, SRSClient, radio
+from marshall import config
 
 OUT_WAV = "/tmp/claude-0/-opt-marshall/6446bc5e-63c5-45fd-86a2-b0ca1aae2bb0/scratchpad/heard.wav"
 
 
 def main() -> int:
-    host = sys.argv[1] if len(sys.argv) > 1 else "192.168.0.35"
+    host = sys.argv[1] if len(sys.argv) > 1 else config.SRS_HOST
     freq_hz = (float(sys.argv[2]) if len(sys.argv) > 2 else 251.0) * 1_000_000
     secs = float(sys.argv[3]) if len(sys.argv) > 3 else 20.0
 
-    c = SRSClient(host, name="Marshall-EARS", eam_password="362").connect([radio(freq_hz, AM)])
+    c = SRSClient(host, name="Marshall-EARS", eam_password=config.SRS_EAM_PASSWORD).connect([radio(freq_hz, AM)])
     print(f"listening on {freq_hz/1e6:.3f} MHz AM for {secs:.0f}s (guid {c.guid}) -- transmit now")
     packets, pcm = c.receive(secs)
     c.close()

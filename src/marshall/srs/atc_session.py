@@ -22,6 +22,7 @@ import threading
 import time
 
 
+from marshall import config
 from marshall.core import route as R
 from marshall.srs import tts
 from marshall.srs.client import AM, SRSClient, radio
@@ -43,7 +44,7 @@ def chan_for(freq_hz: float | None) -> tuple[str, float, str]:
 
 def main() -> int:
     run_dir = sys.argv[1]
-    host = sys.argv[2] if len(sys.argv) > 2 else "192.168.0.35"
+    host = sys.argv[2] if len(sys.argv) > 2 else config.SRS_HOST
     minutes = float(sys.argv[3]) if len(sys.argv) > 3 else 30.0
     # Extra MHz freqs after minutes are added as ad-hoc channels (e.g. 105.0),
     # so Marshall can meet a pilot wherever they happen to be tuned.
@@ -58,7 +59,7 @@ def main() -> int:
     open(command, "a").close()
 
     radios = [radio(mhz * 1e6, AM) for mhz, _, _ in CHANNELS]
-    c = SRSClient(host, name="Marshall", eam_password="362").connect(radios)
+    c = SRSClient(host, name="Marshall", eam_password=config.SRS_EAM_PASSWORD).connect(radios)
     print("Marshall up on " + ", ".join(f"{l} {m:.3f}" for m, l, _ in CHANNELS), flush=True)
 
     from marshall.srs import stt

@@ -6,7 +6,7 @@ frequency, and Whisper TRANSCRIBES whatever the controller says back. Point it a
 the same SRS server + frequency the agent bridge is listening on and it will hold
 a conversation with the controller by itself.
 
-    uv run --extra voice python -m marshall.srs.pilot --srs 192.168.0.35 132.0
+    uv run --extra voice python -m marshall.srs.pilot --srs $SRS_HOST 132.0
 
 The default script flies the Batumi letdown; pass your own lines to probe an edge.
 """
@@ -14,6 +14,8 @@ The default script flies the Batumi letdown; pass your own lines to probe an edg
 from __future__ import annotations
 
 import time
+
+from marshall import config
 
 # A full letdown, the way a pilot actually talks (sloppy, out of order, asking for
 # things the plate doesn't have) -- the exact input the rigid parser choked on.
@@ -42,7 +44,7 @@ def run(host: str, freq_mhz: float, voice_id: str = "Joey",
     freq_hz = freq_mhz * 1_000_000
     voice = tts.Voice(voice_id=voice_id)                 # a different mouth than ATC
     model = stt.load_model()
-    client = SRSClient(host, name=srs_name, eam_password="362").connect(
+    client = SRSClient(host, name=srs_name, eam_password=config.SRS_EAM_PASSWORD).connect(
         [radio(freq_hz, AM)])
     print(f"synthetic pilot: SRS '{srs_name}', voicing its script, on "
           f"{freq_mhz:.3f} (voice {voice_id})", flush=True)

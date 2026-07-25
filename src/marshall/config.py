@@ -18,6 +18,33 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+def _load_dotenv(path: Path) -> None:
+    """Read KEY=VALUE lines from .env into the environment, without a dependency.
+
+    The real environment always wins -- a .env is a default for the box, not an
+    override of what you just exported on the command line. Silently does nothing
+    if the file is absent, which is the normal case in a container where the
+    values are injected directly.
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key, value = key.strip(), value.strip().strip('"').strip("'")
+        os.environ.setdefault(key, value)
+
+
+# deploy/.env.example tells you to copy it to .env at the repo root -- so
+# actually read it. Without this, every documented setting only worked if you
+# happened to export it by hand.
+_load_dotenv(REPO_ROOT / ".env")
+
+
 def _path(env: str, default: Path) -> Path:
     return Path(os.environ[env]) if os.environ.get(env) else default
 
@@ -37,6 +64,13 @@ DCS_INSTALL = _path("DCS_INSTALL", Path("/opt/dcs"))
 DCS_LOGS = _path("DCS_LOGS", BUILD_DIR / "logs")
 
 KNEEBOARD_PORT = int(os.environ.get("KNEEBOARD_PORT", "8362"))
+
+# The SRS server the voice bridge talks to, and the External AWACS Mode password
+# it registers with (external clients are not relayed without it). Both are
+# per-deployment facts about someone's LAN, not code -- this repo is public, so
+# they live in the environment and the defaults reach nobody's server but your own.
+SRS_HOST = os.environ.get("SRS_HOST", "127.0.0.1")
+SRS_EAM_PASSWORD = os.environ.get("SRS_EAM_PASSWORD", "")
 
 
 def ensure_dirs() -> None:

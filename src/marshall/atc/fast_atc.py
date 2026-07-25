@@ -9,13 +9,14 @@ the invariant holds: the LLM only classifies, the machine alone clears.
     # brain only, text-driven (no sim, no SRS):
     uv run --extra voice python -m marshall.atc.fast_atc
     # live over SRS on one frequency:
-    uv run --extra voice python -m marshall.atc.fast_atc --srs 192.168.0.35 128.0
+    uv run --extra voice python -m marshall.atc.fast_atc --srs $SRS_HOST 128.0
 """
 
 from __future__ import annotations
 
 from marshall.atc import bedrock_intent, controller as atc, intents
 from marshall.core import route as R
+from marshall import config
 
 
 def handle(ctl: atc.Controller, transcript: str, classify=bedrock_intent.classify) -> list[str]:
@@ -53,7 +54,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Joanna") -> None:
     voice = tts.Voice(voice_id=voice_id)          # each ATC gets its own Polly voice
     model = stt.load_model()
     client = SRSClient(host, name=R.BATUMI_APPROACH.controller,
-                       eam_password="362").connect([radio(freq_hz, AM)])
+                       eam_password=config.SRS_EAM_PASSWORD).connect([radio(freq_hz, AM)])
     print(f"fast ATC live on {freq_mhz:.3f} as {R.BATUMI_APPROACH.controller} "
           f"(voice {voice_id})")
     while True:
