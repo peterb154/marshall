@@ -31,4 +31,16 @@ services:
     # Host 80 -> container 8362 (the app's port). NPM forwards to <lxc-ip>:80.
     ports:
       - "80:8362"
-    # Charts are generated inside the container at startup; nothing to mount.
+    # The charts are DATA, regenerated from the source at every container start.
+    # That source is mounted rather than only baked into the image: without the
+    # mount a restart faithfully regenerates the charts from whatever code was
+    # copied in at image-build time, so editing a chart on the host changed
+    # nothing and the server quietly served a stale kneeboard. It did exactly
+    # that -- still showing beacon frequencies that no longer existed after the
+    # field moved to a radar approach.
+    volumes:
+      - ../src:/app/src:ro
+    environment:
+      # Make the mounted source win over the copy pip installed into
+      # site-packages, or the mount is decorative.
+      PYTHONPATH: /app/src

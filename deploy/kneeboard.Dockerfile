@@ -13,6 +13,7 @@ ENV MARSHALL_BUILD=/data \
 EXPOSE 8362
 
 # Generate every chart -- the individual pages and the inlined multi-page tab --
-# then serve them. A container restart rebuilds them, so a code change is picked
-# up by a restart rather than needing a manual step.
+# then serve them. Charts are regenerated on every start, and docker-compose
+# mounts src over the copy below, so a restart genuinely picks up a chart
+# change. Without that mount this only ever regenerates the baked-in code.
 CMD ["sh", "-c", "python -m marshall.kneeboard.navlog && python -m marshall.kneeboard.plate && python -m marshall.kneeboard.e6b && python -m marshall.kneeboard.site && python -m marshall.kneeboard.serve"]
