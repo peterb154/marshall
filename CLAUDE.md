@@ -57,6 +57,21 @@ for the voice-only rehearsal).
 Live ops specifics — hosts, credentials, the current running state — live in the
 **private memory notes**, not here.
 
+## Testing, cheapest first
+1. **`uv run python -m unittest discover -s tests -t .`** — the separation
+   engine and callsign parsing, pure stdlib, no LLM/network/sim. Milliseconds.
+   This is what guards the invariant, so add to it when you touch `atc/`.
+2. **`tools/classify_bench.py`** — scores the intent classifier against the
+   phrasing pilots actually use, per model. Run it after touching the schema or
+   the system prompt; the taxonomy wording moves the score more than the model
+   does.
+3. **`tools/atc_dryrun.py`** — the bridge without the radio. Same message
+   assembly as the live loop, typed input, so the two-brain seam (does the agent
+   VOICE the controller's altitudes or paraphrase them?) is testable in seconds.
+4. **`srs/rehearsal.py` / `srs/pilot.py`** — synthetic pilots over real SRS with
+   Polly and Whisper in the loop.
+5. **A live mission** with AI flights, driven by `mission/ai_control.lua`.
+
 ## The repo is PUBLIC
 No personal paths, emails, IPs, or secrets in committed files. Keep ops specifics
 in private memory.
