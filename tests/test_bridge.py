@@ -340,9 +340,14 @@ class TestAsrRangeCall(unittest.TestCase):
         from marshall.core import route as R
         self.asr, self.p = asr, R.BATUMI_ASR
 
-    def g(self, nm, radial=None):
+    def g(self, nm, radial=None, heading=None):
+        # A radar track always carries a heading, and the engine will not call
+        # an aircraft established without one -- being on the centreline says
+        # nothing about which way along it you are going, which is exactly how
+        # a go-around tracking outbound was once cleared down to minimums.
         radial = radial if radial is not None else (self.p.final_crs + 180) % 360
-        return self.asr.guide(self.asr.Position(nm, radial, 500), self.p)
+        heading = self.p.final_crs if heading is None else heading
+        return self.asr.guide(self.asr.Position(nm, radial, 500, heading), self.p)
 
     def test_on_course_call(self):
         out = agent_atc.asr_call("Pony 1-1", self.g(6))

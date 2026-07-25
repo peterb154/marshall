@@ -29,18 +29,29 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-# One rule for closing the centreline, at every distance: turn toward it by an
-# angle proportional to how far off it you are, capped at ninety degrees --
-# straight at it. Fifteen degrees per mile puts a half-mile error at a gentle
-# eight, two miles at thirty, and six miles or more at the cap.
+# One rule for closing the centreline, at every distance: steer at a point on
+# the course a fixed distance ahead, and let the geometry set the angle. Being
+# a mile off with two miles to run is a big correction; being a mile off with
+# twenty to run is a small one. That is pure pursuit, and it is used here for a
+# specific property -- the offset decays exponentially with a length scale of
+# the lookahead, so the last tenth of a mile closes as briskly as the first.
 #
-# The cap matters more than the gain. It used to be thirty degrees, which cannot
-# close a large offset at all, so a separate "no room to intercept" case flew the
-# aircraft PARALLEL to the course to buy distance -- and parallel never reduces
-# an offset. A pilot seventeen miles off the centreline was sent north-west at a
-# constant seventeen miles off, out to sea, until he abandoned the approach.
-# There is no case where turning away from the centreline is the answer; there is
-# only turning toward it harder.
+# The predecessor was proportional to the offset alone, and its tail was the
+# problem: fifteen degrees per mile means a half-mile error is corrected at
+# seven degrees, which needs four miles of run to fix. In simulation an
+# aircraft turned in at fifteen miles was not established until six -- at the
+# final approach point, where he should already have been stable and starting
+# down. Nothing in it was wrong at any single radar look, which is exactly why
+# it survived so long.
+#
+# The lookahead shrinks as he closes, because a quarter-mile off at eighteen
+# miles is nothing and a quarter-mile off at one is a go-around. It is floored
+# at the standard-rate turn radius: aiming closer than the aircraft can turn is
+# how a pursuit law starts to hunt.
+LOOKAHEAD_NM = 2.0
+LOOKAHEAD_MIN_NM = 1.0
+# The old proportional gain, kept because the outbound-leg tests and the
+# spoken-correction sizing are calibrated against it.
 DEG_PER_NM = 15.0
 MAX_INTERCEPT = 90
 # "On course" is an ANGLE, not a distance. A fixed 0.3 nm looks reasonable at
@@ -166,9 +177,23 @@ def cross_track(pos: Position, final_crs: float) -> float:
     return -pos.range_nm * math.sin(math.radians(off))
 
 
-def intercept_heading(final_crs: float, xtk_nm: float) -> int:
-    """Heading that closes the centreline without overshooting it."""
-    correction = max(-MAX_INTERCEPT, min(MAX_INTERCEPT, -DEG_PER_NM * xtk_nm))
+def lookahead_nm(along_nm: float) -> float:
+    """How far down the course to aim, from where he is now."""
+    return min(LOOKAHEAD_NM, max(LOOKAHEAD_MIN_NM, along_nm / 2.0))
+
+
+def intercept_heading(final_crs: float, xtk_nm: float,
+                      along_nm: float | None = None) -> int:
+    """Heading that closes the centreline without overshooting it.
+
+    Aim at a point `lookahead` miles further down the course than he is; the
+    angle to it IS the correction. Callers that have no along-track distance to
+    hand get the full lookahead, which is the right answer everywhere except
+    short final.
+    """
+    look = lookahead_nm(along_nm if along_nm is not None else LOOKAHEAD_NM * 2)
+    correction = math.degrees(math.atan2(-xtk_nm, look))
+    correction = max(-MAX_INTERCEPT, min(MAX_INTERCEPT, correction))
     return round((final_crs + correction) % 360)
 
 
@@ -254,74 +279,198 @@ def iaf_nm(profile) -> float:
     return _m.hypot(dx, dz) / 1852.0
 
 
+# The downwind offset: how far off the centreline to run the repositioning leg.
+# Three miles is a little under three standard-rate turn radii at 240 mph, which
+# is what a 45-degree turn onto the intercept and a second one onto the course
+# need between them without either being flown as a reversal.
+DOWNWIND_NM = 3.0
+
+# How far past the missed approach point still counts as being AT it. The point
+# has no width, and an aircraft crosses it between radar looks -- most of a mile
+# at approach speed on a fifteen-second sweep -- so a test for "inside" alone
+# can miss it entirely and leave the approach with no terminal state, which is
+# what left one simulated aircraft flying circuits over the threshold forever.
+# A mile past the threshold he is over the runway; four miles past he has flown
+# through and is a repositioning problem again.
+MAP_OVERSHOOT_NM = 1.0
+
+
+def entry_gate(profile, side: int) -> tuple[float, float]:
+    """The point the aircraft is repositioned to, in (along, cross) miles.
+
+    A fixed place on the ground, on the given side of the centreline, sitting
+    just outside the intercept wedge -- so arriving there IS being in position,
+    and the turn onto the 45 happens as he gets there rather than being a
+    separate decision. `side` is +1 right of the inbound course, -1 left.
+    """
+    across = DOWNWIND_NM * side
+    return (profile.final_intercept_nm + DOWNWIND_NM + TURN_IN_NM + 0.5, across)
+
+
+# How close to the centreline counts as "already near enough to just steer on",
+# expressed as an angle so it means the same thing at twenty miles and at three.
+# Thirty degrees is the shallowest a proportional correction closes at.
+STEER_ON_DEG = 30.0
+
+
+def in_position(along: float, xtk: float, profile) -> bool:
+    """Can the approach be flown from here, or does he have to be repositioned?
+
+    Two ways to be in position, and both are needed. Either he is near enough
+    to the centreline that ordinary course-keeping will hold him on it -- which
+    has to be judged as an ANGLE, since half a mile off at thirteen miles is
+    nothing and half a mile off at one is a go-around -- or he is far enough out
+    to fly a full intercept, which is what `has_room` answers.
+
+    Asking only the second question is what produced the last dither: an
+    aircraft established on the centreline thirteen miles out was asked whether
+    it had room to intercept, the answer went false as it flew, and it was sent
+    back out to reposition from a perfect final approach.
+    """
+    if along <= 0:                       # past the field: nothing left to fly
+        return False
+    near = min(TURN_IN_NM, along * math.tan(math.radians(STEER_ON_DEG)))
+    return abs(xtk) <= near or has_room(along, xtk, profile)
+
+
+def has_room(along: float, xtk: float, profile) -> bool:
+    """Is there enough centreline left for a full intercept from here?
+
+    This is the whole engine, and it is one line because it has to be. Closing
+    the centreline at 45 degrees trades one mile of centreline for one mile of
+    offset, so an aircraft `xtk` miles off needs `xtk` miles of run, plus the
+    room to roll out, plus everything inside the fix which is not his to spend.
+
+    The property that matters is that the answer does not change while he flies
+    the intercept: at 45 degrees `along` and `xtk` fall together, so `along -
+    xtk` is constant and an aircraft that has room keeps having room, the whole
+    way in. Four previous versions decided the question afresh on every radar
+    look with a stack of conditionals, and two of those conditionals disagreed
+    near the boundary -- so the aircraft was turned in, then sent back out, then
+    turned in again, forever. It is not enough for the rule to be right; it has
+    to be one rule.
+    """
+    return along >= profile.final_intercept_nm + abs(xtk) + TURN_IN_NM
+
+
+def reposition_side(xtk: float, profile) -> int:
+    """Which side to take him round on. +1 right of the inbound course, -1 left.
+
+    Normally the side he is already on -- nobody is dragged across the
+    centreline to join it. When he is ON the centreline and being repositioned
+    (a go-around is exactly this: over the field, lined up, and with no approach
+    left), the sign of a near-zero cross-track is noise, and reading it would
+    flip him between two gates as he wanders across the line. So that case is
+    decided by the missed approach instead, which already turns him one
+    particular way for terrain reasons, and the reset stays on the side the
+    procedure put him.
+    """
+    if abs(xtk) > TURN_IN_NM:
+        return 1 if xtk > 0 else -1
+    return -1 if getattr(profile, "missed_turn", "LEFT").upper() == "LEFT" else 1
+
+
+def _to_point(pos: Position, profile, along: float, across: float) -> float:
+    """Bearing from the aircraft to a point given in (along, cross) miles."""
+    inbound_radial = (profile.final_crs + 180) % 360
+    # Rebuild the point in the field's polar frame, which is the only frame the
+    # radar picture speaks, so nothing here needs a second coordinate system.
+    ae, an = _en(along, inbound_radial)
+    right = (profile.final_crs + 90) % 360
+    ce, cn = _en(across, right)
+    pe, pn = ae + ce, an + cn
+    fe, fn = _en(pos.range_nm, pos.radial_deg)
+    return math.degrees(math.atan2(pe - fe, pn - fn)) % 360
+
+
 def guide(pos: Position, profile) -> Guidance:
     """One radar look -> the next instruction.
 
-    The procedure a controller actually flies, and the reason it is staged this
-    way rather than computed as one heading: every leg has a different JOB.
+    Three states, and which one he is in is decided by a single question --
+    `has_room` -- rather than by a chain of them:
 
-      final      established on the course -- keep it, and come down
-      intercept  45 degrees onto the course, turned TURN_IN_NM off it
-      base       perpendicular, closing the centreline
-      outbound   not enough centreline left to work with; go and get some
+      final        established on the course inside the fix: hold it, come down
+      vector/in    in position: cut across at 45 until close, then blend on
+      vector/out   not in position: go to a fixed gate that puts him in position
 
-    All of the positioning happens OUTSIDE the initial approach fix, so that by
-    the IAF he is established, on course and at the IAF altitude. The fix is a
-    gate he passes through, not a point to be chased -- three sorties were lost
-    to vectoring that aimed at an invented point which moved, and variously
-    turned him away from the field, orbited, and flew him out to sea.
+    Everything except the last mile happens OUTSIDE the fix, so that by the fix
+    he is established, on course and at the fix altitude. The fix is a gate he
+    passes through, never a point to be chased -- chasing a computed point is
+    what turned a pilot away from the field, orbited another, and flew a third
+    out to sea over three sorties.
     """
     xtk = cross_track(pos, profile.final_crs)
+    along = along_track(pos, profile.final_crs)
     tol = on_course_tolerance(pos.range_nm)
     deviation = ("on course" if abs(xtk) <= tol
                  else "right of course" if xtk > 0 else "left of course")
-    inbound_radial = (profile.final_crs + 180) % 360
-    outbound = inbound_radial
-    along = along_track(pos, profile.final_crs)
-    gate = iaf_nm(profile)
 
     def out(phase, heading, alt):
         h = round(heading) % 360
         return Guidance(phase, h, alt, pos.range_nm, xtk, deviation,
                         turn_direction(pos.heading_deg, h))
 
-    if pos.range_nm <= profile.map_nm:
-        return out("map", intercept_heading(profile.final_crs, xtk),
-                   profile.mda_ft)
-
-    # Established: on the course AND pointing down it. The heading check is not
+    # Established: on the course and pointing down it. The heading check is not
     # pedantry -- a go-around tracking outbound sits on the centreline with a
-    # small cross-track, and was called established and told to descend to
+    # tiny cross-track, and was once called established and sent down to
     # minimums while flying away from the field.
-    tracking_in = abs(angle_diff(pos.heading_deg, profile.final_crs)) <= 45
-    if abs(xtk) <= max(tol, TURN_IN_NM / 4) and tracking_in:
-        inside = pos.range_nm <= profile.final_intercept_nm
-        alt = (advisory_altitude(pos.range_nm, profile) if inside
-               else safe_alt(pos, profile))
+    tracking_in = abs(angle_diff(pos.heading_deg, profile.final_crs)) <= 60
+    on_the_course = abs(xtk) <= max(tol, TURN_IN_NM / 4) and tracking_in
+    if on_the_course and along > -MAP_OVERSHOOT_NM:
+        # The missed approach point is a place on the APPROACH -- so far down
+        # the final approach course, established -- and not a radius round the
+        # field. Measuring it as a radius announced it to any aircraft that
+        # happened to be repositioning overhead, which is most of them, since
+        # the track from the far side to the entry gate goes over the top. It
+        # also made the point unhittable between radar looks: at approach speed
+        # a fifteen-second gap is most of a mile, so an aircraft could be
+        # outside the circle on one sweep and past the field on the next.
+        # Hence "at or past", not "within": an aircraft lined up and pointing
+        # at the runway with the threshold behind it has finished the approach
+        # whether it lands or goes around, and either way it is not still
+        # being vectored onto a final it is already past.
+        if -MAP_OVERSHOOT_NM <= along <= profile.map_nm:
+            return out("map", intercept_heading(profile.final_crs, xtk, along),
+                       profile.mda_ft)
+        # Anything further through than that has flown the approach and missed
+        # it, and is a repositioning problem -- so it falls out of this branch
+        # entirely rather than being handed the final approach course. Handing
+        # it over was a five-line convenience that told an aircraft three miles
+        # past the threshold, still pointing down the runway heading, to fly
+        # that heading; it did, out to sea, indefinitely.
+        # Established, at whatever range. It is only "final" once inside the
+        # fix; outside it he is still being vectored, just along the course --
+        # which is also where the descent profile still applies rather than the
+        # published one.
+        inside = 0 < along <= profile.final_intercept_nm
         return out("final" if inside else "vector",
-                   intercept_heading(profile.final_crs, xtk), alt)
+                   intercept_heading(profile.final_crs, xtk, along),
+                   advisory_altitude(pos.range_nm, profile) if inside
+                   else safe_alt(pos, profile))
 
-    # Inside the gate but not established: there is no approach left to fly from
-    # here, so route him to the initial approach fix and start again from there.
-    # DIRECT TO THE FIX, not on a computed reciprocal: "fly outbound, angled
-    # toward the centreline" is a heuristic, and from due east it points
-    # straight across the airfield -- the simulation flew a man over the runway
-    # and called it a missed approach. A real fix fifteen miles out is a real
-    # place to send him, and the track to it clears the field on its own.
-    if along < gate:
-        return out("to the fix",
-                   bearing_between(pos.range_nm, pos.radial_deg,
-                                   gate, inbound_radial),
-                   safe_alt(pos, profile))
+    if in_position(along, xtk, profile):
+        # In position. Far off the course, cut across at a fixed 45 -- fixed,
+        # because that is the angle the room was reserved at, and flying any
+        # shallower spends centreline he has not got. Inside the turn-in
+        # distance, blend on proportionally so he rolls out on the course
+        # rather than through it.
+        if abs(xtk) > TURN_IN_NM:
+            heading = profile.final_crs - INTERCEPT_ANGLE * (1 if xtk > 0 else -1)
+        else:
+            heading = intercept_heading(profile.final_crs, xtk, along)
+        # Down the descent profile as he closes, floored by the minimum
+        # vectoring altitude for the ground he is actually over -- so he
+        # arrives at the fix at the fix altitude rather than being dropped to
+        # it in one instruction on short final.
+        return out("vector", heading, safe_alt(pos, profile))
 
-    # Outside the gate: close the centreline square, then turn 45 onto it.
-    if abs(xtk) > TURN_IN_NM:
-        return out("base", profile.final_crs - 90 * (1 if xtk > 0 else -1),
-                   safe_alt(pos, profile))
-    return out("intercept",
-               profile.final_crs - INTERCEPT_ANGLE * (1 if xtk > 0 else -1),
-               profile.iaf_alt_ft if getattr(profile, "iaf_alt_ft", 0)
-               else profile.platform_ft)
+    # Not in position: send him to a fixed point that puts him in position. A
+    # real place on the ground, so the track to it does not move under him --
+    # and it sits just outside the wedge, so arriving there and being ready to
+    # turn in are the same event rather than two decisions that can disagree.
+    g_along, g_across = entry_gate(profile, reposition_side(xtk, profile))
+    return out("vector", _to_point(pos, profile, g_along, g_across),
+               safe_alt(pos, profile))
 
 
 def spoken_range(nm: float) -> str:

@@ -80,9 +80,15 @@ class TestInterceptHeading(unittest.TestCase):
             self.assertLessEqual(abs(asr.angle_diff(h, 124)), asr.MAX_INTERCEPT)
 
     def test_heading_wraps(self):
-        self.assertEqual(asr.intercept_heading(5, -1.0), (5 + asr.DEG_PER_NM) % 360)
-        self.assertEqual(asr.intercept_heading(355, -1.0),
-                         (355 + asr.DEG_PER_NM) % 360)
+        # Both sides of north: a correction that runs off either end of the
+        # compass has to come back as a heading, not as 365 or -8.
+        turn = math.degrees(math.atan2(1.0, asr.LOOKAHEAD_NM))
+        self.assertEqual(asr.intercept_heading(5, -1.0), round((5 + turn) % 360))
+        self.assertEqual(asr.intercept_heading(355, -1.0), round((355 + turn) % 360))
+        for crs in (0, 1, 359, 180):
+            for xtk in (-3.0, -0.2, 0.0, 0.2, 3.0):
+                h = asr.intercept_heading(crs, xtk)
+                self.assertTrue(0 <= h < 360, (crs, xtk, h))
 
     def test_the_cap_allows_a_perpendicular_turn(self):
         # It used to cap at thirty degrees, which cannot close a large offset --
@@ -425,9 +431,19 @@ class TestTerrain(unittest.TestCase):
         # to minimums is safe at all.
         self.assertEqual(R.mva_for((self.p.final_crs + 180) % 360), 2000)
 
-    def test_a_profile_with_no_msa_still_works(self):
+    def test_a_profile_with_no_terrain_data_still_works(self):
         bare = dataclasses.replace(self.p, msa_sectors=[], mva_sectors=[])
         self.assertEqual(bare.min_safe_ft(20), bare.platform_ft)
+
+    def test_no_survey_falls_back_to_the_published_msa_not_to_batumi(self):
+        # A new field must not inherit this one's mountains. With no vectoring
+        # survey the published figure is the only defensible floor; borrowing
+        # the module default would vector an aircraft over flat ground at
+        # thirteen thousand feet for terrain a hundred miles away.
+        flat = dataclasses.replace(self.p, mva_sectors=[],
+                                   msa_sectors=[(0.0, 360.0, 3000)])
+        self.assertEqual(flat.min_safe_ft(120), 3000)
+        self.assertEqual(flat.min_safe_ft(330), 3000)
 
 if __name__ == "__main__":
     unittest.main()

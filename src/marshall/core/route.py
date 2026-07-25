@@ -299,12 +299,23 @@ class ApproachProfile:
 
         The MVA, not the published MSA -- see the note on the two tables above.
         Never below platform, since platform is the approach's own floor.
+
+        A profile carries its OWN tables and falls back down a ladder rather
+        than borrowing: a surveyed MVA if it has one, otherwise the published
+        MSA, which is conservative but safe, otherwise platform. Defaulting to
+        the module's tables instead would hand a new field Batumi's mountains,
+        and a field on flat ground would be vectored eleven thousand feet up
+        for terrain a hundred miles away.
         """
-        return max(self.platform_ft, mva_for(bearing_deg, self.mva_sectors or None))
+        if self.mva_sectors:
+            return max(self.platform_ft, mva_for(bearing_deg, self.mva_sectors))
+        if self.msa_sectors:
+            return max(self.platform_ft, msa_for(bearing_deg, self.msa_sectors))
+        return self.platform_ft
 
     def briefed_msa_ft(self, bearing_deg: float) -> int:
         """The published figure, for the plate and for what the pilot is told."""
-        return msa_for(bearing_deg, self.msa_sectors or None)
+        return msa_for(bearing_deg, self.msa_sectors) if self.msa_sectors else 0
     # The controllers who work this approach, enroute inwards. Empty falls back
     # to the beacon-derived stations the NDB letdown uses.
     stations: list[Station] = field(default_factory=list)
