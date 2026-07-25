@@ -213,6 +213,23 @@ class Controller:
         self._try_clear()
 
     def request_approach(self, cs: str) -> None:
+        # A pilot who calls up asking for the approach directly (no prior check-in
+        # or beacon report) should still be worked, not ignored. Enter a new
+        # arrival into the stack bottom-up, then let the sequencer clear them.
+        ac = self.get(cs)
+        if ac.phase == Phase.CLEARED:
+            # Already cleared (e.g. the aircraft ahead just landed and freed the
+            # letdown for him) -- re-affirm, don't send him back to the hold.
+            self.say(cs, f"{cs}, cleared beacon approach runway "
+                         f"{self.profile.runway or 'in use'}, continue.")
+            return
+        if ac.phase in (Phase.UNKNOWN, Phase.ENROUTE):
+            slot = self._free_slot()
+            if slot is not None:
+                ac.phase, ac.assigned_ft, ac.last_report_t = Phase.HOLDING, slot, self.t
+                self.say(cs, f"{cs}, {self.profile.controller}, radar not available, "
+                             f"hold at {self.profile.beacon.name} as published, "
+                             f"maintain {spell_alt(slot)}.")
         self._try_clear(requested_by=cs)
 
     # -- the sequencing core ----------------------------------------------

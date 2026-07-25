@@ -51,7 +51,9 @@ INTENT_SCHEMA = {
         "kind": {"type": "string",
                  "enum": [k.value for k in IntentKind]},
         "callsign": {"type": "string",
-                     "description": "flight and number, e.g. 'Pony 2'"},
+                     "description": "flight name plus its number as spoken digits, "
+                     "dash-separated: 'Pony one one' -> 'Pony 1-1', 'Pony two' -> "
+                     "'Pony 2'. Never merge digits into one number (not 'Pony 11')."},
         "altitude_ft": {"type": ["integer", "null"],
                         "description": "reported altitude in feet, or null"},
     },
@@ -62,8 +64,12 @@ LLM_SYSTEM = (
     "You are the ears of a radar-less approach controller, not the controller. "
     "Classify one pilot radio transmission into exactly one intent. Never invent "
     "a clearance, altitude, or instruction -- only report what the pilot said. "
-    "Altitudes: 'four thousand' -> 4000, 'niner thousand' -> 9000. Callsigns are "
-    "a flight name plus a number, e.g. 'Pony 2'."
+    "Altitudes: 'four thousand' -> 4000, 'niner thousand' -> 9000. A callsign is "
+    "usually a single word like 'Sockeye', sometimes a flight name plus a number "
+    "like 'Pony 2'. Use it EXACTLY as spoken -- never add a number the pilot did "
+    "not say (do not turn 'Sockeye, do you copy' into 'Sockeye 2'). A pilot asking "
+    "for something (approach, a DME, a frequency) is request_approach if it is the "
+    "approach, otherwise the closest report; a bare radio check is check_in."
 )
 
 
@@ -82,6 +88,26 @@ def _callsign(text: str) -> str:
     tok = m.group(2).lower()
     num = tok if tok.isdigit() else str(_NUM.get(tok, ""))
     return f"{flight} {num}".strip()
+
+
+def normalize_callsign(cs: str) -> str:
+    """Canonical 'Flight D-D' callsign. Spoken digit runs and the classifier's
+    run-together numbers both collapse the same way: 'Pony one one' and 'Pony 11'
+    -> 'Pony 1-1'; 'Pony two' -> 'Pony 2'; a name with no number ('Sockeye') is
+    left alone. Keeps the separation engine's key identical to what the agent says,
+    so a stack never splits one pilot into two."""
+    cs = (cs or "").strip()
+    m = re.match(r"([A-Za-z]+)(.*)$", cs)
+    if not m:
+        return cs
+    flight = m.group(1).capitalize()
+    digits: list[str] = []
+    for tok in re.findall(r"[A-Za-z]+|\d+", m.group(2)):
+        if tok.isdigit():
+            digits.extend(tok)                       # "11" -> "1","1"
+        elif tok.lower() in _NUM:
+            digits.append(str(_NUM[tok.lower()]))
+    return f"{flight} " + "-".join(digits) if digits else flight
 
 
 def _altitude(text: str) -> int | None:

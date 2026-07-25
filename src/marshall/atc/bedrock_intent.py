@@ -60,7 +60,7 @@ def classify(transcript: str) -> intents.Intent:
     data = bedrock_llm(transcript, intents.LLM_SYSTEM, intents.INTENT_SCHEMA)
     return intents.Intent(
         intents.IntentKind(data["kind"]),
-        data.get("callsign", ""),
+        intents.normalize_callsign(data.get("callsign", "")),
         data.get("altitude_ft"),
         confidence=0.9,
         transcript=transcript,

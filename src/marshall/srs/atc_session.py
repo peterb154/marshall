@@ -21,7 +21,6 @@ import sys
 import threading
 import time
 
-import numpy as np
 
 from marshall.core import route as R
 from marshall.srs import tts
@@ -30,12 +29,6 @@ from marshall.srs.client import AM, SRSClient, radio
 # Flight-plan channels A/B/C, straight from the single source of truth.
 CHANNELS = [(f.freq_mhz, chr(ord("A") + i), f.sector or f.name)
             for i, f in enumerate(R.FIXES)]
-
-# Prime Whisper with the domain so proper nouns survive (Batumi, Pony, Kobuleti).
-WHISPER_PROMPT = ("Radio calls to Batumi Approach, Kobuleti Departure, Batumi "
-                  "Tower. Callsigns Pony, Sockeye, Marshall. Terms: beacon, "
-                  "cleared for the approach, holding, missed approach, established "
-                  "on the beam, platform, thousand feet, Mustang, Batumi, Kobuleti.")
 
 
 def chan_for(freq_hz: float | None) -> tuple[str, float, str]:
@@ -68,8 +61,8 @@ def main() -> int:
     c = SRSClient(host, name="Marshall", eam_password="362").connect(radios)
     print("Marshall up on " + ", ".join(f"{l} {m:.3f}" for m, l, _ in CHANNELS), flush=True)
 
-    from faster_whisper import WhisperModel
-    model = WhisperModel("base.en", device="cpu", compute_type="int8")
+    from marshall.srs import stt
+    model = stt.load_model()
     print("whisper ready; listening", flush=True)
 
     t0 = time.monotonic()
@@ -81,9 +74,7 @@ def main() -> int:
             pcm, freq = c.recv_utterance(max_wait=5, silence=1.1)
             if pcm is None or not pcm.size:
                 continue
-            segs, _ = model.transcribe(pcm.astype(np.float32) / 32768.0,
-                                       language="en", initial_prompt=WHISPER_PROMPT)
-            text = " ".join(s.text for s in segs).strip()
+            text = stt.transcribe(model, pcm)
             if not text:
                 continue
             label, mhz, name = chan_for(freq)

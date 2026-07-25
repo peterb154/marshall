@@ -10,7 +10,7 @@ east. Speeds are MPH because the P-51's airspeed indicator is.
 """
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 
 NM = 1852.0
 MPH_PER_KT = 1.15078
@@ -25,6 +25,12 @@ CRUISE_TAS_MPH = 220.0
 CRUISE_ALT_FT = 5000
 WIND_FROM_DEG = 270.0
 WIND_MPH = 20.0
+
+# The inbound flight this mission expects, for the generated plate (Whisper prime
+# + a hint to the controller). Any pilot may call in with their own callsign; the
+# controller correlates by position, not by expecting this one. build.py names the
+# flight group from the leading word.
+FLIGHT_CALLSIGN = "Pony 1-1"
 
 
 @dataclass
@@ -81,6 +87,25 @@ BATUMI_FIELD = Field_(
 
 
 @dataclass
+class AtcCapability:
+    """What the controller can DO on a given mission -- the dial between a real,
+    capable controller and a period handicap.
+
+    Defaults describe a REAL controller: it has radar, it separates on radar, it
+    talks like a modern controller. A 1944-style mission dials the handicaps in
+    (radar off, no DME, blind procedural separation, period phraseology) -- the
+    Batumi beacon letdown is one such configured flavour, not the baseline. The
+    bridge reads this to generate the agent's prompt and to decide whether to feed
+    it a radar picture at all, so "handicap the ATC for this mission" is data here,
+    not a prompt rewrite.
+    """
+    radar: bool = True          # sees aircraft positions -> can give range/vectors
+    dme: bool = False           # the PILOT's aircraft carries DME (the P-51 doesn't)
+    separation: str = "radar"   # "radar" | "procedural" (blind assigned-altitude stack)
+    era: str = "modern"         # phraseology flavour: "modern" | "ww2"
+
+
+@dataclass
 class ApproachProfile:
     """One field's approach, in one place.
 
@@ -94,6 +119,10 @@ class ApproachProfile:
     beacon: Fix                     # the approach beacon (ident + freq)
     stack_ft: list[int]             # holding stack, bottom first
     outer_hold: Fix                 # escape-valve fix for repeated misses
+
+    # What this field's controller can do. Default is a real, radar-equipped
+    # controller; set it per mission to handicap him (see AtcCapability).
+    atc: AtcCapability = field(default_factory=AtcCapability)
 
     # Used only by the plate, not by ATC (it is blind and cannot see the field).
     final_crs: int = 0              # inbound = runway heading
@@ -180,6 +209,11 @@ BATUMI_APPROACH = ApproachProfile(
     runway="12",
     platform_ft=2000,
     ceiling_ft=400,
+    # Radar ON (you wanted eyes), but the P-51 carries no DME and this is a 1944
+    # beacon letdown -- so the controller reads range off his own scope, separates
+    # procedurally on the single beacon, and talks period. Flip radar off here and
+    # it becomes the fully-blind classic.
+    atc=AtcCapability(radar=True, dme=False, separation="procedural", era="ww2"),
 )
 
 
@@ -213,6 +247,23 @@ def wind_triangle(course_true: float, tas: float = CRUISE_TAS_MPH,
 
 def magnetic(true_deg: float) -> float:
     return (true_deg - MAGVAR) % 360
+
+
+# --- serialization: an ApproachProfile <-> a plain dict (for the DB) ----------
+# An approach is static reference data; storing it means round-tripping the
+# profile (and its nested Fix / AtcCapability) through JSON. Properties like
+# mda_ft recompute from the fields, so only the fields are serialized.
+
+def profile_to_dict(p: ApproachProfile) -> dict:
+    return asdict(p)
+
+
+def profile_from_dict(d: dict) -> ApproachProfile:
+    d = dict(d)
+    d["beacon"] = Fix(**d["beacon"])
+    d["outer_hold"] = Fix(**d["outer_hold"])
+    d["atc"] = AtcCapability(**d["atc"])
+    return ApproachProfile(**d)
 
 
 @dataclass

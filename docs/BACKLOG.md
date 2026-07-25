@@ -77,6 +77,106 @@ So `say()` outputs need a **target frequency** from the aircraft's phase, and th
 relevant fix's freq). `atc_session` already proves one client holds all three; the
 brain just has to emit each output on the right one.
 
+## Scriptable AI control — BUILT + PROVEN (extend maneuvers as needed)
+
+Give AI units live instructions — fly an approach, orbit, vector — for scripted
+test traffic, forcing ATC interactions with no human, and the director's
+"spawn/command" vision. Working as of 2026-07-25.
+
+**Why it isn't gRPC-native** (verified, so don't go looking again): the
+`controller` service exposes only `GetDetectedTargets` + `SetAlarmState` (no
+`SetTask`); `hook.Eval` runs in the GameGUI env where `Group`/`Unit`/`a_do_script`
+are nil; `net.dostring_in('mission', …)` also has no `Group`. `Controller:setTask`
+lives ONLY in the mission scripting env (MSE).
+
+**The mechanism (implemented):** the `.miz` embeds `mission/ai_control.lua`
+(appended to the generated beacons DoScript, so it runs in the MSE). It watches
+**named user flags** and tasks groups on them. Drive it from outside with gRPC
+`trigger.SetUserFlag(flag="ai_inbound", value=1)` (flags are STRING-named). The
+tasker polls, consumes the flag (the flag reset to 0 is the proof it ran), and
+calls `Group:getController():setTask{...}`. Spawn/enable traffic with
+late-activation + `group.Activate` (already wired: `build --traffic` /
+`call_in_traffic`); the server must be unpaused (`hook.SetPaused(false)`) or the
+sim is frozen and tasks never process.
+
+**Proven:** flag-commanded `ai_inbound` broke `Traffic` off its orbit into a
+steady descending inbound — radar range 4.3→2.7 nm, alt 3,200→1,750 ft, heading
+locked ~213 on the beacon.
+
+**To extend:** add entries to the `MANEUVERS` table in `ai_control.lua`
+(`ai_orbit`, `ai_missed`, `ai_hold`, …) — each a flag-triggered `setTask`. Next
+step when wanted: a director tool `command_ai(maneuver)` so the harness/agent
+stages scenarios by name instead of raw flags. Route points are `{x=north,
+y=east}` = `{fix.x, fix.z}`.
+
+## Two-brain latency: the separation classify on the hot path
+
+Surfaced by the multi-ship rehearsal (2026-07-25). With traffic, every pilot call
+runs a Haiku intent-classify (~0.5-1s) BEFORE the Sonnet agent reply, to drive the
+deterministic Controller — replies climbed to 5-8s. It must be synchronous (the
+current report has to affect the current reply), so it can't just be backgrounded.
+Options: (a) for real missions, aircraft are sim units on radar, so gate the
+classify on radar showing >=2 contacts (single ship stays on the fast, classify-
+free path); (b) trim the growing /chat session history; (c) a cheaper/smaller
+classify. Not broken, just slow under traffic; single-ship is unaffected (the
+classify only runs once a stack exists). Note: the voice-only rehearsal can't use
+the radar gate (synthetic pilots aren't tracks) — hence the always-classify path.
+
+Also from the rehearsal, deeper follow-on: **proactive "you're now cleared."**
+When the aircraft ahead lands, the Controller clears the next one, but that's a
+transmission to a pilot who didn't just call — it needs the hook/telemetry
+proactive-TX path, not the reply-to-caller flow. Today the next ship gets its
+clearance when it next keys up (handled: request_approach re-affirms a cleared
+aircraft instead of re-holding it).
+
+## Approaches (static) + flight plans (dynamic) in the database
+
+Wanted (surfaced 2026-07-25). Two separate concerns, both bound for Postgres:
+
+- **Approaches = static reference data.** A published procedure for a field —
+  beacon, runway, altitude ladder, headings, timing, `AtcCapability` — reusable
+  across missions. Today this is the `ApproachProfile` constant in `route.py`;
+  graduate it to a DB `approaches` table (a library). **Define the Batumi NDB
+  approach first.**
+- **Flight plans = dynamic per-sortie data.** Which flight (callsign, aircraft),
+  what route, what weather, and *which approach* it flies — a row that references
+  an approach. This is what a mission is; today it's baked into `build.py`.
+
+The plate generator (`atc/briefing.py`) is the foundation: it already treats the
+approach as data and renders it to the agent's prompt. Next step is to read the
+`ApproachProfile` from the DB (loaded flight plan → its approach) instead of the
+`route.py` constant, so the mission builder, the chart, and the ATC all read one
+DB-backed approach. `route.py` stays the geometry source until then.
+
+## Agent ATC: de-hardcode from Batumi / P-51 (generalize per mission)
+
+Surfaced 2026-07-24 building the agent controller. The working Batumi Approach is
+**over-fit**: the plate values (headings 300/120, levels 4000/2000/300, timing
+3:24, runway 12), the callsign "Pony 1-1", and the beacon lat/lon are all
+hand-written into the agent prompt (`marshall-director/prompts/`) and
+`tools/dcs.py` (`BATUMI_LAT/LON` for the radar picture). Fine for one field; wrong
+as a pattern.
+
+The clean path: **generate the controller's soul/rules and the radar reference
+fix from the single source of truth** -- `core/route.py` (ApproachProfile already
+holds beacon, runway, platform/ceiling, final_approach_sec) and ultimately the
+loaded `.miz` (flight callsign, SCR-522 presets, field). So spinning up "Kobuleti
+Departure" or a different airframe is data, not a prompt rewrite. Radar's field
+anchor should come from the same place (route.py beacon coords -> lat/lon), not a
+constant. Until then: one good Batumi Approach, hand-tuned.
+
+## Event-driven agent: gRPC telemetry triggers (proactive ATC)
+
+Surfaced 2026-07-24. The agent is **reactive** -- it only runs when the pilot keys
+the mic, has no timer, and cannot wake itself. That's why "expect further clearance
+in 5 minutes" is a lie it can't honor (mitigated in the prompt: never promise
+self-initiated action, always hand the pilot the next trigger). The real fix is an
+**event loop**: stream DCS-gRPC telemetry (positions we already read for radar),
+let the agent set triggers ("when Pony 1-1 crosses the beacon / reaches platform,
+wake me"), and transmit **unprompted**. Radar eyes + triggers = a controller that
+volunteers the next call instead of waiting to be asked. Pairs with the two-brain
+split (deterministic sequencing + agent judgment).
+
 ## OpenKneeboard: split doodle pages from clickable pages
 
 OpenKneeboard's Web Dashboard defaults to **mouse emulation** — the tablet pen

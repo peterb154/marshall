@@ -76,6 +76,11 @@ class SRSClient:
         self.udp: socket.socket | None = None
         self.server = (host, port)
         self._stop = threading.Event()
+        # SRS identity of whoever transmitted -- the free, per-packet anchor that
+        # ties a voice to a person before they say a callsign. roster maps client
+        # GUID -> friendly name ("Sockeye"), learned from the server's client list.
+        self.roster: dict[str, str] = {}
+        self.last_sender_guid: str | None = None
 
     # --- registration ---------------------------------------------------
     def connect(self, radios: list[dict]) -> "SRSClient":
@@ -145,14 +150,41 @@ class SRSClient:
                 break
 
     def _drain_tcp(self) -> None:
-        # Read and discard server chatter (client lists, settings) so the socket
-        # buffer never wedges. We are transmit-only; nothing to parse yet.
+        # The server streams newline-delimited JSON (client lists, settings). We
+        # keep the socket drained so it never wedges, and harvest GUID -> Name so
+        # a voice packet's origin GUID can be resolved to "Sockeye".
+        buf = b""
         try:
             while not self._stop.is_set():
-                if not self.tcp.recv(4096):
+                chunk = self.tcp.recv(4096)
+                if not chunk:
                     break
+                buf += chunk
+                while b"\n" in buf:
+                    line, buf = buf.split(b"\n", 1)
+                    self._harvest_roster(line)
         except OSError:
             pass
+
+    def _harvest_roster(self, line: bytes) -> None:
+        """Pull {GUID: Name} out of any client records in one TCP message."""
+        try:
+            msg = json.loads(line)
+        except (ValueError, UnicodeDecodeError):
+            return
+        records = msg.get("Clients") or []
+        if msg.get("Client"):
+            records = list(records) + [msg["Client"]]
+        for c in records:
+            guid, name = c.get("ClientGuid"), c.get("Name")
+            if guid and name:
+                self.roster[guid] = name
+
+    def name_for(self, guid: str | None) -> str:
+        """Friendly SRS name for a client GUID, or a short GUID stub if unknown."""
+        if not guid:
+            return "unknown"
+        return self.roster.get(guid) or guid[:6]
 
     # --- voice ----------------------------------------------------------
     def transmit(self, opus_frames: list[bytes], freq_hz: float, modulation: int = AM,
@@ -276,6 +308,8 @@ class SRSClient:
                 frames.append(np.frombuffer(pcm, dtype="<i2"))
                 if freq_hz is None and freq_len >= 8:      # first freq block
                     (freq_hz,) = struct.unpack("<d", data[6 + audio_len:6 + audio_len + 8])
+                # Origin GUID is the last 22 bytes of the packet (relay + origin).
+                self.last_sender_guid = data[-GUID_LEN:].decode("ascii", "ignore")
                 started = True
                 last = now
             except Exception:
