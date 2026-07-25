@@ -217,6 +217,25 @@ def along_track(pos: Position, final_crs: float) -> float:
 FT_PER_NM = 318.0
 
 
+def descent_gradient(profile) -> float:
+    """Feet per mile from the final approach point down to minimums.
+
+    DERIVED, not assumed. The plate's three degrees is the ILS glidepath and it
+    is aimed at the threshold; a surveillance approach has no glidepath and does
+    not go to the threshold -- it descends to minimums and levels there to look
+    for the runway. So the gradient that matters is the one joining two
+    published points, the fix altitude at the final approach point and the
+    minimum descent altitude at the missed approach point, and at Batumi that is
+    about 2.3 degrees rather than 3.
+
+    It also has to be derived rather than fixed if this is to work at another
+    field, where the fixes sit at different distances and the answer is a
+    different number.
+    """
+    run = max(0.1, profile.fap_nm - profile.map_nm)
+    return (profile.platform_ft - profile.mda_ft) / run
+
+
 def advisory_altitude(range_nm: float, profile) -> int:
     """The height he SHOULD be at, this far out.
 
@@ -232,10 +251,34 @@ def advisory_altitude(range_nm: float, profile) -> int:
     fap = getattr(profile, "fap_nm", 0) or profile.final_intercept_nm
     if range_nm >= fap:
         return profile.platform_ft                    # level intermediate
-    thr = getattr(profile, "field_thr_elev_ft", 0) or profile.field_elev_ft
-    want = thr + round(range_nm * FT_PER_NM)
+    table = getattr(profile, "descent_table", None)
+    if table:
+        want = _from_table(range_nm, sorted(table))
+    else:
+        to_go = max(0.0, range_nm - profile.map_nm)
+        want = profile.mda_ft + to_go * descent_gradient(profile)
     return max(profile.mda_ft, min(profile.platform_ft,
                                    int(round(want / 100) * 100)))
+
+
+def _from_table(range_nm: float, table: list) -> float:
+    """Read a published descent table, straight-lining between its rows.
+
+    The table is a list of points on one straight path, so interpolating
+    between them and extending past the ends with the same slope is reading it
+    rather than inventing anything.
+    """
+    if range_nm <= table[0][0]:
+        (r0, a0), (r1, a1) = table[0], table[1]
+    elif range_nm >= table[-1][0]:
+        (r0, a0), (r1, a1) = table[-2], table[-1]
+    else:
+        for i in range(len(table) - 1):
+            if table[i][0] <= range_nm <= table[i + 1][0]:
+                (r0, a0), (r1, a1) = table[i], table[i + 1]
+                break
+    slope = (a1 - a0) / (r1 - r0)
+    return a0 + (range_nm - r0) * slope
 
 
 def _round_to(ft: float, step: int) -> int:

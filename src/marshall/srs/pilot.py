@@ -30,6 +30,27 @@ DEFAULT_SCRIPT = [
     "Pony one one is down and stopped.",
 ]
 
+# The radar approach, which is a different conversation and not the letdown with
+# words changed. On an ASR the controller navigates and the pilot flies headings,
+# so almost everything the pilot says is a readback -- the calls he originates
+# are the request, the position report that gets him identified, and the field in
+# sight. Reading back is the point: it is what proves the numbers arrived, and
+# the two-brain seam lives exactly here, since a controller who paraphrases the
+# engine's altitudes rather than voicing them is a controller the readback cannot
+# catch.
+ASR_SCRIPT = [
+    "Batumi Approach, Pony one one, request the radar approach, runway one three.",
+    "Pony one one, three thousand, one five miles northwest of the field.",
+    "Pony one one, say again the heading?",
+    "Heading one six nine, Pony one one.",
+    "Pony one one, established on the final approach course.",
+    "Pony one one, leaving two thousand.",
+    "Pony one one, say my distance to the runway?",
+    "Pony one one has the runway in sight.",
+]
+
+SCRIPTS = {"ndb": DEFAULT_SCRIPT, "asr": ASR_SCRIPT}
+
 
 def run(host: str, freq_mhz: float, voice_id: str = "Joey",
         srs_name: str = "Sockeye", script: list[str] | None = None,
@@ -70,6 +91,8 @@ if __name__ == "__main__":
 
     if len(sys.argv) > 1 and sys.argv[1] == "--srs":
         v = sys.argv[4] if len(sys.argv) > 4 else "Joey"
-        run(sys.argv[2], float(sys.argv[3]), v)
+        name = sys.argv[5] if len(sys.argv) > 5 else "Sockeye"
+        which = sys.argv[6] if len(sys.argv) > 6 else "asr"
+        run(sys.argv[2], float(sys.argv[3]), v, name, SCRIPTS.get(which))
     else:
-        print("usage: pilot.py --srs <host> <freq_mhz> [voice]")
+        print("usage: pilot.py --srs <host> <freq_mhz> [voice] [srs_name] [asr|ndb]")

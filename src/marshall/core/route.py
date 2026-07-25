@@ -365,6 +365,18 @@ class ApproachProfile:
     # a field with no scan still flies, it just has no scan on the kneeboard.
     plate_png: str = ""
     chart_name: str = ""
+
+    # The plate's own descent table: (range_nm, altitude_ft), read straight off
+    # the chart. Published data beats a computed gradient -- our derivation came
+    # out at 315 ft per mile against the chart's 325, which is fifty feet by
+    # short final, and there is no reason to be fifty feet out from a number
+    # somebody already printed. It also settles what "3 degrees" is measured
+    # from, which is the sort of thing a derivation quietly gets wrong.
+    #
+    # A field with no table falls back to the gradient joining its published
+    # fixes, so this is an improvement where we have the chart and not a
+    # requirement for having one.
+    descent_table: list = field(default_factory=list)
     # Minimum safe altitude per quadrant around the field. Vectoring is done at
     # platform, and platform is only safe where the ground is low -- at Batumi
     # that is the sea to the north-west and nowhere else. A controller who
@@ -434,15 +446,14 @@ class ApproachProfile:
     # which stretched every derived distance by 15% -- the same trap solve_route
     # already carries a comment about.
     speed_mph: int = 240
-    # Approach speed, flown from the final approach point in. It is a separate
-    # number because the descent rate falls out of it and nothing else: a three
-    # degree path at 240 mph is eleven hundred feet a minute, which is a dive,
-    # not an approach -- unflyable in cloud in a WW2 fighter and not what any
-    # pilot would choose. At 150 it is a shade under seven hundred, which is
-    # what a human actually flies. The vectoring speed stays high because the
-    # positioning is where the time goes; the reduction belongs on final, which
-    # is where a real controller asks for it.
-    final_speed_mph: int = 150
+    # Approach speed. A separate number because the descent rate falls out of
+    # it and nothing else, and it is bounded from BOTH ends. Too fast and the
+    # path becomes a dive: 240 mph on three degrees is eleven hundred feet a
+    # minute. Too slow and the aeroplane will not fly it -- a Mustang is unhappy
+    # below about 130 and 150 is marginal, which is what an earlier value here
+    # asked for. 200 is a speed the airframe is comfortable at, and it is also
+    # about the floor for anything modern, so it generalises.
+    final_speed_mph: int = 200
     descent_fpm: int = 500          # never steeper than this
 
     @property
@@ -685,6 +696,9 @@ BATUMI_ASR = ApproachProfile(
     iaf=INITIAL,
     iaf_alt_ft=2000,
     plate_png="ugsb-ils-12.png",
+    # AD 2.UGSB-IAC-12-ILSy, the ILU DME column of the descent table.
+    descent_table=[(6.0, 2010), (5.0, 1682), (4.0, 1355),
+                   (3.0, 1031), (2.0, 708), (1.0, 387)],
     chart_name="AD 2.UGSB-IAC-12-ILSy, AIRAC AMDT 02/2023",
     field_thr_elev_ft=17,        # threshold elevation, per the plate
     # Radar-equipped and radar-separated: the handicaps that defined the beacon
