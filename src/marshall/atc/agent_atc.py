@@ -59,6 +59,23 @@ def route_tier(transcript: str) -> str:
     return "sonnet" if _COMPLEX.search(transcript or "") else "haiku"
 
 
+# A note to the log, not to the controller. Saying "debug log, the vectors are
+# taking me at the field" during a sortie should record the thought and produce
+# SILENCE -- the pilot is talking to the project, not to ATC, and a controller
+# who answers has both broken the fiction and buried the note in a reply. Kept
+# loose because it arrives through Whisper: "debug log", "debug note", and the
+# bare "debug" all count.
+_DEBUG = re.compile(r"\b(?:debug|de-bug)\b[\s,:-]*(?:log|note|entry)?\b", re.I)
+
+
+def debug_note(transcript: str) -> str | None:
+    """The note, if this transmission was one. None means it is a real call."""
+    m = _DEBUG.search(transcript or "")
+    if not m:
+        return None
+    return (transcript[m.end():].strip(" ,.:-") or transcript.strip())
+
+
 _CHECK = re.compile(r"radio check|how do you (?:read|copy)|how copy|read you|comm check", re.I)
 _CLOSE = re.compile(r"down and stopped|clear of the (?:runway|active)|off the runway|"
                     r"parking|shutting down|clear of active", re.I)
@@ -341,20 +358,18 @@ def asr_context(profile, scope: str, cs: str) -> str:
         return ""
     g = asr.guide(pos, profile)
     rng = asr.spoken_range(g.range_nm)
-    if g.phase == "beyond":
-        return (f"ASR: he is {rng} miles the far side of the field and not on "
-                f"the approach — turn him back and re-vector, do not correct him.")
     if g.phase == "map":
         return ("ASR: he is over the missed approach point. Runway in sight, "
                 "land; if not, missed approach now.")
     turn = "" if not g.off_course else f", {g.deviation}"
+    swing = f" Turn {g.turn}." if g.turn else ""
     if g.phase == "final":
         return (f"ASR: {rng} miles from the runway{turn}. Fly heading "
                 f"{g.heading:03d}, descend and maintain {g.altitude_ft}. "
                 f"Call his range every mile.")
-    return (f"ASR: vectoring, {rng} miles{turn}. Fly heading {g.heading:03d}, "
-            f"maintain {g.altitude_ft} until established on the final approach "
-            f"course.")
+    return (f"ASR: vectoring, {rng} miles{turn}.{swing} Fly heading "
+            f"{g.heading:03d}, maintain {g.altitude_ft} until established on the "
+            f"final approach course.")
 
 
 def radar_range_for(scope: str, cs: str) -> float | None:
@@ -599,6 +614,21 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         vectoring = asr_context(profile, scope, known)
         if vectoring:
             print(f"  {vectoring}", flush=True)
+
+        # A debug note: record it and stay off the air entirely. The pilot is
+        # talking to the project, not to the controller.
+        note = debug_note(transcript)
+        if note is not None:
+            stamp = time.strftime("%H:%M:%S")
+            print(f"  DEBUG NOTE [{stamp}] {note}", flush=True)
+            try:
+                config.BUILD_DIR.mkdir(parents=True, exist_ok=True)
+                with open(config.BUILD_DIR / "debug-notes.md", "a",
+                          encoding="utf-8") as fh:
+                    fh.write(f"- `{stamp}` {note}\n")
+            except OSError as e:
+                print(f"  !! could not write the note: {e}", flush=True)
+            continue
 
         # Which controller answered. The bridge monitors every channel at once,
         # which is an implementation convenience the pilot must never be able to

@@ -318,9 +318,9 @@ class TestAsrContext(unittest.TestCase):
         out = agent_atc.asr_context(self.asr, self.scope(0.4, 304), "Pony 1-1")
         self.assertIn("missed approach point", out)
 
-    def test_past_the_field_is_re_vectored_not_corrected(self):
+    def test_past_the_field_is_vectored_back_to_the_join(self):
         out = agent_atc.asr_context(self.asr, self.scope(4, 124), "Pony 1-1")
-        self.assertIn("re-vector", out)
+        self.assertIn("vectoring", out)
 
     def test_no_bare_digits_in_the_range_call(self):
         # Range reaches Polly as words; a bare "6" would be read as a digit.
@@ -379,7 +379,30 @@ class TestRadarFixes(unittest.TestCase):
         self.assertEqual(agent_atc.radar_fixes(""), [])
         self.assertEqual(agent_atc.radar_fixes("no contacts"), [])
 
+class TestDebugNote(unittest.TestCase):
+    """A note to the log, not to the controller. Saying it in the air must
+    produce silence -- a reply both breaks the fiction and buries the note."""
 
+    def test_recognised_forms(self):
+        for said, want in [
+            ("DEBUG LOG the vectors are taking me at the field",
+             "the vectors are taking me at the field"),
+            ("debug note, he turned me the long way round",
+             "he turned me the long way round"),
+            ("Debug: range calls never fired", "range calls never fired"),
+        ]:
+            with self.subTest(said=said):
+                self.assertEqual(agent_atc.debug_note(said), want)
+
+    def test_a_bare_debug_keeps_the_whole_transmission(self):
+        self.assertEqual(agent_atc.debug_note("debug"), "debug")
+
+    def test_a_real_call_is_not_a_note(self):
+        for said in ("Batumi Approach, Pony one one, checking in",
+                     "Pony one one, level two thousand",
+                     "request position report"):
+            with self.subTest(said=said):
+                self.assertIsNone(agent_atc.debug_note(said))
 
 if __name__ == "__main__":
     unittest.main()

@@ -106,11 +106,30 @@ class TestGuide(unittest.TestCase):
     def test_the_missed_approach_point(self):
         self.assertEqual(self.at(0.4).phase, "map")
 
-    def test_behind_the_field_is_not_an_approach(self):
-        # On the far side he is not off course, he is somewhere else entirely,
-        # and needs re-positioning rather than a correction.
+    def test_the_far_side_of_the_field_is_vectored_back(self):
+        # He has genuinely flown through: vector him round to the join point,
+        # which means turning him AWAY from the field first.
         g = self.at(4, radial=self.p.final_crs)
-        self.assertEqual(g.phase, "beyond")
+        self.assertEqual(g.phase, "vector")
+        inbound = (self.p.final_crs + 180) % 360
+        # The heading must point back toward the inbound side, not at the field.
+        self.assertLess(abs(asr.angle_diff(g.heading, inbound)), 90)
+
+    def test_bearing_is_not_progress(self):
+        # A man due north of the field is ninety-odd degrees off the inbound
+        # radial and has passed NOTHING. Treating that as an overshoot flew a
+        # real pilot straight at the field and then told him he had gone past.
+        g = self.at(12, radial=14)
+        self.assertEqual(g.phase, "vector")
+        self.assertNotEqual(g.heading, self.p.final_crs)
+
+    def test_on_the_centreline_outside_the_turn_on_continues_inbound(self):
+        # It must not send him back OUT to the join point: he is already on the
+        # course, he just is not down yet.
+        inbound = (self.p.final_crs + 180) % 360
+        g = self.at(self.p.final_intercept_nm + 2, radial=inbound)
+        self.assertEqual(g.heading, self.p.final_crs)
+        self.assertEqual(g.altitude_ft, self.p.platform_ft)
 
     def test_well_off_the_inbound_sector_is_still_vectoring(self):
         # Close in range but 60 degrees off: he has not intercepted yet.
