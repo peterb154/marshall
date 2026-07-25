@@ -59,8 +59,12 @@ FIELDS = ["Kobuleti", "Senaki-Kolkhi", "Kutaisi"]
 # any direction.
 BATTERY = [
     # (dcs type, how many, ring radius in metres)
-    ("flak18", 6, 900),      # 8.8 cm heavy -- the reason you do not go over
-    ("bofors40", 4, 550),    # 40 mm light -- the reason you do not go low
+    ("flak37", 4, 900),                 # 8.8 cm heavy, radar-directed
+    ("flak18", 2, 1000),                # 8.8 cm, the older mount
+    ("flak38", 4, 550),                 # 2 cm quad -- punishes anything low
+    ("flak30", 2, 650),                 # 2 cm single
+    ("KDO_Mod40", 1, 750),              # fire director: the battery's eyes
+    ("Flakscheinwerfer_37", 2, 1100),   # searchlights, for night work
 ]
 
 # Every one of these was VERIFIED against the running sim, and that is not
@@ -74,10 +78,12 @@ BATTERY = [
 # and the only way to find out was to ask the sim what it had actually made.
 # Hence verify() below, and hence the short list: flak18 IS the 8.8, bofors40
 # IS period, and both exist in the base game.
-KNOWN_BAD = {
-    "flak30", "flak36", "flak37", "flak38", "flak41", "KDO_Mod40",
-    "Flakscheinwerfer_37", "M1_37mm", "QF_37_AA",
-}
+# Empty now that the WW2 Assets Pack is installed -- every name above was
+# re-probed against the running sim and comes back as itself. Kept as a list
+# rather than deleted because the check is the point: a server without the pack
+# turns all of them into Leopard-2s without saying a word, and verify() below is
+# what notices.
+KNOWN_BAD: set[str] = set()
 
 
 def ring(lat: float, lon: float, radius_m: float, n: int, phase: float = 0.0):
