@@ -251,7 +251,17 @@ def advisory_altitude(range_nm: float, profile) -> int:
     fap = getattr(profile, "fap_nm", 0) or profile.final_intercept_nm
     if range_nm >= fap:
         return profile.platform_ft                    # level intermediate
-    table = getattr(profile, "descent_table", None)
+    # The published table is the ILS GLIDEPATH, and it belongs to the ILS. A
+    # surveillance approach has no glidepath: the pilot descends at a rate of
+    # his choosing and levels at minimums to look for the runway. Flying the
+    # glidepath numbers on a radar approach asks for 940 fpm at 200 mph, which
+    # is the dive again, and it aims at a decision height the procedure is not
+    # precise enough to use. So the table is read only where the aircraft is
+    # actually being given a glidepath; otherwise the descent is spread across
+    # the whole run from the final approach point to the missed approach point,
+    # which is both gentler and what a non-precision approach IS.
+    table = (getattr(profile, "descent_table", None)
+             if getattr(profile, "kind", "") in ("ils", "precision") else None)
     if table:
         want = _from_table(range_nm, sorted(table))
     else:

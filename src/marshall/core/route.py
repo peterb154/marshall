@@ -26,6 +26,34 @@ CRUISE_ALT_FT = 5000
 WIND_FROM_DEG = 270.0
 WIND_MPH = 20.0
 
+# Altimeter setting. Briefed, written into the mission, and passed on radar
+# contact -- a pilot who never gets one is flying on whatever was in the
+# Kollsman window when he spawned, and every advisory altitude the controller
+# reads him is measured against a different datum than the one he is holding.
+# DCS stores it in millimetres of mercury; aircrew are given inches, and the
+# two must come from one number or they drift.
+QNH_MMHG = 760.0
+QNH_INHG = QNH_MMHG / 25.4          # sea level: the altimeter reads elevation
+                                    # on the ground
+
+# Near sea level the atmosphere loses about this much pressure per foot of
+# climb. Enough to convert a field's elevation into the pressure difference
+# between QNH and QFE, which is all this is used for.
+INHG_PER_FT = 0.00108
+
+
+def qfe_inhg(field_elev_ft: float, qnh_inhg: float = 0.0) -> float:
+    """Field-level pressure: set this and the altimeter reads ZERO on the deck."""
+    return (qnh_inhg or QNH_INHG) - field_elev_ft * INHG_PER_FT
+
+
+def altimeter_spoken(inhg: float = 0.0) -> str:
+    """The setting as a controller says it: "two niner niner two"."""
+    digits = f"{(inhg or QNH_INHG):.2f}".replace(".", "")
+    words = {"0": "zero", "1": "one", "2": "two", "3": "three", "4": "four",
+             "5": "five", "6": "six", "7": "seven", "8": "eight", "9": "niner"}
+    return " ".join(words[d] for d in digits)
+
 # The inbound flight this mission expects, for the generated plate (Whisper prime
 # + a hint to the controller). Any pilot may call in with their own callsign; the
 # controller correlates by position, not by expecting this one. build.py names the
@@ -366,6 +394,22 @@ class ApproachProfile:
     plate_png: str = ""
     chart_name: str = ""
 
+    # Which pressure datum this field works to, and therefore what every
+    # altitude in this profile MEANS.
+    #
+    # "QNH" is sea-level pressure: set it and the altimeter reads elevation on
+    # the ground, so the numbers are altitudes above the sea. "QFE" is field
+    # pressure: the altimeter reads zero on the runway, so the numbers are
+    # heights above the field. Ex-Soviet fields, Batumi among them, are worked
+    # to QFE.
+    #
+    # At a 32-foot field the two settings differ by 0.03 inches and it looks
+    # like pedantry. It is not: the DATUM decides whether "two thousand" means
+    # two thousand above the sea or two thousand above the runway, and at a
+    # field a few thousand feet up those are different places. Getting it wrong
+    # is a whole approach flown at the wrong height.
+    altimeter_datum: str = "QNH"
+
     # The plate's own descent table: (range_nm, altitude_ft), read straight off
     # the chart. Published data beats a computed gradient -- our derivation came
     # out at 315 ft per mile against the chart's 325, which is fifty feet by
@@ -502,7 +546,22 @@ class ApproachProfile:
     # move together -- the mission generator reads the same ceiling for weather.
     ceiling_ft: int = 400           # briefed cloud base for this mission
     breakout_ft: int = 100          # MDA this far below the ceiling
-    min_hat_ft: int = 150           # but never lower than field + this
+    # Never lower than the field plus this, whatever the weather says. The
+    # figure is a property of the APPROACH TYPE, not of the field: how low you
+    # may go depends on how precisely the procedure knows where you are.
+    #
+    # An ILS knows within feet and gets a decision height around 200. A
+    # surveillance radar approach knows where you are to the width of a radar
+    # return and has no vertical guidance at all -- the controller reads
+    # advisory heights off a table and the pilot descends at his own rate -- so
+    # its minima are far higher, five hundred feet at the very least and often
+    # closer to a thousand.
+    #
+    # This mattered: the Batumi profile was transcribed from an ILS plate and
+    # inherited its minima, so a radar approach was being flown to 300 feet.
+    # That is below the chart's own obstacle clearance altitude of 687, on a
+    # procedure with none of the ILS's precision.
+    min_hat_ft: int = 150
 
     # Missed approach (Batumi real AIP: straight to 800', LEFT to 330', 3000').
     missed_straight_ft: int = 800
@@ -512,6 +571,12 @@ class ApproachProfile:
 
     @property
     def mda_ft(self) -> int:
+        """Lowest he may go before the runway has to be in sight.
+
+        The weather can only ever raise it. Briefing a low cloud base does not
+        buy a lower minimum -- it just means he is more likely to go missed,
+        which is the point of a hard mission.
+        """
         return max(self.field_elev_ft + self.min_hat_ft,
                    self.ceiling_ft - self.breakout_ft)
 
@@ -680,6 +745,22 @@ BATUMI_ASR = ApproachProfile(
     runway="13",
     platform_ft=2000,
     ceiling_ft=400,
+    # A radar approach, not the ILS the plate is drawn for, and its minima are
+    # bounded from two directions.
+    #
+    # From below by the chart: 687 ft is the obstacle clearance altitude for a
+    # 2.5% missed approach climb -- the lowest you may be and still clear the
+    # ground if you go around from there. It is a floor, not a decision height,
+    # and an MDA beneath it is not a minimum at all.
+    #
+    # From above by the procedure: a surveillance approach knows where you are
+    # to the width of a radar return and gives no vertical guidance, so it is
+    # flown to far higher minima than the ILS this chart is drawn for -- five
+    # hundred feet at the very least, often nearer a thousand.
+    #
+    # 700 above the field satisfies both. The profile inherited the ILS plate's
+    # 300 before anyone read the chart properly.
+    min_hat_ft=700,
     final_intercept_nm=11.0,     # IF, per the AIP plate
     fap_nm=6.0,                  # FAP -- descent begins
     map_nm=0.6,
@@ -696,6 +777,7 @@ BATUMI_ASR = ApproachProfile(
     iaf=INITIAL,
     iaf_alt_ft=2000,
     plate_png="ugsb-ils-12.png",
+    altimeter_datum="QFE",       # ex-Soviet field
     # AD 2.UGSB-IAC-12-ILSy, the ILU DME column of the descent table.
     descent_table=[(6.0, 2010), (5.0, 1682), (4.0, 1355),
                    (3.0, 1031), (2.0, 708), (1.0, 387)],

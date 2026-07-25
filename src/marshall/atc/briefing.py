@@ -94,6 +94,19 @@ def _formation(flight: str, size: int, profile: R.ApproachProfile) -> list[str]:
         "- After the break-up they are ordinary singles on their own callsigns.",
     ]
 
+def _setting(profile: R.ApproachProfile) -> str:
+    """The altimeter setting this field passes, spoken.
+
+    QFE or QNH is the field's convention and it changes the number. It also
+    changes what every altitude on the plate MEANS -- height above the runway
+    or altitude above the sea -- which is why the datum is said out loud rather
+    than assumed.
+    """
+    if getattr(profile, "altimeter_datum", "QNH").upper() == "QFE":
+        return R.altimeter_spoken(R.qfe_inhg(profile.field_elev_ft))
+    return R.altimeter_spoken()
+
+
 def _asr_plate(profile: R.ApproachProfile, flight: str, size: int) -> str:
     """The facts for a surveillance-radar approach.
 
@@ -125,10 +138,16 @@ def _asr_plate(profile: R.ApproachProfile, flight: str, size: int) -> str:
         "course, turn left heading one two zero\".",
         "- **There is no glidepath.** You give range and course; his descent is "
         "his own. Never invent a glidepath call.",
+        f"- **Altimeter {_setting(profile)}** ({profile.altimeter_datum}) — pass "
+        "it when you call radar contact, and to anyone who asks. Every height "
+        "you read him is measured against this datum; a pilot who never gets it "
+        "is holding a different one and neither of you knows by how much.",
         f"- Wind **{int(R.WIND_FROM_DEG):03d} at {int(R.WIND_MPH)}** mph. Do NOT "
-        "pass it as a correction — you are watching his ground track, so the "
-        "drift is already inside the heading you give him. Correct what the "
-        "scope shows, not what the wind should do.",
+        "pass it as a correction while vectoring — you are watching his ground "
+        "track, so the drift is already inside the heading you give him. "
+        "Correct what the scope shows, not what the wind should do. It IS said "
+        "with the landing clearance, where it tells him what to expect in the "
+        "flare: \"cleared to land, wind two seven zero at two zero\".",
         f"- Assignable altitudes: **{profile.platform_ft}** vectoring, "
         f"**{profile.mda_ft}** MDA, **{profile.missed_ft}** missed. Nothing else.",
         *_formation(flight, size, profile),

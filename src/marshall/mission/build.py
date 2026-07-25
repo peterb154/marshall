@@ -196,6 +196,9 @@ def build(weather: str = "light", traffic: bool = False,
         # on the nav log or the whole plan is a lie.
         w.direction = int((R.WIND_FROM_DEG + 180) % 360)   # DCS stores "blowing to"
         w.speed = R.WIND_MPH * 0.44704
+    # The altimeter setting the controller will pass, so the number he says and
+    # the number the sim is running are the same one.
+    m.weather.qnh = int(round(R.QNH_MMHG))
 
     usa = m.country("USA")
 
