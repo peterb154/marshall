@@ -317,6 +317,18 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         if not transcript:
             continue
         srs = client.name_for(client.last_sender_guid)   # who keyed the mic (free)
+
+        # Never answer another controller. A second bridge left running on the
+        # same frequency -- trivially easy, since killing the launcher does not
+        # kill the python child -- hears this one, treats the transmission as a
+        # pilot call, and replies; then this one hears THAT. The two talk to each
+        # other forever, jamming the frequency and burning tokens, and the
+        # transcripts look almost plausible. Cheap guard, unbounded saving.
+        if srs == profile.controller or client.last_sender_guid == client.guid:
+            print(f"  (ignoring {srs} -- that is a controller, not a pilot)",
+                  flush=True)
+            continue
+
         scope = fetch_radar(session_id) if radar_on else ""
         n_contacts = count_contacts(scope)
         tag = f" [RADAR: {scope}]" if scope else ""

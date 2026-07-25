@@ -61,6 +61,25 @@ the runs actually taught us, worst first:
    — caught live, by a missing `CONTROLLER:` line. It counts ships now. **Any
    change to the radar picture's format is a change to a control-flow input.**
 
+9. **Two controllers on one frequency talk to each other forever.** A second
+   bridge left running (easy — killing the `uv`/`timeout` launcher does NOT kill
+   the python child) hears the first, treats its transmission as a pilot call,
+   and answers; the first then hears that. The transcripts look almost
+   plausible, so it is not obvious from the log. The bridge now ignores any
+   transmitter whose SRS name is its own controller name, or its own GUID. **To
+   stop a bridge, kill the `marshall.atc.agent_atc` python PID, not the
+   launcher** — and `pkill -f agent_atc` matches your own shell and kills it.
+
+### Still open: wingmen's SRS names do not resolve
+
+Late-joining clients still log as raw GUID stubs (`Ma6rcq`) rather than their
+SRS names, so the free identity anchor is degraded exactly for wingmen. The
+roster thread was hardened (finding 3) and a standalone reproduction *does*
+resolve a late joiner from an already-connected client — so the hardening was
+necessary but is not the whole story. Not blocking (the agent works from the
+callsign), but the three-way correlation is running on two legs. Next step:
+instrument the bridge's roster directly rather than inferring it from the log.
+
 ### Open, and the interesting one: radar vs. the blind engine
 
 A pilot reported "over the beacon" while radar showed him **eight miles out**.
