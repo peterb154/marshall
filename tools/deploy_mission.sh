@@ -67,4 +67,17 @@ case "$SERVED" in
   *) echo "FAIL: clients would be offered a different mission than the sim is running" >&2
      exit 1 ;;
 esac
+# The kneeboard runs in a container that generates its pages ONCE, at start,
+# from mounted source. So every route.py change -- a frequency, a minimum, an
+# MSA -- is invisible on the chart until it restarts, and a pilot flies a
+# mission whose card disagrees with it. That is the same failure as the radio
+# presets, and it is silent from both ends: the page looks fine, it is just
+# answering an older question.
+#
+# A mission deploy is exactly when the two must agree, so it happens here.
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx marshall-kneeboard; then
+  echo "rebuilding the kneeboard (it regenerates only on container start)"
+  docker restart marshall-kneeboard >/dev/null
+fi
+
 echo "now unpause: it boots paused (pause_on_load), and AI tasking is frozen until you do"
