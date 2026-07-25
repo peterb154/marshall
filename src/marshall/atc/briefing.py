@@ -47,6 +47,28 @@ def _mmss(sec: float) -> str:
     return f"{m} minutes {s} seconds"
 
 
+def _channels(profile: R.ApproachProfile) -> list[str]:
+    """Which controller sits on which frequency, and why it is not a choice.
+
+    The aircraft has four radio presets and its homing adapter works only on the
+    frequency the set is tuned to, so the pilot cannot listen to you on one
+    channel while homing a beacon on another. Each phase's controller therefore
+    lives on the beacon flown in that phase.
+    """
+    enr_name, enr_freq = profile.station(enroute=True)
+    twr_name, twr_freq = profile.station()
+    out = []
+    if enr_freq and enr_freq != twr_freq:
+        out.append(
+            f"- **Channels.** Enroute he homes {profile.arrival_fix.name} and is "
+            f"on **{enr_freq:.1f}** ({enr_name}); the letdown is flown homing "
+            f"{profile.beacon.name}, so it belongs to {twr_name} on "
+            f"**{twr_freq:.1f}**. Hand him over as he leaves "
+            f"{profile.arrival_fix.name}. He physically cannot hear you on a "
+            "channel he is not homing.")
+    return out
+
+
 def _formation(flight: str, size: int, profile: R.ApproachProfile) -> list[str]:
     """The formation block: who is expected, and how a flight gets handled.
 
@@ -106,6 +128,7 @@ def plate(profile: R.ApproachProfile = R.BATUMI_APPROACH,
         f"- Controller **{profile.controller}**, recovering to runway **{rwy}**.",
         f"- Beacon **{b.name}**, **{b.freq_mhz:.1f}**, Morse ident "
         f"**{_phonetic(b.ident)}** — the pilot homes it.",
+        *_channels(profile),
         f"- Capability: radar **{'ON' if cap.radar else 'OFF'}**, "
         f"aircraft DME **{'yes' if cap.dme else 'NO'}**, "
         f"separation **{cap.separation}**, era **{cap.era}**.",

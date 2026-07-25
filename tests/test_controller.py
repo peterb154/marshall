@@ -183,6 +183,89 @@ class TestSpokenOutput(unittest.TestCase):
         for t in texts(ctl):
             self.assertNotIn("1-1", t)
 
+class TestSpokenNumbers(unittest.TestCase):
+    def test_altitudes(self):
+        self.assertEqual(atc.spell_alt(4000), "four thousand")
+        self.assertEqual(atc.spell_alt(3500), "three thousand five hundred")
+
+    def test_five_figure_altitudes_are_read_digit_by_digit(self):
+        # Reachable since the ceiling became the P-51's oxygen limit; used to
+        # come out as the literal "10 thousand".
+        self.assertEqual(atc.spell_alt(10000), "one zero thousand")
+        self.assertEqual(atc.spell_alt(12000), "one two thousand")
+
+    def test_no_bare_digits_reach_polly(self):
+        for ft in (4000, 7000, 10000, 12000, 3500):
+            self.assertFalse(any(c.isdigit() for c in atc.spell_alt(ft)),
+                             atc.spell_alt(ft))
+
+    def test_frequencies(self):
+        self.assertEqual(atc.spell_freq(132.0), "one three two")
+        self.assertEqual(atc.spell_freq(128.5), "one two eight decimal five")
+        self.assertEqual(atc.spell_freq(121.75),
+                         "one two one decimal seven five")
+
+
+class TestChannels(unittest.TestCase):
+    """A phase's controller lives on the beacon flown in that phase -- the set
+    has four presets and the ARA-8 homes on whatever it is tuned to, so working
+    the beacon and hearing the controller are the same act."""
+
+    def setUp(self):
+        self.ctl = atc.Controller(profile())
+
+    def test_enroute_is_worked_on_the_arrival_fix(self):
+        self.ctl.check_in("Pony 1-1")
+        self.assertEqual(self.ctl.out[0].freq_mhz, R.INITIAL.freq_mhz)
+
+    def test_check_in_hands_him_over_to_the_beacon_frequency(self):
+        self.ctl.check_in("Pony 1-1")
+        self.assertTrue(said(self.ctl, "contact", "one three two"))
+
+    def test_the_letdown_is_worked_on_the_beacon(self):
+        self.ctl.check_in("Pony 1-1")
+        texts(self.ctl)
+        self.ctl.report_beacon("Pony 1-1", 4000)
+        self.assertTrue(all(tx.freq_mhz == R.BATUMI.freq_mhz for tx in self.ctl.out),
+                        [str(t) for t in self.ctl.out])
+
+    def test_a_banished_aircraft_is_worked_on_the_outer_hold(self):
+        self.ctl.report_beacon("Hawk 1", 4000)
+        self.ctl.report_missed("Hawk 1")
+        texts(self.ctl)
+        self.ctl.report_missed("Hawk 1")            # second miss -> banished
+        banish = [tx for tx in self.ctl.out if "proceed" in tx.text]
+        self.assertEqual(banish[0].freq_mhz, R.KOBULETI.freq_mhz)
+
+    def test_a_single_controller_field_needs_no_handoff(self):
+        one = dataclasses.replace(R.BATUMI_APPROACH, arrival_fix=None)
+        ctl = atc.Controller(one)
+        ctl.check_in("Pony 1-1")
+        self.assertEqual(ctl.out[0].freq_mhz, R.BATUMI.freq_mhz)
+        self.assertFalse(said(ctl, "contact"))     # drains ctl.out
+
+class TestProfileRoundTrip(unittest.TestCase):
+    """Approaches are stored, so a profile outlives the code that wrote it."""
+
+    def test_every_nested_fix_is_rebuilt(self):
+        rt = R.profile_from_dict(R.profile_to_dict(R.BATUMI_APPROACH))
+        for key in ("beacon", "outer_hold", "arrival_fix"):
+            self.assertIsInstance(getattr(rt, key), R.Fix, key)
+
+    def test_a_round_tripped_profile_can_still_pick_a_channel(self):
+        # The failure this guards: a dict left in arrival_fix passes every other
+        # check and only breaks when the controller asks which frequency to use.
+        rt = R.profile_from_dict(R.profile_to_dict(R.BATUMI_APPROACH))
+        self.assertEqual(rt.station(enroute=True), ("Batumi Approach", 128.0))
+        self.assertEqual(rt.station(), ("Batumi Tower", 132.0))
+        self.assertEqual(rt.station(banished=True), ("Kobuleti Departure", 124.0))
+
+    def test_a_legacy_row_without_arrival_fix_still_loads(self):
+        d = R.profile_to_dict(R.BATUMI_APPROACH)
+        d.pop("arrival_fix")
+        rt = R.profile_from_dict(d)
+        self.assertIsNone(rt.arrival_fix)
+        self.assertEqual(rt.station(enroute=True), rt.station())
 
 if __name__ == "__main__":
     unittest.main()

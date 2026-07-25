@@ -291,8 +291,21 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
     radar_on = profile.atc.radar          # a no-radar mission works purely procedural
     voice = tts.Voice(voice_id=voice_id)
     model = stt.load_model()
+    # Monitor EVERY channel this approach uses, not just one. A WW2 set has
+    # four presets and the ARA-8 homes on whatever it is tuned to, so the pilot
+    # is always listening on the beacon he is currently flying -- enroute that is
+    # the arrival fix, in the letdown it is the approach beacon, and a banished
+    # aircraft is out at the outer hold. A controller sitting on one frequency
+    # is simply not audible for two thirds of the arrival.
+    channels = []
+    for fix in (profile.arrival_fix, profile.beacon, profile.outer_hold):
+        if fix is not None and fix.freq_mhz and fix.freq_mhz not in channels:
+            channels.append(fix.freq_mhz)
+    if freq_mhz not in channels:
+        channels.insert(0, freq_mhz)
     client = SRSClient(host, name=profile.controller,
-                       eam_password=config.SRS_EAM_PASSWORD).connect([radio(freq_hz, AM)])
+                       eam_password=config.SRS_EAM_PASSWORD).connect(
+                           [radio(mhz * 1_000_000, AM) for mhz in channels])
     ctl = controller.Controller(profile)  # deterministic separation, seeded from the approach
     print(f"agent ATC live on {freq_mhz:.3f} as {profile.controller} "
           f"(voice {voice_id}, session {session_id})", flush=True)
@@ -302,7 +315,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
     # they must never overlap -- no talking over the pilot, no racing the session.
     radio_lock = threading.Lock()
 
-    def interact(message: str, kind: str, tier: str = "sonnet") -> None:
+    def interact(message: str, kind: str, tier: str = "sonnet",
+                 on_hz: float | None = None) -> None:
         with radio_lock:
             t0 = time.monotonic()
             try:
@@ -316,7 +330,9 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 print(f"  ATC[{kind}/{tier}] ({dt:.1f}s): (no call)", flush=True)
                 return
             print(f"  ATC[{kind}/{tier}] ({dt:.1f}s): {reply}", flush=True)
-            client.transmit(voice.frames(reply), freq_hz, AM)
+            # Answer on the channel he called from -- that is the beacon he is
+            # homing, and therefore the only one he can hear.
+            client.transmit(voice.frames(reply), on_hz or freq_hz, AM)
 
     def scheduler() -> None:
         # Fire the agent's own wake-up hooks: when a timer expires, re-invoke it
@@ -337,7 +353,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
     threading.Thread(target=scheduler, daemon=True).start()
 
     while True:
-        pcm, _f = client.recv_utterance(max_wait=3600)
+        pcm, heard_hz = client.recv_utterance(max_wait=3600)
         if pcm is None or not pcm.size:
             continue
         transcript = stt.transcribe(model, pcm)
@@ -378,7 +394,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             canned = for_voice(canned)
             print(f"  ATC[simple] (0.0s): {canned}", flush=True)
             with radio_lock:
-                client.transmit(voice.frames(canned), freq_hz, AM)
+                client.transmit(voice.frames(canned), heard_hz or freq_hz, AM)
             continue
 
         directive, stack = separation_context(ctl, transcript) if engaged else ("", "")
@@ -401,7 +417,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         if stack:
             parts.append(f"SEPARATION (holding stack, one in the letdown): {stack}")
         parts.append(f"PILOT: {transcript}")
-        interact("\n".join(parts), "pilot", route_tier(transcript))
+        interact("\n".join(parts), "pilot", route_tier(transcript),
+                 on_hz=heard_hz)
 
 
 if __name__ == "__main__":

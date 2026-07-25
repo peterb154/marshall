@@ -143,6 +143,13 @@ means all of them.**
   say it the controller's way ("Pony one one", never "Pony eleven"). Whisper may
   mangle it — recognize it and use it consistently. The plate names the flight you
   expect, but any pilot may check in.
+- **He can only hear you on the beacon he is homing.** A period set has four
+  radio presets and its homing adapter works only on the frequency it is tuned
+  to, so listening to you and flying the beacon are the same act. Each phase's
+  controller therefore sits on the beacon flown in that phase — see the plate's
+  Channels line. Hand him over when he changes beacon ("contact Tower one three
+  two"), and never give an instruction on a channel he has already left: it is
+  not a missed call, it is inaudible.
 - No transponder, no squawk codes in a period cockpit. Keep every transmission
   short.
 - **Tools are silent; your transmission is always LAST.** The pilot hears only

@@ -124,6 +124,20 @@ class ApproachProfile:
     beacon: Fix                     # the approach beacon (ident + freq)
     outer_hold: Fix                 # escape-valve fix for repeated misses
 
+    # Where the flight is worked BEFORE it reaches the beacon. None means one
+    # controller owns the whole arrival.
+    #
+    # This exists because of a hard constraint of the aircraft, not of ATC: a
+    # WW2 set has four preset channels and the ARA-8 homes only on the frequency
+    # it is tuned to. So the pilot cannot listen to a controller on one channel
+    # while homing a beacon on another -- and therefore **a phase's controller
+    # must live on the beacon flown in that phase**. Enroute to INITIAL he is on
+    # INITIAL's frequency, so that is where Approach talks to him; the moment he
+    # turns for the letdown he is homing BATUMI, so Tower owns him from there.
+    # Getting this wrong is not cosmetic: it puts the controller on a channel the
+    # pilot physically cannot be listening to.
+    arrival_fix: Fix | None = None
+
     # The holding stack is GENERATED, not a fixed list. A stack is just 1,000-ft
     # increments from the base, and how many you need depends on who shows up --
     # a four-ship breaking up for individual approaches wants four levels on its
@@ -195,6 +209,23 @@ class ApproachProfile:
         One value, both readers, so the watch and the controller never disagree."""
         return self.inbound_descent_nm / self.speed_kt * 3600
 
+    def station(self, enroute: bool = False, banished: bool = False) -> tuple[str, float]:
+        """(controller name, frequency) for a phase of the arrival.
+
+        Enroute he is homing the arrival fix, so Approach owns him there. From
+        the hold onward he is homing the approach beacon, so the letdown
+        controller lives on the beacon's own frequency. A banished aircraft is
+        sent to the outer hold and works whoever owns that beacon.
+        """
+        if banished:
+            fix = self.outer_hold
+        elif enroute and self.arrival_fix is not None:
+            fix = self.arrival_fix
+        else:
+            fix = self.beacon
+        return (fix.sector or self.controller,
+                fix.freq_mhz if fix.freq_mhz else 0.0)
+
     @property
     def stack_ft(self) -> list[int]:
         """The holding levels, bottom first. Derived, so there is no list to keep
@@ -225,6 +256,9 @@ BATUMI_APPROACH = ApproachProfile(
     controller="Batumi Approach",
     beacon=BATUMI,
     outer_hold=KOBULETI,
+    # Enroute he homes INITIAL (128), so Batumi Approach works him there; the
+    # letdown itself is flown homing BATUMI (132), which is Tower's frequency.
+    arrival_fix=INITIAL,
     hold_base_ft=4000,
     final_crs=124,
     hold_turns="RIGHT",
@@ -294,8 +328,12 @@ def profile_from_dict(d: dict) -> ApproachProfile:
     the mission actually briefed).
     """
     d = dict(d)
-    d["beacon"] = Fix(**d["beacon"])
-    d["outer_hold"] = Fix(**d["outer_hold"])
+    # Every nested Fix has to be rebuilt, not just the two obvious ones -- a dict
+    # left in arrival_fix survives every check and only fails at the moment the
+    # controller asks which frequency to talk on, which is mid-approach.
+    for key in ("beacon", "outer_hold", "arrival_fix"):
+        if isinstance(d.get(key), dict):
+            d[key] = Fix(**d[key])
     d["atc"] = AtcCapability(**d.get("atc", {}))
 
     # stack_ft used to be a stored list; it is now derived from base/step/ceiling.

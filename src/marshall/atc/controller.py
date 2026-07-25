@@ -94,20 +94,38 @@ class Aircraft:
 
 @dataclass
 class Tx:
+    """One transmission, and the channel it has to go out on.
+
+    The frequency is not decoration. A WW2 set has four presets and the ARA-8
+    homes only on the frequency it is tuned to, so the pilot is always listening
+    on the channel of the beacon he is currently flying. Transmit a clearance on
+    the wrong one and it is not heard at all.
+    """
     to: str
     text: str
     t: float
+    freq_mhz: float = 0.0
+    controller: str = ""
 
     def __str__(self) -> str:
-        return f"[{int(self.t)//60:02d}:{int(self.t)%60:02d}] {self.to}: {self.text}"
+        chan = f" {self.freq_mhz:.3f}" if self.freq_mhz else ""
+        return (f"[{int(self.t)//60:02d}:{int(self.t)%60:02d}]{chan} "
+                f"{self.to}: {self.text}")
 
 
 def spell_alt(ft: int) -> str:
-    """7000 -> 'seven thousand', 3500 -> 'three thousand five hundred'."""
+    """7000 -> 'seven thousand', 3500 -> 'three thousand five hundred'.
+
+    Five figures and up are read digit by digit -- "one zero thousand", the way
+    a controller says it, not "10 thousand". Reachable since the stack's ceiling
+    became the P-51's oxygen limit rather than a four-element list.
+    """
     words = {0: "", 1: "one", 2: "two", 3: "three", 4: "four", 5: "five",
              6: "six", 7: "seven", 8: "eight", 9: "nine"}
     th, hu = divmod(ft, 1000)
-    out = f"{words.get(th, str(th))} thousand"
+    thousands = (words.get(th) if th < 10
+                 else " ".join(words[int(c)] or "zero" for c in str(th)))
+    out = f"{thousands} thousand"
     if hu:
         out += f" {words[hu // 100]} hundred"
     return out
@@ -118,6 +136,21 @@ def spell_time(t: float) -> str:
     d = {c: w for c, w in zip("0123456789",
          "zero one two three four five six seven eight nine".split())}
     return " ".join(d[c] for c in f"{(int(t) // 60) % 60:02d}")
+
+
+def spell_freq(mhz: float) -> str:
+    """132.0 -> 'one three two', 128.5 -> 'one two eight decimal five'.
+
+    Digit by digit, the way a controller reads a frequency; a trailing .0 is
+    dropped because nobody says "one three two decimal zero".
+    """
+    d = {c: w for c, w in zip("0123456789",
+         "zero one two three four five six seven eight nine".split())}
+    whole, _, frac = f"{mhz:.3f}".rstrip("0").rstrip(".").partition(".")
+    out = " ".join(d[c] for c in whole)
+    if frac:
+        out += " decimal " + " ".join(d[c] for c in frac)
+    return out
 
 
 def spell_dur(sec: float) -> str:
@@ -139,8 +172,20 @@ class Controller:
     _letdown_since: float = 0.0
 
     # -- plumbing ----------------------------------------------------------
-    def say(self, to: str, text: str) -> None:
-        self.out.append(Tx(to, text, self.t))
+    def say(self, to: str, text: str, ref: Aircraft | None = None) -> None:
+        """Queue a transmission on the channel this aircraft is actually on.
+
+        `ref` overrides the lookup for the one case where the addressee is no
+        longer in the dictionary: a break-up announcement is addressed to the
+        flight, and the flight entry has just been replaced by its members. Left
+        to the lookup it would come out on the enroute channel -- which is
+        precisely the channel the flight has already been told to leave.
+        """
+        ac = ref if ref is not None else self.aircraft.get(to)
+        enroute = ac is None or ac.phase in (Phase.UNKNOWN, Phase.ENROUTE)
+        banished = ac is not None and ac.phase is Phase.BANISHED
+        name, freq = self.profile.station(enroute=enroute, banished=banished)
+        self.out.append(Tx(to, text, self.t, freq, name))
 
     def _resolve(self, cs: str) -> str:
         """Which entity owns this callsign.
@@ -220,9 +265,17 @@ class Controller:
     def check_in(self, cs: str, size: int = 1) -> None:
         ac = self._enter(cs, size)
         ac.phase, ac.last_report_t = Phase.ENROUTE, self.t
-        self.say(ac.callsign,
-                 f"{self._addr(ac)}, {self.profile.controller}, radar not "
-                 f"available, report {self.profile.beacon.name} inbound.")
+        here, here_freq = self.profile.station(enroute=True)
+        tower, tower_freq = self.profile.station()
+        call = (f"{self._addr(ac)}, {here}, radar not available, "
+                f"report {self.profile.beacon.name} inbound.")
+        if tower_freq and tower_freq != here_freq:
+            # He has to change channel to fly the letdown at all: the ARA-8
+            # homes on whatever the set is tuned to, so working the beacon and
+            # listening to this controller are the same act.
+            call += (f" Contact {tower} {spell_freq(tower_freq)} -- you will be "
+                     f"homing {self.profile.beacon.name} on that channel.")
+        self.say(ac.callsign, call)
 
     # -- formations --------------------------------------------------------
     def _break_up(self, ac: Aircraft) -> None:
@@ -277,7 +330,7 @@ class Controller:
             for m, _ in assigned:
                 self.aircraft.pop(m, None)
             self.aircraft[ac.callsign] = ac
-            self.say(ac.callsign,
+            self.say(ac.callsign, ref=ac, text=
                      f"{self._addr(ac)}, unable break-up, holding is full to "
                      f"{spell_alt(self.profile.top_ft)}. Remain as a flight, "
                      f"maintain {spell_alt(ac.assigned_ft or self.profile.bottom_ft)}, "
@@ -309,7 +362,7 @@ class Controller:
                 f"{callsign.parse(m).spoken} maintain "
                 f"{spell_alt(self.aircraft[m].assigned_ft)}" for m in announced)
             call += f" {levels}. Report each aircraft level."
-        self.say(ac.callsign, call)
+        self.say(ac.callsign, call, ref=ac)
 
         # Drop the sequencer's step-downs for aircraft this call already gave a
         # level to -- they would repeat, verbatim, the altitude just assigned.
@@ -409,9 +462,10 @@ class Controller:
     def _missed_instruction(self, banished: bool) -> str:
         if banished:
             return (f"climb {spell_alt(self.profile.top_ft)}, proceed "
-                    f"{self.profile.outer_hold.name} "
-                    f"{self.profile.outer_hold.freq_mhz:.3f}, hold, expect "
-                    f"re-sequence. Traffic holding.")
+                    f"{self.profile.outer_hold.name}, contact "
+                    f"{self.profile.outer_hold.sector or 'the outer hold'} "
+                    f"{spell_freq(self.profile.outer_hold.freq_mhz or 0)}, hold, "
+                    f"expect re-sequence. Traffic holding.")
         return (f"climb {spell_alt(self.profile.missed_ft)}, "
                 f"return to the beacon. You are number one for the approach.")
 
