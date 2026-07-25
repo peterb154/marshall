@@ -122,6 +122,44 @@ def parse(cs: str) -> Callsign:
     return Callsign(f"{stem} {digits[0]}", int(digits[-1]))
 
 
+# Words that routinely sit in front of a number on the radio and are NOT
+# callsigns. Without these, "level four thousand" reads as an aircraft called
+# "Level 4" -- and if that is used to identify a transmitter, one number-carrying
+# transmission overwrites who the controller thought was talking.
+_NOT_A_NAME = {
+    "level", "levels", "heading", "altitude", "runway", "thousand", "hundred",
+    "angels", "channel", "maintain", "climb", "descend", "descending",
+    "climbing", "passing", "squawk", "flight", "approach", "tower", "departure",
+    "ground", "point", "at", "to", "and", "on", "of", "in", "for", "over",
+    "number", "wind", "knots", "miles", "mile", "radial", "degrees", "time",
+    "minutes", "seconds", "plus", "contact", "report", "cleared", "traffic",
+}
+
+_CANDIDATE = re.compile(
+    r"\b([A-Za-z]{3,})((?:[\s-]+(?:" + "|".join(_SPOKEN) + r"|\d))+)\b", re.I)
+
+
+def extract(text: str) -> str:
+    """Pull the first plausible callsign out of a transcript, or "".
+
+    Deliberately conservative. This feeds the controller's memory of who a radio
+    is, so a false positive is worse than a miss: a miss just means "I still
+    think you are who you were last time", while a false positive silently
+    reassigns a transmitter to an aircraft that does not exist.
+
+    Requires a number, so a bare name ("Sockeye, request approach") is NOT
+    extracted -- there is nothing in the string to separate it from the field or
+    the controller being addressed ("Batumi, request approach"). Military
+    callsigns carry a number, and the cost of the miss is only that the radio
+    stays unidentified until the agent correlates it properly.
+    """
+    for m in _CANDIDATE.finditer(_digits(text or "")):
+        if m.group(1).lower() in _NOT_A_NAME:
+            continue
+        return parse(m.group(0)).canonical
+    return ""
+
+
 def flight_of(cs: str) -> str:
     """The flight a callsign belongs to -- 'Pony 1-3' -> 'Pony 1'."""
     return parse(cs).flight

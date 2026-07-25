@@ -29,7 +29,10 @@ from marshall.core import route as R  # noqa: E402
 FORMATION = [
     ("Sockeye", "Batumi Approach, Pony one one, flight of four, checking in."),
     ("Sockeye", "Pony one one, flight of four, over the beacon, six thousand."),
-    ("Bandit",  "Pony one three, level six thousand."),
+    # The controller asks whether they can maintain visual separation before he
+    # breaks them up; nothing progresses until the flight answers.
+    ("Sockeye", "Pony one flight, negative, we're in cloud."),
+    ("Bandit",  "Pony one three, level five thousand."),
     ("Sockeye", "Pony one one, established inbound on the beam, starting my clock."),
     ("Sockeye", "Pony one one has the field, runway in sight."),
     ("Bandit",  "Pony one two, request approach."),
@@ -43,7 +46,16 @@ SINGLE = [
     ("Sockeye", "Pony one one has the field, runway in sight."),
 ]
 
-SCRIPTS = {"formation": FORMATION, "single": SINGLE}
+VISUAL = [
+    ("Sockeye", "Batumi Approach, Pony one one, flight of four, checking in."),
+    ("Sockeye", "Pony one one, flight of four, over the beacon, six thousand."),
+    ("Sockeye", "Pony one flight, affirmative, we can maintain visual separation."),
+    ("Bandit",  "Pony one two, visual with lead, in trail."),
+    ("Sockeye", "Pony one one, established inbound on the beam, starting my clock."),
+    ("Sockeye", "Pony one one has the field, runway in sight."),
+]
+
+SCRIPTS = {"formation": FORMATION, "single": SINGLE, "visual": VISUAL}
 
 
 def run(script, session_id: str, sep_always: bool = True) -> None:
@@ -61,7 +73,11 @@ def run(script, session_id: str, sep_always: bool = True) -> None:
         if stack:
             print(f"  SEPARATION: {stack}", flush=True)
 
-        parts = [f"SRS transmitter: {srs}"]
+        known = agent_atc.transmitter_callsign(f"guid-{srs}", text)
+        parts = [f"TRANSMITTER: the radio calling itself {known}. Same aircraft "
+                 f"as every other call from {known} -- keep them together."
+                 if known else
+                 "TRANSMITTER: a radio you have not identified yet."]
         if directive:
             parts.append("CONTROLLER (deterministic next step of the approach — "
                          "voice its altitudes, headings and sequence exactly, add "

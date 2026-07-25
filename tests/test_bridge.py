@@ -129,6 +129,55 @@ class TestSimpleResponse(unittest.TestCase):
         self.assertIsNone(
             agent_atc.simple_response("Pony one one, over the beacon, four thousand"))
 
+class TestTransmitterIdentity(unittest.TestCase):
+    """The radio is the anchor: its NAME is irrelevant, its stability is not."""
+
+    def setUp(self):
+        agent_atc._transmitters.clear()
+
+    def test_learns_the_callsign_a_radio_uses(self):
+        self.assertEqual(
+            agent_atc.transmitter_callsign("g1", "Batumi Approach, Pony one one, "
+                                           "flight of four, checking in."),
+            "Pony 1-1")
+
+    def test_remembers_it_when_the_callsign_is_missing(self):
+        # The whole point: Whisper drops or mangles callsigns constantly, and
+        # the controller should still know who is talking.
+        agent_atc.transmitter_callsign("g1", "Pony one one, checking in.")
+        self.assertEqual(
+            agent_atc.transmitter_callsign("g1", "uhh, level four thousand"),
+            "Pony 1-1")
+
+    def test_a_numbered_phrase_does_not_steal_the_identity(self):
+        # "level four thousand" must not rebind the radio to an aircraft called
+        # "Level 4" -- a false positive silently reassigns a transmitter.
+        agent_atc.transmitter_callsign("g1", "Pony one one, checking in.")
+        for noise in ("descending to four thousand",
+                      "heading three zero four",
+                      "runway one two in sight",
+                      "passing five thousand"):
+            with self.subTest(noise=noise):
+                self.assertEqual(agent_atc.transmitter_callsign("g1", noise),
+                                 "Pony 1-1")
+
+    def test_a_radio_can_re_identify(self):
+        agent_atc.transmitter_callsign("g1", "Pony one one, checking in.")
+        self.assertEqual(
+            agent_atc.transmitter_callsign("g1", "Pony one two, level five thousand"),
+            "Pony 1-2")
+
+    def test_radios_are_kept_apart(self):
+        agent_atc.transmitter_callsign("g1", "Pony one one, checking in.")
+        agent_atc.transmitter_callsign("g2", "Pony one three, level five thousand.")
+        self.assertEqual(agent_atc.transmitter_callsign("g1", "say again"), "Pony 1-1")
+        self.assertEqual(agent_atc.transmitter_callsign("g2", "say again"), "Pony 1-3")
+
+    def test_an_unheard_radio_is_honestly_unknown(self):
+        self.assertEqual(agent_atc.transmitter_callsign("g9", "mumble"), "")
+
+    def test_no_guid_is_harmless(self):
+        self.assertEqual(agent_atc.transmitter_callsign(None, "Pony one one"), "")
 
 if __name__ == "__main__":
     unittest.main()

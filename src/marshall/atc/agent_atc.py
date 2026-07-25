@@ -186,6 +186,33 @@ def fetch_due(session_id: str, url: str = HOOKS_URL, timeout: float = 5.0) -> li
         return []
 
 
+# SRS client GUID -> the callsign that radio has been using. The GUID is the
+# only stable, free, per-transmission identity we get, and its VALUE is
+# irrelevant -- nobody cares that a radio is registered as "Sockeye". What
+# matters is that it is the same radio as last time, so once the controller has
+# worked out that this one calls itself Rifle 1-1 (and correlated Rifle 1-1 to
+# a radar track), every later transmission from it is Rifle 1-1 even when
+# Whisper mangles the callsign or the pilot omits it entirely.
+_transmitters: dict[str, str] = {}
+
+
+def transmitter_callsign(guid: str | None, transcript: str) -> str:
+    """Who this radio is, learning from the transcript when it says so.
+
+    Uses the free offline regex rather than the classifier: this has to work on
+    every call, including the single-ship ones where the LLM classifier never
+    runs, and getting a callsign out of "Pony one one, level four thousand" does
+    not need a model.
+    """
+    if not guid:
+        return ""
+    from marshall.atc import callsign
+    heard = callsign.extract(transcript)
+    if heard:
+        _transmitters[guid] = heard
+    return _transmitters.get(guid, "")
+
+
 _SHIPS = re.compile(r"(\d+)\s+ships\b", re.I)
 
 
@@ -329,10 +356,14 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                   flush=True)
             continue
 
+        # Who this RADIO is, from what it has called itself before. Survives a
+        # garbled or omitted callsign, which is the whole point.
+        known = transmitter_callsign(client.last_sender_guid, transcript)
+
         scope = fetch_radar(session_id) if radar_on else ""
         n_contacts = count_contacts(scope)
         tag = f" [RADAR: {scope}]" if scope else ""
-        print(f"PILOT [SRS:{srs}]: {transcript}{tag}", flush=True)
+        print(f"PILOT [{known or srs}]: {transcript}{tag}", flush=True)
 
         # Engage the deterministic engine only with real traffic (or forced on for
         # the voice-only rehearsal, or once a stack already exists). A single ship
@@ -358,7 +389,11 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         parts = []
         if scope:
             parts.append(f"RADAR: {scope}")
-        parts.append(f"SRS transmitter: {srs}")
+        parts.append(
+            f"TRANSMITTER: the radio calling itself {known}. Same aircraft as "
+            f"every other call from {known} -- keep them together."
+            if known else
+            "TRANSMITTER: a radio you have not identified yet.")
         if directive:
             parts.append("CONTROLLER (deterministic next step of the approach — "
                          "voice its altitudes, headings and sequence exactly, add "
