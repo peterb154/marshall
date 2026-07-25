@@ -253,6 +253,65 @@ OVERHEAD_NM = 4.0
 _RANGE = re.compile(r"\[([^\]]+)\][^|]*?(\d+(?:\.\d+)?)\s*nm", re.I)
 
 
+_FIX = re.compile(
+    r"\[([^\]]+)\][^|]*?(\d+(?:\.\d+)?)\s*nm[^|]*?on the (\d+)\s*radial"
+    r"[^|]*?([\d,]+)\s*ft(?:[^|]*?heading\s*(\d+))?", re.I)
+
+
+def radar_fix(scope: str, cs: str) -> "object | None":
+    """Range, radial, altitude and heading of the track bound to this callsign.
+
+    Only radar-IDENTIFIED contacts (the [tagged] ones) -- guidance computed from
+    a blip that might not be him is worse than no guidance, because it sounds
+    exactly as confident.
+    """
+    if not scope or not cs:
+        return None
+    from marshall.atc import asr, callsign as C
+    want = C.parse(cs).flight.lower()
+    for tag, nm, radial, alt, hdg in _FIX.findall(scope):
+        if C.parse(tag).flight.lower() == want:
+            return asr.Position(float(nm), float(radial),
+                                int(alt.replace(",", "")),
+                                float(hdg) if hdg else 0.0)
+    return None
+
+
+def asr_context(profile, scope: str, cs: str) -> str:
+    """Radar guidance for a vectored approach -- the controller's next call.
+
+    This is what replaces the deterministic engine for a single ship. The engine
+    is blind and sequences aircraft against each other; on an ASR with one
+    aeroplane there is nothing to sequence, but there is still a procedure to
+    fly, and ALL of it is geometry: where he is, how far off the course, what
+    heading regains it, when he comes down. None of that needs a classify, so
+    the picture costs nothing and a lone pilot stops getting an improvised
+    approach.
+    """
+    from marshall.atc import asr
+    if not getattr(profile, "vectored", False):
+        return ""
+    pos = radar_fix(scope, cs)
+    if pos is None:
+        return ""
+    g = asr.guide(pos, profile)
+    rng = asr.spoken_range(g.range_nm)
+    if g.phase == "beyond":
+        return (f"ASR: he is {rng} miles the far side of the field and not on "
+                f"the approach — turn him back and re-vector, do not correct him.")
+    if g.phase == "map":
+        return ("ASR: he is over the missed approach point. Runway in sight, "
+                "land; if not, missed approach now.")
+    turn = "" if not g.off_course else f", {g.deviation}"
+    if g.phase == "final":
+        return (f"ASR: {rng} miles from the runway{turn}. Fly heading "
+                f"{g.heading:03d}, descend and maintain {g.altitude_ft}. "
+                f"Call his range every mile.")
+    return (f"ASR: vectoring, {rng} miles{turn}. Fly heading {g.heading:03d}, "
+            f"maintain {g.altitude_ft} until established on the final approach "
+            f"course.")
+
+
 def radar_range_for(scope: str, cs: str) -> float | None:
     """Range from the beacon of the track bound to this callsign, if any.
 
@@ -440,6 +499,12 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
 
         directive, stack = (separation_context(ctl, transcript, scope) if engaged
                             else ("", ""))
+        # Radar guidance for a vectored approach. Costs no model call, so it
+        # runs for a single ship too -- which is the case that was flying with
+        # no deterministic picture at all.
+        vectoring = asr_context(profile, scope, known)
+        if vectoring:
+            print(f"  {vectoring}", flush=True)
         if directive:
             print(f"  CONTROLLER: {directive}", flush=True)
         if stack:
@@ -458,6 +523,11 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                          f"your radar read, never skip a leg): {directive}")
         if stack:
             parts.append(f"SEPARATION (holding stack, one in the letdown): {stack}")
+        if vectoring:
+            parts.append(
+                "ASR (radar guidance, computed from the scope — voice these "
+                "numbers exactly; you are navigating for him and he has no "
+                f"approach aid of his own): {vectoring}")
         parts.append(f"PILOT: {transcript}")
         interact("\n".join(parts), "pilot", route_tier(transcript),
                  on_hz=heard_hz)

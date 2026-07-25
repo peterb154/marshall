@@ -258,6 +258,76 @@ class TestPositionRejection(unittest.TestCase):
         self.assertNotIn("POSITION REJECTED", directive)
 
 
+class TestAsrContext(unittest.TestCase):
+    """Radar guidance for a vectored approach. Costs no model call, which is why
+    it can run for a single ship -- the case that was previously flying with no
+    deterministic picture at all."""
+
+    def setUp(self):
+        from marshall.core import route as R
+        self.R = R
+        self.asr = R.BATUMI_ASR
+        self.ndb = R.BATUMI_APPROACH
+
+    def scope(self, nm, radial, alt=2000, tag="Pony one one"):
+        return (f"Enfield11 [{tag}] (P-51D-30-NA): {nm} nm on the {radial} "
+                f"radial, {alt:,} ft, heading 124")
+
+    def test_parses_a_tagged_fix(self):
+        pos = agent_atc.radar_fix(self.scope(6.4, 304, 2000), "Pony 1-1")
+        self.assertIsNotNone(pos)
+        self.assertAlmostEqual(pos.range_nm, 6.4)
+        self.assertAlmostEqual(pos.radial_deg, 304)
+        self.assertEqual(pos.alt_ft, 2000)
+
+    def test_untagged_contacts_give_no_guidance(self):
+        # Guidance from a blip that might not be him is worse than none: it
+        # sounds exactly as confident.
+        bogey = "Bogey (P-51D): 6 nm on the 304 radial, 2,000 ft, heading 124"
+        self.assertIsNone(agent_atc.radar_fix(bogey, "Pony 1-1"))
+        self.assertEqual(agent_atc.asr_context(self.asr, bogey, "Pony 1-1"), "")
+
+    def test_a_wingman_uses_his_flights_track(self):
+        pos = agent_atc.radar_fix(self.scope(6, 304), "Pony 1-3")
+        self.assertIsNotNone(pos)
+
+    def test_silent_on_a_non_vectored_approach(self):
+        # A beacon letdown must never receive vectors: the homing adapter points
+        # the nose at the beacon, so a heading destroys his only reference.
+        self.assertEqual(
+            agent_atc.asr_context(self.ndb, self.scope(6, 304), "Pony 1-1"), "")
+
+    def test_far_out_is_vectoring(self):
+        out = agent_atc.asr_context(self.asr, self.scope(14, 300), "Pony 1-1")
+        self.assertIn("vectoring", out)
+        self.assertIn(str(self.asr.platform_ft), out)
+
+    def test_on_final_gives_range_and_minimums(self):
+        out = agent_atc.asr_context(self.asr, self.scope(6, 304), "Pony 1-1")
+        self.assertIn("six miles from the runway", out)
+        self.assertIn(str(self.asr.mda_ft), out)
+        self.assertIn("every mile", out)
+
+    def test_off_course_is_named(self):
+        right = agent_atc.asr_context(self.asr, self.scope(6, 296), "Pony 1-1")
+        left = agent_atc.asr_context(self.asr, self.scope(6, 312), "Pony 1-1")
+        self.assertIn("right of course", right)
+        self.assertIn("left of course", left)
+
+    def test_the_missed_approach_point(self):
+        out = agent_atc.asr_context(self.asr, self.scope(0.4, 304), "Pony 1-1")
+        self.assertIn("missed approach point", out)
+
+    def test_past_the_field_is_re_vectored_not_corrected(self):
+        out = agent_atc.asr_context(self.asr, self.scope(4, 124), "Pony 1-1")
+        self.assertIn("re-vector", out)
+
+    def test_no_bare_digits_in_the_range_call(self):
+        # Range reaches Polly as words; a bare "6" would be read as a digit.
+        out = agent_atc.asr_context(self.asr, self.scope(6, 304), "Pony 1-1")
+        self.assertIn("six miles", out)
+
+
 
 if __name__ == "__main__":
     unittest.main()
