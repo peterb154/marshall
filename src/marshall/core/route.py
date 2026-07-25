@@ -378,7 +378,37 @@ class ApproachProfile:
     # course and talks it down to minimums, calling range each mile. Needs
     # nothing in the cockpit but a radio, so it works in any aeroplane -- unlike
     # the beacon letdown, which needs the ARA-8 and therefore a P-51D-30.
-    kind: str = "ndb"               # "ndb" (pilot navigates) | "asr" (ATC does)
+    kind: str = "ndb"               # "ndb" | "asr" | "ils" | "visual"
+
+    # WHERE THE CONTROLLER STOPS. This is the only axis on which the approaches
+    # we care about actually differ, and naming it is what stops the hardest one
+    # becoming the shape the others have to fit.
+    #
+    # All three are the same job up to the intercept: sequence him, vector him
+    # onto the final approach course, watch the ground track. Every bit of that
+    # is geometry and none of it knows what kind of approach it serves. What
+    # differs is who owns the aeroplane afterwards.
+    #
+    #   "talkdown"  the controller never stops -- he navigates the aircraft to
+    #               the missed approach point, calling range every mile and
+    #               reading advisory heights, because there is no glidepath and
+    #               nothing in the cockpit to fly. This is the ASR, and it is
+    #               the hardest of the three for the controller by a distance.
+    #
+    #   "intercept" the controller stops at the intercept. Once established the
+    #               AIRCRAFT flies it -- localiser and glideslope -- and the
+    #               controller's remaining job is to say so and get off the air.
+    #               This is the ILS, and for the controller it is mostly
+    #               sequencing. Calling ranges down an ILS is chatter over a
+    #               pilot who is busy and already has better information.
+    #
+    #   "visual"    the controller stops when the pilot reports the field. Until
+    #               then it is a vector towards a close base; after, it is the
+    #               pilot's approach and the controller's spacing.
+    #
+    # The difference is three words, and the alternative -- an engine per
+    # procedure -- is three copies of the geometry that will drift apart.
+    guidance: str = "talkdown"
     # From the AIP plate. IF: established on the course, level, by 11 nm. FAP:
     # 6 nm, still 2,000 -- the descent begins HERE, not at the IF. The segment
     # between them is deliberately level, which is what makes the approach
@@ -768,6 +798,7 @@ BATUMI_ASR = ApproachProfile(
     beacon=BATUMI,                  # still the radar reference point, not a nav aid
     outer_hold=KOBULETI,
     kind="asr",
+    guidance="talkdown",            # no glidepath: he is talked to the MAP
     stations=list(STATIONS),
     hold_base_ft=4000,
     final_crs=124,
