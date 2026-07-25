@@ -10,7 +10,7 @@ east. Speeds are MPH because the P-51's airspeed indicator is.
 """
 
 import math
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 
 NM = 1852.0
 MPH_PER_KT = 1.15078
@@ -57,7 +57,8 @@ INITIAL = Fix("INITIAL", "SW", -337949, 596106, 128.000,
 
 BATUMI = Fix("BATUMI", "OS", -355811, 617386, 132.000,
              "Batumi Tower",
-             "Field elevation 32 ft. Runway 13/31.")
+             "Field elevation 32 ft. Landing runway 12 (charted 13/31 today -- "
+             "magnetic drift renamed it; we fly the period AIP designation).")
 
 FIXES = [KOBULETI, INITIAL, BATUMI]
 
@@ -81,7 +82,7 @@ class Field_:
 # within 25 nm, plus 1000 ft. The NW quadrant is open sea, which is why the
 # entire procedure lives there.
 BATUMI_FIELD = Field_(
-    "Batumi", -355811, 617386, 32, 130,
+    "Batumi", -355811, 617386, 32, 124,
     msa={"NW": 1000, "NE": 8400, "SE": 11700, "SW": 7500},
     note="Highest terrain 10,623 ft at 23 nm SE. Missed approach turns LEFT.")
 
@@ -117,8 +118,18 @@ class ApproachProfile:
     """
     controller: str                 # radio callsign, e.g. "Batumi Approach"
     beacon: Fix                     # the approach beacon (ident + freq)
-    stack_ft: list[int]             # holding stack, bottom first
     outer_hold: Fix                 # escape-valve fix for repeated misses
+
+    # The holding stack is GENERATED, not a fixed list. A stack is just 1,000-ft
+    # increments from the base, and how many you need depends on who shows up --
+    # a four-ship breaking up for individual approaches wants four levels on its
+    # own. Hard-coding four made a formation break-up a capacity problem the
+    # controller had to refuse, which is not a thing a real controller does; he
+    # just stacks them higher. The only genuine ceiling here is OXYGEN: a P-51D
+    # holding for a long recovery has no business above 10,000 ft.
+    hold_base_ft: int = 4000        # bottom of the stack -- first arrival gets this
+    hold_step_ft: int = 1000        # vertical separation between holders
+    hold_top_ft: int = 10000        # ceiling (P-51: oxygen, not airspace)
 
     # What this field's controller can do. Default is a real, radar-equipped
     # controller; set it per mission to handicap him (see AtcCapability).
@@ -181,6 +192,14 @@ class ApproachProfile:
         return self.inbound_descent_nm / self.speed_kt * 3600
 
     @property
+    def stack_ft(self) -> list[int]:
+        """The holding levels, bottom first. Derived, so there is no list to keep
+        in step with the base/step/ceiling -- and no stored copy in the DB that
+        could drift from them."""
+        return list(range(self.hold_base_ft, self.hold_top_ft + 1,
+                          self.hold_step_ft))
+
+    @property
     def top_ft(self) -> int:
         return self.stack_ft[-1]
 
@@ -201,11 +220,14 @@ class ApproachProfile:
 BATUMI_APPROACH = ApproachProfile(
     controller="Batumi Approach",
     beacon=BATUMI,
-    stack_ft=[4000, 5000, 6000, 7000],
     outer_hold=KOBULETI,
+    hold_base_ft=4000,
     final_crs=124,
     hold_turns="RIGHT",
-    field_elev_ft=37,
+    # Read the field's own elevation rather than restating it. These two were 37
+    # and 32, and field_elev_ft is what sets MDA (min_hat_ft above the field), so
+    # the disagreement moved the minimums the pilot breaks out at.
+    field_elev_ft=BATUMI_FIELD.elevation_ft,
     runway="12",
     platform_ft=2000,
     ceiling_ft=400,
@@ -259,11 +281,30 @@ def profile_to_dict(p: ApproachProfile) -> dict:
 
 
 def profile_from_dict(d: dict) -> ApproachProfile:
+    """Rebuild a profile from a stored record, tolerating older shapes.
+
+    Approaches are persisted, so a row written by a previous version outlives the
+    code that wrote it. Unknown keys are dropped rather than raising -- a stale
+    row should cost you a field, not the whole approach (and the fallback for a
+    failed load is the route.py constant, which would silently ignore whatever
+    the mission actually briefed).
+    """
     d = dict(d)
     d["beacon"] = Fix(**d["beacon"])
     d["outer_hold"] = Fix(**d["outer_hold"])
-    d["atc"] = AtcCapability(**d["atc"])
-    return ApproachProfile(**d)
+    d["atc"] = AtcCapability(**d.get("atc", {}))
+
+    # stack_ft used to be a stored list; it is now derived from base/step/ceiling.
+    # Recover the base from a legacy row so an old record still holds at the right
+    # bottom level instead of silently jumping to the default.
+    legacy_stack = d.pop("stack_ft", None)
+    if legacy_stack and "hold_base_ft" not in d:
+        d["hold_base_ft"] = min(legacy_stack)
+        d["hold_step_ft"] = (sorted(legacy_stack)[1] - sorted(legacy_stack)[0]
+                             if len(legacy_stack) > 1 else 1000)
+
+    known = {f.name for f in fields(ApproachProfile)}
+    return ApproachProfile(**{k: v for k, v in d.items() if k in known})
 
 
 @dataclass

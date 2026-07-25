@@ -27,11 +27,19 @@ def _phonetic(ident: str) -> str:
 
 
 def _inbound_hdg(profile: R.ApproachProfile) -> int:
-    """Runway "12" -> 120 degrees; fall back to the profile's charted course."""
+    """The charted inbound course, falling back to the runway designation.
+
+    final_crs wins. Deriving the course from the runway number instead ("12" ->
+    120) is off by however much the runway's real centreline differs from its
+    rounded name -- at Batumi that is 124 vs 120, so the agent was reading the
+    plate four degrees off the nav log the pilot flies.
+    """
+    if profile.final_crs:
+        return profile.final_crs
     try:
         return int(profile.runway) * 10
     except (ValueError, TypeError):
-        return profile.final_crs or 0
+        return 0
 
 
 def _mmss(sec: float) -> str:
