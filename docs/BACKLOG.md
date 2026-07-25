@@ -2,6 +2,95 @@
 
 Deferred work, captured so it isn't lost. Not a promise of order.
 
+## Formations debrief — 2026-07-25 (first four-ship, live AI + synthetic pilots)
+
+Formations shipped and were flown against real AI traffic on the server. What
+the runs actually taught us, worst first:
+
+1. **The controller narrated its reasoning over the air.** With extended
+   thinking disabled the model reasons in the OUTPUT, and Polly read all of it
+   to the pilot in the controller's voice: *"This is a different transmitter, a
+   wingman, reporting his level. He's holding, not yet identified
+   individually..."* Prompting alone did not hold it. Fixed with a `RADIO:`
+   marker — the bridge transmits only what follows the last one, so thinking has
+   somewhere to go that is not the frequency. **This is a general hazard, not a
+   formation one:** any prompt change that invites deliberation can put it on
+   the air, and only the marker stands between the two.
+
+2. **The identity rules made formations invisible to radar.** "Two candidates →
+   do not identify" means four aeroplanes on one wing can *never* be radar
+   identified — the bigger the formation, the less the controller sees it. Radar
+   now collapses a tight group into one contact and the ambiguity rule is
+   explicitly lifted for it. Watch the threshold: the altitude window MUST stay
+   under the stack's 1,000 ft step, or a correctly-separated stack reads as a
+   formation and the controller is told four aircraft he just separated are one.
+
+3. **The SRS roster died silently.** `_drain_tcp` caught only `OSError`, so one
+   malformed message ended GUID→name tracking for the whole session while the
+   socket kept draining and calls kept working. Two wingmen logged as raw GUID
+   stubs. It fails precisely for late-joining clients — which is what a
+   formation is made of. Hardened, but the lesson generalises: **every
+   background thread in the voice stack needs a catch-all, because its failure
+   mode is silence, not a stack trace.**
+
+4. **The prompt was the bottleneck, not the model.** Both Haiku and Sonnet read
+   "level five thousand" as a check-in because the enum was *named*
+   `report_beacon` and nothing said a bare level report was the same event.
+   Spelling the taxonomy out in the schema: Haiku 11/17 → 16/17, Sonnet 12/17 →
+   17/17. Reach for the wording before the bigger model. (`tools/classify_bench.py`)
+
+5. **Structured output is not a guarantee.** Given an exhaustive seven-value
+   enum, Sonnet still returned `report_approach`. `IntentKind(...)` raised, the
+   bridge swallowed it, and the controller fell silent with an empty directive.
+   Anything that turns a model's string into an enum needs a `coerce`.
+
+6. **pydcs names units `<group> Pilot #n`,** not `<group>-<n>`. The assumption
+   that a group called "Pony 1" yields units "Pony 1-1".."Pony 1-4" was wrong;
+   they are renamed explicitly now. Radar labels still come from the DCS
+   *callsign* (Enfield11…), which is deliberate — correlation is meant to be
+   earned from a position report.
+
+7. **Polly's newer voices are neural-only** and reject the standard engine with
+   a `ValidationException`, killing a rehearsal at whichever synthetic pilot drew
+   one. Falls back and remembers.
+
+8. **Collapsing the formation switched the separation engine off.** The bridge
+   engages the deterministic controller at ≥2 radar contacts, and it counted
+   radar *lines*. The moment a four-ship became one line it counted as one
+   contact, so the engine stayed off for the arrival that most needs sequencing
+   — caught live, by a missing `CONTROLLER:` line. It counts ships now. **Any
+   change to the radar picture's format is a change to a control-flow input.**
+
+### Open, and the interesting one: radar vs. the blind engine
+
+A pilot reported "over the beacon" while radar showed him **eight miles out**.
+The agent correctly refused — *"negative, radar shows you eight miles northwest
+of the beacon, continue inbound"* — but the deterministic controller had already
+acted on the false report and **broken the flight up**. The two brains now
+disagree about the world: the engine thinks four aircraft are stacked, the agent
+told them to keep coming.
+
+The engine is blind by design, so it cannot catch this itself. The fix belongs
+in the bridge: **validate a position report against radar before feeding it to
+the controller**, and drop or flag the ones the scope contradicts. Until then a
+lying (or lost, or garbled-by-Whisper) position report silently corrupts the
+separation state. This is the most important thing left open from tonight.
+
+### Also deferred
+
+- **The AI cannot actually fly the break-up.** A DCS group is tasked as a whole
+  and wingmen follow lead, so the four-ship flies as one and the break-up is
+  driven from the radio by synthetic pilots. Fine for testing the controller;
+  if we ever want the AI to really split, it needs four single-ship groups.
+- **`director/` has no tests.** The formation clustering was validated by hand
+  through `docker exec`. It wants a test harness that can import `tools/`
+  without Postgres — the two real bugs in it were found by poking, not by a
+  suite.
+- **Rejoin after a missed approach.** A broken-up member that goes around stays
+  a single forever; it never rejoins its flight. Probably correct, but unstated.
+- **Trail-spacing break-up** as an alternative to the altitude stack (more
+  period-correct for 1944; needs timing machinery the engine does not have).
+
 ## Flight-test debrief — 2026-07-24 (first live voice ATC + beacon approach)
 
 1. **No cone of silence, confirmed.** DCS produces no detectable station-passage

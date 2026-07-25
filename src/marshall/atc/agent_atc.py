@@ -186,6 +186,27 @@ def fetch_due(session_id: str, url: str = HOOKS_URL, timeout: float = 5.0) -> li
         return []
 
 
+_SHIPS = re.compile(r"(\d+)\s+ships\b", re.I)
+
+
+def count_contacts(scope: str) -> int:
+    """How many AIRCRAFT the scope is showing, not how many lines it has.
+
+    Radar collapses a formation into one line ("... IN FORMATION with ... — 4
+    ships ..."), which is right for the controller to read but wrong to count:
+    the bridge engages the deterministic separation engine at two or more
+    contacts, so counting lines makes a four-ship look like a single ship and
+    switches the engine OFF for the one arrival that most needs sequencing.
+    """
+    if not scope or scope == "no contacts":
+        return 0
+    total = 0
+    for line in scope.split(" | "):
+        m = _SHIPS.search(line)
+        total += int(m.group(1)) if m else 1
+    return total
+
+
 def _stack_summary(ctl) -> str:
     """The deterministic holding stack, one aircraft per clause."""
     parts = []
@@ -297,7 +318,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             continue
         srs = client.name_for(client.last_sender_guid)   # who keyed the mic (free)
         scope = fetch_radar(session_id) if radar_on else ""
-        n_contacts = 0 if not scope or scope == "no contacts" else scope.count(" | ") + 1
+        n_contacts = count_contacts(scope)
         tag = f" [RADAR: {scope}]" if scope else ""
         print(f"PILOT [SRS:{srs}]: {transcript}{tag}", flush=True)
 

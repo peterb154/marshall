@@ -101,7 +101,43 @@ letdown at a time):
 - **Repeat miss (≥2) → banish** to the outer hold so one aircraft can't block the
   field.
 
-Field-agnostic: only the `ApproachProfile` differs.
+Field-agnostic: only the `ApproachProfile` differs. The stack itself is
+*generated* — `hold_base_ft` + `hold_step_ft` up to `hold_top_ft` — because how
+many levels you need depends on who turns up, and the only real ceiling is
+oxygen (10,000 ft in a Mustang), not a hard-coded list length.
+
+## Formations
+
+Military aircraft arrive in flights of up to four, and ATC works them as **one
+aeroplane** while they are together: one clearance, one altitude, lead answers
+for everybody. Talking to four aircraft to move four aircraft wastes a
+frequency, and lead — not the controller — owns separation *inside* the
+formation.
+
+Modelled by making a joined flight a single `Aircraft` with `members[]`, holding
+one stack slot. The entire sequencing core needs no idea formations exist;
+break-up replaces one entry with N and from that moment they are ordinary
+singles.
+
+**They break up at the holding fix, always.** You do not hold four ships in
+formation through a letdown — a holding pattern is minutes of turning in cloud
+with three wingmen welded to lead's wing, exactly when lead's attention is on
+the plate and the clock. Lead takes the lowest level so he lands first, and the
+break-up is announced once, with the levels they will actually fly.
+
+Three consequences worth knowing:
+
+- **Any member who transmits is the flight talking.** This is realism *and* the
+  best defence we have against speech-to-text: Whisper hears "one two" for "one
+  one" constantly, and without the mapping a single garbled digit forks one
+  aeroplane into two entries in the stack, each holding its own level.
+- **A formation is one radar contact.** Four blips a mile apart at one altitude
+  would otherwise be permanently un-identifiable under the "ambiguous match →
+  don't identify" rule. The detector's altitude window must stay well under the
+  stack step, or a correctly separated stack reads as a formation.
+- **A formation is several SRS transmitters.** Four aeroplanes are four radios,
+  so an unfamiliar transmitter claiming a member of a known flight is a wingman
+  keying up, not an impostor.
 
 ## The approach — a no-DME beacon letdown
 

@@ -47,6 +47,38 @@ class TestForVoice(unittest.TestCase):
                          "Pony one one, cleared approach.")
 
 
+class TestCountContacts(unittest.TestCase):
+    """The bridge engages the separation engine on contact count, so this
+    decides whether a formation gets deterministic sequencing at all."""
+
+    def test_empty_sky(self):
+        self.assertEqual(agent_atc.count_contacts(""), 0)
+        self.assertEqual(agent_atc.count_contacts("no contacts"), 0)
+
+    def test_single(self):
+        self.assertEqual(agent_atc.count_contacts(
+            "Enfield11 (P-51D): 6.0 nm on the 332 radial, 4,000 ft, heading 151"), 1)
+
+    def test_two_singles(self):
+        self.assertEqual(agent_atc.count_contacts(
+            "A (P-51): 6.0 nm on the 332 radial, 4,000 ft, heading 151 | "
+            "B (P-51): 8.0 nm on the 300 radial, 5,000 ft, heading 120"), 2)
+
+    def test_a_formation_counts_its_ships_not_its_line(self):
+        # The regression this exists for: radar collapses a four-ship into ONE
+        # line, so counting lines left the engine switched off for the arrival
+        # that most needs sequencing.
+        self.assertEqual(agent_atc.count_contacts(
+            "Enfield11 (P-51D) IN FORMATION with Enfield12, Enfield13, Enfield14 "
+            "— 4 ships, lead 12.3 nm on the 332 radial, 6,004 ft, heading 151"), 4)
+
+    def test_formation_plus_a_single(self):
+        self.assertEqual(agent_atc.count_contacts(
+            "E11 (P-51D) IN FORMATION with E12 — 2 ships, lead 12.3 nm on the "
+            "332 radial, 6,004 ft, heading 151 | "
+            "Hawk (P-51D): 8.0 nm on the 300 radial, 5,000 ft, heading 120"), 3)
+
+
 class TestRoster(unittest.TestCase):
     """The SRS name lookup, which is the free identity anchor on every packet."""
 
