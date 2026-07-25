@@ -167,6 +167,26 @@ HOMEBOUND = Fix("RIDGE", "", -318936, 712429, None,
 SORTIE = [BATUMI, FEET_WET, NORTH, TARGET_AREA, HOMEBOUND, BATUMI]
 SORTIE_LEGS = list(zip(SORTIE, SORTIE[1:]))
 
+
+def steerpoint(fix) -> int:
+    """Which numbered point on today's route this is, or 0 if it is not on it.
+
+    Numbers because a radio is a bad place for proper nouns. "Steerpoint two"
+    survives Whisper, an accent and a bad channel; "FEET WET" comes out as
+    "feet wet" if you are lucky and "fee twet" if you are not, and TSUTSNVATI
+    has no chance at all. The names stay for the chart, where a pilot is
+    reading rather than listening -- both, and each where it works.
+    """
+    for i, f in enumerate(SORTIE):
+        if f is fix or f.name == fix.name:
+            return i + 1
+    return 0
+
+
+def sortie_points() -> list[tuple[int, "Fix"]]:
+    """(number, fix) down the route, which is how it should be read out."""
+    return list(enumerate(SORTIE, start=1))
+
 # The route, in order. INITIAL to BATUMI is deliberately runway heading, so
 # rolling out of the turn inbound puts you on the approach course already.
 LEGS = [(KOBULETI, INITIAL), (INITIAL, BATUMI)]

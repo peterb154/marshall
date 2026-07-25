@@ -86,10 +86,13 @@ def draw(ch) -> str:
             f'{BLUE}, 1, true, "")')
         mid += 1
 
-    # Waypoint labels, so a line on the map has names on it.
-    for fix in R.SORTIE[:-1]:
+    # Waypoint labels: NUMBER first, because the number is what gets said on
+    # the radio and the name is what gets read on the chart.
+    for n, fix in R.sortie_points():
+        if n == len(R.SORTIE):          # the last point is home again
+            continue
         lines.append(
-            f'trigger.action.markToCoalition({mid}, "{fix.name}", '
+            f'trigger.action.markToCoalition({mid}, "{n}. {fix.name}", '
             f'{{x = {fix.x}, y = 0, z = {fix.z}}}, 2, true, "")')
         mid += 1
 

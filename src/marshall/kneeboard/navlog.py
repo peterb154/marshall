@@ -99,7 +99,7 @@ def build() -> str:
     # The first line is the departure point itself: no leg flown to reach it.
     start = R.SORTIE[0]
     rows.append(
-        f'<tr><td class="fix">{start.name}</td>'
+        f'<tr><td class="fix">{R.steerpoint(start)}. {start.name}</td>'
         f'<td>{start.ident or "&mdash;"}</td>'
         f'<td>{f"{start.freq_mhz:.3f}" if start.freq_mhz else "&mdash;"}</td>'
         f'<td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td>'
@@ -109,7 +109,7 @@ def build() -> str:
         elapsed += leg.minutes
         eta = f"{int(elapsed)}:{round((elapsed % 1) * 60):02d}"
         rows.append(
-            f'<tr><td class="fix">{leg.to.name}</td>'
+            f'<tr><td class="fix">{R.steerpoint(leg.to)}. {leg.to.name}</td>'
             f'<td>{leg.to.ident or "&mdash;"}</td>'
             f'<td>{f"{leg.to.freq_mhz:.3f}" if leg.to.freq_mhz else "&mdash;"}</td>'
             f'<td>{leg.course_true:03.0f}</td>'

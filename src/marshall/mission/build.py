@@ -439,7 +439,8 @@ def _brief_text() -> str:
     """
     legs = R.solve_route(legs=R.SORTIE_LEGS)
     route = "\n".join(
-        f"    {l.frm.name:<11s} -> {l.to.name:<11s}  hdg {l.heading_mag:03.0f}   "
+        f"    {R.steerpoint(l.frm)}. {l.frm.name:<11s} -> "
+        f"{R.steerpoint(l.to)}. {l.to.name:<11s}  hdg {l.heading_mag:03.0f}   "
         f"{l.distance_nm:5.1f} nm   {l.time_str}" for l in legs)
     total_nm = sum(l.distance_nm for l in legs)
     p = R.BATUMI_ASR

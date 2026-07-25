@@ -78,7 +78,7 @@ def build(profile=P) -> str:
             f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="5" fill="#fff" '
             f'stroke="#1b3fa0" stroke-width="2.5"/>'
             f'<text x="{cx + 9:.1f}" y="{cy - 8:.1f}" font-size="14" '
-            f'font-weight="bold" fill="#1b3fa0">{f.name}</text>')
+            f'font-weight="bold" fill="#1b3fa0">{i + 1}. {f.name}</text>')
     for leg in legs:
         mx = (sx(leg.frm.z) + sx(leg.to.z)) / 2
         my = (sy(leg.frm.x) + sy(leg.to.x)) / 2

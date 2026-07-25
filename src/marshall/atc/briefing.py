@@ -150,9 +150,45 @@ def _asr_plate(profile: R.ApproachProfile, flight: str, size: int) -> str:
         "flare: \"cleared to land, wind two seven zero at two zero\".",
         f"- Assignable altitudes: **{profile.platform_ft}** vectoring, "
         f"**{profile.mda_ft}** MDA, **{profile.missed_ft}** missed. Nothing else.",
+        *_sortie(),
         *_threats(),
         *_formation(flight, size, profile),
     ])
+
+
+def _sortie() -> list[str]:
+    """The route the squadron is flying today, so a controller recognises it.
+
+    Without this a pilot says "we are routing via FEET WET to NORTH" and the
+    controller has never heard either name -- it can vector him perfectly well
+    but cannot talk about his PLAN, which is most of what an enroute controller
+    does. With it, "cleared as filed" means something, "report NORTH" is a
+    trigger he owns, and a request to route direct can be answered against what
+    was actually filed.
+
+    It is today's plan, not a permanent fact about the field. Wording matters:
+    a controller who assumes every arrival is flying it will greet a stranger
+    by name, which is the over-fitting that got caught once already.
+    """
+    if not getattr(R, "SORTIE", None):
+        return []
+    legs = R.solve_route(legs=R.SORTIE_LEGS)
+    line = ", ".join(f"**{n}** {f.name}" for n, f in R.sortie_points())
+    detail = "; ".join(
+        f"{R.steerpoint(l.frm)} to {R.steerpoint(l.to)}, "
+        f"{l.heading_mag:03.0f} at {l.distance_nm:.0f} nm" for l in legs)
+    return [
+        f"- **Today's filed route** (the squadron's, not every aircraft's): "
+        f"{line}. Legs: {detail}.",
+        "- **Use the NUMBERS on the radio.** \"Report steerpoint two\" "
+        "survives a bad channel and a worse accent; \"report FEET WET\" "
+        "arrives as \"fee twet\", and TSUTSNVATI has no chance at all. The "
+        "names are for the chart he is reading, the numbers for the radio he "
+        "is listening to.",
+        "- He may not be flying it. Ask what he wants rather than assuming he "
+        "is on the frag — a pilot who has never mentioned it is just an "
+        "aeroplane going somewhere.",
+    ]
 
 
 def _threats() -> list[str]:
