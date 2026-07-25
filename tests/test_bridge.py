@@ -320,9 +320,12 @@ class TestAsrContext(unittest.TestCase):
         out = agent_atc.asr_context(self.asr, self.scope(0.4, 304), "Pony 1-1")
         self.assertIn("missed approach point", out)
 
-    def test_past_the_field_is_vectored_back(self):
+    def test_past_the_field_and_low_gets_the_missed_approach(self):
+        # Lined up, low, four miles beyond the threshold: he has flown the
+        # approach and not landed, and the plate answers that -- not a vector.
         out = agent_atc.asr_context(self.asr, self.scope(4, 124), "Pony 1-1")
-        self.assertTrue("vectoring" in out or "downwind" in out, out)
+        self.assertIn("issed approach", out)
+        self.assertNotIn("of course", out.split("Do NOT")[0])
 
     def test_no_bare_digits_in_the_range_call(self):
         # Range reaches Polly as words; a bare "6" would be read as a digit.
@@ -453,3 +456,40 @@ class TestPronunciation(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCourseTalkOnlyWhenOnCourse(unittest.TestCase):
+    """"Left of course" is a claim about a course he is actually flying.
+
+    Said to an aircraft climbing away on its missed approach -- having just
+    been told to fly 330, and flying 330 -- it is simply false, and it invites
+    the pilot to correct a course he has been ordered off. Heard live.
+    """
+
+    def setUp(self):
+        from marshall.atc import asr
+        from marshall.core import route as R
+        self.asr, self.p = asr, R.BATUMI_ASR
+
+    def g(self, nm, radial, hdg, alt=2000):
+        return self.asr.guide(self.asr.Position(nm, radial, alt, hdg), self.p)
+
+    def test_the_missed_approach_is_never_told_it_is_off_course(self):
+        g = self.g(5, 120, 330, alt=1600)
+        self.assertEqual(g.phase, "missed")
+        self.assertFalse(g.off_course)
+        self.assertEqual(g.deviation, "")
+        # asr_call is what the pilot HEARS; the context is what the agent is
+        # told, and it may mention the phrase only to forbid it.
+        self.assertNotIn("of course", agent_atc.asr_call("Pony 1-1", g))
+
+    def test_repositioning_outbound_is_not_told_it_is_off_course(self):
+        g = self.g(9, 330, 300, alt=3000)
+        self.assertFalse(g.off_course)
+        self.assertNotIn("of course", agent_atc.asr_call("Pony 1-1", g))
+
+    def test_an_inbound_aircraft_that_drifts_IS_told(self):
+        # The whole point of the approach: this one must still be corrected.
+        g = self.g(6, 296, 124, alt=1500)
+        self.assertTrue(g.off_course)
+        self.assertIn("of course", agent_atc.asr_call("Pony 1-1", g))

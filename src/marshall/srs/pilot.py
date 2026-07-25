@@ -52,6 +52,77 @@ ASR_SCRIPT = [
 SCRIPTS = {"ndb": DEFAULT_SCRIPT, "asr": ASR_SCRIPT}
 
 
+def live_script(group: str, profile=None) -> list[str]:
+    """A script that says TRUE things, read off the aircraft's actual position.
+
+    The fixed scripts are a tape recorder, and a tape recorder makes a useless
+    test subject. Run against a real aeroplane, one of them announced
+    "established on the final approach course" while the aircraft was five miles
+    the wrong side of the field flying its missed approach. The controller
+    correctly said "negative, not established" -- and that is the problem: with
+    a pilot who lies, a right answer and a wrong one look identical, so the
+    transcript proves nothing about the ATC.
+
+    So the position report comes from the sim, and the calls a pilot only makes
+    when something is true -- established, runway in sight -- are only made when
+    it is. What stays scripted is the part that is genuinely the pilot's choice:
+    what he asks for.
+    """
+    import math
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[3]
+    sys.path.insert(0, str(root / "tools"))
+    from asr_autopilot import lead_of, position_of      # the same radar we vector on
+    import grpc
+    import os
+
+    from marshall.atc import asr
+    from marshall.core import route as R
+    profile = profile or R.BATUMI_ASR
+
+    addr = os.environ.get("DCS_GRPC_ADDR", "127.0.0.1:50051")
+    with grpc.insecure_channel(addr) as ch:
+        unit = lead_of(ch, group)
+        if unit is None:
+            return [f"Batumi Approach, {group}, no joy on my own position, "
+                    "request radar contact."]
+        pos = position_of(unit, profile)
+
+    g = asr.guide(pos, profile)
+    compass = ["north", "north east", "east", "south east",
+               "south", "south west", "west", "north west"]
+    where = compass[int((pos.radial_deg + 22.5) % 360 // 45)]
+    alt = int(round(pos.alt_ft / 100.0) * 100)
+
+    lines = [
+        f"Batumi Approach, Pony one one, request the radar approach, runway "
+        f"{profile.runway}.",
+        f"Pony one one, {_spoken_alt(alt)}, {_spoken_num(round(pos.range_nm))} "
+        f"miles {where} of the field.",
+        "Pony one one, say the altimeter?",
+    ]
+    if g.established:
+        lines.append("Pony one one, established on the final approach course.")
+    else:
+        lines.append("Pony one one, not established yet, say my position?")
+    lines.append("Pony one one, say my distance to the runway?")
+    return lines
+
+
+def _spoken_num(n: int) -> str:
+    words = ["zero", "one", "two", "three", "four", "five", "six", "seven",
+             "eight", "nine"]
+    return " ".join(words[int(d)] for d in str(int(n)))
+
+
+def _spoken_alt(ft: int) -> str:
+    if ft >= 1000 and ft % 1000 == 0:
+        return f"{_spoken_num(ft // 1000)} thousand"
+    return f"{_spoken_num(ft // 100)} hundred" if ft < 1000 else str(ft)
+
+
 def run(host: str, freq_mhz: float, voice_id: str = "Joey",
         srs_name: str = "Sockeye", script: list[str] | None = None,
         reply_wait: float = 25.0) -> None:
@@ -93,6 +164,9 @@ if __name__ == "__main__":
         v = sys.argv[4] if len(sys.argv) > 4 else "Joey"
         name = sys.argv[5] if len(sys.argv) > 5 else "Sockeye"
         which = sys.argv[6] if len(sys.argv) > 6 else "asr"
-        run(sys.argv[2], float(sys.argv[3]), v, name, SCRIPTS.get(which))
+        # "live:<group>" reads the aeroplane and tells the truth about it.
+        script = (live_script(which.split(":", 1)[1])
+                  if which.startswith("live:") else SCRIPTS.get(which))
+        run(sys.argv[2], float(sys.argv[3]), v, name, script)
     else:
         print("usage: pilot.py --srs <host> <freq_mhz> [voice] [srs_name] [asr|ndb]")

@@ -411,11 +411,15 @@ def asr_context(profile, scope: str, cs: str) -> str:
                 f"is being transmitted automatically every mile — do NOT repeat "
                 f"his range, heading or altitude. Acknowledge what he said in a "
                 f"few words and stop.")
-    if g.phase == "downwind":
-        return (f"ASR: {rng} miles, {g.deviation}, and no room to turn him in "
-                f"yet.{swing} Fly heading {g.heading:03d}, maintain "
-                f"{g.altitude_ft} — he is going downwind to make room for the "
-                f"intercept.")
+    if g.phase == "missed":
+        # He has flown the approach and not landed. What he needs is the
+        # PUBLISHED missed approach, and he must not be told anything about the
+        # final approach course -- he is deliberately leaving it.
+        return (f"ASR: he has gone around, {rng} miles. Missed approach: fly "
+                f"heading {g.heading:03d}, climb {g.altitude_ft}. Do NOT tell "
+                f"him he is off course — he is flying the missed approach and "
+                f"is exactly where he should be. Re-sequence him after the "
+                f"climb.")
     return (f"ASR: vectoring, {rng} miles{turn}.{swing} Fly heading "
             f"{g.heading:03d}, maintain {g.altitude_ft} until established on the "
             f"final approach course.")

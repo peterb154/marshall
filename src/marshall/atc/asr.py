@@ -149,13 +149,22 @@ class Guidance:
     altitude_ft: int | None     # the altitude to assign, or None to leave him
     range_nm: float             # range to the field, for the range call
     xtk_nm: float               # cross-track: +right of course, -left of course
-    deviation: str              # "on course" | "left of course" | "right of course"
+    deviation: str              # "on course" | "left/right of course" | "" when
+                                # the course is not what he is flying
     turn: str = ""              # "left" | "right", the short way round
     speed_kt: float = 0.0       # the speed this leg should be flown at
 
     @property
     def off_course(self) -> bool:
-        return self.deviation != "on course"
+        """Off the final approach course -- and only meaningful if he is ON it.
+
+        An empty deviation means the question does not apply: he is being
+        repositioned, or flying the missed approach, and "you are left of
+        course" describes a course he is not trying to fly. It was said to an
+        aircraft outbound on its missed approach, which had just been told to
+        fly 330 and was doing exactly that.
+        """
+        return bool(self.deviation) and self.deviation != "on course"
 
     @property
     def established(self) -> bool:
@@ -460,15 +469,30 @@ def guide(pos: Position, profile) -> Guidance:
     xtk = cross_track(pos, profile.final_crs)
     along = along_track(pos, profile.final_crs)
     tol = on_course_tolerance(pos.range_nm)
-    deviation = ("on course" if abs(xtk) <= tol
-                 else "right of course" if xtk > 0 else "left of course")
+    # Is he flying the approach at all? Pointing roughly down the course, on
+    # the near side of the field. This is what decides whether the words "of
+    # course" mean anything to him -- see below.
+    inbound = (abs(angle_diff(pos.heading_deg, profile.final_crs)) <= 60
+               and along > 0)
 
     def out(phase, heading, alt):
         h = round(heading) % 360
+        # Deviation is a statement ABOUT THE FINAL APPROACH COURSE, so it is
+        # only said to someone flying it. Drifting off course while inbound is
+        # exactly what he needs to hear; being "left of course" while
+        # repositioning, or outbound on the missed approach, is not true in any
+        # useful sense -- he is flying the heading he was given and is where he
+        # should be. It was said to an aircraft climbing away on 330 having
+        # just been told to fly 330.
+        if inbound or phase in ("final", "map"):
+            dev = ("on course" if abs(xtk) <= tol
+                   else "right of course" if xtk > 0 else "left of course")
+        else:
+            dev = ""
         on_approach = phase in ("final", "map")
         speed = (profile.speed_kt_at(along, on_approach)
                  if hasattr(profile, "speed_kt_at") else 0.0)
-        return Guidance(phase, h, alt, pos.range_nm, xtk, deviation,
+        return Guidance(phase, h, alt, pos.range_nm, xtk, dev,
                         turn_direction(pos.heading_deg, h), speed)
 
     # Established: on the course and pointing down it. The heading check is not
