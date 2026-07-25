@@ -466,12 +466,23 @@ class ApproachProfile:
         the point where the descent starts still doing pattern speed is how the
         descent becomes a dive.
         """
-        # Inbound, and actually ON the approach. Along-track alone is not
-        # enough: an aircraft abeam the field four miles off the centreline has
-        # a small along-track and is nowhere near final, and slowing it to
-        # approach speed just makes the trip round the pattern longer. A
-        # negative along-track means past the field, same answer.
-        if established and 0 < along_nm <= self.fap_nm + 2.0:
+        # The reduction belongs at the INTERMEDIATE FIX, not at the point where
+        # the descent starts. Two reasons, and the second is the one the sim
+        # showed. Comfort first: a pilot who arrives at the final approach point
+        # still doing pattern speed has to dive to stay on the path, and 240 mph
+        # on a three degree gradient is eleven hundred feet a minute. But also,
+        # decelerating and descending at once is asking for both at the expense
+        # of each -- flown live, an aircraft told to slow two miles before the
+        # point managed 478 fpm of the 690 the path wanted, and arrived six
+        # hundred feet high. Slowing at the fix buys five level miles to settle,
+        # so the descent starts from a stable aeroplane already at approach
+        # speed and only has to do one thing.
+        #
+        # Inbound and actually ON the approach: along-track alone is not enough,
+        # since an aircraft abeam the field four miles off the centreline has a
+        # small along-track and is nowhere near final. Negative means past the
+        # field, same answer.
+        if established and 0 < along_nm <= self.final_intercept_nm:
             return self.final_speed_kt
         return self.speed_kt
 

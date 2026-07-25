@@ -167,11 +167,44 @@ def main() -> int:
         for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
             signal.signal(sig, lambda s, f: sys.exit(0))    # runs atexit
 
+        # Talking must not stop him watching the scope. Rendering a call costs a
+        # round trip to Polly and transmitting it takes as long as the words do,
+        # and doing both inline stretched a four-second radar look to nearly ten
+        # -- the aircraft moved eight hundred yards between looks while the
+        # controller had his mouth open. A real controller does not stop seeing
+        # when he keys the mic.
+        #
+        # One worker, one queue, and the queue is deliberately shallow: if calls
+        # are arriving faster than they can be spoken, the newest is the only
+        # one still true, and a backlog of stale range calls is worse than
+        # silence. Dropped calls are counted rather than hidden, because a
+        # talk-down that quietly stops talking looks identical to one that has
+        # nothing to say.
+        import queue
+        import threading
+
+        pending: "queue.Queue[str]" = queue.Queue(maxsize=1)
+        dropped = 0
+
+        def radio_worker():
+            while True:
+                text = pending.get()
+                if text is None:
+                    return
+                try:
+                    srs.transmit(voice.frames(text), hz, AM)
+                except Exception as e:               # a radio is not the point
+                    print(f"   (transmit failed: {e})")
+
+        threading.Thread(target=radio_worker, daemon=True).start()
+
         def say(text: str) -> None:
+            nonlocal dropped
             try:
-                srs.transmit(voice.frames(text), hz, AM)
-            except Exception as e:                       # a radio is not the point
-                print(f"   (transmit failed: {e})")
+                pending.put_nowait(text)
+            except queue.Full:
+                dropped += 1
+                print(f"   (still talking — dropped a call, {dropped} so far)")
 
     last_hdg, last_alt = None, None
     last_said_nm = None
