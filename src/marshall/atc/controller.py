@@ -335,6 +335,24 @@ class Controller:
         return self.get(cs)
 
     # -- pilot inputs ------------------------------------------------------
+    def owns_the_approach(self) -> str | None:
+        """Whose turn it is. None when nobody has been cleared.
+
+        The sequencing IS the hard part of a radar approach -- peeling one off
+        the stack at a time, vectoring him to the fix, and getting him in before
+        the next one starts. The geometry does not know about queues and the
+        queue does not know about geometry, so this is what joins them: the
+        vectoring asks who owns the approach and works only him.
+        """
+        return self._letdown
+
+    def waiting(self) -> list[str]:
+        """Everyone who is not the one being worked. They hold; they are not
+        vectored, because a vector is an invitation to start the approach."""
+        return [cs for cs, ac in self.aircraft.items()
+                if cs != self._letdown
+                and ac.phase.name not in ("LANDED", "UNKNOWN")]
+
     def seen_on_final(self, cs: str, size: int = 1) -> bool:
         """Radar shows him already established. Enter him as such, not as new.
 
@@ -404,6 +422,14 @@ class Controller:
         # is far quicker than laddering four aeroplanes up the stack. In cloud
         # that is not available and the controller must separate them himself.
         # He cannot know which it is from the ground, so he asks, once.
+        # When the hold is above the weather -- which on a vectored approach it
+        # is, by construction -- there is nothing to ask. They can see each
+        # other, so they hold as one aeroplane at one level in trail, and the
+        # levels go to separating FLIGHTS from other flights. Laddering a
+        # formation up the stack in clear air is work that buys nothing and
+        # spends four levels on one arrival.
+        if ac.visual is None and getattr(self.profile, "hold_in_clear_air", False):
+            ac.visual = True
         if ac.visual is None:
             if ac.assigned_ft is None:
                 ac.assigned_ft = self._free_slot() or self.profile.bottom_ft

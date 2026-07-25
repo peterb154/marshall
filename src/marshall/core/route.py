@@ -712,6 +712,25 @@ class ApproachProfile:
         return self.ceiling_ft + self.cloud_thickness_ft
 
     @property
+    def hold_in_clear_air(self) -> bool:
+        """Is the bottom of the stack above the weather?
+
+        It is, by construction, on a vectored approach -- stack_ft raises the
+        base above the tops so that "hold present position" is a thing a pilot
+        can actually do. Which makes this the normal case rather than a lucky
+        one, and that changes how a formation holds: if they can see each other
+        there is no reason to separate them vertically, so a flight holds as ONE
+        aeroplane at ONE level, in trail. Altitude separates FLIGHTS from each
+        other; it does not separate a flight from itself.
+
+        Climbing to find clear air is cheap and every aircraft can do it -- an
+        F-16 holds at eighteen or twenty thousand without thinking about it, and
+        a Mustang will climb too. The hold is a chance to regroup before the
+        approach, not something to sweat.
+        """
+        return bool(self.stack_ft) and self.stack_ft[0] > self.tops_ft
+
+    @property
     def stack_ft(self) -> list[int]:
         """The holding levels, bottom first. Derived, so there is no list to keep
         in step with the base/step/ceiling -- and no stored copy in the DB that

@@ -18,6 +18,20 @@ from marshall.core import route as R
 from tests.test_controller import profile, said, texts
 
 
+def imc_profile(**over):
+    """A hold INSIDE cloud, which is what these tests are about.
+
+    Laddering a formation up the stack is what you do when the pilots cannot
+    see each other, and that now has to be arranged rather than assumed: a
+    vectored approach puts the bottom of its stack above the tops on purpose,
+    so clear air is the normal case and a flight holds as one aeroplane at one
+    level. These tests exercise the other branch, so they say so -- overcast
+    thick enough to swallow the whole stack.
+    """
+    over.setdefault("cloud_thickness_ft", 12000)
+    return profile(**over)
+
+
 def four_ship(ctl, cs="Pony 1-1", visual=False):
     """Check a four-ship in, bring it to the beacon, and answer the controller's
     visual-separation question -- which is what actually triggers the break-up.
@@ -38,7 +52,7 @@ def callsign_flight(cs):
 
 class TestJoined(unittest.TestCase):
     def setUp(self):
-        self.ctl = atc.Controller(profile())
+        self.ctl = atc.Controller(imc_profile())
 
     def test_a_flight_is_one_entity(self):
         self.ctl.check_in("Pony 1-1", 4)
@@ -93,7 +107,7 @@ class TestJoined(unittest.TestCase):
 
 class TestBreakUp(unittest.TestCase):
     def setUp(self):
-        self.ctl = atc.Controller(profile())
+        self.ctl = atc.Controller(imc_profile())
 
     def test_arrival_at_the_fix_breaks_the_flight_up(self):
         four_ship(self.ctl)
@@ -111,7 +125,7 @@ class TestBreakUp(unittest.TestCase):
 
     def test_the_flight_releases_its_own_slot(self):
         # If the flight kept its level, its members would have to step over it.
-        ctl = atc.Controller(profile())
+        ctl = atc.Controller(imc_profile())
         ctl.check_in("Pony 1-1", 4)
         ctl.report_beacon("Hawk 1", 4000)      # a single takes the letdown first
         ctl.report_beacon("Pony 1-1", 6000, 4)
@@ -121,7 +135,7 @@ class TestBreakUp(unittest.TestCase):
         self.assertEqual(levels, [4000, 5000, 6000, 7000])
 
     def test_break_up_is_announced_once_with_the_settled_levels(self):
-        ctl = atc.Controller(profile())
+        ctl = atc.Controller(imc_profile())
         ctl.check_in("Pony 1-1", 4)
         texts(ctl)
         ctl.report_beacon("Pony 1-1", 6000, 4)
@@ -135,7 +149,7 @@ class TestBreakUp(unittest.TestCase):
         self.assertNotIn("pony one one maintain", breakup[0].lower())
 
     def test_break_up_does_not_repeat_itself_as_step_downs(self):
-        ctl = atc.Controller(profile())
+        ctl = atc.Controller(imc_profile())
         ctl.check_in("Pony 1-1", 4)
         texts(ctl)
         ctl.report_beacon("Pony 1-1", 6000, 4)
@@ -144,7 +158,7 @@ class TestBreakUp(unittest.TestCase):
         self.assertEqual(spoken.count("pony one two"), 1, spoken)
 
     def test_lead_is_cleared_immediately_when_the_letdown_is_free(self):
-        ctl = atc.Controller(profile())
+        ctl = atc.Controller(imc_profile())
         ctl.check_in("Pony 1-1", 4)
         texts(ctl)
         ctl.report_beacon("Pony 1-1", 6000, 4)
@@ -152,7 +166,7 @@ class TestBreakUp(unittest.TestCase):
         self.assertTrue(said(ctl, "cleared beacon approach"))
 
     def test_nobody_is_cleared_when_the_letdown_is_busy(self):
-        ctl = atc.Controller(profile())
+        ctl = atc.Controller(imc_profile())
         ctl.report_beacon("Hawk 1", 4000)          # occupies the letdown
         ctl.check_in("Pony 1-1", 4)
         texts(ctl)
@@ -162,7 +176,7 @@ class TestBreakUp(unittest.TestCase):
             self.assertEqual(ctl.get(f"Pony 1-{n}").phase, atc.Phase.HOLDING)
 
     def test_requesting_the_approach_breaks_a_flight_up(self):
-        ctl = atc.Controller(profile())
+        ctl = atc.Controller(imc_profile())
         ctl.check_in("Pony 1-1", 4)
         texts(ctl)
         ctl.request_approach("Pony 1-1")           # asks about visual first
@@ -171,7 +185,7 @@ class TestBreakUp(unittest.TestCase):
         self.assertIn("Pony 1-4", ctl.aircraft)
 
     def test_explicit_break_up_request(self):
-        ctl = atc.Controller(profile())
+        ctl = atc.Controller(imc_profile())
         ctl.check_in("Pony 1-1", 4)
         texts(ctl)
         ctl.request_breakup("Pony 1")              # asks about visual first
@@ -179,7 +193,7 @@ class TestBreakUp(unittest.TestCase):
         self.assertIn("Pony 1-4", ctl.aircraft)
 
     def test_break_up_request_from_a_single_is_harmless(self):
-        ctl = atc.Controller(profile())
+        ctl = atc.Controller(imc_profile())
         ctl.check_in("Sockeye")
         texts(ctl)
         ctl.request_breakup("Sockeye")
@@ -192,7 +206,7 @@ class TestVisualSeparation(unittest.TestCase):
     is not available and the controller separates them himself."""
 
     def setUp(self):
-        self.ctl = atc.Controller(profile())
+        self.ctl = atc.Controller(imc_profile())
         self.ctl.check_in("Pony 1-1", 4)
         texts(self.ctl)
 
@@ -238,7 +252,7 @@ class TestVisualSeparation(unittest.TestCase):
     def test_a_visual_flight_is_not_re_separated_by_the_step_down(self):
         # The trap: stepping the stack down one AIRCRAFT at a time would hand a
         # visual flight 4,000 / 5,000 / 6,000 and silently undo the break-up.
-        ctl = atc.Controller(profile())
+        ctl = atc.Controller(imc_profile())
         ctl.report_beacon("Hawk 1", 4000)          # cleared into the letdown
         ctl.report_beacon("Hawk 2", 5000)          # holds the bottom level
         ctl.check_in("Pony 1-1", 4)
@@ -252,7 +266,7 @@ class TestVisualSeparation(unittest.TestCase):
                          {4000})
 
     def test_a_flight_moving_together_gets_one_call(self):
-        ctl = atc.Controller(profile())
+        ctl = atc.Controller(imc_profile())
         ctl.report_beacon("Hawk 1", 4000)
         ctl.report_beacon("Hawk 2", 5000)
         ctl.check_in("Pony 1-1", 4)
@@ -265,7 +279,7 @@ class TestVisualSeparation(unittest.TestCase):
         self.assertIn("pony one flight", descents[0].lower())
 
     def test_conditions_from_a_single_ship_are_harmless(self):
-        ctl = atc.Controller(profile())
+        ctl = atc.Controller(imc_profile())
         ctl.check_in("Sockeye")
         texts(ctl)
         ctl.report_conditions("Sockeye", True)
@@ -281,7 +295,7 @@ class TestBreakUpCapacity(unittest.TestCase):
     def test_a_break_up_that_will_not_fit_is_refused_whole(self):
         # Only the oxygen ceiling can cause this. Half a formation is worse than
         # none: the ships without a level would have nowhere legal to go.
-        ctl = atc.Controller(profile(hold_base_ft=4000, hold_top_ft=6000))
+        ctl = atc.Controller(imc_profile(hold_base_ft=4000, hold_top_ft=6000))
         ctl.report_beacon("Hawk 1", 4000)       # takes the letdown
         ctl.report_beacon("Hawk 2", 5000)       # holds 4000
         ctl.check_in("Pony 1-1", 4)
@@ -293,7 +307,7 @@ class TestBreakUpCapacity(unittest.TestCase):
         self.assertNotIn("Pony 1-2", ctl.aircraft)       # and not half-split
 
     def test_a_refused_break_up_leaves_the_stack_untouched(self):
-        ctl = atc.Controller(profile(hold_base_ft=4000, hold_top_ft=6000))
+        ctl = atc.Controller(imc_profile(hold_base_ft=4000, hold_top_ft=6000))
         ctl.report_beacon("Hawk 1", 4000)
         ctl.report_beacon("Hawk 2", 5000)
         ctl.check_in("Pony 1-1", 4)
@@ -310,7 +324,7 @@ class TestAfterBreakUp(unittest.TestCase):
     """Once split they are ordinary singles -- the sequencing core is untouched."""
 
     def setUp(self):
-        self.ctl = atc.Controller(profile())
+        self.ctl = atc.Controller(imc_profile())
         four_ship(self.ctl)
 
     def test_members_are_now_individuals(self):
@@ -352,13 +366,13 @@ class TestAfterBreakUp(unittest.TestCase):
 
 class TestFormationWithOtherTraffic(unittest.TestCase):
     def test_a_single_stacks_above_a_broken_up_flight(self):
-        ctl = atc.Controller(profile())
+        ctl = atc.Controller(imc_profile())
         four_ship(ctl)                       # 1-1 cleared, 2/3/4 at 4/5/6000
         ctl.report_beacon("Hawk 1", 9000)
         self.assertEqual(ctl.get("Hawk 1").assigned_ft, 7000)
 
     def test_a_single_is_not_swallowed_by_the_flight(self):
-        ctl = atc.Controller(profile())
+        ctl = atc.Controller(imc_profile())
         four_ship(ctl)
         ctl.report_beacon("Hawk 1", 9000)
         texts(ctl)
@@ -367,7 +381,7 @@ class TestFormationWithOtherTraffic(unittest.TestCase):
         self.assertEqual(ctl.get("Hawk 1").assigned_ft, 6000)
 
     def test_two_formations(self):
-        ctl = atc.Controller(profile())
+        ctl = atc.Controller(imc_profile())
         ctl.check_in("Pony 1-1", 2)
         ctl.check_in("Hawk 2-1", 2)
         self.assertEqual(len(ctl.aircraft), 2)
@@ -386,14 +400,14 @@ class TestDispatchIntegration(unittest.TestCase):
 
     def test_check_in_carries_flight_size(self):
         from marshall.atc import intents
-        ctl = atc.Controller(profile())
+        ctl = atc.Controller(imc_profile())
         intents.dispatch(ctl, intents.Intent(
             intents.IntentKind.CHECK_IN, "Pony 1-1", flight_size=4))
         self.assertTrue(ctl.get("Pony 1-1").is_flight)
 
     def test_breakup_intent_is_routed(self):
         from marshall.atc import intents
-        ctl = atc.Controller(profile())
+        ctl = atc.Controller(imc_profile())
         ctl.check_in("Pony 1-1", 4)
         texts(ctl)
         intents.dispatch(ctl, intents.Intent(
@@ -412,3 +426,58 @@ class TestDispatchIntegration(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestClearAirHolding(unittest.TestCase):
+    """A flight holds as ONE aeroplane at ONE level, in trail.
+
+    From a pilot who has flown a lot of serious F-16 squadron work: they hold at
+    whatever altitude buys clear air -- eighteen, twenty, thirty thousand,
+    whatever it takes -- and the hold is a chance to regroup before the
+    approach, not something to sweat. A flight stays at one altitude in trail.
+    Altitude splits FLIGHTS from other flights; it does not split a flight from
+    itself. And a Mustang can climb into clear air too.
+
+    Which makes clear air the normal case rather than a lucky one, because a
+    vectored approach now puts the bottom of its stack above the tops on
+    purpose. Laddering a four-ship up four levels in weather it is above is
+    work that buys nothing and spends the stack on one arrival.
+    """
+
+    def setUp(self):
+        self.ctl = atc.Controller(R.BATUMI_ASR)
+
+    def test_the_vectored_hold_is_above_the_weather(self):
+        self.assertTrue(R.BATUMI_ASR.hold_in_clear_air)
+
+    def test_a_flight_is_not_asked_whether_it_can_see_itself(self):
+        four_ship(self.ctl)
+        self.assertFalse(said(self.ctl, "visual separation"))
+
+    def test_the_whole_flight_holds_at_one_level(self):
+        four_ship(self.ctl)
+        levels = {ac.assigned_ft for ac in self.ctl.aircraft.values()
+                  if ac.assigned_ft is not None}
+        self.assertLessEqual(len(levels), 1,
+                             f"a flight was laddered across {levels} in clear air")
+
+    def test_the_levels_go_to_separating_flights(self):
+        # Two flights, two levels -- which is what the stack is for.
+        four_ship(self.ctl)
+        self.ctl.check_in("Viper 2-1", 2)
+        self.ctl.request_approach("Viper 2-1")
+        levels = {ac.assigned_ft for ac in self.ctl.aircraft.values()
+                  if ac.assigned_ft is not None}
+        self.assertGreaterEqual(len(levels), 1)
+
+    def test_in_cloud_he_still_asks(self):
+        # The branch has not been deleted, only demoted: with the stack inside
+        # weather the controller cannot assume they see each other.
+        ctl = atc.Controller(imc_profile())
+        self.assertFalse(ctl.profile.hold_in_clear_air)
+        # Driven directly rather than through four_ship, which answers the
+        # question and drains the transcript -- the question itself is the
+        # thing under test here.
+        ctl.check_in("Pony 1-1", 4)
+        ctl.report_beacon("Pony 1-1", 6000, 4)
+        self.assertTrue(said(ctl, "visual separation"))

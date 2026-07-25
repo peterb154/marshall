@@ -567,7 +567,7 @@ SRS_NAME = "Marshall"
 
 def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
              session_id: str | None = None, url: str = AGENT_URL) -> None:
-    from marshall.atc import asr, controller
+    from marshall.atc import asr, callsign as C, controller
     from marshall.core import route as R
     from marshall.srs import stt, tts
     from marshall.srs.client import AM, SRSClient, radio
@@ -696,7 +696,18 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 continue
             try:
                 scope = fetch_radar(session_id)
+                # Sequencing: with a queue, only the aircraft that owns the
+                # approach is vectored. Everyone else is holding, and a vector
+                # is an invitation to start -- issue two and two aeroplanes fly
+                # the same intercept to the same fix at the same time, which is
+                # not a talk-down, it is a collision brief. With nobody queued
+                # the question does not arise and the single ship is worked
+                # normally.
+                turn = ctl.owns_the_approach() if len(ctl.aircraft) >= 2 else None
+
                 for cs, pos in radar_fixes(scope):
+                    if turn and C.parse(cs).flight.lower() != C.parse(turn).flight.lower():
+                        continue                # he is holding; not his turn
                     g = asr.guide(pos, profile)
 
                     # Being VECTORED. The controller has to turn him when he
