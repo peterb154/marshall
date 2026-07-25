@@ -75,6 +75,13 @@ class Aircraft:
     approaches: int = 0
     map_t: float | None = None       # computed station-passage (missed approach point) time
     members: list[str] = field(default_factory=list)   # non-empty => a joined flight
+    # Can this flight maintain VISUAL separation between its own aircraft?
+    # None = not asked yet. True = they can see each other, so they may share one
+    # holding level. False = IMC, so the controller must separate them himself.
+    # Tri-state on purpose: "we haven't asked" and "they said no" lead to the
+    # same separation but very different transmissions, and defaulting an unasked
+    # flight to "yes" would stack four aeroplanes on one level in cloud.
+    visual: bool | None = None
 
     @property
     def is_flight(self) -> bool:
@@ -174,9 +181,11 @@ class Controller:
         return c.spoken_flight if ac.is_flight else c.spoken
 
     def _holders(self) -> list[Aircraft]:
+        # Callsign breaks ties so a flight sharing one level under visual
+        # separation still sequences lead first (Pony 1-1 before Pony 1-2).
         return sorted((a for a in self.aircraft.values()
                        if a.phase == Phase.HOLDING and a.assigned_ft is not None),
-                      key=lambda a: a.assigned_ft)
+                      key=lambda a: (a.assigned_ft, a.callsign))
 
     def _free_slot(self) -> int | None:
         """Lowest stack level nobody holds -- a new arrival enters here, i.e.
@@ -227,15 +236,39 @@ class Controller:
         The flight's own slot is released first so its members can reuse it --
         otherwise a four-ship holding at the bottom would step over its own level.
         """
+        # Can they see each other? In VMC a flight may break up into singles in
+        # the SAME pattern at the SAME level -- the pilots accept responsibility
+        # for staying apart, which is what "maintain visual separation" means and
+        # is far quicker than laddering four aeroplanes up the stack. In cloud
+        # that is not available and the controller must separate them himself.
+        # He cannot know which it is from the ground, so he asks, once.
+        if ac.visual is None:
+            if ac.assigned_ft is None:
+                ac.assigned_ft = self._free_slot() or self.profile.bottom_ft
+            ac.phase, ac.last_report_t = Phase.HOLDING, self.t
+            self.say(ac.callsign,
+                     f"{self._addr(ac)}, hold at {self.profile.beacon.name} as "
+                     f"published, maintain {spell_alt(ac.assigned_ft)}. Can you "
+                     f"maintain visual separation between your aircraft?")
+            return
+
         members = list(ac.members)
         self.aircraft.pop(ac.callsign, None)
         assigned: list[tuple[str, int]] = []
-        for m in members:
-            slot = self._free_slot()
-            if slot is None:
-                break
-            self.aircraft[m] = Aircraft(m, Phase.HOLDING, slot, self.t)
-            assigned.append((m, slot))
+        if ac.visual:
+            # One level for the whole flight; they keep themselves apart.
+            level = ac.assigned_ft or self._free_slot() or self.profile.bottom_ft
+            for m in members:
+                self.aircraft[m] = Aircraft(m, Phase.HOLDING, level, self.t,
+                                            visual=True)
+                assigned.append((m, level))
+        else:
+            for m in members:
+                slot = self._free_slot()
+                if slot is None:
+                    break
+                self.aircraft[m] = Aircraft(m, Phase.HOLDING, slot, self.t)
+                assigned.append((m, slot))
 
         if len(assigned) < len(members):
             # Only the oxygen ceiling can cause this. Half a formation is worse
@@ -264,11 +297,17 @@ class Controller:
 
         announced = [m for m, _ in assigned
                      if self.aircraft[m].phase == Phase.HOLDING]
-        levels = ". ".join(
-            f"{callsign.parse(m).spoken} maintain "
-            f"{spell_alt(self.aircraft[m].assigned_ft)}" for m in announced)
         call = f"{self._addr(ac)}, break up for individual approaches."
-        if levels:
+        if ac.visual and announced:
+            # One level, one instruction -- reading four identical altitudes out
+            # would be noise, and the point is that they stay together.
+            call += (f" Maintain visual separation, all maintain "
+                     f"{spell_alt(self.aircraft[announced[0]].assigned_ft)}, "
+                     f"in trail. Report each aircraft in the pattern.")
+        elif announced:
+            levels = ". ".join(
+                f"{callsign.parse(m).spoken} maintain "
+                f"{spell_alt(self.aircraft[m].assigned_ft)}" for m in announced)
             call += f" {levels}. Report each aircraft level."
         self.say(ac.callsign, call)
 
@@ -284,6 +323,25 @@ class Controller:
         if not ac.is_flight:
             self.say(ac.callsign, f"{self._addr(ac)}, roger, no flight to break up.")
             return
+        self._break_up(ac)
+
+    def report_conditions(self, cs: str, visual: bool) -> None:
+        """The flight answering "can you maintain visual separation?".
+
+        Affirmative means the pilots take responsibility for staying apart, so
+        the whole flight can break up inside one holding level. Negative means
+        the controller separates them by altitude. Either way the answer arrives
+        while they are holding as a flight, so it is followed straight by the
+        break-up it was asked for.
+        """
+        ac = self.get(cs)
+        ac.visual, ac.last_report_t = visual, self.t
+        if not ac.is_flight:
+            self.say(ac.callsign, f"{self._addr(ac)}, roger.")
+            return
+        if not visual:
+            self.say(ac.callsign, f"{self._addr(ac)}, roger, instrument "
+                                  f"conditions, I will separate you.")
         self._break_up(ac)
 
     def report_beacon(self, cs: str, altitude_ft: int | None = None,
@@ -444,13 +502,31 @@ class Controller:
             self._step_down()
 
     def _step_down(self) -> None:
-        """The bottom slot just emptied; drop every holder 1,000 ft."""
-        for i, ac in enumerate(self._holders()):
+        """The bottom slot just emptied; drop the stack down to close the gap.
+
+        Steps LEVELS, not aircraft. Under visual separation a whole flight shares
+        one level, and walking the holders one at a time would hand them
+        4,000 / 5,000 / 6,000 -- silently undoing the visual break-up and
+        re-separating a flight that had just been told to stay together.
+        """
+        levels = sorted({a.assigned_ft for a in self._holders()})
+        for i, level in enumerate(levels):
             want = self.profile.stack_ft[i]
-            if ac.assigned_ft != want:
+            if level == want:
+                continue
+            movers = [a for a in self._holders() if a.assigned_ft == level]
+            for ac in movers:
                 ac.assigned_ft = want
-                self.say(ac.callsign, f"{self._addr(ac)}, descend and maintain "
-                                      f"{spell_alt(want)}.")
+            # One call for a flight moving together, one per aircraft otherwise.
+            flights = {callsign.parse(a.callsign).flight for a in movers}
+            if len(movers) > 1 and len(flights) == 1:
+                addr = callsign.Callsign(flights.pop()).spoken_flight
+                self.say(movers[0].callsign,
+                         f"{addr}, descend and maintain {spell_alt(want)}.")
+            else:
+                for ac in movers:
+                    self.say(ac.callsign, f"{self._addr(ac)}, descend and maintain "
+                                          f"{spell_alt(want)}.")
 
     def tick(self, seconds: float) -> None:
         """Advance the clock. Two time-based safety nets:
@@ -507,6 +583,10 @@ PATTERNS = [
      lambda c, cs, g: c.check_in(cs, _size(g))),
     (re.compile(r"(?P<cs>\w+ [\d-]+)(?: flight)? break", re.I),
      lambda c, cs, g: c.request_breakup(cs)),
+    (re.compile(r"(?P<cs>\w+ [\d-]+)(?: flight)? (?:affirm|vmc|visual)", re.I),
+     lambda c, cs, g: c.report_conditions(cs, True)),
+    (re.compile(r"(?P<cs>\w+ [\d-]+)(?: flight)? (?:negative|imc|in cloud)", re.I),
+     lambda c, cs, g: c.report_conditions(cs, False)),
     (re.compile(r"(?P<cs>\w+ [\d-]+) miss", re.I), lambda c, cs, g: c.report_missed(cs)),
     (re.compile(r"(?P<cs>\w+ [\d-]+) land", re.I), lambda c, cs, g: c.report_landed(cs)),
     (re.compile(r"(?P<cs>\w+ [\d-]+) request", re.I),

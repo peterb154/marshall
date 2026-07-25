@@ -24,38 +24,49 @@ from marshall.atc import bedrock_intent, intents  # noqa: E402
 
 K = intents.IntentKind
 
-# (transcript, expected kind, expected callsign, expected flight size).
+# (transcript, expected kind, expected callsign, expected flight size,
+#  expected visual answer or None).
 # Callsign None = don't care. Drawn from what Whisper actually returned in
 # flight plus the formation phrasing we are adding.
 CASES = [
     # --- formations: the new, load-bearing cases ------------------------
     ("Batumi Approach, Pony one one, flight of four, checking in.",
-     K.CHECK_IN, "Pony 1-1", 4),
+     K.CHECK_IN, "Pony 1-1", 4, None),
+    # --- visual separation: the answer decides whether four aeroplanes may
+    # share one holding level, so a wrong read here is a separation error.
+    ("Pony one flight, affirmative, we can maintain visual separation.",
+     K.REPORT_CONDITIONS, "Pony 1", 1, True),
+    ("Pony one one, affirm, VMC, we have each other in sight.",
+     K.REPORT_CONDITIONS, "Pony 1-1", 1, True),
+    ("Pony one flight, negative, we're in cloud.",
+     K.REPORT_CONDITIONS, "Pony 1", 1, False),
+    ("Pony one one, negative visual, IMC.",
+     K.REPORT_CONDITIONS, "Pony 1-1", 1, False),
     ("Batumi Approach, Pony one flight, four ship, with you.",
-     K.CHECK_IN, "Pony 1", 4),
+     K.CHECK_IN, "Pony 1", 4, None),
     ("Pony one one, flight of two, over the beacon, six thousand.",
-     K.REPORT_BEACON, "Pony 1-1", 2),
+     K.REPORT_BEACON, "Pony 1-1", 2, None),
     ("Pony one flight requesting break-up for individual approaches.",
-     K.REQUEST_BREAKUP, "Pony 1", 1),
+     K.REQUEST_BREAKUP, "Pony 1", 1, None),
     ("Batumi, Pony one one, we'd like to split up for singles.",
-     K.REQUEST_BREAKUP, "Pony 1-1", 1),
-    ("Pony one two, level five thousand.", K.REPORT_BEACON, "Pony 1-2", 1),
-    ("Pony one three is established inbound.", K.REPORT_BEACON, "Pony 1-3", 1),
-    ("Pony one four, going around.", K.REPORT_MISSED, "Pony 1-4", 1),
+     K.REQUEST_BREAKUP, "Pony 1-1", 1, None),
+    ("Pony one two, level five thousand.", K.REPORT_BEACON, "Pony 1-2", 1, None),
+    ("Pony one three is established inbound.", K.REPORT_BEACON, "Pony 1-3", 1, None),
+    ("Pony one four, going around.", K.REPORT_MISSED, "Pony 1-4", 1, None),
     # A single ship must NOT be read as a formation.
-    ("Batumi Approach, Pony one one, checking in.", K.CHECK_IN, "Pony 1-1", 1),
-    ("Sockeye, request approach.", K.REQUEST_APPROACH, "Sockeye", 1),
+    ("Batumi Approach, Pony one one, checking in.", K.CHECK_IN, "Pony 1-1", 1, None),
+    ("Sockeye, request approach.", K.REQUEST_APPROACH, "Sockeye", 1, None),
 
     # --- the real transcripts from the first flight ---------------------
     ("Kobuleti Departure, this is Sockeye on 124.00, how do you read?",
-     K.CHECK_IN, "Sockeye", 1),
+     K.CHECK_IN, "Sockeye", 1, None),
     ("Batumi Approach is a Sockeye, 9,000 level over Kobuleti and bound for the "
-     "approach.", K.REPORT_BEACON, "Sockeye", 1),
-    ("Batumi Tower, Sockeye's turning inbound.", K.REPORT_BEACON, "Sockeye", 1),
-    ("The Tumi Tower Sockeye is going missed.", K.REPORT_MISSED, "Sockeye", 1),
-    ("Batumi Tower, Sockeye has the runway.", K.REPORT_LANDED, "Sockeye", 1),
-    ("pony two, passing four grand at the beacon", K.REPORT_BEACON, "Pony 2", 1),
-    ("uhh Batumi Pony 3 is, uh, established", K.REPORT_BEACON, "Pony 3", 1),
+     "approach.", K.REPORT_BEACON, "Sockeye", 1, None),
+    ("Batumi Tower, Sockeye's turning inbound.", K.REPORT_BEACON, "Sockeye", 1, None),
+    ("The Tumi Tower Sockeye is going missed.", K.REPORT_MISSED, "Sockeye", 1, None),
+    ("Batumi Tower, Sockeye has the runway.", K.REPORT_LANDED, "Sockeye", 1, None),
+    ("pony two, passing four grand at the beacon", K.REPORT_BEACON, "Pony 2", 1, None),
+    ("uhh Batumi Pony 3 is, uh, established", K.REPORT_BEACON, "Pony 3", 1, None),
 ]
 
 
@@ -64,7 +75,7 @@ def bench(model_id: str) -> tuple[int, float]:
     bedrock_intent._client = None
     good, elapsed = 0, 0.0
     print(f"\n=== {model_id} ===")
-    for text, kind, cs, size in CASES:
+    for text, kind, cs, size, visual in CASES:
         t0 = time.monotonic()
         try:
             it = bedrock_intent.classify(text)
@@ -79,6 +90,8 @@ def bench(model_id: str) -> tuple[int, float]:
             bad.append(f"cs={it.callsign!r} want {cs!r}")
         if it.flight_size != size:
             bad.append(f"size={it.flight_size} want {size}")
+        if visual is not None and it.visual is not visual:
+            bad.append(f"visual={it.visual} want {visual}")
         good += not bad
         print(f"  {'ok  ' if not bad else 'FAIL'} {text[:58]:60} "
               + ("; ".join(bad) if bad else ""))

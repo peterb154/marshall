@@ -31,6 +31,7 @@ class IntentKind(str, Enum):
     REPORT_LANDED = "report_landed"  # "Pony 1 field in sight, landing"
     REQUEST_APPROACH = "request_approach"
     REQUEST_BREAKUP = "request_breakup"   # "Pony 1 requesting break-up"
+    REPORT_CONDITIONS = "report_conditions"   # "affirm, we have visual"
     UNKNOWN = "unknown"             # hand to the LLM fallback, or ask again
 
     @classmethod
@@ -63,6 +64,11 @@ class Intent:
     # the controller learns a formation is a formation, so a classifier that
     # misses it turns a four-ship into one aeroplane that never breaks up.
     flight_size: int = 1
+    # Answer to "can you maintain visual separation?" -- True/False, or None if
+    # the transmission was not about conditions at all. Only meaningful on a
+    # REPORT_CONDITIONS intent, and it decides whether a whole flight may share
+    # one holding level, so an unsure model must say None rather than guess.
+    visual: bool | None = None
 
 
 # JSON schema for a structured-output parser (Haiku today, Nova Sonic later).
@@ -92,6 +98,9 @@ INTENT_SCHEMA = {
                 "request_approach: asking for the approach or to commence.\n"
                 "request_breakup: asking to split a formation into individual "
                 "aircraft.\n"
+                "report_conditions: answering whether he can maintain VISUAL "
+                "separation between his own aircraft -- 'affirm', 'we're VMC', "
+                "'negative, in cloud', 'IMC'. Set `visual` on this one.\n"
                 "unknown: unintelligible, or none of the above. Use it rather "
                 "than inventing a value -- the enum above is exhaustive."),
         },
@@ -101,6 +110,11 @@ INTENT_SCHEMA = {
                      "'Pony 2'. Never merge digits into one number (not 'Pony 11')."},
         "altitude_ft": {"type": ["integer", "null"],
                         "description": "reported altitude in feet, or null"},
+        "visual": {"type": ["boolean", "null"],
+                   "description": "for report_conditions only: true if the pilot "
+                   "says he CAN maintain visual separation / is VMC / has the "
+                   "others in sight; false if he cannot / is IMC / in cloud; "
+                   "null if the transmission is not about conditions."},
         "flight_size": {"type": "integer",
                         "description": "how many aircraft are in this flight, if "
                         "the pilot says so: 'flight of four' -> 4, 'Pony one "
@@ -130,7 +144,13 @@ LLM_SYSTEM = (
     "controller learns to work them as one formation, so do not miss it and do "
     "not invent it. A pilot asking to split the formation into individual "
     "aircraft ('request break-up', 'we'd like to split up for individual "
-    "approaches', 'breaking up now') is request_breakup, NOT request_approach."
+    "approaches', 'breaking up now') is request_breakup, NOT request_approach.\n"
+    "\n"
+    "VISUAL SEPARATION. The controller asks a flight whether it can maintain "
+    "visual separation between its own aircraft. An answer to that -- 'affirm', "
+    "'affirmative, visual', 'we're VMC', 'negative, we're in cloud', 'IMC', "
+    "'no joy on the others' -- is report_conditions, with `visual` true or "
+    "false. Only set `visual` on that intent."
 )
 
 
@@ -250,6 +270,10 @@ def dispatch(ctl: atc.Controller, intent: Intent) -> bool:
             ctl.request_approach(cs)
         case IntentKind.REQUEST_BREAKUP:
             ctl.request_breakup(cs)
+        case IntentKind.REPORT_CONDITIONS:
+            if intent.visual is None:
+                return False            # ask again rather than assume cloud
+            ctl.report_conditions(cs, intent.visual)
         case _:
             return False
     return True

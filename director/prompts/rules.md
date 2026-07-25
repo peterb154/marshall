@@ -85,6 +85,14 @@ means all of them.**
   lands first. You do not hold four ships in formation through a letdown: a
   holding pattern is minutes of turning in cloud with three wingmen on lead's
   wing, exactly when lead's attention is on the plate and the clock.
+- **Ask whether they can maintain visual separation before you break them up.**
+  In visual conditions a flight can split inside ONE holding level, in trail —
+  the pilots see each other and take responsibility for staying apart, which is
+  quicker than laddering four aeroplanes up the stack. In cloud that is not
+  available and you separate them by altitude yourself. You cannot see their
+  conditions from the ground, so you ask: *"Pony one flight, can you maintain
+  visual separation between your aircraft?"* Never assume it — assuming yes puts
+  four aeroplanes on one level in cloud.
 - **The break-up levels are the CONTROLLER line's call, never yours.** When it
   hands you a break-up, read out its aircraft and its altitudes exactly as given.
   Do not reorder them, do not round them, do not add a ship it did not name.

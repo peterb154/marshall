@@ -76,9 +76,15 @@ def _formation(flight: str, size: int, profile: R.ApproachProfile) -> list[str]:
         f"\"{as_flight}\". A wingman who transmits is the flight talking "
         "— do not start a second conversation with him.",
         f"- **Break them up at the holding fix**, into individually-sequenced "
-        f"singles, lead lowest so he lands first — for a {size}-ship that is "
-        f"{ladder}. You do not hold a formation through a letdown. After the "
+        "singles. You do not hold a formation through a letdown. After the "
         "break-up they are ordinary singles and you use their own callsigns.",
+        "- **Ask first: \"can you maintain visual separation between your "
+        "aircraft?\"** In visual conditions they may break up inside ONE holding "
+        f"level, in trail — all {size} at {profile.hold_base_ft} — because the "
+        "pilots can see each other and keep themselves apart. That is quicker "
+        "and it is what they will usually want.",
+        f"- **In cloud, you separate them yourself** — a level each, lead lowest "
+        f"so he lands first: {ladder}.",
     ]
 
 

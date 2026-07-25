@@ -78,6 +78,7 @@ def classify(transcript: str) -> intents.Intent:
         # Clamp: a formation is four ships at most, and a model that hallucinates
         # a size would otherwise fabricate wingmen the controller then separates.
         flight_size=max(1, min(4, int(data.get("flight_size") or 1))),
+        visual=data.get("visual"),
     )
 
 

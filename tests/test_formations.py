@@ -18,11 +18,22 @@ from marshall.core import route as R
 from tests.test_controller import profile, said, texts
 
 
-def four_ship(ctl, cs="Pony 1-1"):
-    """Check a four-ship in and bring it to the beacon (which breaks it up)."""
+def four_ship(ctl, cs="Pony 1-1", visual=False):
+    """Check a four-ship in, bring it to the beacon, and answer the controller's
+    visual-separation question -- which is what actually triggers the break-up.
+
+    Defaults to IMC (altitude separation), the case most of these tests are
+    about; pass visual=True for the one-level VMC break-up.
+    """
     ctl.check_in(cs, 4)
     ctl.report_beacon(cs, 6000, 4)
+    ctl.report_conditions(callsign_flight(cs), visual)
     texts(ctl)
+
+
+def callsign_flight(cs):
+    from marshall.atc import callsign as C
+    return C.parse(cs).flight
 
 
 class TestJoined(unittest.TestCase):
@@ -68,6 +79,7 @@ class TestJoined(unittest.TestCase):
         self.ctl.check_in("Pony 1-1", 4)
         texts(self.ctl)
         self.ctl.report_beacon("Pony 1-3", 6000)
+        self.ctl.report_conditions("Pony 1", False)
         self.assertTrue(said(self.ctl, "break up"))
         self.assertEqual(self.ctl.get("Pony 1-2").assigned_ft, 4000)
 
@@ -103,6 +115,7 @@ class TestBreakUp(unittest.TestCase):
         ctl.check_in("Pony 1-1", 4)
         ctl.report_beacon("Hawk 1", 4000)      # a single takes the letdown first
         ctl.report_beacon("Pony 1-1", 6000, 4)
+        ctl.report_conditions("Pony 1", False)
         texts(ctl)
         levels = sorted(ctl.get(f"Pony 1-{n}").assigned_ft for n in range(1, 5))
         self.assertEqual(levels, [4000, 5000, 6000, 7000])
@@ -112,6 +125,7 @@ class TestBreakUp(unittest.TestCase):
         ctl.check_in("Pony 1-1", 4)
         texts(ctl)
         ctl.report_beacon("Pony 1-1", 6000, 4)
+        ctl.report_conditions("Pony 1", False)
         spoken = texts(ctl)
         breakup = [t for t in spoken if "break up" in t.lower()]
         self.assertEqual(len(breakup), 1, spoken)
@@ -125,6 +139,7 @@ class TestBreakUp(unittest.TestCase):
         ctl.check_in("Pony 1-1", 4)
         texts(ctl)
         ctl.report_beacon("Pony 1-1", 6000, 4)
+        ctl.report_conditions("Pony 1", False)
         spoken = " ".join(texts(ctl)).lower()
         self.assertEqual(spoken.count("pony one two"), 1, spoken)
 
@@ -133,6 +148,7 @@ class TestBreakUp(unittest.TestCase):
         ctl.check_in("Pony 1-1", 4)
         texts(ctl)
         ctl.report_beacon("Pony 1-1", 6000, 4)
+        ctl.report_conditions("Pony 1", False)
         self.assertTrue(said(ctl, "cleared beacon approach"))
 
     def test_nobody_is_cleared_when_the_letdown_is_busy(self):
@@ -141,6 +157,7 @@ class TestBreakUp(unittest.TestCase):
         ctl.check_in("Pony 1-1", 4)
         texts(ctl)
         ctl.report_beacon("Pony 1-1", 6000, 4)
+        ctl.report_conditions("Pony 1", False)
         for n in range(1, 5):
             self.assertEqual(ctl.get(f"Pony 1-{n}").phase, atc.Phase.HOLDING)
 
@@ -148,7 +165,8 @@ class TestBreakUp(unittest.TestCase):
         ctl = atc.Controller(profile())
         ctl.check_in("Pony 1-1", 4)
         texts(ctl)
-        ctl.request_approach("Pony 1-1")
+        ctl.request_approach("Pony 1-1")           # asks about visual first
+        ctl.report_conditions("Pony 1", False)
         self.assertTrue(said(ctl, "break up"))
         self.assertIn("Pony 1-4", ctl.aircraft)
 
@@ -156,7 +174,8 @@ class TestBreakUp(unittest.TestCase):
         ctl = atc.Controller(profile())
         ctl.check_in("Pony 1-1", 4)
         texts(ctl)
-        ctl.request_breakup("Pony 1")
+        ctl.request_breakup("Pony 1")              # asks about visual first
+        ctl.report_conditions("Pony 1", False)
         self.assertIn("Pony 1-4", ctl.aircraft)
 
     def test_break_up_request_from_a_single_is_harmless(self):
@@ -165,6 +184,97 @@ class TestBreakUp(unittest.TestCase):
         texts(ctl)
         ctl.request_breakup("Sockeye")
         self.assertTrue(said(ctl, "no flight to break up"))
+
+
+class TestVisualSeparation(unittest.TestCase):
+    """In VMC a flight can break up inside ONE holding level, because the pilots
+    can see each other and accept responsibility for staying apart. In cloud that
+    is not available and the controller separates them himself."""
+
+    def setUp(self):
+        self.ctl = atc.Controller(profile())
+        self.ctl.check_in("Pony 1-1", 4)
+        texts(self.ctl)
+
+    def arrive(self):
+        self.ctl.report_beacon("Pony 1-1", 6000, 4)
+
+    def test_the_controller_asks_before_assuming(self):
+        self.arrive()
+        self.assertTrue(said(self.ctl, "maintain visual separation"))
+
+    def test_no_break_up_until_he_answers(self):
+        self.arrive()
+        self.assertIn("Pony 1", self.ctl.aircraft)        # still one entity
+        self.assertNotIn("Pony 1-2", self.ctl.aircraft)
+
+    def test_they_still_get_a_holding_level_while_asked(self):
+        # Asking must not leave a four-ship with no altitude assigned.
+        self.arrive()
+        self.assertEqual(self.ctl.get("Pony 1").assigned_ft, 4000)
+
+    def test_affirmative_puts_the_whole_flight_on_one_level(self):
+        self.arrive()
+        texts(self.ctl)
+        self.ctl.report_conditions("Pony 1", True)
+        levels = {self.ctl.get(f"Pony 1-{n}").assigned_ft for n in range(1, 5)}
+        self.assertEqual(levels, {4000})
+        self.assertTrue(said(self.ctl, "maintain visual separation", "in trail"))
+
+    def test_negative_separates_them_by_altitude(self):
+        self.arrive()
+        texts(self.ctl)
+        self.ctl.report_conditions("Pony 1", False)
+        self.assertEqual(self.ctl.get("Pony 1-2").assigned_ft, 4000)
+        self.assertEqual(self.ctl.get("Pony 1-3").assigned_ft, 5000)
+        self.assertEqual(self.ctl.get("Pony 1-4").assigned_ft, 6000)
+
+    def test_lead_is_still_sequenced_first_within_one_level(self):
+        self.arrive()
+        texts(self.ctl)
+        self.ctl.report_conditions("Pony 1", True)
+        self.assertEqual(self.ctl.get("Pony 1-1").phase, atc.Phase.CLEARED)
+
+    def test_a_visual_flight_is_not_re_separated_by_the_step_down(self):
+        # The trap: stepping the stack down one AIRCRAFT at a time would hand a
+        # visual flight 4,000 / 5,000 / 6,000 and silently undo the break-up.
+        ctl = atc.Controller(profile())
+        ctl.report_beacon("Hawk 1", 4000)          # cleared into the letdown
+        ctl.report_beacon("Hawk 2", 5000)          # holds the bottom level
+        ctl.check_in("Pony 1-1", 4)
+        ctl.report_beacon("Pony 1-1", 6000, 4)
+        ctl.report_conditions("Pony 1", True)
+        texts(ctl)
+        self.assertEqual({ctl.get(f"Pony 1-{n}").assigned_ft for n in range(1, 5)},
+                         {5000})
+        ctl.report_landed("Hawk 1")                # Hawk 2 cleared, stack steps down
+        self.assertEqual({ctl.get(f"Pony 1-{n}").assigned_ft for n in range(1, 5)},
+                         {4000})
+
+    def test_a_flight_moving_together_gets_one_call(self):
+        ctl = atc.Controller(profile())
+        ctl.report_beacon("Hawk 1", 4000)
+        ctl.report_beacon("Hawk 2", 5000)
+        ctl.check_in("Pony 1-1", 4)
+        ctl.report_beacon("Pony 1-1", 6000, 4)
+        ctl.report_conditions("Pony 1", True)
+        texts(ctl)
+        ctl.report_landed("Hawk 1")
+        descents = [t for t in texts(ctl) if "descend and maintain" in t]
+        self.assertEqual(len(descents), 1, descents)
+        self.assertIn("pony one flight", descents[0].lower())
+
+    def test_conditions_from_a_single_ship_are_harmless(self):
+        ctl = atc.Controller(profile())
+        ctl.check_in("Sockeye")
+        texts(ctl)
+        ctl.report_conditions("Sockeye", True)
+        self.assertTrue(said(ctl, "roger"))
+
+    def test_an_unanswered_question_never_assumes_visual(self):
+        # "Not asked" and "said no" must not collapse: defaulting to visual would
+        # stack four aeroplanes on one level in cloud.
+        self.assertIsNone(self.ctl.get("Pony 1").visual)
 
 
 class TestBreakUpCapacity(unittest.TestCase):
@@ -177,6 +287,7 @@ class TestBreakUpCapacity(unittest.TestCase):
         ctl.check_in("Pony 1-1", 4)
         texts(ctl)
         ctl.report_beacon("Pony 1-1", 6000, 4)
+        ctl.report_conditions("Pony 1", False)
         self.assertTrue(said(ctl, "unable break-up"))
         self.assertIn("Pony 1", ctl.aircraft)            # still one entity
         self.assertNotIn("Pony 1-2", ctl.aircraft)       # and not half-split
@@ -187,8 +298,10 @@ class TestBreakUpCapacity(unittest.TestCase):
         ctl.report_beacon("Hawk 2", 5000)
         ctl.check_in("Pony 1-1", 4)
         texts(ctl)
+        ctl.report_beacon("Pony 1-1", 6000, 4)          # asks about visual
+        texts(ctl)
         before = {cs: a.assigned_ft for cs, a in ctl.aircraft.items()}
-        ctl.report_beacon("Pony 1-1", 6000, 4)
+        ctl.report_conditions("Pony 1", False)
         after = {cs: a.assigned_ft for cs, a in ctl.aircraft.items()}
         self.assertEqual(before, after)
 
@@ -259,7 +372,9 @@ class TestFormationWithOtherTraffic(unittest.TestCase):
         ctl.check_in("Hawk 2-1", 2)
         self.assertEqual(len(ctl.aircraft), 2)
         ctl.report_beacon("Pony 1-1", 6000, 2)
+        ctl.report_conditions("Pony 1", False)
         ctl.report_beacon("Hawk 2-1", 7000, 2)
+        ctl.report_conditions("Hawk 2", False)
         texts(ctl)
         self.assertEqual(ctl.get("Pony 1-2").assigned_ft, 4000)
         self.assertEqual(ctl.get("Hawk 2-1").assigned_ft, 5000)
@@ -283,6 +398,8 @@ class TestDispatchIntegration(unittest.TestCase):
         texts(ctl)
         intents.dispatch(ctl, intents.Intent(
             intents.IntentKind.REQUEST_BREAKUP, "Pony 1"))
+        intents.dispatch(ctl, intents.Intent(
+            intents.IntentKind.REPORT_CONDITIONS, "Pony 1", visual=False))
         self.assertIn("Pony 1-4", ctl.aircraft)
 
     def test_unknown_kind_never_raises(self):
