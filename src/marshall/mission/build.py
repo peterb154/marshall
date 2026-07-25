@@ -23,7 +23,8 @@ from pathlib import Path
 from dcs.action import DoScriptFile
 from dcs.mission import Mission, StartType
 from dcs.mapping import Point
-from dcs.planes import P_47D_30, P_51D_30_NA
+from dcs.planes import (MosquitoFBMkVI, P_47D_30, P_51D_30_NA,
+                        SpitfireLFMkIX)
 from dcs.task import CAP, OrbitAction
 from dcs.terrain import Caucasus
 from dcs.triggers import TriggerStart
@@ -38,7 +39,28 @@ OUT = config.MISSION_OUT / "362nd-Blind-Flying.miz"
 MISSIONS = config.DCS_MISSIONS
 
 FLIGHT_SIZE = 4
-JUG_CRUISE_MPH = 265        # the Thunderbolt is heavy; 220 stalls it
+JUG_CRUISE_MPH = 265
+
+# The allied line-up: everything a squadron mate might want to fly, four each.
+# Cruise speeds are per airframe because they are not interchangeable -- the
+# Mustang's number spawned a Thunderbolt on the edge of the stall, and the
+# Mosquito is heavier again.
+# The allied line-up, and how many of each sit on the ramp.
+#
+# Batumi has TEN parking slots and that is the whole constraint. Three of each
+# airframe wants twelve and does not fit; a mission that fails to build is
+# worse than one with a slot fewer. So the tens are spent rather than left
+# over: three of the two aeroplanes most likely to be flown, two of the others.
+# Change the numbers freely -- the arithmetic is ten, however it is divided.
+#
+# Air starts are not in this list because they need no parking, which is why
+# the rehearsal pair below costs nothing.
+SQUADRON = [
+    ("Pony", P_51D_30_NA, 265, 3),        # Mustang
+    ("Hammer", P_47D_30, 265, 3),         # Thunderbolt
+    ("Spit", SpitfireLFMkIX, 250, 2),     # Spitfire LF Mk IX
+    ("Mossie", MosquitoFBMkVI, 255, 2),   # Mosquito FB Mk VI
+]        # the Thunderbolt is heavy; 220 stalls it
 RATE = 22050
 TONE_HZ = 1020.0
 DOT = 0.09
@@ -200,6 +222,18 @@ def build(weather: str = "light", traffic: bool = False,
     # the number the sim is running are the same one.
     m.weather.qnh = int(round(R.QNH_MMHG))
 
+    # ---- the front line ---------------------------------------------------
+    #
+    # Batumi is the only blue field on the map and everything else is red: a
+    # foothold in hostile country. It is a scenario decision with teeth rather
+    # than dressing -- there is nowhere to divert to, so a go-around means
+    # coming back and doing it again, and a fuel state becomes a real problem
+    # instead of a number. It also makes an overlord's tasking honest, since
+    # anything outside the wire is a legitimate target.
+    for airport in m.terrain.airports.values():
+        airport.set_red()
+    m.terrain.airports["Batumi"].set_blue()
+
     usa = m.country("USA")
 
     # Airborne over the departure beacon, already at cruise. Getting four
@@ -235,16 +269,10 @@ def build(weather: str = "light", traffic: bool = False,
         unit.alt = alt_m
     set_channels(flight)
 
-    # A hot-ramp P-51 at Batumi: a listening station. Sit in it to hear ATC on
-    # the SRS radios (SCR-522 button A = Kobuleti Departure, 124.000) without
-    # flying the approach. Engines running, parked -- StartType.Warm.
-    listen = m.flight_group_from_airport(
-        country=usa, name="Sockeye", aircraft_type=P_51D_30_NA,
-        airport=m.terrain.airports["Batumi"], start_type=StartType.Warm)
-    listen.frequency = R.APPROACH.freq_mhz        # start tuned to button B
-    for unit in listen.units:
-        unit.set_client()
-    set_channels(listen)
+    # (The old lone "Sockeye" hot-ramp listening slot lived here. The squadron
+    # below replaces it -- every one of those is a client on the ramp, so there
+    # is always somewhere to sit and listen, and Batumi's ten parking slots are
+    # too few to spend one on a seat that does nothing else.)
 
     # A flight of Thunderbolts, airborne alongside the Mustangs. The whole point
     # of moving to a radar approach is that it needs nothing in the cockpit but
@@ -271,6 +299,30 @@ def build(weather: str = "light", traffic: bool = False,
         unit.name = f"Hammer 1-{n}"
         unit.set_client()
     set_channels(jugs)
+
+    # ---- the squadron ----------------------------------------------------
+    #
+    # Every allied airframe, cold and dark on the Batumi ramp. This is
+    # what missions get flown with: a slot for whoever turns up, in whatever
+    # they feel like flying, starting where a sortie actually starts. Cold
+    # start rather than hot because the comms ladder now begins on the ground
+    # -- clearance, taxi, departure -- and a hot ramp skips the half of it that
+    # has never been exercised.
+    #
+    # Every one of them is a client. An empty slot costs nothing; a missing one
+    # costs a squadron mate the sortie.
+    client_slots: list[tuple[int, str]] = []
+    for name, kind, cruise, howmany in SQUADRON:
+        sq = m.flight_group_from_airport(
+            country=usa, name=name, aircraft_type=kind,
+            airport=m.terrain.airports["Batumi"],
+            start_type=StartType.Cold, group_size=howmany)
+        sq.frequency = R.TOWER.freq_mhz        # cold on the ramp: ground/tower
+        for n, unit in enumerate(sq.units, start=1):
+            unit.name = f"{name} 1-{n}"
+            unit.set_client()
+            client_slots.append((unit.id, kind.id))
+        set_channels(sq)
 
     if traffic:
         add_traffic(m, usa)
@@ -303,15 +355,17 @@ def build(weather: str = "light", traffic: bool = False,
         m.map_resource.add_resource_file(str(generated))))
     m.triggerrules.triggers.append(boot)
 
-    # Every client unit needs SCR-522 presets injected (the Pony flight and the
-    # Sockeye listening station both), or their channels can't tune the beacons.
-    # Every CLIENT slot needs SCR-522 presets injected or its channels cannot
-    # tune the controllers -- Mustangs, the listening station, and the Jugs.
-    # (unit id, DCS type) for every CLIENT slot. The type matters: the Avionics
-    # override is written under a per-aircraft path, so a Mustang's radio file
-    # dropped into a Thunderbolt's folder is simply ignored -- silently.
-    slots = [(u.id, P_51D_30_NA.id) for u in flight.units]
-    slots += [(u.id, P_51D_30_NA.id) for u in listen.units]
+    # Every CLIENT slot needs its four-channel VHF presets injected, or its
+    # buttons cannot tune the controllers. (unit id, DCS type) for each: the
+    # type matters, because the Avionics override is written under a
+    # per-aircraft path and a Mustang's radio file dropped into a Thunderbolt's
+    # folder is ignored -- silently, which is how a flight of Jugs once spent a
+    # sortie unable to talk to anybody.
+    #
+    # Collected as the groups are built rather than listed here by hand, so
+    # adding an airframe to the squadron cannot leave it mute.
+    slots = list(client_slots)
+    slots += [(u.id, P_51D_30_NA.id) for u in flight.units]
     slots += [(u.id, P_47D_30.id) for u in jugs.units]
     return m, slots
 

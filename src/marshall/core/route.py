@@ -247,7 +247,16 @@ class Station:
     """
     name: str
     freq_mhz: float
-    role: str = ""              # "center" | "approach" | "tower"
+    role: str = ""              # his PRIMARY job, and what he is called
+    # Everything else he also works. A field this size does not staff a seat per
+    # phase of flight: one man has ground and tower, another has departure and
+    # approach, and that is how it is done for real. It matters because a
+    # departing aircraft and an arriving one then share a controller and a
+    # frequency, which is where sequencing gets interesting -- he is fitting
+    # departures into the airspace he is recovering through.
+    #
+    # Empty means "just the primary role", so the simple case stays simple.
+    also: tuple = ()
     # The Polly voice this controller speaks with. On the STATION rather than
     # passed to the bridge, because a voice handed in separately drifts from the
     # identity it belongs to -- you end up with Tower's manner in Center's voice
@@ -269,8 +278,10 @@ class Station:
 # a Center owns a region and hands you between aerodromes, so there is one for
 # the whole theatre rather than one per airfield.
 CENTER = Station("Georgia Center", 139.000, "center", voice="Brian")
-APPROACH = Station("Batumi Approach", 124.000, "approach", voice="Matthew")
-TOWER = Station("Batumi Tower", 118.000, "tower", voice="Joey")
+APPROACH = Station("Batumi Approach", 124.000, "approach",
+                   also=("departure",), voice="Matthew")
+TOWER = Station("Batumi Tower", 118.000, "tower",
+                also=("ground", "delivery"), voice="Joey")
 
 # The mission commander. Not a new kind of machine -- a controller with a wider
 # scope, which is why it is a Station like the others: it has a frequency, a
@@ -690,8 +701,18 @@ class ApproachProfile:
                 fix.freq_mhz if fix.freq_mhz else 0.0)
 
     def station_for(self, role: str) -> Station | None:
+        """Who works this phase of flight.
+
+        Primary role first, then anyone who also covers it -- so asking for
+        "departure" finds Approach at a field where the two share a seat, and
+        would find a dedicated Departure controller at one where they do not,
+        without either caller knowing which kind of field it is.
+        """
         for s in self.stations:
             if s.role == role:
+                return s
+        for s in self.stations:
+            if role in getattr(s, "also", ()):
                 return s
         return None
 

@@ -28,6 +28,7 @@ from marshall import config
 from marshall.kneeboard import e6b as build_e6b
 from marshall.kneeboard import asr_plate
 from marshall.kneeboard import aip_plate
+from marshall.kneeboard import comms as build_comms
 from marshall.kneeboard import navlog as build_kneeboard
 from marshall.kneeboard import plate as build_plate
 
@@ -48,6 +49,10 @@ def pages(profile: R.ApproachProfile = R.BATUMI_ASR):
     """
     rwy = profile.runway or "--"
     out = [
+        # First tab on purpose: it is the one page a pilot needs before he has
+        # done anything at all, and the one that makes the radio usable.
+        ("{f7a1b3c9-2d45-4e60-8a71-3c9d05e2b641}", "COMMS", "comms",
+         lambda: build_comms.build(profile)),
         ("{a1c8e0f2-3b47-4d91-9f2a-6c5e10b74d01}", "NAV LOG", "navlog",
          build_kneeboard.build),
         ("{b2d9f103-4c58-4ea2-a03b-7d6f21c85e02}", f"{profile.kind.upper()} {rwy}",

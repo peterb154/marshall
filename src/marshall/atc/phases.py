@@ -57,7 +57,7 @@ PHASES: dict[str, Phase] = {p.name: p for p in (
           follows=("clearance", "taxi", "enroute"),
           note="A plan exists and there is no aeroplane yet. Nobody works him."),
 
-    Phase("clearance", owner="ground", aims_at="none",
+    Phase("clearance", owner="delivery", aims_at="none",
           follows=("taxi", "filed"),
           note="The IFR clearance, read back on the ramp. The one place "
                "'readback correct' belongs -- airborne, a correct readback is "
@@ -66,7 +66,7 @@ PHASES: dict[str, Phase] = {p.name: p for p in (
     Phase("taxi", owner="ground", aims_at="none", follows=("departure",),
           note="To the holding point. Ground movement, no geometry."),
 
-    Phase("departure", owner="tower", aims_at="course", follows=("enroute",),
+    Phase("departure", owner="departure", aims_at="course", follows=("enroute",),
           note="Rolling and climbing out on the runway heading, then turned "
                "on course. The same intercept geometry as an approach, flown "
                "the other way."),
