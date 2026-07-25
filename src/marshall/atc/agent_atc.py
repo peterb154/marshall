@@ -154,10 +154,10 @@ def load_and_push_plate(profile, base: str = BASE_URL):
     from marshall.core import route as R
 
     try:
-        _put_json(f"{base}/approaches/batumi-ndb",
+        _put_json(f"{base}/approaches/batumi-asr",
                   {"field": profile.beacon.name, "data": R.profile_to_dict(profile)})
-        _put_json(f"{base}/flightplans/362nd-batumi-ndb",
-                  {"callsign": R.FLIGHT_CALLSIGN, "approach": "batumi-ndb",
+        _put_json(f"{base}/flightplans/362nd-batumi-asr",
+                  {"callsign": R.FLIGHT_CALLSIGN, "approach": "batumi-asr",
                    "active": True})
         fp = _get_json(f"{base}/flightplan/active")
         if fp.get("approach"):
@@ -328,7 +328,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
 
     freq_hz = freq_mhz * 1_000_000
     session_id = session_id or f"batumi-approach:{freq_mhz:.3f}"
-    profile = load_and_push_plate(R.BATUMI_APPROACH)   # DB is the source of truth
+    profile = load_and_push_plate(R.BATUMI_ASR)       # DB is the source of truth
     radar_on = profile.atc.radar          # a no-radar mission works purely procedural
     voice = tts.Voice(voice_id=voice_id)
     model = stt.load_model()

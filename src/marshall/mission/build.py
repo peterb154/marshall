@@ -23,7 +23,7 @@ from pathlib import Path
 from dcs.action import DoScriptFile
 from dcs.mission import Mission, StartType
 from dcs.mapping import Point
-from dcs.planes import P_51D_30_NA
+from dcs.planes import P_47D_30, P_51D_30_NA
 from dcs.task import CAP, OrbitAction
 from dcs.terrain import Caucasus
 from dcs.triggers import TriggerStart
@@ -237,6 +237,24 @@ def build(weather: str = "light", traffic: bool = False,
     for unit in listen.units:
         unit.set_client()
 
+    # A flight of Thunderbolts, airborne alongside the Mustangs. The whole point
+    # of moving to a radar approach is that it needs nothing in the cockpit but
+    # a radio -- the beacon letdown was locked to the P-51D-30 because the ARA-8
+    # homing adapter exists on no other airframe. These are here to fly the
+    # approach and prove that.
+    jugs = m.flight_group(
+        country=usa, name="Hammer", aircraft_type=P_47D_30, airport=None,
+        position=Point(R.KOBULETI.x - 4000, R.KOBULETI.z - 4000, m.terrain),
+        altitude=alt_m, speed=cruise_ms, maintask=CAP,
+        start_type=StartType.Runway, group_size=2)
+    jugs.frequency = int(R.APPROACH.freq_mhz)
+    for p in jugs.points:
+        p.alt, p.speed = alt_m, cruise_ms
+    for n, unit in enumerate(jugs.units, start=1):
+        unit.alt, unit.speed = alt_m, cruise_ms
+        unit.name = f"Hammer 1-{n}"
+        unit.set_client()
+
     if traffic:
         add_traffic(m, usa)
     if formation:
@@ -270,15 +288,33 @@ def build(weather: str = "light", traffic: bool = False,
 
     # Every client unit needs SCR-522 presets injected (the Pony flight and the
     # Sockeye listening station both), or their channels can't tune the beacons.
-    return m, [u.id for u in flight.units] + [u.id for u in listen.units]
+    # Every CLIENT slot needs SCR-522 presets injected or its channels cannot
+    # tune the controllers -- Mustangs, the listening station, and the Jugs.
+    # (unit id, DCS type) for every CLIENT slot. The type matters: the Avionics
+    # override is written under a per-aircraft path, so a Mustang's radio file
+    # dropped into a Thunderbolt's folder is simply ignored -- silently.
+    slots = [(u.id, P_51D_30_NA.id) for u in flight.units]
+    slots += [(u.id, P_51D_30_NA.id) for u in listen.units]
+    slots += [(u.id, P_47D_30.id) for u in jugs.units]
+    return m, slots
 
 
-def write_presets(miz: Path, unit_ids: list[int]) -> None:
+# Aircraft whose VHF preset file we know how to write. Anything else gets its
+# starting frequency from the group and the pilot tunes by hand -- better than
+# injecting a settings file into a radio that does not read it.
+PRESET_PATHS = {P_51D_30_NA.id: "VHF_RADIO"}
+
+
+def write_presets(miz: Path, slots: list[tuple[int, str]]) -> None:
     """SCR-522 channel presets. They can only be set on the ground, so without
-    this the flight has no way to tune any beacon."""
-    presets = [f.freq_mhz for f in R.FIXES]
+    this the flight has no way to tune the controllers.
+
+    The presets are the CONTROLLERS now, not beacons. Under a radar approach the
+    pilot navigates by nothing, so a frequency is only ever somebody to talk to:
+    Center, Approach, Tower."""
+    presets = [s.freq_mhz for s in R.STATIONS]
     while len(presets) < 5:
-        presets.append(R.FIXES[-1].freq_mhz)
+        presets.append(presets[-1])
     body = ("settings=\n{\n\t[\"dials\"]=\n\t{\n\t\t[\"channel\"]=0,\n\t},\n"
             "\t[\"presets\"]=\n\t{\n"
             + "".join(f"\t\t[{i+1}]={int(f*1_000_000)},\n"
@@ -288,9 +324,10 @@ def write_presets(miz: Path, unit_ids: list[int]) -> None:
     with zipfile.ZipFile(miz) as zf:
         blobs = {n: zf.read(n) for n in zf.namelist()}
     blobs.setdefault("theatre", b"Caucasus")     # pydcs omits it
-    for uid in unit_ids:
-        blobs[f"Avionics/P-51D-30-NA/{uid}/VHF_RADIO/SETTINGS.lua"] = \
-            body.encode("utf-8")
+    for uid, kind in slots:
+        radio = PRESET_PATHS.get(kind)
+        if radio:
+            blobs[f"Avionics/{kind}/{uid}/{radio}/SETTINGS.lua"] = body.encode("utf-8")
     with zipfile.ZipFile(miz, "w", zipfile.ZIP_DEFLATED) as zf:
         for n, data in blobs.items():
             zf.writestr(n, data)
@@ -339,13 +376,14 @@ if __name__ == "__main__":
     wx = {"clear": "CAVOK (clear)",
           "light": "overcast, base 1500 ft above ceiling",
           "hard": "overcast at ceiling (minimums)"}[weather]
-    print(f"\n{FLIGHT_SIZE} x P-51D-30, airborne over {R.KOBULETI.name} "
-          f"at {R.CRUISE_ALT_FT:,} ft")
-    print(f"MDA {R.BATUMI_APPROACH.mda_ft}, weather: {wx}"
-          f", wind {R.WIND_FROM_DEG:.0f}/{R.WIND_MPH:.0f}\n")
-    for i, f in enumerate(R.FIXES):
-        print(f"  ch {'ABCD'[i]}  {f.freq_mhz:7.3f}  {f.ident:3} {f.name:9} "
-              f"{f.sector}")
+    P = R.BATUMI_ASR
+    print(f"\n{FLIGHT_SIZE} x P-51D-30 + 2 x P-47D-30, airborne over "
+          f"{R.KOBULETI.name} at {R.CRUISE_ALT_FT:,} ft")
+    print(f"{P.kind.upper()} approach runway {P.runway}, final course "
+          f"{P.final_crs:03d}M, MDA {P.mda_ft}")
+    print(f"weather: {wx}, wind {R.WIND_FROM_DEG:.0f}/{R.WIND_MPH:.0f}\n")
+    for i, s in enumerate(R.STATIONS):
+        print(f"  ch {'ABCD'[i]}  {s.freq_mhz:7.3f}  {s.name}")
     print()
     for leg in R.solve_route():
         print(f"  {leg.frm.ident} -> {leg.to.ident}   hdg {leg.heading_mag:03.0f}M   "

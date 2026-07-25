@@ -26,6 +26,7 @@ from pathlib import Path
 from marshall import config
 
 from marshall.kneeboard import e6b as build_e6b
+from marshall.kneeboard import asr_plate
 from marshall.kneeboard import navlog as build_kneeboard
 from marshall.kneeboard import plate as build_plate
 
@@ -36,7 +37,9 @@ HERE = Path(__file__).parent
 PAGES = [
     ("{a1c8e0f2-3b47-4d91-9f2a-6c5e10b74d01}", "NAV LOG", "navlog",
      build_kneeboard.build),
-    ("{b2d9f103-4c58-4ea2-a03b-7d6f21c85e02}", "BATUMI 13", "plate",
+    ("{b2d9f103-4c58-4ea2-a03b-7d6f21c85e02}", "ASR 13", "asr",
+     asr_plate.build),
+    ("{d4fb1325-6e7a-40c4-c25d-9f8143ea7f04}", "NDB 13", "plate",
      build_plate.build),
     ("{c3ea0214-5d69-4fb3-b14c-8e7032d96f03}", "E6B", "e6b", build_e6b.build),
 ]

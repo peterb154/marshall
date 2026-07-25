@@ -110,9 +110,58 @@ def _formation(flight: str, size: int, profile: R.ApproachProfile) -> list[str]:
     ]
 
 
-def plate(profile: R.ApproachProfile = R.BATUMI_APPROACH,
+def _asr_plate(profile: R.ApproachProfile, flight: str, size: int) -> str:
+    """The facts for a surveillance-radar approach.
+
+    A different procedure needs a different briefing, not the letdown's with
+    words changed: on an ASR the controller navigates, so what he must know is
+    the course to put the pilot on, the altitudes, and where to stop -- there
+    are no legs for the pilot to fly and nothing for him to home.
+    """
+    inbound = profile.final_crs
+    rwy = profile.runway or "in use"
+    stations = "; ".join(f"**{s.name} {s.freq_mhz:.1f}**" for s in profile.stations)
+    return "\n".join([
+        "# This mission's plate (the field-specific facts)",
+        "",
+        f"- This is a **surveillance radar approach** to runway **{rwy}** at "
+        f"**{profile.beacon.name}**. **You** navigate; the pilot flies the "
+        "headings you give him. He has no approach aid of his own.",
+        f"- Controllers: {stations}.",
+        f"- Final approach course **{inbound:03d}**. Vector him to intercept it "
+        f"by **{profile.final_intercept_nm:.0f} miles** from the field.",
+        f"- Vectoring altitude **{profile.platform_ft}** until established on "
+        f"final; then down to **MDA {profile.mda_ft}** "
+        f"({profile.mda_ft - profile.field_elev_ft} ft above the field).",
+        f"- Missed approach point **{profile.map_nm:.1f} miles** from the field. "
+        f"Missed approach: climbing **{profile.missed_turn}** turn to "
+        f"**{profile.missed_ft}**, re-sequence.",
+        "- **Call range every mile on final**, with his position relative to the "
+        "course: \"six miles from the runway, on course\", \"drifting right of "
+        "course, turn left heading one two zero\".",
+        "- **There is no glidepath.** You give range and course; his descent is "
+        "his own. Never invent a glidepath call.",
+        f"- Wind **{int(R.WIND_FROM_DEG):03d} at {int(R.WIND_MPH)}** mph. Do NOT "
+        "pass it as a correction — you are watching his ground track, so the "
+        "drift is already inside the heading you give him. Correct what the "
+        "scope shows, not what the wind should do.",
+        f"- Assignable altitudes: **{profile.platform_ft}** vectoring, "
+        f"**{profile.mda_ft}** MDA, **{profile.missed_ft}** missed. Nothing else.",
+        *_formation(flight, size, profile),
+    ])
+
+
+def plate(profile: R.ApproachProfile = R.BATUMI_ASR,
           flight: str = R.FLIGHT_CALLSIGN,
           size: int = R.FLIGHT_SIZE) -> str:
+    if getattr(profile, "vectored", False):
+        return _asr_plate(profile, flight, size)
+    return _ndb_plate(profile, flight, size)
+
+
+def _ndb_plate(profile: R.ApproachProfile,
+               flight: str = R.FLIGHT_CALLSIGN,
+               size: int = R.FLIGHT_SIZE) -> str:
     """The field-specific facts, as the markdown 'plate' prompt part."""
     cap = profile.atc
     b = profile.beacon

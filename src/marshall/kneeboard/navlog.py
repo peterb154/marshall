@@ -120,12 +120,15 @@ def build() -> str:
         f'<td>{int(total_min)}:{round((total_min % 1) * 60):02d}</td>'
         f'<td class="blank"></td></tr>')
 
-    beacons = "".join(
-        f'<tr><td>{"ABCD"[i]}</td><td>{f.freq_mhz:.3f}</td>'
-        f'<td class="fix">{f.name}</td><td>{f.ident}</td>'
-        f'<td style="letter-spacing:.2em">{morse(f.ident)}</td>'
-        f'<td style="text-align:left">{f.sector}</td></tr>'
-        for i, f in enumerate(R.FIXES))
+    # The channel card lists CONTROLLERS, not beacons. Under a radar approach
+    # the pilot navigates by nothing, so a preset is only ever somebody to talk
+    # to -- and unlike a beacon, a controller needs no receiver in the aeroplane,
+    # which is why any airframe can fly the approach.
+    channels = "".join(
+        f'<tr><td>{"ABCD"[i]}</td><td>{s.freq_mhz:.3f}</td>'
+        f'<td class="fix">{s.name}</td>'
+        f'<td style="text-align:left">{s.role.title()}</td></tr>'
+        for i, s in enumerate(R.STATIONS))
 
     msa = "".join(f"<td>{q}<br><b>{v:,}</b></td>"
                   for q, v in R.BATUMI_FIELD.msa.items())
@@ -154,11 +157,10 @@ def build() -> str:
     {"".join(rows)}
   </table>
 
-  <h2>Beacons &mdash; SCR-522 Channels</h2>
+  <h2>Controllers &mdash; SCR-522 Channels</h2>
   <table>
-    <tr><th>Ch</th><th>Freq</th><th>Station</th><th>Ident</th>
-        <th>Code</th><th>Controller</th></tr>
-    {beacons}
+    <tr><th>Ch</th><th>Freq</th><th>Station</th><th>Sector</th></tr>
+    {channels}
   </table>
 
   <h2>Batumi &mdash; Minimum Safe Altitude, 25 NM</h2>
