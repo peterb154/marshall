@@ -97,9 +97,24 @@ KUTAISI = Fix("KUTAISI", "KT", -284887, 683859, None,
                    "Batumi is the only blue aerodrome on the map.")
 
 # Where the work is. Not an aerodrome and not a beacon: a point on the ground
-# with a name, which is what a target area actually is.
-TARGET_AREA = Fix("VALLEY", "", -284887, 720899, None,
-                  note="CAS area, 20 nm east of Kutaisi. Hostile ground.")
+# with a name, which is what a target area actually is -- somewhere a controller
+# can say out loud and a pilot can find by looking.
+#
+# The lakes east of Kutaisi, found by asking the terrain rather than by picking
+# a coordinate off a map: a surface-type sweep east of the field turned up water
+# here and nowhere else nearby, which makes it the one landmark in the valley
+# that reads the same from ten thousand feet as it does on a chart.
+# N42 17.314 E42 51.676, given rather than derived -- a terrain sweep found a
+# lake nearby and picked the wrong one, and somebody who has flown over the
+# place beats a surface-type search every time.
+TARGET_AREA = Fix("TSUTSNVATI", "", -268955, 713840, None,
+                  note="CAS area: the town on the western shore of the lake, "
+                       "11 nm east of Kutaisi. Hostile ground. The lake is the "
+                       "only water for miles, which makes it the one landmark "
+                       "that reads the same at eight thousand feet as it does "
+                       "on a chart -- and the town sits on its western edge, "
+                       "so a target can be described by where it is rather "
+                       "than by a coordinate nobody can see.")
 
 FIXES = [KOBULETI, INITIAL, BATUMI]
 
