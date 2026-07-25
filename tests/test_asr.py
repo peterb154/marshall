@@ -351,9 +351,38 @@ class TestTerrain(unittest.TestCase):
                 g = asr.guide(asr.Position(15, radial, 5000, 200), self.p)
                 self.assertGreaterEqual(g.altitude_ft, self.p.msa[quadrant])
 
-    def test_over_the_sea_he_may_come_down_to_platform(self):
+    def test_over_the_sea_he_is_not_held_high_by_terrain(self):
+        # Nothing under him but water, so the only thing holding him up is the
+        # descent profile, not the MSA.
         g = asr.guide(asr.Position(15, 330, 5000, 200), self.p)
-        self.assertEqual(g.altitude_ft, self.p.platform_ft)
+        self.assertLess(g.altitude_ft, self.p.msa["NE"])
+
+    def test_he_reaches_platform_at_the_turn_on_and_not_before(self):
+        # "No sense descending so early": platform at twenty miles means flying
+        # twelve miles low and slow for nothing.
+        far = asr.guide(asr.Position(20, 304, 5500, 124), self.p)
+        at_turn_on = asr.guide(
+            asr.Position(self.p.final_intercept_nm, 304, 2500, 124), self.p)
+        self.assertGreater(far.altitude_ft, self.p.platform_ft)
+        self.assertEqual(at_turn_on.altitude_ft, self.p.platform_ft)
+
+    def test_the_descent_is_monotonic(self):
+        alt, last = 5500, None
+        for nm in (20, 16, 12, 10, 8, 6, 4, 2):
+            g = asr.guide(asr.Position(nm, 304, alt, 124), self.p)
+            if last is not None:
+                self.assertLessEqual(g.altitude_ft, last)
+            last = alt = g.altitude_ft
+
+    def test_assigned_altitudes_are_round_numbers(self):
+        for nm in (20, 16, 12, 10, 9):
+            g = asr.guide(asr.Position(nm, 304, 5500, 124), self.p)
+            self.assertEqual(g.altitude_ft % 100, 0, g.altitude_ft)
+
+    def test_he_is_never_told_to_climb_back_onto_the_profile(self):
+        # Already low over the water: leave him there rather than bouncing him.
+        g = asr.guide(asr.Position(16, 304, 2000, 124), self.p)
+        self.assertLessEqual(g.altitude_ft, 2000)
 
     def test_the_final_is_flown_over_water(self):
         # The approach course itself lies north-west, which is why the descent

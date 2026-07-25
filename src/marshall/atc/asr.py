@@ -190,16 +190,36 @@ def advisory_altitude(range_nm: float, profile) -> int:
     return max(profile.mda_ft, min(profile.platform_ft, int(round(want / 100) * 100)))
 
 
-def safe_alt(pos: Position, profile) -> int:
-    """The lowest altitude that may be assigned where he currently is.
+def _round_to(ft: float, step: int) -> int:
+    return int(round(ft / step) * step)
 
-    Vectoring happens at platform, and platform is only safe over low ground. At
-    Batumi that is the sea to the north-west; the other three quadrants hold
-    between seven and eleven thousand feet of Caucasus. Geometry alone will
-    cheerfully turn an aircraft over a mountain at two thousand feet, and did.
+
+def safe_alt(pos: Position, profile) -> int:
+    """What to assign him while he is being vectored.
+
+    Three things bound it, and the lowest legal answer is rarely the right one:
+
+    **Terrain.** Platform is only safe over low ground. At Batumi that is the
+    sea to the north-west; the other three quadrants hold between seven and
+    eleven thousand feet of Caucasus, and geometry alone will cheerfully turn an
+    aircraft over a mountain at two thousand.
+
+    **The profile.** He should reach platform AS he reaches the turn-on point,
+    not twelve miles before it. Sending him to platform the moment he checks in
+    has him droning along low and slow for ten minutes -- "no sense descending
+    so early", and quite right.
+
+    **Where he already is.** If he is below the profile there is no point
+    telling him to climb back onto it; keep him where he is if that is safe.
     """
-    fn = getattr(profile, "min_safe_ft", None)
-    return fn(pos.radial_deg) if fn else profile.platform_ft
+    msa = (profile.min_safe_ft(pos.radial_deg)
+           if hasattr(profile, "min_safe_ft") else profile.platform_ft)
+    to_go = max(0.0, pos.range_nm - profile.final_intercept_nm)
+    # Rounded to five hundred: a controller assigns "four thousand five
+    # hundred", never "four thousand five hundred and forty-four".
+    on_profile = _round_to(profile.platform_ft + to_go * FT_PER_NM, 500)
+    here = _round_to(pos.alt_ft, 500) if pos.alt_ft else 0
+    return max(msa, min(on_profile, here) if here else on_profile)
 
 
 def guide(pos: Position, profile) -> Guidance:
