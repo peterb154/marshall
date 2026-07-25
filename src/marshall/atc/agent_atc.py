@@ -124,6 +124,25 @@ def for_voice(text: str) -> str:
     return re.sub(r"\s{2,}", " ", text).strip()
 
 
+
+def record(session_id: str, **fields) -> None:
+    """Append one machine-readable line to the flight recorder.
+
+    The console log already carries the radar picture on every call, but as
+    prose and as the WHOLE scope -- which is why diagnosing a bad vector meant
+    hand-copying positions out of a transcript into a script. One JSON object
+    per transmission makes a sortie replayable: the geometry can be re-run
+    against a real flight after a fix, without flying it again.
+    """
+    try:
+        path = config.BUILD_DIR / "logs" / f"flight-{session_id}.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"t": time.time(), **fields}) + "\n")
+    except (OSError, TypeError, ValueError) as e:
+        print(f"  !! recorder: {e}", flush=True)     # never cost a transmission
+
+
 def fetch_radar(session_id: str = "", url: str = RADAR_URL,
                 timeout: float = 5.0) -> str:
     """Grab the current scope (tagged with this session's radar-identified
@@ -500,6 +519,9 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 print(f"  ATC[{kind}/{tier}] ({dt:.1f}s): (no call)", flush=True)
                 return
             print(f"  ATC[{kind}/{tier}] ({dt:.1f}s): {reply}", flush=True)
+            record(session_id, kind=f"atc/{kind}", tier=tier,
+                   seconds=round(dt, 1),
+                   freq_mhz=(on_hz or freq_hz) / 1_000_000, text=reply)
             # Answer on the channel he called from -- that is the beacon he is
             # homing, and therefore the only one he can hear.
             client.transmit(voice.frames(reply), on_hz or freq_hz, AM)
@@ -554,6 +576,9 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     text = for_voice(asr_call(cs, g))
                     with radio_lock:
                         print(f"  ATC[asr] {text}", flush=True)
+                        record(session_id, kind="atc/range", callsign=cs,
+                               range_nm=round(g.range_nm, 2), phase=g.phase,
+                               heading=g.heading, text=text)
                         client.transmit(voice.frames(text), freq_hz, AM)
             except Exception as e:                 # never kill the metronome
                 print(f"  !! asr monitor: {e}", flush=True)
@@ -589,6 +614,13 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         n_contacts = count_contacts(scope)
         tag = f" [RADAR: {scope}]" if scope else ""
         print(f"PILOT [{known or srs}]: {transcript}{tag}", flush=True)
+        _fix = radar_fix(scope, known)
+        record(session_id, kind="pilot", callsign=known or srs,
+               freq_mhz=(heard_hz or freq_hz) / 1_000_000, transcript=transcript,
+               range_nm=_fix.range_nm if _fix else None,
+               radial=_fix.radial_deg if _fix else None,
+               alt_ft=_fix.alt_ft if _fix else None,
+               heading=_fix.heading_deg if _fix else None, scope=scope)
 
         # Engage the deterministic engine only with real traffic (or forced on for
         # the voice-only rehearsal, or once a stack already exists). A single ship
@@ -614,6 +646,9 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         vectoring = asr_context(profile, scope, known)
         if vectoring:
             print(f"  {vectoring}", flush=True)
+            record(session_id, kind="asr", callsign=known, text=vectoring)
+        if directive:
+            record(session_id, kind="controller", text=directive)
 
         # A debug note: record it and stay off the air entirely. The pilot is
         # talking to the project, not to the controller.
@@ -621,6 +656,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         if note is not None:
             stamp = time.strftime("%H:%M:%S")
             print(f"  DEBUG NOTE [{stamp}] {note}", flush=True)
+            record(session_id, kind="debug", text=note)
             try:
                 config.BUILD_DIR.mkdir(parents=True, exist_ok=True)
                 with open(config.BUILD_DIR / "debug-notes.md", "a",
