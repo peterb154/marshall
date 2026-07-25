@@ -39,6 +39,7 @@ import re
 from dataclasses import dataclass, field
 from enum import Enum, auto
 
+from marshall.atc import callsign
 from marshall.core import route as R
 
 CLEARANCE_TIMEOUT_SEC = 12 * 60      # silent aircraft -> assume clear, move on
@@ -58,12 +59,30 @@ class Phase(Enum):
 
 @dataclass
 class Aircraft:
+    """One entity the controller separates.
+
+    Usually one aeroplane -- but while a formation is together it is ONE entity
+    with `members` filled in, holding one level and answering to one clearance.
+    That is not a shortcut: it is what the controller actually does, and it means
+    the whole stack (enter at the top, step down on vacate, one in the letdown)
+    needs no idea that formations exist. Break-up simply replaces this single
+    entry with one per member.
+    """
     callsign: str
     phase: Phase = Phase.UNKNOWN
     assigned_ft: int | None = None
     last_report_t: float = 0.0
     approaches: int = 0
     map_t: float | None = None       # computed station-passage (missed approach point) time
+    members: list[str] = field(default_factory=list)   # non-empty => a joined flight
+
+    @property
+    def is_flight(self) -> bool:
+        return len(self.members) > 1
+
+    @property
+    def size(self) -> int:
+        return max(1, len(self.members))
 
 
 @dataclass
@@ -116,8 +135,43 @@ class Controller:
     def say(self, to: str, text: str) -> None:
         self.out.append(Tx(to, text, self.t))
 
+    def _resolve(self, cs: str) -> str:
+        """Which entity owns this callsign.
+
+        A wingman who keys the mic while the flight is still together is the
+        FLIGHT talking -- ATC does not open a second conversation with Pony 1-3.
+        This also absorbs the commonest speech-to-text failure there is: Whisper
+        hears "one two" for "one one" constantly, and without this a single
+        garbled digit silently forks one aeroplane into two entries in the stack,
+        each holding its own level.
+
+        After break-up the members exist in their own right, so they resolve to
+        themselves -- and a call addressed to the flight then means lead, who is
+        the one still answering for the formation's name.
+        """
+        c = callsign.parse(cs)
+        key = c.canonical
+        if key in self.aircraft:
+            return key
+        owner = self.aircraft.get(c.flight)
+        if owner is not None and owner.is_flight:
+            return c.flight                       # a member, still joined
+        if c.is_flight:
+            lead = f"{c.flight}-1"
+            if lead in self.aircraft:
+                return lead                       # broken up; the name means lead
+        return key
+
     def get(self, cs: str) -> Aircraft:
-        return self.aircraft.setdefault(cs, Aircraft(cs))
+        key = self._resolve(cs)
+        return self.aircraft.setdefault(key, Aircraft(key))
+
+    def _addr(self, ac: Aircraft) -> str:
+        """How to say this entity on the radio: 'Pony one flight' while they are
+        together, 'Pony one one' once they are not. Spoken form, never the
+        canonical 'Pony 1-1' -- that reaches Polly as 'Pony one dash one'."""
+        c = callsign.parse(ac.callsign)
+        return c.spoken_flight if ac.is_flight else c.spoken
 
     def _holders(self) -> list[Aircraft]:
         return sorted((a for a in self.aircraft.values()
@@ -133,36 +187,142 @@ class Controller:
                 return ft
         return None                     # stack full
 
-    # -- pilot inputs ------------------------------------------------------
-    def check_in(self, cs: str) -> None:
-        ac = self.get(cs)
-        ac.phase, ac.last_report_t = Phase.ENROUTE, self.t
-        self.say(cs, f"{cs}, {self.profile.controller}, radar not available, "
-                     f"report {self.profile.beacon.name} inbound.")
+    def _enter(self, cs: str, size: int = 1) -> Aircraft:
+        """Find or create the entity for this call, as a formation if size > 1.
 
-    def report_beacon(self, cs: str, altitude_ft: int | None = None) -> None:
-        """Reported over the approach beacon."""
+        A flight of four is keyed on the FLIGHT no matter who keyed the mic --
+        "Pony one one, flight of four" and "Pony one flight" are the same entity.
+        If the formation has already been broken up, its members own themselves
+        again and a late size report must not re-merge them.
+        """
+        c = callsign.parse(cs)
+        if size > 1:
+            if any(m in self.aircraft for m in c.members(size)):
+                return self.get(cs)           # already split; leave them alone
+            ac = self.aircraft.get(c.flight)
+            if ac is None:
+                ac = self.aircraft[c.flight] = Aircraft(c.flight)
+            if not ac.members:
+                ac.members = c.members(size)
+            return ac
+        return self.get(cs)
+
+    # -- pilot inputs ------------------------------------------------------
+    def check_in(self, cs: str, size: int = 1) -> None:
+        ac = self._enter(cs, size)
+        ac.phase, ac.last_report_t = Phase.ENROUTE, self.t
+        self.say(ac.callsign,
+                 f"{self._addr(ac)}, {self.profile.controller}, radar not "
+                 f"available, report {self.profile.beacon.name} inbound.")
+
+    # -- formations --------------------------------------------------------
+    def _break_up(self, ac: Aircraft) -> None:
+        """Split a joined formation into individually-separated aircraft.
+
+        This is the whole formation feature. Everything upstream treats the
+        flight as one entity; here it becomes N, each with its own level, lead at
+        the bottom so he lands first. From this moment on they are ordinary
+        singles and the existing sequencing runs unchanged.
+
+        The flight's own slot is released first so its members can reuse it --
+        otherwise a four-ship holding at the bottom would step over its own level.
+        """
+        members = list(ac.members)
+        self.aircraft.pop(ac.callsign, None)
+        assigned: list[tuple[str, int]] = []
+        for m in members:
+            slot = self._free_slot()
+            if slot is None:
+                break
+            self.aircraft[m] = Aircraft(m, Phase.HOLDING, slot, self.t)
+            assigned.append((m, slot))
+
+        if len(assigned) < len(members):
+            # Only the oxygen ceiling can cause this. Half a formation is worse
+            # than none -- the ones without a level would have nowhere legal to
+            # go -- so put it back and keep them together until room appears.
+            for m, _ in assigned:
+                self.aircraft.pop(m, None)
+            self.aircraft[ac.callsign] = ac
+            self.say(ac.callsign,
+                     f"{self._addr(ac)}, unable break-up, holding is full to "
+                     f"{spell_alt(self.profile.top_ft)}. Remain as a flight, "
+                     f"maintain {spell_alt(ac.assigned_ft or self.profile.bottom_ft)}, "
+                     f"expect break-up shortly.")
+            return
+
+        # Hand over to the sequencer BEFORE announcing. It may clear the bottom
+        # aircraft -- normally lead -- and settle everyone above him a level
+        # lower, and the break-up call has to state the levels they will actually
+        # fly. Announce first and lead gets assigned a holding altitude and
+        # cleared out of it in the same breath, which is not a thing a controller
+        # says. Its transmissions are held back and replayed after ours.
+        mark = len(self.out)
+        self._try_clear()
+        followup = self.out[mark:]
+        del self.out[mark:]
+
+        announced = [m for m, _ in assigned
+                     if self.aircraft[m].phase == Phase.HOLDING]
+        levels = ". ".join(
+            f"{callsign.parse(m).spoken} maintain "
+            f"{spell_alt(self.aircraft[m].assigned_ft)}" for m in announced)
+        call = f"{self._addr(ac)}, break up for individual approaches."
+        if levels:
+            call += f" {levels}. Report each aircraft level."
+        self.say(ac.callsign, call)
+
+        # Drop the sequencer's step-downs for aircraft this call already gave a
+        # level to -- they would repeat, verbatim, the altitude just assigned.
+        # Anything aimed at somebody else (a single already holding behind the
+        # formation) still has to go out.
+        self.out.extend(tx for tx in followup if tx.to not in announced)
+
+    def request_breakup(self, cs: str) -> None:
+        """Lead asking to split the formation up himself."""
         ac = self.get(cs)
+        if not ac.is_flight:
+            self.say(ac.callsign, f"{self._addr(ac)}, roger, no flight to break up.")
+            return
+        self._break_up(ac)
+
+    def report_beacon(self, cs: str, altitude_ft: int | None = None,
+                      size: int = 1) -> None:
+        """Reported over the approach beacon."""
+        ac = self._enter(cs, size) if size > 1 else self.get(cs)
         ac.last_report_t = self.t
 
         if ac.phase in (Phase.UNKNOWN, Phase.ENROUTE):
+            # A formation arriving at the fix is the moment it stops being one
+            # aeroplane. You do NOT hold four ships in formation through a
+            # letdown -- a holding pattern is minutes of turning in cloud with
+            # three wingmen welded to lead exactly when lead's attention is on
+            # the plate and the clock. Break them up on arrival, every time.
+            if ac.is_flight:
+                self._break_up(ac)
+                return
             slot = self._free_slot()
             if slot is None:
-                self.say(cs, f"{cs}, no holding available, remain clear.")
+                self.say(ac.callsign,
+                         f"{self._addr(ac)}, no holding available, remain clear.")
                 return
             ac.phase, ac.assigned_ft = Phase.HOLDING, slot
-            self.say(cs, f"{cs}, hold at {self.profile.beacon.name} as published, "
-                         f"maintain {spell_alt(slot)}.")
+            self.say(ac.callsign,
+                     f"{self._addr(ac)}, hold at {self.profile.beacon.name} as "
+                     f"published, maintain {spell_alt(slot)}.")
             self._try_clear()
         elif ac.phase == Phase.CLEARED:
             # Established inbound on the beam: start the station-passage clock.
             # The pilot flies the MAP on a watch; ATC times the same number and
             # calls it as backup (aural station passage does not read in the sim).
             ac.map_t = self.t + self.profile.final_approach_sec
-            self.say(cs, f"{cs}, roger, station passage {spell_dur(self.profile.final_approach_sec)}, "
-                         f"report field in sight or missed approach.")
+            self.say(ac.callsign,
+                     f"{self._addr(ac)}, roger, station passage "
+                     f"{spell_dur(self.profile.final_approach_sec)}, "
+                     f"report field in sight or missed approach.")
         else:
-            self.say(cs, f"{cs} roger, {spell_alt(altitude_ft or ac.assigned_ft or 0)}.")
+            self.say(ac.callsign, f"{self._addr(ac)} roger, "
+                                  f"{spell_alt(altitude_ft or ac.assigned_ft or 0)}.")
 
     def _do_missed(self, ac: Aircraft) -> bool:
         """Missed-approach state transition. Returns True if banished (2nd miss)."""
@@ -189,8 +349,9 @@ class Controller:
     def report_missed(self, cs: str) -> None:
         ac = self.get(cs)
         banished = self._do_missed(ac)
-        prefix = f"{cs}, " if banished else f"{cs} roger, "
-        self.say(cs, prefix + self._missed_instruction(banished))
+        addr = self._addr(ac)
+        prefix = f"{addr}, " if banished else f"{addr} roger, "
+        self.say(ac.callsign, prefix + self._missed_instruction(banished))
         self._try_clear()
 
     def _station_passage(self, ac: Aircraft) -> None:
@@ -199,7 +360,7 @@ class Controller:
         cone of silence is unreliable in the sim, so ATC backs the timing up."""
         banished = self._do_missed(ac)
         inst = self._missed_instruction(banished)
-        self.say(ac.callsign, f"{ac.callsign}, heard a Mustang overhead, field is "
+        self.say(ac.callsign, f"{self._addr(ac)}, heard a Mustang overhead, field is "
                               f"beneath you, go missed. " + inst[0].upper() + inst[1:])
         self._try_clear()
 
@@ -207,9 +368,9 @@ class Controller:
         ac = self.get(cs)
         ac.phase, ac.last_report_t = Phase.LANDED, self.t
         ac.map_t = None
-        if self._letdown == cs:
+        if self._letdown == ac.callsign:
             self._letdown = None
-        self.say(cs, f"{cs}, roger, landing assured. Good day.")
+        self.say(ac.callsign, f"{self._addr(ac)}, roger, landing assured. Good day.")
         self._try_clear()
 
     def request_approach(self, cs: str) -> None:
@@ -220,17 +381,19 @@ class Controller:
         if ac.phase == Phase.CLEARED:
             # Already cleared (e.g. the aircraft ahead just landed and freed the
             # letdown for him) -- re-affirm, don't send him back to the hold.
-            self.say(cs, f"{cs}, cleared beacon approach runway "
-                         f"{self.profile.runway or 'in use'}, continue.")
+            self.say(ac.callsign,
+                     f"{self._addr(ac)}, cleared beacon approach runway "
+                     f"{self.profile.runway or 'in use'}, continue.")
             return
         if ac.phase in (Phase.UNKNOWN, Phase.ENROUTE):
             slot = self._free_slot()
             if slot is not None:
                 ac.phase, ac.assigned_ft, ac.last_report_t = Phase.HOLDING, slot, self.t
-                self.say(cs, f"{cs}, {self.profile.controller}, radar not available, "
-                             f"hold at {self.profile.beacon.name} as published, "
-                             f"maintain {spell_alt(slot)}.")
-        self._try_clear(requested_by=cs)
+                self.say(ac.callsign,
+                         f"{self._addr(ac)}, {self.profile.controller}, radar not "
+                         f"available, hold at {self.profile.beacon.name} as "
+                         f"published, maintain {spell_alt(slot)}.")
+        self._try_clear(requested_by=ac.callsign)
 
     # -- the sequencing core ----------------------------------------------
     def _next_up(self) -> Aircraft | None:
@@ -258,7 +421,7 @@ class Controller:
         ac.last_report_t = self.t
         self._letdown, self._letdown_since = ac.callsign, self.t
         self.say(ac.callsign,
-                 f"{ac.callsign}, cleared beacon approach runway "
+                 f"{self._addr(ac)}, cleared beacon approach runway "
                  f"{self.profile.runway or 'in use'}, report beacon inbound. "
                  f"Report missed approach or landing.")
         if was_bottom_holder:
@@ -270,7 +433,7 @@ class Controller:
             want = self.profile.stack_ft[i]
             if ac.assigned_ft != want:
                 ac.assigned_ft = want
-                self.say(ac.callsign, f"{ac.callsign}, descend and maintain "
+                self.say(ac.callsign, f"{self._addr(ac)}, descend and maintain "
                                       f"{spell_alt(want)}.")
 
     def tick(self, seconds: float) -> None:
@@ -288,7 +451,9 @@ class Controller:
 
         if self._letdown and self.t - self._letdown_since > CLEARANCE_TIMEOUT_SEC:
             cs = self._letdown
-            self.say(cs, f"{cs}, {self.profile.controller}, no report, "
+            ac = self.aircraft.get(cs)
+            addr = self._addr(ac) if ac else callsign.parse(cs).spoken
+            self.say(cs, f"{addr}, {self.profile.controller}, no report, "
                          f"say intentions.")
             self._letdown = None                # assume clear; do not deadlock
             self._try_clear()
@@ -301,7 +466,7 @@ class Controller:
         if overdue:
             ac = max(overdue, key=lambda a: self.t - a.last_report_t)
             ac.last_report_t = self.t
-            self.say(ac.callsign, f"{ac.callsign}, {self.profile.controller}, "
+            self.say(ac.callsign, f"{self._addr(ac)}, {self.profile.controller}, "
                                   f"report position.")
 
 
@@ -310,14 +475,30 @@ class Controller:
 #   "Pony 1 checking in"
 #   "Pony 1 beacon 4000"
 #   "Pony 1 missed" / "Pony 1 landed" / "Pony 1 request approach"
+_SIZE = {"two": 2, "three": 3, "four": 4}
+
+
+def _size(g: dict) -> int:
+    """'flight of four' -> 4. Absent means a single ship."""
+    tok = (g.get("size") or "").lower()
+    if not tok:
+        return 1
+    return _SIZE.get(tok) or (int(tok) if tok.isdigit() else 1)
+
+
 PATTERNS = [
-    (re.compile(r"(?P<cs>\w+ \d) check", re.I), lambda c, cs, g: c.check_in(cs)),
-    (re.compile(r"(?P<cs>\w+ \d) miss", re.I), lambda c, cs, g: c.report_missed(cs)),
-    (re.compile(r"(?P<cs>\w+ \d) land", re.I), lambda c, cs, g: c.report_landed(cs)),
-    (re.compile(r"(?P<cs>\w+ \d) request", re.I),
+    (re.compile(r"(?P<cs>\w+ [\d-]+)(?: flight)?(?: of (?P<size>\w+))? check", re.I),
+     lambda c, cs, g: c.check_in(cs, _size(g))),
+    (re.compile(r"(?P<cs>\w+ [\d-]+)(?: flight)? break", re.I),
+     lambda c, cs, g: c.request_breakup(cs)),
+    (re.compile(r"(?P<cs>\w+ [\d-]+) miss", re.I), lambda c, cs, g: c.report_missed(cs)),
+    (re.compile(r"(?P<cs>\w+ [\d-]+) land", re.I), lambda c, cs, g: c.report_landed(cs)),
+    (re.compile(r"(?P<cs>\w+ [\d-]+) request", re.I),
      lambda c, cs, g: c.request_approach(cs)),
-    (re.compile(r"(?P<cs>\w+ \d) beacon(?: (?P<alt>\d+))?", re.I),
-     lambda c, cs, g: c.report_beacon(cs, int(g["alt"]) if g["alt"] else None)),
+    (re.compile(r"(?P<cs>\w+ [\d-]+)(?: flight)?(?: of (?P<size>\w+))? "
+                r"beacon(?: (?P<alt>\d+))?", re.I),
+     lambda c, cs, g: c.report_beacon(cs, int(g["alt"]) if g["alt"] else None,
+                                      _size(g))),
 ]
 
 
@@ -330,7 +511,46 @@ def feed(ctl: Controller, line: str) -> None:
     print(f"  ?? unparsed: {line}")
 
 
+FORMATION_SCRIPT = [
+    # A four-ship recovers, plus a single already in the pattern behind them.
+    (0,   "Pony 1 flight of four checking in"),   # ONE entity, one clearance
+    (20,  "Hawk 2 checking in"),                  # a single, separate flight
+    (90,  "Pony 1 flight of four beacon 6000"),   # arrival = break-up, four levels
+    (10,  "Pony 1-3 beacon"),                     # a wingman talks: now his own ship
+    (20,  "Hawk 2 beacon 5000"),                  # the single takes what is left
+    (150, "Pony 1-1 beacon inbound"),             # lead flies the letdown first
+    (120, "Pony 1-1 landed"),                     # stack steps down, two is cleared
+    (30,  "Pony 1-2 beacon inbound"),
+    (120, "Pony 1-2 landed"),
+]
+
+
+def _run(ctl: Controller, script) -> None:
+    for dt, line in script:
+        ctl.tick(dt)
+        if line:
+            print(f"\n>>> {line}")
+            feed(ctl, line)
+        else:
+            print(f"\n>>> ...{int(dt)}s pass, no landing reported...")
+        for tx in ctl.out:
+            print("    " + str(tx))
+        ctl.out.clear()
+
+    print("\n--- final ---")
+    for cs, ac in sorted(ctl.aircraft.items()):
+        alt = f"{ac.assigned_ft} ft" if ac.assigned_ft else "-"
+        size = f" x{ac.size}" if ac.is_flight else ""
+        print(f"  {cs:10} {ac.phase.name:9} {alt:9} approaches={ac.approaches}{size}")
+
+
 if __name__ == "__main__":
+    import sys
+
+    if len(sys.argv) > 1 and sys.argv[1] == "--formation":
+        _run(Controller(R.BATUMI_APPROACH), FORMATION_SCRIPT)
+        raise SystemExit(0)
+
     ctl = Controller(R.BATUMI_APPROACH)
     script = [
         (0,   "Pony 1 checking in"),
@@ -349,18 +569,4 @@ if __name__ == "__main__":
         (120, "Pony 2 landed"),
         (260, "Pony 3 landed"),
     ]
-    for dt, line in script:
-        ctl.tick(dt)
-        if line:
-            print(f"\n>>> {line}")
-            feed(ctl, line)
-        else:
-            print(f"\n>>> ...{int(dt)}s pass, no landing reported...")
-        for tx in ctl.out:
-            print("    " + str(tx))
-        ctl.out.clear()
-
-    print("\n--- final ---")
-    for cs, ac in sorted(ctl.aircraft.items()):
-        alt = f"{ac.assigned_ft} ft" if ac.assigned_ft else "-"
-        print(f"  {cs:8} {ac.phase.name:9} {alt:9} approaches={ac.approaches}")
+    _run(ctl, script)
