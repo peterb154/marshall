@@ -23,8 +23,8 @@ from pathlib import Path
 from dcs.action import DoScriptFile
 from dcs.mission import Mission, StartType
 from dcs.mapping import Point
-from dcs.planes import (MosquitoFBMkVI, P_47D_30, P_51D_30_NA,
-                        SpitfireLFMkIX)
+from dcs.planes import MosquitoFBMkVI, P_47D_30, P_51D_30_NA, SpitfireLFMkIX  # noqa: F401
+from dcs.planes import PlaneType
 from dcs.task import CAP, OrbitAction
 from dcs.terrain import Caucasus
 from dcs.triggers import TriggerStart
@@ -45,6 +45,35 @@ JUG_CRUISE_MPH = 265
 # Cruise speeds are per airframe because they are not interchangeable -- the
 # Mustang's number spawned a Thunderbolt on the edge of the stall, and the
 # Mosquito is heavier again.
+class F4U_1D(PlaneType):
+    """The Corsair, which this pydcs does not know about.
+
+    The module is newer than the library, so the type simply is not in
+    dcs.planes and the mission builder cannot name it. Declaring it here is the
+    smaller of the two fixes -- upgrading pydcs mid-evening to gain one airframe
+    risks the builder that four other aeroplanes depend on, and DCS only needs
+    the id to match. The dimensions and fuel are the aeroplane's; everything
+    else follows the Mustang, which is the closest thing pydcs does know.
+
+    Same four-channel VHF card as the rest, because the comms ladder is the
+    whole point and an aircraft that cannot tune the controllers is a seat
+    nobody can use.
+    """
+
+    id = "F4U-1D"
+    flyable = True
+    height = 4.50
+    width = 12.50
+    length = 10.26
+    fuel_max = 923
+    max_speed = 717.0
+    category = "Air"
+    task_default = P_51D_30_NA.task_default
+    tasks = P_51D_30_NA.tasks
+    radio_frequency = R.TOWER.freq_mhz
+    panel_radio = P_51D_30_NA.panel_radio
+
+
 # The allied line-up, and how many of each sit on the ramp.
 #
 # Batumi has TEN parking slots and that is the whole constraint. Three of each
@@ -59,7 +88,7 @@ SQUADRON = [
     ("Pony", P_51D_30_NA, 265, 3),        # Mustang
     ("Hammer", P_47D_30, 265, 3),         # Thunderbolt
     ("Spit", SpitfireLFMkIX, 250, 2),     # Spitfire LF Mk IX
-    ("Mossie", MosquitoFBMkVI, 255, 2),   # Mosquito FB Mk VI
+    ("Whistler", F4U_1D, 260, 2),         # Corsair (the Mosquito's two slots)
 ]        # the Thunderbolt is heavy; 220 stalls it
 RATE = 22050
 TONE_HZ = 1020.0
