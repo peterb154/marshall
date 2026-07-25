@@ -72,6 +72,33 @@ LEGS = [(KOBULETI, INITIAL), (INITIAL, BATUMI)]
 
 
 @dataclass
+class Station:
+    """A controller: a name, a frequency, and the phase of flight he owns.
+
+    Distinct from a Fix on purpose. A Fix is a place; a Station is a person on a
+    radio. They were the same thing while the approach was a beacon letdown --
+    the controller had to sit on the beacon you were homing, because the ARA-8
+    tunes and homes on one frequency at a time. Under radar the pilot navigates
+    by nothing at all, so a frequency is free to be just a frequency, and the
+    controllers can be split the way real ones are: Center, Approach, Tower.
+    """
+    name: str
+    freq_mhz: float
+    role: str = ""              # "center" | "approach" | "tower"
+
+
+# Batumi's VHF-high is 131.000 in DCS -- the frequency the in-game field ATC
+# actually uses, so Tower gets it. Center and Approach take free slots in the
+# SCR-522's 100-156 AM band: every Caucasus airfield occupies 121-141 at 1 MHz
+# spacing, and 121.500 is guard, so the clear air is below 121.
+CENTER = Station("Batumi Center", 119.000, "center")
+APPROACH = Station("Batumi Approach", 120.000, "approach")
+TOWER = Station("Batumi Tower", 131.000, "tower")
+
+STATIONS = [CENTER, APPROACH, TOWER]
+
+
+@dataclass
 class Field_:
     name: str
     x: float
@@ -153,6 +180,29 @@ class ApproachProfile:
     # controller; set it per mission to handicap him (see AtcCapability).
     atc: AtcCapability = field(default_factory=AtcCapability)
 
+    # --- surveillance-radar approach ------------------------------------
+    # The controller navigates: he vectors the aircraft onto the final approach
+    # course and talks it down to minimums, calling range each mile. Needs
+    # nothing in the cockpit but a radio, so it works in any aeroplane -- unlike
+    # the beacon letdown, which needs the ARA-8 and therefore a P-51D-30.
+    kind: str = "ndb"               # "ndb" (pilot navigates) | "asr" (ATC does)
+    final_intercept_nm: float = 8.0  # rolled out on final by here
+    map_nm: float = 0.6             # missed approach point, range from the field
+    # The controllers who work this approach, enroute inwards. Empty falls back
+    # to the beacon-derived stations the NDB letdown uses.
+    stations: list[Station] = field(default_factory=list)
+
+    @property
+    def vectored(self) -> bool:
+        """True when the CONTROLLER owns navigation.
+
+        The two are mutually exclusive and must never be mixed: a homing adapter
+        points the nose at the beacon, so a pilot handed a vector heading loses
+        the only course reference he has. Either he navigates and we watch, or we
+        navigate and he stops homing.
+        """
+        return self.kind == "asr"
+
     # Used only by the plate, not by ATC (it is blind and cannot see the field).
     final_crs: int = 0              # inbound = runway heading
     hold_turns: str = "RIGHT"
@@ -167,8 +217,19 @@ class ApproachProfile:
     # level, the altimeter reads a true height and there is nothing but water
     # under the whole approach, so MDA can sit low.
     platform_ft: int = 2000         # level here on the reversal before the beam
-    speed_kt: int = 240             # pattern speed (4 nm/min)
+    # Pattern speed in MPH, because a WW2 USAAF airspeed indicator reads MPH and
+    # the number the pilot flies has to be the number we brief. This was
+    # `speed_kt = 240` and was divided into nautical miles as if it were knots,
+    # which stretched every derived distance by 15% -- the same trap solve_route
+    # already carries a comment about.
+    speed_mph: int = 240
     descent_fpm: int = 500          # never steeper than this
+
+    @property
+    def speed_kt(self) -> float:
+        """Pattern speed in knots -- i.e. nautical miles per hour, which is what
+        every distance here is measured in."""
+        return self.speed_mph / MPH_PER_KT
 
     # MDA is not chosen freely: it must sit just below the briefed cloud base so
     # that levelling at minimums actually reveals the runway. Ceiling and MDA
@@ -212,11 +273,19 @@ class ApproachProfile:
     def station(self, enroute: bool = False, banished: bool = False) -> tuple[str, float]:
         """(controller name, frequency) for a phase of the arrival.
 
-        Enroute he is homing the arrival fix, so Approach owns him there. From
-        the hold onward he is homing the approach beacon, so the letdown
-        controller lives on the beacon's own frequency. A banished aircraft is
-        sent to the outer hold and works whoever owns that beacon.
+        Under radar this is an ordinary sector split -- Center has him enroute,
+        Approach works him inbound, Tower takes the landing -- because a vectored
+        pilot navigates by nothing and a frequency is free to be just a
+        frequency.
+
+        On a beacon letdown it is not free. The ARA-8 homes on whatever the set
+        is tuned to, so the controller has to sit on the beacon being flown in
+        that phase, and the "station" is derived from the fix instead.
         """
+        if self.stations:
+            first, last = self.stations[0], self.stations[-1]
+            s = first if (enroute or banished) else last
+            return s.name, s.freq_mhz
         if banished:
             fix = self.outer_hold
         elif enroute and self.arrival_fix is not None:
@@ -225,6 +294,12 @@ class ApproachProfile:
             fix = self.beacon
         return (fix.sector or self.controller,
                 fix.freq_mhz if fix.freq_mhz else 0.0)
+
+    def station_for(self, role: str) -> Station | None:
+        for s in self.stations:
+            if s.role == role:
+                return s
+        return None
 
     @property
     def stack_ft(self) -> list[int]:
@@ -274,6 +349,46 @@ BATUMI_APPROACH = ApproachProfile(
     # procedurally on the single beacon, and talks period. Flip radar off here and
     # it becomes the fully-blind classic.
     atc=AtcCapability(radar=True, dme=False, separation="procedural", era="ww2"),
+)
+
+
+# Batumi, worked as a SURVEILLANCE RADAR approach -- the default now.
+#
+# The controller does the navigating: he vectors the aircraft onto the final
+# approach course and talks it down, calling range each mile. Two things the
+# beacon letdown could not do fall out of that for free.
+#
+# It works in ANY aeroplane. The beacon approach needs the AN/ARA-8 homing
+# adapter, which exists on the P-51D-30 and nothing else, so the whole procedure
+# was the property of one airframe. An ASR needs a radio and nothing else, so a
+# Spitfire, a 109 or a Jug can fly it and the approach belongs to the FIELD.
+#
+# And it works in wind. Homing points the nose at the beacon, so tracking a
+# straight line means crabbing -- and crabbing destroys the only course
+# reference the pilot has. Flight testing hit this twice. Under radar the
+# controller watches the ground track, absorbs the drift into the heading he
+# assigns, and nobody in the aeroplane needs to know the wind exists.
+#
+# Runway note: DCS names this runway 13/31 (heading 310 true = 304 magnetic, so
+# 124 magnetic inbound). We brief the course, not the name, and 124 is the same
+# number the old AIP-anchored letdown used.
+BATUMI_ASR = ApproachProfile(
+    controller=APPROACH.name,
+    beacon=BATUMI,                  # still the radar reference point, not a nav aid
+    outer_hold=KOBULETI,
+    kind="asr",
+    stations=list(STATIONS),
+    hold_base_ft=4000,
+    final_crs=124,
+    field_elev_ft=BATUMI_FIELD.elevation_ft,
+    runway="13",
+    platform_ft=2000,
+    ceiling_ft=400,
+    final_intercept_nm=8.0,
+    map_nm=0.6,
+    # Radar-equipped and radar-separated: the handicaps that defined the beacon
+    # letdown do not apply to a procedure the controller flies for you.
+    atc=AtcCapability(radar=True, dme=False, separation="radar", era="ww2"),
 )
 
 
