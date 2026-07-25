@@ -473,6 +473,17 @@ def separation_context(ctl, transcript: str, scope: str = "") -> tuple[str, str]
                     f"shows him {nm:.0f} miles out. Correct him and have him "
                     f"continue inbound; he has NOT reached the fix.", "")
 
+        # Seed the blind engine from the scope BEFORE it decides anything. An
+        # aircraft radar shows established on the approach must not be filed as
+        # a new arrival and stacked -- see Controller.seen_on_final.
+        fix = radar_fix(scope, intent.callsign)
+        if fix is not None:
+            from marshall.atc import asr as _asr
+            g = _asr.guide(fix, ctl.profile)
+            if g.established and ctl.seen_on_final(intent.callsign):
+                print(f"  .. {intent.callsign} is already on final per radar; "
+                      "not stacking him", flush=True)
+
         if intents.dispatch(ctl, intent):
             directive = " | ".join(tx.text for tx in ctl.out)
             ctl.out.clear()

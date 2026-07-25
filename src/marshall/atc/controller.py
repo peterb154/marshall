@@ -312,6 +312,35 @@ class Controller:
         return self.get(cs)
 
     # -- pilot inputs ------------------------------------------------------
+    def seen_on_final(self, cs: str, size: int = 1) -> bool:
+        """Radar shows him already established. Enter him as such, not as new.
+
+        This engine is BLIND -- it knows only what has been said to it -- while
+        the vectoring half watches the scope, and until now the two never spoke.
+        The consequence was heard on the radio: a flight established on the
+        final approach course at ten miles and two thousand feet checked in, the
+        engine had never heard the callsign, filed it as a fresh arrival, and
+        assigned it the bottom of the holding stack -- climb to five thousand
+        and hold. The vectoring half was simultaneously talking it down. The
+        agent voiced both, in one transmission.
+
+        Neither half was wrong about its own job. The gap was that the one
+        making the sequencing decision could not see, and nobody handed it the
+        picture. So: an aircraft the radar shows on the approach IS the
+        approach, and it owns the letdown rather than queueing for it.
+
+        Returns True if it did anything, so the caller can tell a seeding from
+        an ordinary call.
+        """
+        ac = self.get(cs)
+        if ac is not None and ac.phase in (Phase.CLEARED, Phase.LANDED):
+            return False                       # already known to be on it
+        ac = self._enter(cs, size)
+        ac.phase, ac.last_report_t = Phase.CLEARED, self.t
+        ac.assigned_ft = None                  # he is not in the stack
+        self._letdown, self._letdown_since = ac.callsign, self.t
+        return True
+
     def check_in(self, cs: str, size: int = 1) -> None:
         ac = self._enter(cs, size)
         ac.phase, ac.last_report_t = Phase.ENROUTE, self.t

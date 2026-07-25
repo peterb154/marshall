@@ -379,3 +379,51 @@ class TestVectoredHoldingIsVisual(unittest.TestCase):
         p = R.BATUMI_ASR
         gaps = {b - a for a, b in zip(p.stack_ft, p.stack_ft[1:])}
         self.assertEqual(gaps, {p.hold_step_ft})
+
+
+class TestTheBlindEngineIsToldWhatRadarSees(unittest.TestCase):
+    """The sequencing brain cannot see, so somebody has to tell it.
+
+    Heard on the radio: a flight established on the final approach course at
+    ten miles and two thousand feet checked in. The vectoring half was talking
+    it down; the separation half had never heard the callsign, filed it as a
+    fresh arrival and assigned it the bottom of the stack -- climb to five
+    thousand and hold. The agent voiced both in one transmission: "you are on
+    final" and "hold present position, maintain five thousand".
+
+    Neither half was wrong about its own job. The gap was that the half making
+    the decision was blind and nobody handed it the picture.
+    """
+
+    def setUp(self):
+        self.c = atc.Controller(R.BATUMI_ASR)
+        self.said = []
+        self.c.say = lambda cs, text: self.said.append(text)
+
+    def test_an_aircraft_on_final_is_not_put_in_the_holding_stack(self):
+        self.assertTrue(self.c.seen_on_final("Pony 1-1", size=3))
+        ac = self.c.get("Pony 1-1")
+        self.assertEqual(ac.phase, atc.Phase.CLEARED)
+        self.assertIsNone(ac.assigned_ft, "he was given a holding level anyway")
+
+    def test_he_owns_the_letdown_rather_than_queueing_for_it(self):
+        self.c.seen_on_final("Pony 1-1")
+        self.assertEqual(self.c._letdown, "Pony 1-1")
+
+    def test_checking_in_afterwards_does_not_stack_him(self):
+        self.c.seen_on_final("Pony 1-1")
+        self.c.request_approach("Pony 1-1")
+        for line in self.said:
+            self.assertNotIn("hold", line.lower(), line)
+
+    def test_seeding_twice_is_harmless(self):
+        self.assertTrue(self.c.seen_on_final("Pony 1-1"))
+        self.assertFalse(self.c.seen_on_final("Pony 1-1"))
+
+    def test_a_second_aircraft_still_gets_separated(self):
+        # Seeding must not switch the engine off: the one behind still holds.
+        self.c.seen_on_final("Pony 1-1")
+        self.c.check_in("Viper 2-1")
+        self.c.request_approach("Viper 2-1")
+        self.assertTrue(any("hold" in l.lower() for l in self.said),
+                        "the following aircraft was not separated")
