@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import time
 import types
 from pathlib import Path
 
@@ -82,6 +83,8 @@ def main() -> int:
     ap.add_argument("--voice", default="Joey")
     ap.add_argument("--name", default="Sockeye", help="SRS roster name")
     ap.add_argument("--wait", type=float, default=25.0, help="seconds to listen")
+    ap.add_argument("--no-listen", action="store_true",
+                    help="transmit and hang up without waiting for a reply")
     ap.add_argument("--look", action="store_true",
                     help="print the radar picture and say nothing")
     ap.add_argument("--group", default="", help="which aircraft, for --look")
@@ -103,6 +106,13 @@ def main() -> int:
         time.sleep(2)                                 # let registration settle
         print(f"PILOT: {line}", flush=True)
         client.transmit(tts.Voice(voice_id=args.voice).frames(line), hz, AM)
+        if args.no_listen:
+            # For talking TO the pilot rather than to the controller -- an
+            # engineer on the frequency answering a debug note. Loading Whisper
+            # to hear a reply nobody is going to give costs ten seconds and a
+            # gigabyte for nothing.
+            time.sleep(0.5)
+            return 0
         pcm, _ = client.recv_utterance(max_wait=args.wait, silence=1.5)
         if pcm is None or not pcm.size:
             print("ATC:   <no reply>")

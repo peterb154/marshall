@@ -389,15 +389,22 @@ def build(weather: str = "light", traffic: bool = False,
     if formation:
         add_formation(m, usa)
 
+    # NO BEACON TRANSMITTERS.
+    #
+    # They are left from the NDB letdown, which this field no longer flies, and
+    # they were actively breaking the radio: the Kobuleti NDB transmits on
+    # 124.000, which is Batumi Approach's frequency. A pilot on Approach heard
+    # a beacon instead of a controller, and could not be heard by anybody. The
+    # frequencies were assigned from the AIP months after the beacons were
+    # placed and nobody put the two lists side by side.
+    #
+    # The FIXES stay in route.py as coordinates -- the radar picture is still
+    # measured off BATUMI -- they simply do not transmit any more. Nothing in
+    # the aeroplane can receive them and nothing in the approach needs them.
     beacon_lua = []
     for fix in R.FIXES:
-        make_ident_audio(fix.ident)
-        m.map_resource.add_resource_file(
-            str(SOUNDS / f"bcn_{fix.ident.lower()}.wav"))
         beacon_lua.append(
-            f'  {{name="{fix.name}", ident="{fix.ident}", '
-            f'freq={fix.freq_mhz:.3f}, x={fix.x:.0f}, z={fix.z:.0f}, '
-            f'file="bcn_{fix.ident.lower()}.wav", power=1000}},')
+            f'  -- {fix.name} ({fix.ident}) not transmitted: radar approach')
 
     # One generated file: beacon table then script. A DoScript carrying Lua as
     # dictionary text fails at run time -- getValueDictByKey returns the key

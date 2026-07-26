@@ -1128,8 +1128,14 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         if me:
             parts.append(
                 f"YOU ARE: {me.name} on {me.freq_mhz:.1f}. Identify as that and "
-                "nothing else — he called this frequency and does not know one "
-                "controller is covering several.")
+                "NOTHING else, even if he calls you by another name. A pilot "
+                "who says \"Batumi Tower\" on Approach's frequency has the "
+                "wrong button pressed, and agreeing with him puts Tower on a "
+                "frequency Tower is not on — he then believes it, and so does "
+                "everyone listening. Correct him in the same breath as the "
+                "answer: \"Pony one one, this is Batumi Approach, Tower is one "
+                "one eight\" — then give him what he asked for. He is flying "
+                "an aeroplane; do not make him ask twice.")
             if getattr(me, "role", "") == "overlord":
                 parts.append(OVERLORD_BRIEF)
         if nxt:
