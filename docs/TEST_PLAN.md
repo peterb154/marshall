@@ -105,7 +105,8 @@ It is also the moment the runway frees for whoever is holding behind you, so on 
 | C2 | P1 | On the visual, listen for mile calls | **Silence.** He is spacing, not talking you down | [#10] `may_be_vectored` |
 | C3 | P1 | On any approach, once you can see the runway: *"Hoover one one, field in sight"* | **A landing clearance and the wind** — *"cleared to land runway one three, wind two seven zero at two zero"* | [#10] intent ordering |
 | C4 | [script] | Two-ship: check in as a flight, then request break-up | Each aircraft **named in order** and asked to check in individually | [#12] `_identify_phrase` |
-| C4a | [script] | Lead checks in as the FLIGHT ("Pony one, flight of two"), then after the split says "Pony one one" | He is addressed as **Pony one one** from then on, not as the flight | [#12] `transmitter_callsign` |
+| C4a | [script] | After the split, lead calls as the FLIGHT again — *"Pony one, level five thousand"* | **He is asked who he is**, and told the options: *"you are broken up — say your callsign. I have Pony one one, Pony one two"* | [#12] `ambiguous_after_breakup` |
+| C4d | [script] | Then he names himself — *"Pony one one, level five thousand"* | Answered normally as Pony one one from then on | [#12] `transmitter_callsign` |
 | C4b | [script] | Wingman checks in as "Pony one two" | Addressed as **Pony one two**, distinct from lead, and it sticks | [#12] `transmitter_callsign` |
 | C4c | [script] | Anywhere: say something with a number but no callsign — "I have two aircraft", "say my altitude" | **No new aircraft appears in the stack** | [#13] `_plausible_callsign` |
 | C5 | P1 | Depart Batumi on the sortie, outbound past 25 nm | Center **keeps you** until you leave his airspace — no early handoff to Approach | [#16] `leaving_my_airspace` |
@@ -133,7 +134,9 @@ The other direction is the dangerous one and you are unlikely to see it from the
 
 **C4** — Identity has to be settled BEFORE anyone is separated. A controller who cannot tell two aeroplanes apart cannot keep them apart.
 
-**C4a** — A lead who checked in for the formation was stuck with the flight's name. Saying your own callsign **once** must be enough to change it — you cannot out-vote yourself.
+**C4a** — Once a flight is split, its name refers to nobody. The controller used to answer it anyway by assuming it meant lead — which is a guess, and the wrong kind: he cannot actually tell which of two aeroplanes keyed the mic, and separating men he cannot tell apart is the failure this whole feature exists to prevent. He asks now, and offers the callsigns he is holding so the answer is easy.
+
+**C4d** — And saying your own callsign **once** is enough to fix the binding for good; you cannot out-vote yourself, so a count would leave lead stuck with the formation's name all sortie.
 
 **C4b** — The wingman ends up distinct and stays that way, including when the transcriber hears 'Pony one *too*'.
 

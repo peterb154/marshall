@@ -275,8 +275,8 @@ class Controller:
         each holding its own level.
 
         After break-up the members exist in their own right, so they resolve to
-        themselves -- and a call addressed to the flight then means lead, who is
-        the one still answering for the formation's name.
+        themselves. A call still addressed to the FLIGHT is ambiguous and is not
+        resolved by guessing -- see `ambiguous_after_breakup`.
         """
         c = callsign.parse(cs)
         key = c.canonical
@@ -294,6 +294,33 @@ class Controller:
     def get(self, cs: str) -> Aircraft:
         key = self._resolve(cs)
         return self.aircraft.setdefault(key, Aircraft(key))
+
+    def ambiguous_after_breakup(self, cs: str) -> bool:
+        """Is this the name of a formation that has already been split?
+
+        Once a flight is broken up its name refers to nobody. Answering it by
+        picking lead is an inference, and the wrong kind: the controller cannot
+        actually tell which of two aeroplanes keyed the mic, and separating men
+        he cannot tell apart is the failure this whole feature exists to
+        prevent. It also had a visible symptom -- two Mustangs addressed as
+        "Pony one" and "Pony one one", adjacent and confusable.
+
+        A controller in this position asks. He does not guess and carry on.
+        """
+        c = callsign.parse(cs)
+        if not c.is_flight or c.canonical in self.aircraft:
+            return False
+        return any(callsign.parse(k).flight == c.flight and k != c.canonical
+                   for k in self.aircraft)
+
+    def say_again_who(self, cs: str) -> None:
+        """Ask him who he is, and do nothing else with the call."""
+        c = callsign.parse(cs)
+        members = sorted(k for k in self.aircraft
+                         if callsign.parse(k).flight == c.flight)
+        names = ", ".join(callsign.parse(m).spoken for m in members)
+        self.say(cs, f"{c.spoken_flight}, you are broken up for individual "
+                     f"approaches — say your callsign. I have {names}.")
 
     def _addr(self, ac: Aircraft) -> str:
         """How to say this entity on the radio: 'Pony one flight' while they are

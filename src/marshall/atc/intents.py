@@ -277,6 +277,12 @@ def dispatch(ctl: atc.Controller, intent: Intent) -> bool:
     cs = intent.callsign
     if not cs or intent.kind is IntentKind.UNKNOWN:
         return False
+    # A formation that has been split no longer names an aeroplane. Ask rather
+    # than infer -- picking lead is a guess, and a controller who cannot tell two
+    # men apart must not act as though he can.
+    if ctl.ambiguous_after_breakup(cs):
+        ctl.say_again_who(cs)
+        return True
     match intent.kind:
         case IntentKind.CHECK_IN:
             ctl.check_in(cs, intent.flight_size)

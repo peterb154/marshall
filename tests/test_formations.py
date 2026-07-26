@@ -523,3 +523,50 @@ class TestIdentifyOnBreakUp(unittest.TestCase):
         c.request_breakup("Pony 1-1")
         for tx in c.out:
             self.assertNotIn("identify each of you", tx.text)
+
+
+class TestAskDoNotInferAfterBreakUp(unittest.TestCase):
+    """A formation that has been split no longer names an aeroplane.
+
+    Answering it by picking lead is a guess, and the wrong kind: the controller
+    cannot actually tell which of two aircraft keyed the mic, and separating men
+    he cannot tell apart is the failure this whole feature exists to prevent.
+    """
+
+    def setUp(self):
+        self.ctl = atc.Controller(profile())
+        self.ctl.check_in("Pony 1-1", 2)
+        self.ctl.request_breakup("Pony 1-1")
+        self.ctl.out.clear()
+
+    def test_the_flight_name_is_ambiguous_once_split(self):
+        self.assertTrue(self.ctl.ambiguous_after_breakup("Pony 1"))
+
+    def test_a_member_name_is_not(self):
+        for cs in ("Pony 1-1", "Pony 1-2"):
+            with self.subTest(cs=cs):
+                self.assertFalse(self.ctl.ambiguous_after_breakup(cs))
+
+    def test_another_flight_still_together_is_not(self):
+        self.ctl.check_in("Hammer 1-1", 2)
+        self.assertFalse(self.ctl.ambiguous_after_breakup("Hammer 1"))
+
+    def test_he_is_asked_who_he_is_and_offered_the_options(self):
+        from marshall.atc import intents
+        handled = intents.dispatch(
+            self.ctl, intents.Intent(kind=intents.IntentKind.REPORT_BEACON,
+                                     callsign="Pony 1", altitude_ft=5000))
+        self.assertTrue(handled, "silence would be worse than a guess")
+        said = " ".join(t.text for t in self.ctl.out).lower()
+        self.assertIn("say your callsign", said)
+        self.assertIn("pony one one", said)
+        self.assertIn("pony one two", said)
+
+    def test_the_ambiguous_call_is_not_acted_on(self):
+        from marshall.atc import intents
+        before = self.ctl.get("Pony 1-1").assigned_ft
+        intents.dispatch(self.ctl,
+                         intents.Intent(kind=intents.IntentKind.REPORT_BEACON,
+                                        callsign="Pony 1", altitude_ft=9000))
+        self.assertEqual(self.ctl.get("Pony 1-1").assigned_ft, before,
+                         "a guess about WHO must not become a change to his state")
