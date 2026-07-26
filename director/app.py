@@ -36,6 +36,7 @@ from strands_pg import (
 # DCS-gRPC live-world tools (stubs vendored under _grpc, on PYTHONPATH).
 from tools.dcs import (
     call_in_traffic,
+    spawn_ground,
     get_current_mission,
     get_player_units,
     load_mission,
@@ -107,6 +108,16 @@ def build_agent(session_id: str) -> Agent:
             vector,                       # heading + distance to a fix or another aircraft
             *hook_tools(session_id),      # "wake me in N seconds" — proactive callbacks
             *memory_tools(namespace=session_id),
+            # The OVERLORD's hands. One agent covers every position and picks
+            # its manner from which frequency was called, so the tool is here
+            # for all of them and the overlord brief is what says who may use
+            # it. An approach controller has no reason to put armour in a
+            # valley and its own brief tells it so.
+            #
+            # Without this, asking Sentry for a target produced a confident,
+            # detailed answer and nothing on the ground -- which is the worst
+            # kind of wrong, because a pilot flies out and looks for it.
+            spawn_ground,
         ],
         session_manager=PgSessionManager(session_id=session_id),
         # Bound the context the model sees so latency doesn't compound over a long

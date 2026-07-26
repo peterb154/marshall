@@ -184,6 +184,96 @@ def call_in_traffic(group_name: str = "Traffic") -> str:
     return f"Activated group '{group_name}' — it should now be airborne and on radar."
 
 
+# Things an overlord can put on the ground, named the way he would say them.
+# Every one verified against the running sim -- DCS silently substitutes a
+# Leopard-2 for any type it does not recognise, with no error and no warning,
+# so a name that has not been checked is a name that quietly spawns a modern
+# main battle tank into 1945.
+SPAWNABLE = {
+    "armour": "T-55", "tank": "T-55", "tanks": "T-55",
+    "apc": "M-113", "truck": "Ural-375", "trucks": "Ural-375",
+    "infantry": "Soldier M4", "artillery": "M-109",
+    "aaa": "ZU-23 Emplacement", "sam": "Strela-1 9P31",
+}
+
+
+@tool
+def spawn_ground(what: str, bearing_deg: float, range_nm: float,
+                 count: int = 4, anchor: str = "Batumi",
+                 name: str = "") -> str:
+    """Put enemy ground units into the world at a place you can describe.
+
+    For an OVERLORD giving a flight something to do: armour appearing in a
+    valley, a convoy on a road, guns round a position. Located the way a target
+    actually gets described -- a bearing and a distance from somewhere both of
+    you know -- rather than by coordinates nobody can see from a cockpit.
+
+    what: armour, tank, apc, truck, infantry, artillery, aaa, sam
+    bearing_deg / range_nm: from the anchor, magnetic-ish bearing and nautical miles
+    anchor: an aerodrome name, e.g. Batumi or Kutaisi
+    count: how many
+    name: what to call the group, so you can refer to it later
+
+    Refuses to put ground units in the sea. Returns what was actually created,
+    read back from the sim -- not what was asked for.
+    """
+    import math
+    dcs_type = SPAWNABLE.get(what.lower().strip())
+    if not dcs_type:
+        return (f"'{what}' is not something I can place. Options: "
+                f"{', '.join(sorted(set(SPAWNABLE)))}.")
+    count = max(1, min(int(count), 12))
+    group = (name or f"{what}-{int(bearing_deg):03d}").replace('"', "")
+
+    lua = f"""
+    local ab = Airbase.getByName("{anchor}")
+    if not ab then return "no airbase called {anchor}" end
+    local c = ab:getPoint()
+    local a = math.rad({float(bearing_deg)})
+    local d = {float(range_nm)} * 1852
+    local x, z = c.x + d * math.cos(a), c.z + d * math.sin(a)
+    local st = land.getSurfaceType({{x = x, y = z}})
+    if st == 2 or st == 3 then return "that position is water" end
+    local units = {{}}
+    for i = 1, {count} do
+      units[i] = {{
+        ["type"] = "{dcs_type}", ["unitId"] = 8600 + i, ["skill"] = "Average",
+        ["x"] = x + (i - 1) * 60, ["y"] = z, ["heading"] = 0,
+        ["name"] = "{group} " .. i,
+      }}
+    end
+    coalition.addGroup(country.id.RUSSIA, Group.Category.GROUND, {{
+      ["visible"] = true, ["taskSelected"] = true, ["hidden"] = false,
+      ["groupId"] = 8600, ["name"] = "{group}",
+      ["x"] = x, ["y"] = z, ["task"] = "Ground Nothing", ["units"] = units,
+    }})
+    local g = Group.getByName("{group}")
+    local got = g and g:getUnit(1) and g:getUnit(1):getTypeName() or "nothing"
+    local ll = ""
+    local la, lo = coord.LOtoLL({{x = x, y = 0, z = z}})
+    ll = string.format("%.4f %.4f", la, lo)
+    return "made=" .. got .. " at " .. ll
+    """
+    try:
+        with _channel() as ch:
+            from dcs.custom.v0 import custom_pb2, custom_pb2_grpc
+            out = str(custom_pb2_grpc.CustomServiceStub(ch).Eval(
+                custom_pb2.EvalRequest(lua=lua), timeout=30).json).strip('"')
+    except Exception as e:                       # never break the conversation
+        log.warning("spawn_ground failed: %s", e)
+        return f"Could not place them: {e}"
+
+    if out.startswith("made="):
+        made = out.split("made=")[1]
+        if dcs_type not in made:
+            return (f"Something is wrong: asked for {dcs_type} and the sim "
+                    f"produced {made}. Do not tell the pilot it is there.")
+        return (f"{count} x {dcs_type} now on the ground as '{group}', "
+                f"{range_nm:.0f} nm on the {bearing_deg:03.0f} from {anchor} "
+                f"({made}). They are on radar and can be talked onto.")
+    return f"Not placed: {out}"
+
+
 @tool
 def radar() -> str:
     """Your radar scope: where every aircraft is right now, as range and radial
