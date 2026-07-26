@@ -637,3 +637,71 @@ class TestOneBridgeAtATime(unittest.TestCase):
         agent_atc._lock_fd = None
         self.assertTrue(agent_atc.claim_the_frequency(self.path),
                         "a crashed bridge must not block the next one")
+
+
+class TestEngineeringChannel(unittest.TestCase):
+    """Getting a human on the line, and knowing whether one is there.
+
+    The failure this replaces: a pilot transmitted into what he thought was a
+    live channel and got nothing back -- "I tried talking to you, no response"
+    -- with no way to tell a dead process from an engineer who was heads-down
+    in code. Either answer is fine. Not knowing is not.
+    """
+
+    def test_the_ways_a_pilot_actually_asks(self):
+        for said in ("get engineering on the line",
+                     "Engineering, are you there?",
+                     "engineering come up",
+                     "engineering radio check"):
+            with self.subTest(said=said):
+                self.assertTrue(agent_atc._ENG_CALL.search(said))
+
+    def test_an_ordinary_call_is_not_a_summons(self):
+        for said in ("Batumi Approach, Hammer one one, request the approach",
+                     "Hammer one one going around",
+                     "Sentry, Hammer one one, request a target"):
+            with self.subTest(said=said):
+                self.assertIsNone(agent_atc._ENG_CALL.search(said))
+
+    def test_release_reads_either_way_round(self):
+        for said in ("engineering, clear", "thanks engineering",
+                     "engineering out", "back to approach"):
+            with self.subTest(said=said):
+                self.assertTrue(agent_atc._ENG_DONE.search(said))
+
+    def test_talking_TO_engineering_is_not_leaving_it(self):
+        """The pilot's actual traffic must not be read as a goodbye."""
+        self.assertIsNone(
+            agent_atc._ENG_DONE.search("engineering the vectors are wrong"))
+
+    def test_an_unattended_bench_says_so_rather_than_going_quiet(self):
+        import time as _t
+        try:
+            agent_atc.ENG_ATTENDED.unlink()
+        except OSError:
+            pass
+        self.assertFalse(agent_atc.engineering_attended())
+        ack = agent_atc.engineering_ack(summoned=True)
+        self.assertIn("not at the bench", ack)
+        self.assertIn("recorded", ack, "silence is the thing being fixed")
+
+    def test_an_attended_bench_invites_him_to_talk(self):
+        agent_atc.ENG_ATTENDED.parent.mkdir(parents=True, exist_ok=True)
+        agent_atc.ENG_ATTENDED.touch()
+        try:
+            self.assertTrue(agent_atc.engineering_attended())
+            self.assertIn("go ahead", agent_atc.engineering_ack(summoned=True))
+        finally:
+            agent_atc.ENG_ATTENDED.unlink(missing_ok=True)
+
+    def test_a_stale_claim_counts_as_nobody_home(self):
+        import os as _os, time as _t
+        agent_atc.ENG_ATTENDED.parent.mkdir(parents=True, exist_ok=True)
+        agent_atc.ENG_ATTENDED.touch()
+        old = _t.time() - agent_atc.ENG_ATTENDED_SEC - 60
+        _os.utime(agent_atc.ENG_ATTENDED, (old, old))
+        try:
+            self.assertFalse(agent_atc.engineering_attended(),
+                             "a stale claim is worse than an honest 'not here'")
+        finally:
+            agent_atc.ENG_ATTENDED.unlink(missing_ok=True)

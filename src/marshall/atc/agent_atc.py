@@ -874,6 +874,71 @@ SRS_NAME = "Marshall"
 # channel is indistinguishable, from the cockpit, from a controller losing the
 # plot.
 OUR_STATIONS = frozenset({SRS_NAME, "Engineering", "Eartest"})
+# Engineering is no longer a separate SRS client -- the bridge speaks for it
+# in its own voice -- but the name stays here so an older engineer.py left
+# running on a frequency is still never mistaken for a pilot.
+
+
+# --- engineering: getting a human on the line -----------------------------
+#
+# The most valuable debugging tool of the squadron night was being able to talk
+# to the pilot mid-sortie: he reports what the controller just did wrong, the
+# fix goes in, he flies it again, all without leaving the aeroplane. That loop
+# is worth protecting, and the version that earned it was held together with
+# tape -- a separate process, launched by hand, once per frequency, transmit
+# only. When the pilot moved from 124 to 118 there was nothing there, and when
+# he asked "are you there?" the system had no way to tell him whether the
+# channel was even alive. Silence from a dead process and silence from an
+# engineer who is heads-down in code look exactly the same from the cockpit.
+#
+# So the bridge owns it. It is already on every frequency and already
+# transcribing, which is the whole cost of the thing.
+#
+# NO FREQUENCY OF ITS OWN, deliberately: the SCR-522 has four presets and the
+# comms ladder uses all four, so a dedicated engineering channel would be one
+# the pilot physically cannot tune. It answers wherever it was called.
+
+_ENG_CALL = re.compile(
+    r"\b(?:get\s+)?engineering\b.{0,24}?\b(?:on the line|come up|are you|"
+    r"you there|check in|checking in|read me|copy)\b|"
+    r"\bget engineering\b|\bengineering,?\s*(?:radio )?check\b", re.I)
+_ENG_DONE = re.compile(
+    r"\bengineering\b.{0,16}?\b(?:clear|out|thanks|thank you|done)\b|"
+    r"\b(?:clear|out|thanks|thank you|done)[,\s]+engineering\b|"
+    r"\bback to (?:approach|tower|center|centre|the controller)\b", re.I)
+
+# Where a human says "I am at the bench". Touched while an engineer is actually
+# working; anything older than this is treated as nobody home, because a stale
+# claim is worse than an honest "he is not here".
+ENG_ATTENDED = config.BUILD_DIR / "engineering.attended"
+ENG_ATTENDED_SEC = 45 * 60
+ENG_SPOOL = "/tmp/marshall-say"
+
+
+def engineering_attended() -> bool:
+    try:
+        return (time.time() - ENG_ATTENDED.stat().st_mtime) < ENG_ATTENDED_SEC
+    except OSError:
+        return False
+
+
+def engineering_ack(summoned: bool) -> str:
+    """What the pilot hears the moment he calls, before any human is involved.
+
+    Deterministic and instant on purpose. The failure this exists to prevent is
+    a pilot transmitting into what he thinks is a live channel and getting
+    nothing back -- "I tried talking to you, no response" -- with no way to tell
+    a broken radio from a busy engineer. Either answer is fine; not knowing is
+    not.
+    """
+    if not summoned:
+        return "Copied, logged."
+    if engineering_attended():
+        return ("Engineering is up, go ahead. I am reading your notes as you "
+                "make them.")
+    return ("Engineering is not at the bench right now. Keep talking, every "
+            "word is recorded and he will read it.")
+
 
 
 # --- one bridge at a time ------------------------------------------------
@@ -1054,6 +1119,13 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
     # the hook scheduler both drive the same agent session and the same radio, so
     # they must never overlap -- no talking over the pilot, no racing the session.
     radio_lock = threading.Lock()
+
+    # Who has engineering up, and on which frequency they called from -- so the
+    # reply goes back where it was asked rather than wherever the bridge was
+    # started. A distinct voice, because a pilot must never mistake engineering
+    # for a controller.
+    engineering_line: dict[str, float] = {}
+    eng_voice = tts.Voice(voice_id="Amy")
 
     def interact(message: str, kind: str, tier: str = "sonnet",
                  on_hz: float | None = None) -> None:
@@ -1269,6 +1341,47 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             except Exception as e:                 # never kill the metronome
                 print(f"  !! asr monitor: {e}", flush=True)
 
+    def engineering_radio() -> None:
+        """Speak whatever the engineer types, on the frequency he was called on.
+
+        A file rather than an API because the whole point is that it is
+        reachable from anywhere in one line -- an editor, a shell, a script
+        that just finished a rebuild:
+
+            echo "that vector was mine, fix is loading" >> /tmp/marshall-say
+
+        Consumed before speaking, so a slow transmission can never repeat it.
+        """
+        spool = pathlib.Path(ENG_SPOOL)
+        try:
+            spool.touch(exist_ok=True)
+        except OSError:
+            return
+        while True:
+            time.sleep(1.0)
+            try:
+                lines = [l for l in spool.read_text().splitlines() if l.strip()]
+                if not lines:
+                    continue
+                spool.write_text("")
+            except OSError:
+                continue
+            # Wherever he was last spoken to. With nobody on the line it still
+            # goes out on the channel the bridge was started on, so a broadcast
+            # to an unattended frequency is possible on purpose.
+            hz = (list(engineering_line.values())[-1] if engineering_line
+                  else freq_hz)
+            for line in lines:
+                with radio_lock:
+                    print(f"  ENG[tx] {line}", flush=True)
+                    record(session_id, kind="engineering/tx", text=line)
+                    try:
+                        client.transmit(eng_voice.frames(line), hz, AM)
+                    except Exception as e:
+                        print(f"  !! engineering transmit failed: {e}", flush=True)
+                time.sleep(0.3)
+
+    threading.Thread(target=engineering_radio, daemon=True).start()
     threading.Thread(target=scheduler, daemon=True).start()
     threading.Thread(target=asr_monitor, daemon=True).start()
 
@@ -1386,6 +1499,39 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 _agreed.setdefault("runway", profile.runway or None)
             if _agreed:
                 flight_agree(_fid, **_agreed)
+
+        # ENGINEERING. Handled before the controller sees anything, because a
+        # pilot who has called engineering up is not talking to ATC and must not
+        # be answered by it.
+        _eng_hz = heard_hz or freq_hz
+        _summoned = bool(_ENG_CALL.search(transcript))
+        _on_the_line = client.last_sender_guid in engineering_line
+        if _summoned or (_on_the_line and not _ENG_DONE.search(transcript)):
+            engineering_line[client.last_sender_guid] = _eng_hz
+            stamp = time.strftime("%H:%M:%S")
+            who = known or srs
+            print(f"  ENGINEERING [{stamp}] {who}: {transcript}", flush=True)
+            record(session_id, kind="engineering", callsign=who, text=transcript)
+            try:
+                config.BUILD_DIR.mkdir(parents=True, exist_ok=True)
+                with open(config.BUILD_DIR / "debug-notes.md", "a",
+                          encoding="utf-8") as fh:
+                    fh.write(f"- `{stamp}` **{who}** {transcript}\n")
+            except OSError as e:
+                print(f"  !! could not write the note: {e}", flush=True)
+            reply = engineering_ack(_summoned)
+            with radio_lock:
+                print(f"  ENG[tx] {reply}", flush=True)
+                client.transmit(eng_voice.frames(reply), _eng_hz, AM)
+            continue
+        if _on_the_line and _ENG_DONE.search(transcript):
+            engineering_line.pop(client.last_sender_guid, None)
+            print(f"  ENGINEERING released {known or srs}", flush=True)
+            with radio_lock:
+                client.transmit(
+                    eng_voice.frames("Engineering clear, back to the controller."),
+                    _eng_hz, AM)
+            continue
 
         # A debug note: record it and stay off the air entirely. The pilot is
         # talking to the project, not to the controller.
