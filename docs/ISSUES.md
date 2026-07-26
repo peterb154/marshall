@@ -698,6 +698,54 @@ call on a phrase that is *real but wrong*, like "landing assured".
 
 ---
 
+## [FT-1] Call the result on the radio; the card keeps the score — #31
+labels: feature
+
+**Status:** TODO
+
+Flying the card produces results that currently live only in a pilot's memory
+until he lands, and the ones that matter most — the failures — arrive with
+detail that is lost by then.
+
+Three ways were considered:
+
+- **OpenKneeboard's doodle.** Ephemeral, and not machine-readable, so it can
+  never become an attestation.
+- **Checkboxes on the page.** Machine-readable, but it needs you to look at and
+  touch the kneeboard at exactly the moment you are busiest.
+- **Say it on the engineering channel.** Hands-free, uses a channel that already
+  exists, already timestamps, already logs.
+
+The third wins, and not only because it is hands-free: **a spoken result carries
+context a checkbox cannot.** "B4 fail" is worth much less than "B4 fail, he
+stepped on me at four miles", and the description is the part that gets fixed.
+
+It also makes the second option free. Say it, and the page shows it — voice in,
+card keeps the score, hands never leave the stick.
+
+**Acceptance criteria**
+1. *"B4 pass"* / *"B4 failed, he talked over my readback"* on the engineering
+   channel is recognised, stored against the test ID, and **acknowledged on the
+   air** so the pilot knows it landed.
+2. Free text after the verdict is kept verbatim. It is the valuable half.
+3. `/flighttest/` shows what has been called this sortie — a row already
+   reported reads differently from one not yet flown.
+4. Results carry the timestamp, the callsign and the COMMIT, so they can become
+   an attestation without being retyped (`tools/attest.py`).
+5. A result for an unknown ID is refused out loud rather than silently filed —
+   "say again, I do not have a test D9".
+6. Ordinary engineering talk is not mistaken for a verdict.
+
+**Watch for:** the transcriber. "B4" and "before", "C1" and "see one" are exactly
+the kind of thing Whisper mangles, and a mis-parsed ID silently scores the wrong
+row. The vocabulary priming already helps; the IDs should be in it, and an
+unrecognised ID must fail loudly per criterion 5.
+
+Depends on [ENG-1] #4 being flown — this is more traffic on a channel whose
+basics are still unverified.
+
+---
+
 ## [OPS-2] Backlog and issues stay in step — #27
 labels: chore
 
