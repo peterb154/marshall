@@ -72,6 +72,21 @@ Live ops specifics — hosts, credentials, the current running state — live in
    Polly and Whisper in the loop.
 5. **A live mission** with AI flights, driven by `mission/ai_control.lua`.
 
+## Every commit names an issue
+Work is tracked in **`docs/ISSUES.md`** and mirrored to GitHub issues; the
+flight test card (`docs/TEST_PLAN.md`) cites the same numbers. So a commit ends
+with a trailer saying which one it belongs to:
+
+    Refs #11            touches it
+    Closes #11          finishes it — but a `needs-flight-test` issue is closed
+                        by a PILOT flying the card, never by a green test suite
+
+Everything merges straight to `main`; there are no PRs. The issue reference IS
+the correlation — GitHub threads the commit onto the issue, so "what changed for
+this, and why" is one click rather than an archaeology exercise. A change worth
+committing that fits no issue means the issue is missing: write it into
+`docs/ISSUES.md` and `uv run python tools/file_issues.py`.
+
 ## The repo is PUBLIC
 No personal paths, emails, IPs, or secrets in committed files. Keep ops specifics
 in private memory.

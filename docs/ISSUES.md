@@ -607,6 +607,58 @@ automating a channel whose basics are unverified.
 
 ---
 
+## [KB-1] Kneeboards render live, and one of them is the test card — #29
+labels: feature
+
+**Status:** SHIPPED/UNVERIFIED — commits `a7d3956`, `b28542d`
+
+Two things that were one problem. Pages were generated once at container start,
+so editing a chart changed nothing until somebody restarted the server — which is
+how the kneeboard came to be showing beacon frequencies for a field that had
+moved to a radar approach. And there was nowhere to read the test card in the
+cockpit.
+
+**Acceptance criteria**
+1. Editing a chart or a doc on the host shows up on the next page turn, with no
+   restart. (Changing `serve.py` itself still needs one — it defines the app.)
+2. `/flighttest/` carries the test card, one tab per section, plus the live
+   issues, so a failure can be reported by number from the aeroplane.
+3. Both survive an OpenKneeboard reconnect without "No Pages".
+4. The card is PARSED from the markdown, never re-authored, so the copy read in
+   the cockpit cannot drift from the copy reviewed in a diff.
+
+Flown by: reading the card in the aeroplane and reporting a failure by its
+number — which is every other test on this list.
+
+---
+
+## [PHR-1] Phraseology a real controller would actually use — #30
+labels: bug
+
+**Status:** OPEN — two found so far, both by a pilot
+
+Invented phraseology reaches the air and nothing here catches it, because a test
+can check that a call was MADE, not that it is something a controller would ever
+say.
+
+Found so far:
+- clearing a Mustang with no ADF for a *beacon* approach, and asking him to
+  report a fix he had no receiver for
+- *"landing assured"* — the pilot's determination, not a controller's, put in
+  his mouth as a verdict (fixed: he now gives the clearance and the wind)
+- inventing a field, a frequency and a handoff that exist nowhere in the plan
+  ([BUG-3] #21)
+
+**Acceptance criteria**
+1. A rehearsal transcript can be checked against the profile automatically —
+   every fix, frequency and procedure named must exist in the loaded data.
+2. A list of phrases that are the PILOT's to say, which the controller never
+   uses, with a test keeping them out.
+3. New procedures arrive with their phraseology reviewed by a pilot before they
+   are flown, not after.
+
+---
+
 ## [OPS-2] Backlog and issues stay in step — #27
 labels: chore
 
