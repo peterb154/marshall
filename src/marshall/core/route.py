@@ -156,15 +156,16 @@ DEFENDED = [
 # inside their reach.
 FEET_WET = Fix("FEET WET", "", -355811, 595162, None,
                note="Off 31 to the west, over water. Climb here.")
-NORTH = Fix("NORTH", "", -259507, 595162, None,
-            note="52 nm north of Batumi, 12 nm offshore -- water the whole way, "
-                 "and north of Kutaisi. Turn east for the target from here.")
-HOMEBOUND = Fix("RIDGE", "", -318936, 712429, None,
-                note="Return turning point, 24 nm south-east of Kutaisi. Over "
-                     "the high ground: a climb in exchange for 15 nm of "
-                     "clearance from every battery.")
+INGRESS = Fix("INGRESS", "", -259507, 595162, None,
+              note="52 nm north of Batumi, 12 nm offshore -- water the whole "
+                   "way, and north of Kutaisi. Turn east for the target from "
+                   "here; this is where the run in starts.")
+HOMEBOUND = Fix("EGRESS", "", -318936, 712429, None,
+                note="Off the target and heading home, 24 nm south-east of "
+                     "Kutaisi. Over the high ground: a climb in exchange for "
+                     "15 nm of clearance from every battery.")
 
-SORTIE = [BATUMI, FEET_WET, NORTH, TARGET_AREA, HOMEBOUND, BATUMI]
+SORTIE = [BATUMI, FEET_WET, INGRESS, TARGET_AREA, HOMEBOUND, BATUMI]
 SORTIE_LEGS = list(zip(SORTIE, SORTIE[1:]))
 
 # Altitude per leg, and the shape of the sortie is in these numbers rather than
