@@ -30,6 +30,13 @@ most-repeated failure this project has had and a script closes it in a second;
 channel the way two people do. **Flight time is the scarcest resource here** —
 spend it only on what it is uniquely good for.
 
+**Closing an issue needs an attestation, not a tick.** Who or what tested it,
+what was actually exercised, and the COMMIT it was tested at — because six weeks
+later the only questions that matter are those, and none of them survive a green
+tick. `uv run python tools/attest.py <n> --by <who> --how "<what>" --close`
+records it and closes. It flags a dirty tree, since "tested at abc1234" is a lie
+if the working copy was not.
+
 **Status key.** `SHIPPED/UNVERIFIED` — the code is in and the two cheap tiers
 are clean, but no human has flown it. `OPEN` — known broken, with a repro.
 `TODO` — not built. `VALIDATED` — a human used it and it did the job; this is

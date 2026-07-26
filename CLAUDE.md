@@ -81,6 +81,10 @@ with a trailer saying which one it belongs to:
     Closes #11          finishes it — but a `needs-flight-test` issue is closed
                         by a PILOT flying the card, never by a green test suite
 
+Closing also wants an **attestation**: who tested it, what was exercised, and the
+commit it was tested at (`tools/attest.py`). An issue closed with "works now" is
+one you cannot revisit.
+
 Everything merges straight to `main`; there are no PRs. The issue reference IS
 the correlation — GitHub threads the commit onto the issue, so "what changed for
 this, and why" is one click rather than an archaeology exercise. A change worth
