@@ -2,6 +2,76 @@
 
 Deferred work, captured so it isn't lost. Not a promise of order.
 
+## The reversal hunt — 2026-07-26 (branch `reversal-geometry`)
+
+An attempt at the reversals that were only MUTED on squadron night. No fix
+shipped. What came out of it is better than a fix would have been if it had been
+another guess: **the instrument was wrong twice, and both errors flattered the
+engine in one direction and slandered it in the other.**
+
+1. **Ninety per cent of "reversals" were one correct turn.** Classifying every
+   flip by which branch of `guide()` produced it:
+
+       537  REPOSITION -> INTERCEPT-45     (539 of them in the 15-20 nm band)
+
+   The entry gate sits at 16.5 nm. That transition IS the aircraft arriving at
+   the gate and rolling onto the 45 — the manoeuvre working, once per approach.
+   **Two fixes were judged and rejected last night on this number.** It could
+   not answer the question being asked of it. The sweep now separates
+   `DITHERING` (flips inside 30 s of each other) from `turns`.
+
+2. **The model aeroplane changed height in one radar sweep.** So "climb to three
+   thousand" completed instantly, putting the aircraft at the altitude that ENDS
+   the missed approach while it was still over the field. The resulting churn
+   was scored as dithering the engine was not doing. With an honest 1,000 fpm
+   the baseline went from "11 rapid flips" to **1**.
+
+3. **A perfect pilot cannot find this bug, by construction.** He only ever
+   visits positions the ENGINE chose, so the engine is never caught disagreeing
+   about a position it did not expect — and that is where every reversal a real
+   pilot has reported comes from. `asr_sweep.py --sloppy` flies it with lag,
+   overshoot and drift: 1 flip becomes 26, on two approaches, both named in the
+   output.
+
+### The bug this leaves, pinned and reproducible
+
+An aircraft flying the **published missed approach** is vectored back towards
+the field:
+
+    3 nm on the 330 radial, 1500 ft, heading 330  ->  vector fly 311
+    5 nm on the 330 radial, 2000 ft, heading 330  ->  vector fly 308
+    8 nm on the 330 radial, 2600 ft, heading 330  ->  vector fly 301
+
+The missed-approach branch sits BELOW `in_position`, and the second leg of the
+procedure — the climbing turn onto 330 — puts the aeroplane on the approach SIDE
+of the field with positive along-track. It reads as "in position" and is handed
+an intercept. This is the pilot's first-night report, still true:
+
+    "pny flight is outbound after the missed and the atc is saying that he is
+     left of course (thinking he is inbound)"
+
+The "left of course" half is already fixed; the vector is not.
+`TestClimbingOutOnTheMissed` marks it `expectedFailure` so it stays visible.
+
+### What was tried and rejected, with numbers
+
+Recognising the procedure by ITS OWN track (`on_the_missed`) rather than by the
+final approach course — the plate turns onto 330 while the outbound centreline
+is 304, so a correctly-flown missed is 4.8 nm off course by 11 nm against a
+branch that allowed 2. Correct diagnosis, and it fixed all three orbits. But
+membership in a missed approach is a fact about HISTORY, not position: the
+procedure commands a 206-degree turn and half way round it the aircraft is on
+nobody's track. Every stateless test flickers.
+
+    clean pilot      arrived    worst-est   DITHERING       turns
+    original       1293/1296      2.4 nm    1,   0 appr      582
+    by-its-track   1296/1296      4.2 nm    2696, 186 appr  3388
+
+Latching it in the caller (`guide(..., on_missed=)`) is almost certainly the
+right shape — it matches the session's own rule, that the agreed facts and the
+observed ones are different things — but it needs the bridge and `controller.py`
+to own the latch, and that is a bigger change than a tired branch should make.
+
 ## Two-pilot debrief — 2026-07-26 (first human squadron night, Sockeye + Shooter)
 
 Two people flew it for real, on the radio, for several hours, while fixes went

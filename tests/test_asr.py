@@ -596,3 +596,64 @@ class TestLeavingMyAirspace(unittest.TestCase):
         self.assertIsNone(
             self.A.leaving_my_airspace("http://127.0.0.1:1", "s", "Pony 1-1",
                                        self.approach, self.p, self.at(40.0)))
+
+
+class TestClimbingOutOnTheMissed(unittest.TestCase):
+    """An aircraft flying the published missed must not be vectored back.
+
+    Reported live on the first night and still true:
+
+        "right now pny flight is outbound after the missed and the atc is
+         saying that he is left of course (thinking he is inbound)"
+
+    The mechanism, found by measurement rather than reading: the missed-approach
+    branch sits BELOW the in-position test, and the second leg of the procedure
+    -- the climbing turn onto 330 -- puts the aeroplane on the approach SIDE of
+    the field with positive along-track. It therefore reads as "in position" and
+    is handed an intercept, which turns it back towards the field it is trying
+    to climb away from.
+
+    The clean sweep cannot catch this: its aeroplane only ever visits positions
+    the ENGINE chose, so it never climbs out on 330 unless something put it
+    there. `--sloppy` and a live pilot both do.
+
+    Left FAILING on purpose. Two attempts to fix it are recorded in the branch
+    notes; both traded these reversals for far worse ones (2,696 rapid flips
+    against a baseline of 1), and shipping either would have been a bad trade
+    made quietly. The test stays so the next attempt starts from a repro rather
+    than from a description.
+    """
+
+    def setUp(self):
+        self.p = R.BATUMI_ASR
+
+    def climbing_out(self, nm, alt):
+        return asr.Position(range_nm=nm, radial_deg=self.p.missed_hdg,
+                            alt_ft=alt, heading_deg=self.p.missed_hdg)
+
+    @unittest.expectedFailure
+    def test_he_is_left_to_fly_the_procedure(self):
+        for nm, alt in ((3.0, 1500), (5.0, 2000), (8.0, 2600)):
+            with self.subTest(nm=nm):
+                g = asr.guide(self.climbing_out(nm, alt), self.p)
+                self.assertEqual(g.phase, "missed",
+                                 f"vectored to {g.heading} while climbing out")
+
+    def test_he_is_not_told_he_is_off_course(self):
+        """He is flying the heading he was given and is exactly where he should
+        be. 'Left of course' is not true in any useful sense.
+
+        This half is already fixed -- deviation is only spoken to someone who is
+        actually flying the final approach course -- which is why the pilot's
+        complaint now shows up as a bad VECTOR rather than as a bad description
+        of one.
+        """
+        g = asr.guide(self.climbing_out(5.0, 2000), self.p)
+        self.assertEqual(g.deviation, "")
+
+    def test_once_he_is_up_at_the_missed_altitude_he_is_ours_again(self):
+        """The procedure has a defined end, and after it he is an ordinary
+        repositioning problem. This half already works."""
+        g = asr.guide(self.climbing_out(9.0, self.p.missed_climb_ft + 200),
+                      self.p)
+        self.assertNotEqual(g.phase, "missed")
