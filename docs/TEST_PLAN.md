@@ -103,7 +103,7 @@ It is also the moment the runway frees for whoever is holding behind you, so on 
 |----|------|------|--------------------|----------------|
 | C1 | P1 | Ask Approach for a **visual approach** | Granted without argument: *"cleared visual approach runway one three, report the field in sight"* | [#10] `request_visual` |
 | C2 | P1 | On the visual, listen for mile calls | **Silence.** He is spacing, not talking you down | [#10] `may_be_vectored` |
-| C3 | P1 | Report `field in sight` (do **not** say "request the visual") | Treated as a report, not a request | [#10] intent ordering |
+| C3 | P1 | On any approach, once you can see the runway: *"Hoover one one, field in sight"* | **A landing clearance and the wind** — *"cleared to land runway one three, wind two seven zero at two zero"* | [#10] intent ordering |
 | C4 | [script] | Two-ship: check in as a flight, then request break-up | Each aircraft **named in order** and asked to check in individually | [#12] `_identify_phrase` |
 | C4a | [script] | Lead checks in as the FLIGHT ("Pony one, flight of two"), then after the split says "Pony one one" | He is addressed as **Pony one one** from then on, not as the flight | [#12] `transmitter_callsign` |
 | C4b | [script] | Wingman checks in as "Pony one two" | Addressed as **Pony one two**, distinct from lead, and it sticks | [#12] `transmitter_callsign` |
@@ -125,7 +125,11 @@ not working, not you misreading it.
 
 **C2** — A visual means he stops talking you down. Reading ranges to a man looking at the runway is chatter over somebody busy.
 
-**C3** — 'Request the visual' and 'field in sight' are one word apart and mean opposite things — asking versus reporting. Backwards, it either denies you an approach or clears one while you are still in cloud.
+**C3** — *"Request the visual"* and *"field in sight"* are one word apart and mean opposite things: one is asking for an approach, the other is telling him you already have the runway. They used to classify the same way, because the bare word *visual* belonged to the reporting pattern and swallowed both.
+
+The failure is easy to hear and slightly absurd: instead of clearing you to land he offers you a visual approach and asks you to **report the field in sight** — which you just did. If that happens, say so; it means the two have swapped again.
+
+The other direction is the dangerous one and you are unlikely to see it from the cockpit: a *request* read as a *report* would clear an aircraft to land while it is still in cloud with no runway anywhere.
 
 **C4** — Identity has to be settled BEFORE anyone is separated. A controller who cannot tell two aeroplanes apart cannot keep them apart.
 
