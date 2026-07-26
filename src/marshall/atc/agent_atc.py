@@ -1201,6 +1201,44 @@ def handoff_phrase(nxt, fix) -> str:
             f"{controller.spell_freq(nxt.freq_mhz)} and say goodbye.")
 
 
+def addressed_to_another_aircraft(transcript: str, speaker: str,
+                                  stations=()) -> str:
+    """Whose name this call opens with, if it is somebody else's aeroplane.
+
+    Real ATC assumes a pilot is talking to it -- which is why nobody says
+    "Omaha Approach" on every transmission, and why ours answers everything on
+    its frequency. But two aircraft occasionally talk to each other on it:
+
+        "Pony one two, Pony one one, join up"
+
+    A controller hears that, understands it is not his, and says nothing. The
+    giveaway is the ADDRESSEE, and it is readable: a transmission opening with
+    an aircraft callsign that is not the speaker's own is ship-to-ship. Opening
+    with a station name, or with his own callsign, or with nothing, is a call to
+    the controller exactly as before.
+
+    Returns the addressee, or "" when the call is ours. Refuses to decide
+    without knowing who is speaking: guessing that a transmission is not for us
+    is worse than answering one that was not, because the pilot gets silence and
+    no way to tell why.
+    """
+    from marshall.atc import callsign as C
+
+    if not speaker or not transcript:
+        return ""
+    head = transcript.strip()[:44]
+    for name in stations:                    # "Batumi Approach, ..." is ours
+        if name and name.lower() in head.lower():
+            return ""
+    first = C.extract(head)
+    if not first or not _plausible_callsign(first):
+        return ""
+    if C.parse(first).flight == C.parse(speaker).flight \
+            and C.parse(first).canonical == C.parse(speaker).canonical:
+        return ""                            # his own name: talking to us
+    return first
+
+
 def _plausible_callsign(cs: str) -> bool:
     """Does this look like something a pilot would actually be called?
 
@@ -1920,6 +1958,17 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 print(f"  ENG[tx] {reply}", flush=True)
                 client.transmit(eng_voice.frames(reply), _eng_hz, AM)
             continue
+        # Not addressed to us. Two aircraft on our frequency talking to each
+        # other -- a real controller hears it, understands, and says nothing.
+        _other = addressed_to_another_aircraft(
+            transcript, known, [s.name for s in (getattr(profile, "stations", None) or [])])
+        if _other:
+            print(f"  (ship-to-ship: {known or srs} calling {_other} — not ours)",
+                  flush=True)
+            record(session_id, kind="ship-to-ship", callsign=known,
+                   text=transcript)
+            continue
+
         # A debug note: record it and stay off the air entirely. The pilot is
         # talking to the project, not to the controller.
         note = debug_note(transcript)

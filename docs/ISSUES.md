@@ -784,6 +784,66 @@ the channel over at all — [FT-1] #31.
 
 ---
 
+## [RAD-4] Ship-to-ship on frequency, and the callsign discipline we skip — #33
+labels: feature
+
+**Status:** TODO
+
+Two related things about who a transmission is FOR.
+
+### Ignoring what is not addressed to him
+
+Real ATC assumes a pilot is talking to it, which is why nobody says "Omaha
+Approach" on every transmission — and ours does the same, correctly. But
+occasionally two aircraft talk to each other on the same frequency:
+
+> *"Pony one two, Pony one one, join up"*
+
+That is addressed to the wingman. A controller hears it, understands it is not
+his, and says nothing. Ours answers it, because everything on its frequency is
+treated as a call to it.
+
+The giveaway is the ADDRESSEE, and we can read it: a transmission that opens
+with an aircraft callsign which is **not the speaker's own** is ship-to-ship.
+"Batumi Approach, Pony one one, ..." opens with a station. "Pony one one, level
+five thousand" opens with his own name. "Pony one two, Pony one one, join up"
+opens with somebody else's.
+
+**Acceptance criteria**
+1. A transmission opening with another aircraft's callsign is logged and **not
+   answered**.
+2. Opening with his own callsign, a station name, or nothing at all is answered
+   as now.
+3. It is never applied when the speaker is unidentified — guessing that a call
+   is not for us is worse than answering one that was not, because the pilot
+   gets silence and no way to tell why.
+4. The separation engine does not act on it either: a join-up is not a position
+   report.
+
+### The callsign discipline we quietly do not need
+
+Ours has an advantage a real controller does not: the SRS GUID tells it who
+transmitted, so a pilot can omit his callsign entirely and still be understood.
+That is unrealistic, and it removes the one piece of radio discipline a pilot
+genuinely owes — **every transmission starts with who you are**.
+
+Worth keeping the GUID as the ANCHOR. It is what stops a mangled callsign
+inventing an aeroplane, and giving that up to chase realism would trade a real
+bug for a fictional one. What is missing is the manner: a controller who gets an
+unprompted transmission with no callsign in it asks for one, rather than
+silently knowing.
+
+**Acceptance criteria**
+5. An unprompted call with no callsign draws *"station calling, say your
+   callsign"* — even though we know perfectly well who it is.
+6. A reply inside a conversation already under way does not (a readback is not
+   an unprompted call, and demanding a callsign on every "roger" is its own kind
+   of unrealistic).
+7. Identity itself still comes from the GUID. This changes what he SAYS, never
+   what he knows.
+
+---
+
 ## [OPS-2] Backlog and issues stay in step — #27
 labels: chore
 

@@ -876,3 +876,46 @@ class TestCallingAControllerLetsYouGo(unittest.TestCase):
                      "engineering, B4 passed", "thanks engineering"):
             with self.subTest(said=said):
                 self.assertIsNone(self.rx.search(said))
+
+
+class TestShipToShipIsNotOurs(unittest.TestCase):
+    """Two aircraft talking to each other on our frequency.
+
+    Real ATC assumes a pilot is talking to it -- nobody says "Omaha Approach" on
+    every transmission -- so ours answers everything on its channel. But
+    occasionally a flight talks to itself on it, and a controller hears that,
+    understands it is not his, and says nothing.
+    """
+
+    def setUp(self):
+        from marshall.core import route as R
+        self.f = agent_atc.addressed_to_another_aircraft
+        self.st = [s.name for s in R.BATUMI_ASR.stations]
+
+    def test_opening_with_another_aircraft_is_theirs(self):
+        for said in ("Pony one two, Pony one one, join up",
+                     "Pony one two, you are cleared to cross",
+                     "Hammer one two, Hammer one one, go button three"):
+            with self.subTest(said=said):
+                self.assertTrue(self.f(said, "Pony 1-1", self.st))
+
+    def test_opening_with_his_own_name_is_ours(self):
+        self.assertEqual(self.f("Pony one one, level five thousand",
+                                "Pony 1-1", self.st), "")
+
+    def test_opening_with_a_station_is_ours(self):
+        for said in ("Batumi Approach, Pony one one, request the approach",
+                     "Sentry, Pony one one, request a target",
+                     "Batumi Tower, Pony one one, going around"):
+            with self.subTest(said=said):
+                self.assertEqual(self.f(said, "Pony 1-1", self.st), "")
+
+    def test_opening_with_nothing_is_ours(self):
+        """The normal case: he does not re-address us every time."""
+        self.assertEqual(self.f("level five thousand", "Pony 1-1", self.st), "")
+
+    def test_an_unidentified_speaker_is_always_answered(self):
+        """Guessing a call is not for us is worse than answering one that was
+        not -- the pilot gets silence and no way to tell why."""
+        self.assertEqual(self.f("Pony one two, Pony one one, join up",
+                                "", self.st), "")
