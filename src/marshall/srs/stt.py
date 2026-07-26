@@ -4,10 +4,15 @@ The ATC bridge, the synthetic pilot, and the older loops each grew their own cop
 of the Whisper model setup and the domain-priming prompt. They live here now so a
 vocabulary fix (or a model-size change) happens in one place.
 
-The prompt is still Batumi-specific -- callsigns and proper nouns to keep Whisper
-from mangling "Batumi" into "But to me". Longer term it should be generated from
-route.py (the field's callsigns and beacon names), the same de-hardcoding the
-agent prompt needs; for now it's one shared constant instead of three.
+`domain_prompt` builds the priming text from what is actually in play -- the
+stations on the ladder, the fixes on the route, the callsigns that have keyed a
+mic -- because the mangling lands squarely on the proper nouns and the proper
+nouns are knowable. A squadron night produced "Century" and "Sensory" for
+Sentry, "in-grass" for ingress, and one garble that bound a radio to "Waypoint
+3" and filled the separation stack with aeroplanes that did not exist.
+
+WHISPER_PROMPT remains as the static fallback for callers with no profile to
+hand (the synthetic pilot, the rehearsal harness).
 """
 
 from __future__ import annotations
@@ -19,6 +24,38 @@ WHISPER_PROMPT = (
     "established on the beam, platform, missed approach, going around, field in "
     "sight, thousand feet, DME, Oscar Sierra, Batumi, Kobuleti, do you copy, how "
     "do you read.")
+
+
+def domain_prompt(stations=(), fixes=(), callsigns=(), field: str = "Batumi") -> str:
+    """Prime Whisper with the proper nouns that are actually on the air.
+
+    Priming is not a spell-checker: it biases the decoder toward words it has
+    just been shown, which is why it works so well on exactly the tokens that
+    matter here -- names. Everything else in a radio call is ordinary English
+    that Whisper already handles.
+
+    Kept SHORT and front-loaded with names. The prompt window is small (a few
+    hundred tokens) and anything past it is silently dropped, so a long list of
+    phraseology would push out the callsigns it exists to protect.
+    """
+    # SPOKEN forms, not canonical ones. Whisper is decoding speech, so priming
+    # it with "Pony 1-1" teaches it nothing about the sound a pilot makes --
+    # "Pony one one" does. Same for the fixes: a chart says FEET WET and a pilot
+    # says "feet wet".
+    bits = [f"Radio calls at {field.title()}."]
+    if callsigns:
+        bits.append("Callsigns: " + ", ".join(dict.fromkeys(callsigns)) + ".")
+    if stations:
+        bits.append("Controllers: " + ", ".join(dict.fromkeys(stations)) + ".")
+    if fixes:
+        bits.append("Fixes: "
+                    + ", ".join(dict.fromkeys(f.title() for f in fixes)) + ".")
+    bits.append(
+        "Numbers are spoken as digits. Terms: checking in, request approach, "
+        "holding, established, platform, missed approach, going around, field "
+        "in sight, cleared to land, altimeter, steerpoint, waypoint, ingress, "
+        "egress, say again, how do you read.")
+    return " ".join(bits)
 
 
 def load_model(size: str = "base.en"):

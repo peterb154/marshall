@@ -987,6 +987,31 @@ def claim_the_frequency(path=None) -> bool:
     return True
 
 
+def whisper_vocabulary(profile) -> str:
+    """The priming text for the transcriber, from what is actually on the air.
+
+    Rebuilt as radios identify themselves, because the callsigns are the half
+    that cannot be known in advance and are also the half that does the damage
+    when it is wrong -- a mangled callsign does not merely mis-transcribe a
+    word, it invents an aeroplane and gives it a place in the holding stack.
+    """
+    from marshall.atc import callsign as C
+    from marshall.core import route as R
+    from marshall.srs import stt
+
+    spoken = []
+    for seen in _transmitters.values():
+        for cs in seen:
+            try:
+                spoken.append(C.parse(cs).spoken)
+            except Exception:
+                spoken.append(cs)
+    stations = [s.name for s in (getattr(profile, "stations", None) or [])]
+    fixes = [f.name for _, f in R.sortie_points()]
+    field = getattr(getattr(profile, "beacon", None), "name", "Batumi")
+    return stt.domain_prompt(stations, fixes, spoken, field)
+
+
 def push_fixes(base: str, profile) -> int:
     """Project route.py's fixes with the SIM's own converter and push them.
 
@@ -1436,7 +1461,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         pcm, heard_hz = client.recv_utterance(max_wait=3600)
         if pcm is None or not pcm.size:
             continue
-        transcript = stt.transcribe(model, pcm)
+        transcript = stt.transcribe(model, pcm,
+                                    prompt=whisper_vocabulary(profile))
         if not transcript:
             continue
         srs = client.name_for(client.last_sender_guid)   # who keyed the mic (free)
