@@ -672,16 +672,21 @@ class Controller:
         ac.map_t = None
         if self._letdown == ac.callsign:
             self._letdown = None
-        self.say(ac.callsign, f"{self._addr(ac)}, roger, landing assured. Good day.")
+        # He has the field. What a controller owes him now is the CLEARANCE and
+        # the wind -- not a verdict on whether the landing is assured, which is
+        # the pilot's call and not a phrase a real controller uses.
+        self.say(ac.callsign,
+                 f"{self._addr(ac)}, roger, cleared to land runway "
+                 f"{self.profile.runway or 'in use'}, {self._wind_phrase()}")
         self._try_clear()
 
     def report_down(self, cs: str) -> None:
         """Radar shows him stopped on the aerodrome. Get him off the runway.
 
-        Distinct from `report_landed`, which answers a pilot SAYING he is
-        landing -- "roger, landing assured, good day" is what you say to
-        somebody still in the air, and saying it to a man sitting on the runway
-        is a controller who has not noticed the aeroplane arrive.
+        Distinct from `report_landed`, which answers a pilot who has the field
+        in sight and is still flying -- what he is owed there is the clearance
+        and the wind. Reading a landing clearance to a man already stopped on
+        the runway is a controller who has not noticed the aeroplane arrive.
 
         What a tower actually says once the roll is over is where to go: off the
         runway, then to parking. It is also the transmission that tells him he

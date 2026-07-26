@@ -1582,7 +1582,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                             grounded.add(cs)
                             continue
                         # SAY GOODBYE. The controller already composes one --
-                        # "roger, landing assured, good day" -- and the bridge
+                        # a taxi instruction -- and the bridge
                         # used to drop it on the floor, so the observable end of
                         # an approach was SILENCE. A pilot cannot tell that from
                         # a controller who has crashed or lost him, which is the

@@ -728,3 +728,28 @@ class TestTheEndOfAnApproachIsAudible(unittest.TestCase):
         self.assertEqual(self.ctl.owns_the_approach(), "Hoover 1-1")
         self.ctl.report_down("Hoover 1-1")
         self.assertNotEqual(self.ctl.owns_the_approach(), "Hoover 1-1")
+
+
+class TestPhraseologyIsAControllersNotAPilots(unittest.TestCase):
+    """"Landing assured" is the PILOT's determination, not a controller's.
+
+    It is not a phrase a real controller uses, and having one say it puts a
+    judgement in his mouth that was never his to make. What he owes a man with
+    the field in sight is the clearance and the wind.
+    """
+
+    def setUp(self):
+        self.ctl = atc.Controller(profile())
+        self.ctl.report_beacon("Hoover 1-1", 4000)
+        self.ctl.out.clear()
+
+    def test_the_controller_never_assures_a_landing(self):
+        self.ctl.report_landed("Hoover 1-1")
+        said = " ".join(t.text for t in self.ctl.out).lower()
+        self.assertNotIn("assured", said)
+
+    def test_field_in_sight_earns_a_clearance_and_the_wind(self):
+        self.ctl.report_landed("Hoover 1-1")
+        said = " ".join(t.text for t in self.ctl.out).lower()
+        self.assertIn("cleared to land", said)
+        self.assertIn("wind", said)
