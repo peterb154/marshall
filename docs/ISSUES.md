@@ -533,6 +533,54 @@ to scale anywhere.
 
 ---
 
+## [ENG-2] Engineering answers when nobody is watching a terminal — #28
+labels: feature
+
+**Status:** TODO
+
+Engineering is turning into half the point of flying this, not a debugging
+convenience — so it should not depend on a person having a log tail open.
+
+**The split that already exists, and should be kept.** The CHANNEL is durable:
+it records every note (`build/debug-notes.md` and the flight recorder) and always
+answers with its own state, so a pilot is never talking into silence. The
+RESPONDER is separate and may be absent — `tools/bench.py` is exactly that
+boundary. What is missing is a responder that is a *program*.
+
+`claude` is installed on the host, so a responder can be a headless session
+given the note, the recent bridge log and the radar picture. That is the shape:
+`tools/bench.py claude` claims the bench and answers from then on.
+
+**Acceptance criteria**
+1. With no human at a terminal, asking for engineering gets a real answer to the
+   question asked — not just an acknowledgement.
+2. The pilot can always tell WHAT he is talking to. A model answering must not
+   sound like a person who is reading; the ack says which it is.
+3. Immediate acknowledgement, answer when it arrives. A model takes seconds to
+   tens of seconds and a silent radio reads as broken — the deterministic ack
+   already solves this and must stay in front.
+4. With no responder at all, behaviour is unchanged: *"not at the bench, keep
+   talking, every word is recorded"*, and the note is still durable.
+5. Notes survive a mission reload and a bridge restart, and can be read back by
+   sortie afterwards.
+6. Bounded cost: a rate limit and a per-sortie ceiling, so a chatty channel
+   cannot run up a bill unattended.
+
+**What it must NOT do by default.** Edit code, restart the bridge, or deploy
+anything while somebody is flying. The value here is *answering and diagnosing*;
+acting is a different risk entirely, and an agent that patches the ATC mid-approach
+is a bad idea however good the patch is. Any such action needs explicit consent
+on the radio, and should be off unless deliberately enabled.
+
+**Open question worth deciding before building:** whether the responder should
+also be able to answer as the CONTROLLER — it has the same information. Probably
+not: two voices with one brain is the confusion this project keeps fixing.
+
+Depends on nothing. [ENG-1] (#4) should be flown first — there is no point
+automating a channel whose basics are unverified.
+
+---
+
 ## [OPS-2] Backlog and issues stay in step — #27
 labels: chore
 
