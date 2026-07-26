@@ -469,6 +469,32 @@ def radar_fixes(scope: str) -> list[tuple[str, "object"]]:
     return out
 
 
+def spoken_deviation(g) -> str:
+    """How far off, not just which side.
+
+    "Left of course" is an assertion a pilot can disagree with, and on a live
+    approach he did -- repeatedly, while two and a half miles left of the
+    centreline and certain he was lined up. He was not being difficult: from
+    the cockpit of a Mustang with no navaid there is nothing to disagree WITH,
+    so a bare direction is one man's word against another's.
+
+    A distance ends the argument. "Two miles left of course" is a number he can
+    act on, and it tells him the size of the correction as well as its
+    direction, which is most of what the call is for.
+    """
+    if not g.deviation or g.deviation == "on course":
+        return g.deviation
+    off = abs(g.xtk_nm)
+    if off < 0.4:
+        return f"slightly {g.deviation}"
+    if off < 1.5:
+        return f"about a mile {g.deviation}"
+    words = ["zero", "one", "two", "three", "four", "five", "six", "seven",
+             "eight", "nine"]
+    n = round(off)
+    return f"{words[n] if n < len(words) else n} miles {g.deviation}"
+
+
 def asr_call(cs: str, g) -> str:
     """The controller's spoken range call. Deterministic on purpose.
 
@@ -488,7 +514,7 @@ def asr_call(cs: str, g) -> str:
         return (f"{who}, over the missed approach point. Runway in sight, land; "
                 f"if not, execute missed approach.")
     if g.off_course:
-        return (f"{who}, {rng} miles from the runway, {g.deviation}, "
+        return (f"{who}, {rng} miles from the runway, {spoken_deviation(g)}, "
                 f"turn heading {ctl.spell_hdg(g.heading)}, altitude "
                 f"should be {alt}.")
     return (f"{who}, {rng} miles from the runway, on course, altitude should be "
@@ -527,14 +553,14 @@ def asr_context(profile, scope: str, cs: str) -> str:
     if g.phase == "map":
         return ("ASR: he is over the missed approach point. Runway in sight, "
                 "land; if not, missed approach now.")
-    turn = "" if not g.off_course else f", {g.deviation}"
+    turn = "" if not g.off_course else f", {spoken_deviation(g)}"
     swing = f" Turn {g.turn}." if g.turn else ""
     if g.phase == "final":
         # The mile calls are already going out automatically, every mile. If the
         # agent ALSO reports range and heading on each transmission the pilot
         # hears the same numbers twice from the same controller -- which is what
         # "too chatty on final" meant. Acknowledge and get off the air.
-        return (f"ASR: he is on final, {rng} miles, {g.deviation}. The talk-down "
+        return (f"ASR: he is on final, {rng} miles, {spoken_deviation(g)}. The talk-down "
                 f"is being transmitted automatically every mile — do NOT repeat "
                 f"his range, heading or altitude. Acknowledge what he said in a "
                 f"few words and stop.")
@@ -649,8 +675,17 @@ def separation_context(ctl, transcript: str, scope: str = "") -> tuple[str, str]
         # two brains then disagreed about where four aeroplanes were. So when
         # the scope contradicts a claimed station passage, the report never
         # reaches the engine at all.
+        # ...but ONLY where there is a beacon to be over. On a radar approach
+        # there is none, and the classifier files any ordinary position report
+        # as REPORT_BEACON because that is the nearest thing it knows. The
+        # result, heard on a live sortie: every single position call the pilot
+        # made was answered with "negative, you are not over the beacon",
+        # including "on final, runway one three" at two miles. He said the
+        # controller seemed confused about where he was. It was contradicting
+        # him about a fix that does not exist.
         nm = radar_range_for(scope, intent.callsign)
-        if (intent.kind is intents.IntentKind.REPORT_BEACON
+        beacon_flown = not getattr(ctl.profile, "vectored", False)
+        if (beacon_flown and intent.kind is intents.IntentKind.REPORT_BEACON
                 and nm is not None and nm > OVERHEAD_NM):
             print(f"  !! rejected: claims the beacon, radar shows {nm:.1f} nm",
                   flush=True)
