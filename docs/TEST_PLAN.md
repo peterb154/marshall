@@ -73,7 +73,11 @@ fix and it has only ever been proven against a synthetic pilot.
 
 **B2** — The mile calls ARE the surveillance approach — one voice, one channel, every mile. Silence is indistinguishable from having been forgotten.
 
-**B3** — Known-bad geometry, still open. What I need is whether the turn is *away* from the field, and roughly where you were when it happened.
+**B3** — **The last reversal, and the one I have never been able to fix.** Between about 20 and 11 miles the controller is closing you onto the final approach course, and each vector should bring you nearer to it — a heading that swings *further* from the field is the bug. It shows up when you are inbound and more than about two miles off course, and it is the only thing on this card that has beaten four separate attempts: every fix I tried made the synthetic sweep worse, so the geometry you are flying is deliberately the old, known one.
+
+What a good pass looks like: corrections that get smaller as you close, rolling you out on about 124. What the failure looks like: one turn that points you away, usually around fourteen miles, often after you have drifted well off course.
+
+**The four things worth saying if it happens** — your range, roughly how far off course you were, which way he turned you, and whether he corrected it on the next call or kept going. The bridge log records the radar picture for every transmission, so with your range and rough offset I can re-run the exact geometry afterwards and test a fix against it without you flying again. That is worth more than the fix attempt itself: I have four failures because I had no repro.
 
 **B4** — A radio is half duplex and so are the manners. The metronome transmitted on its own schedule regardless of who was talking — and a call it holds must be **made afterwards, not dropped**.
 

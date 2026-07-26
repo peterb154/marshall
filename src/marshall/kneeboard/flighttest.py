@@ -50,7 +50,13 @@ _ISSUE = re.compile(r"^## \[([A-Z]+-\d+)\]\s+(.*?)(?:\s+—\s+#(\d+))?\s*$", re.
 # "**A1** — what this row is actually checking." The table has to stay terse to
 # be readable as a table; the sentence is what makes it flyable by somebody who
 # was not in the room when the bug was found.
-_WHY = re.compile(r"^\*\*([A-F]\d+[a-z]?)\*\*\s+—\s+(.+?)\s*$", re.M)
+# Runs to the NEXT why-line or the end of the block, not to the end of the line:
+# the rows that need explaining most need more than one sentence, and a
+# single-line capture silently drops everything after the first paragraph --
+# which it did, losing the half of B3 that says what to actually report.
+_WHY = re.compile(
+    r"^\*\*([A-F]\d+[a-z]?)\*\*\s+—\s+(.*?)"
+    r"(?=\n\*\*[A-F]\d+[a-z]?\*\*\s+—|\n---|\n## |\Z)", re.M | re.S)
 
 
 def _read(name: str) -> str:
@@ -150,6 +156,7 @@ CSS = """
   .ft .exp:before { content: "→ "; }
   .ft .why { margin: 4px 0 0 66px; font-size: 13px; color: #4a4335;
              border-left: 2px solid #b9ad8c; padding-left: 8px; }
+  .ft .why + .why { margin-top: 5px; }
   .ft code { background: #ded3b2; padding: 0 3px; }
   .ft .warn { background: #f2e3c4; border-left: 4px solid #b03024;
               padding: 6px 9px; margin: 8px 0; }
@@ -169,6 +176,14 @@ def _issue_only(cell: str) -> str:
     return _md(re.sub(r"`[^`]*`", "", cell).strip(" —·-"))
 
 
+def _why_html(text: str) -> str:
+    """The explanation, one block per paragraph. Blank lines are how the card
+    separates 'what the bug is' from 'what to tell me about it', and running
+    them together is how a cockpit page becomes a wall."""
+    paras = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
+    return "".join(f'<div class="why">{_md(p)}</div>' for p in paras)
+
+
 def _rows_html(rows: list[dict]) -> str:
     out = []
     for r in rows:
@@ -183,8 +198,7 @@ def _rows_html(rows: list[dict]) -> str:
                 f'</span>{_issue_only(r["issue"])} {prio}</div>'
                 f'<div class="what">{_md(r["what"])}</div>'
                 f'<div class="exp">{_md(r["expect"])}</div>'
-                + (f'<div class="why">{_md(r["why"])}</div>' if r.get("why")
-                   else "")
+                + (_why_html(r["why"]) if r.get("why") else "")
                 + '</div>')
         else:
             out.append(
