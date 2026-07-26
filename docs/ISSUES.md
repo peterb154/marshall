@@ -11,6 +11,25 @@ so this file stays readable whether or not you are online.
 test card (`docs/TEST_PLAN.md`); `Code:` names where it lives. Acceptance
 criteria are things that are either true or not — no "works well".
 
+**Two ways an issue closes, and the label says which.**
+
+`needs-flight-test` — **a human is the instrument.** Only for what a person
+uniquely judges: whether it *felt* like two controllers, whether the timing was
+usable, whether he was talked over, whether the phrasing was natural at the
+moment it mattered. Also for conditions a synthetic pilot cannot create.
+
+`needs-synthetic-check` — **a script is a better instrument, and a hundred times
+faster.** Deterministic behaviour with an observable output: did the handoff
+fire, did the ghost enter the stack, did the second bridge refuse. A pilot
+tickling these one at a time is flight time spent badly, and he can only cover
+the cases he happens to fly.
+
+The split is not about importance. #18 (one bridge at a time) is the
+most-repeated failure this project has had and a script closes it in a second;
+#5 (talking over the pilot) is unglamorous and no script has yet contested a
+channel the way two people do. **Flight time is the scarcest resource here** —
+spend it only on what it is uniquely good for.
+
 **Status key.** `SHIPPED/UNVERIFIED` — the code is in and the two cheap tiers
 are clean, but no human has flown it. `OPEN` — known broken, with a repro.
 `TODO` — not built. `VALIDATED` — a human used it and it did the job; this is
@@ -652,13 +671,23 @@ Found so far:
 - inventing a field, a frequency and a handoff that exist nowhere in the plan
   ([BUG-3] #21)
 
+**This is a script's job, not a sortie's.** You cannot fly enough approaches to
+tickle every phrase, and a pilot who does hear a bad one has spent an approach to
+find a single instance. A harness can drive hundreds of exchanges through the
+real bridge and check every transcript, which is both faster and more complete —
+so it carries `needs-synthetic-check`. What still needs a pilot is the judgement
+call on a phrase that is *real but wrong*, like "landing assured".
+
 **Acceptance criteria**
-1. A rehearsal transcript can be checked against the profile automatically —
-   every fix, frequency and procedure named must exist in the loaded data.
-2. A list of phrases that are the PILOT's to say, which the controller never
-   uses, with a test keeping them out.
-3. New procedures arrive with their phraseology reviewed by a pilot before they
-   are flown, not after.
+1. A harness drives scripted exchanges through the bridge and checks every
+   transcript against the LOADED profile: any fix, frequency, field or procedure
+   named that is not in the data is a failure.
+2. A list of phrases that are the PILOT's to say and the controller never does,
+   kept out by test.
+3. It runs over the existing rehearsal scripts, so adding a script adds coverage.
+4. New procedures have their phraseology read by a pilot before they are flown —
+   the one part of this that cannot be automated, because "real phrase, wrong
+   speaker" is a judgement and not a lookup.
 
 ---
 
