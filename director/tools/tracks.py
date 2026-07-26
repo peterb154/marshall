@@ -32,10 +32,84 @@ from strands_pg._pool import get_pool
 from tools.dcs import BATUMI_LAT, BATUMI_LON, DCS_GRPC_ADDR, _M_TO_FT
 
 _MAGVAR = 6.0   # Caucasus magnetic variation (E); pilots fly magnetic headings
-# Named fixes we can vector to, as lat/lon. Batumi is the beacon/field; more fixes
-# join here once route.py's DCS metres are projected to lat/lon.
+# Named fixes we can vector to, as lat/lon.
+#
+# Batumi is built in because it is the field. Everything else -- the sortie
+# steerpoints, the target, the approach fixes -- is PUSHED here at bridge
+# startup by whoever owns route.py, because route.py is the single source of
+# truth for where a fix is and this container cannot import it.
+#
+# The projection is not ours and must not be: Caucasus is a transverse Mercator
+# and a flat-earth offset from the field is out by seven miles at the target
+# area, which was measured rather than assumed. The bridge asks the SIM to
+# convert, so the numbers here are the sim's own.
+#
+# Until that push arrives the table holds only the field, and `vector` says so
+# rather than guessing -- which is the correct failure. A pilot asking for the
+# range to his ingress point got "negative DME to ingress, you'll have to call
+# it off your own nav", and that was honest.
 _FIXES = {"batumi": (BATUMI_LAT, BATUMI_LON), "the field": (BATUMI_LAT, BATUMI_LON),
           "the beacon": (BATUMI_LAT, BATUMI_LON), "home": (BATUMI_LAT, BATUMI_LON)}
+
+
+def _ensure_fix_table() -> None:
+    with get_pool().connection() as conn:
+        conn.execute("CREATE TABLE IF NOT EXISTS fixes ("
+                     "name text PRIMARY KEY, lat double precision NOT NULL, "
+                     "lon double precision NOT NULL, pushed_at timestamptz "
+                     "DEFAULT now())")
+
+
+def set_fixes(fixes: dict) -> int:
+    """Load named fixes pushed from route.py, via the sim's own projection.
+
+    Additive and idempotent: the built-in field entries stay, and a re-push
+    (every bridge restart) overwrites what it knew before.
+
+    PERSISTED, and that is the point. Held only in memory, the table survives
+    exactly as long as this process -- so a director restart with the bridge
+    still up would leave the controller silently back to knowing only the
+    field, answering "no fix for that" for the rest of the night with nothing
+    to say why. A restart is the routine event here; the table has to outlive
+    it.
+    """
+    clean = {}
+    for name, ll in (fixes or {}).items():
+        key = str(name).strip().lower()
+        if key and ll and len(ll) == 2:
+            clean[key] = (float(ll[0]), float(ll[1]))
+    if clean:
+        _ensure_fix_table()
+        with get_pool().connection() as conn:
+            for key, (la, lo) in clean.items():
+                conn.execute(
+                    "INSERT INTO fixes (name, lat, lon) VALUES (%s, %s, %s) "
+                    "ON CONFLICT (name) DO UPDATE SET lat = EXCLUDED.lat, "
+                    "lon = EXCLUDED.lon, pushed_at = now()", (key, la, lo))
+    _FIXES.update(clean)
+    log.info("fix table now holds %d names", len(_FIXES))
+    return len(_FIXES)
+
+
+def _load_fixes() -> None:
+    """Pull the pushed fixes back after a restart. Once, lazily."""
+    global _fixes_loaded
+    if _fixes_loaded:
+        return
+    _fixes_loaded = True
+    try:
+        _ensure_fix_table()
+        with get_pool().connection() as conn:
+            for name, la, lo in conn.execute(
+                    "SELECT name, lat, lon FROM fixes").fetchall():
+                _FIXES.setdefault(name, (la, lo))
+    except Exception as e:
+        log.warning("could not reload the fix table: %s", e)
+
+
+def known_fixes() -> dict:
+    _load_fixes()
+    return {k: list(v) for k, v in sorted(_FIXES.items())}
 
 from dcs.common.v0 import common_pb2
 from dcs.mission.v0 import mission_pb2, mission_pb2_grpc
@@ -44,6 +118,7 @@ log = logging.getLogger(__name__)
 
 FRESH_SEC = 15          # a track older than this is stale -> not shown
 _ready = False
+_fixes_loaded = False
 _started = False
 _lock = threading.Lock()
 
@@ -145,6 +220,7 @@ def _resolve(name: str) -> tuple[float, float] | None:
     """A target name -> (lat, lon): a named fix, else a fresh radar track (matched
     on its scope label or unit name)."""
     key = (name or "").strip().lower()
+    _load_fixes()
     if key in _FIXES:
         return _FIXES[key]
     try:

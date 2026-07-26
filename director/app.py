@@ -251,3 +251,19 @@ def flights_clear_endpoint(mission: str = "default") -> dict:
 @app.get("/flightplan/active")
 def active_flightplan_endpoint() -> dict:
     return active_flight_plan() or {}
+
+
+# Named fixes, pushed from route.py at bridge startup. The bridge owns WHERE a
+# fix is and the sim owns the projection; this end just stores the answer so
+# `vector` can compute a real bearing and range to a steerpoint instead of the
+# controller estimating one out loud.
+@app.put("/fixes")
+def set_fixes_endpoint(body: dict) -> dict:
+    from tools.tracks import set_fixes
+    return {"fixes": set_fixes(body.get("fixes") or {})}
+
+
+@app.get("/fixes")
+def get_fixes_endpoint() -> dict:
+    from tools.tracks import known_fixes
+    return {"fixes": known_fixes()}
