@@ -1120,6 +1120,32 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
     # they must never overlap -- no talking over the pilot, no racing the session.
     radio_lock = threading.Lock()
 
+    # When the metronome must stay off the air. Two different courtesies:
+    #
+    #   someone_is_talking  -- a pilot has the channel. A radio is half duplex
+    #                          and so is the manners; wait.
+    #   readback_until      -- we have just issued a clearance and he is owed
+    #                          room to read it back. Filling that gap ourselves
+    #                          is how "he never gave me time for a readback"
+    #                          happens, and it also destroys the readback we
+    #                          would otherwise get to check.
+    #
+    # Both apply only to the UNPROMPTED threads. A direct answer to something
+    # the pilot just said is a reply, and replies are not interruptions.
+    readback_until = [0.0]
+    READBACK_SEC = 7.0
+
+    def channel_is_free(now: float | None = None) -> tuple[bool, str]:
+        now = now or time.monotonic()
+        if client.someone_is_talking():
+            return False, "a pilot is transmitting"
+        if now < readback_until[0]:
+            return False, f"readback window, {readback_until[0] - now:.0f}s left"
+        return True, ""
+
+    def hold_the_channel_for_a_readback() -> None:
+        readback_until[0] = time.monotonic() + READBACK_SEC
+
     # Who has engineering up, and on which frequency they called from -- so the
     # reply goes back where it was asked rather than wherever the bridge was
     # started. A distinct voice, because a pilot must never mistake engineering
@@ -1149,6 +1175,10 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             # homing, and therefore the only one he can hear.
             client.transmit(voice_for(on_hz).frames(reply),
                             on_hz or freq_hz, AM)
+            # He is owed room to read that back, and we want to HEAR the
+            # readback -- it is the only check on whether he got the numbers
+            # right, and several were mangled on the sortie that prompted this.
+            hold_the_channel_for_a_readback()
 
     def scheduler() -> None:
         # Fire the agent's own wake-up hooks: when a timer expires, re-invoke it
@@ -1310,6 +1340,13 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                                       f" degree reversal for {cs} to see if it "
                                       "persists", flush=True)
                                 continue
+                        free, why = channel_is_free()
+                        if not free:
+                            # Do NOT record it as issued -- he never heard it,
+                            # and marking it sent would suppress the repeat.
+                            print(f"  .. holding a vector for {cs}: {why}",
+                                  flush=True)
+                            continue
                         pending.pop(cs, None)
                         vectored[cs], vec_at[cs] = want, time.time()
                         text = for_voice(vector_call(cs, g))
@@ -1320,6 +1357,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                                    heading=want, alt=g.altitude_ft, text=text)
                             client.transmit(voice_for(final_hz).frames(text),
                                             final_hz, AM)
+                            hold_the_channel_for_a_readback()
                         continue
 
                     if g.phase not in ("final", "map"):
@@ -1329,6 +1367,11 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     mile = 0 if g.phase == "map" else int(round(g.range_nm))
                     if called.get(cs) == mile:
                         continue
+                    free, why = channel_is_free()
+                    if not free:
+                        print(f"  .. holding the {mile} mile call for {cs}: "
+                              f"{why}", flush=True)
+                        continue        # not marked as called; it repeats
                     called[cs] = mile
                     text = for_voice(asr_call(cs, g))
                     with radio_lock:
@@ -1338,6 +1381,10 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                                heading=g.heading, text=text)
                         client.transmit(voice_for(final_hz).frames(text),
                                         final_hz, AM)
+                        if g.phase != "map":
+                            # A range call with a correction in it is an
+                            # instruction; the bare "over the point" is not.
+                            hold_the_channel_for_a_readback()
             except Exception as e:                 # never kill the metronome
                 print(f"  !! asr monitor: {e}", flush=True)
 

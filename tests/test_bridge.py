@@ -705,3 +705,42 @@ class TestEngineeringChannel(unittest.TestCase):
                              "a stale claim is worse than an honest 'not here'")
         finally:
             agent_atc.ENG_ATTENDED.unlink(missing_ok=True)
+
+
+class TestChannelCourtesy(unittest.TestCase):
+    """A radio is half duplex, and so are the manners.
+
+    "the controller talks over us constantly, and didnt give us time for a
+    readback" -- the mile-call metronome transmitted on its own schedule
+    regardless of what was happening on the frequency. The radio lock only ever
+    stopped the bridge's own threads overlapping each other; it knew nothing
+    about the humans.
+    """
+
+    def setUp(self):
+        from marshall.srs.client import SRSClient
+        self.c = SRSClient.__new__(SRSClient)     # no socket, no server
+        self.c.last_rx = 0.0
+
+    def test_a_quiet_channel_is_free(self):
+        self.assertFalse(self.c.someone_is_talking())
+
+    def test_a_pilot_mid_transmission_holds_the_channel(self):
+        import time as _t
+        self.c.last_rx = _t.monotonic()
+        self.assertTrue(self.c.someone_is_talking())
+
+    def test_the_channel_comes_back_after_he_stops(self):
+        import time as _t
+        self.c.last_rx = _t.monotonic() - 3.0
+        self.assertFalse(self.c.someone_is_talking(),
+                         "three seconds of silence is his transmission ended")
+
+    def test_the_window_is_short_enough_to_be_courtesy_not_deafness(self):
+        """Deferring must not mean missing. A mile call held for a whole mile
+        is worse than one that steps on a word."""
+        import time as _t
+        self.c.last_rx = _t.monotonic() - 1.4
+        self.assertTrue(self.c.someone_is_talking())
+        self.c.last_rx = _t.monotonic() - 1.6
+        self.assertFalse(self.c.someone_is_talking())

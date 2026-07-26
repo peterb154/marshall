@@ -71,6 +71,7 @@ class SRSClient:
         # A unique unit id per client -- reusing one id makes the server collide
         # stale clients and drop radio registrations.
         self.unit_id = UNIT_ID + secrets.randbelow(1_000_000)
+        self.last_rx = 0.0        # when voice last arrived; see someone_is_talking
         self.radios: list[dict] = []
         self.packet_id = 1
         self.tcp: socket.socket | None = None
@@ -331,9 +332,27 @@ class SRSClient:
                 self.last_sender_guid = data[-GUID_LEN:].decode("ascii", "ignore")
                 started = True
                 last = now
+                # Somebody is on the air RIGHT NOW. Read by the transmitting
+                # threads so the controller does not talk over a pilot -- see
+                # `someone_is_talking`.
+                self.last_rx = time.monotonic()
             except Exception:
                 pass
         return (np.concatenate(frames) if frames else None), freq_hz
+
+    def someone_is_talking(self, within: float = 1.5) -> bool:
+        """Is a pilot keying the mic right now?
+
+        The radio lock only stops this client's own threads overlapping each
+        other; it knows nothing about the humans. So the mile-call metronome
+        transmitted on its own schedule regardless of what was happening on the
+        frequency, and a pilot reported the controller "talks over us
+        constantly, and didn't give us time for a readback".
+
+        A real radio is half duplex and so is the courtesy: if voice packets
+        arrived within the last second and a half, the channel is his.
+        """
+        return (time.monotonic() - self.last_rx) < within
 
     def close(self) -> None:
         self._stop.set()
