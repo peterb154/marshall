@@ -56,6 +56,9 @@ fix and it has only ever been proven against a synthetic pilot.
 | C2 | P1 | On the visual, listen for mile calls | **Silence.** He is spacing, not talking you down | `may_be_vectored` · `4d011ed` |
 | C3 | P1 | Report `field in sight` (do **not** say "request the visual") | Treated as a report, not a request | intent ordering · `4d011ed` |
 | C4 | P1 | Two-ship: check in as a flight, then request break-up | Each aircraft **named in order** and asked to check in individually | `_identify_phrase` · `ed18e97` |
+| C4a | P2 | Lead checks in as the FLIGHT ("Pony one, flight of two"), then after the split says "Pony one one" | He is addressed as **Pony one one** from then on, not as the flight | `transmitter_callsign` · `50cebe7` |
+| C4b | P2 | Wingman checks in as "Pony one two" | Addressed as **Pony one two**, distinct from lead, and it sticks | `transmitter_callsign` · `50cebe7` |
+| C4c | P2 | Anywhere: say something with a number but no callsign — "I have two aircraft", "say my altitude" | **No new aircraft appears in the stack** | `_plausible_callsign` · `50cebe7` |
 | C5 | P1 | Depart Batumi on the sortie, outbound past 25 nm | Center **keeps you** until you leave his airspace — no early handoff to Approach | `leaving_my_airspace` · `8a4ce0f` |
 | C6 | P1 | Coming home, inbound | Center hands you to Approach normally | `handoff_from` · `8a4ce0f` |
 | C7 | P2 | Ask Sentry for range to `ingress`, `waypoint three`, and the target | Computed, and **consistent when asked twice** | `push_fixes` · `0b08330` |
@@ -107,5 +110,25 @@ radio call — say what you were doing and roughly where.
   timestamp, and the bridge log has the radar picture for every call — so a
   bad vector can be re-run against the geometry afterwards without flying again.
 
-*Correlations are to `main` as of the squadron-night fixes; `git show <hash>`
-for the reasoning behind any of them.*
+## The ladder, and what has been through it
+
+Cheapest first, per CLAUDE.md. Nothing reaches a human until the two tiers
+below it are clean, because a person's time is the expensive one and a
+synthetic pilot never gets bored.
+
+| Tier | What | Cost |
+|------|------|------|
+| 1 | `uv run python -m unittest discover -s tests -t .` | milliseconds |
+| 1b | `tools/asr_sweep.py` (add `--sloppy`) — 1,296 approaches | seconds |
+| 2 | `python -m marshall.srs.rehearsal --srs <host> 124.0 breakup` — synthetic pilots on real radios, real Whisper, real Polly | a few minutes |
+| 3 | AI aircraft in the sim (`tools/spawn.py`, `tools/asr_autopilot.py`) | minutes |
+| 4 | **A human.** This card. | a sortie |
+
+**Tier 2 earns its keep.** The break-up identification work passed tier 1 and
+was then rejected by tier 2, which produced "Pony won", "Pony12" and an
+aeroplane called "21-2" that took a place in the holding stack behind two real
+ones. A unit test cannot find that, because the defect only exists once real
+speech is in the loop.
+
+*Correlations are to `main`; `git show <hash>` for the reasoning behind any of
+them.*
