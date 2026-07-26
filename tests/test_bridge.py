@@ -846,3 +846,33 @@ class TestPlausibleCallsign(unittest.TestCase):
         for good in ("Pony 1-1", "Hammer 1", "Whistler 2-3", "Hoover 1"):
             with self.subTest(good=good):
                 self.assertTrue(agent_atc._plausible_callsign(good))
+
+
+class TestCallingAControllerLetsYouGo(unittest.TestCase):
+    """Forgetting to release must not make the controller deaf to you.
+
+    Everything a pilot says goes to engineering until he releases the line, and
+    the moment he is most likely to forget is the moment it costs most -- four
+    miles out with other things to think about. Addressing a station by name is
+    an unambiguous statement about who he is talking to.
+    """
+
+    def setUp(self):
+        from marshall.core import route as R
+        import re as _re
+        names = [s.name for s in R.BATUMI_ASR.stations]
+        self.rx = _re.compile("|".join(_re.escape(n) for n in names), _re.I)
+
+    def test_naming_a_controller_releases(self):
+        for said in ("Batumi Approach, Hoover one one, request the approach",
+                     "Batumi Tower, Hoover one one, going around",
+                     "Sentry, Hoover one one, request a target",
+                     "Georgia Center, Hoover one one, checking in"):
+            with self.subTest(said=said):
+                self.assertTrue(self.rx.search(said))
+
+    def test_talking_to_engineering_does_not(self):
+        for said in ("B4 passed", "the vectors turned me at four miles",
+                     "engineering, B4 passed", "thanks engineering"):
+            with self.subTest(said=said):
+                self.assertIsNone(self.rx.search(said))

@@ -1420,6 +1420,18 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
     engineering_line: dict[str, float] = {}
     eng_voice = tts.Voice(voice_id="Amy")
 
+    # CALLING A CONTROLLER BY NAME LETS YOU GO.
+    #
+    # Everything a pilot says goes to engineering until he releases the line, so
+    # forgetting the goodbye means the controller has gone deaf to him -- and the
+    # moment he is most likely to forget is the moment it costs most, four miles
+    # out with other things to think about. Addressing a station by name is an
+    # unambiguous statement about who he is talking to, and the system should not
+    # need it said twice.
+    _station_names = [s.name for s in (getattr(profile, "stations", None) or [])]
+    _ADDRESSING = (re.compile("|".join(re.escape(n) for n in _station_names), re.I)
+                   if _station_names else None)
+
     def interact(message: str, kind: str, tier: str = "sonnet",
                  on_hz: float | None = None) -> None:
         answering[0] = True
@@ -1871,6 +1883,16 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # both contain the word, so a summons that matched on the word alone
         # would re-open the line the pilot was trying to close and he could
         # never get back to the controller.
+        _addressed_atc = bool(_ADDRESSING and _ADDRESSING.search(transcript))
+        if _on_the_line and _addressed_atc and not _ENG_CALL.search(transcript):
+            # He is talking to a controller. Step out of the way silently -- a
+            # "clear" call here would be engineering talking over the very
+            # transmission it just got out of the way of.
+            engineering_line.pop(client.last_sender_guid, None)
+            print(f"  ENGINEERING released {known or srs} — he called a controller",
+                  flush=True)
+            _on_the_line = False
+
         if _on_the_line and _ENG_DONE.search(transcript):
             engineering_line.pop(client.last_sender_guid, None)
             print(f"  ENGINEERING released {known or srs}", flush=True)

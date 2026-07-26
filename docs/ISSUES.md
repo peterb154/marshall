@@ -736,6 +736,13 @@ card keeps the score, hands never leave the stick.
    "say again, I do not have a test D9".
 6. Ordinary engineering talk is not mistaken for a verdict.
 
+**A verdict should be ONE transmission, not three.** Today reporting a result
+means summon, report, release — and forgetting the release leaves the controller
+deaf to you, which is worst at exactly the moment you are most likely to forget.
+Naming a station now releases the line automatically (a safety net, not the
+answer). The answer is that *"B4 pass"* should be a one-shot report that never
+takes the channel over at all.
+
 **Watch for:** the transcriber. "B4" and "before", "C1" and "see one" are exactly
 the kind of thing Whisper mangles, and a mis-parsed ID silently scores the wrong
 row. The vocabulary priming already helps; the IDs should be in it, and an
