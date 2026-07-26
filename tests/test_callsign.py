@@ -88,3 +88,23 @@ class TestMembers(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestOrdinarySpeechIsNotAnAeroplane(unittest.TestCase):
+    """Every one of these produced a ghost in a live separation stack, where
+    real aircraft were then sequenced behind something nobody had flown."""
+
+    def test_verbs_that_take_a_number(self):
+        for said in ("I need two more minutes",
+                     "I have two aircraft in sight",
+                     "give me two minutes",
+                     "I see two contacts",
+                     "about three miles",
+                     "just one more turn"):
+            with self.subTest(said=said):
+                self.assertEqual(C.extract(said), "")
+
+    def test_real_callsigns_still_extract(self):
+        self.assertEqual(C.extract("Pony one one, checking in"), "Pony 1-1")
+        self.assertEqual(C.extract("Hoover one two, level five"), "Hoover 1-2")
+        self.assertEqual(C.extract("Hammer one, flight of two"), "Hammer 1")

@@ -153,6 +153,13 @@ _NOT_A_NAME = {
     "inbound", "outbound", "established", "holding", "turning", "leaving",
     "reaching", "through", "gear", "flaps", "fuel", "bingo", "engine", "angel",
     "checking", "check", "ready", "field", "runway", "visual", "missed",
+    # Verbs that take a number straight after them in ordinary speech. "I need
+    # two more minutes" became an aeroplane called "Need 2" -- and a "Need 3"
+    # reached a live separation stack, where real aircraft were sequenced behind
+    # something nobody had ever flown.
+    "need", "needs", "want", "wants", "got", "give", "take", "make", "call",
+    "see", "seen", "hear", "heard", "count", "counting", "about", "around",
+    "another", "only", "just", "maybe", "like", "than", "then", "over",
 }
 
 _CANDIDATE = re.compile(

@@ -108,7 +108,7 @@ It is also the moment the runway frees for whoever is holding behind you, so on 
 | C4a | [script] | After the split, lead calls as the FLIGHT again — *"Pony one, level five thousand"* | **He is asked who he is**, and told the options: *"you are broken up — say your callsign. I have Pony one one, Pony one two"* | [#12] `ambiguous_after_breakup` |
 | C4d | [script] | Then he names himself — *"Pony one one, level five thousand"* | Answered normally as Pony one one from then on | [#12] `transmitter_callsign` |
 | C4b | [script] | Wingman checks in as "Pony one two" | Addressed as **Pony one two**, distinct from lead, and it sticks | [#12] `transmitter_callsign` |
-| C4c | [script] | Anywhere: say something with a number but no callsign — "I have two aircraft", "say my altitude" | **No new aircraft appears in the stack** | [#13] `_plausible_callsign` |
+| C4c | [script] | **Listen, all sortie**, for the controller mentioning an aeroplane that is not there | Nothing you say creates one. He never sequences you behind a ghost | [#13] `_plausible_callsign` |
 | C5 | P1 | Depart Batumi on the sortie, outbound past 25 nm | Center **keeps you** until you leave his airspace — no early handoff to Approach | [#16] `leaving_my_airspace` |
 | C6 | P1 | Coming home, inbound | Center hands you to Approach normally | [#16] `handoff_from` |
 | C7 | [script] | Ask Sentry for range to `ingress`, `waypoint three`, and the target | Computed, and **consistent when asked twice** | [#17] `push_fixes` |
@@ -140,7 +140,13 @@ The other direction is the dangerous one and you are unlikely to see it from the
 
 **C4b** — The wingman ends up distinct and stays that way, including when the transcriber hears 'Pony one *too*'.
 
-**C4c** — Noise must not become an aeroplane. A garbled call once put 'Waypoint 3' in the holding stack, and real aircraft were sequenced behind a ghost.
+**C4c** — This one cannot be forced on demand, so listen for it rather than trying to trigger it. The cause is a mis-transcription: the classifier is asked "whose call is this?" and answers even when the transcript has no callsign in it. Real examples, all of which reached a live holding stack:
+
+*"Pony one two, say my altitude"* → heard as *"21-2, same by altitude"* → an aircraft called **21-2**. *"I have two aircraft"* → **Have 2**. A garbled call → **Waypoint 3**. A phrase with "need" in it → **Need 3**, which sat in the separation stack while real aeroplanes queued behind it.
+
+**What it looks like from the cockpit**, which is the part worth knowing: the controller refers to traffic that is not there, tells you that you are **number two when you are alone**, holds you for an aircraft you never see land, or addresses a callsign nobody has used. That is the observable — a ghost you can hear rather than a call you can make.
+
+Saying odd things with numbers in them is fair game and will not do it any more — every phrasing above is now refused. If you do produce one, that is a real find: say what you had just transmitted, because the mis-hearing is the interesting half.
 
 **C5** — Range cannot express 'keep him until he leaves', because range does not know whether you are arriving or departing. Airspace does.
 
