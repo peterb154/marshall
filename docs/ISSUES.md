@@ -566,15 +566,41 @@ given the note, the recent bridge log and the radar picture. That is the shape:
 6. Bounded cost: a rate limit and a per-sortie ceiling, so a chatty channel
    cannot run up a bill unattended.
 
-**What it must NOT do by default.** Edit code, restart the bridge, or deploy
-anything while somebody is flying. The value here is *answering and diagnosing*;
-acting is a different risk entirely, and an agent that patches the ATC mid-approach
-is a bad idea however good the patch is. Any such action needs explicit consent
-on the radio, and should be off unless deliberately enabled.
+### The line: engineering is out-of-world, the controller is in-world
 
-**Open question worth deciding before building:** whether the responder should
-also be able to answer as the CONTROLLER — it has the same information. Probably
-not: two voices with one brain is the confusion this project keeps fixing.
+This is the distinction that makes the whole thing coherent, and it is not about
+who is allowed to talk.
+
+The **controller** knows what a controller knows: the radar picture, what was
+agreed on the radio, the plate. He is in the fiction, and he gives clearances.
+
+**Engineering is outside it** and can see GROUND TRUTH — the `tracks` table, the
+flight recorder, the bridge log, what the engine actually computed for a given
+aeroplane, whether a spawn really produced what it claimed. That is precisely
+what a pilot needs when the world and the fiction disagree:
+
+> *"hey engineering, sentry says there is a tank down there, I don't see it. Can
+> you confirm it's there and tell me where it is"*
+
+No controller could answer that without breaking. Engineering can, because it is
+querying the sim rather than reading a scope — and "the spawn reported success
+but nothing is in `tracks`" is a real answer that has already happened once.
+
+**Engineering never gives clearances**, vectors, altitudes or separation. Two
+voices with one brain is the confusion this project has spent three sessions
+removing, and the pilot must never be unsure which he is talking to.
+
+### It MAY change things, with consent on the radio
+
+Explicitly wanted: on-the-fly changes during a test flight are most of the cycle
+time saved. Fixing something between two approaches is the loop that made
+squadron night productive.
+
+The residual risk is not the edit, it is the TIMING. Loading a bridge change
+drops the radio for about twenty seconds, and doing that to a man at four miles
+in cloud is unkind however good the fix is. So consent covers *when* as well as
+*what* — "I will load it while you are climbing out" — and engineering says when
+it is back, which is what a human engineer did by hand all of squadron night.
 
 Depends on nothing. [ENG-1] (#4) should be flown first — there is no point
 automating a channel whose basics are unverified.
