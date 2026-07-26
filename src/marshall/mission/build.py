@@ -21,6 +21,7 @@ import zipfile
 from pathlib import Path
 
 from dcs.action import DoScriptFile
+from dcs.forcedoptions import ForcedOptions
 from dcs.mission import Mission, StartType
 from dcs.mapping import Point
 from dcs.planes import MosquitoFBMkVI, P_47D_30, P_51D_30_NA, SpitfireLFMkIX  # noqa: F401
@@ -268,6 +269,27 @@ def build(weather: str = "light", traffic: bool = False,
     for airport in m.terrain.airports.values():
         airport.set_red()
     m.terrain.airports["Batumi"].set_blue()
+
+    # ---- what the map is allowed to tell you --------------------------------
+    #
+    # F10 shows only our own side. Left at the default it shows everybody, and
+    # the whole scenario falls apart: the flak batteries and the armour at
+    # Tsutsnvati are visible before anyone starts an engine, so the route round
+    # the guns is pointless and the overlord's tasking is a formality. Finding
+    # the target is meant to be part of the sortie.
+    #
+    # It also makes the ATC worth talking to. A pilot who can see every
+    # aeroplane on the map does not need a controller to tell him where anyone
+    # is -- take the map away and the radio becomes the only source of the
+    # picture, which is the entire point of the project.
+    # `options_view`, not `views`. Setting the wrong name is silent -- Python
+    # takes the attribute happily, pydcs serialises nothing, and the mission
+    # ships with the map wide open. Checked in the built .miz afterwards.
+    m.forced_options.options_view = ForcedOptions.Views.OnlyAllies
+    # Labels off as well: a name floating over an aeroplane at fifteen miles
+    # is the same cheat by another route, and this is a WW2 mission where
+    # seeing the other fellow first is the whole of air combat.
+    m.forced_options.labels = ForcedOptions.Labels.None_
 
     usa = m.country("USA")
 

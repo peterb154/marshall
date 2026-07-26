@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import time
 import types
 from pathlib import Path
 
@@ -41,11 +42,21 @@ from marshall.core import route as R                            # noqa: E402
 
 ADDR = os.environ.get("DCS_GRPC_ADDR", "127.0.0.1:50051")
 
-# A fixed range of mark ids that belong to us. Everything in it is removed
-# before anything is drawn, so a redraw replaces the plan rather than layering
-# a second copy over the first.
+# Mark ids, and the rule that governs them: DCS NEVER LETS ONE BE REUSED.
+#
+# Create a mark, remove it, create it again with the same id and the second one
+# silently does not exist. No error, no warning; the call is accepted and
+# nothing appears. It cost an evening: the route drew perfectly the first time,
+# vanished on every redraw after, and each redraw cheerfully reported success.
+# It was diagnosed by putting up two marks at once -- a used id and a fresh one
+# -- and watching only the fresh one arrive.
+#
+# So each draw takes a NEW block of ids and remembers it, and the next draw
+# erases the block before it. The state lives in a file because the tool is one
+# process per invocation and the sim will not tell us which ids were ours.
 BASE_ID = 4000
-MAX_IDS = 120
+BLOCK = 200
+STATE = Path("/tmp/marshall-draw-marks")
 
 BLUE = "{0, 0.35, 0.9, 0.9}"          # our route
 RED = "{0.85, 0.15, 0.1, 0.95}"       # things that shoot
@@ -59,14 +70,32 @@ def _eval(ch, lua: str) -> str:
         custom_pb2.EvalRequest(lua=lua), timeout=60).json).strip('"')
 
 
+def _last_base() -> int:
+    try:
+        return int(STATE.read_text().strip())
+    except (OSError, ValueError):
+        return BASE_ID
+
+
+def _next_base() -> int:
+    """A block of ids never used before. See the note on BASE_ID."""
+    nxt = _last_base() + BLOCK
+    try:
+        STATE.write_text(str(nxt))
+    except OSError:
+        pass
+    return nxt
+
+
+def _erase_lua(base: int) -> str:
+    return (f"for id = {base}, {base + BLOCK - 1} do "
+            "trigger.action.removeMark(id) end")
+
+
 def erase(ch) -> str:
-    """Remove our marks. Safe to call when there are none."""
-    return _eval(ch, f"""
-    for id = {BASE_ID}, {BASE_ID + MAX_IDS} do
-      trigger.action.removeMark(id)
-    end
+    """Take down whatever we drew last."""
+    _eval(ch, _erase_lua(_last_base()) + '\nreturn "cleared"')
     return "cleared"
-    """)
 
 
 def draw(ch, coalition: int = -1) -> str:
@@ -80,7 +109,11 @@ def draw(ch, coalition: int = -1) -> str:
 
     Pass 2 for blue-only on a server where the other side has real players.
     """
-    lines, mid = [], BASE_ID
+    # Erase the previous block, then draw into a fresh one -- ids are never
+    # reused, so the new marks cannot collide with the old ones even in the
+    # same frame.
+    lines = [_erase_lua(_last_base())]
+    mid = _next_base()
 
     # The route, leg by leg. One line per leg rather than a polyline, because a
     # leg is the unit a pilot thinks in and can be talked about on its own.
@@ -122,7 +155,12 @@ def draw(ch, coalition: int = -1) -> str:
         mid += 1
 
     body = "\n".join(lines)
-    return _eval(ch, f'{body}\nreturn "{mid - BASE_ID}"')
+    _eval(ch, f'{body}\nreturn "sent"')
+    # Count in a SEPARATE call: marks created in a chunk are not visible to
+    # getMarkPanels until the next frame, so counting inline reports the old
+    # total and looks like a failure even when it worked.
+    time.sleep(1.5)
+    return _eval(ch, "return tostring(#world.getMarkPanels())")
 
 
 def main() -> int:
@@ -133,13 +171,13 @@ def main() -> int:
     args = ap.parse_args()
 
     with grpc.insecure_channel(ADDR) as ch:
-        erase(ch)
         if args.clear:
+            erase(ch)
             print("map cleared")
             return 0
         n = draw(ch, 2 if args.blue_only else -1)
         who = "blue only" if args.blue_only else "everyone, spectators included"
-        print(f"drew {n} marks on the F10 map ({who})")
+        print(f"{n} marks now on the F10 map ({who}) — counted by the sim")
         for a, b in zip(R.SORTIE, R.SORTIE[1:]):
             print(f"   {a.name:11s} -> {b.name}")
         print(f"   target ring 5 nm, threat rings on "
