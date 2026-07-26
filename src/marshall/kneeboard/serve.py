@@ -61,7 +61,15 @@ ROOT: Path = config.KNEEBOARD_OUT
 # rather than restarting the process -- OpenKneeboard's Chromium holds a
 # keep-alive connection, and dropping it shows up as "No Pages", which is
 # indistinguishable from the server being broken.
+# WHAT hot-reloads: the chart builders and the data they read. NOT this module.
+# Reloading the file that defines the FastAPI app re-runs the decorators against
+# a fresh app object while uvicorn keeps serving the original, so the routes a
+# request actually reaches are the ones registered at start -- a change here
+# would appear to do nothing, which is precisely the class of confusion the
+# reload exists to end. Editing serve.py still needs a restart, and that is
+# fine: it changes about once a month, while the charts change hourly.
 _WATCHED = ("marshall.kneeboard", "marshall.core.route")
+_NEVER_RELOAD = ("marshall.kneeboard.serve",)
 _stamps: dict[str, float] = {}
 _reload_lock = threading.Lock()
 
@@ -70,6 +78,8 @@ def _source_files() -> list[Path]:
     out = []
     for name, mod in list(sys.modules.items()):
         if not any(name == w or name.startswith(w + ".") for w in _WATCHED):
+            continue
+        if name in _NEVER_RELOAD:
             continue
         f = getattr(mod, "__file__", None)
         if f:
@@ -147,12 +157,16 @@ _HOME = """<!doctype html><meta charset="utf-8"><title>Marshall</title>
   main{text-align:center;padding:2rem}
   h1{letter-spacing:.15em;margin:0 0 .3em}
   p{margin:.2em 0;opacity:.8}
-  a{color:#241f18;font-weight:bold}
+  a{color:#241f18;font-weight:bold;display:block;margin:.45em 0}
+  .why{font-size:.8em;font-weight:normal;opacity:.7;display:inline}
 </style>
 <main>
   <h1>MARSHALL</h1>
   <p>Procedural radio ATC &middot; kneeboard charts</p>
-  <p><a href="/kneeboard/">&rarr; kneeboard charts</a></p>
+  <a href="/kneeboard/">&rarr; kneeboard charts</a>
+  <a href="/flighttest/">&rarr; flight test card</a>
+  <p class="why">both are OpenKneeboard Web Dashboard pages &mdash;
+     point a tab at each</p>
 </main>
 """
 
