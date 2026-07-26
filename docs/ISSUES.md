@@ -17,7 +17,7 @@ are clean, but no human has flown it. `OPEN` — known broken, with a repro.
 
 ---
 
-## [FP-1] Flight plans: many on file, assigned per flight
+## [FP-1] Flight plans: many on file, assigned per flight — #1
 labels: feature
 
 **Status:** TODO
@@ -58,7 +58,7 @@ Code: `director/tools/approaches.py`, `director/migrations/`, `flights` table
 
 ---
 
-## [ARCH-1] One approach profile per flight, not per bridge
+## [ARCH-1] One approach profile per flight, not per bridge — #2
 labels: architecture
 
 **Status:** TODO — blocked on nothing, but large
@@ -76,7 +76,7 @@ the Kobuleti test [TEST-1].
 
 ---
 
-## [TEST-1] Fly Kobuleti ILS to prove the data drives it
+## [TEST-1] Fly Kobuleti ILS to prove the data drives it — #3
 labels: test
 
 **Status:** TODO
@@ -96,7 +96,7 @@ descent table now all derive from the profile.
 
 ---
 
-## [ENG-1] Engineering channel: getting a human on the line
+## [ENG-1] Engineering channel: getting a human on the line — #4
 labels: needs-flight-test
 
 **Status:** SHIPPED/UNVERIFIED — commit `cffad1a`
@@ -120,7 +120,7 @@ Code: `agent_atc.engineering_ack`, `_ENG_CALL`, `_ENG_DONE`
 
 ---
 
-## [RAD-1] Do not talk over the pilot; leave room to read back
+## [RAD-1] Do not talk over the pilot; leave room to read back — #5
 labels: needs-flight-test
 
 **Status:** SHIPPED/UNVERIFIED — commits `8464b4b`, `c0c5d29`
@@ -145,7 +145,7 @@ politely, so F2/F3 have never been properly contested.
 
 ---
 
-## [RAD-2] Wait for the check-in before working him
+## [RAD-2] Wait for the check-in before working him — #6
 labels: needs-flight-test
 
 **Status:** SHIPPED/UNVERIFIED — commit `c0c5d29`
@@ -166,7 +166,7 @@ Code: `agent_atc._heard_on`, `may_be_vectored(freq_hz=)`
 
 ---
 
-## [RAD-3] One controller, one frequency, for the whole approach
+## [RAD-3] One controller, one frequency, for the whole approach — #7
 labels: needs-flight-test
 
 **Status:** SHIPPED/UNVERIFIED — commit `296b33d`
@@ -184,7 +184,7 @@ Code: `agent_atc` `final_hz`, `route.hands_to_tower_nm`
 
 ---
 
-## [APP-1] The talkdown keeps him to the missed approach point
+## [APP-1] The talkdown keeps him to the missed approach point — #8
 labels: needs-flight-test
 
 **Status:** SHIPPED/UNVERIFIED — commit `faac653`
@@ -204,7 +204,7 @@ Code: `route.hands_to_tower_nm`
 
 ---
 
-## [APP-2] The approach ends when the wheels are down
+## [APP-2] The approach ends when the wheels are down — #9
 labels: needs-flight-test
 
 **Status:** SHIPPED/UNVERIFIED — commit `faac653`
@@ -222,7 +222,7 @@ Code: `asr.on_the_ground`
 
 ---
 
-## [APP-3] Visual approaches, without having to argue for one
+## [APP-3] Visual approaches, without having to argue for one — #10
 labels: needs-flight-test
 
 **Status:** SHIPPED/UNVERIFIED — commit `4d011ed`
@@ -240,7 +240,7 @@ Code: `controller.request_visual`, intent ordering in `intents.py`
 
 ---
 
-## [APP-4] Going around: no vector back towards the field
+## [APP-4] Going around: no vector back towards the field — #11
 labels: needs-flight-test
 
 **Status:** SHIPPED/UNVERIFIED — commit `36ea1a4`
@@ -264,7 +264,7 @@ Code: `asr.guide(on_missed=)`, `agent_atc.flying_the_missed`
 
 ---
 
-## [ID-1] Telling a flight's aircraft apart after they split
+## [ID-1] Telling a flight's aircraft apart after they split — #12
 labels: needs-flight-test
 
 **Status:** SHIPPED/UNVERIFIED — commits `50cebe7`, `ed18e97`
@@ -289,7 +289,7 @@ Code: `agent_atc.transmitter_callsign`, `controller._identify_phrase`,
 
 ---
 
-## [ID-2] Noise must not become an aeroplane
+## [ID-2] Noise must not become an aeroplane — #13
 labels: needs-flight-test
 
 **Status:** SHIPPED/UNVERIFIED — commits `631173a`, `50cebe7`
@@ -309,7 +309,7 @@ Code: `stt.domain_prompt`, `callsign._NOT_A_NAME`, `agent_atc._plausible_callsig
 
 ---
 
-## [ID-3] Answer the man who actually spoke
+## [ID-3] Answer the man who actually spoke — #14
 labels: needs-flight-test
 
 **Status:** SHIPPED/UNVERIFIED — commit `c0c5d29`
@@ -328,7 +328,7 @@ Code: `agent_atc` `THIS TRANSMISSION IS FROM`
 
 ---
 
-## [SEQ-1] One in the letdown, and nobody vectored until cleared
+## [SEQ-1] One in the letdown, and nobody vectored until cleared — #15
 labels: needs-flight-test
 
 **Status:** SHIPPED/UNVERIFIED — commit `296b33d`
@@ -351,7 +351,7 @@ design exists to prevent.
 
 ---
 
-## [HO-1] Handoffs follow airspace, not range
+## [HO-1] Handoffs follow airspace, not range — #16
 labels: needs-flight-test
 
 **Status:** SHIPPED/UNVERIFIED — commit `8a4ce0f`
@@ -373,7 +373,7 @@ be reproduced solo.
 
 ---
 
-## [OVL-1] Sentry computes, and admits what she cannot
+## [OVL-1] Sentry computes, and admits what she cannot — #17
 labels: needs-flight-test
 
 **Status:** SHIPPED/UNVERIFIED — commits `0b08330`, `296b33d`
@@ -394,7 +394,7 @@ Code: `agent_atc.push_fixes`, `director/tools/tracks.py`, `spawn_ground`
 
 ---
 
-## [OPS-1] One bridge at a time
+## [OPS-1] One bridge at a time — #18
 labels: needs-flight-test
 
 **Status:** SHIPPED/VERIFIED (ground) — commit `296b33d`
@@ -411,7 +411,7 @@ Code: `agent_atc.claim_the_frequency`
 
 ---
 
-## [BUG-1] Outbound vector at ~14 nm while inbound
+## [BUG-1] Outbound vector at ~14 nm while inbound — #19
 labels: bug
 
 **Status:** OPEN
@@ -427,7 +427,7 @@ across two sessions, all of which regressed the sweep.
 
 ---
 
-## [BUG-2] Three approaches orbit instead of arriving
+## [BUG-2] Three approaches orbit instead of arriving — #20
 labels: bug
 
 **Status:** OPEN
@@ -443,7 +443,7 @@ orbit that, sampled once a revolution, looks like an aeroplane frozen in the sky
 
 ---
 
-## [BUG-3] The model invents fields, frequencies and procedures
+## [BUG-3] The model invents fields, frequencies and procedures — #21
 labels: bug
 
 **Status:** OPEN
@@ -464,7 +464,7 @@ None of that exists in the plan. Same class as the invented ranges fixed in
 
 ---
 
-## [UI-1] Flight planning front end
+## [UI-1] Flight planning front end — #22
 labels: feature
 
 **Status:** TODO — the DB half is [FP-1]
@@ -480,7 +480,7 @@ Simulator before writing one.
 
 ---
 
-## [MAP-1] Situation map
+## [MAP-1] Situation map — #23
 labels: feature
 
 **Status:** TODO
@@ -494,7 +494,7 @@ is working them — most of the data already exists in `tracks` and `flights`.
 
 ---
 
-## [CTL-1] Controller personalities: a roster of people, not sectors
+## [CTL-1] Controller personalities: a roster of people, not sectors — #24
 labels: feature
 
 **Status:** TODO
@@ -509,7 +509,7 @@ Center tonight and Tower tomorrow and a pilot recognises him.
 
 ---
 
-## [HOOK-1] Hooks keep their promises
+## [HOOK-1] Hooks keep their promises — #25
 labels: bug
 
 **Status:** TODO
@@ -523,7 +523,7 @@ must stay conditional.
 
 ---
 
-## [CHART-1] Chart the enroute fixes, not just the letdown
+## [CHART-1] Chart the enroute fixes, not just the letdown — #26
 labels: feature
 
 **Status:** TODO
@@ -533,7 +533,7 @@ to scale anywhere.
 
 ---
 
-## [OPS-2] Backlog and issues stay in step
+## [OPS-2] Backlog and issues stay in step — #27
 labels: chore
 
 **Status:** TODO
