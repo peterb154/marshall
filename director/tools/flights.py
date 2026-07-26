@@ -88,9 +88,19 @@ def bind(mission: str = "default", **names) -> dict:
     if not known:
         raise ValueError("bind needs at least one name")
 
-    row = find(mission, callsign=known.get("callsign"),
-               srs_guid=known.get("srs_guid"),
-               track_name=known.get("track_name"))
+    # Fold together everything that turns out to be the same aeroplane.
+    #
+    # Identity arrives in pieces and out of order, so one aircraft can already
+    # own two rows -- one created when a voice was heard, another when radar
+    # named a track -- and binding the two names together is the moment they
+    # are discovered to be one. Updating either row then collides with the
+    # other's unique index, which is not a corner case: it happened on a live
+    # sortie and every write for that pilot failed from then on.
+    #
+    # The oldest row wins because it has the history. The others give up what
+    # they know and are deleted.
+    rows = _all_matching(mission, known)
+    row = _merge(rows) if len(rows) > 1 else (rows[0] if rows else None)
     with get_pool().connection() as c:
         if row is None:
             cols = ["mission"] + list(known)
@@ -106,6 +116,53 @@ def bind(mission: str = "default", **names) -> dict:
             c.execute(f"UPDATE flights SET {sets}, updated_at = now() "
                       "WHERE id = %s", [known[k] for k in known] + [fid])
     return get(fid) or {}
+
+
+def _all_matching(mission: str, known: dict) -> list[dict]:
+    """Every row that any of these names points at, oldest first."""
+    seen, out = set(), []
+    for col in ("srs_guid", "track_name", "callsign"):
+        val = known.get(col)
+        if not val:
+            continue
+        with get_pool().connection() as c:
+            cur = c.execute(
+                f"SELECT * FROM flight_state WHERE mission = %s AND {col} = %s",
+                (mission, val))
+            cols = [d[0] for d in cur.description]
+            for r in cur.fetchall():
+                d = _row(r, cols)
+                if d["id"] not in seen:
+                    seen.add(d["id"])
+                    out.append(d)
+    out.sort(key=lambda d: d["id"])
+    return out
+
+
+def _merge(rows: list[dict]) -> dict:
+    """Collapse several rows for one aeroplane into the oldest of them.
+
+    Anything the survivor does not know, it takes from the others; anything it
+    already knows, it keeps, because the earlier record is the one with the
+    conversation behind it. The losers are deleted rather than blanked, since a
+    row with every name stripped out is a ghost that the next lookup will
+    happily create all over again.
+    """
+    keep, rest = rows[0], rows[1:]
+    fill = {}
+    for other in rest:
+        for k in _FIELDS:
+            if keep.get(k) in (None, "", 0) and other.get(k) not in (None, ""):
+                fill.setdefault(k, other[k])
+    with get_pool().connection() as c:
+        for other in rest:
+            c.execute("DELETE FROM flights WHERE id = %s", (other["id"],))
+        if fill:
+            sets = ", ".join(f"{k} = %s" for k in fill)
+            c.execute(f"UPDATE flights SET {sets}, updated_at = now() "
+                      "WHERE id = %s", list(fill.values()) + [keep["id"]])
+    log.info("merged %d duplicate flight rows into %s", len(rest), keep["id"])
+    return get(keep["id"]) or keep
 
 
 def get(flight_id: int) -> dict | None:
