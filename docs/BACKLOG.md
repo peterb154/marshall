@@ -2,6 +2,92 @@
 
 Deferred work, captured so it isn't lost. Not a promise of order.
 
+## Two-pilot debrief — 2026-07-26 (first human squadron night, Sockeye + Shooter)
+
+Two people flew it for real, on the radio, for several hours, while fixes went
+in live. Almost everything that broke broke the same way: **a component was
+confidently authoritative about something it could not actually see.**
+
+1. **"Duplicate controllers" was reported four times and had four different
+   causes.** Worth listing because the symptom never varied and the cause never
+   repeated:
+   - two bridge processes, both answering (killing the launcher does not kill
+     the python child — kill by PID);
+   - the talk-down transmitting on TOWER's frequency while the model answered on
+     APPROACH's, so one controller arrived as two voices on two channels;
+   - the vector thread turning aircraft the controller had just told to hold;
+   - the same thread vectoring BOTH aircraft because it asked the blind engine
+     how many aeroplanes existed, and a restart had emptied it.
+   The lesson is the diagnosis, not any one fix: *a pilot cannot tell which
+   component is speaking*, so any two parts of the system that can transmit
+   must agree on WHO IS TALKING and WHAT WAS ASSIGNED before either keys up.
+
+2. **Restarting to deploy a fix re-opened the fix.** Three of the four causes
+   above were introduced or unmasked by a bridge restart, because the
+   deterministic controller learns only from the radio and starts empty. Any
+   guard keyed on `ctl.aircraft` is therefore keyed on "what has been said since
+   the last restart". Guards on the hot path should key on the SCOPE, which does
+   not forget. (`may_be_vectored(..., traffic=...)`)
+
+3. **The scope may overrule the conversation, and in two places it must.** A
+   pilot sat parked at Batumi while Tower worked him as a missed approach,
+   because nothing read the radar for "on the ground". Same shape as the landing
+   report and the position report: the database stores what was AGREED, the
+   scope stores what is TRUE, and a few facts — wheels down, aeroplane exists —
+   are not matters of opinion. (`asr.on_the_ground`)
+
+4. **Whisper noise took a radio's identity and would not give it back.** One
+   garbled call bound a P-47's GUID to "Waypoint 3", which then overrode every
+   correct "Hammer one two" that followed — the GUID anchor making things worse,
+   not better. A radio's callsign is now the one it says MOST, ties to the
+   newest: noise loses, and a genuine re-identification still works if the pilot
+   says it twice. Closes the ghost-callsign half of #31.
+
+5. **An LLM will invent a number it has a tool for.** Sentry gave three
+   different ranges to the field inside a minute — "three miles", "eight miles",
+   "four miles northwest" — with `vector` in her tool list the whole time. The
+   brief now forbids estimating a bearing or a range outright. **A pilot cannot
+   tell a computed number from a guessed one**, which is the entire reason the
+   guess is unacceptable, and it generalises to every deterministic tool the
+   agent holds.
+
+6. **Check the projection before trusting it.** Steerpoints could not be
+   vectored to because `route.py` holds DCS metres and the director holds
+   lat/lon. A flat-earth offset from Batumi looks obviously fine and is out by
+   1.2 nm at the coast and **7.6 nm at the target area** — Caucasus is a
+   transverse Mercator. The sim now does the projection (`coord.LOtoLL`) and the
+   bridge pushes the result, so route.py stays the truth and nobody
+   re-implements a map. The table is PERSISTED: held in memory it would vanish
+   on a director restart and silently answer "no fix for that" all night.
+
+7. **A talk-down does not end at the intercept.** Approach was handing pilots to
+   Tower at 10 nm — in cloud, mid-talkdown, off the frequency that was flying
+   the approach. On an ILS that handoff is right; on an ASR the controller IS
+   the approach aid, so he keeps him to the missed approach point and relays the
+   landing clearance. Now derived from `guidance`, not hardcoded, so an ILS
+   still behaves the old way. Closes #26.
+
+8. **`tools/asr_sweep.py` exists now** — 1,296 approaches, and it reports
+   `arrived / established / reversals` because a change that improves one and
+   wrecks another is the normal outcome, not the exceptional one. Two attempts
+   to fix the close-in orbit got every aircraft home and took reversals from
+   607 to 2,682 and 4,159. Both reverted. **Run it before and after anything
+   touching `asr.py` or `geometry.py`, and compare all three numbers.**
+
+### Still open, deliberately
+
+- **The outbound vector beyond ~14 nm.** Inbound, more than 2 nm off course, and
+  the engine turns him away. Four attempts across two sessions have all
+  regressed the sweep. Wants an hour and a clear head, not a hot patch. (#29)
+- **Three orbits in 1,296.** Starts 8–12 nm behind the field, on the departure
+  side, now that `in_position` correctly refuses to squeeze an aircraft onto a
+  final it cannot fly. The bearing to the entry gate rotates the same way the
+  aircraft turns, so it chases it round — a stable orbit, which sampled once a
+  revolution looks like an aeroplane frozen in the sky.
+- **Kobuleti ILS** — still the stated proof that this is data-driven and not
+  Batumi-shaped. Tonight moved it closer: the handoff distance, the final's
+  frequency and the descent table all now derive from the profile.
+
 ## Formations debrief — 2026-07-25 (first four-ship, live AI + synthetic pilots)
 
 Formations shipped and were flown against real AI traffic on the server. What
