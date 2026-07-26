@@ -57,7 +57,7 @@ A2 gives silence, stop and tell me — every other test gets harder to report.
 | B4 | P1 | At about 4 nm, key the mic and talk for ~15 seconds | Controller **waits**, then makes the call it was holding. It must not be lost | [#5] `channel_is_free` |
 | B5 | P1 | Read back a clearance immediately after he issues one | ~7 s of quiet for you to do it | [#5] readback window |
 | B6 | P2 | Continue to the missed approach point | *"over the missed approach point"* — and **no handoff to Tower before it** | [#8] `hands_to_tower_nm` |
-| B7 | P2 | Land and stop | Controller stops working you within a sweep or two | [#9] `on_the_ground` |
+| B7 | P2 | Land and stop | **Tower sends you off the runway** — *"welcome, exit the runway when able, taxi to parking, good day"* — then goes quiet | [#9] `report_down` |
 | B8 | **P1** | **Go around at the point.** Climb out on the published missed (330) | Every call is about the missed — climb, published heading, re-sequencing. **No turn back towards the field. Never "left of course"** | [#11] `flying_the_missed` |
 | B9 | P1 | Reaching the missed approach altitude | Re-sequenced normally; he is an ordinary arrival again | [#11] |
 
@@ -85,7 +85,9 @@ What a good pass looks like: corrections that get smaller as you close, rolling 
 
 **B6** — On a talkdown the controller IS your approach aid, so sending you to Tower mid-approach takes you off the frequency that is flying it. On an ILS the same handoff is correct — the difference is the procedure, not the field.
 
-**B7** — The scope knows you are down. Nothing was reading it, so a pilot sat parked while Tower worked him as a missed approach.
+**B7** — The scope knows you are down; nothing was reading it, so a pilot once sat parked while Tower worked him as a missed approach. The thing to listen for is a **positive instruction**, not an absence: silence would be indistinguishable from a controller who has crashed or simply lost you, and this is the last thing that happens on every flight. He should say it once, within a sweep or two of you stopping, and then stay off the air. It is a taxi instruction rather than a farewell on purpose — *"landing assured, good day"* is what you say to somebody still in the air, and hearing it while sitting on the runway is a controller who has not noticed you arrive.
+
+It is also the moment the runway frees for whoever is holding behind you, so on a two-ship this is what lets number two start down.
 
 **B8** — Open for three sessions and four failed attempts: climbing out on the published missed, you were vectored back towards the field. The fix is new and **has never been flown**.
 

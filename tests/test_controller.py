@@ -681,3 +681,50 @@ class TestTheMissedApproachLatch(unittest.TestCase):
         self.A.note_missed("Pony 1-1", "vector", self.ctl)
         self.assertFalse(
             self.A.flying_the_missed("Pony 1-1", self.at(4, 1800), self.p, self.ctl))
+
+
+class TestTheEndOfAnApproachIsAudible(unittest.TestCase):
+    """A pilot must be able to tell "he has me down" from "he has crashed".
+
+        "B7 — how will I know he has me down and stopped?"
+
+    He could not. The controller composes a farewell and the bridge dropped it,
+    so the observable end of every approach was silence -- the same bug as an
+    engineering channel that says nothing, and worse here because it is the last
+    thing that happens on every flight.
+    """
+
+    def setUp(self):
+        self.ctl = atc.Controller(profile())
+        self.ctl.report_beacon("Hoover 1-1", 4000)
+        self.ctl.out.clear()
+
+    def test_he_says_something_when_you_are_down(self):
+        self.ctl.report_down("Hoover 1-1")
+        said = " ".join(t.text for t in self.ctl.out).lower()
+        self.assertTrue(said.strip(), "silence is the bug")
+        self.assertIn("hoover one one", said, "and it has to be addressed to him")
+
+    def test_it_tells_him_where_to_go(self):
+        """"Landing assured, good day" is what you say to somebody still in the
+        air. Said to a man sitting on the runway it is a controller who has not
+        noticed the aeroplane arrive; what a tower says after the roll is where
+        to go."""
+        self.ctl.report_down("Hoover 1-1")
+        said = " ".join(t.text for t in self.ctl.out).lower()
+        self.assertIn("runway", said)
+        self.assertIn("parking", said)
+
+    def test_reporting_a_landing_from_the_air_still_reads_that_way(self):
+        """The other case must not become a taxi instruction to an aeroplane on
+        short final."""
+        self.ctl.report_landed("Hoover 1-1")
+        said = " ".join(t.text for t in self.ctl.out).lower()
+        self.assertNotIn("taxi", said)
+
+    def test_he_is_out_of_the_letdown_afterwards(self):
+        """The goodbye is not decoration -- it is the moment the runway frees
+        for whoever is holding behind him."""
+        self.assertEqual(self.ctl.owns_the_approach(), "Hoover 1-1")
+        self.ctl.report_down("Hoover 1-1")
+        self.assertNotEqual(self.ctl.owns_the_approach(), "Hoover 1-1")

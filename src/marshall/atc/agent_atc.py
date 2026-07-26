@@ -1573,17 +1573,45 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     # overrule the conversation, because an aeroplane at zero
                     # feet on the aerodrome is not a matter of opinion.
                     if asr.on_the_ground(pos, profile):
-                        if cs not in grounded:
+                        if cs in grounded:
+                            continue
+                        # Only somebody we were actually working. `report_landed`
+                        # creates an aircraft it has never heard of, so without
+                        # this every parked machine on the ramp gets a farewell.
+                        if ctl._resolve(cs) not in ctl.aircraft:
                             grounded.add(cs)
-                            print(f"  {cs} is on the ground — approach complete",
-                                  flush=True)
-                            try:
-                                ctl.report_landed(cs)
-                            except Exception:
-                                pass            # a stale stack is not fatal
-                            called.pop(cs, None)
-                            vectored.pop(cs, None)
-                            pending.pop(cs, None)
+                            continue
+                        # SAY GOODBYE. The controller already composes one --
+                        # "roger, landing assured, good day" -- and the bridge
+                        # used to drop it on the floor, so the observable end of
+                        # an approach was SILENCE. A pilot cannot tell that from
+                        # a controller who has crashed or lost him, which is the
+                        # same bug as an engineering channel that says nothing,
+                        # and it is worse here because it is the last thing that
+                        # happens on every flight.
+                        free, why = channel_is_free()
+                        if not free:
+                            print(f"  .. holding {cs}'s goodbye: {why}", flush=True)
+                            continue          # not marked down; it will repeat
+                        grounded.add(cs)
+                        print(f"  {cs} is on the ground — approach complete",
+                              flush=True)
+                        try:
+                            ctl.report_down(cs)
+                            bye = for_voice(" ".join(tx.text for tx in ctl.out))
+                            ctl.out.clear()
+                        except Exception:
+                            bye = ""          # a stale stack is not fatal
+                        called.pop(cs, None)
+                        vectored.pop(cs, None)
+                        pending.pop(cs, None)
+                        if bye:
+                            with radio_lock:
+                                print(f"  ATC[down] {bye}", flush=True)
+                                record(session_id, kind="atc/landed",
+                                       callsign=cs, text=bye)
+                                client.transmit(voice_for(final_hz).frames(bye),
+                                                final_hz, AM)
                         continue
                     grounded.discard(cs)        # airborne again: a new sortie
 

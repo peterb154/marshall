@@ -675,6 +675,33 @@ class Controller:
         self.say(ac.callsign, f"{self._addr(ac)}, roger, landing assured. Good day.")
         self._try_clear()
 
+    def report_down(self, cs: str) -> None:
+        """Radar shows him stopped on the aerodrome. Get him off the runway.
+
+        Distinct from `report_landed`, which answers a pilot SAYING he is
+        landing -- "roger, landing assured, good day" is what you say to
+        somebody still in the air, and saying it to a man sitting on the runway
+        is a controller who has not noticed the aeroplane arrive.
+
+        What a tower actually says once the roll is over is where to go: off the
+        runway, then to parking. It is also the transmission that tells him he
+        has been SEEN to land, which is the only difference between "he has me
+        down" and "he has crashed" -- and this is the last thing that happens on
+        every flight.
+        """
+        ac = self.get(cs)
+        ac.phase, ac.last_report_t = Phase.LANDED, self.t
+        ac.map_t = None
+        if self._letdown == ac.callsign:
+            self._letdown = None
+        twr = (self.profile.station_for("tower")
+               if hasattr(self.profile, "station_for") else None)
+        who = f"{twr.name}, " if twr else ""
+        self.say(ac.callsign,
+                 f"{self._addr(ac)}, {who}welcome. Exit the runway when able, "
+                 f"taxi to parking. Good day.")
+        self._try_clear()
+
     def request_visual(self, cs: str, field_in_sight: bool = False) -> None:
         """He would like to fly it himself, and in decent weather that is the
         normal thing to do.
