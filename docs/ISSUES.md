@@ -753,6 +753,37 @@ basics are still unverified.
 
 ---
 
+## [ENG-3] Naming a controller releases the engineering line — #32
+labels: needs-synthetic-check
+
+**Status:** SHIPPED/UNVERIFIED — commit `72b79cc`
+
+Everything a pilot says goes to engineering until he releases the line. Forget
+the goodbye and the controller has gone deaf to him — and the moment he is most
+likely to forget is four miles out, with other things to think about, which is
+also the moment it costs most.
+
+Addressing a station by name is an unambiguous statement about who he is talking
+to, and the system should not need it said twice.
+
+Found by briefing the workflow aloud rather than by any test: *"first get
+engineering on the line, then say b4 passed, then goodbye engineering?"* — three
+steps, and the third is the one you drop.
+
+**Acceptance criteria**
+1. On the engineering line, a transmission naming a station ("Batumi Approach,
+   ...") reaches ATC and gets a controller's answer.
+2. The line is released silently — a "clear" call here would be engineering
+   talking over the transmission it just got out of the way of.
+3. Engineering traffic that happens to be about ATC is NOT released: "the
+   vectors turned me at four miles" stays a note.
+4. Explicitly saying goodbye still works and still gets its acknowledgement.
+
+A safety net, not the fix. A verdict should be one transmission and never take
+the channel over at all — [FT-1] #31.
+
+---
+
 ## [OPS-2] Backlog and issues stay in step — #27
 labels: chore
 
