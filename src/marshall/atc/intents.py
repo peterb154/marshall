@@ -31,6 +31,7 @@ class IntentKind(str, Enum):
     REPORT_LANDED = "report_landed"  # "Pony 1 field in sight, landing"
     REQUEST_APPROACH = "request_approach"
     REQUEST_BREAKUP = "request_breakup"   # "Pony 1 requesting break-up"
+    REQUEST_VISUAL = "request_visual"     # "Pony 1 requests the visual"
     REPORT_CONDITIONS = "report_conditions"   # "affirm, we have visual"
     UNKNOWN = "unknown"             # hand to the LLM fallback, or ask again
 
@@ -95,7 +96,12 @@ INTENT_SCHEMA = {
                 "you where he is or what he is doing, it is this one.\n"
                 "report_missed: going around, overshooting, missed approach.\n"
                 "report_landed: field or runway in sight, landing, down.\n"
-                "request_approach: asking for the approach or to commence.\n"
+                "request_approach: asking for the approach or to commence, "
+                "without naming which one.\n"
+                "request_visual: asking specifically for a VISUAL approach -- "
+                "'request the visual', 'we'd like a visual to one three'. He "
+                "wants to fly it himself. Distinct from report_landed: 'request "
+                "the visual' is asking, 'field in sight' is reporting.\n"
                 "request_breakup: asking to split a formation into individual "
                 "aircraft.\n"
                 "report_conditions: answering whether he can maintain VISUAL "
@@ -150,7 +156,15 @@ LLM_SYSTEM = (
     "visual separation between its own aircraft. An answer to that -- 'affirm', "
     "'affirmative, visual', 'we're VMC', 'negative, we're in cloud', 'IMC', "
     "'no joy on the others' -- is report_conditions, with `visual` true or "
-    "false. Only set `visual` on that intent."
+    "false. Only set `visual` on that intent.\n"
+    "\n"
+    "ASKING FOR A VISUAL vs HAVING THE FIELD. These are one word apart and mean "
+    "opposite things. 'Request the visual approach' is request_visual -- he "
+    "wants to fly it himself and has not necessarily seen the field yet. "
+    "'Field in sight', 'runway in sight', 'we have the field visual' is "
+    "report_landed -- he is telling you he can see it. Getting this backwards "
+    "either denies a pilot an approach he asked for, or clears one who is still "
+    "in cloud."
 )
 
 
@@ -210,6 +224,12 @@ _RULES = [
     (re.compile(r"check|with you|on frequency", re.I), IntentKind.CHECK_IN),
     (re.compile(r"missed|going around|go around|overshoot", re.I),
      IntentKind.REPORT_MISSED),
+    # ASKING for the visual, before REPORT_LANDED claims the bare word. "I have
+    # the field visual" and "request the visual" are opposite ends of the same
+    # approach and one token apart, so the specific pattern has to win.
+    (re.compile(r"(?:request|requesting|ready for|like|take|give me)"
+                r"[^.]{0,20}?visual|visual approach", re.I),
+     IntentKind.REQUEST_VISUAL),
     (re.compile(r"land|field in sight|runway in sight|visual", re.I),
      IntentKind.REPORT_LANDED),
     (re.compile(r"request.*approach|ready for approach", re.I),
@@ -270,6 +290,8 @@ def dispatch(ctl: atc.Controller, intent: Intent) -> bool:
             ctl.request_approach(cs)
         case IntentKind.REQUEST_BREAKUP:
             ctl.request_breakup(cs)
+        case IntentKind.REQUEST_VISUAL:
+            ctl.request_visual(cs, field_in_sight=bool(intent.visual))
         case IntentKind.REPORT_CONDITIONS:
             if intent.visual is None:
                 return False            # ask again rather than assume cloud

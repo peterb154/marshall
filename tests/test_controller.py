@@ -528,3 +528,58 @@ class TestNobodyClearedNobodyVectored(unittest.TestCase):
         # one -- see the CAS flight that was vectored onto the Batumi final
         # the whole way to its ingress point.
         self.assertFalse(self.may(self.ctl, "Pony 1-1", traffic=False))
+
+
+class TestVisualApproach(unittest.TestCase):
+    """Asking for a visual should be enough.
+
+    "the controllers have to be forced to give us a visual approach. need to
+     make that more natural."
+
+    Backwards, as it stood: the surveillance approach is the hard,
+    weather-driven case and a visual is what everybody flies on a clear day.
+    The agent was refusing outright -- "I have no visual approach published
+    here, only the surveillance radar approach."
+    """
+
+    def setUp(self):
+        self.ctl = atc.Controller(profile())
+
+    def said(self, i=0):
+        return self.ctl.out[i].text.lower()
+
+    def test_asking_is_enough(self):
+        self.ctl.request_visual("Pony 1-1")
+        self.assertIn("cleared visual approach", self.said())
+        self.assertEqual(self.ctl.get("Pony 1-1").phase, atc.Phase.CLEARED)
+
+    def test_he_is_asked_to_report_the_field_if_he_has_not(self):
+        self.ctl.request_visual("Pony 1-1")
+        self.assertIn("report the field in sight", self.said())
+
+    def test_with_the_field_in_sight_he_gets_the_wind_instead(self):
+        self.ctl.request_visual("Pony 1-1", field_in_sight=True)
+        self.assertIn("wind", self.said())
+        self.assertNotIn("report the field", self.said())
+
+    def test_a_visual_does_not_jump_the_queue(self):
+        """Spacing is the one thing the controller still owns once the pilot is
+        flying his own approach."""
+        self.ctl.request_visual("Pony 1-1")
+        self.ctl.request_visual("Hammer 1-1")
+        self.assertEqual(self.ctl.get("Hammer 1-1").phase, atc.Phase.HOLDING)
+        self.assertIn("expect the visual", self.said(1))
+
+    def test_the_talkdown_stops(self):
+        """Reading ranges to a man looking at the runway is chatter over
+        somebody busy -- and it is the difference between a visual approach and
+        a talkdown he did not ask for."""
+        from marshall.atc.agent_atc import may_be_vectored
+        self.ctl.request_visual("Pony 1-1")
+        self.assertFalse(may_be_vectored(self.ctl, "Pony 1-1"))
+
+    def test_a_formation_is_broken_up_first(self):
+        self.ctl.check_in("Pony 1-1", 2)
+        self.ctl.out.clear()
+        self.ctl.request_visual("Pony 1-1")
+        self.assertTrue(any("break up" in tx.text.lower() for tx in self.ctl.out))

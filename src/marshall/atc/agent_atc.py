@@ -755,6 +755,13 @@ def may_be_vectored(ctl, cs: str, traffic: bool = False) -> bool:
     if ctl._resolve(cs) not in ctl.aircraft:
         return False
 
+    # Cleared for a VISUAL: he is flying it, not us. Reading ranges to a man
+    # looking at the runway is chatter over somebody busy, and it is the
+    # difference between a visual approach and a talkdown he did not ask for.
+    _ac = ctl.aircraft.get(ctl._resolve(cs))
+    if _ac is not None and getattr(_ac, "on_visual", False):
+        return False
+
     if len(ctl.aircraft) < 2 and not traffic:
         return True                     # single ship: no queue, no question
     turn = ctl.owns_the_approach()
@@ -1714,6 +1721,16 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 "ASR (radar guidance, computed from the scope — voice these "
                 "numbers exactly; you are navigating for him and he has no "
                 f"approach aid of his own): {vectoring}")
+        if me and getattr(me, "role", "") in ("approach", "tower"):
+            parts.append(
+                "VISUAL APPROACHES ARE AVAILABLE and are the normal thing to "
+                "fly in decent weather. If he asks for one, give it to him -- "
+                "\"cleared visual approach runway "
+                f"{profile.runway or 'in use'}, report the field in sight\" -- "
+                "and then get off the air: your job shrinks to spacing and he "
+                "flies the approach. Do NOT tell him only the surveillance "
+                "approach is published and make him argue for it. The radar "
+                "approach is the bad-weather procedure, not the only one.")
         if me:
             parts.append(
                 f"YOU ARE: {me.name} on {me.freq_mhz:.1f}. Identify as that and "

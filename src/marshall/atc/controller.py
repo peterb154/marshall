@@ -75,6 +75,10 @@ class Aircraft:
     approaches: int = 0
     map_t: float | None = None       # computed station-passage (missed approach point) time
     members: list[str] = field(default_factory=list)   # non-empty => a joined flight
+    # Cleared for a VISUAL approach: he is flying it himself from here. The
+    # controller's job shrinks to spacing, and the talk-down must stop -- reading
+    # ranges to a man looking at the runway is chatter over somebody busy.
+    on_visual: bool = False
     # Can this flight maintain VISUAL separation between its own aircraft?
     # None = not asked yet. True = they can see each other, so they may share one
     # holding level. False = IMC, so the controller must separate them himself.
@@ -669,6 +673,56 @@ class Controller:
             self._letdown = None
         self.say(ac.callsign, f"{self._addr(ac)}, roger, landing assured. Good day.")
         self._try_clear()
+
+    def request_visual(self, cs: str, field_in_sight: bool = False) -> None:
+        """He would like to fly it himself, and in decent weather that is the
+        normal thing to do.
+
+        Pilots reported having to FORCE the controller into a visual, which is
+        backwards: the surveillance approach is the hard, weather-driven case
+        and a visual is what everybody flies on a clear day. Asking should be
+        enough.
+
+        The controller's part ends when the pilot has the field. Until then he
+        gets a vector towards it; after, it is the pilot's approach and the
+        controller's spacing -- which is exactly what route.py's `guidance`
+        comment has said all along.
+        """
+        ac = self.get(cs)
+        if ac.is_flight:
+            self._break_up(ac)          # four ships cannot fly one approach
+            return
+        runway = self.profile.runway or "in use"
+        if not self._letdown or self._letdown == ac.callsign:
+            self._letdown = ac.callsign
+            ac.phase, ac.on_visual, ac.last_report_t = Phase.CLEARED, True, self.t
+            if field_in_sight:
+                self.say(ac.callsign,
+                         f"{self._addr(ac)}, cleared visual approach runway "
+                         f"{runway}, {self._wind_phrase()}")
+            else:
+                self.say(ac.callsign,
+                         f"{self._addr(ac)}, cleared visual approach runway "
+                         f"{runway}, report the field in sight.")
+            return
+        # Somebody is already in the letdown. A visual does not jump the queue --
+        # spacing is still the controller's, and it is the only thing he still
+        # owns once the pilot is flying his own approach.
+        ac.phase = Phase.HOLDING
+        if ac.assigned_ft is None:
+            ac.assigned_ft = self._free_slot() or self.profile.bottom_ft
+        place = len(self._holders())
+        words = ["", "one", "two", "three", "four", "five", "six"]
+        self.say(ac.callsign,
+                 f"{self._addr(ac)}, {self._hold_phrase(ac.assigned_ft)}. "
+                 f"Expect the visual, you are number "
+                 f"{words[place] if place < len(words) else place}.")
+
+    def _wind_phrase(self) -> str:
+        """The wind, on the clearance that ends with a landing."""
+        from marshall.core import route as _R
+        return (f"wind {spell_hdg(int(_R.WIND_FROM_DEG))} at "
+                f"{spell_hdg(int(_R.WIND_MPH))[-9:].strip()}.")
 
     def request_approach(self, cs: str) -> None:
         # A pilot who calls up asking for the approach directly (no prior check-in
