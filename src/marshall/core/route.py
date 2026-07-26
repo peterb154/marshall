@@ -167,6 +167,33 @@ HOMEBOUND = Fix("RIDGE", "", -318936, 712429, None,
 SORTIE = [BATUMI, FEET_WET, NORTH, TARGET_AREA, HOMEBOUND, BATUMI]
 SORTIE_LEGS = list(zip(SORTIE, SORTIE[1:]))
 
+# Altitude per leg, and the shape of the sortie is in these numbers rather than
+# in the route: go out low where nobody is looking, come home high because the
+# way home is over mountains.
+#
+# The terrain under each leg was sampled from the sim, not guessed:
+#
+#   1-2  BATUMI to FEET WET        32 ft   -- climbing out over the coast
+#   2-3  FEET WET to NORTH          0 ft   -- open water the whole way
+#   3-4  NORTH to TSUTSNVATI    1,865 ft   -- the run east
+#   4-5  TSUTSNVATI to RIDGE    6,684 ft   -- climbing away from the target
+#   5-6  RIDGE to BATUMI        8,832 ft   -- over the top
+#
+# Five hundred feet over the sea is deliberate and is the whole point of going
+# that way: low enough that nobody on the coast has anything to report, and
+# there is nothing out there to hit. The run east is as low as the ground
+# allows. Coming home the numbers are set by the mountains and not by choice --
+# eleven thousand clears the highest ridge on the line by two, which is the
+# margin you want when the alternative is a hillside.
+SORTIE_ALT_FT = [2000, 500, 3000, 9000, 11000]
+
+
+def leg_altitude(i: int) -> int:
+    """Planned altitude for leg i (0-based), or cruise if the route is shorter."""
+    if 0 <= i < len(SORTIE_ALT_FT):
+        return SORTIE_ALT_FT[i]
+    return CRUISE_ALT_FT
+
 
 def steerpoint(fix) -> int:
     """Which numbered point on today's route this is, or 0 if it is not on it.

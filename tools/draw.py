@@ -69,11 +69,16 @@ def erase(ch) -> str:
     """)
 
 
-def draw(ch) -> str:
-    """Route, target and threat rings, drawn for the blue coalition only.
+def draw(ch, coalition: int = -1) -> str:
+    """Route, target and threat rings.
 
-    Coalition-scoped on purpose: the red side has no business reading our plan,
-    and on a map where every field but one is hostile that is not a detail.
+    Coalition -1 is EVERYONE and is the default, which is not the tidy answer
+    but is the working one: marks scoped to blue are invisible to anybody who
+    has not taken a blue slot yet, including spectators and anybody still on
+    the slot screen -- which is exactly when people want to look at the plan.
+    Drawn blue-only they simply are not there, with nothing to say why.
+
+    Pass 2 for blue-only on a server where the other side has real players.
     """
     lines, mid = [], BASE_ID
 
@@ -81,7 +86,7 @@ def draw(ch) -> str:
     # leg is the unit a pilot thinks in and can be talked about on its own.
     for a, b in zip(R.SORTIE, R.SORTIE[1:]):
         lines.append(
-            f'trigger.action.lineToAll(2, {mid}, '
+            f'trigger.action.lineToAll({coalition}, {mid}, '
             f'{{x = {a.x}, y = 0, z = {a.z}}}, {{x = {b.x}, y = 0, z = {b.z}}}, '
             f'{BLUE}, 1, true, "")')
         mid += 1
@@ -92,14 +97,14 @@ def draw(ch) -> str:
         if n == len(R.SORTIE):          # the last point is home again
             continue
         lines.append(
-            f'trigger.action.markToCoalition({mid}, "{n}. {fix.name}", '
-            f'{{x = {fix.x}, y = 0, z = {fix.z}}}, 2, true, "")')
+            f'trigger.action.markToAll({mid}, "{n}. {fix.name}", '
+            f'{{x = {fix.x}, y = 0, z = {fix.z}}}, true, "")')
         mid += 1
 
     # The target: a circle you can fly to, not a coordinate you have to find.
     t = R.TARGET_AREA
     lines.append(
-        f'trigger.action.circleToAll(2, {mid}, '
+        f'trigger.action.circleToAll({coalition}, {mid}, '
         f'{{x = {t.x}, y = 0, z = {t.z}}}, {5 * 1852}, {RED}, {RED_FILL}, 1, '
         f'true, "")')
     mid += 1
@@ -108,12 +113,12 @@ def draw(ch) -> str:
     # see is where it becomes unwise, not where the barrels are.
     for name, x, z, reach_nm in R.DEFENDED:
         lines.append(
-            f'trigger.action.circleToAll(2, {mid}, {{x = {x}, y = 0, z = {z}}}, '
+            f'trigger.action.circleToAll({coalition}, {mid}, {{x = {x}, y = 0, z = {z}}}, '
             f'{int(reach_nm * 1852)}, {RED}, {RED_FILL}, 2, true, "")')
         mid += 1
         lines.append(
-            f'trigger.action.markToCoalition({mid}, "{name.upper()} - AAA", '
-            f'{{x = {x}, y = 0, z = {z}}}, 2, true, "")')
+            f'trigger.action.markToAll({mid}, "{name.upper()} - AAA", '
+            f'{{x = {x}, y = 0, z = {z}}}, true, "")')
         mid += 1
 
     body = "\n".join(lines)
@@ -123,6 +128,8 @@ def draw(ch) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--clear", action="store_true", help="erase and stop")
+    ap.add_argument("--blue-only", action="store_true",
+                    help="scope to the blue coalition (invisible to spectators)")
     args = ap.parse_args()
 
     with grpc.insecure_channel(ADDR) as ch:
@@ -130,8 +137,9 @@ def main() -> int:
         if args.clear:
             print("map cleared")
             return 0
-        n = draw(ch)
-        print(f"drew {n} marks on the F10 map (blue coalition only)")
+        n = draw(ch, 2 if args.blue_only else -1)
+        who = "blue only" if args.blue_only else "everyone, spectators included"
+        print(f"drew {n} marks on the F10 map ({who})")
         for a, b in zip(R.SORTIE, R.SORTIE[1:]):
             print(f"   {a.name:11s} -> {b.name}")
         print(f"   target ring 5 nm, threat rings on "

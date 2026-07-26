@@ -103,9 +103,10 @@ def build() -> str:
         f'<td>{start.ident or "&mdash;"}</td>'
         f'<td>{f"{start.freq_mhz:.3f}" if start.freq_mhz else "&mdash;"}</td>'
         f'<td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td>'
-        f'<td>&mdash;</td><td>&mdash;</td><td class="blank"></td></tr>')
+        f'<td>&mdash;</td><td>&mdash;</td><td>&mdash;</td>'
+        f'<td class="blank"></td></tr>')
 
-    for leg in legs:
+    for i, leg in enumerate(legs):
         elapsed += leg.minutes
         eta = f"{int(elapsed)}:{round((elapsed % 1) * 60):02d}"
         rows.append(
@@ -115,6 +116,7 @@ def build() -> str:
             f'<td>{leg.course_true:03.0f}</td>'
             f'<td>{leg.wca:+.0f}</td>'
             f'<td><b>{leg.heading_mag:03.0f}</b></td>'
+            f'<td><b>{R.leg_altitude(i):,}</b></td>'
             f'<td>{leg.distance_nm:.1f}</td>'
             f'<td>{leg.groundspeed_mph:.0f}</td>'
             f'<td>{leg.time_str}</td>'
@@ -122,7 +124,7 @@ def build() -> str:
 
     rows.append(
         f'<tr class="tot"><td class="fix">TOTAL</td><td></td><td></td>'
-        f'<td></td><td></td><td></td><td>{total_nm:.1f}</td><td></td>'
+        f'<td></td><td></td><td></td><td></td><td>{total_nm:.1f}</td><td></td>'
         f'<td>{int(total_min)}:{round((total_min % 1) * 60):02d}</td>'
         f'<td class="blank"></td></tr>')
 
@@ -160,7 +162,7 @@ def build() -> str:
     <tr>
       <th>Checkpoint</th><th>Ident</th><th>Freq</th>
       <th>Crs&deg;T</th><th>WCA</th><th>Hdg&deg;M</th>
-      <th>Dist</th><th>GS</th><th>Time</th><th>ATA</th>
+      <th>Alt</th><th>Dist</th><th>GS</th><th>Time</th><th>ATA</th>
     </tr>
     {"".join(rows)}
   </table>
