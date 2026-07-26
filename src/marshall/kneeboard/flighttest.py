@@ -227,17 +227,26 @@ def build_section(letter: str) -> str:
 
 
 def build_issues() -> str:
-    live = [i for i in issues() if i["status"] != "TODO"]
+    """What is still open, and therefore worth a radio call.
+
+    VALIDATED drops off the list on purpose. Leaving a signed-off issue on a
+    cockpit page invites a pilot to spend a sortie re-testing something already
+    finished, which is the same waste as section E existing at all.
+    """
+    all_ = issues()
+    live = [i for i in all_ if i["status"] not in ("TODO", "VALIDATED")]
     rows = "".join(
         f'<tr><td><span class="iss">#{i["number"] or "--"}</span></td>'
         f'<td>{_md(i["title"])}<div class="st">{i["slug"]} &middot; '
         f'{i["status"] or "-"}</div></td></tr>'
         for i in live)
-    todo = sum(1 for i in issues() if i["status"] == "TODO")
+    todo = sum(1 for i in all_ if i["status"] == "TODO")
+    done = sum(1 for i in all_ if i["status"] == "VALIDATED")
     return (f"<title>ISSUES</title><style>{CSS}</style>"
             f'<div class="ft"><h1>OPEN ISSUES</h1>'
             f'<div class="sub">what a failure gets reported against &middot; '
-            f'{len(live)} live, {todo} not yet built</div>'
+            f'{len(live)} live &middot; {done} signed off &middot; '
+            f'{todo} not yet built</div>'
             f"<table>{rows}</table></div>")
 
 

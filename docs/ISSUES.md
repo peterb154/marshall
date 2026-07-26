@@ -13,7 +13,9 @@ criteria are things that are either true or not — no "works well".
 
 **Status key.** `SHIPPED/UNVERIFIED` — the code is in and the two cheap tiers
 are clean, but no human has flown it. `OPEN` — known broken, with a repro.
-`TODO` — not built.
+`TODO` — not built. `VALIDATED` — a human used it and it did the job; this is
+the only status a `needs-flight-test` issue can be closed on, and a green test
+suite has never been sufficient for it.
 
 ---
 
@@ -610,7 +612,8 @@ automating a channel whose basics are unverified.
 ## [KB-1] Kneeboards render live, and one of them is the test card — #29
 labels: feature
 
-**Status:** SHIPPED/UNVERIFIED — commits `a7d3956`, `b28542d`
+**Status:** VALIDATED — Hoover, read in the cockpit and used to brief and
+correct A1, A2, B3 and B7 in one sitting. Closed.
 
 Two things that were one problem. Pages were generated once at container start,
 so editing a chart changed nothing until somebody restarted the server — which is
