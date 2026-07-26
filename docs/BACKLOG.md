@@ -1,6 +1,18 @@
 # Backlog
 
-Deferred work, captured so it isn't lost. Not a promise of order.
+**The WORK now lives in `docs/ISSUES.md`** — one entry per thing, each with
+acceptance criteria, cross-referenced from the flight test card. Start there if
+you are looking for what to do next.
+
+This file is the other half and is worth keeping separate: the DEBRIEFS. What a
+sortie actually taught us, in the pilot's words where possible, and what was
+tried and rejected with the numbers. An issue says what must be true; a debrief
+says why we believe it, and stops the same wrong fix being attempted a fourth
+time.
+
+Older entries below still name deferred work directly. They are being folded
+into ISSUES.md as they come up rather than in one sweep, because a migrated
+backlog nobody has read is worse than one nobody has tidied.
 
 ## The reversal hunt — 2026-07-26 (branch `reversal-geometry`)
 

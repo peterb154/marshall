@@ -1,0 +1,546 @@
+# The work, as issues
+
+The single list. Every shipped fix that a human still has to sign off on, every
+open bug, and every feature not yet built — each with acceptance criteria you
+could hand to somebody else.
+
+`tools/file_issues.py` files these on GitHub and writes the numbers back here,
+so this file stays readable whether or not you are online.
+
+**Format.** `## [SLUG] Title` then the body. `Tests:` names rows on the flight
+test card (`docs/TEST_PLAN.md`); `Code:` names where it lives. Acceptance
+criteria are things that are either true or not — no "works well".
+
+**Status key.** `SHIPPED/UNVERIFIED` — the code is in and the two cheap tiers
+are clean, but no human has flown it. `OPEN` — known broken, with a repro.
+`TODO` — not built.
+
+---
+
+## [FP-1] Flight plans: many on file, assigned per flight
+labels: feature
+
+**Status:** TODO
+
+Today there is exactly one flight plan and it is mission-wide — `flight_plans`
+carries `active`, and every insert does `UPDATE flight_plans SET active=false`
+first. The bridge loads that one plan at startup to build the plate. Two flights
+cannot be going to two different places, and a plan cannot be reused.
+
+A plan should be a **filed template with no callsign**. When a flight asks for
+clearance and references one, it is **copied** to an active instance bound to
+that flight. Two flights can then fly the same plan at once, and the same plan
+can be flown night after night. The copy also means a controller amending one
+flight's routing never edits the filed original — the same rule as everywhere
+else here: the template is what was *filed*, the instance is what was *agreed*.
+
+**Acceptance criteria**
+1. Two flights hold different assigned plans at the same time, and each ATC
+   response reflects that flight's own destination and route.
+2. The same template can be assigned to two flights concurrently; amending one
+   instance leaves the other and the template untouched.
+3. A template survives a mission reload and can be assigned again with no edit.
+4. A plan can be referenced **by callsign** (it is filed against nobody, so the
+   controller offers what is on file) or **by name** when there is more than one.
+5. Assigning stamps `flights.flight_plan`, `destination`, `route`, `cruise_ft`
+   and `clearance_ack`.
+6. Once assigned, the controller can answer "where am I going" and "what am I
+   doing" without the pilot repeating himself.
+7. Nothing regresses when a flight has NO plan — that is still the normal case.
+
+**Out of scope**, deliberately, and tracked as [ARCH-1]: two flights recovering
+to *different fields*. The bridge holds one `ApproachProfile` and the geometry,
+the controller and the plate all read it. The schema here will carry
+`destination` and `approach` from the start so that work needs no migration.
+
+Code: `director/tools/approaches.py`, `director/migrations/`, `flights` table
+(columns already exist and nothing writes them).
+
+---
+
+## [ARCH-1] One approach profile per flight, not per bridge
+labels: architecture
+
+**Status:** TODO — blocked on nothing, but large
+
+`_run_srs` holds a single `profile`, and `asr.guide`, `controller.py`, the
+metronome and the plate all read it. Two aircraft recovering to different fields
+need a profile each. This is the wall in front of [FP-1] point 8 and in front of
+the Kobuleti test [TEST-1].
+
+**Acceptance criteria**
+1. Two aircraft, two fields, two approaches flown concurrently without either
+   controller using the other's numbers.
+2. `asr_sweep.py` runs against a named profile and still reports the same
+   figures for Batumi.
+
+---
+
+## [TEST-1] Fly Kobuleti ILS to prove the data drives it
+labels: test
+
+**Status:** TODO
+
+The stated proof that this is data-driven and not Batumi-shaped. Load a Kobuleti
+ILS profile and fly it with no code change.
+
+**Acceptance criteria**
+1. A Kobuleti ILS profile is loaded from data alone.
+2. The talkdown does NOT run (`guidance: "intercept"` — the aircraft has its own
+   aid) and Tower takes him at the intercept, not at the missed approach point.
+3. The plate, the kneeboard and the ATC agree on the field, course and minima.
+4. No file under `src/marshall/atc/` changes to make it work.
+
+Partly de-risked already: handoff distance, the final's frequency and the
+descent table now all derive from the profile.
+
+---
+
+## [ENG-1] Engineering channel: getting a human on the line
+labels: needs-flight-test
+
+**Status:** SHIPPED/UNVERIFIED — commit `cffad1a`
+
+"Get engineering on the line" from any frequency, answered instantly without a
+model. Replaces a hand-launched transmit-only process that was not there when
+the pilot changed channels.
+
+**Acceptance criteria**
+1. Summoning on 124 and on 118 both answer, in engineering's voice, within a
+   second or two.
+2. With nobody at the bench the answer is *"not at the bench right now, keep
+   talking, every word is recorded"* — **never silence**.
+3. After summoning, ordinary speech is logged and acknowledged, and **Approach
+   does not answer it**.
+4. "Thanks engineering" releases; the next call reaches ATC normally.
+5. Every note lands in `build/debug-notes.md` with a timestamp and a callsign.
+
+Tests: A1, A2, A3, A4
+Code: `agent_atc.engineering_ack`, `_ENG_CALL`, `_ENG_DONE`
+
+---
+
+## [RAD-1] Do not talk over the pilot; leave room to read back
+labels: needs-flight-test
+
+**Status:** SHIPPED/UNVERIFIED — commits `8464b4b`, `c0c5d29`
+
+The radio lock only ever stopped the bridge's own threads colliding with each
+other; it knew nothing about the humans. Three guards now: while a pilot is
+transmitting, while his answer is being composed, and for seven seconds after a
+clearance.
+
+**Acceptance criteria**
+1. Talking for ~15 seconds on final does not get a mile call on top of you.
+2. The held call is **made afterwards, not lost**.
+3. After a clearance there is a gap long enough to read it back.
+4. **Two pilots:** a mile call for one never lands where the other's answer
+   should have been.
+
+Tests: B4, B5, F2, F3
+Code: `agent_atc.channel_is_free`, `SRSClient.someone_is_talking`
+
+**Least evidence of anything on this list.** Synthetic pilots take turns
+politely, so F2/F3 have never been properly contested.
+
+---
+
+## [RAD-2] Wait for the check-in before working him
+labels: needs-flight-test
+
+**Status:** SHIPPED/UNVERIFIED — commit `c0c5d29`
+
+> "when we got a handoff from center to approach, by the time I switched over,
+> approach was already half done with the first instruction"
+
+The metronome worked anyone the controller knew, and it knew him from *Center's*
+frequency.
+
+**Acceptance criteria**
+1. After a handoff, the new controller says **nothing** until you check in.
+2. On check-in he begins normally, from the start of the instruction.
+3. A man who never checks in is never vectored.
+
+Tests: B1a (new)
+Code: `agent_atc._heard_on`, `may_be_vectored(freq_hz=)`
+
+---
+
+## [RAD-3] One controller, one frequency, for the whole approach
+labels: needs-flight-test
+
+**Status:** SHIPPED/UNVERIFIED — commit `296b33d`
+
+The talkdown used to transmit on Tower's frequency while the model answered on
+Approach's — one controller arriving as two voices on two channels.
+
+**Acceptance criteria**
+1. Vectors, mile calls and landing clearance all arrive on 124.
+2. One voice throughout.
+3. No instruction to change frequency before the missed approach point.
+
+Tests: B1, B2, B6
+Code: `agent_atc` `final_hz`, `route.hands_to_tower_nm`
+
+---
+
+## [APP-1] The talkdown keeps him to the missed approach point
+labels: needs-flight-test
+
+**Status:** SHIPPED/UNVERIFIED — commit `faac653`
+
+On an ILS the aeroplane has its own aid and Tower takes him at the intercept. On
+a talkdown the controller IS the approach aid, so he keeps him and relays the
+landing clearance.
+
+**Acceptance criteria**
+1. No handoff to Tower inside the final.
+2. Landing clearance with the wind arrives from the controller flying the
+   approach.
+3. A profile with `guidance: "intercept"` still hands over at the intercept.
+
+Tests: B6
+Code: `route.hands_to_tower_nm`
+
+---
+
+## [APP-2] The approach ends when the wheels are down
+labels: needs-flight-test
+
+**Status:** SHIPPED/UNVERIFIED — commit `faac653`
+
+> "I'm sitting on the ground at Batumi, in Batumi Tower thinks I'm on the missed
+> approach"
+
+**Acceptance criteria**
+1. Landed and stopped, the controller stops working you within a sweep or two.
+2. It does **not** fire early — at 200 ft a mile and a half out you are still
+   being talked down.
+
+Tests: B7
+Code: `asr.on_the_ground`
+
+---
+
+## [APP-3] Visual approaches, without having to argue for one
+labels: needs-flight-test
+
+**Status:** SHIPPED/UNVERIFIED — commit `4d011ed`
+
+> "the controllers have to be forced to give us a visual approach"
+
+**Acceptance criteria**
+1. Asking for a visual gets one, first time, with no argument.
+2. Once cleared visual, **no mile calls** — he is spacing, not talking you down.
+3. "Field in sight" is still read as a report, not a request.
+4. A visual does not jump the queue.
+
+Tests: C1, C2, C3
+Code: `controller.request_visual`, intent ordering in `intents.py`
+
+---
+
+## [APP-4] Going around: no vector back towards the field
+labels: needs-flight-test
+
+**Status:** SHIPPED/UNVERIFIED — commit `36ea1a4`
+
+> "pny flight is outbound after the missed and the atc is saying that he is left
+> of course (thinking he is inbound)"
+
+Open for three sessions and four failed attempts. Fixed by giving the caller the
+one fact geometry cannot recover: whether he is flying the procedure.
+
+**Acceptance criteria**
+1. Going around and climbing out on the published missed, **every** instruction
+   is about the missed approach — climb, the published heading, re-sequencing.
+2. No turn back towards the field while below the missed approach altitude.
+3. Never told he is "left of course" while flying it.
+4. At the missed approach altitude he is re-sequenced normally.
+5. `asr_sweep.py` clean and `--sloppy` both unchanged from baseline.
+
+Tests: B8 (new)
+Code: `asr.guide(on_missed=)`, `agent_atc.flying_the_missed`
+
+---
+
+## [ID-1] Telling a flight's aircraft apart after they split
+labels: needs-flight-test
+
+**Status:** SHIPPED/UNVERIFIED — commits `50cebe7`, `ed18e97`
+
+> "last night shooter was being called pony1"
+
+`Pony 1` is a *formation*. Naming yourself more precisely now wins immediately,
+and the controller asks each aircraft to check in by name at the break-up.
+
+**Acceptance criteria**
+1. At break-up each aircraft is named, in order, and asked to check in.
+2. A lead who checked in as the flight is addressed by his own callsign from the
+   moment he uses it — **one call, not a majority**.
+3. Two pilots are never addressed by the same name.
+4. A flight name is never bound to a radar track that has a wingman on it.
+5. A single ship whose callsign looks like a flight ("Hoover 1") is still
+   radar-identifiable and still gets talked down.
+
+Tests: C4, C4a, C4b, F5
+Code: `agent_atc.transmitter_callsign`, `controller._identify_phrase`,
+`director/tools/identify.py`
+
+---
+
+## [ID-2] Noise must not become an aeroplane
+labels: needs-flight-test
+
+**Status:** SHIPPED/UNVERIFIED — commits `631173a`, `50cebe7`
+
+A garbled call put an aircraft called `Waypoint 3` in the holding stack; another
+produced `21-2`; "I have two aircraft" became `Have 2`.
+
+**Acceptance criteria**
+1. A sentence with a number but no callsign never creates an aircraft.
+2. "Sentry" and "ingress" transcribe correctly (were "Century", "in-grass").
+3. "Pony one **too**" is understood as Pony 1-2.
+4. Your first transmission is primed — a callsign on the roster, or passed via
+   `MARSHALL_CALLSIGNS`, is known before you speak.
+
+Tests: C4c, D1, D2
+Code: `stt.domain_prompt`, `callsign._NOT_A_NAME`, `agent_atc._plausible_callsign`
+
+---
+
+## [ID-3] Answer the man who actually spoke
+labels: needs-flight-test
+
+**Status:** SHIPPED/UNVERIFIED — commit `c0c5d29`
+
+The bridge had the identity right on every transmission and never told the
+model, which inferred the caller from the transcript and the radar — and
+answered a wingman's check-in as his leader.
+
+**Acceptance criteria**
+1. Every reply names the pilot who transmitted.
+2. Holds when the transcript mangles the callsign.
+3. Holds with two pilots alternating.
+
+Tests: F1
+Code: `agent_atc` `THIS TRANSMISSION IS FROM`
+
+---
+
+## [SEQ-1] One in the letdown, and nobody vectored until cleared
+labels: needs-flight-test
+
+**Status:** SHIPPED/UNVERIFIED — commit `296b33d`
+
+The guard asked the blind engine how many aircraft existed; a restart emptied
+it, and both aircraft were vectored at once — different headings, different
+altitudes, one frequency.
+
+**Acceptance criteria**
+1. Two contacts on the scope and nobody cleared: **nobody** is vectored.
+2. The man holding hears the hold and nothing else.
+3. It survives a bridge restart mid-sortie.
+4. A single ship is worked normally.
+
+Tests: D4, F4
+Code: `agent_atc.may_be_vectored`
+
+**Safety-relevant.** Two aircraft on one intercept is the thing this whole
+design exists to prevent.
+
+---
+
+## [HO-1] Handoffs follow airspace, not range
+labels: needs-flight-test
+
+**Status:** SHIPPED/UNVERIFIED — commit `8a4ce0f`
+
+> "georgia center handed us off the approach oftly early... should have kept us
+> with him until we left his airspace"
+
+**Acceptance criteria**
+1. Departing, Center keeps you until you leave his airspace.
+2. Returning, Center hands you to Approach normally.
+3. A talkdown is **never** handed over mid-approach, whatever the airspace says.
+4. An unreachable director means no opinion, not a wrong one.
+
+Tests: C5, C6
+Code: `agent_atc.leaving_my_airspace`, `migrations/008`
+
+**Least certain of the shipped fixes.** It fires on live geometry that could not
+be reproduced solo.
+
+---
+
+## [OVL-1] Sentry computes, and admits what she cannot
+labels: needs-flight-test
+
+**Status:** SHIPPED/UNVERIFIED — commits `0b08330`, `296b33d`
+
+She gave three different ranges to the field inside a minute, all invented, with
+the tool in her list. Steerpoints were not in her table at all.
+
+**Acceptance criteria**
+1. Range and bearing to any steerpoint, by name or number, computed not guessed.
+2. Asked twice, the same answer.
+3. No fix for it → says so, never a made-up mile count.
+4. Asked for a target, she places one and tasks you onto it.
+5. Reports what the sim actually created, and refuses to send anyone if it does
+   not match.
+
+Tests: C7, C8, C9
+Code: `agent_atc.push_fixes`, `director/tools/tracks.py`, `spawn_ground`
+
+---
+
+## [OPS-1] One bridge at a time
+labels: needs-flight-test
+
+**Status:** SHIPPED/VERIFIED (ground) — commit `296b33d`
+
+The most-repeated cause of "duplicate controllers". Killing the launcher does not
+kill the python child.
+
+**Acceptance criteria**
+1. A second bridge refuses to start and names the PID holding the lock.
+2. A crashed bridge (`kill -9`) leaves no stale lock.
+
+Tests: D5
+Code: `agent_atc.claim_the_frequency`
+
+---
+
+## [BUG-1] Outbound vector at ~14 nm while inbound
+labels: bug
+
+**Status:** OPEN
+
+Inbound, more than 2 nm off course, and the engine turns him away. Four attempts
+across two sessions, all of which regressed the sweep.
+
+**Acceptance criteria**
+1. Inbound and off course at 20–11 nm, corrections converge — no turn away.
+2. `asr_sweep.py` and `--sloppy` no worse than baseline
+   (1293/1296 · 1 flip · 582 turns; sloppy 1296/1296 · 26 flips).
+3. A repro exists as a test before any fix is written.
+
+---
+
+## [BUG-2] Three approaches orbit instead of arriving
+labels: bug
+
+**Status:** OPEN
+
+Starts 8–12 nm behind the field on the departure side. The bearing to the entry
+gate rotates the same way the aircraft turns, so it chases it round — a stable
+orbit that, sampled once a revolution, looks like an aeroplane frozen in the sky.
+
+**Acceptance criteria**
+1. 1296/1296 arrive on the clean sweep.
+2. Dithering stays at 1 and turns at ~582 — the two attempts that "fixed" this
+   took dithering to 2,696 and 4,159.
+
+---
+
+## [BUG-3] The model invents fields, frequencies and procedures
+labels: bug
+
+**Status:** OPEN
+
+Observed on a go-around rehearsal:
+
+    "climb one zero thousand, proceed KOBULETI, contact Kobuleti Departure
+     one two four, hold, expect re-sequence"
+
+None of that exists in the plan. Same class as the invented ranges fixed in
+[OVL-1]: a model asked a question answers it whether or not it knows.
+
+**Acceptance criteria**
+1. The controller never names a field, frequency or fix that is not in the
+   profile or the fix table.
+2. When it has nothing, it says so.
+3. A rehearsal transcript can be checked against the profile automatically.
+
+---
+
+## [UI-1] Flight planning front end
+labels: feature
+
+**Status:** TODO — the DB half is [FP-1]
+
+A pilot files a plan before the sortie and the ATC knows him when he calls. The
+schema arrives with [FP-1]; this is the way in. Evaluate Digital Kneeboard
+Simulator before writing one.
+
+**Acceptance criteria**
+1. A plan can be filed without touching the database by hand.
+2. A filed plan is assignable by voice on the night with no further setup.
+3. It survives a mission reload.
+
+---
+
+## [MAP-1] Situation map
+labels: feature
+
+**Status:** TODO
+
+Mine the old dcs-dedicated-server repo. A live picture of who is where and who
+is working them — most of the data already exists in `tracks` and `flights`.
+
+**Acceptance criteria**
+1. Live positions, current controller, and assigned altitude for every flight.
+2. Readable while a sortie is running, without touching the bridge.
+
+---
+
+## [CTL-1] Controller personalities: a roster of people, not sectors
+labels: feature
+
+**Status:** TODO
+
+Tables exist already (`controllers`, `sector_staffing`) and nothing reads them.
+A voice belongs to a person, never to a seat, so the same somebody can work
+Center tonight and Tower tomorrow and a pilot recognises him.
+
+**Acceptance criteria**
+1. A controller's voice and manner follow the person across sectors.
+2. Staffing is data, not code.
+
+---
+
+## [HOOK-1] Hooks keep their promises
+labels: bug
+
+**Status:** TODO
+
+"I will call you in five miles" has to actually happen, and a conditional hook
+must stay conditional.
+
+**Acceptance criteria**
+1. Every promise on the air is either kept or explicitly withdrawn.
+2. A hook whose condition has passed does not fire anyway.
+
+---
+
+## [CHART-1] Chart the enroute fixes, not just the letdown
+labels: feature
+
+**Status:** TODO
+
+The kneeboard has the plate and the route map; the enroute fixes are not drawn
+to scale anywhere.
+
+---
+
+## [OPS-2] Backlog and issues stay in step
+labels: chore
+
+**Status:** TODO
+
+**Acceptance criteria**
+1. Every row on the flight test card names an issue.
+2. Every SHIPPED/UNVERIFIED issue is closed by a human flight, not by a green
+   unit test.
+3. `docs/BACKLOG.md` keeps the debriefs and the reasoning; this file keeps the
+   work.
