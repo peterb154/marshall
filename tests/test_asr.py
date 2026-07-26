@@ -7,7 +7,6 @@ field, in cloud, while sounding completely correct.
 """
 
 import dataclasses
-import inspect
 import math
 import unittest
 
@@ -621,5 +620,68 @@ class TestHandoffPhraseWithoutARadarFix(unittest.TestCase):
     def test_with_a_fix_it_says_the_range(self):
         pos = asr.Position(range_nm=12.0, radial_deg=304, alt_ft=3000,
                            heading_deg=124)
-        said = self.A.handoff_phrase(self.tower, pos)
-        self.assertIn("12 miles out", said)
+        self.assertIn("12 miles out", self.A.handoff_phrase(self.tower, pos))
+
+
+class TestClimbingOutOnTheMissed(unittest.TestCase):
+    """An aircraft flying the published missed must not be vectored back.
+
+    Reported on the first night and true for three sessions:
+
+        "pny flight is outbound after the missed and the atc is saying that he
+         is left of course (thinking he is inbound)"
+
+    The mechanism, found by measuring rather than reading: the missed branch sat
+    BELOW the in-position test, and the second leg of the procedure -- the
+    climbing turn onto 330 -- puts the aeroplane on the approach SIDE of the
+    field with positive along-track. It read as "in position" and was handed an
+    intercept, turning it back towards the field it was climbing away from.
+
+    The fix is not a cleverer geometric test. Four were tried and every one
+    flickered, because the procedure commands a two-hundred-degree turn and half
+    way round it the aeroplane is on nobody's track. Whether a man is flying the
+    missed approach is a fact about his HISTORY, so the caller holds it.
+    """
+
+    def setUp(self):
+        self.p = R.BATUMI_ASR
+
+    def climbing_out(self, nm, alt):
+        return asr.Position(range_nm=nm, radial_deg=self.p.missed_hdg,
+                            alt_ft=alt, heading_deg=self.p.missed_hdg)
+
+    def test_he_is_left_to_fly_the_procedure(self):
+        for nm, alt in ((3.0, 1500), (5.0, 2000), (8.0, 2600)):
+            with self.subTest(nm=nm):
+                g = asr.guide(self.climbing_out(nm, alt), self.p, on_missed=True)
+                self.assertEqual(g.phase, "missed",
+                                 f"vectored to {g.heading} while climbing out")
+                self.assertEqual(g.heading, self.p.missed_hdg)
+
+    def test_he_is_not_told_he_is_off_course(self):
+        """He is flying the heading he was given and is exactly where he should
+        be. 'Left of course' is not true in any useful sense."""
+        g = asr.guide(self.climbing_out(5.0, 2000), self.p, on_missed=True)
+        self.assertEqual(g.deviation, "")
+
+    def test_the_procedure_ends_at_the_missed_approach_altitude(self):
+        """A latch with no release is a worse bug than the one it fixes."""
+        g = asr.guide(self.climbing_out(9.0, self.p.missed_climb_ft + 200),
+                      self.p, on_missed=True)
+        self.assertNotEqual(g.phase, "missed")
+
+    def test_and_when_he_flies_out_of_the_terminal_area(self):
+        g = asr.guide(
+            asr.Position(range_nm=self.p.final_intercept_nm + 5,
+                         radial_deg=self.p.missed_hdg, alt_ft=2000,
+                         heading_deg=self.p.missed_hdg),
+            self.p, on_missed=True)
+        self.assertNotEqual(g.phase, "missed")
+
+    def test_geometry_alone_cannot_know_and_does_not_pretend_to(self):
+        """Unlatched, the same position is an ordinary vectoring problem -- and
+        that is correct, not a bug. Nothing in where he IS says he went around;
+        four attempts to infer it from position all produced reversals."""
+        g = asr.guide(self.climbing_out(5.0, 2000), self.p)
+        self.assertNotEqual(g.phase, "missed")
+

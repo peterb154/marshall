@@ -68,7 +68,28 @@ BREAKUP_ID = [
     ("Hoover", "Joey",    "Pony one one, request the approach."),
 ]
 
-SCRIPTS = {"pair": SCRIPT, "formation": FORMATION, "breakup": BREAKUP_ID}
+# THE GO-AROUND. Three sessions of pilots reporting the same thing:
+#
+#     "pny flight is outbound after the missed and the atc is saying that he is
+#      left of course (thinking he is inbound)"
+#
+# He flies the approach, misses, and climbs away on the published missed --
+# which at Batumi turns onto 330 while the outbound centreline is 304. What must
+# NOT happen is a vector back towards the field while he is climbing out on it.
+GO_AROUND = [
+    ("Hoover", "Joey", "Batumi Approach, Hoover one one, checking in, one five miles northwest."),
+    ("Hoover", "Joey", "Hoover one one, request the radar approach runway one three."),
+    ("Hoover", "Joey", "Hoover one one, established on the final approach course."),
+    ("Hoover", "Joey", "Hoover one one is going around, missed approach."),
+    # From here every reply must be about the MISSED APPROACH -- climb, the
+    # published heading, re-sequencing -- and never a turn back towards the
+    # field, and never "left of course".
+    ("Hoover", "Joey", "Hoover one one, climbing through two thousand on the missed."),
+    ("Hoover", "Joey", "Hoover one one, passing two thousand five hundred, say my instructions."),
+]
+
+SCRIPTS = {"pair": SCRIPT, "formation": FORMATION, "breakup": BREAKUP_ID,
+           "goaround": GO_AROUND}
 
 
 def run(host: str, freq_mhz: float, script=None, reply_wait: float = 30.0) -> None:

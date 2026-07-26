@@ -288,7 +288,7 @@ def _to_point(pos: Position, profile, along: float, across: float) -> float:
     return math.degrees(math.atan2(pe - fe, pn - fn)) % 360
 
 
-def guide(pos: Position, profile) -> Guidance:
+def guide(pos: Position, profile, on_missed: bool = False) -> Guidance:
     """One radar look -> the next instruction.
 
     Three states, and which one he is in is decided by a single question --
@@ -297,6 +297,17 @@ def guide(pos: Position, profile) -> Guidance:
       final        established on the course inside the fix: hold it, come down
       vector/in    in position: cut across at 45 until close, then blend on
       vector/out   not in position: go to a fixed gate that puts him in position
+
+    `on_missed` is the one fact this function cannot work out for itself, and it
+    is the caller's to hold. Whether a man is flying the published missed
+    approach is a fact about his HISTORY, not about where he is: the procedure
+    commands a two-hundred-degree turn, and half way round it he is on nobody's
+    track and pointing at nothing in particular. Every stateless test for it
+    flickers, and each flicker is a reversal on the radio.
+
+    Geometry still starts it -- the entry test below is unchanged and catches
+    the pilot who goes around without saying so. The flag is only what makes him
+    STAY on it, and it costs nothing when the caller has no opinion.
 
     Everything except the last mile happens OUTSIDE the fix, so that by the fix
     he is established, on course and at the fix altitude. The fix is a gate he
@@ -370,6 +381,28 @@ def guide(pos: Position, profile) -> Guidance:
                    intercept_heading(profile.final_crs, xtk, along),
                    advisory_altitude(pos.range_nm, profile) if inside
                    else safe_alt(pos, profile))
+
+    # ALREADY FLYING THE MISSED, and not yet finished it.
+    #
+    # Above the in-position question, which is the whole fix. Underneath it this
+    # was unreachable on the second leg: an aeroplane climbing out on 330 sits
+    # on the APPROACH side of the field with positive along-track, reads as "in
+    # position", and is handed an intercept -- turning it back towards the field
+    # it is climbing away from. Reported from the cockpit on the first night and
+    # true until now:
+    #
+    #   "pny flight is outbound after the missed and the atc is saying that he
+    #    is left of course (thinking he is inbound)"
+    #
+    # The procedure has a defined end and this is it: at the missed approach
+    # altitude he is an ordinary repositioning problem again.
+    if (on_missed and pos.alt_ft < profile.missed_climb_ft
+            and pos.range_nm <= profile.final_intercept_nm):
+        straight_ft = getattr(profile, "missed_straight_ft", 0)
+        return out("missed",
+                   profile.final_crs if pos.alt_ft < straight_ft
+                   else profile.missed_hdg,
+                   profile.missed_climb_ft)
 
     if in_position(along, xtk, profile):
         # In position. Far off the course, cut across at a fixed 45 -- fixed,

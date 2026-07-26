@@ -623,3 +623,61 @@ class TestWaitForTheCheckIn(unittest.TestCase):
     def test_the_rule_is_off_when_no_frequency_is_given(self):
         """Callers that do not care about channels must not be broken by it."""
         self.assertTrue(self.A.may_be_vectored(self.ctl, "Pony 1-1"))
+
+
+class TestTheMissedApproachLatch(unittest.TestCase):
+    """Who is flying the published missed, held by the side that can know.
+
+    A latch is a liability unless it releases, so the release is tested harder
+    than the set: an aircraft stuck on the missed approach for ever would be a
+    worse bug than the reversals it was built to stop.
+    """
+
+    def setUp(self):
+        from marshall.atc import agent_atc
+        from marshall.atc import asr
+        from marshall.core import route as R
+        self.A, self.asr, self.p = agent_atc, asr, R.BATUMI_ASR
+        self.A._flying_missed.clear()
+        self.ctl = atc.Controller(self.p)
+
+    def at(self, nm, alt, radial=None):
+        return self.asr.Position(range_nm=nm, alt_ft=alt,
+                                 radial_deg=radial or self.p.missed_hdg,
+                                 heading_deg=self.p.missed_hdg)
+
+    def test_it_starts_when_the_geometry_hands_out_the_procedure(self):
+        self.A.note_missed("Pony 1-1", "missed", self.ctl)
+        self.assertTrue(
+            self.A.flying_the_missed("Pony 1-1", self.at(4, 1800), self.p, self.ctl))
+
+    def test_it_also_starts_when_he_SAYS_he_is_going_around(self):
+        """The two ways a controller finds out. Either is enough."""
+        self.ctl.report_missed("Pony 1-1")
+        self.assertTrue(
+            self.A.flying_the_missed("Pony 1-1", self.at(4, 1800), self.p, self.ctl))
+
+    def test_it_releases_at_the_missed_approach_altitude(self):
+        self.A.note_missed("Pony 1-1", "missed", self.ctl)
+        self.assertFalse(
+            self.A.flying_the_missed("Pony 1-1",
+                                     self.at(6, self.p.missed_climb_ft), self.p,
+                                     self.ctl))
+
+    def test_it_releases_outside_the_terminal_area(self):
+        self.A.note_missed("Pony 1-1", "missed", self.ctl)
+        self.assertFalse(
+            self.A.flying_the_missed("Pony 1-1",
+                                     self.at(self.p.final_intercept_nm + 2, 2000),
+                                     self.p, self.ctl))
+
+    def test_it_does_not_leak_between_aircraft(self):
+        self.A.note_missed("Pony 1-1", "missed", self.ctl)
+        self.assertFalse(
+            self.A.flying_the_missed("Hammer 1-1", self.at(4, 1800), self.p,
+                                     self.ctl))
+
+    def test_an_ordinary_vector_does_not_set_it(self):
+        self.A.note_missed("Pony 1-1", "vector", self.ctl)
+        self.assertFalse(
+            self.A.flying_the_missed("Pony 1-1", self.at(4, 1800), self.p, self.ctl))

@@ -736,6 +736,52 @@ def reconcile(directive: str, stack: str, vectoring: str,
     return directive, stack, vectoring, ""
 
 
+# WHO IS FLYING THE PUBLISHED MISSED APPROACH, and has not finished it.
+#
+# The one thing `asr.guide` cannot work out for itself, so it belongs to this
+# side. The procedure commands a two-hundred-degree turn and half way round it
+# the aeroplane is on nobody's track -- so every stateless test for it flickers,
+# and every flicker is a reversal on the radio. This is what makes him STAY on
+# it once the geometry has recognised he started.
+_flying_missed: set[str] = set()
+_missed_count: dict[str, int] = {}     # go-arounds already seen, per aircraft
+
+
+def flying_the_missed(cs: str, pos, profile, ctl=None) -> bool:
+    """Maintain and read the missed-approach latch for one aircraft.
+
+    Set when the geometry recognises the procedure has begun, or when the pilot
+    has SAID he is going around and the controller recorded it -- the two ways a
+    controller finds out, and either is enough. Released at the missed approach
+    altitude or on leaving the terminal area, because a latch with no release is
+    a worse bug than the one it fixes.
+    """
+    key = ctl._resolve(cs) if ctl is not None else cs
+    if (pos.alt_ft >= profile.missed_climb_ft
+            or pos.range_nm > profile.final_intercept_nm):
+        _flying_missed.discard(key)
+        return False
+    if ctl is not None:
+        ac = ctl.aircraft.get(key)
+        if ac is not None:
+            # His APPROACH COUNT, not his phase. `report_missed` sets the phase
+            # to MISSED and `_try_clear` re-clears him for another attempt in
+            # the same breath, so by the time anyone looks he reads as CLEARED
+            # again -- correct for sequencing and useless as a signal. The count
+            # only ever goes up, and it goes up exactly once per go-around.
+            been = _missed_count.get(key, 0)
+            if ac.approaches > been:
+                _missed_count[key] = ac.approaches
+                _flying_missed.add(key)
+    return key in _flying_missed
+
+
+def note_missed(cs: str, phase: str, ctl=None) -> None:
+    """The geometry has just handed out the missed approach. Remember it."""
+    if phase == "missed":
+        _flying_missed.add(ctl._resolve(cs) if ctl is not None else cs)
+
+
 # Which frequency each aircraft was last heard on. A controller works the men on
 # HIS channel, and nobody else -- see `may_be_vectored`.
 _heard_on: dict[str, float] = {}
@@ -914,7 +960,9 @@ def separation_context(ctl, transcript: str, scope: str = "",
         fix = radar_fix(scope, intent.callsign)
         if fix is not None:
             from marshall.atc import asr as _asr
-            g = _asr.guide(fix, ctl.profile)
+            g = _asr.guide(fix, ctl.profile,
+                           on_missed=flying_the_missed(intent.callsign, fix,
+                                                       ctl.profile, ctl))
             if g.established and ctl.seen_on_final(intent.callsign):
                 print(f"  .. {intent.callsign} is already on final per radar; "
                       "not stacking him", flush=True)
@@ -1522,7 +1570,10 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     if not may_be_vectored(ctl, cs, traffic=traffic,
                                            freq_hz=final_hz):
                         continue                # holding, or nobody's turn yet
-                    g = asr.guide(pos, profile)
+                    g = asr.guide(pos, profile,
+                                  on_missed=flying_the_missed(cs, pos, profile,
+                                                              ctl))
+                    note_missed(cs, g.phase, ctl)
 
                     # Being VECTORED. The controller has to turn him when he
                     # reaches the point, not when he next happens to transmit --
@@ -1724,7 +1775,10 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
 
         # One aeroplane, one instruction. Decide here which authority owns him
         # rather than handing the agent three and hoping -- see reconcile().
-        _g = asr.guide(_fix, profile) if _fix is not None else None
+        _g = (asr.guide(_fix, profile,
+                        on_missed=flying_the_missed(known or "?", _fix, profile,
+                                                    ctl))
+              if _fix is not None else None)
         directive, stack, vectoring, dropped = reconcile(
             directive, stack, vectoring, _g)
         if dropped:
