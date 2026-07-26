@@ -1024,10 +1024,30 @@ OUR_STATIONS = frozenset({SRS_NAME, "Engineering", "Eartest"})
 # comms ladder uses all four, so a dedicated engineering channel would be one
 # the pilot physically cannot tune. It answers wherever it was called.
 
+# ASKING for engineering, in whatever words. Two failure modes, and this sits
+# between them.
+#
+# A fixed list of phrasings is a list of ways to be ignored: of twenty-five
+# natural ways to ask, the first pattern missed twelve, and a pilot who is
+# ignored has no way of telling that from a dead channel -- the exact bug this
+# channel exists to end.
+#
+# Matching the bare noun is the other ditch. "Engineering said the vectors are
+# fixed", said to a controller, is not a request to be transferred, and quietly
+# routing it away from ATC is its own kind of not-listening.
+#
+# So: the word, plus anything that makes it an ADDRESS or a REQUEST. Wide on
+# purpose -- being wrong costs one transmission in the log and "back to
+# approach" undoes it.
 _ENG_CALL = re.compile(
-    r"\b(?:get\s+)?engineering\b.{0,24}?\b(?:on the line|come up|are you|"
-    r"you there|check in|checking in|read me|copy)\b|"
-    r"\bget engineering\b|\bengineering,?\s*(?:radio )?check\b", re.I)
+    r"\bengineering\b[\s,]*[?!]"                            # "Engineering?" -- a query
+    r"|\bengineering\b.{0,28}?\b(?:on the line|come up|are you|you there|"
+    r"you up|you on|you got|check in|checking in|read me|copy|how do you|"
+    r"standing by|got a (?:sec|minute|moment)|there\b|available|this is)"
+    r"|\b(?:get|need|want|call|raise|reach|ask|talk to|speak to|for|this is)"
+    r"\b.{0,20}?\bengineering\b"
+    r"|\bengineering\b[\s,]*(?:radio )?check\b"
+    r"|\bis engineering\b", re.I)
 _ENG_DONE = re.compile(
     r"\bengineering\b.{0,16}?\b(?:clear|out|thanks|thank you|done)\b|"
     r"\b(?:clear|out|thanks|thank you|done)[,\s]+engineering\b|"
@@ -1818,9 +1838,21 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # pilot who has called engineering up is not talking to ATC and must not
         # be answered by it.
         _eng_hz = heard_hz or freq_hz
-        _summoned = bool(_ENG_CALL.search(transcript))
         _on_the_line = client.last_sender_guid in engineering_line
-        if _summoned or (_on_the_line and not _ENG_DONE.search(transcript)):
+        # Release is checked FIRST: "thanks engineering" and "engineering, clear"
+        # both contain the word, so a summons that matched on the word alone
+        # would re-open the line the pilot was trying to close and he could
+        # never get back to the controller.
+        if _on_the_line and _ENG_DONE.search(transcript):
+            engineering_line.pop(client.last_sender_guid, None)
+            print(f"  ENGINEERING released {known or srs}", flush=True)
+            with radio_lock:
+                client.transmit(
+                    eng_voice.frames("Engineering clear, back to the controller."),
+                    _eng_hz, AM)
+            continue
+        _summoned = bool(_ENG_CALL.search(transcript))
+        if _summoned or _on_the_line:
             engineering_line[client.last_sender_guid] = _eng_hz
             stamp = time.strftime("%H:%M:%S")
             who = known or srs
@@ -1838,15 +1870,6 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 print(f"  ENG[tx] {reply}", flush=True)
                 client.transmit(eng_voice.frames(reply), _eng_hz, AM)
             continue
-        if _on_the_line and _ENG_DONE.search(transcript):
-            engineering_line.pop(client.last_sender_guid, None)
-            print(f"  ENGINEERING released {known or srs}", flush=True)
-            with radio_lock:
-                client.transmit(
-                    eng_voice.frames("Engineering clear, back to the controller."),
-                    _eng_hz, AM)
-            continue
-
         # A debug note: record it and stay off the air entirely. The pilot is
         # talking to the project, not to the controller.
         note = debug_note(transcript)

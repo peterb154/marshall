@@ -649,12 +649,35 @@ class TestEngineeringChannel(unittest.TestCase):
     """
 
     def test_the_ways_a_pilot_actually_asks(self):
+        """Saying the word is the call.
+
+        A list of accepted wordings is a list of ways to be ignored: of
+        twenty-five natural phrasings against the original pattern, twelve
+        missed -- including just saying "Engineering".
+        """
         for said in ("get engineering on the line",
                      "Engineering, are you there?",
                      "engineering come up",
-                     "engineering radio check"):
+                     "engineering radio check",
+                     "engineering",
+                     "Engineering?",
+                     "engineering, you up?",
+                     "engineering, how do you read",
+                     "is engineering there",
+                     "Hoover one one for engineering",
+                     "need engineering"):
             with self.subTest(said=said):
                 self.assertTrue(agent_atc._ENG_CALL.search(said))
+
+    def test_release_beats_summons_on_the_same_word(self):
+        """"thanks engineering" contains the word, so a summons matching on the
+        word alone would re-open the line the pilot is trying to close -- and he
+        could never get back to the controller."""
+        for said in ("thanks engineering", "engineering, clear", "engineering out"):
+            with self.subTest(said=said):
+                self.assertTrue(agent_atc._ENG_CALL.search(said))
+                self.assertTrue(agent_atc._ENG_DONE.search(said),
+                                "release must be checked first, and it is")
 
     def test_an_ordinary_call_is_not_a_summons(self):
         for said in ("Batumi Approach, Hammer one one, request the approach",
