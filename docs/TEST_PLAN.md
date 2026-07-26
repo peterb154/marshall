@@ -33,6 +33,17 @@ Priority column: **P1** never flown, this sortie is the first real test ·
 **P1.** A1–A4 are the tool you will use for everything else, so they go first. If
 A2 gives silence, stop and tell me — every other test gets harder to report.
 
+
+**What each one is actually checking**
+
+**A1** — Engineering has to be reachable on **more than one channel** — it used to be a process launched by hand per frequency, so when you changed radio there was simply nothing there.
+
+**A2** — Silence is the actual bug. You could not tell a dead channel from an engineer with his head in the code, so it now always tells you which world you are in.
+
+**A3** — Once you have called engineering up, your words come to me and **not** to the controller. Without this the ATC answers your bug report, and the report ends up buried in its reply.
+
+**A4** — And you can hand the frequency back without restarting anything — otherwise talking to engineering costs you the controller for the rest of the sortie.
+
 ---
 
 ## B — the approach (the one that has been flown most, and broken most)
@@ -52,6 +63,29 @@ A2 gives silence, stop and tell me — every other test gets harder to report.
 
 **B4 is the headline test of this sortie.** It is the "talks over us constantly"
 fix and it has only ever been proven against a synthetic pilot.
+
+
+**What each one is actually checking**
+
+**B1** — Everything about the approach on ONE channel. The talkdown used to transmit on Tower's frequency while the model answered on Approach's, which arrived as two voices disagreeing.
+
+**B1a** — A controller must not start working you before you have tuned him. The metronome knew you from *Center's* frequency and began mid-instruction.
+
+**B2** — The mile calls ARE the surveillance approach — one voice, one channel, every mile. Silence is indistinguishable from having been forgotten.
+
+**B3** — Known-bad geometry, still open. What I need is whether the turn is *away* from the field, and roughly where you were when it happened.
+
+**B4** — A radio is half duplex and so are the manners. The metronome transmitted on its own schedule regardless of who was talking — and a call it holds must be **made afterwards, not dropped**.
+
+**B5** — A readback needs somewhere to go. Filling that gap destroys the only check anyone has on whether you got the numbers right, and several were mangled the night this was found.
+
+**B6** — On a talkdown the controller IS your approach aid, so sending you to Tower mid-approach takes you off the frequency that is flying it. On an ILS the same handoff is correct — the difference is the procedure, not the field.
+
+**B7** — The scope knows you are down. Nothing was reading it, so a pilot sat parked while Tower worked him as a missed approach.
+
+**B8** — Open for three sessions and four failed attempts: climbing out on the published missed, you were vectored back towards the field. The fix is new and **has never been flown**.
+
+**B9** — The other half of B8 — the latch has to release. Stuck on the missed approach for ever would be a worse bug than the one it fixed.
 
 ---
 
@@ -75,6 +109,33 @@ fix and it has only ever been proven against a synthetic pilot.
 **C5 is the one I am least sure of.** It fires on live geometry I could not
 reproduce alone. If Center hands you off on departure anyway, that is the fix
 not working, not you misreading it.
+
+
+**What each one is actually checking**
+
+**C1** — Asking for a visual should be enough. The controller used to refuse outright and had to be argued into it.
+
+**C2** — A visual means he stops talking you down. Reading ranges to a man looking at the runway is chatter over somebody busy.
+
+**C3** — 'Request the visual' and 'field in sight' are one word apart and mean opposite things — asking versus reporting. Backwards, it either denies you an approach or clears one while you are still in cloud.
+
+**C4** — Identity has to be settled BEFORE anyone is separated. A controller who cannot tell two aeroplanes apart cannot keep them apart.
+
+**C4a** — A lead who checked in for the formation was stuck with the flight's name. Saying your own callsign **once** must be enough to change it — you cannot out-vote yourself.
+
+**C4b** — The wingman ends up distinct and stays that way, including when the transcriber hears 'Pony one *too*'.
+
+**C4c** — Noise must not become an aeroplane. A garbled call once put 'Waypoint 3' in the holding stack, and real aircraft were sequenced behind a ghost.
+
+**C5** — Range cannot express 'keep him until he leaves', because range does not know whether you are arriving or departing. Airspace does.
+
+**C6** — And the ordinary inbound handoff still has to work — the risk in C5 is breaking this.
+
+**C7** — Computed off the live track cache, not estimated. Ask twice and get the same answer, because a pilot cannot tell a computed number from a guessed one.
+
+**C8** — An honest miss beats an invented number every time. 'No fix for that' is a good answer.
+
+**C9** — The overlord can actually put something in the world and task you onto it — and reports what the sim really created, not what she asked for.
 
 ---
 
@@ -100,6 +161,19 @@ for is a mile call landing where your answer should have been.
 **F4 matters most for safety.** If the man holding starts getting vectors, that
 is two aircraft flying the same intercept — stop and say so.
 
+
+**What each one is actually checking**
+
+**F1** — Two pilots, and every reply names the man who actually spoke. The bridge knew and was not telling the model, which inferred the caller and got it wrong.
+
+**F2** — The same courtesy as B4, but contested: one of you is taking mile calls while the other talks. **This has never been properly tested** — synthetic pilots take turns too politely.
+
+**F3** — The gap between you stopping and the answer arriving is three to nine seconds of model thinking, and the metronome would happily fill it with somebody else's mile call.
+
+**F4** — The safety one. If the man holding starts getting vectors, that is two aircraft flying the same intercept — stop and say so.
+
+**F5** — Identity through the split, with two real radios. One SRS client is one radio, so this cannot be tested any other way.
+
 ---
 
 ## D — identity and the radio
@@ -111,6 +185,19 @@ is two aircraft flying the same intercept — stop and say so.
 | D3 | P2 | Call Approach by the wrong name (say "Batumi Tower" on 124) | Corrected **and told which frequency you are on** | [#7] |
 | D4 | P3 | Two aircraft airborne, neither cleared | **Neither** gets vectors until one is cleared | [#15] `may_be_vectored` |
 | D5 | P3 | Try to start a second bridge while one runs *(ground test, my end)* | Refuses, names the PID | [#18] `claim_the_frequency` |
+
+
+**What each one is actually checking**
+
+**D1** — Your identity is anchored to the RADIO, not to the words, so it survives a mangled or missing callsign.
+
+**D2** — The transcriber is primed with the names actually in play — these came through as 'Century' and 'in-grass', and one garble hijacked a radio for a whole sortie.
+
+**D3** — He corrects you rather than accepting whatever he is called, and tells you which frequency you are on — agreeing would put Tower on a frequency Tower is not on.
+
+**D4** — With traffic and nobody cleared, a vector is an invitation that two aircraft accept at once.
+
+**D5** — Two bridges on one frequency was the most-repeated failure of squadron night, and killing the launcher does not kill the process.
 
 ---
 

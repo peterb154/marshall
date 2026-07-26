@@ -47,6 +47,10 @@ SHORT = {"A": "PREFLT", "B": "APPROACH", "C": "NEW", "D": "RADIO",
 _SECTION = re.compile(r"^## ([A-F]) — (.+)$", re.M)
 _ROW = re.compile(r"^\|\s*([A-F]\d+[a-z]?)\s*\|(.+)$")
 _ISSUE = re.compile(r"^## \[([A-Z]+-\d+)\]\s+(.*?)(?:\s+—\s+#(\d+))?\s*$", re.M)
+# "**A1** — what this row is actually checking." The table has to stay terse to
+# be readable as a table; the sentence is what makes it flyable by somebody who
+# was not in the room when the bug was found.
+_WHY = re.compile(r"^\*\*([A-F]\d+[a-z]?)\*\*\s+—\s+(.+?)\s*$", re.M)
 
 
 def _read(name: str) -> str:
@@ -69,9 +73,15 @@ def _md(text: str) -> str:
     return re.sub(r"\[#(\d+)\]", r'<span class="iss">#\1</span>', text)
 
 
+def why() -> dict[str, str]:
+    """{test id: the sentence saying what it is really checking}."""
+    return {m.group(1): m.group(2) for m in _WHY.finditer(_read("TEST_PLAN.md"))}
+
+
 def sections() -> list[tuple[str, str, list[dict]]]:
     """(letter, title, rows) for each section of the card, in card order."""
     card = _read("TEST_PLAN.md")
+    notes = why()
     found = list(_SECTION.finditer(card))
     out = []
     for i, m in enumerate(found):
@@ -89,7 +99,7 @@ def sections() -> list[tuple[str, str, list[dict]]]:
                         and not set(cells[0]) <= set("-: ")
                         and not cells[0].startswith("What you")):
                     rows.append({"id": "", "prio": "", "what": cells[0],
-                                 "expect": cells[1], "issue": ""})
+                                 "expect": cells[1], "issue": "", "why": ""})
                 continue
             cells = _cells(line)
             if len(cells) < 3:
@@ -102,7 +112,8 @@ def sections() -> list[tuple[str, str, list[dict]]]:
                 ident, what, expect, issue = cells[:4]
                 prio = ""
             rows.append({"id": ident, "prio": prio, "what": what,
-                         "expect": expect, "issue": issue})
+                         "expect": expect, "issue": issue,
+                         "why": notes.get(ident, "")})
         out.append((m.group(1), m.group(2), rows))
     return out
 
@@ -137,6 +148,8 @@ CSS = """
   .ft .what { margin: 2px 0 0 66px; }
   .ft .exp { margin: 2px 0 0 66px; color: #2f4a24; }
   .ft .exp:before { content: "→ "; }
+  .ft .why { margin: 4px 0 0 66px; font-size: 13px; color: #4a4335;
+             border-left: 2px solid #b9ad8c; padding-left: 8px; }
   .ft code { background: #ded3b2; padding: 0 3px; }
   .ft .warn { background: #f2e3c4; border-left: 4px solid #b03024;
               padding: 6px 9px; margin: 8px 0; }
@@ -169,7 +182,10 @@ def _rows_html(rows: list[dict]) -> str:
                 f'<div class="row"><div class="hd"><span class="id">{r["id"]}'
                 f'</span>{_issue_only(r["issue"])} {prio}</div>'
                 f'<div class="what">{_md(r["what"])}</div>'
-                f'<div class="exp">{_md(r["expect"])}</div></div>')
+                f'<div class="exp">{_md(r["expect"])}</div>'
+                + (f'<div class="why">{_md(r["why"])}</div>' if r.get("why")
+                   else "")
+                + '</div>')
         else:
             out.append(
                 f'<div class="row"><div class="what" style="margin-left:0">'
