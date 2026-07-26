@@ -85,6 +85,20 @@ def morse(ident: str) -> str:
     return " ".join(table[c] for c in ident.upper())
 
 
+def _stamp() -> str:
+    """When this page was generated, printed small in the corner.
+
+    Every chart here is generated from route.py, and the failure mode is always
+    the same: the page is right on the server and wrong in front of the pilot,
+    because something between them cached it. Chrome caches per URL, the
+    kneeboard container regenerates only on start, and OpenKneeboard has ideas
+    of its own -- three separate places a stale copy can hide, and no way to
+    tell by looking.
+    """
+    import datetime
+    return datetime.datetime.now().strftime("%H:%M:%S")
+
+
 def build() -> str:
     # The SORTIE, not the letdown. This page used to show the three beacon legs
     # of the approach, which stopped being a flight plan the moment the approach
@@ -103,7 +117,7 @@ def build() -> str:
         f'<td>{start.ident or "&mdash;"}</td>'
         f'<td>{f"{start.freq_mhz:.3f}" if start.freq_mhz else "&mdash;"}</td>'
         f'<td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td>'
-        f'<td>&mdash;</td><td>&mdash;</td><td>&mdash;</td>'
+        f'<td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td>'
         f'<td class="blank"></td></tr>')
 
     for i, leg in enumerate(legs):
@@ -117,6 +131,7 @@ def build() -> str:
             f'<td>{leg.wca:+.0f}</td>'
             f'<td><b>{leg.heading_mag:03.0f}</b></td>'
             f'<td><b>{R.leg_altitude(i):,}</b></td>'
+            f'<td><b>{R.ias_mph(R.CRUISE_TAS_MPH, R.leg_altitude(i))}</b></td>'
             f'<td>{leg.distance_nm:.1f}</td>'
             f'<td>{leg.groundspeed_mph:.0f}</td>'
             f'<td>{leg.time_str}</td>'
@@ -124,7 +139,8 @@ def build() -> str:
 
     rows.append(
         f'<tr class="tot"><td class="fix">TOTAL</td><td></td><td></td>'
-        f'<td></td><td></td><td></td><td></td><td>{total_nm:.1f}</td><td></td>'
+        f'<td></td><td></td><td></td><td></td><td></td><td>{total_nm:.1f}</td>'
+        f'<td></td>'
         f'<td>{int(total_min)}:{round((total_min % 1) * 60):02d}</td>'
         f'<td class="blank"></td></tr>')
 
@@ -162,11 +178,13 @@ def build() -> str:
     <tr>
       <th>Checkpoint</th><th>Ident</th><th>Freq</th>
       <th>Crs&deg;T</th><th>WCA</th><th>Hdg&deg;M</th>
-      <th>Alt</th><th>Dist</th><th>GS</th><th>Time</th><th>ATA</th>
+      <th>Alt</th><th>IAS</th><th>Dist</th><th>GS</th><th>Time</th><th>ATA</th>
     </tr>
     {"".join(rows)}
   </table>
 
+  <div style="text-align:right;font-size:10px;color:#7a7060;margin:-6px 0 6px">
+    built {_stamp()}</div>
   <h2>Controllers &mdash; SCR-522 Channels</h2>
   <table>
     <tr><th>Ch</th><th>Freq</th><th>Station</th><th>Sector</th></tr>

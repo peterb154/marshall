@@ -189,6 +189,20 @@ SORTIE_LEGS = list(zip(SORTIE, SORTIE[1:]))
 SORTIE_ALT_FT = [2000, 500, 3000, 9000, 11000]
 
 
+def ias_mph(tas_mph: float, alt_ft: float) -> int:
+    """Indicated airspeed for a true airspeed at a height.
+
+    What the pilot flies is the needle, and the needle reads less than the
+    truth as the air thins -- about two per cent per thousand feet, which is
+    the rule of thumb every pilot carries and is close enough well below the
+    tropopause. Down at five hundred feet over the water they are the same
+    number; coming home at eleven thousand they are thirty apart, and a nav log
+    quoting only true airspeed asks the pilot to do that sum himself while
+    flying an aeroplane.
+    """
+    return int(round(tas_mph / (1.0 + 0.02 * (alt_ft / 1000.0))))
+
+
 def leg_altitude(i: int) -> int:
     """Planned altitude for leg i (0-based), or cruise if the route is shorter."""
     if 0 <= i < len(SORTIE_ALT_FT):
