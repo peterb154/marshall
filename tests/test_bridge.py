@@ -5,6 +5,7 @@ radio. They exist because both failures below were found on the air, in the
 controller's voice, mid-sortie.
 """
 
+import os
 import unittest
 
 from marshall.atc import agent_atc
@@ -559,3 +560,80 @@ class TestOneAircraftOneInstruction(unittest.TestCase):
         # Blind, we have no grounds to overrule anyone.
         d, s, v, dropped = agent_atc.reconcile(self.HOLD, "S", self.VEC, None)
         self.assertEqual((d, s, v, dropped), (self.HOLD, "S", self.VEC, ""))
+
+
+class TestNoiseDoesNotStealTheRadio(unittest.TestCase):
+    """One garbled call must not rebind a radio that has identified properly.
+
+    A P-47 bound itself to "Waypoint 3" off a single misheard transmission and
+    then overrode every correct "Hammer one two" that followed -- and the
+    separation stack filled with aeroplanes that did not exist.
+    """
+
+    def setUp(self):
+        agent_atc._transmitters.clear()
+        agent_atc._order.clear()
+
+    def test_an_established_binding_survives_one_garble(self):
+        for _ in range(3):
+            agent_atc.transmitter_callsign("g9", "Hammer one two, level five thousand")
+        self.assertEqual(
+            agent_atc.transmitter_callsign("g9", "Waypoint three, say distance"),
+            "Hammer 1-2")
+
+    def test_saying_it_twice_re_identifies(self):
+        for _ in range(3):
+            agent_atc.transmitter_callsign("g9", "Hammer one two, level five thousand")
+        agent_atc.transmitter_callsign("g9", "Pony one one, checking in")
+        agent_atc.transmitter_callsign("g9", "Pony one one, five thousand")
+        agent_atc.transmitter_callsign("g9", "Pony one one, inbound")
+        self.assertEqual(agent_atc.transmitter_callsign("g9", "say again"),
+                         "Pony 1-1")
+
+
+class TestOneBridgeAtATime(unittest.TestCase):
+    """Two bridges on one frequency is the most expensive failure here.
+
+    Killing the `uv run` launcher does not kill the python child, so "restart
+    the bridge" quietly leaves the old one logged into SRS. Both answer, and
+    each hears the other's reply as a pilot call. It happened twice on squadron
+    night and was reported both times as "duplicate controllers": two stacks,
+    two conversations, one believing a pilot inbound while the other believed
+    him outbound, both fluent.
+    """
+
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.mkdtemp()
+        self.path = os.path.join(self.tmp, "bridge.lock")
+        self._saved = agent_atc._lock_fd
+        agent_atc._lock_fd = None
+
+    def tearDown(self):
+        if agent_atc._lock_fd:
+            agent_atc._lock_fd.close()
+        agent_atc._lock_fd = self._saved
+
+    def test_the_first_bridge_takes_the_frequency(self):
+        self.assertTrue(agent_atc.claim_the_frequency(self.path))
+
+    def test_the_second_is_refused(self):
+        held = agent_atc.claim_the_frequency(self.path)
+        self.assertTrue(held)
+        first = agent_atc._lock_fd
+        agent_atc._lock_fd = None       # a genuinely separate claim
+        self.assertFalse(agent_atc.claim_the_frequency(self.path))
+        agent_atc._lock_fd = first
+
+    def test_the_lock_names_the_process_holding_it(self):
+        agent_atc.claim_the_frequency(self.path)
+        with open(self.path) as fh:
+            self.assertEqual(fh.read().strip(), str(os.getpid()),
+                             "the refusal message has to say what to kill")
+
+    def test_releasing_frees_it(self):
+        agent_atc.claim_the_frequency(self.path)
+        agent_atc._lock_fd.close()      # what process death does for us
+        agent_atc._lock_fd = None
+        self.assertTrue(agent_atc.claim_the_frequency(self.path),
+                        "a crashed bridge must not block the next one")

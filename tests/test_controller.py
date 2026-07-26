@@ -472,3 +472,59 @@ class TestStationsAreChosenByRole(unittest.TestCase):
         no_twr = dataclasses.replace(
             R.BATUMI_ASR, stations=[R.CENTER, R.APPROACH, R.OVERLORD])
         self.assertEqual(no_twr.station()[0], R.APPROACH.name)
+
+
+class TestNobodyClearedNobodyVectored(unittest.TestCase):
+    """The radar thread may only turn the aircraft that owns the approach.
+
+    The state that was wrong is the ordinary one: a stack with nobody cleared
+    yet. The filter applied only when somebody DID own the approach, so with
+    nobody cleared it switched itself off and vectored the lot. Two Mustangs
+    holding at five and six thousand were each told to turn onto the intercept
+    and climb to twelve, seconds after being told to hold where they were --
+    reported from the cockpit as "we have duplicate controllers again". It was
+    one controller disagreeing with itself, which is worse.
+    """
+
+    def setUp(self):
+        from marshall.atc.agent_atc import may_be_vectored
+        self.may = may_be_vectored
+        self.ctl = atc.Controller(profile())
+
+    def test_a_single_ship_is_always_vectored(self):
+        self.ctl.report_beacon("Pony 1-1", 4000)
+        texts(self.ctl)
+        self.assertTrue(self.may(self.ctl, "Pony 1-1"))
+
+    def test_a_full_stack_with_nobody_cleared_vectors_nobody(self):
+        self.ctl.check_in("Pony 1-1")
+        self.ctl.check_in("Pony 1-2")
+        texts(self.ctl)
+        for a in self.ctl.aircraft.values():
+            a.phase = atc.Phase.HOLDING
+        self.assertIsNone(self.ctl.owns_the_approach())
+        self.assertFalse(self.may(self.ctl, "Pony 1-1"))
+        self.assertFalse(self.may(self.ctl, "Pony 1-2"))
+
+    def test_only_the_one_who_owns_it_is_vectored(self):
+        self.ctl.report_beacon("Pony 1-1", 4000)     # cleared into the letdown
+        self.ctl.report_beacon("Pony 1-2", 5000)     # holds
+        texts(self.ctl)
+        self.assertTrue(self.may(self.ctl, "Pony 1-1"))
+        self.assertFalse(self.may(self.ctl, "Pony 1-2"))
+
+    def test_radar_traffic_counts_even_with_an_empty_stack(self):
+        """The blind engine forgets over a restart. Radar does not.
+
+        Two Mustangs were on the scope and neither had spoken since the bridge
+        came back, so the stack held nobody -- and both were vectored, at
+        different headings and different altitudes, on one frequency.
+        """
+        self.assertEqual(len(self.ctl.aircraft), 0)
+        self.assertFalse(self.may(self.ctl, "Pony 1-1", traffic=True))
+        self.assertFalse(self.may(self.ctl, "Pony 1", traffic=True))
+        # ...and a lone contact the controller has never heard of is not
+        # vectored either. He has not asked for an approach, so he is not on
+        # one -- see the CAS flight that was vectored onto the Batumi final
+        # the whole way to its ingress point.
+        self.assertFalse(self.may(self.ctl, "Pony 1-1", traffic=False))

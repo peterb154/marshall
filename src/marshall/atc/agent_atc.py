@@ -19,8 +19,11 @@ for a single ship in the letdown the plate levels are the whole story.
 
 from __future__ import annotations
 
+import dataclasses
+from collections import Counter
 import json
 import os
+import pathlib
 import re
 import threading
 import time
@@ -232,6 +235,14 @@ What you own is the JOB:
   essentials.
 - **The picture.** You have the same radar the controllers do. Use it for
   threat calls, bearing and range to a contact, and to answer "where am I".
+- **Never estimate a bearing or a range. Call `vector`.** It computes them
+  exactly off the live track cache. Asked how far the field was, one sortie got
+  "three miles", "eight miles" and "four miles northwest" within a minute, all
+  invented, all confident, from a controller who had the tool and did not
+  reach for it. A pilot cannot tell a computed number from a guessed one, which
+  is the whole reason the guess is unacceptable. If `vector` cannot resolve
+  what he asked for, say so plainly — "no fix for that, call it off your own
+  nav" is a good answer and a made-up mile count is not.
 - **Check-in and check-out.** A flight checks in with fuel and weapons and you
   acknowledge; when it is done or bingo, you release it and send it home.
 - **Honesty about what you do not know.** You know what was reported, not what
@@ -244,6 +255,16 @@ What you own is the JOB:
   sim ACTUALLY created; if that does not match what you asked for, say so and
   do not send anybody. NEVER describe a target you have not either seen on
   radar or placed yourself: a pilot will fly out and look for it.
+- **A pilot may ASK for a target, and the answer is yes.** "Can you give me a
+  tank south of the field", "put something in the valley for me" — that is a
+  request to place one, not a question about what is already there, and
+  refusing it because the area is friendly is the wrong answer. Place it with
+  `spawn_ground`, then task him onto it with a bearing and range he can fly:
+  "roger, armour on the road two miles south of the field, cleared in hot".
+  If the spot is genuinely a bad idea — over the runway, on top of our own
+  troops — offer the nearest one that is not, and place it there. The only
+  refusal is a target you cannot actually create; say that plainly if the sim
+  gives you something other than what you asked for.
 
 Keep transmissions short. You are talking to somebody flying an aeroplane."""
 
@@ -345,6 +366,13 @@ def load_and_push_plate(profile, base: str = BASE_URL):
         print(f"  !! flight-plan bootstrap failed, using route.py: {e}", flush=True)
 
     try:
+        n = push_fixes(base, profile)
+        print(f"  pushed {n} named fixes (projected by the sim)", flush=True)
+    except Exception as e:      # a fix table is not worth failing to start for
+        print(f"  !! fix push failed, controller has the field only: {e}",
+              flush=True)
+
+    try:
         _put_json(f"{base}/prompts/plate", {"body": briefing.plate(profile)})
         print(f"  pushed plate for {profile.controller} to the director", flush=True)
     except (urllib.error.URLError, TimeoutError, OSError) as e:
@@ -385,10 +413,29 @@ def transmitter_callsign(guid: str | None, transcript: str) -> str:
         return ""
     from marshall.atc import callsign
     heard = callsign.extract(transcript)
+    seen = _transmitters.setdefault(guid, Counter())
+    order = _order.setdefault(guid, {})
     if heard:
-        _transmitters[guid] = heard
-    return _transmitters.get(guid, "")
+        seen[heard] += 1
+        order["__n"] = order.get("__n", 0) + 1
+        order[heard] = order["__n"]
+    if not seen:
+        return ""
+    # Most often, ties to the newest. A pilot who says a different callsign
+    # twice has re-identified; one who says it once against an established
+    # binding has probably been misheard. Count alone would freeze the first
+    # thing ever heard, recency alone would chase every garble -- together they
+    # follow the pilot and ignore the noise.
+    return max(seen, key=lambda k: (seen[k], order.get(k, 0)))
 
+
+# What a radio has called itself, and how often. A COUNT rather than the last
+# thing heard, because the last thing heard is whatever Whisper made of a
+# gusty transmission -- one Jug bound itself to "Waypoint 3" off a single
+# garbled call and then overrode every correct "Hammer one two" that followed,
+# which is worse than having no binding at all. Real callsigns repeat; noise
+# does not, so the mode is right and gets righter with every transmission.
+_order: dict = {}          # per-GUID recency, to break count ties
 
 _SHIPS = re.compile(r"(\d+)\s+ships\b", re.I)
 
@@ -667,7 +714,63 @@ def reconcile(directive: str, stack: str, vectoring: str,
     return directive, stack, vectoring, ""
 
 
-def separation_context(ctl, transcript: str, scope: str = "") -> tuple[str, str]:
+def may_be_vectored(ctl, cs: str, traffic: bool = False) -> bool:
+    """May the radar thread turn this aircraft right now?
+
+    The separation invariant, as one question. With a queue, exactly one
+    aircraft is being flown and everybody else is holding -- so a vector, which
+    IS the invitation to start the approach, may only go to whoever owns it.
+
+    The case that matters, and the one that was wrong: a full stack with nobody
+    cleared yet. There the answer is NO for everyone, not YES for everyone. Two
+    Mustangs holding at five and six thousand were each told to turn onto the
+    intercept and climb to twelve, seconds after being told to hold -- "we have
+    duplicate controllers again". They were the same controller, disagreeing
+    with itself.
+    """
+    # TRAFFIC IS WHAT THE SCOPE SEES, not what the stack remembers.
+    #
+    # Keying this on ctl.aircraft alone left the hole that the fix was meant to
+    # close. The blind engine only learns of an aeroplane when somebody says its
+    # name on the radio, so a restart empties it -- and the very next radar
+    # sweep, with two Mustangs plainly on the scope, found fewer than two
+    # aircraft "known" and vectored them both: "Pony one, turn right one eight
+    # zero, maintain four thousand five hundred" and "Pony one one, turn left
+    # one six nine, maintain one two thousand", seconds apart on one frequency.
+    #
+    # Radar does not forget over a restart and does not need to be told. If the
+    # scope shows two, there is traffic, and queue discipline applies whatever
+    # the stack believes.
+    # HE HAS TO HAVE ASKED. The radar thread flies approaches; an aeroplane
+    # that never requested one is not on one, and the scope cannot tell the
+    # difference between an arrival and somebody transiting at four hundred
+    # feet on his way to a target. Two Jugs on a CAS sortie, feet wet and
+    # outbound, were vectored onto the Batumi final the whole way to their
+    # ingress point -- turn right one four nine, turn left three zero zero,
+    # turn left two eight eight -- while they were talking to Sentry about
+    # something else entirely.
+    #
+    # Knowing him is the test, because the controller only knows an aeroplane
+    # that has spoken to it about arriving.
+    if ctl._resolve(cs) not in ctl.aircraft:
+        return False
+
+    if len(ctl.aircraft) < 2 and not traffic:
+        return True                     # single ship: no queue, no question
+    turn = ctl.owns_the_approach()
+    if turn is None:
+        return False                    # nobody cleared -> nobody vectored
+    # Compare ENTITIES, not flight names. Matching on the flight lets a wingman
+    # through on his leader's clearance -- "Pony 1-1" and "Pony 1-2" are one
+    # flight by name, and the whole point of the break-up is that they are two
+    # aeroplanes flying two approaches. Resolving through the controller gets
+    # this right in both states: while they are joined both members resolve to
+    # the flight, and once broken up each resolves to himself.
+    return ctl._resolve(cs) == turn
+
+
+def separation_context(ctl, transcript: str, scope: str = "",
+                       known: str = "") -> tuple[str, str]:
     """The two-brain seam. Advance the deterministic Controller from the call and
     return its authoritative (next-step directive, holding stack).
 
@@ -681,6 +784,26 @@ def separation_context(ctl, transcript: str, scope: str = "") -> tuple[str, str]
     directive = ""
     try:
         intent = bedrock_intent.classify(transcript)
+
+        # ONE RADIO IS ONE AEROPLANE. Whose call this is comes from the GUID
+        # that keyed the mic, never from what Whisper made of the words.
+        #
+        # The transcript is the least reliable thing in the system. In one
+        # sortie a single P-47 entered the separation stack as "Hammer 1-1",
+        # "Hammer 1-3", "All 4" and "Maintained 2" -- four aeroplanes, three of
+        # them imaginary, each with its own place in the queue. With one ship
+        # flying that is untidy. With two it is dangerous: the sequencer works
+        # whoever owns the approach and holds everybody else, so a ghost at the
+        # head of the queue holds two real pilots for an aircraft that does not
+        # exist and never will arrive.
+        #
+        # The GUID arrives free on every transmission and survives any mangling
+        # of the words, so where it has told us a callsign before, that is the
+        # callsign -- and the classifier's guess is overruled.
+        if known and intent.callsign and intent.callsign != known:
+            print(f"  .. heard '{intent.callsign}', but this radio is {known}",
+                  flush=True)
+            intent = dataclasses.replace(intent, callsign=known)
 
         # The engine is blind: it believes position reports, and it has no way
         # to notice a wrong one. Seen live -- a flight called "over the beacon"
@@ -739,6 +862,133 @@ def separation_context(ctl, transcript: str, scope: str = "") -> tuple[str, str]
 # What we register as on the SRS roster. The system, not any one controller --
 # see the note where the client is built.
 SRS_NAME = "Marshall"
+
+# Roster names that are OURS, and must never be mistaken for a pilot.
+#
+# Marshall is the obvious one. Engineering is the one that cost a sortie: a
+# transmit-only radio for talking to a pilot mid-flight, on the same frequency
+# because that is where his ears are. The controller heard it, transcribed it,
+# and answered -- "station calling, say your callsign" -- and worse, attributed
+# a long engineering explanation to Hammer 1-1 and fed it to the model as
+# something the pilot had said. A controller arguing with its own maintenance
+# channel is indistinguishable, from the cockpit, from a controller losing the
+# plot.
+OUR_STATIONS = frozenset({SRS_NAME, "Engineering", "Eartest"})
+
+
+# --- one bridge at a time ------------------------------------------------
+
+BRIDGE_LOCK = config.BUILD_DIR / "bridge.lock"
+_lock_fd = None                      # held open for the life of the process
+
+
+def claim_the_frequency(path=None) -> bool:
+    """Take the bridge lock, or refuse to start. Returns False if taken.
+
+    Two bridges on one frequency is the most expensive failure this system has,
+    and it is trivially easy to cause: killing the `uv run` launcher does not
+    kill the python child, so "restart the bridge" quietly leaves the old one
+    logged into SRS. Both then hear the pilot, both answer, and each hears the
+    other's reply as a pilot call. On squadron night it happened twice and was
+    reported both times as "duplicate controllers" -- the two had separate
+    holding stacks and separate conversations, so one believed a pilot was
+    inbound while the other believed he was outbound, and both were fluent.
+
+    An advisory flock, not a PID file. The kernel releases it when the process
+    dies however it dies, so a crash or a kill -9 cannot leave a stale lock that
+    stops the next start -- which would swap one failure for a worse one.
+    """
+    global _lock_fd
+    import fcntl
+
+    path = pathlib.Path(path) if path else BRIDGE_LOCK
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = open(path, "a+")
+    try:
+        fcntl.flock(fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        fd.seek(0)
+        who = fd.read().strip() or "unknown"
+        fd.close()
+        print(f"!! another bridge already holds the frequency (pid {who}).\n"
+              f"   Two controllers on one channel is the bug this prevents.\n"
+              f"   Stop it first:  kill {who}", flush=True)
+        return False
+    fd.seek(0)
+    fd.truncate()
+    fd.write(str(os.getpid()))
+    fd.flush()
+    _lock_fd = fd            # keep the handle; closing it drops the lock
+    return True
+
+
+def push_fixes(base: str, profile) -> int:
+    """Project route.py's fixes with the SIM's own converter and push them.
+
+    The controller must never estimate a bearing or a range, so it needs a fix
+    table it can compute against -- and the director cannot build one, because
+    it holds lat/lon while route.py holds DCS metres and the two containers do
+    not share code.
+
+    The projection is the sim's, not ours, and that is not fussiness. Caucasus
+    is a transverse Mercator; a flat-earth offset from the field was measured
+    against `coord.LOtoLL` and came out 1.2 miles wrong at the coast and 7.6
+    miles wrong at the target area. A controller confidently seven miles out is
+    worse than one who says he does not know.
+
+    Best effort by design. If the sim is not up, or gRPC is not reachable, the
+    table keeps only the field, `vector` answers "no fix for that", and the
+    approach -- which needs none of this -- carries on unaffected.
+    """
+    import sys
+    from pathlib import Path as _Path
+    from marshall.core import route as R
+
+    # The generated DCS-gRPC stubs live beside the director and are not a
+    # package this process imports normally. pydcs also claims the name `dcs`,
+    # and a regular package shuts the namespace search down -- so the stub tree
+    # has to be bound before anything touches it. Same dance as the tools.
+    _root = _Path(__file__).resolve().parents[3]
+    _stubs = _root / "director" / "_grpc"
+    if str(_stubs) not in sys.path:
+        sys.path.insert(0, str(_stubs))
+    if "dcs" not in sys.modules or not hasattr(sys.modules["dcs"], "__path__"):
+        import types as _types
+        _pkg = _types.ModuleType("dcs")
+        _pkg.__path__ = [str(_stubs / "dcs")]
+        sys.modules["dcs"] = _pkg
+
+    fixes = {f.name: f for _, f in R.sortie_points()}
+    if getattr(profile, "beacon", None) is not None:
+        fixes.setdefault(profile.beacon.name, profile.beacon)
+    if not fixes:
+        return 0
+    lua = "local o = {} "
+    for name, f in fixes.items():
+        lua += (f'do local la, lo = coord.LOtoLL({{x = {f.x}, y = 0, z = {f.z}}}) '
+                f'o[#o+1] = string.format("%s|%.6f|%.6f", "{name}", la, lo) end ')
+    lua += 'return table.concat(o, ";")'
+
+    from dcs.custom.v0 import custom_pb2, custom_pb2_grpc
+    import grpc
+    addr = os.environ.get("DCS_GRPC_ADDR", "127.0.0.1:50051")
+    with grpc.insecure_channel(addr) as ch:
+        raw = str(custom_pb2_grpc.CustomServiceStub(ch).Eval(
+            custom_pb2.EvalRequest(lua=lua), timeout=30).json).strip('"')
+
+    out = {}
+    for rec in raw.split(";"):
+        if rec.count("|") == 2:
+            name, la, lo = rec.split("|")
+            out[name] = [float(la), float(lo)]
+            # Steerpoint NUMBERS too -- "distance to waypoint three" is how a
+            # pilot asks, and the name is what the chart shows.
+    for n, f in R.sortie_points():
+        if f.name in out:
+            out[f"waypoint {n}"] = out[f.name]
+            out[f"steerpoint {n}"] = out[f.name]
+    _put_json(f"{base}/fixes", {"fixes": out})
+    return len(out)
 
 
 def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
@@ -857,12 +1107,28 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         under the same radio lock as everything else so it can never talk over
         the pilot or over the agent mid-sentence.
         """
-        # The talk-down is the final controller's job, so it goes out in his
-        # voice on his frequency rather than on whichever channel the bridge
-        # happened to be started with.
-        _twr = (profile.station_for("tower")
-                if hasattr(profile, "station_for") else None)
-        final_hz = (_twr.freq_mhz * 1_000_000) if _twr else freq_hz
+        # WHICH FREQUENCY THE FINAL IS FLOWN ON. One controller, one channel.
+        #
+        # This used to go out on Tower's frequency while the model's answers
+        # went out on Approach's, and the result was exactly what it sounds
+        # like: a pilot heard a conversation from one voice on one channel and
+        # vectors from a different voice on another, disagreeing, and reported
+        # "two personalities" and "he's sending me south of the field". They
+        # were two halves of one controller, split across two radios.
+        #
+        # On a talkdown the radar controller flies the approach, so his channel
+        # carries all of it -- the conversation, the vectors and the mile calls
+        # -- and Tower's landing clearance is relayed rather than collected on
+        # another frequency. That matches both the procedure and the handoff
+        # rule in route.py, which now keeps him here to the missed approach
+        # point. On any other approach the aeroplane has its own aid and Tower
+        # genuinely does take him at the intercept, so the old behaviour stands.
+        _final = None
+        if hasattr(profile, "station_for"):
+            _final = (profile.station_for("approach")
+                      if getattr(profile, "guidance", "") == "talkdown"
+                      else profile.station_for("tower"))
+        final_hz = (_final.freq_mhz * 1_000_000) if _final else freq_hz
         called: dict[str, int] = {}
         vectored: dict[str, int] = {}      # last heading issued, per aircraft
         vec_at: dict[str, float] = {}      # and when, so he is not nagged
@@ -878,6 +1144,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # the difference between a controller who is thinking and one who is
         # unusable, and it costs one poll of latency on a genuine reversal.
         pending: dict[str, int] = {}
+        grounded: set[str] = set()   # already noticed on the runway
         while True:
             time.sleep(ASR_POLL_SEC)
             if not (radar_on and getattr(profile, "vectored", False)):
@@ -891,11 +1158,60 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 # not a talk-down, it is a collision brief. With nobody queued
                 # the question does not arise and the single ship is worked
                 # normally.
-                turn = ctl.owns_the_approach() if len(ctl.aircraft) >= 2 else None
+                # NOBODY CLEARED MEANS NOBODY VECTORED.
+                #
+                # The filter used to apply only when somebody owned the
+                # approach, so the one state it had to cover -- a full stack
+                # with nobody cleared yet -- was the one where it switched
+                # itself off and vectored everyone. Two Mustangs holding at five
+                # and six thousand were each told to turn onto the intercept and
+                # climb to twelve, seconds after being told to hold where they
+                # were. From the cockpit that is two controllers, and the pilot
+                # said so: "we have duplicate controllers again".
+                #
+                # With traffic a vector IS the invitation to start the approach.
+                # Issuing it to a man who has been told to hold contradicts the
+                # only instruction that matters, and issuing it to two men at
+                # once is the collision brief this whole thread exists to avoid.
+                # So the queue decides, and silence is the correct output until
+                # it does.
 
-                for cs, pos in radar_fixes(scope):
-                    if turn and C.parse(cs).flight.lower() != C.parse(turn).flight.lower():
-                        continue                # he is holding; not his turn
+
+                fixes = radar_fixes(scope)
+                # Two contacts is traffic, and traffic means one at a time.
+                traffic = len(fixes) >= 2
+                for cs, pos in fixes:
+                    # He is on the ground. Stop flying him.
+                    #
+                    # The approach ends when the aeroplane is on the runway, and
+                    # the scope says so plainly -- at the field, at field
+                    # elevation. Waiting to be TOLD leaves the controller working
+                    # a parked aircraft: "I'm sitting on the ground at Batumi,
+                    # and Batumi Tower thinks I'm on the missed approach". He
+                    # was, because nothing had read the one source that knew.
+                    #
+                    # This is the session's rule in miniature -- the stack holds
+                    # what was agreed, the scope holds what is true -- and a
+                    # landing is one of the few places the scope may simply
+                    # overrule the conversation, because an aeroplane at zero
+                    # feet on the aerodrome is not a matter of opinion.
+                    if asr.on_the_ground(pos, profile):
+                        if cs not in grounded:
+                            grounded.add(cs)
+                            print(f"  {cs} is on the ground — approach complete",
+                                  flush=True)
+                            try:
+                                ctl.report_landed(cs)
+                            except Exception:
+                                pass            # a stale stack is not fatal
+                            called.pop(cs, None)
+                            vectored.pop(cs, None)
+                            pending.pop(cs, None)
+                        continue
+                    grounded.discard(cs)        # airborne again: a new sortie
+
+                    if not may_be_vectored(ctl, cs, traffic=traffic):
+                        continue                # holding, or nobody's turn yet
                     g = asr.guide(pos, profile)
 
                     # Being VECTORED. The controller has to turn him when he
@@ -971,8 +1287,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # pilot call, and replies; then this one hears THAT. The two talk to each
         # other forever, jamming the frequency and burning tokens, and the
         # transcripts look almost plausible. Cheap guard, unbounded saving.
-        if srs == SRS_NAME or client.last_sender_guid == client.guid:
-            print(f"  (ignoring {srs} -- that is a controller, not a pilot)",
+        if srs in OUR_STATIONS or client.last_sender_guid == client.guid:
+            print(f"  (ignoring {srs} -- that is one of ours, not a pilot)",
                   flush=True)
             continue
 
@@ -1009,7 +1325,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                                 heard_hz or freq_hz, AM)
             continue
 
-        directive, stack = (separation_context(ctl, transcript, scope) if engaged
+        directive, stack = (separation_context(ctl, transcript, scope, known) if engaged
                             else ("", ""))
         # Radar guidance for a vectored approach. Costs no model call, so it
         # runs for a single ship too -- which is the case that was flying with
@@ -1133,9 +1449,14 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 "wrong button pressed, and agreeing with him puts Tower on a "
                 "frequency Tower is not on — he then believes it, and so does "
                 "everyone listening. Correct him in the same breath as the "
-                "answer: \"Pony one one, this is Batumi Approach, Tower is one "
-                "one eight\" — then give him what he asked for. He is flying "
-                "an aeroplane; do not make him ask twice.")
+                "answer, and name the frequency he is ON as well as the one he "
+                f"wanted: \"Pony one one, this is {me.name}, "
+                f"{controller.spell_freq(me.freq_mhz)} — Tower is one one "
+                "eight\" — then give him what he asked for. Saying only which "
+                "frequency he wanted leaves him still not knowing which button "
+                "he is holding, and a pilot who has lost track of that gets it "
+                "wrong again on the next call. He is flying an aeroplane; do "
+                "not make him ask twice.")
             if getattr(me, "role", "") == "overlord":
                 parts.append(OVERLORD_BRIEF)
         if nxt:
@@ -1143,6 +1464,22 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 f"HANDOFF: he is {fix.range_nm:.0f} miles out and past your "
                 f"boundary — hand him to {nxt.name} on "
                 f"{controller.spell_freq(nxt.freq_mhz)} and say goodbye.")
+        elif (me and getattr(me, "role", "") == "approach"
+                and getattr(profile, "guidance", "") == "talkdown"
+                and fix is not None and fix.range_nm <= profile.final_intercept_nm):
+            # He is inside the final on a talkdown, so he is NOT going to
+            # Tower -- you are flying him to the missed approach point. Do not
+            # send him to another frequency; the clearance comes to him through
+            # you. Telling him to change radios here is the one thing that
+            # cannot be recovered, because the controller reading his ranges is
+            # the one he just left.
+            parts.append(
+                f"TOWER RELAY: he is inside the final and stays with you to the "
+                f"missed approach point — do NOT hand him to Tower. You have "
+                f"his landing clearance from Tower; pass it on once, in your "
+                f"own transmission, with the wind: \"cleared to land runway "
+                f"{profile.runway}, wind {controller.spell_hdg(int(R.WIND_FROM_DEG))} "
+                f"at {int(R.WIND_MPH)}\". Say it once and go back to the talk-down.")
         parts.append(f"PILOT: {transcript}")
         interact("\n".join(parts), "pilot", route_tier(transcript),
                  on_hz=heard_hz)
@@ -1152,6 +1489,8 @@ if __name__ == "__main__":
     import sys
 
     if len(sys.argv) > 1 and sys.argv[1] == "--srs":
+        if not claim_the_frequency():
+            raise SystemExit(1)
         voice = sys.argv[4] if len(sys.argv) > 4 else "Matthew"
         session = sys.argv[5] if len(sys.argv) > 5 else None
         _run_srs(sys.argv[2], float(sys.argv[3]), voice, session)
