@@ -253,6 +253,72 @@ class TestGuide(unittest.TestCase):
                              asr.INTERCEPT_ANGLE + 1)
 
 
+class TestRoomToFly(unittest.TestCase):
+    """Being near the centreline is not the same as being able to fly it.
+
+    A P-47 on the go-around, three miles out and pointing away from the field,
+    was told to turn a hundred and thirty degrees onto a three-mile final:
+    "he turned me around way, way, way too soon, and that left me way south of
+    the field". The angle test said he was in position because a mile and a
+    third at three miles is only twenty-five degrees. Closing it costs a mile
+    and a third of centreline, and rolling out costs the turn-in distance on
+    top, which is more approach than was left.
+    """
+
+    def setUp(self):
+        self.p = R.BATUMI_ASR
+
+    def test_close_in_and_off_the_centreline_is_not_in_position(self):
+        pos = asr.Position(range_nm=3.2, radial_deg=329, alt_ft=2898,
+                           heading_deg=296)
+        xtk = asr.cross_track(pos, self.p.final_crs)
+        along = asr.along_track(pos, self.p.final_crs)
+        self.assertAlmostEqual(abs(xtk), 1.35, delta=0.1)
+        self.assertAlmostEqual(along, 2.9, delta=0.1)
+        self.assertFalse(asr.in_position(along, xtk, self.p),
+                         "squeezed onto a three-mile final it cannot fly")
+
+    def test_the_run_has_to_fit_the_offset_plus_the_roll_out(self):
+        # Just enough room, and just too little, either side of the same rule.
+        self.assertTrue(asr.in_position(asr.TURN_IN_NM + 1.0, 0.9, self.p))
+        self.assertFalse(asr.in_position(asr.TURN_IN_NM + 0.5, 0.9, self.p))
+
+    def test_nearly_on_the_centreline_well_out_is_still_in_position(self):
+        """The rule must not undo the case it was written around -- an aircraft
+        established twelve miles out was once sent back to reposition."""
+        self.assertTrue(asr.in_position(12.0, 0.2, self.p))
+        self.assertTrue(asr.in_position(8.0, 0.2, self.p))
+
+
+class TestOnTheGround(unittest.TestCase):
+    """The approach ends when the wheels are down, and the scope knows.
+
+    "I'm sitting on the ground at Batumi, and Batumi Tower thinks I'm on the
+    missed approach." Nothing was reading the one source that knew.
+    """
+
+    def setUp(self):
+        self.p = R.BATUMI_ASR
+
+    def at(self, nm, radial, alt):
+        return asr.Position(range_nm=nm, radial_deg=radial, alt_ft=alt,
+                            heading_deg=self.p.final_crs)
+
+    def test_parked_on_the_aerodrome(self):
+        self.assertTrue(asr.on_the_ground(self.at(0.0, 124, 30), self.p))
+
+    def test_rolling_out_at_the_far_end(self):
+        self.assertTrue(asr.on_the_ground(self.at(0.9, 124, 40), self.p))
+
+    def test_short_final_is_still_flying(self):
+        """The one that must not fire early -- two hundred feet at a mile and a
+        half is an aeroplane being talked down, not a parked one."""
+        self.assertFalse(asr.on_the_ground(self.at(1.5, 304, 200), self.p))
+
+    def test_going_around_over_the_threshold_is_still_flying(self):
+        self.assertFalse(asr.on_the_ground(self.at(0.3, 304, 900), self.p))
+
+
 class TestConvergence(unittest.TestCase):
     """Fly the guidance and check it actually gets there.
 
@@ -366,9 +432,29 @@ class TestStations(unittest.TestCase):
                                   self.p.approach_hands_over_nm - 2)
         self.assertEqual(nxt.role, "approach")
 
-    def test_approach_gives_him_to_tower_on_final(self):
-        nxt = self.p.handoff_from(self.freq("approach"),
-                                  self.p.final_intercept_nm - 2)
+    def test_approach_keeps_him_through_the_talkdown(self):
+        """On a talkdown the controller IS the approach aid, so he does not
+        get handed away at the intercept.
+
+        This went the other way live, in cloud: "contact Batumi Tower now" at
+        ten miles, from the same controller that was reading his range every
+        mile. The pilot was told to leave the frequency flying his approach.
+        """
+        self.assertEqual(self.p.guidance, "talkdown")
+        for rng in (self.p.final_intercept_nm - 2, 8, 4, 1):
+            self.assertIsNone(self.p.handoff_from(self.freq("approach"), rng),
+                              f"handed off at {rng} nm, mid-talkdown")
+
+    def test_approach_gives_him_to_tower_at_the_missed_approach_point(self):
+        nxt = self.p.handoff_from(self.freq("approach"), self.p.map_nm / 2)
+        self.assertEqual(nxt.role, "tower")
+
+    def test_a_precision_approach_hands_off_at_the_intercept(self):
+        """The old rule, kept for the case it was actually written for: with an
+        aid of his own he is established and Tower takes him."""
+        ils = dataclasses.replace(self.p, guidance="intercept")
+        self.assertEqual(ils.hands_to_tower_nm, ils.final_intercept_nm)
+        nxt = ils.handoff_from(self.freq("approach"), ils.final_intercept_nm - 2)
         self.assertEqual(nxt.role, "tower")
 
     def test_approach_keeps_him_before_final(self):

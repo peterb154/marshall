@@ -877,9 +877,32 @@ class ApproachProfile:
             return None
         if here.role == "center" and range_nm <= self.approach_hands_over_nm:
             return self.station_for("approach")
-        if here.role == "approach" and range_nm <= self.final_intercept_nm:
+        if here.role == "approach" and range_nm <= self.hands_to_tower_nm:
             return self.station_for("tower")
         return None
+
+    @property
+    def hands_to_tower_nm(self) -> float:
+        """Where Approach gives him up -- and on a talkdown, that is not the
+        intercept.
+
+        On an ILS the aeroplane has its own approach aid, so once established
+        there is nothing left for Approach to do and Tower takes him. On a
+        talkdown the controller IS the approach aid: he reads the range every
+        mile and corrects the heading to the missed approach point. Handing off
+        at the intercept therefore abandons the pilot at the exact moment the
+        procedure begins.
+
+        It did, live, at ten miles in cloud -- "contact Batumi Tower now" while
+        the same controller was still transmitting a mile-by-mile talkdown, so
+        the pilot was told to leave the frequency that was flying his approach.
+
+        Real practice keeps him: the final controller obtains the landing
+        clearance from Tower and relays it, and the pilot never changes
+        frequency inside the final. So a talkdown holds him to the missed
+        approach point, where the procedure ends one way or the other.
+        """
+        return self.map_nm if self.guidance == "talkdown" else self.final_intercept_nm
 
     @property
     def tops_ft(self) -> int:

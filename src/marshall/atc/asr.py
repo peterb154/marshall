@@ -218,7 +218,24 @@ def in_position(along: float, xtk: float, profile) -> bool:
     if along <= 0:                       # past the field: nothing left to fly
         return False
     near = min(TURN_IN_NM, along * math.tan(math.radians(STEER_ON_DEG)))
-    return abs(xtk) <= near or has_room(along, xtk, profile)
+    # Near the centreline is not enough on its own -- the run has to fit.
+    #
+    # The angle test alone says an aircraft a mile and a third off at just under
+    # three miles is in position, because a mile and a third at three miles is
+    # only twenty-five degrees. It is not: closing that offset costs a mile and
+    # a third of centreline at forty-five degrees, and rolling out costs the
+    # turn-in distance on top, which is more approach than he has left. So he
+    # gets turned a hundred and thirty degrees onto a three-mile final he cannot
+    # descend on or stabilise in.
+    #
+    # It happened to a P-47 on the go-around, at three miles, pointing away from
+    # the field: "he turned me around way, way, way too soon, and that left me
+    # way south of the field". He was right, and the answer is not to know he
+    # went missed -- this function is stateless on purpose -- but to notice that
+    # the approach does not fit in the room remaining.
+    if abs(xtk) <= near and along >= abs(xtk) + TURN_IN_NM:
+        return True
+    return has_room(along, xtk, profile)
 
 
 def has_room(along: float, xtk: float, profile) -> bool:
@@ -403,8 +420,38 @@ def guide(pos: Position, profile) -> Guidance:
     # and it sits just outside the wedge, so arriving there and being ready to
     # turn in are the same event rather than two decisions that can disagree.
     g_along, g_across = entry_gate(profile, reposition_side(xtk, profile))
+
     return out("vector", _to_point(pos, profile, g_along, g_across),
                safe_alt(pos, profile))
+
+
+# How far above field elevation still counts as being on it. Radar altitude is
+# coarse and the aerodrome is not flat, so a landed aeroplane does not report
+# exactly the field elevation -- but it is nowhere near two hundred feet up.
+ON_DECK_FT = 200
+
+# And how far from the field. Wide enough to cover the far end of a runway and
+# the taxiways, narrow enough that an aircraft at two hundred feet a mile and a
+# half out -- which is an aeroplane on short final, not a parked one -- is still
+# being flown.
+ON_DECK_NM = 1.2
+
+
+def on_the_ground(pos: Position, profile) -> bool:
+    """Is this aeroplane on the aerodrome rather than flying an approach?
+
+    The approach ends when the wheels are down, and the scope is what knows: at
+    the field, at field elevation. Nothing was asking, so the controller went on
+    working an aircraft that was parked -- "I'm sitting on the ground at Batumi,
+    and Batumi Tower thinks I'm on the missed approach".
+
+    Deliberately a question about POSITION and not about what anyone said. A
+    pilot who forgets to report down is common; an aeroplane at zero feet on the
+    aerodrome that is somehow still airborne is not.
+    """
+    field_ft = getattr(profile, "field_elev_ft", 0)
+    return (pos.range_nm <= ON_DECK_NM
+            and pos.alt_ft <= field_ft + ON_DECK_FT)
 
 
 def spoken_range(nm: float) -> str:
