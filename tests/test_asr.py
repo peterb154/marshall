@@ -556,3 +556,43 @@ class TestTerrain(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestLeavingMyAirspace(unittest.TestCase):
+    """Handing a flight back as it departs -- and never mid-approach.
+
+    Range cannot express "keep him until he leaves my airspace", because range
+    does not know whether he is arriving or departing. A flight leaving Batumi
+    on a CAS sortie was given to Approach at 25 miles and never handed back.
+
+    The dangerous direction is the other one: Tower's volume has a 4,000 ft
+    ceiling, so an aircraft descending a talkdown sits inside it. Letting
+    geography vote there would re-create the exact bug that took a pilot off
+    the frequency flying his approach.
+    """
+
+    def setUp(self):
+        from marshall.atc import agent_atc
+        self.A = agent_atc
+        self.p = R.BATUMI_ASR
+        self.approach = self.p.station_for("approach")
+
+    def at(self, nm):
+        return asr.Position(range_nm=nm, radial_deg=304, alt_ft=2000,
+                            heading_deg=self.p.final_crs)
+
+    def test_a_talkdown_inside_the_final_is_never_handed_over(self):
+        """No HTTP call is even made -- the guard returns first."""
+        for nm in (10.0, 6.0, 2.0, 1.0):
+            with self.subTest(nm=nm):
+                self.assertIsNone(
+                    self.A.leaving_my_airspace(
+                        "http://127.0.0.1:1",      # would fail if reached
+                        "s", "Pony 1-1", self.approach, self.p, self.at(nm)))
+
+    def test_a_broken_director_does_not_break_the_handoff(self):
+        """Airspace is an improvement, not a crutch: unreachable means no
+        opinion, and route.py's rules still stand."""
+        self.assertIsNone(
+            self.A.leaving_my_airspace("http://127.0.0.1:1", "s", "Pony 1-1",
+                                       self.approach, self.p, self.at(40.0)))

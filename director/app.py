@@ -267,3 +267,20 @@ def set_fixes_endpoint(body: dict) -> dict:
 def get_fixes_endpoint() -> dict:
     from tools.tracks import known_fixes
     return {"fixes": known_fixes()}
+
+
+# Which sector actually contains him, versus which controller is working him.
+# The disagreement IS the handoff trigger -- see migrations/005 and 008. Whether
+# to act on it is the controller's judgement, which is why this reports and does
+# not decide.
+@app.get("/flights/airspace")
+def flight_airspace_endpoint(callsign: str, mission: str = "default") -> dict:
+    from strands_pg._pool import get_pool
+    with get_pool().connection() as c:
+        r = c.execute(
+            "SELECT working_with, should_be_with, alt_ft FROM flight_airspace "
+            "WHERE mission = %s AND callsign = %s LIMIT 1",
+            (mission, callsign)).fetchone()
+    if not r:
+        return {}
+    return {"working_with": r[0], "should_be_with": r[1], "alt_ft": r[2]}

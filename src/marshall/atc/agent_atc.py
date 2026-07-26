@@ -987,6 +987,54 @@ def claim_the_frequency(path=None) -> bool:
     return True
 
 
+def leaving_my_airspace(base: str, session_id: str, callsign: str, me,
+                        profile, fix) -> "object | None":
+    """The station he should be with now, if he has flown out of mine.
+
+    ONLY the outbound direction, deliberately. Arrivals are sequenced by
+    route.py's rules, which are tested and which encode the one exception that
+    matters -- a talkdown keeps him to the missed approach point -- and airspace
+    must not get a second vote on that. What airspace adds is the case range
+    cannot express at all:
+
+        "georgia center handed us off the approach oftly early... should have
+         given us vectors and kept us with him until we left his airspace"
+
+    Range does not know whether he is arriving or departing, so a flight leaving
+    Batumi on a CAS sortie was given to Approach at 25 miles and then never
+    handed back, because leaving resolved to nobody. It does now.
+    """
+    # A talkdown in progress outranks any question of geography. Tower's volume
+    # has a 4,000 ft ceiling, so an aircraft descending the final sits inside it
+    # -- and handing him over there is precisely the bug that took a pilot off
+    # the frequency that was flying his approach.
+    if (getattr(me, "role", "") == "approach"
+            and getattr(profile, "guidance", "") == "talkdown"
+            and fix is not None
+            and fix.range_nm <= profile.final_intercept_nm):
+        return None
+    try:
+        row = _get_json(f"{base}/flights/airspace?"
+                        + urllib.parse.urlencode({"callsign": callsign}))
+    except Exception:
+        return None                    # airspace is an improvement, not a crutch
+    want = (row or {}).get("should_be_with") or ""
+    if not want:
+        return None
+    role = want.rsplit("-", 1)[-1]     # 'georgia-center' -> 'center'
+    if role == getattr(me, "role", ""):
+        return None                    # he is where he should be
+    nxt = (profile.station_for(role)
+           if hasattr(profile, "station_for") else None)
+    # Outbound only: hand him DOWN the ladder (approach -> center), never up.
+    # Climbing the ladder is an arrival, and arrivals belong to route.py.
+    order = {"center": 0, "approach": 1, "tower": 2}
+    if (nxt is None
+            or order.get(role, 9) >= order.get(getattr(me, "role", ""), 9)):
+        return None
+    return nxt
+
+
 def whisper_vocabulary(profile) -> str:
     """The priming text for the transcriber, from what is actually on the air.
 
@@ -1631,6 +1679,12 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         fix = radar_fix(scope, known)
         nxt = (profile.handoff_from(on_mhz, fix.range_nm)
                if me and fix is not None else None)
+        if nxt is None and me is not None and known:
+            # He may be on his way OUT rather than in -- the case range cannot
+            # answer. Costs one lookup and only ever fires when the approach
+            # rules had nothing to say.
+            nxt = leaving_my_airspace(BASE_URL, session_id, known, me,
+                                      profile, fix)
         if directive:
             print(f"  CONTROLLER: {directive}", flush=True)
         if stack:
