@@ -659,7 +659,6 @@ class TestEngineeringChannel(unittest.TestCase):
                      "Engineering, are you there?",
                      "engineering come up",
                      "engineering radio check",
-                     "engineering",
                      "Engineering?",
                      "engineering, you up?",
                      "engineering, how do you read",
@@ -669,15 +668,25 @@ class TestEngineeringChannel(unittest.TestCase):
             with self.subTest(said=said):
                 self.assertTrue(agent_atc._ENG_CALL.search(said))
 
-    def test_release_beats_summons_on_the_same_word(self):
-        """"thanks engineering" contains the word, so a summons matching on the
-        word alone would re-open the line the pilot is trying to close -- and he
-        could never get back to the controller."""
+    def test_merely_mentioning_engineering_is_not_a_summons(self):
+        """Said TO a controller, these are ordinary talk. Routing them away
+        from ATC would be its own kind of not-listening."""
+        for said in ("engineering",
+                     "engineering said the vectors are fixed",
+                     "the engineering fix worked",
+                     "tell approach the engineering change is in"):
+            with self.subTest(said=said):
+                self.assertIsNone(agent_atc._ENG_CALL.search(said))
+
+    def test_leaving_is_never_read_as_arriving(self):
+        """"thanks engineering" carries the word, and the pilot is closing the
+        line, not opening it. Read the other way he could never get back to the
+        controller -- so the two patterns must not overlap, and the bridge
+        checks release first regardless."""
         for said in ("thanks engineering", "engineering, clear", "engineering out"):
             with self.subTest(said=said):
-                self.assertTrue(agent_atc._ENG_CALL.search(said))
-                self.assertTrue(agent_atc._ENG_DONE.search(said),
-                                "release must be checked first, and it is")
+                self.assertTrue(agent_atc._ENG_DONE.search(said))
+                self.assertIsNone(agent_atc._ENG_CALL.search(said))
 
     def test_an_ordinary_call_is_not_a_summons(self):
         for said in ("Batumi Approach, Hammer one one, request the approach",
