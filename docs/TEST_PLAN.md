@@ -71,6 +71,30 @@ not working, not you misreading it.
 
 ---
 
+## F — two pilots at once (needs Hoover + one more)
+
+The case with the least evidence behind it. One controller, two aeroplanes, one
+frequency — and the failure is not a wrong instruction, it is a **right
+instruction the wrong man hears, or nobody hears at all**.
+
+| ID | Prio | Test | What should happen | Fix under test |
+|----|------|------|--------------------|----------------|
+| F1 | P1 | Both check in. Watch who each reply is addressed to | Every reply names the man who actually spoke | `THIS TRANSMISSION IS FROM` · `c0c5d29` |
+| F2 | P1 | **One of you on final taking mile calls, the other calls Approach with a long request** | The mile calls **pause** and resume — not lost, not on top of him | `channel_is_free` · `c0c5d29` |
+| F3 | P1 | Same, but transmit again the moment the other man stops, before ATC answers | ATC answers the first man. The metronome must **not** fill the thinking time | `answering` · `c0c5d29` |
+| F4 | P1 | Number two, while holding | Hears the hold and **nothing else**. No vectors until it is his turn | `may_be_vectored` · `296b33d` |
+| F5 | P2 | Break up, then each say his own callsign once | Addressed individually from then on | `transmitter_callsign` · `50cebe7` |
+
+**F2 and F3 are the ones I could not prove alone.** Synthetic pilots take turns
+politely and my AI aircraft drifted past the field, so the metronome never had
+much to say and never really contested the channel. The failure mode to watch
+for is a mile call landing where your answer should have been.
+
+**F4 matters most for safety.** If the man holding starts getting vectors, that
+is two aircraft flying the same intercept — stop and say so.
+
+---
+
 ## D — identity and the radio
 
 | ID | Prio | Test | What should happen | Fix under test |
@@ -121,8 +145,15 @@ synthetic pilot never gets bored.
 | 1 | `uv run python -m unittest discover -s tests -t .` | milliseconds |
 | 1b | `tools/asr_sweep.py` (add `--sloppy`) — 1,296 approaches | seconds |
 | 2 | `python -m marshall.srs.rehearsal --srs <host> 124.0 breakup` — synthetic pilots on real radios, real Whisper, real Polly | a few minutes |
-| 3 | AI aircraft in the sim (`tools/spawn.py`, `tools/asr_autopilot.py`) | minutes |
+| 3 | AI aircraft in the sim (`tools/spawn.py`) + synthetic pilots — the first tier where a radio, a callsign and a TRACK are three different things | minutes |
 | 4 | **A human.** This card. | a sortie |
+
+**Tier 3 earns its keep too.** It found a crash -- `handoff_phrase` read a
+radar fix that an airspace handoff does not have, and the bridge went down
+silent with pilots on the frequency. Wording took out the process. It also
+caught the controller working a man before he had checked in, and the model
+addressing a wingman as his leader because the scope had a formation bound to
+it as if it were an aeroplane.
 
 **Tier 2 earns its keep.** The break-up identification work passed tier 1 and
 was then rejected by tier 2, which produced "Pony won", "Pony12" and an
