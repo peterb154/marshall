@@ -31,15 +31,20 @@ services:
     # Host 80 -> container 8362 (the app's port). NPM forwards to <lxc-ip>:80.
     ports:
       - "80:8362"
-    # The charts are DATA, regenerated from the source at every container start.
-    # That source is mounted rather than only baked into the image: without the
-    # mount a restart faithfully regenerates the charts from whatever code was
-    # copied in at image-build time, so editing a chart on the host changed
-    # nothing and the server quietly served a stale kneeboard. It did exactly
-    # that -- still showing beacon frequencies that no longer existed after the
-    # field moved to a radar approach.
+    # The charts are RENDERED PER REQUEST from this source, so a restart is no
+    # longer part of editing one -- see the freshness note in serve.py. The
+    # mount is what makes that possible: without it the server would faithfully
+    # serve whatever code was copied in at image-build time, which it did for
+    # months, still showing beacon frequencies for a field that had moved to a
+    # radar approach.
+    #
+    # docs/ is mounted for the flight-test kneeboard at /flighttest/, which is
+    # built from TEST_PLAN.md and ISSUES.md. Without it that page renders empty
+    # -- and an empty test card reads as "nothing to test" rather than as a
+    # missing mount.
     volumes:
       - ../src:/app/src:ro
+      - ../docs:/app/docs:ro
     environment:
       # Make the mounted source win over the copy pip installed into
       # site-packages, or the mount is decorative.

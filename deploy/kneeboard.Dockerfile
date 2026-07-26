@@ -12,8 +12,10 @@ ENV MARSHALL_BUILD=/data \
     KNEEBOARD_PORT=8362
 EXPOSE 8362
 
-# Generate every chart -- the individual pages and the inlined multi-page tab --
-# then serve them. Charts are regenerated on every start, and docker-compose
-# mounts src over the copy below, so a restart genuinely picks up a chart
-# change. Without that mount this only ever regenerates the baked-in code.
-CMD ["sh", "-c", "python -m marshall.kneeboard.navlog && python -m marshall.kneeboard.plate && python -m marshall.kneeboard.e6b && python -m marshall.kneeboard.site && python -m marshall.kneeboard.serve"]
+# Just serve. The multi-page documents are built on every request (about five
+# milliseconds) and the server reloads a chart module when its file changes, so
+# there is nothing to pre-generate and no reason to restart after an edit.
+#
+# The individual page generators are still runnable by hand
+# (`python -m marshall.kneeboard.navlog`) for rendering a single chart to a file.
+CMD ["python", "-m", "marshall.kneeboard.serve"]

@@ -42,7 +42,7 @@ A2 gives silence, stop and tell me — every other test gets harder to report.
 | B1 | P2 | Call Approach from ~20 nm NW for the radar approach | Radar contact, altimeter, vectors — **all on 124** | [#7] |
 | B1a | **P1** | Get handed from Center to Approach, then **wait** before checking in | Approach says **nothing** until you check in — no half-finished instruction | [#6] `_heard_on` |
 | B2 | P2 | Fly it in | Mile calls every mile, one voice, one channel | [#7] `final_hz` |
-| B3 | P2 | Watch the vectors between 20 and 11 nm | Should converge. **A turn away from the field is the known outbound flip — report it** | *unfixed*, see §E |
+| B3 | P2 | Watch the vectors between 20 and 11 nm | Should converge. **A turn away from the field is the known outbound flip — report it** | [#19] — open, see §E |
 | B4 | P1 | At about 4 nm, key the mic and talk for ~15 seconds | Controller **waits**, then makes the call it was holding. It must not be lost | [#5] `channel_is_free` |
 | B5 | P1 | Read back a clearance immediately after he issues one | ~7 s of quiet for you to do it | [#5] readback window |
 | B6 | P2 | Continue to the missed approach point | *"over the missed approach point"* — and **no handoff to Tower before it** | [#8] `hands_to_tower_nm` |

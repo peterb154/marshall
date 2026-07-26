@@ -119,9 +119,16 @@ def scope(css: str, sel: str) -> str:
     return "\n".join(out)
 
 
-def build() -> str:
+def build(page_list=None) -> str:
+    """Render one OpenKneeboard multi-page document from a list of tabs.
+
+    Takes the list so a SECOND kneeboard can be built from the same machinery --
+    the flight-test card is the same shape of thing as the charts and should not
+    grow a parallel renderer that drifts.
+    """
+    page_list = PAGES if page_list is None else page_list
     styles, sections, scripts = [], [], []
-    for guid, name, slug, builder in PAGES:
+    for guid, name, slug, builder in page_list:
         css, html, js = split(builder())
         styles.append(f"/* ---- {name} ---- */\n" + scope(css, f"#p-{slug}"))
         first = ' class="on"' if not sections else ''
@@ -133,9 +140,9 @@ def build() -> str:
 
     page_js = ",".join(
         f'{{guid:"{guid}",pixelSize:{{width:{PAGE_W},height:{PAGE_H}}}}}'
-        for guid, _, _, _ in PAGES)
+        for guid, _, _, _ in page_list)
     buttons = "".join(f'<button data-guid="{guid}">{name}</button>'
-                      for guid, name, _, _ in PAGES)
+                      for guid, name, _, _ in page_list)
     nl = chr(10)
 
     return f"""<title>362nd Kneeboard</title>

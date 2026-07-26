@@ -33,6 +33,9 @@ stay public; mutating routes get a dependency guard, or an access list on the
 external Nginx Proxy Manager that fronts this host. See deploy/docker-compose.yml.
 """
 
+import importlib
+import sys
+import threading
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -41,6 +44,77 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from marshall import config
 
 ROOT: Path = config.KNEEBOARD_OUT
+
+# --- freshness -------------------------------------------------------------
+#
+# The pages are RENDERED PER REQUEST, not served from disk. The whole build is
+# about five milliseconds, so there is no reason to keep a stale copy around and
+# every reason not to: for months the charts were generated once at container
+# start, and editing one changed nothing until somebody remembered to bounce the
+# server. That produced a kneeboard still showing beacon frequencies for a field
+# that had moved to a radar approach -- wrong in the one document a pilot trusts
+# without checking.
+#
+# Mounting the source fixed half of it. The other half is that a running Python
+# process holds the modules it imported at start, so a live mount changes
+# nothing on its own. These reload the chart builders when their FILES change,
+# rather than restarting the process -- OpenKneeboard's Chromium holds a
+# keep-alive connection, and dropping it shows up as "No Pages", which is
+# indistinguishable from the server being broken.
+_WATCHED = ("marshall.kneeboard", "marshall.core.route")
+_stamps: dict[str, float] = {}
+_reload_lock = threading.Lock()
+
+
+def _source_files() -> list[Path]:
+    out = []
+    for name, mod in list(sys.modules.items()):
+        if not any(name == w or name.startswith(w + ".") for w in _WATCHED):
+            continue
+        f = getattr(mod, "__file__", None)
+        if f:
+            out.append(Path(f))
+    return out
+
+
+def _seed() -> None:
+    """Import every chart module and stamp it, at server start.
+
+    Ordering matters and cost an hour: `refresh` only reloads a file it has SEEN
+    before, so a module first imported lazily inside a request handler is merely
+    stamped on that request -- and the edit that prompted the request is missed.
+    Importing them here means the first request already has a baseline for
+    everything.
+    """
+    from marshall.kneeboard import flighttest, site      # noqa: F401
+    refresh()
+
+
+def refresh() -> int:
+    """Reload any chart module whose file changed. Returns how many.
+
+    Cheap: a stat per module, and nothing is reloaded when nothing moved.
+    """
+    changed = []
+    with _reload_lock:
+        for path in _source_files():
+            try:
+                mtime = path.stat().st_mtime
+            except OSError:
+                continue
+            key = str(path)
+            if _stamps.get(key) != mtime:
+                if key in _stamps:          # not the first sighting
+                    changed.append(path)
+                _stamps[key] = mtime
+        for path in changed:
+            for name, mod in list(sys.modules.items()):
+                if getattr(mod, "__file__", None) == str(path):
+                    try:
+                        importlib.reload(mod)
+                    except Exception as e:   # a broken edit must not 500 the site
+                        print(f"  !! reload {name} failed: {e}", flush=True)
+    return len(changed)
 
 # Applied to every response. no-store is the one that actually matters to
 # OpenKneeboard; the other two are for older caches on the path.
@@ -51,6 +125,11 @@ NO_CACHE = {
 }
 
 app = FastAPI(title="Marshall", docs_url=None, redoc_url=None)
+
+
+@app.on_event("startup")
+async def _on_start() -> None:
+    _seed()
 
 
 @app.get("/healthz")
@@ -89,13 +168,45 @@ async def kneeboard_root() -> RedirectResponse:
     return RedirectResponse(url="/kneeboard/", headers=NO_CACHE)
 
 
+def _render(page_list=None) -> str:
+    """One multi-page document, built fresh. See the note on freshness."""
+    refresh()
+    from marshall.kneeboard import site
+    return site.build(page_list)
+
+
+@app.get("/flighttest")
+async def flighttest_root() -> RedirectResponse:
+    return RedirectResponse(url="/flighttest/", headers=NO_CACHE)
+
+
+@app.get("/flighttest/", response_class=HTMLResponse)
+async def flighttest() -> HTMLResponse:
+    """The test card and the issue numbers, as a second kneeboard.
+
+    Point a second OpenKneeboard Web Dashboard tab here. It is built from
+    docs/TEST_PLAN.md and docs/ISSUES.md on every request, so editing the card
+    -- or filing an issue -- shows up on the next page turn.
+    """
+    refresh()
+    from marshall.kneeboard import flighttest as ft
+    from marshall.kneeboard import site
+    return HTMLResponse(site.build(ft.pages()), headers=NO_CACHE)
+
+
 @app.get("/kneeboard/{path:path}")
-async def chart(path: str = "") -> FileResponse:
+async def chart(path: str = ""):
     """Serve a generated chart from KNEEBOARD_OUT, no-cache, always 200.
 
     A bare `/kneeboard/` is the multi-page index.html OpenKneeboard points at.
     Path traversal out of the build tree is refused.
     """
+    # The multi-page document itself is generated, never read from disk, so it
+    # cannot go stale. Everything else under /kneeboard/ is a real file (the
+    # scanned plates), and those are served as before.
+    if path in ("", "index.html"):
+        return HTMLResponse(_render(), headers=NO_CACHE)
+
     root = ROOT.resolve()
     target = (root / (path or "index.html")).resolve()
 
