@@ -150,10 +150,53 @@ def _asr_plate(profile: R.ApproachProfile, flight: str, size: int) -> str:
         "flare: \"cleared to land, wind two seven zero at two zero\".",
         f"- Assignable altitudes: **{profile.platform_ft}** vectoring, "
         f"**{profile.mda_ft}** MDA, **{profile.missed_ft}** missed. Nothing else.",
+        *_mission(),
         *_sortie(),
         *_threats(),
         *_formation(flight, size, profile),
     ])
+
+
+def _mission() -> list[str]:
+    """What the squadron is actually doing today, and who owns which part.
+
+    Without this a controller knows the route but not the sortie, which makes
+    him a very well-informed taxi service: he can vector a pilot to a waypoint
+    and has no idea why anyone would go there, cannot answer "how long have I
+    got", and will happily send a flight home past the thing it was sent to
+    attack. A real controller knows what the aeroplanes on his frequency are
+    for.
+
+    Deliberately short. This is context, not a script -- the detail belongs to
+    whoever is working him at the time, and the overlord's own brief covers
+    tasking.
+    """
+    overlord = None
+    for s in (getattr(R.BATUMI_ASR, "stations", None) or R.STATIONS):
+        if getattr(s, "role", "") == "overlord":
+            overlord = s
+    tgt = getattr(R, "TARGET_AREA", None)
+    if tgt is None:
+        return []
+    lines = [
+        "- **Today's mission.** Armed reconnaissance and close air support over "
+        f"**{tgt.name}**, the town on the lake east of Kutaisi. The flight "
+        "transits out, works the area under tasking, and recovers here. It is "
+        "1945, the war is over, and the ground east of Kutaisi has not been "
+        "told.",
+        "- **Batumi is the only friendly field.** There is no alternate and "
+        "nowhere to divert. A pilot who cannot get in comes round and tries "
+        "again, so keep something in reserve for him and do not let a fuel "
+        "state creep up on you.",
+    ]
+    if overlord:
+        lines.append(
+            f"- **{overlord.name} on {overlord.freq_mhz:.1f} owns the "
+            "tasking**, not you. Targets, time on station and what is down "
+            "there are his to give. If a pilot asks you for a target, send him "
+            f"to {overlord.name} — and if he is coming home early, that is "
+            "worth knowing, because it usually means something went wrong.")
+    return lines
 
 
 def _sortie() -> list[str]:
