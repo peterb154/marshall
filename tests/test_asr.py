@@ -7,6 +7,7 @@ field, in cloud, while sounding completely correct.
 """
 
 import dataclasses
+import inspect
 import math
 import unittest
 
@@ -596,3 +597,29 @@ class TestLeavingMyAirspace(unittest.TestCase):
         self.assertIsNone(
             self.A.leaving_my_airspace("http://127.0.0.1:1", "s", "Pony 1-1",
                                        self.approach, self.p, self.at(40.0)))
+
+
+class TestHandoffPhraseWithoutARadarFix(unittest.TestCase):
+    """A handoff must never depend on having our own radar fix.
+
+    An airspace handoff is answered from the PostGIS view and needs no fix. The
+    phrase read one anyway and took the whole bridge down mid-rehearsal -- a
+    crash, not a bad call, from a piece of wording, leaving pilots on a silent
+    frequency. Nothing in a sentence should be able to do that.
+    """
+
+    def setUp(self):
+        from marshall.atc import agent_atc
+        self.A = agent_atc
+        self.tower = R.BATUMI_ASR.station_for("tower")
+
+    def test_with_no_fix_it_still_hands_him_over(self):
+        said = self.A.handoff_phrase(self.tower, None)
+        self.assertIn("Batumi Tower", said)
+        self.assertIn("left your airspace", said)
+
+    def test_with_a_fix_it_says_the_range(self):
+        pos = asr.Position(range_nm=12.0, radial_deg=304, alt_ft=3000,
+                           heading_deg=124)
+        said = self.A.handoff_phrase(self.tower, pos)
+        self.assertIn("12 miles out", said)

@@ -736,7 +736,13 @@ def reconcile(directive: str, stack: str, vectoring: str,
     return directive, stack, vectoring, ""
 
 
-def may_be_vectored(ctl, cs: str, traffic: bool = False) -> bool:
+# Which frequency each aircraft was last heard on. A controller works the men on
+# HIS channel, and nobody else -- see `may_be_vectored`.
+_heard_on: dict[str, float] = {}
+
+
+def may_be_vectored(ctl, cs: str, traffic: bool = False,
+                    freq_hz: float | None = None) -> bool:
     """May the radar thread turn this aircraft right now?
 
     The separation invariant, as one question. With a queue, exactly one
@@ -783,6 +789,22 @@ def may_be_vectored(ctl, cs: str, traffic: bool = False) -> bool:
     _ac = ctl.aircraft.get(ctl._resolve(cs))
     if _ac is not None and getattr(_ac, "on_visual", False):
         return False
+
+    # HE HAS TO HAVE CHECKED IN WITH ME, on this frequency.
+    #
+    # Otherwise Approach starts working an aeroplane the moment Center hands it
+    # over -- while the pilot is still reaching for the radio:
+    #
+    #   "when we got a handoff from center to approach, by the time I switched
+    #    over, approach was already half done with the first instruction"
+    #
+    # He then arrives mid-sentence, has missed a heading and an altitude, and
+    # has no way of knowing what he missed. A real controller waits for the
+    # check-in; it is what the check-in is FOR.
+    if freq_hz is not None:
+        was = _heard_on.get(ctl._resolve(cs))
+        if was is None or abs(was - freq_hz) > 1000:
+            return False
 
     if len(ctl.aircraft) < 2 and not traffic:
         return True                     # single ship: no queue, no question
@@ -1091,6 +1113,26 @@ def leaving_my_airspace(base: str, session_id: str, callsign: str, me,
     return nxt
 
 
+def handoff_phrase(nxt, fix) -> str:
+    """Hand him over, whether or not we have a radar fix of our own.
+
+    `fix` is optional and that is the entire point of this function existing.
+    An airspace handoff is answered from the PostGIS view, which needs no fix --
+    and the range in the sentence is decoration. Reading it unconditionally
+    crashed the bridge DEAD on a live rehearsal: a flight whose radar label had
+    not yet been bound to its callsign produced a handoff with no fix, and the
+    process went down mid-sortie, silent, with pilots on the frequency.
+
+    No phrase should be able to do that. Wording is the least important thing
+    here and it took down the most important one.
+    """
+    from marshall.atc import controller
+    where = (f"he is {fix.range_nm:.0f} miles out and past your boundary"
+             if fix is not None else "he has left your airspace")
+    return (f"HANDOFF: {where} — hand him to {nxt.name} on "
+            f"{controller.spell_freq(nxt.freq_mhz)} and say goodbye.")
+
+
 def _plausible_callsign(cs: str) -> bool:
     """Does this look like something a pilot would actually be called?
 
@@ -1283,11 +1325,19 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
     # the pilot just said is a reply, and replies are not interruptions.
     readback_until = [0.0]
     READBACK_SEC = 7.0
+    # A pilot has spoken and the model is composing his answer. The transmission
+    # is over, so `someone_is_talking` is already false, and the metronome would
+    # cheerfully fill the three to nine seconds of thinking time -- so the pilot
+    # hears a mile call for somebody else where his own answer should have been.
+    # With two aeroplanes working one controller that is most of the traffic.
+    answering = [False]
 
     def channel_is_free(now: float | None = None) -> tuple[bool, str]:
         now = now or time.monotonic()
         if client.someone_is_talking():
             return False, "a pilot is transmitting"
+        if answering[0]:
+            return False, "answering a pilot"
         if now < readback_until[0]:
             return False, f"readback window, {readback_until[0] - now:.0f}s left"
         return True, ""
@@ -1304,6 +1354,14 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
 
     def interact(message: str, kind: str, tier: str = "sonnet",
                  on_hz: float | None = None) -> None:
+        answering[0] = True
+        try:
+            _interact(message, kind, tier, on_hz)
+        finally:
+            answering[0] = False
+
+    def _interact(message: str, kind: str, tier: str = "sonnet",
+                  on_hz: float | None = None) -> None:
         with radio_lock:
             t0 = time.monotonic()
             try:
@@ -1461,7 +1519,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                         continue
                     grounded.discard(cs)        # airborne again: a new sortie
 
-                    if not may_be_vectored(ctl, cs, traffic=traffic):
+                    if not may_be_vectored(ctl, cs, traffic=traffic,
+                                           freq_hz=final_hz):
                         continue                # holding, or nobody's turn yet
                     g = asr.guide(pos, profile)
 
@@ -1605,6 +1664,10 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # Who this RADIO is, from what it has called itself before. Survives a
         # garbled or omitted callsign, which is the whole point.
         known = transmitter_callsign(client.last_sender_guid, transcript)
+        if known:
+            # He has checked in HERE. Until he does, no controller on this
+            # channel may start working him -- see may_be_vectored.
+            _heard_on[known] = heard_hz or freq_hz
 
         scope = fetch_radar(session_id) if radar_on else ""
         n_contacts = count_contacts(scope)
@@ -1819,10 +1882,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             if getattr(me, "role", "") == "overlord":
                 parts.append(OVERLORD_BRIEF)
         if nxt:
-            parts.append(
-                f"HANDOFF: he is {fix.range_nm:.0f} miles out and past your "
-                f"boundary — hand him to {nxt.name} on "
-                f"{controller.spell_freq(nxt.freq_mhz)} and say goodbye.")
+            parts.append(handoff_phrase(nxt, fix))
         elif (me and getattr(me, "role", "") == "approach"
                 and getattr(profile, "guidance", "") == "talkdown"
                 and fix is not None and fix.range_nm <= profile.final_intercept_nm):
@@ -1839,6 +1899,16 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 f"own transmission, with the wind: \"cleared to land runway "
                 f"{profile.runway}, wind {controller.spell_hdg(int(R.WIND_FROM_DEG))} "
                 f"at {int(R.WIND_MPH)}\". Say it once and go back to the talk-down.")
+        if known:
+            # WHO THIS IS, settled. The model has the radar picture and the
+            # transcript and was inferring the caller from both, which is how a
+            # wingman who said "Pony one two, checking in" was answered as "Pony
+            # one" -- his leader's formation. The radio GUID already knows;
+            # nothing was telling the model.
+            parts.append(
+                f"THIS TRANSMISSION IS FROM {known} — identified by his radio, "
+                f"not by the words. Address him as {known} and nobody else, "
+                f"even if the transcript sounds like another callsign.")
         parts.append(f"PILOT: {transcript}")
         interact("\n".join(parts), "pilot", route_tier(transcript),
                  on_hz=heard_hz)

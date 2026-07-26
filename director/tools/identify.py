@@ -19,6 +19,7 @@ match; on no match or two candidates, don't — "not radar identified, continue"
 from __future__ import annotations
 
 import logging
+import re
 
 from strands_pg._pool import get_pool
 
@@ -93,6 +94,15 @@ def bindings_for(session_id: str) -> dict[str, str]:
         return {}
 
 
+# "Pony 1" is a FORMATION. "Pony 1-1" is an aeroplane. Only one of those is a
+# thing a radar track can be.
+_MEMBER = re.compile(r"^\s*[A-Za-z][A-Za-z' -]{1,}\s+\d+\s*-\s*\d+\s*$")
+
+
+def is_one_aeroplane(callsign: str) -> bool:
+    return bool(_MEMBER.match(callsign or ""))
+
+
 def identify_tools(session_id: str) -> list:
 
     @tool
@@ -105,6 +115,35 @@ def identify_tools(session_id: str) -> list:
         unidentified. This SUPERSEDES any earlier binding for this callsign or
         this track, so use it freely to re-identify when a pilot changes jets or
         a track changes pilots — the latest positive ID is the truth."""
+        # A FLIGHT is not a contact. Binding "Pony 1" to a track says a
+        # formation is one aeroplane, and it then annotates the radar picture
+        # with a name that outranks everything else the controller is told: a
+        # wingman who said "Pony one two, checking in" was answered as "Pony one
+        # one" and then as "Pony one two" on his leader's call, because the
+        # scope kept asserting the flight name and the model believed the scope.
+        #
+        # While they are together the picture already says "IN FORMATION with"
+        # and needs no help. Once broken up they are members and bind normally.
+        # A FLIGHT name may only be bound to a track that is ALONE.
+        #
+        # "Pony 1" is one aeroplane when it is alone and a formation when it is
+        # not, and the difference is not in the callsign -- it is out of the
+        # window. Binding the flight name to a track that has a wingman on it
+        # says a formation is one aircraft, and it then annotates the radar with
+        # a name that outranks everything else the controller is told: a wingman
+        # who said "Pony one two, checking in" was answered as "Pony one one",
+        # because the scope kept asserting the flight name and the model
+        # believed the scope over the radio it came from.
+        #
+        # Refusing outright was tried first and is worse -- it would leave a
+        # single ship called "Hoover 1" permanently unidentifiable, and an
+        # unidentified aircraft never gets talked down.
+        from tools.tracks import in_formation
+        if not is_one_aeroplane(callsign) and in_formation(contact):
+            return (f"'{callsign}' is a flight and '{contact}' is flying in "
+                    f"formation, so that name covers more than one track. "
+                    f"Identify the members individually once they separate; "
+                    f"while they are together the picture already shows it.")
         try:
             bind(session_id, callsign, contact, srs_name or None)
         except Exception as e:

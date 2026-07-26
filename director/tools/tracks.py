@@ -339,6 +339,38 @@ def _clusters(rows: list) -> list[list]:
     return groups
 
 
+def in_formation(label: str) -> bool:
+    """Is this track flying tight enough on another to be one contact?
+
+    Asked before binding a FLIGHT name to a track. "Pony 1" is one aeroplane
+    when it is alone and a formation when it is not, and the difference is not
+    in the callsign -- it is out of the window.
+    """
+    try:
+        _ensure_table()
+        with get_pool().connection() as conn:
+            rows = conn.execute(
+                """
+                WITH bcn AS (
+                    SELECT ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography AS g)
+                SELECT t.label, t.type, t.alt_ft, t.heading,
+                       ST_Distance(t.geog, bcn.g) / 1852.0,
+                       degrees(ST_Azimuth(bcn.g, t.geog))
+                FROM tracks t, bcn
+                WHERE t.last_seen > now() - make_interval(secs => %s)
+                """, (BATUMI_LON, BATUMI_LAT, FRESH_SEC)).fetchall()
+        # Postgres hands back Decimal for the numerics and the clustering does
+        # float arithmetic on them; mixing the two raises rather than coercing.
+        rows = [(r[0], r[1], float(r[2] or 0), float(r[3] or 0),
+                 float(r[4] or 0), float(r[5] or 0)) for r in rows]
+        for group in _clusters(rows):
+            if any(r[0] == label for r in group):
+                return len(group) > 1
+    except Exception as e:
+        log.warning("in_formation(%s) failed: %s", label, e)
+    return False
+
+
 def _render(rows: list, bindings: dict) -> list[str]:
     lines = []
     for group in _clusters(rows):
