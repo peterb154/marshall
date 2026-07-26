@@ -412,9 +412,31 @@ def transmitter_callsign(guid: str | None, transcript: str) -> str:
     if not guid:
         return ""
     from marshall.atc import callsign
+    from marshall.atc.callsign import parse as C_parse
     heard = callsign.extract(transcript)
     seen = _transmitters.setdefault(guid, Counter())
     order = _order.setdefault(guid, {})
+
+    # NAMING YOURSELF MORE PRECISELY ALWAYS WINS, IMMEDIATELY.
+    #
+    # A radio bound to "Pony 1" that says "Pony one one" has not changed its
+    # mind, it has become specific: the flight designator covers two aeroplanes
+    # and the member names one. Counting votes is right while a callsign is
+    # stable and wrong here -- a lead who identified as the flight three times
+    # cannot out-vote himself by saying his own callsign once, so he keeps the
+    # formation's name after the formation has stopped existing. That is how a
+    # pilot ended up being addressed as "Pony 1" while his wingman was "Pony
+    # 1-1": adjacent, confusable, and one of them not an aeroplane at all.
+    #
+    # Independent of whether anyone noticed the break-up, which is the point --
+    # it needs no cooperation from the controller, the classifier, or the sim.
+    if heard and seen:
+        was = max(seen, key=lambda k: (seen[k], order.get(k, 0)))
+        w, h = C_parse(was), C_parse(heard)
+        if w.is_flight and not h.is_flight and w.flight == h.flight:
+            seen.clear()
+            order.clear()
+
     if heard:
         seen[heard] += 1
         order["__n"] = order.get("__n", 0) + 1
@@ -788,6 +810,7 @@ def separation_context(ctl, transcript: str, scope: str = "",
     (a question, a request) -- there the agent reasons freely (and the router will
     have sent that to the smart tier). The STACK is shown only with real traffic."""
     from marshall.atc import bedrock_intent, intents
+    from marshall.atc import callsign as C_
     directive = ""
     try:
         intent = bedrock_intent.classify(transcript)
@@ -807,6 +830,32 @@ def separation_context(ctl, transcript: str, scope: str = "",
         # The GUID arrives free on every transmission and survives any mangling
         # of the words, so where it has told us a callsign before, that is the
         # callsign -- and the classifier's guess is overruled.
+        # The classifier is a model, and a model asked "whose call is this?"
+        # will answer even when the transcript has no callsign in it. Whisper
+        # turned "Pony one two, say my altitude" into "21-2, same by altitude"
+        # and the classifier dutifully filed it as an aircraft called 21-2,
+        # which took a place in the holding stack behind two real ones.
+        #
+        # The offline extractor already refuses this -- a callsign needs a NAME
+        # -- so hold the model to the same bar. Rejecting leaves him unidentified
+        # for one transmission, which costs nothing; accepting invents an
+        # aeroplane the controller then sequences.
+        if intent.callsign and not _plausible_callsign(intent.callsign):
+            print(f"  .. ignoring '{intent.callsign}' -- that is not a callsign",
+                  flush=True)
+            intent = dataclasses.replace(intent, callsign=known or "")
+
+        # The same precision rule as the radio binding: if this radio answers to
+        # the FLIGHT and the classifier heard a MEMBER of it, the member is more
+        # specific and wins. Otherwise a lead who checked in for the formation
+        # keeps its name after it has stopped existing, and his own callsign is
+        # rejected as a mishearing every time he says it.
+        if (known and intent.callsign
+                and C_.parse(known).is_flight
+                and not C_.parse(intent.callsign).is_flight
+                and C_.parse(known).flight == C_.parse(intent.callsign).flight):
+            known = intent.callsign
+
         if known and intent.callsign and intent.callsign != known:
             print(f"  .. heard '{intent.callsign}', but this radio is {known}",
                   flush=True)
@@ -1040,6 +1089,20 @@ def leaving_my_airspace(base: str, session_id: str, callsign: str, me,
             or order.get(role, 9) >= order.get(getattr(me, "role", ""), 9)):
         return None
     return nxt
+
+
+def _plausible_callsign(cs: str) -> bool:
+    """Does this look like something a pilot would actually be called?
+
+    A name and a number. The offline extractor has always required it, for the
+    reason in its docstring -- a false positive silently reassigns a transmitter
+    to an aircraft that does not exist -- and the model on the same hot path was
+    never held to it.
+    """
+    from marshall.atc import callsign as C
+    flight = C.parse(cs).flight
+    name = flight.split()[0] if flight else ""
+    return len(name) >= 3 and name.isalpha()
 
 
 def whisper_vocabulary(profile) -> str:

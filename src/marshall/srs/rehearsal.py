@@ -41,7 +41,34 @@ FORMATION = [
     ("Ranger",  "Stephen", "Pony one three, say my altitude."),
 ]
 
-SCRIPTS = {"pair": SCRIPT, "formation": FORMATION}
+# THE BREAK-UP IDENTIFICATION CASE, and the reason it needs real radios.
+#
+# Live, a two-ship split for individual approaches and the controller went on
+# calling one of them "Pony 1" -- the FLIGHT -- and the other "Pony 1-1".
+# Adjacent, confusable, and the first of those names did not refer to an
+# aeroplane at all: it referred to a formation that had just stopped existing.
+#
+# Lead deliberately identifies as the FLIGHT while they are together, which is
+# correct and is what a real lead does. The whole test is what happens after the
+# split: each aeroplane must end up on its own member callsign, from its own
+# radio, and the controller must stop using the flight name for anybody.
+#
+# It cannot be tested any other way. One process with one SRS client is one
+# radio, and a radio is the thing identity is anchored to -- so two aeroplanes
+# sharing a client would pass a test that a real pair would fail.
+BREAKUP_ID = [
+    ("Hoover", "Joey",    "Batumi Approach, Pony one, flight of two, checking in."),
+    ("Hoover", "Joey",    "Pony one, flight of two, request the radar approach."),
+    ("Hoover", "Joey",    "Pony one, request break-up for individual approaches."),
+    # The controller has now asked them to check in individually, in order.
+    ("Hoover", "Joey",    "Pony one one, checking in."),
+    ("Shooter", "Justin", "Pony one two, checking in."),
+    # ...and from here each must be addressed as himself.
+    ("Shooter", "Justin", "Pony one two, say my altitude."),
+    ("Hoover", "Joey",    "Pony one one, request the approach."),
+]
+
+SCRIPTS = {"pair": SCRIPT, "formation": FORMATION, "breakup": BREAKUP_ID}
 
 
 def run(host: str, freq_mhz: float, script=None, reply_wait: float = 30.0) -> None:

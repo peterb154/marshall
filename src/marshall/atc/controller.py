@@ -450,6 +450,7 @@ class Controller:
     def _break_up(self, ac: Aircraft) -> None:
         """Split a joined formation into individually-separated aircraft.
 
+
         This is the whole formation feature. Everything upstream treats the
         flight as one entity; here it becomes N, each with its own level, lead at
         the bottom so he lands first. From this moment on they are ordinary

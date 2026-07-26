@@ -744,3 +744,73 @@ class TestChannelCourtesy(unittest.TestCase):
         self.assertTrue(self.c.someone_is_talking())
         self.c.last_rx = _t.monotonic() - 1.6
         self.assertFalse(self.c.someone_is_talking())
+
+
+class TestIdentityThroughBreakUp(unittest.TestCase):
+    """Telling two aeroplanes apart after the formation stops existing.
+
+    Live, a two-ship split for individual approaches and the controller went on
+    calling one of them "Pony 1" -- the FLIGHT -- and the other "Pony 1-1".
+    Adjacent, confusable, and one of those names did not refer to an aeroplane
+    at all: it referred to a formation that had just ceased to exist.
+
+    Fixed by letting a MORE PRECISE self-identification win at once, rather than
+    by forgetting the old binding. Forgetting was tried and rejected in the
+    voice rehearsal: it hands identity to the transcriber at the exact moment
+    everyone is saying new callsigns, and it produced "Pony won", "Pony12" and
+    an aeroplane called "21-2" that took a place in the holding stack.
+    """
+
+    def setUp(self):
+        agent_atc._transmitters.clear()
+        agent_atc._order.clear()
+
+    def bind(self, guid, said, times=1):
+        for _ in range(times):
+            agent_atc.transmitter_callsign(guid, said)
+
+    def test_a_member_callsign_beats_the_flight_at_once(self):
+        self.bind("shooter", "Pony one, flight of two, checking in", times=6)
+        self.assertEqual(agent_atc.transmitter_callsign("shooter", ""), "Pony 1")
+        self.assertEqual(
+            agent_atc.transmitter_callsign("shooter", "Pony one two, checking in"),
+            "Pony 1-2",
+            "he cannot out-vote himself, so counting must not decide this")
+
+    def test_and_it_sticks(self):
+        self.bind("shooter", "Pony one, checking in", times=6)
+        agent_atc.transmitter_callsign("shooter", "Pony one two, checking in")
+        self.assertEqual(agent_atc.transmitter_callsign("shooter", "say again"),
+                         "Pony 1-2")
+
+    def test_a_different_flight_does_not_hijack_him(self):
+        """Precision only wins WITHIN the flight he already answers to."""
+        self.bind("shooter", "Pony one, checking in", times=6)
+        agent_atc.transmitter_callsign("shooter", "Hammer one two, checking in")
+        self.assertEqual(agent_atc.transmitter_callsign("shooter", ""), "Pony 1")
+
+    def test_noise_still_loses_to_an_established_member_binding(self):
+        self.bind("sockeye", "Pony one one, checking in", times=4)
+        self.assertEqual(
+            agent_atc.transmitter_callsign("sockeye", "Waypoint three, say range"),
+            "Pony 1-1")
+
+
+class TestPlausibleCallsign(unittest.TestCase):
+    """The classifier is a model, and a model asked "whose call is this?" will
+    answer even when the transcript has no callsign in it.
+
+    Whisper turned "Pony one two, say my altitude" into "21-2, same by
+    altitude"; the classifier filed it as an aircraft called 21-2, and it took a
+    place in the holding stack behind two real ones.
+    """
+
+    def test_a_callsign_needs_a_name(self):
+        for bad in ("21-2", "2 1 2", "1-1", "7"):
+            with self.subTest(bad=bad):
+                self.assertFalse(agent_atc._plausible_callsign(bad))
+
+    def test_real_callsigns_pass(self):
+        for good in ("Pony 1-1", "Hammer 1", "Whistler 2-3", "Hoover 1"):
+            with self.subTest(good=good):
+                self.assertTrue(agent_atc._plausible_callsign(good))

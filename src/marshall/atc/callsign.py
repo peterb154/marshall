@@ -29,7 +29,15 @@ from dataclasses import dataclass
 # Spoken digits, so a number the controller says lands back as a number.
 _WORD = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight",
          "nine"]
-_SPOKEN = {w: str(i) for i, w in enumerate(_WORD)} | {"niner": "9"}
+# What a transcriber makes of a spoken digit. "niner" is the pilot's word; the
+# rest are homophones, and they are here because the input is SPEECH and speech
+# is what actually arrives. A live rehearsal turned "Pony one two" into "Pony
+# one too" -- so the wingman's radio bound itself to "Pony 1", the FLIGHT, which
+# is precisely the confusion this module exists to prevent. Whisper cannot know
+# that "too" is a number; here, after a callsign name, it can only be one.
+_HOMOPHONES = {"niner": "9", "too": "2", "to": "2", "won": "1", "for": "4",
+               "fore": "4", "ate": "8", "tree": "3", "fife": "5", "sex": "6"}
+_SPOKEN = {w: str(i) for i, w in enumerate(_WORD)} | _HOMOPHONES
 _SPOKEN_RE = re.compile(r"\b(" + "|".join(_SPOKEN) + r")\b", re.I)
 
 
@@ -133,6 +141,18 @@ _NOT_A_NAME = {
     "ground", "point", "at", "to", "and", "on", "of", "in", "for", "over",
     "number", "wind", "knots", "miles", "mile", "radial", "degrees", "time",
     "minutes", "seconds", "plus", "contact", "report", "cleared", "traffic",
+    # Words that turn up immediately before a number in ordinary radio speech.
+    # Without them the extractor invents an aeroplane out of a sentence: "I have
+    # two aircraft" became "Have 2", and a garbled call bound a real radio to
+    # "Waypoint 3" for the rest of a sortie. A callsign that IS one of these
+    # words would be rejected, which is the right way round -- a miss leaves a
+    # radio unidentified for one transmission, a false positive puts a ghost in
+    # the holding stack and sequences real aeroplanes behind it.
+    "have", "has", "with", "say", "says", "request", "requesting", "requests",
+    "waypoint", "steerpoint", "position", "range", "bearing", "distance",
+    "inbound", "outbound", "established", "holding", "turning", "leaving",
+    "reaching", "through", "gear", "flaps", "fuel", "bingo", "engine", "angel",
+    "checking", "check", "ready", "field", "runway", "visual", "missed",
 }
 
 _CANDIDATE = re.compile(
