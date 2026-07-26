@@ -481,3 +481,45 @@ class TestClearAirHolding(unittest.TestCase):
         ctl.check_in("Pony 1-1", 4)
         ctl.report_beacon("Pony 1-1", 6000, 4)
         self.assertTrue(said(ctl, "visual separation"))
+
+
+class TestIdentifyOnBreakUp(unittest.TestCase):
+    """Establish who is who BEFORE separating them.
+
+    Until the break-up the flight is one entity and one voice speaks for it,
+    which is right. The instant they are separated they are N aircraft the
+    controller has to tell apart -- and the only names he has came off the
+    radar, which labels tracks by whatever the sim called the units. Live that
+    produced two Mustangs addressed as "Pony one" and "Pony one one":
+    adjacent, confusable, and never agreed with anybody.
+    """
+
+    def ctl(self, size):
+        c = atc.Controller(profile())
+        c.check_in("Pony 1-1", size)
+        c.request_breakup("Pony 1-1")
+        return c
+
+    def breakup_call(self, c):
+        return next(tx.text for tx in c.out if "break up" in tx.text)
+
+    def test_every_aircraft_is_named_in_order(self):
+        call = self.breakup_call(self.ctl(4))
+        for name in ("Pony one one", "Pony one two", "Pony one three",
+                     "Pony one four"):
+            self.assertIn(name, call)
+        self.assertLess(call.index("Pony one one"), call.index("Pony one four"),
+                        "the ORDER is what binds each voice to each track")
+
+    def test_the_cleared_aircraft_is_named_too(self):
+        """The sequencer usually clears lead in the same breath, and lead is
+        the one whose identity matters most -- he is about to be talked down."""
+        c = self.ctl(2)
+        self.assertIn("Pony one one", self.breakup_call(c))
+
+    def test_a_single_ship_is_not_asked_to_identify_itself(self):
+        c = atc.Controller(profile())
+        c.check_in("Pony 1-1", 1)
+        c.request_breakup("Pony 1-1")
+        for tx in c.out:
+            self.assertNotIn("identify each of you", tx.text)

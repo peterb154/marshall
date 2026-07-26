@@ -405,6 +405,44 @@ class Controller:
         self.say(ac.callsign, call)
 
     # -- formations --------------------------------------------------------
+    def _identify_phrase(self, members: list[str],
+                         already_named: bool = False) -> str:
+        """Ask each aeroplane to say who it is, now that they are separate.
+
+        Until this moment the flight was one entity and one voice spoke for it,
+        which is correct. The instant they are separated they are N aircraft the
+        controller must be able to tell apart -- and he cannot, because the only
+        names he has came off the radar, which labels tracks by whatever the sim
+        called the units.
+
+        Live, that produced a controller addressing two Mustangs as "Pony one"
+        and "Pony one one": adjacent, confusable, and never agreed with anybody.
+        The pilot's read was the right one -- "he probably should have asked for
+        separate identification for the wingman on separation". A real controller
+        establishes identity before he separates people; he does not infer it and
+        hope.
+
+        Named in order, and asked to answer in that order, because the sequence
+        is what binds each voice to each track.
+
+        Every aircraft in the break-up is named, not merely the ones still
+        holding. The sequencer usually clears lead in the same breath, and a
+        cleared aeroplane is exactly the one whose identity matters most -- he
+        is the one about to be talked down.
+        """
+        if len(members) < 2:
+            return " Report established."
+        if already_named:
+            # Their levels were just read out one by one, so every callsign has
+            # already been said. Saying all four again inside the same
+            # transmission is noise, and noise on a break-up is the last place
+            # it belongs.
+            return " Check in individually in that order so I can identify you."
+        names = [callsign.parse(m).spoken for m in members]
+        in_turn = ", ".join(names[:-1]) + f", then {names[-1]}"
+        return (f" Check in individually in that order, {in_turn}, so I can "
+                f"identify each of you.")
+
     def _break_up(self, ac: Aircraft) -> None:
         """Split a joined formation into individually-separated aircraft.
 
@@ -490,12 +528,14 @@ class Controller:
             # would be noise, and the point is that they stay together.
             call += (f" Maintain visual separation, all maintain "
                      f"{spell_alt(self.aircraft[announced[0]].assigned_ft)}, "
-                     f"in trail. Report each aircraft in the pattern.")
+                     f"in trail.{self._identify_phrase([m for m, _ in assigned])}")
         elif announced:
             levels = ". ".join(
                 f"{callsign.parse(m).spoken} maintain "
                 f"{spell_alt(self.aircraft[m].assigned_ft)}" for m in announced)
-            call += f" {levels}. Report each aircraft level."
+            call += (f" {levels}."
+                     + self._identify_phrase([m for m, _ in assigned],
+                                             already_named=True))
         self.say(ac.callsign, call, ref=ac)
 
         # Drop the sequencer's step-downs for aircraft this call already gave a
