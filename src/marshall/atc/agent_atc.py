@@ -101,7 +101,7 @@ def simple_response(transcript: str) -> str | None:
 NO_CALL = {"(no call)", "no call", "(none)", "standby."}
 
 
-def for_voice(text: str) -> str:
+def for_voice(text: str, agent: bool = False) -> str:
     """Reduce the agent's reply to the words that actually go over the air.
 
     Two problems, both seen live:
@@ -115,9 +115,23 @@ def for_voice(text: str) -> str:
       does not hold, so the reply carries an explicit RADIO: marker and
       everything before the last one is thinking, not talking.
     * It emits markdown. A radio does not speak asterisks.
+
+    `agent=True` for anything the MODEL wrote, where a missing marker means the
+    reply is thinking and must not be heard. Deterministic strings -- the mile
+    calls, the canned replies -- carry no marker by design and pass through.
     """
     if "RADIO:" in text:
         text = text.rsplit("RADIO:", 1)[1]
+    elif agent:
+        # No marker at all, from the AGENT. The reply is malformed and the
+        # whole of it is thinking -- which is precisely when the model has
+        # decided NOT to speak and written its reasoning instead. Transmitting
+        # it read a pilot ten seconds of "his readback was correct, no
+        # acknowledgment needed, but I notice he's turning through heading
+        # 042... the ASR line contradicts what I just told him" in a
+        # controller's voice. Silence is the right answer to a malformed reply:
+        # the model meant to say nothing, and saying nothing is free.
+        return ""
     text = re.sub(r"[*_`#>]+", "", text)          # emphasis / code / heading marks
     text = re.sub(r"(?m)^\s*[-•]\s+", "", text)    # list bullets
     text = re.sub(r"\s*\n+\s*", " ", text)          # collapse newlines to one line
@@ -801,7 +815,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 print(f"  !! agent error: {e}", flush=True)
                 reply = "Standby."
             dt = time.monotonic() - t0
-            reply = for_voice(reply)
+            reply = for_voice(reply, agent=True)
             if not reply or reply.lower() in NO_CALL:
                 print(f"  ATC[{kind}/{tier}] ({dt:.1f}s): (no call)", flush=True)
                 return
@@ -852,6 +866,18 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         called: dict[str, int] = {}
         vectored: dict[str, int] = {}      # last heading issued, per aircraft
         vec_at: dict[str, float] = {}      # and when, so he is not nagged
+        # A proposed REVERSAL has to be seen twice before it is spoken. The
+        # geometry can flip between "intercept" and "reposition" at a boundary,
+        # and this thread transmits on every poll -- so a pilot heard turn right
+        # 148, turn left 306, turn left 291, turn left 249, turn right 264, turn
+        # right 295, and said it felt like two controllers, one of whom thought
+        # he was outbound. He was not wrong: those are two answers to the same
+        # question, alternating.
+        #
+        # This does not fix the flip. It stops the radio carrying it, which is
+        # the difference between a controller who is thinking and one who is
+        # unusable, and it costs one poll of latency on a genuine reversal.
+        pending: dict[str, int] = {}
         while True:
             time.sleep(ASR_POLL_SEC)
             if not (radar_on and getattr(profile, "vectored", False)):
@@ -886,6 +912,17 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                             asr.angle_diff(want, last)) >= VECTOR_CHANGE_DEG
                         if not drifted or time.time() - vec_at.get(cs, 0) < VECTOR_MIN_SEC:
                             continue
+                        # A big change is a reversal, not a correction. Hold it
+                        # for one poll and only speak if it is still wanted.
+                        if last is not None and abs(asr.angle_diff(want, last)) > 60:
+                            prev = pending.get(cs)
+                            if prev is None or abs(asr.angle_diff(want, prev)) > 20:
+                                pending[cs] = want
+                                print(f"  .. holding a {abs(asr.angle_diff(want, last)):.0f}"
+                                      f" degree reversal for {cs} to see if it "
+                                      "persists", flush=True)
+                                continue
+                        pending.pop(cs, None)
                         vectored[cs], vec_at[cs] = want, time.time()
                         text = for_voice(vector_call(cs, g))
                         with radio_lock:
