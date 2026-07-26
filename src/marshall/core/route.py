@@ -59,6 +59,17 @@ def altimeter_spoken(inhg: float = 0.0) -> str:
 # controller correlates by position, not by expecting this one. build.py names the
 # flight group from the leading word.
 FLIGHT_CALLSIGN = "Pony 1-1"
+
+# Every flight name that can appear on this mission's ramp. Knowable in advance,
+# which matters: the transcriber is primed with the callsigns it has HEARD, so
+# without this the first call a pilot makes -- the one that establishes who he
+# is -- is the one call with no priming behind it. A garbled first callsign does
+# not merely mis-transcribe a word; it invents an aeroplane and gives it a place
+# in the holding stack.
+#
+# The mission builder takes its flight names from here, so the ramp and the
+# transcriber cannot disagree about who is flying.
+SQUADRON_CALLSIGNS = ("Pony", "Hammer", "Spit", "Whistler")
 # How many aircraft that flight brings. A formation is worked as ONE entity
 # until it reaches the holding fix, then broken up into individually-sequenced
 # singles -- so this number decides how many levels the stack has to give away.

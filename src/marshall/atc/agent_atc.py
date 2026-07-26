@@ -1054,7 +1054,13 @@ def whisper_vocabulary(profile) -> str:
     from marshall.core import route as R
     from marshall.srs import stt
 
-    spoken = []
+    # Seed with who COULD be flying before anyone has spoken, plus anybody
+    # named on the command line -- a visiting pilot or a test callsign. Without
+    # this the very first transmission, which is the one that binds a radio to a
+    # name, is the only one with no priming behind it.
+    spoken = list(getattr(R, "SQUADRON_CALLSIGNS", ()))
+    spoken += [c for c in os.environ.get("MARSHALL_CALLSIGNS", "").split(",")
+               if c.strip()]
     for seen in _transmitters.values():
         for cs in seen:
             try:

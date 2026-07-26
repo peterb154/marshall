@@ -85,11 +85,14 @@ class F4U_1D(PlaneType):
 #
 # Air starts are not in this list because they need no parking, which is why
 # the rehearsal pair below costs nothing.
+# Names come from route.py so the ramp and the transcriber's vocabulary cannot
+# drift apart -- see SQUADRON_CALLSIGNS.
+_PONY, _HAMMER, _SPIT, _WHISTLER = R.SQUADRON_CALLSIGNS
 SQUADRON = [
-    ("Pony", P_51D_30_NA, 265, 3),        # Mustang
-    ("Hammer", P_47D_30, 265, 3),         # Thunderbolt
-    ("Spit", SpitfireLFMkIX, 250, 2),     # Spitfire LF Mk IX
-    ("Whistler", F4U_1D, 260, 2),         # Corsair (the Mosquito's two slots)
+    (_PONY, P_51D_30_NA, 265, 3),         # Mustang
+    (_HAMMER, P_47D_30, 265, 3),          # Thunderbolt
+    (_SPIT, SpitfireLFMkIX, 250, 2),      # Spitfire LF Mk IX
+    (_WHISTLER, F4U_1D, 260, 2),          # Corsair (the Mosquito's two slots)
 ]        # the Thunderbolt is heavy; 220 stalls it
 RATE = 22050
 TONE_HZ = 1020.0
