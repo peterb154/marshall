@@ -4,10 +4,14 @@ One sortie, in order. Each test names the change behind it, so **a failure point
 at one commit and one function** instead of at "the ATC was weird".
 
 Every row names an **issue** in `docs/ISSUES.md`, which carries the acceptance
-criteria. **Everything a script can close has been taken off this card.** Twenty-three rows
-went when their issues closed; they live on in `tools/` and run from
-`tools/check.py`, so nothing is unguarded — it is just no longer yours to fly.
-What is left needs a person. A test that fails is a comment on that issue; a section that passes
+criteria. **Everything a script can close has been taken off this card.** Thirty-five rows
+went as their issues closed; they live on in `tools/` and run from
+`tools/check.py`, so nothing is unguarded — it is simply no longer yours to fly.
+
+What is left is the engineering channel, which is the one thing on this project
+a script genuinely cannot judge (whether a human on the other end is USEFUL), and
+the three known-broken rows in section E, which are there so you do not spend a
+sortie re-finding them. A test that fails is a comment on that issue; a section that passes
 closes it. Nothing here is closed by a green unit test — that is the point.
 
 Report by ID over the radio. Say `engineering, come up` first, then
@@ -52,33 +56,11 @@ A2 gives silence, stop and tell me — every other test gets harder to report.
 
 | ID | Prio | Test | What should happen | Fix under test |
 |----|------|------|--------------------|----------------|
-| B1a | [script] | Get handed from Center to Approach, then **wait** before checking in | Approach says **nothing** until you check in — no half-finished instruction | [#6] `_heard_on` |
-| B3 | P2 | Watch the vectors between 20 and 11 nm | Should converge. **A turn away from the field is the known outbound flip — report it** | [#19] — open, see §E |
-| B4 | P1 | At about 4 nm, key the mic and talk for ~15 seconds | Controller **waits**, then makes the call it was holding. It must not be lost | [#5] `channel_is_free` |
-| B5 | P1 | Read back a clearance immediately after he issues one | ~7 s of quiet for you to do it | [#5] readback window |
-| B8 | **P1** | **Go around at the point.** Climb out on the published missed (330) | Every call is about the missed — climb, published heading, re-sequencing. **No turn back towards the field. Never "left of course"** | [#11] `flying_the_missed` |
-| B9 | P1 | Reaching the missed approach altitude | Re-sequenced normally; he is an ordinary arrival again | [#11] |
 
 **B4 is the headline test of this sortie.** It is the "talks over us constantly"
 fix and it has only ever been proven against a synthetic pilot.
 
 **What each one is actually checking**
-
-**B1a** — A controller must not start working you before you have tuned him. The metronome knew you from *Center's* frequency and began mid-instruction.
-
-**B3** — **The last reversal, and the one I have never been able to fix.** Between about 20 and 11 miles the controller is closing you onto the final approach course, and each vector should bring you nearer to it — a heading that swings *further* from the field is the bug. It shows up when you are inbound and more than about two miles off course, and it is the only thing on this card that has beaten four separate attempts: every fix I tried made the synthetic sweep worse, so the geometry you are flying is deliberately the old, known one.
-
-What a good pass looks like: corrections that get smaller as you close, rolling you out on about 124. What the failure looks like: one turn that points you away, usually around fourteen miles, often after you have drifted well off course.
-
-**The four things worth saying if it happens** — your range, roughly how far off course you were, which way he turned you, and whether he corrected it on the next call or kept going. The bridge log records the radar picture for every transmission, so with your range and rough offset I can re-run the exact geometry afterwards and test a fix against it without you flying again. That is worth more than the fix attempt itself: I have four failures because I had no repro.
-
-**B4** — A radio is half duplex and so are the manners. The metronome transmitted on its own schedule regardless of who was talking — and a call it holds must be **made afterwards, not dropped**.
-
-**B5** — A readback needs somewhere to go. Filling that gap destroys the only check anyone has on whether you got the numbers right, and several were mangled the night this was found.
-
-**B8** — Open for three sessions and four failed attempts: climbing out on the published missed, you were vectored back towards the field. The fix is new and **has never been flown**.
-
-**B9** — The other half of B8 — the latch has to release. Stuck on the missed approach for ever would be a worse bug than the one it fixed.
 
 ---
 
@@ -86,9 +68,6 @@ What a good pass looks like: corrections that get smaller as you close, rolling 
 
 | ID | Prio | Test | What should happen | Fix under test |
 |----|------|------|--------------------|----------------|
-| C1 | P1 | Ask Approach for a **visual approach** | Granted without argument: *"cleared visual approach runway one three, report the field in sight"* | [#10] `request_visual` |
-| C2 | P1 | On the visual, listen for mile calls | **Silence.** He is spacing, not talking you down | [#10] `may_be_vectored` |
-| C3 | P1 | On any approach, once you can see the runway: *"Hoover one one, field in sight"* | **A landing clearance and the wind** — *"cleared to land runway one three, wind two seven zero at two zero"* | [#10] intent ordering |
 
 **C5 and C6 are script-checked now** (`tools/handoff_check.py`). "I could not
 reproduce it alone" turned out to mean "not while somebody was flying" —
@@ -97,16 +76,6 @@ case that matters: an aircraft that has left Approach's airspace being handed
 back to Center.
 
 **What each one is actually checking**
-
-**C1** — Asking for a visual should be enough. The controller used to refuse outright and had to be argued into it.
-
-**C2** — A visual means he stops talking you down. Reading ranges to a man looking at the runway is chatter over somebody busy.
-
-**C3** — *"Request the visual"* and *"field in sight"* are one word apart and mean opposite things: one is asking for an approach, the other is telling him you already have the runway. They used to classify the same way, because the bare word *visual* belonged to the reporting pattern and swallowed both.
-
-The failure is easy to hear and slightly absurd: instead of clearing you to land he offers you a visual approach and asks you to **report the field in sight** — which you just did. If that happens, say so; it means the two have swapped again.
-
-The other direction is the dangerous one and you are unlikely to see it from the cockpit: a *request* read as a *report* would clear an aircraft to land while it is still in cloud with no runway anywhere.
 
 ---
 
@@ -118,9 +87,6 @@ instruction the wrong man hears, or nobody hears at all**.
 
 | ID | Prio | Test | What should happen | Fix under test |
 |----|------|------|--------------------|----------------|
-| F2 | [script] | **One of you on final taking mile calls, the other calls Approach with a long request** | The mile calls **pause** and resume — not lost, not on top of him | [#5] `channel_is_free` |
-| F3 | [script] | Same, but transmit again the moment the other man stops, before ATC answers | ATC answers the first man. The metronome must **not** fill the thinking time | [#5] `answering` |
-| F4 | [script] | Number two, while holding | Hears the hold and **nothing else**. No vectors until it is his turn | [#15] `may_be_vectored` |
 
 **F2 and F3 are script-checked now** (`tools/channel_check.py`). "Synthetic
 pilots take turns too politely" was true of my harness and not of scripts: one
@@ -134,29 +100,14 @@ is two aircraft flying the same intercept — stop and say so.
 
 **What each one is actually checking**
 
-**F2** — The same courtesy as B4, but contested: one of you is taking mile calls while the other talks. **This has never been properly tested** — synthetic pilots take turns too politely.
-
-**F3** — The gap between you stopping and the answer arriving is three to nine seconds of model thinking, and the metronome would happily fill it with somebody else's mile call.
-
-**F4** — The safety one. If the man holding starts getting vectors, that is two aircraft flying the same intercept — stop and say so.
-
 ---
 
 ## D — identity and the radio
 
 | ID | Prio | Test | What should happen | Fix under test |
 |----|------|------|--------------------|----------------|
-| D4 | **P1** | Both of you check in with Approach. **Neither asks for the approach yet.** Wait a minute | He talks to you both, but issues **no vectors to either**. First vector comes only after somebody is cleared | [#15] `may_be_vectored` |
 
 **What each one is actually checking**
-
-**D4** — **The safety one, and the reason the deterministic engine exists at all.** With traffic on frequency a vector is not information, it is an *invitation to start the approach* — so issuing one to two aircraft that have not been sequenced is two aeroplanes flying the same intercept to the same fix at the same altitude. That is not a talk-down, it is a collision brief.
-
-To set it up: both check in, neither requests the approach. He should be perfectly happy to talk to you — altimeter, radar contact, questions — while issuing **no turn to anybody**. The moment one of you is cleared, that one starts getting vectors and the other should hear only his hold.
-
-**What the failure looks like:** you both get *"turn right heading..."*, usually with different headings and different altitudes, seconds apart on one frequency. If that happens, **stop and say so immediately** — do not fly it and see what happens.
-
-It has happened, and the cause is worth knowing because it makes this a regression watch rather than a one-off: the guard asked the *blind* engine how many aircraft existed, and that engine only learns of an aeroplane when somebody says its name on the radio. A bridge restart emptied it, so the very next radar sweep saw "fewer than two aircraft known" and vectored both. **Anything that restarts the bridge mid-sortie re-opens this**, which is why it is worth a minute of a two-ship sortie every time.
 
 ---
 

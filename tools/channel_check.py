@@ -17,6 +17,12 @@ final and requests the approach for it. Then:
   F2  a long transmission across a mile boundary -- the call must be HELD and
       then made, never dropped. A deferred call that vanishes is worse than one
       that steps on you, because you never learn what you missed.
+
+      The aircraft goes ON the final for this, not out at the intercept: the
+      metronome only wants the channel when a mile boundary is crossed or a
+      vector drifts, so out at fourteen miles a twenty-second transmission can
+      pass with nothing wanting to speak -- which reads as a pass and tests
+      nothing.
   F3  a second transmission the moment the first ends, inside the gap where the
       model is thinking -- the metronome must not fill it with somebody else's
       mile call.
@@ -82,7 +88,7 @@ def main() -> int:
         [sys.executable, str(ROOT / "tools" / "spawn.py"),
          "--name", "Hoover 1-1", "--type", "mustang", "--count", "1",
          "--alt", "2500", "--heading", str(int(p.final_crs)),
-         "--at", "batumi", "--bearing", str(int(inbound)), "--range", "14",
+         "--at", "batumi", "--bearing", str(int(inbound)), "--range", "8",
          "--side", "blue"],
         capture_output=True, env={**os.environ, "PYTHONPATH": str(ROOT / "src")})
     time.sleep(12)
