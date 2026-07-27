@@ -30,6 +30,12 @@ most-repeated failure this project has had and a script closes it in a second;
 channel the way two people do. **Flight time is the scarcest resource here** —
 spend it only on what it is uniquely good for.
 
+**Priority is a label, and it means what it says.** `p1` is next and has
+evidence behind it — a transcript, a repro, or something blocking two other
+issues. `p2` is real and queued. `p3` is wanted and not urgent.
+`needs-triage` means it predates the current shape of things and somebody
+should check it is still true before working it.
+
 **Closing an issue needs an attestation, not a tick.** Who or what tested it,
 what was actually exercised, and the COMMIT it was tested at — because six weeks
 later the only questions that matter are those, and none of them survive a green

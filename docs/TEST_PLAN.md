@@ -124,7 +124,7 @@ real aeroplane. What is *not* worth a call is discovering it.
 |----|------|-------------------|----------------------------------------|-------|
 | E1 | note | Inbound, more than ~2 nm off course, somewhere around 14 nm: one vector turns you **away** from the field | A turn away when you are ON course, or inside 11 nm, or on the second attempt after correcting | [#19] |
 | E2 | note | After a go-around or arriving from behind the field: he circles you near the field instead of taking you out | Circling while you are **inbound and established** — E2 is a repositioning bug, not an approach one | [#20] |
-| E3 | note | A field, frequency or fix named that is not on your chart — *"proceed KOBULETI, contact Kobuleti Departure one two four"* | Any of it. Say what he named; every instance is a separate escape | [#21] |
+| E3 | note | A field, frequency or fix named that is not on your chart — *"proceed KOBULETI, contact Kobuleti Departure one two four"* | Any of it. Say what he named; every instance is a separate escape | [#30] |
 
 **What each one actually is**
 
