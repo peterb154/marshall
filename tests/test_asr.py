@@ -11,6 +11,7 @@ import math
 import unittest
 
 from marshall.atc import asr
+from marshall.atc import geometry as G
 from marshall.core import route as R
 
 
@@ -684,3 +685,61 @@ class TestClimbingOutOnTheMissed(unittest.TestCase):
         g = asr.guide(self.climbing_out(5.0, 2000), self.p)
         self.assertNotEqual(g.phase, "missed")
 
+
+
+class TestTheReversalHooverFlew(unittest.TestCase):
+    """#19, from the aeroplane, at last.
+
+    Four fix attempts across two sessions never reproduced this, because the
+    sweep flies a pilot who OBEYS -- `--sloppy` lags and overshoots and still
+    complies -- and the bug needs the geometry to keep getting worse while the
+    controller keeps talking. Hoover produced exactly that by accident: he was
+    outbound at 320, five to eight miles northwest, reading a bug report to
+    engineering and not turning.
+
+        "when I'm in this range between the inner, basically near the runway,
+         going the opposite direction. This is where he gets very, very
+         confused."
+
+    His radar trace, and what the engine said to it:
+
+        4.9 nm  r305  hdg 318   ->  turn to 126   xtk -0.09
+        6.1 nm  r310  hdg 320   ->  turn to 142   xtk -0.64
+        6.7 nm  r312  hdg 322   ->  turn to 149   xtk -0.93
+        7.7 nm  r315  hdg 324   ->  turn to 160   xtk -1.47
+        8.5 nm  r316  hdg 324   ->  turn to 165   xtk -1.77
+       10.0 nm  r318  hdg 324   ->  turn to 309   xtk -2.42     <-- 144 degrees
+
+    Two faults in one trace. The engine hands an aircraft flying AWAY from the
+    field the intercept heading it would give one flying towards it -- 126 to a
+    man on 318 is an instant one-eighty at five miles, not a vector -- and then,
+    somewhere past two miles of cross-track, it gives up and sends him outbound
+    instead, in a single 144-degree reversal with no downwind and no base leg.
+    """
+
+    TRACE = [(4.9, 305, 2032, 318), (6.1, 310, 1976, 320), (6.7, 312, 1907, 322),
+             (7.7, 315, 1848, 324), (8.5, 316, 1800, 324), (10.0, 318, 1800, 324)]
+
+    def headings(self):
+        p = R.BATUMI_ASR
+        return [asr.guide(G.Position(rng, rad, alt, hdg), p).heading
+                for rng, rad, alt, hdg in self.TRACE]
+
+    def test_the_trace_still_produces_the_reversal(self):
+        """Characterisation, not approval. When this stops being true the fix
+        has landed and this test should be rewritten as the assertion below."""
+        got = self.headings()
+        biggest = max(abs(G.angle_diff(b, a)) for a, b in zip(got, got[1:]))
+        self.assertGreater(biggest, 90, f"the reversal is gone: {got}")
+
+    @unittest.expectedFailure
+    def test_a_vector_should_never_reverse_on_a_man_holding_his_heading(self):
+        """What SHOULD happen. Nothing about his flying changed between one call
+        and the next -- same heading, a mile further out -- so nothing about the
+        instruction should change by 144 degrees. Turning him around is a
+        decision to re-sequence him, and that is a downwind and a base leg, not
+        one word."""
+        got = self.headings()
+        for a, b in zip(got, got[1:]):
+            self.assertLessEqual(abs(G.angle_diff(b, a)), 90,
+                                 f"reversed from {a} to {b} in one call: {got}")

@@ -477,16 +477,61 @@ Code: `agent_atc.claim_the_frequency`
 ## [BUG-1] Outbound vector at ~14 nm while inbound — #19
 labels: bug
 
-**Status:** OPEN
+**Status:** OPEN — **reproduced**, 27 July, and criterion 3 is met.
 
 Inbound, more than 2 nm off course, and the engine turns him away. Four attempts
-across two sessions, all of which regressed the sweep.
+across two sessions, all of which regressed the sweep and none of which ever
+reproduced it.
+
+**Why it hid for so long.** The sweep flies a pilot who OBEYS. `--sloppy` lags,
+overshoots and drifts, and still complies. This bug needs the geometry to keep
+getting WORSE while the controller keeps talking, and an obedient aeroplane
+never allows that — it turns, the error shrinks, and the engine looks fine.
+
+Hoover produced it by accident: outbound at 320, five to eight miles northwest,
+reading a bug report to engineering and not turning.
+
+    "when I'm in this range between the inner, basically near the runway, going
+     the opposite direction. This is where he gets very, very confused."
+
+His radar trace, replayed offline and deterministic:
+
+        4.9 nm  r305  hdg 318   ->  turn to 126   xtk -0.09
+        6.1 nm  r310  hdg 320   ->  turn to 142   xtk -0.64
+        6.7 nm  r312  hdg 322   ->  turn to 149   xtk -0.93
+        7.7 nm  r315  hdg 324   ->  turn to 160   xtk -1.47
+        8.5 nm  r316  hdg 324   ->  turn to 165   xtk -1.77
+       10.0 nm  r318  hdg 324   ->  turn to 309   xtk -2.42     <-- 144 degrees
+
+**Two faults, one trace.** The engine hands an aircraft flying AWAY from the
+field the intercept heading it would give one flying towards it — 126 to a man
+on 318 is an instant one-eighty at five miles, not a vector — and then, past
+about two miles of cross-track, it gives up and sends him outbound instead, in a
+single 144-degree reversal with no downwind and no base leg.
+
+**Scale.** A pilot who does not turn produces a >90-degree reversal in **237 of
+1,080** starts. The same starts with an obedient pilot produce **none**.
+
+**Now guarded.** `asr_sweep.py --deaf` flies a pilot who never turns, from three
+miles out as well (the ordinary grid has never STARTED inside eight), with its
+own baseline — arrivals are not a measure of a man who is not flying the
+approach, so it scores the arguing instead. In `tools/check.py`. The trace above
+is `TestTheReversalHooverFlew`, which holds the current behaviour and carries the
+assertion it should pass, marked expected-failure so the day it is fixed the
+suite says so.
 
 **Acceptance criteria**
 1. Inbound and off course at 20–11 nm, corrections converge — no turn away.
 2. `asr_sweep.py` and `--sloppy` no worse than baseline
    (1293/1296 · 1 flip · 582 turns; sloppy 1296/1296 · 26 flips).
-3. A repro exists as a test before any fix is written.
+3. ~~A repro exists as a test before any fix is written.~~ **Done.**
+4. An aircraft flying AWAY from the field is sequenced — downwind, base, final —
+   rather than handed the inbound intercept heading as though it could turn onto
+   the course from where it is.
+5. No instruction reverses by more than 90 degrees between consecutive calls
+   while the pilot's own heading is unchanged. Turning him around is a decision
+   to re-sequence, and that is a pattern, not one word.
+6. `--deaf` no worse than its baseline (23 flips, 576 turns).
 
 ---
 

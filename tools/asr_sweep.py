@@ -76,8 +76,21 @@ DESCEND_FPM = 700.0
 
 
 def fly(range_nm: float, radial_deg: float, heading_deg: float, profile,
-        sloppy: bool = False, seed: int = 0) -> dict:
-    """One approach, from one start, until it arrives or runs out of fuel."""
+        sloppy: bool = False, seed: int = 0, deaf: bool = False) -> dict:
+    """One approach, from one start, until it arrives or runs out of fuel.
+
+    `deaf` is a pilot who does not turn. Not a bad pilot -- a BUSY one: head
+    down, changing a frequency, talking to somebody else, or reading a bug
+    report to engineering, which is exactly what Hoover was doing at seven miles
+    when the vectors reversed on him.
+
+    It matters because every start in this sweep otherwise OBEYS. `--sloppy`
+    lags and overshoots and drifts, and still complies. So the engine has only
+    ever been measured against an aeroplane that does what it is told, and the
+    reversal bug (#19) survived four fix attempts across two sessions without
+    ever reproducing here -- because it needs the geometry to keep getting worse
+    while the controller keeps talking, and an obedient aeroplane never lets it.
+    """
     rnd = random.Random(seed)              # seeded: a failure must be repeatable
     speed_nm_s = SPEED_MPH / 3600.0 * 0.868      # mph -> knots -> nm/sec
     pos = asr.Position(range_nm=range_nm, radial_deg=radial_deg,
@@ -114,7 +127,7 @@ def fly(range_nm: float, radial_deg: float, heading_deg: float, profile,
                     "dither": dither}
 
         # Turn towards the ordered heading at standard rate, then move.
-        err = G.angle_diff(g.heading, pos.heading_deg)
+        err = 0.0 if deaf else G.angle_diff(g.heading, pos.heading_deg)
         turn = max(-TURN_RATE_DEG * STEP_SEC, min(TURN_RATE_DEG * STEP_SEC, err))
         if sloppy:
             # What a person actually does with a heading: hears it a beat late,
@@ -148,15 +161,20 @@ def fly(range_nm: float, radial_deg: float, heading_deg: float, profile,
             "turns": turns, "dither": dither}
 
 
-def sweep(profile, sloppy: bool = False) -> tuple[list[dict], int]:
-    ranges = [8, 12, 16, 20, 25, 30]
+def sweep(profile, sloppy: bool = False,
+          deaf: bool = False) -> tuple[list[dict], int]:
+    # A deaf pilot is flown from CLOSE IN as well. That is where he was when he
+    # reported it -- "between the inner, near the runway, going the opposite
+    # direction. This is where he gets very very confused" -- and the ordinary
+    # grid has never started an approach inside eight miles.
+    ranges = [3, 5, 8, 12, 16, 20, 25, 30] if deaf else [8, 12, 16, 20, 25, 30]
     radials = range(0, 360, 20)              # 18
     headings = range(0, 360, 30)             # 12
     out = []
     for rng in ranges:
         for rad in radials:
             for hdg in headings:
-                r = fly(rng, rad, hdg, profile, sloppy=sloppy,
+                r = fly(rng, rad, hdg, profile, sloppy=sloppy, deaf=deaf,
                         seed=rng * 100000 + rad * 100 + hdg)
                 r["start"] = (rng, rad, hdg)
                 out.append(r)
@@ -173,8 +191,15 @@ def sweep(profile, sloppy: bool = False) -> tuple[list[dict], int]:
 # Beat any of these and update them in the same commit. That is the point: the
 # numbers only move deliberately.
 BASELINE = {
-    False: {"arrived": 1293, "dither": 1, "turns": 582},      # clean pilot
-    True:  {"arrived": 1296, "dither": 26, "turns": 899},     # --sloppy
+    "clean":  {"arrived": 1293, "dither": 1, "turns": 582},
+    "sloppy": {"arrived": 1296, "dither": 26, "turns": 899},
+    # --deaf: a pilot who never turns, so ARRIVING IS NOT THE MEASURE -- he is
+    # not flying the approach and 20 of 1728 reaching the missed approach point
+    # is him drifting over it, not the engine working. What is measured here is
+    # whether the CONTROLLER argues with itself when the geometry refuses to
+    # improve: reversals and direction changes. That is #19, and it is invisible
+    # to an obedient aeroplane.
+    "deaf":   {"arrived": 0, "dither": 23, "turns": 576},
 }
 # Turns wander a little with the seeded drift; dithering and arrivals must not.
 TURN_SLACK = 0.05
@@ -184,12 +209,15 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--sloppy", action="store_true",
                     help="fly it with a pilot who lags, overshoots and drifts")
+    ap.add_argument("--deaf", action="store_true",
+                    help="fly it with a pilot who does not turn at all -- head "
+                         "down, busy, or talking to somebody else")
     ap.add_argument("--verbose", action="store_true",
                     help="list every start that never arrived")
     args = ap.parse_args()
 
     profile = R.BATUMI_ASR
-    results, total = sweep(profile, sloppy=args.sloppy)
+    results, total = sweep(profile, sloppy=args.sloppy, deaf=args.deaf)
     arrived = [r for r in results if r["arrived"]]
     est = [r["established"] for r in arrived if r["established"]]
     turns = sum(r["turns"] for r in results)
@@ -215,10 +243,12 @@ def main() -> int:
             print(f"     {r['dither']:3d} flips  from {rng:2d} nm on the "
                   f"{rad:03d} radial, heading {hdg:03d}")
 
-    base = BASELINE.get(bool(args.sloppy))
+    mode = "deaf" if args.deaf else ("sloppy" if args.sloppy else "clean")
+    base = BASELINE.get(mode)
     regressed = []
     if base:
-        if len(arrived) < base["arrived"]:
+        # Arrivals are not a measure of a pilot who does not turn.
+        if not args.deaf and len(arrived) < base["arrived"]:
             regressed.append(f"arrived {len(arrived)} < {base['arrived']}")
         if dither > base["dither"]:
             regressed.append(f"DITHERING {dither} > {base['dither']}")
@@ -230,7 +260,7 @@ def main() -> int:
                  else "  — no regression"))
 
     lost = [r for r in results if not r["arrived"]]
-    if lost:
+    if lost and not args.deaf:
         print(f"  NEVER ARRIVED {len(lost)}")
         show = lost if args.verbose else lost[:10]
         for r in show:
