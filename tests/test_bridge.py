@@ -1082,9 +1082,25 @@ class TestAFiledPlanIsNotAnAeroplane(unittest.TestCase):
         self.assertEqual(C.extract_all(self.SAID), ["Hoover 1-1"])
         self.assertEqual(C.extract(self.SAID), "Hoover 1-1")
 
-    def test_the_radio_binds_to_the_pilot_not_to_his_plan(self):
-        """Even with no list registered. The plan name is late in the sentence
-        and is not on the roster, so position refuses it."""
+    def test_position_alone_no_longer_separates_them_and_that_is_deliberate(self):
+        """An honest record of a guarantee that WEAKENED.
+
+        Position used to refuse "Samovar Three" because it sat late in the
+        sentence. Then the rule had to widen: a callsign is at the START or the
+        END of a transmission, because reading back puts it last -- "Left zero
+        nine zero, Falcon one one" -- and rejecting that made a pilot's own
+        aeroplane vanish from the board every time he did the correct thing.
+
+        The plan name is also at the end, so position can no longer tell them
+        apart. What does is the REGISTERED list of plan names, which the bridge
+        loads from the director when it primes the transcriber. That is the
+        structural fix and this is the belt it replaced.
+        """
+        C._NOT_AN_AIRCRAFT.clear()
+        self.assertIn("Samovar 3", C.extract_all(self.SAID))
+
+    def test_with_the_plans_registered_the_radio_binds_to_the_pilot(self):
+        C.these_are_not_aircraft(["Samovar One", "Samovar Two", "Samovar Three"])
         got = agent_atc.transmitter_callsign("guid-sockeye", self.SAID)
         self.assertEqual(got, "Hoover 1-1")
 

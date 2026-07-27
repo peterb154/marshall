@@ -1215,10 +1215,49 @@ def separation_context(ctl, transcript: str, scope: str = "",
                 and C_.parse(known).flight == C_.parse(intent.callsign).flight):
             known = intent.callsign
 
-        if known and intent.callsign and intent.callsign != known:
+        # ONLY A RADIO MAY BE AN AEROPLANE.
+        #
+        # This is the rule three ghosts in one evening cost us, and every one of
+        # them was a patch to a symptom: "21-2", then "Left 3-8" and "Write 2-5",
+        # then "Maintained 2" -- which filed itself as an aircraft, took a
+        # clearance for the approach, and had a real pilot held at five thousand
+        # behind it. Each time the answer was another word on a denylist, and
+        # each time a different sentence got through, because ANY word before a
+        # number looks exactly like a callsign and a read-back is made of our own
+        # words and numbers.
+        #
+        # The words were never the right evidence. Every transmission arrives
+        # with the SRS GUID of the radio that sent it -- that is not a guess, it
+        # is the transport telling us who keyed the mic -- and `known` is the
+        # callsign that radio has told us it answers to. So the separation
+        # engine hears from RADIOS, never from sentences:
+        #
+        #   * whatever the classifier thought it heard, the aeroplane is the one
+        #     this radio belongs to;
+        #   * and if we do not yet know whose radio it is, nothing reaches the
+        #     engine at all.
+        #
+        # The cost of the second half is that an unidentified caller gets no
+        # separation until he is identified, which is exactly right: a
+        # controller who does not know who is calling asks, and he cannot
+        # sequence somebody he cannot name. The cost of the old behaviour was a
+        # holding stack with three aeroplanes in it, two of which were sentences.
+        if intent.callsign and known and intent.callsign != known:
             print(f"  .. heard '{intent.callsign}', but this radio is {known}",
                   flush=True)
             intent = dataclasses.replace(intent, callsign=known)
+        elif intent.callsign and not known:
+            # TWO sources count, and neither of them is a sentence: a radio we
+            # have bound, or a radar track already tagged with that callsign.
+            # Radar is how an aeroplane that has not spoken yet -- or whose
+            # first call was garbled -- still gets separated, and dropping that
+            # would have been a worse bug than the one being fixed.
+            tagged = radar_fix(scope, intent.callsign, ctl.profile) is not None
+            if not tagged:
+                print(f"  .. '{intent.callsign}' is neither a radio we have "
+                      f"identified nor a track on the scope; the engine will "
+                      f"not be told about it", flush=True)
+                intent = dataclasses.replace(intent, callsign="")
 
         # The engine is blind: it believes position reports, and it has no way
         # to notice a wrong one. Seen live -- a flight called "over the beacon"
@@ -1269,7 +1308,9 @@ def separation_context(ctl, transcript: str, scope: str = "",
                 print(f"  .. {intent.callsign} is already on final per radar; "
                       "not stacking him", flush=True)
 
-        if intents.dispatch(ctl, intent):
+        # An intent with no callsign never reaches the engine. Belt to the
+        # braces above: `dispatch` would otherwise be free to invent a key.
+        if intent.callsign and intents.dispatch(ctl, intent):
             directive = " | ".join(tx.text for tx in ctl.out)
             ctl.out.clear()
     except Exception as e:                       # must not break the call
@@ -1676,11 +1717,25 @@ def _plausible_callsign(cs: str, said: str = "") -> bool:
         return True
     if not said:
         return True          # no transcript to judge by; do not block on nothing
-    # Three words, not four. "Batumi Approach, Hoover one one" puts a real
-    # callsign third and that is the longest legitimate run-up; a fourth word
-    # lets "give me a minute two sort this out" in as "Minute 2".
-    opening = " ".join(said.split()[:3]).lower()
-    return name.lower() in opening
+    # AT THE START OR AT THE END, because those are the two places radio
+    # procedure puts a callsign:
+    #
+    #     "Batumi Approach, Falcon one one, request..."   addressing
+    #     "Left zero nine zero, Falcon one one"           reading back
+    #
+    # Only the first was accepted, and the omission was doing real damage in
+    # both directions. A pilot's own callsign at the end of a read-back was
+    # rejected as noise -- so the aeroplane vanished from the board every time
+    # he did the correct thing -- while our own words at the START of that same
+    # read-back sat exactly where a callsign was expected and were let through.
+    # The rule was precisely backwards for the commonest transmission there is.
+    #
+    # Three words at each end. "Batumi Approach, Hoover one one" puts a real
+    # callsign third and that is the longest legitimate run-up; a fourth lets
+    # "give me a minute two sort this out" in as "Minute 2".
+    words = said.split()
+    edges = " ".join(words[:3] + words[-3:]).lower()
+    return name.lower() in edges
 
 
 _plan_labels: list[str] = []
