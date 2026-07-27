@@ -4,9 +4,10 @@ One sortie, in order. Each test names the change behind it, so **a failure point
 at one commit and one function** instead of at "the ATC was weird".
 
 Every row names an **issue** in `docs/ISSUES.md`, which carries the acceptance
-criteria. Rows marked **[script]** are closed by `tools/` rather than by you —
-fly them if they are on your way, but do not spend the sortie on them. Your time
-is for the things only a person can judge. A test that fails is a comment on that issue; a section that passes
+criteria. **Everything a script can close has been taken off this card.** Twenty-three rows
+went when their issues closed; they live on in `tools/` and run from
+`tools/check.py`, so nothing is unguarded — it is just no longer yours to fly.
+What is left needs a person. A test that fails is a comment on that issue; a section that passes
 closes it. Nothing here is closed by a green unit test — that is the point.
 
 Report by ID over the radio. Say `engineering, come up` first, then
@@ -35,7 +36,6 @@ Priority column: **P1** never flown, this sortie is the first real test ·
 **P1.** A1–A4 are the tool you will use for everything else, so they go first. If
 A2 gives silence, stop and tell me — every other test gets harder to report.
 
-
 **What each one is actually checking**
 
 **A1** — Say it however you like: *"get engineering on the line"*, *"engineering, you there?"*, *"Hoover one one for engineering"*, *"need engineering"* — it is looking for you ASKING, not for a magic phrase. Merely mentioning the word does not summon him, so *"engineering said the vectors are fixed"* still reaches the controller. Engineering has to be reachable on **more than one channel** — it used to be a process launched by hand per frequency, so when you changed radio there was simply nothing there.
@@ -52,28 +52,19 @@ A2 gives silence, stop and tell me — every other test gets harder to report.
 
 | ID | Prio | Test | What should happen | Fix under test |
 |----|------|------|--------------------|----------------|
-| B1 | [script] | Call Approach from ~20 nm NW for the radar approach | Radar contact, altimeter, vectors — **all on 124** | [#7] |
 | B1a | [script] | Get handed from Center to Approach, then **wait** before checking in | Approach says **nothing** until you check in — no half-finished instruction | [#6] `_heard_on` |
-| B2 | [script] | Fly it in | Mile calls every mile, one voice, one channel | [#7] `final_hz` |
 | B3 | P2 | Watch the vectors between 20 and 11 nm | Should converge. **A turn away from the field is the known outbound flip — report it** | [#19] — open, see §E |
 | B4 | P1 | At about 4 nm, key the mic and talk for ~15 seconds | Controller **waits**, then makes the call it was holding. It must not be lost | [#5] `channel_is_free` |
 | B5 | P1 | Read back a clearance immediately after he issues one | ~7 s of quiet for you to do it | [#5] readback window |
-| B6 | [script] | Continue to the missed approach point | *"over the missed approach point"* — and **no handoff to Tower before it** | [#8] `hands_to_tower_nm` |
-| B7 | [script] | Land and stop | **Tower sends you off the runway** — *"welcome, exit the runway when able, taxi to parking, good day"* — then goes quiet | [#9] `report_down` |
 | B8 | **P1** | **Go around at the point.** Climb out on the published missed (330) | Every call is about the missed — climb, published heading, re-sequencing. **No turn back towards the field. Never "left of course"** | [#11] `flying_the_missed` |
 | B9 | P1 | Reaching the missed approach altitude | Re-sequenced normally; he is an ordinary arrival again | [#11] |
 
 **B4 is the headline test of this sortie.** It is the "talks over us constantly"
 fix and it has only ever been proven against a synthetic pilot.
 
-
 **What each one is actually checking**
 
-**B1** — Everything about the approach on ONE channel. The talkdown used to transmit on Tower's frequency while the model answered on Approach's, which arrived as two voices disagreeing.
-
 **B1a** — A controller must not start working you before you have tuned him. The metronome knew you from *Center's* frequency and began mid-instruction.
-
-**B2** — The mile calls ARE the surveillance approach — one voice, one channel, every mile. Silence is indistinguishable from having been forgotten.
 
 **B3** — **The last reversal, and the one I have never been able to fix.** Between about 20 and 11 miles the controller is closing you onto the final approach course, and each vector should bring you nearer to it — a heading that swings *further* from the field is the bug. It shows up when you are inbound and more than about two miles off course, and it is the only thing on this card that has beaten four separate attempts: every fix I tried made the synthetic sweep worse, so the geometry you are flying is deliberately the old, known one.
 
@@ -84,12 +75,6 @@ What a good pass looks like: corrections that get smaller as you close, rolling 
 **B4** — A radio is half duplex and so are the manners. The metronome transmitted on its own schedule regardless of who was talking — and a call it holds must be **made afterwards, not dropped**.
 
 **B5** — A readback needs somewhere to go. Filling that gap destroys the only check anyone has on whether you got the numbers right, and several were mangled the night this was found.
-
-**B6** — On a talkdown the controller IS your approach aid, so sending you to Tower mid-approach takes you off the frequency that is flying it. On an ILS the same handoff is correct — the difference is the procedure, not the field.
-
-**B7** — The scope knows you are down; nothing was reading it, so a pilot once sat parked while Tower worked him as a missed approach. The thing to listen for is a **positive instruction**, not an absence: silence would be indistinguishable from a controller who has crashed or simply lost you, and this is the last thing that happens on every flight. He should say it once, within a sweep or two of you stopping, and then stay off the air. It is a taxi instruction on purpose: while you still had the field in sight he owed you a **clearance and the wind**, and reading that to a man already stopped on the runway is a controller who has not noticed you arrive.
-
-It is also the moment the runway frees for whoever is holding behind you, so on a two-ship this is what lets number two start down.
 
 **B8** — Open for three sessions and four failed attempts: climbing out on the published missed, you were vectored back towards the field. The fix is new and **has never been flown**.
 
@@ -104,23 +89,12 @@ It is also the moment the runway frees for whoever is holding behind you, so on 
 | C1 | P1 | Ask Approach for a **visual approach** | Granted without argument: *"cleared visual approach runway one three, report the field in sight"* | [#10] `request_visual` |
 | C2 | P1 | On the visual, listen for mile calls | **Silence.** He is spacing, not talking you down | [#10] `may_be_vectored` |
 | C3 | P1 | On any approach, once you can see the runway: *"Hoover one one, field in sight"* | **A landing clearance and the wind** — *"cleared to land runway one three, wind two seven zero at two zero"* | [#10] intent ordering |
-| C4 | [script] | Two-ship: check in as a flight, then request break-up | Each aircraft **named in order** and asked to check in individually | [#12] `_identify_phrase` |
-| C4a | [script] | After the split, lead calls as the FLIGHT again — *"Pony one, level five thousand"* | **He is asked who he is**, and told the options: *"you are broken up — say your callsign. I have Pony one one, Pony one two"* | [#12] `ambiguous_after_breakup` |
-| C4d | [script] | Then he names himself — *"Pony one one, level five thousand"* | Answered normally as Pony one one from then on | [#12] `transmitter_callsign` |
-| C4b | [script] | Wingman checks in as "Pony one two" | Addressed as **Pony one two**, distinct from lead, and it sticks | [#12] `transmitter_callsign` |
-| C4c | [script] | **Listen, all sortie**, for the controller mentioning an aeroplane that is not there | Nothing you say creates one. He never sequences you behind a ghost | [#13] `_plausible_callsign` |
-| C5 | [script] | Depart Batumi on the sortie, outbound past 25 nm | Center **keeps you** until you leave his airspace — no early handoff to Approach | [#16] `leaving_my_airspace` |
-| C6 | [script] | Coming home, inbound | Center hands you to Approach normally | [#16] `handoff_from` |
-| C7 | [script] | Ask Sentry for range to `ingress`, `waypoint three`, and the target | Computed, and **consistent when asked twice** | [#17] `push_fixes` |
-| C8 | [script] | Ask Sentry for something with no fix | *"no fix for that"* — an honest miss, never an invented mile count | [#17] overlord brief |
-| C9 | [script] | Ask Sentry to place a target somewhere | Placed, then tasked onto with a bearing and range | [#17] `spawn_ground` |
 
 **C5 and C6 are script-checked now** (`tools/handoff_check.py`). "I could not
 reproduce it alone" turned out to mean "not while somebody was flying" —
 spawned traffic and the airspace view drive it perfectly well, including the
 case that matters: an aircraft that has left Approach's airspace being handed
 back to Center.
-
 
 **What each one is actually checking**
 
@@ -134,32 +108,6 @@ The failure is easy to hear and slightly absurd: instead of clearing you to land
 
 The other direction is the dangerous one and you are unlikely to see it from the cockpit: a *request* read as a *report* would clear an aircraft to land while it is still in cloud with no runway anywhere.
 
-**C4** — Identity has to be settled BEFORE anyone is separated. A controller who cannot tell two aeroplanes apart cannot keep them apart.
-
-**C4a** — Once a flight is split, its name refers to nobody. The controller used to answer it anyway by assuming it meant lead — which is a guess, and the wrong kind: he cannot actually tell which of two aeroplanes keyed the mic, and separating men he cannot tell apart is the failure this whole feature exists to prevent. He asks now, and offers the callsigns he is holding so the answer is easy.
-
-**C4d** — And saying your own callsign **once** is enough to fix the binding for good; you cannot out-vote yourself, so a count would leave lead stuck with the formation's name all sortie.
-
-**C4b** — The wingman ends up distinct and stays that way, including when the transcriber hears 'Pony one *too*'.
-
-**C4c** — This one cannot be forced on demand, so listen for it rather than trying to trigger it. The cause is a mis-transcription: the classifier is asked "whose call is this?" and answers even when the transcript has no callsign in it. Real examples, all of which reached a live holding stack:
-
-*"Pony one two, say my altitude"* → heard as *"21-2, same by altitude"* → an aircraft called **21-2**. *"I have two aircraft"* → **Have 2**. A garbled call → **Waypoint 3**. A phrase with "need" in it → **Need 3**, which sat in the separation stack while real aeroplanes queued behind it.
-
-**What it looks like from the cockpit**, which is the part worth knowing: the controller refers to traffic that is not there, tells you that you are **number two when you are alone**, holds you for an aircraft you never see land, or addresses a callsign nobody has used. That is the observable — a ghost you can hear rather than a call you can make.
-
-Saying odd things with numbers in them is fair game and will not do it any more — every phrasing above is now refused. If you do produce one, that is a real find: say what you had just transmitted, because the mis-hearing is the interesting half.
-
-**C5** — Range cannot express 'keep him until he leaves', because range does not know whether you are arriving or departing. Airspace does.
-
-**C6** — And the ordinary inbound handoff still has to work — the risk in C5 is breaking this.
-
-**C7** — Computed off the live track cache, not estimated. Ask twice and get the same answer, because a pilot cannot tell a computed number from a guessed one.
-
-**C8** — An honest miss beats an invented number every time. 'No fix for that' is a good answer.
-
-**C9** — The overlord can actually put something in the world and task you onto it — and reports what the sim really created, not what she asked for.
-
 ---
 
 ## F — two pilots at once (needs Hoover + one more)
@@ -170,12 +118,9 @@ instruction the wrong man hears, or nobody hears at all**.
 
 | ID | Prio | Test | What should happen | Fix under test |
 |----|------|------|--------------------|----------------|
-| F1 | [script] | Both check in. Watch who each reply is addressed to | Every reply names the man who actually spoke | [#14] the FROM line |
 | F2 | [script] | **One of you on final taking mile calls, the other calls Approach with a long request** | The mile calls **pause** and resume — not lost, not on top of him | [#5] `channel_is_free` |
 | F3 | [script] | Same, but transmit again the moment the other man stops, before ATC answers | ATC answers the first man. The metronome must **not** fill the thinking time | [#5] `answering` |
-| F6 | [script] | **Talk to each other on frequency** — *"Pony one two, Pony one one, join up"* | ATC says **nothing**. It is not his call | [#33] ship-to-ship |
 | F4 | [script] | Number two, while holding | Hears the hold and **nothing else**. No vectors until it is his turn | [#15] `may_be_vectored` |
-| F5 | [script] | Break up, then each say his own callsign once | Addressed individually from then on | [#12] `transmitter_callsign` |
 
 **F2 and F3 are script-checked now** (`tools/channel_check.py`). "Synthetic
 pilots take turns too politely" was true of my harness and not of scripts: one
@@ -187,20 +132,13 @@ the thing to notice.
 **F4 matters most for safety.** If the man holding starts getting vectors, that
 is two aircraft flying the same intercept — stop and say so.
 
-
 **What each one is actually checking**
-
-**F1** — Two pilots, and every reply names the man who actually spoke. The bridge knew and was not telling the model, which inferred the caller and got it wrong.
 
 **F2** — The same courtesy as B4, but contested: one of you is taking mile calls while the other talks. **This has never been properly tested** — synthetic pilots take turns too politely.
 
 **F3** — The gap between you stopping and the answer arriving is three to nine seconds of model thinking, and the metronome would happily fill it with somebody else's mile call.
 
-**F6** — Real ATC assumes you are talking to it, which is why you do not say "Batumi Approach" on every transmission — and ours does the same. The cost is that a call between you two gets answered by a controller who thought it was his. The giveaway is who you open with: your wingman's name rather than a station or your own. If ATC answers a join-up call, that is the failure. If it stays quiet when you were talking to IT, that is the opposite failure and more serious — say so.
-
 **F4** — The safety one. If the man holding starts getting vectors, that is two aircraft flying the same intercept — stop and say so.
-
-**F5** — Identity through the split, with two real radios. One SRS client is one radio, so this cannot be tested any other way.
 
 ---
 
@@ -208,26 +146,9 @@ is two aircraft flying the same intercept — stop and say so.
 
 | ID | Prio | Test | What should happen | Fix under test |
 |----|------|------|--------------------|----------------|
-| D1 | [script] | Say your callsign clearly on the first call, then mumble one later | He keeps calling you the right thing | [#13] `transmitter_callsign` |
-| D2 | [script] | Say `Sentry` and `ingress` a few times across the sortie | Transcribed correctly — was coming through as "Century" and "in-grass" | [#13] `whisper_vocabulary` |
-| D6 | P1 | **Say a level out of the blue** — go quiet 2 min, then just *"four thousand level"* | *"Station calling four thousand level, say your callsign"* — he repeats what he heard | [#33] `challenge_for` |
-| D7 | P1 | Same, but during a back-and-forth (reply within ~90 s) | Answered normally. **No** callsign demanded — he knows your voice | [#33] `in_conversation` |
-| D3 | [script] | Call Approach by the wrong name (say "Batumi Tower" on 124) | Corrected **and told which frequency you are on** | [#7] |
 | D4 | **P1** | Both of you check in with Approach. **Neither asks for the approach yet.** Wait a minute | He talks to you both, but issues **no vectors to either**. First vector comes only after somebody is cleared | [#15] `may_be_vectored` |
-| D5 | [script] | Try to start a second bridge while one runs *(ground test, my end)* | Refuses, names the PID | [#18] `claim_the_frequency` |
-
 
 **What each one is actually checking**
-
-**D1** — Your identity is anchored to the RADIO, not to the words, so it survives a mangled or missing callsign.
-
-**D2** — The transcriber is primed with the names actually in play — these came through as 'Century' and 'in-grass', and one garble hijacked a radio for a whole sortie.
-
-**D6** — Out of a silent frequency a controller genuinely does not know who spoke, and will not act on a report he cannot attribute. He repeats the words back on purpose: it tells you that you WERE heard and only the identity is missing, which is a different problem from a dead radio and should not sound like one. Ours knows perfectly well who you are from your radio — this is manner, not ignorance, and the identity behind it never changes.
-
-**D7** — The other side of the same timer, and the one that would be annoying if wrong. Ninety seconds is a readback, a follow-up and a moment to think; inside that he does not harass you for a callsign, because he knows the voice. If he demands one on every "roger", say so.
-
-**D3** — He corrects you rather than accepting whatever he is called, and tells you which frequency you are on — agreeing would put Tower on a frequency Tower is not on.
 
 **D4** — **The safety one, and the reason the deterministic engine exists at all.** With traffic on frequency a vector is not information, it is an *invitation to start the approach* — so issuing one to two aircraft that have not been sequenced is two aeroplanes flying the same intercept to the same fix at the same altitude. That is not a talk-down, it is a collision brief.
 
@@ -236,8 +157,6 @@ To set it up: both check in, neither requests the approach. He should be perfect
 **What the failure looks like:** you both get *"turn right heading..."*, usually with different headings and different altitudes, seconds apart on one frequency. If that happens, **stop and say so immediately** — do not fly it and see what happens.
 
 It has happened, and the cause is worth knowing because it makes this a regression watch rather than a one-off: the guard asked the *blind* engine how many aircraft existed, and that engine only learns of an aeroplane when somebody says its name on the radio. A bridge restart emptied it, so the very next radar sweep saw "fewer than two aircraft known" and vectored both. **Anything that restarts the bridge mid-sortie re-opens this**, which is why it is worth a minute of a two-ship sortie every time.
-
-**D5** — Two bridges on one frequency was the most-repeated failure of squadron night, and killing the launcher does not kill the process.
 
 ---
 
