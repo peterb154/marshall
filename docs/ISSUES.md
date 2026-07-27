@@ -823,6 +823,72 @@ shape rather than a sentence.
 
 ---
 
+## [BUG-4] Which side of course he is on — #35
+
+labels: bug, needs-flight-test
+
+**Status:** OPEN — partly explained, not solved.
+
+    "Only major complaint is that he thinks I'm left of course when right of
+     course." ... "It shows up as him always vectoring me about .25 miles south."
+
+One cause is found and fixed: the geometry computed in TRUE and the controller
+spoke MAGNETIC without converting, so every vector was six degrees right of what
+the engine intended. See the frame split in `route.py` and `asr.py`.
+
+**That does not close this.** At seven miles Hoover was told "left of course"
+while he believed he was right, and the corrected centreline moves that call by
+under two degrees without flipping its sign. Either something else is wrong, or
+his sense of which side he was on came from instruments we now know were lying —
+the P-51's wet compass read 139 where the F10 map said 123 magnetic, and the DG
+beside it had drifted seven degrees the other way.
+
+**How to settle it, and it needs an aeroplane**: fly it in something with an
+inertial platform and an HSI — an F-16 — where "which side of the centreline am
+I on" is an instrument reading rather than a judgement. If the F-16 agrees with
+the controller, the P-51's instruments were the story and this closes. If it
+does not, the residual is real and we have a clean measurement of it.
+
+**Acceptance criteria**
+1. In an aircraft with an HSI, the side called matches the needle, inbound,
+   from 20 nm to the threshold.
+2. The distance called matches within 0.2 nm at 10 nm.
+3. A P-51 flying the same track gets the same calls — the answer must not
+   depend on what the pilot can see.
+
+---
+
+## [PHR-2] Two altitudes for one missed approach — #36
+
+labels: bug, needs-flight-test
+
+**Status:** OPEN — seen once, live, 27 July.
+
+On the go-around the controller said **"fly heading three three zero, climb and
+maintain three thousand"**. Hoover read it back and started up. Thirty seconds
+later, checking in after the frequency change, he was told **"turn right heading
+three one one, maintain two thousand, vectoring for another approach"**.
+
+Two altitudes for one missed approach, a half-minute apart, with a read-back in
+between. A pilot climbing away from a runway with the throttle up is the worst
+possible audience for a contradiction, and there is no way for him to tell which
+one is the mistake.
+
+Same shape as the departure-frequency contradiction fixed the same night: a
+number the controller INVENTS on one transmission and INVENTS AGAIN on the next,
+where it should have come from one place. The missed approach altitude is
+published — it is on the plate — so it should be quoted, not remembered.
+
+**Acceptance criteria**
+1. The altitude in the go-around instruction is the plate's missed approach
+   altitude, and the same number is used on the check-in that follows.
+2. If the controller means to change it, he says so — "amend your altitude,
+   maintain two thousand" — rather than issuing a different number as though it
+   were the first one.
+3. A regression check drives a go-around and compares the two transmissions.
+
+---
+
 ## [PHR-1] Phraseology a real controller would actually use — #30
 labels: bug
 

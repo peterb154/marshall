@@ -32,6 +32,8 @@ Priority column: **P1** never flown, this sortie is the first real test ·
 
 | ID | Test | What should happen | Fix under test |
 |----|------|--------------------|----------------|
+| A8 | P1 | **In an F-16**, fly the approach from 20 nm and compare every "left/right of course" call against your HSI | The side he calls matches the needle, all the way in. This is the one that settles whether the P-51's instruments were the story | [#35] frames |
+| A9 | P1 | Go around, and write down the altitude in the go-around instruction AND the one on the next check-in | The **same number** both times, and it is the plate's missed approach altitude | [#36] |
 | A7 | P1 | On the ramp, draw on a chart page with a pen or the mouse, turn the page and come back, then go to the **E6B** page and press a button | Ink appears; the E6B still **works**, because that page is a calculator and keeps its clicks | [#34] `SetCursorEventsMode` |
 | A6 | P1 | On the go-around, listen to every instruction | Nothing named that is not on your chart. **"Proceed Kobuleti, contact Kobuleti Departure" is the failure** — it exists nowhere | [#30] |
 
@@ -47,6 +49,21 @@ What is left in this section is A6, and it needs you airborne.
 
 
 
+
+**A8** — Your idea, and it is the right one. In the Mustang "which side am I
+on" is a judgement made by looking out of the window, and tonight we learned its
+instruments cannot be trusted for this: the wet compass read 139 where the F10
+map said 123 magnetic, and the DG beside it had drifted seven the other way. An
+F-16 has an inertial platform and an HSI, so the same question becomes an
+instrument reading. If the needle agrees with the controller, the P-51 was the
+story and #35 closes. If it does not, the residual is real and we finally have a
+clean measurement of it. Fly the same track both ways if you have the patience —
+the answer must not depend on what aeroplane you are sitting in.
+
+**A9** — Seen once, live: "climb and maintain three thousand" on the go-around,
+then "maintain two thousand" thirty seconds later on the check-in, with your
+read-back in between. Write both numbers down as he says them; the specific pair
+is the evidence.
 
 **A7** — You said it was a setting, and it was. The tab defaults to mouse
 emulation, so a pen stroke arrives as a mouse drag and draws nothing; the page
