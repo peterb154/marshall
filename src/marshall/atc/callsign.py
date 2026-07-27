@@ -229,6 +229,31 @@ _CANDIDATE = re.compile(
     r"\b([A-Za-z]{3,})((?:[\s-]*(?:" + "|".join(_SPOKEN) + r"|\d))+)\b", re.I)
 
 
+def _is_our_word(word: str) -> bool:
+    """Is this one of OUR words, in any form a pilot might say it back?
+
+    Three ghosts in one evening came from the same place, and the third one --
+    "Maintained 2", from "Maintained two thousand, Falcon one one" -- got itself
+    cleared for the approach and a real pilot was held behind it. The list
+    already contained "maintain". It did not contain "maintained", because a
+    controller says the instruction and a pilot reads it back in a different
+    tense.
+
+    So the inflections are derived rather than listed. Adding "maintained" would
+    have fixed that one transmission and left "turning", "descended", "holds"
+    and every other form a human might produce.
+    """
+    w = word.lower()
+    if w in _NOT_A_NAME or w in _NOT_AN_AIRCRAFT:
+        return True
+    for suffix in ("ed", "ing", "s", "d"):
+        if w.endswith(suffix) and w[:-len(suffix)] in _NOT_A_NAME:
+            return True
+    # "vectoring" -> "vector" is covered above; this catches the forms that
+    # drop an -e, like "declaring" from "declare".
+    return w.endswith("ing") and (w[:-3] + "e") in _NOT_A_NAME
+
+
 def extract_all(text: str) -> list[str]:
     """Every plausible callsign in a transcript, in the order spoken.
 
@@ -239,7 +264,7 @@ def extract_all(text: str) -> list[str]:
     """
     out = []
     for m in _CANDIDATE.finditer(_digits(text or "")):
-        if m.group(1).lower() in _NOT_A_NAME or m.group(1).lower() in _NOT_AN_AIRCRAFT:
+        if _is_our_word(m.group(1)):
             continue
         got = parse(m.group(0)).canonical
         if got not in out:
@@ -275,7 +300,7 @@ def extract(text: str) -> str:
     stays unidentified until the agent correlates it properly.
     """
     for m in _CANDIDATE.finditer(_digits(text or "")):
-        if m.group(1).lower() in _NOT_A_NAME or m.group(1).lower() in _NOT_AN_AIRCRAFT:
+        if _is_our_word(m.group(1)):
             continue
         return parse(m.group(0)).canonical
     return ""

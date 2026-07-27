@@ -214,3 +214,43 @@ class TestOurOwnPhraseologyIsNotAnAeroplane(unittest.TestCase):
                           ("Falcon one one, level five thousand", "Falcon 1-1")):
             with self.subTest(said=said):
                 self.assertIn(who, C.extract_all(said))
+
+
+class TestOurWordsInEveryTenseAPilotUses(unittest.TestCase):
+    """A controller says the instruction; a pilot reads it back in his own words.
+
+    Three ghosts in one evening came from this, and the third got itself CLEARED
+    FOR THE APPROACH and a real pilot was held behind it:
+
+        SEPARATION: Falcon 1-1 unknown -; Maintained 2 cleared 5000 ft
+
+    from "Right, 135, Maintained two thousand, Falcon one one". The list already
+    held "maintain". It did not hold "maintained", and adding that one word
+    would have left "turning", "descended", "holds" and every other form a human
+    might produce. So the inflections are derived.
+    """
+
+    READBACKS = [
+        "Right, 135, Maintained two thousand, Falcon one one",
+        "Turning left 230, Falcon one one",
+        "Holds two thousand, Falcon one one",
+        "Descended to 2000, Falcon one one",
+        "Cleared 5000, Falcon one one",
+        "Maintaining two thousand, Falcon one one",
+        "Climbing 5000, Falcon one one",
+        "Turned right 090, Falcon one one",
+    ]
+
+    def test_no_tense_of_our_own_words_becomes_an_aeroplane(self):
+        for said in self.READBACKS:
+            with self.subTest(said=said):
+                self.assertEqual(C.extract_all(said), ["Falcon 1-1"])
+
+    def test_a_real_callsign_that_merely_looks_inflected_survives(self):
+        """The rule strips suffixes, so it must not eat a name that ends in one.
+        Nothing is safe here except checking."""
+        for said, who in (("Ranger one one, checking in", "Ranger 1-1"),
+                          ("Kings two one, with you", "Kings 2-1"),
+                          ("Reaper one two, request", "Reaper 1-2")):
+            with self.subTest(said=said):
+                self.assertIn(who, C.extract_all(said))
