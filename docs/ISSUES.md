@@ -987,6 +987,95 @@ night.
 
 ---
 
+## [ID-4] A callsign is a POSITION, not a person — model identity properly — #38
+
+labels: architecture, needs-design
+
+**Status:** TODO — design first. Do not build the obvious fix.
+
+    "Falcon 1-1 is not a person, it's a position in a flight. A person might
+     participate in different flights in a night."
+
+    "how do I reset it without engineering help? What happens in the future if a
+     pilot changes slots and call signs?"
+
+Both questions come from the same mistake: the system stores **one** binding
+where there are **three** different things, and the one it stores is the least
+stable of them.
+
+**The three things**
+
+| | what it is | how long it lasts | how we learn it |
+|---|---|---|---|
+| **person** | a human being | a night, or years | SRS transmitter name |
+| **aircraft** | a track on radar | one slot | the sim's unit; labelled with the player's name while a human is in it |
+| **position** | "Falcon 1-1" | ONE SORTIE, sometimes less | he says it on the radio |
+
+Today `contacts` stores position → aircraft and nothing else, so a position that
+outlives its sortie captures the next aeroplane. That is exactly what happened:
+a tag reading `Hammer 1-1` from a Jug sortie twelve hours earlier sat on an F-16
+whose pilot was calling himself Falcon 1-1, the geometry could not match him,
+and the controller improvised two entire approaches without one deterministic
+call. A two-hour expiry was added as a stopgap; it narrows the window and does
+not fix the model.
+
+**Why the obvious fix is wrong**
+
+Matching the SRS name to the radar label is a good signal — they are the same
+string, because both are the player — but binding *that* to the callsign
+recreates the same error one level up. It says "this person IS Falcon 1-1",
+which stops being true the moment he flies the second sortie of the night as
+Pony 1-3, or hands the lead position over and becomes Falcon 1-2.
+
+**What to think about instead.** The physical fact is person ↔ aircraft, and it
+is knowable on every single transmission without anybody being asked: the voice
+carries an SRS GUID, the GUID gives a name, and the name matches a track label.
+The POSITION is then just what that person is answering to at this moment, taken
+from the words he is currently speaking.
+
+If that holds, the binding stops being state at all. It is COMPUTED per
+transmission, nothing is persisted, and the answer to "how do I reset it" is
+that there is nothing to reset — a wrong association cannot survive one call.
+Some memory is still wanted for an aircraft that is not currently talking, so
+the scope can label it; that is a cache with a short life, not a record.
+
+**Cases the design has to answer**
+
+1. Same person, second sortie, new callsign. Correct on his first transmission,
+   with no engineering and no spoken ritual.
+2. Same person, changes slot mid-night. Already works today, must keep working.
+3. A position handed over — lead goes home and number two becomes lead.
+4. Two people, one after the other, in the same position.
+5. A pilot whose SRS name does NOT match his DCS name, or a visitor. This is the
+   case the automatic path cannot serve.
+6. AI flights, which have a callsign and no person at all.
+7. Two people with the same SRS name. Ambiguous; ask rather than guess, the same
+   rule as a formation that has broken up.
+
+**For case 5, the period-correct answer is TURN IDENTIFICATION.** There is no
+transponder in 1944 and none in DCS, so a controller identifies a track by
+asking for a turn and watching which one turns: *"turn left thirty degrees for
+identification"*. It needs nothing from the pilot but a heading, it is how it was
+actually done, and it gives the pilot the reset he asked for without inventing a
+command that does not exist in aviation.
+
+**Acceptance criteria**
+1. A person flying a second sortie under a different callsign is tagged
+   correctly on his first transmission, with no operator action.
+2. A tag from a previous sortie can never apply to a current aeroplane.
+3. Changing slot keeps the identification.
+4. A callsign handed from one pilot to another follows the words, not the
+   history.
+5. A pilot whose name does not match can be identified by a turn, and it works
+   without engineering.
+6. There is no "reset" command, because there is nothing durable to reset.
+
+Related: [#12] (the first identity work), [#13] (ghost callsigns — the same
+lesson, that a name is not an aeroplane), and the two-hour expiry now in
+`identify.py`, which this should make unnecessary.
+
+---
+
 ## [PHR-1] Phraseology a real controller would actually use — #30
 labels: bug
 
