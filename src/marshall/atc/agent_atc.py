@@ -712,6 +712,88 @@ _TALKDOWN_WORDS = re.compile(
     r"altitude should be)", re.I)
 
 
+# What we last TOLD each aeroplane to fly. Not what we want him to fly now --
+# those are different things and confusing them is a bug with a name.
+_issued: dict[str, set[str]] = {}
+# "one four zero" becomes "1 4 0" once the spoken digits are converted, so the
+# number to compare is a RUN of single digits, not a word-bounded integer.
+# Matching \b\d{2,4}\b against "heading 1 4 0" finds nothing at all, which is
+# how the first version of this quietly never fired.
+_DIGIT_RUN = re.compile(r"\d(?:\s*\d){1,3}")
+
+
+def _callsign_numbers(cs: str) -> set[str]:
+    """The digits in his own callsign, in every form they arrive in.
+
+    Stored canonically as "Falcon 1-1", said as "Falcon one one". The hyphen
+    form defeats a digit-run match, so the SPOKEN form is what gets compared --
+    without this, "Falcon one one, say again" counted as a correct read-back of
+    an instruction containing 11.
+    """
+    from marshall.atc import callsign as C
+    try:
+        spoken = C.parse(cs).spoken
+    except Exception:
+        spoken = cs
+    return _spoken_numbers(spoken) | _spoken_numbers((cs or "").replace("-", " "))
+
+
+def _spoken_numbers(said: str) -> set[str]:
+    """Every number in a transmission, however it was said.
+
+    "one four zero", "140" and "one forty" all have to come out as 140, because
+    a controller says one, a pilot reads back another, and a transcriber writes
+    the third.
+    """
+    from marshall.atc import callsign as C
+    text = C._digits(said or "")
+    out = {m.group(0).replace(" ", "") for m in _DIGIT_RUN.finditer(text)}
+    # An altitude spoken as "two thousand" survives _digits as "2 thousand".
+    for n, word in ((1000, "thousand"), (100, "hundred")):
+        for m in re.finditer(rf"(\d)\s*{word}", text):
+            out.add(str(int(m.group(1)) * n))
+    return {o for o in out if len(o) >= 2}
+
+
+def note_issued(cs: str, said: str) -> None:
+    """Remember the numbers in an instruction, so a read-back can be judged
+    against what he was ACTUALLY given."""
+    if not cs or not said:
+        return
+    # HIS OWN CALLSIGN IS NOT AN INSTRUCTION. "Falcon one one" carries a 11,
+    # and without removing it every transmission he makes "matches" the last
+    # thing we said, including "say again".
+    got = _spoken_numbers(said) - _callsign_numbers(cs)
+    if got:
+        _issued[cs] = got
+
+
+def reads_back_what_we_said(cs: str, transcript: str) -> bool:
+    """Is he correctly repeating the last instruction we gave him?
+
+    THE BUG THIS EXISTS FOR, and it is a good one because it makes an aeroplane
+    feel at fault when it is not:
+
+        "sometimes he gives me a heading/alt -- say 140 -- then I read back 140
+         and he says incorrect, 135. The reason is that he is making an
+         aggressive move to get me on track... The result is that it feels like
+         I misspoke it when I didn't."
+
+    Exactly right. The engine recomputes continuously, so between issuing 140 and
+    hearing the read-back it has moved on to 135 -- and the controller, holding
+    the CURRENT directive, answers a perfectly correct read-back with "negative".
+    The pilot is told he was wrong about something he got right.
+
+    A read-back is judged against what was SAID TO HIM. If the engine now wants
+    something different that is not a correction, it is a NEW instruction, and it
+    is spoken as an amendment.
+    """
+    want = _issued.get(cs)
+    if not want or not transcript:
+        return False
+    return bool(want & (_spoken_numbers(transcript) - _callsign_numbers(cs)))
+
+
 def hush_a_second_talkdown(reply: str, g) -> tuple[str, str]:
     """Keep the agent OFF the talkdown while the engine is flying it.
 
@@ -1866,15 +1948,17 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                    if _station_names else None)
 
     def interact(message: str, kind: str, tier: str = "sonnet",
-                 on_hz: float | None = None, guide=None) -> None:
+                 on_hz: float | None = None, guide=None,
+                 to_callsign: str = "") -> None:
         answering[0] = True
         try:
-            _interact(message, kind, tier, on_hz, guide)
+            _interact(message, kind, tier, on_hz, guide, to_callsign)
         finally:
             answering[0] = False
 
     def _interact(message: str, kind: str, tier: str = "sonnet",
-                  on_hz: float | None = None, guide=None) -> None:
+                  on_hz: float | None = None, guide=None,
+                  to_callsign: str = "") -> None:
         with radio_lock:
             t0 = time.monotonic()
             try:
@@ -1895,6 +1979,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 return
             print(f"  ATC[{kind}/{tier}] ({dt:.1f}s): {reply}", flush=True)
             _last_said[0] = reply
+            if to_callsign:
+                note_issued(to_callsign, reply)
             record(session_id, kind=f"atc/{kind}", tier=tier,
                    seconds=round(dt, 1),
                    freq_mhz=(on_hz or freq_hz) / 1_000_000, text=reply)
@@ -2138,6 +2224,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                         pending.pop(cs, None)
                         vectored[cs], vec_at[cs] = want, time.time()
                         text = for_voice(vector_call(cs, g))
+                        note_issued(cs, text)
                         with radio_lock:
                             print(f"  ATC[vec] {text}", flush=True)
                             record(session_id, kind="atc/vector", callsign=cs,
@@ -2162,6 +2249,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                         continue        # not marked as called; it repeats
                     called[cs] = mile
                     text = for_voice(asr_call(cs, g, pos, profile))
+                    note_issued(cs, text)
                     with radio_lock:
                         print(f"  ATC[asr] {text}", flush=True)
                         record(session_id, kind="atc/range", callsign=cs,
@@ -2631,6 +2719,18 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 "say which one, give the correct value, and ask for that element "
                 "again. Silence is not an option here: he is on the ground with "
                 "a pencil and no way to know whether you heard him.")
+        # HIS READ-BACK IS CORRECT unless it disagrees with what he was GIVEN.
+        # The engine recomputes continuously, so by the time a read-back arrives
+        # it often wants a different number -- and the controller, holding the
+        # new one, told a pilot he was wrong about something he got right. See
+        # reads_back_what_we_said.
+        if known and reads_back_what_we_said(known, transcript):
+            parts.append(
+                "READ-BACK CORRECT: those numbers are what you actually gave "
+                "him. Do NOT say negative and do not correct him -- he got it "
+                "right. If you now want something different, that is a NEW "
+                "instruction: say \"amend\" and give it, so he knows it is a "
+                "change and not a mistake he made.")
         parts.append(f"PILOT: {transcript}")
         # The current geometry goes with it so the transmit path can tell
         # whether the engine is already flying him down.
@@ -2641,7 +2741,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                              on_missed=flying_the_missed(known, _fix, profile, ctl)
                              if known else False)
         interact("\n".join(parts), "pilot", route_tier(transcript),
-                 on_hz=heard_hz, guide=_g)
+                 on_hz=heard_hz, guide=_g, to_callsign=known or "")
         # If that answer WAS a clearance, his next transmission is the read-back.
         if known and is_a_clearance(_last_said[0]):
             _awaiting_readback[known] = time.time()

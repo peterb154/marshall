@@ -1076,6 +1076,71 @@ lesson, that a name is not an aeroplane), and the two-hour expiry now in
 
 ---
 
+## [ASR-4] Vector him onto a BASE LEG, not at a point — #39
+
+labels: bug, needs-design
+
+**Status:** TODO — the pilot's design, and it is better than what is there.
+
+    "He has a very hard time getting me to the IF, then it works well... right
+     now, if I'm going fast, he basically flies me around in circles. If I'm
+     going slow enough, he aims me right at the IF -- even if I'm 180 out of
+     phase, then turns me hard 180. It would be way better if he had a right
+     base and a left base that he could put me on. Again, once established it
+     was really good."
+
+**The engine steers at a POINT.** `entry_gate` returns one place on the ground,
+just outside the intercept wedge, and an aircraft that is not in position is
+vectored straight at it. That is why both failures look the way they do:
+
+* **Fast** — the gate is recomputed as he moves, the bearing to it rotates as
+  fast as he turns, and he chases it round. Twelve vector calls in twenty-degree
+  steps, which is the circle he describes.
+* **Slow** — he reaches the point pointing the wrong way and has to be turned
+  through 180 degrees, because arriving at a place says nothing about arriving
+  on a heading.
+
+Neither is how anybody vectors an aeroplane. A real controller flies him a
+PATTERN: downwind, base, final — three legs at known angles, each one a heading
+he can hold, and the turn onto final is a 30-45 degree intercept rather than a
+reversal.
+
+**What to design.** A base leg is a TRACK, not a point: perpendicular to the
+final approach course, on the side he is already on, crossing the centreline far
+enough out that the turn onto final fits. The vectoring question stops being
+"what heading points at the gate" and becomes "which leg is he on, and what
+heading holds it":
+
+    downwind   parallel to the course, opposite direction, offset to one side
+    base       90 degrees to the course, turning toward the centreline
+    final      the 30-45 degree intercept that already works
+
+The engine is deliberately stateless -- `guide` computes from position alone --
+so the design has to decide a leg from geometry rather than remembering one.
+That is the interesting part, and it is worth doing carefully: which leg a
+position belongs to is a function of along-track, cross-track and heading, and
+getting it wrong produces exactly the dithering the sweep measures.
+
+**Right base and left base**, as he says: pick the side he is already on and
+never cross him through the centreline to reach the other one.
+
+**Acceptance criteria**
+1. An aircraft arriving from any direction is established on final having flown
+   recognisable legs, with no turn greater than 90 degrees between consecutive
+   instructions.
+2. A fast aircraft is not turned in a circle: the number of direction changes
+   before established does not grow with speed.
+3. An aircraft 180 degrees out of phase is taken downwind and turned base,
+   never pointed at a fix and reversed on arrival.
+4. The side is chosen once and not swapped.
+5. `asr_sweep.py`, `--sloppy` and `--deaf` no worse than baseline, and the
+   established range improves.
+
+This is the last big piece of the approach: he reports that once established the
+talkdown is "really good", and every complaint left is about how he gets there.
+
+---
+
 ## [PHR-1] Phraseology a real controller would actually use — #30
 labels: bug
 

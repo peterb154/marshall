@@ -1447,3 +1447,51 @@ class TestTheEngineOwnsTheTalkdown(unittest.TestCase):
         said = "Falcon one one, six miles from the runway, come right heading one three zero."
         out, _ = agent_atc.hush_a_second_talkdown(said, None)
         self.assertEqual(out, said)
+
+
+class TestAGoodReadBackIsNotAnError(unittest.TestCase):
+    """The engine moves on between issuing an instruction and hearing it back.
+
+        "he gives me a heading -- say 140 -- then I read back 140 and he says
+         incorrect, 135... The result is that it feels like I misspoke it when
+         I didn't."
+
+    A read-back is judged against what the pilot was GIVEN, not against what the
+    engine has since decided it wants. If the engine now wants something else
+    that is a new instruction, and it is spoken as an amendment.
+    """
+
+    def setUp(self):
+        agent_atc._issued.clear()
+        agent_atc.note_issued(
+            "Falcon 1-1",
+            "Falcon one one, turn left heading one four zero, maintain two thousand.")
+
+    def test_reading_back_what_he_was_given_is_correct(self):
+        for said in ("Left one four zero, two thousand, Falcon one one",
+                     "Left 140, Falcon one one",
+                     "Falcon one one, one four zero"):
+            with self.subTest(said=said):
+                self.assertTrue(
+                    agent_atc.reads_back_what_we_said("Falcon 1-1", said))
+
+    def test_reading_back_something_else_is_not(self):
+        self.assertFalse(agent_atc.reads_back_what_we_said(
+            "Falcon 1-1", "Left one three five, Falcon one one"))
+
+    def test_his_own_callsign_is_not_a_read_back(self):
+        """"Falcon one one" carries an eleven. Without excluding it, every
+        transmission he makes counts as reading back an instruction that
+        happened to contain one -- including "say again"."""
+        for said in ("Falcon one one, say again",
+                     "Falcon one one, request the approach"):
+            with self.subTest(said=said):
+                self.assertFalse(
+                    agent_atc.reads_back_what_we_said("Falcon 1-1", said))
+
+    def test_an_altitude_spoken_as_words_still_matches(self):
+        self.assertTrue(agent_atc.reads_back_what_we_said(
+            "Falcon 1-1", "maintain two thousand, Falcon one one"))
+
+    def test_nothing_issued_means_nothing_to_read_back(self):
+        self.assertFalse(agent_atc.reads_back_what_we_said("Viper 2-1", "two thousand"))
