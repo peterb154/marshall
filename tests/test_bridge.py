@@ -1185,3 +1185,56 @@ class TestWhereAPromisedCallbackIsSpoken(unittest.TestCase):
 
     def test_with_nothing_known_it_says_so_rather_than_guessing(self):
         self.assertIsNone(agent_atc.hook_frequency(self.WHY, {}, None))
+
+
+class TestTheReadBackOfAClearanceIsAnswered(unittest.TestCase):
+    """An IFR clearance is the one transmission that must be read back AND must
+    be answered, and leaving that to the brief lost.
+
+    "Readback correct" competes with the airborne rule that a correct read-back
+    is met with silence, and the airborne rule won often enough that Hoover read
+    a clearance back on the ramp, got nothing, and had to ask "did you hear my
+    read back?" -- after which he was told it was correct.
+
+    So the bridge decides an answer is owed and the agent supplies the words,
+    which is the same division as a separation call.
+    """
+
+    CLEARANCE = ("Pony one one, cleared to Batumi as filed, maintain four "
+                 "thousand, departure frequency one two four decimal zero, "
+                 "squawk seven five six zero.")
+
+    def setUp(self):
+        agent_atc._awaiting_readback.clear()
+
+    def test_a_clearance_is_recognised_by_what_it_carries(self):
+        self.assertTrue(agent_atc.is_a_clearance(self.CLEARANCE))
+
+    def test_nothing_else_on_the_frequency_looks_like_one(self):
+        for said in ("Pony one one, taxi to active approved, contact Georgia "
+                     "Center one three nine",
+                     "Pony one one, cleared to land runway one three, wind two "
+                     "seven zero at two zero",
+                     "Pony one one, descend and maintain four thousand",
+                     "Pony one one, radar contact, report the beacon inbound"):
+            with self.subTest(said=said):
+                self.assertFalse(agent_atc.is_a_clearance(said))
+
+    def test_the_next_transmission_from_him_is_owed_an_answer(self):
+        agent_atc._awaiting_readback["Pony 1-1"] = 1000.0
+        self.assertTrue(agent_atc.readback_due("Pony 1-1", now=1005.0))
+
+    def test_it_is_owed_to_HIM_and_not_to_whoever_speaks_next(self):
+        agent_atc._awaiting_readback["Pony 1-1"] = 1000.0
+        self.assertFalse(agent_atc.readback_due("Pony 1-2", now=1005.0))
+
+    def test_it_stops_being_a_read_back_after_a_while(self):
+        """Long enough to write five elements down; short enough that it is not
+        still armed when he calls for taxi three minutes later."""
+        agent_atc._awaiting_readback["Pony 1-1"] = 1000.0
+        self.assertFalse(
+            agent_atc.readback_due(
+                "Pony 1-1", now=1000.0 + agent_atc.READBACK_WINDOW_SEC + 1))
+
+    def test_nobody_is_owed_one_by_default(self):
+        self.assertFalse(agent_atc.readback_due("Pony 1-1"))

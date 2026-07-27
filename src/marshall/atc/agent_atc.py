@@ -1324,6 +1324,42 @@ def known_flight_names() -> set[str]:
 _last_active_hz: list[float | None] = [None]
 
 
+# What the controller last said, and who is owed an answer to a read-back.
+#
+# An IFR clearance is the one transmission on the whole frequency that MUST be
+# read back and MUST be answered. Getting that right was left to the brief, and
+# the brief lost: "readback correct" competes with the airborne rule that a good
+# read-back is met with silence, and the airborne rule won often enough that
+# Hoover read a clearance back on the ramp, got nothing, and had to ask "did you
+# hear my read back?" -- after which he was told it was correct.
+#
+# So it stops being a matter of judgement. The bridge SEES the clearance go out,
+# knows the next thing that pilot says is his read-back, and says so.
+_last_said: list[str] = [""]
+_awaiting_readback: dict[str, float] = {}
+
+# How long a clearance stays outstanding. Long enough for a pilot to write five
+# elements down and read them back; short enough that it is not still armed when
+# he calls for taxi three minutes later.
+READBACK_WINDOW_SEC = 150
+
+
+def is_a_clearance(said: str) -> bool:
+    """Did we just issue an IFR clearance? Read off the words, because that is
+    what a clearance IS -- there is no other transmission on this frequency that
+    carries a squawk and a routing together."""
+    low = (said or "").lower()
+    return "squawk" in low and ("cleared to" in low or "as filed" in low)
+
+
+def readback_due(callsign: str, now: float | None = None) -> bool:
+    """Is this transmission the read-back of a clearance we just gave him?"""
+    when = _awaiting_readback.get(callsign)
+    if when is None:
+        return False
+    return ((now if now is not None else time.time()) - when) <= READBACK_WINDOW_SEC
+
+
 def hook_frequency(why: str, heard_on: dict, last_hz: float | None) -> float | None:
     """Which channel a promised callback is spoken on.
 
@@ -1667,6 +1703,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 print(f"  ATC[{kind}/{tier}] ({dt:.1f}s): (no call)", flush=True)
                 return
             print(f"  ATC[{kind}/{tier}] ({dt:.1f}s): {reply}", flush=True)
+            _last_said[0] = reply
             record(session_id, kind=f"atc/{kind}", tier=tier,
                    seconds=round(dt, 1),
                    freq_mhz=(on_hz or freq_hz) / 1_000_000, text=reply)
@@ -2314,6 +2351,33 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     f"names has the RIGHT button pressed. Do the work; do not "
                     f"send him to another frequency for it, and never name a "
                     f"frequency that is not on the plate.")
+            # WHOM HE CALLS AFTER HE ROLLS, from the published stations rather
+            # than from the model's memory of what it said a minute ago.
+            #
+            # Hoover was cleared with "departure frequency one two four decimal
+            # zero", read it back, and was then told on the taxi clearance to
+            # contact Georgia Center one three nine when airborne. Two different
+            # answers to "who do I call after takeoff", one minute apart, and the
+            # pilot has no way to tell which one is wrong. The clearance is built
+            # from this same station list, so quoting it here means the two
+            # cannot disagree.
+            if getattr(me, "role", "") in ("tower", "ground", "delivery") or (
+                    "delivery" in [r for r in (getattr(me, "also", ()) or ())]):
+                _dep = None
+                for _s in (getattr(profile, "stations", None) or []):
+                    _roles = [getattr(_s, "role", ""), *(getattr(_s, "also", ()) or ())]
+                    if "departure" in _roles:
+                        _dep = _s
+                        break
+                if _dep is not None:
+                    parts.append(
+                        f"DEPARTURE FREQUENCY: {_dep.name} on "
+                        f"{controller.spell_freq(_dep.freq_mhz)}. That is the "
+                        f"frequency in his IFR clearance and it is the ONLY one "
+                        f"to send him to after takeoff. Do not send a departing "
+                        f"aircraft to Center -- Center gets him from Departure, "
+                        f"later, and telling him otherwise contradicts a "
+                        f"clearance he has already read back.")
             if getattr(me, "role", "") == "overlord":
                 parts.append(OVERLORD_BRIEF)
         if nxt:
@@ -2344,9 +2408,26 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 f"THIS TRANSMISSION IS FROM {known} — identified by his radio, "
                 f"not by the words. Address him as {known} and nobody else, "
                 f"even if the transcript sounds like another callsign.")
+        # THE READ-BACK IS ANSWERED. Deterministic, like a separation call:
+        # the bridge decides that an answer is owed and the agent supplies the
+        # words. See _awaiting_readback.
+        if known and readback_due(known):
+            _awaiting_readback.pop(known, None)
+            parts.append(
+                "READ-BACK EXPECTED: you have just issued this aircraft an IFR "
+                "clearance and this transmission is his read-back of it. ANSWER "
+                "IT. If every element matches what you gave him -- clearance "
+                "limit, route, altitude, departure frequency, squawk -- say "
+                "\"readback correct\" and nothing more. If any element is wrong, "
+                "say which one, give the correct value, and ask for that element "
+                "again. Silence is not an option here: he is on the ground with "
+                "a pencil and no way to know whether you heard him.")
         parts.append(f"PILOT: {transcript}")
         interact("\n".join(parts), "pilot", route_tier(transcript),
                  on_hz=heard_hz)
+        # If that answer WAS a clearance, his next transmission is the read-back.
+        if known and is_a_clearance(_last_said[0]):
+            _awaiting_readback[known] = time.time()
 
 
 if __name__ == "__main__":
