@@ -826,3 +826,53 @@ class TestEveryHoldGoesThroughOnePhrase(unittest.TestCase):
         c.out.clear()
         c.report_beacon("Hammer 1-2", 5000)
         self.assertIn("as published", " ".join(str(t) for t in c.out))
+
+
+class TestWhatHeIsFlyingDecidesTheHold(unittest.TestCase):
+    """The equipment suffix, except the sim states it and nobody can lie.
+
+        "somehow we need to infer or request what equipment a pilot has. IRL
+         it's in the IFR flight plan. In DCS, we could make a module table?"
+
+    A P-51D-30 has the AN/ARA-8 and can hold at a beacon. The Spitfire on the
+    next level down has a compass and a clock, and telling it to hold at BATUMI
+    sends it somewhere it cannot find.
+    """
+
+    def hold_for(self, nav, profile=None):
+        c = atc.Controller(profile or R.BATUMI_APPROACH)
+        c.report_beacon("Pony 1-1", 6000)
+        c.note_equipment("Pony 1-1", nav)
+        return c._hold_phrase(6000, c.aircraft["Pony 1-1"].nav)
+
+    def test_a_homer_may_hold_at_the_beacon(self):
+        self.assertIn("as published", self.hold_for("adf"))
+
+    def test_dead_reckoning_gets_the_pattern_instead(self):
+        said = self.hold_for("dr")
+        self.assertNotIn("as published", said)
+        self.assertIn("outbound", said)
+        self.assertIn("minute", said)
+
+    def test_an_unknown_aeroplane_at_a_beacon_field_is_assumed_able(self):
+        """It is flying a beacon letdown; it has already shown it can home the
+        beacon by being in the procedure at all."""
+        self.assertIn("as published", self.hold_for("unknown"))
+
+    def test_at_a_radar_field_nobody_holds_at_a_fix(self):
+        """There is nothing to hold over, whatever he is flying."""
+        for nav in ("ins", "adf", "dr", "unknown"):
+            with self.subTest(nav=nav):
+                said = self.hold_for(nav, R.BATUMI_ASR)
+                self.assertNotIn("as published", said)
+
+    def test_the_equipment_is_remembered_on_the_aircraft(self):
+        c = atc.Controller(R.BATUMI_ASR)
+        c.report_beacon("Pony 1-1", 6000)
+        c.note_equipment("Pony 1-1", "adf")
+        self.assertEqual(c.aircraft["Pony 1-1"].nav, "adf")
+
+    def test_noting_equipment_for_somebody_not_on_the_board_is_harmless(self):
+        c = atc.Controller(R.BATUMI_ASR)
+        c.note_equipment("Ghost 9-9", "dr")      # must not raise or create
+        self.assertNotIn("Ghost 9-9", c.aircraft)

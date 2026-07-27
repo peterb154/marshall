@@ -526,6 +526,22 @@ _FIX = re.compile(
     r"(?:[^|]*?(\d+)\s*knots)?", re.I)
 
 
+# "362nd_sockeye [Pony 1-1] (P-51D-30-NA): 8.0 nm on the ..." -- the airframe,
+# in brackets after the callsign. It is the equipment suffix an IFR flight plan
+# would carry, except that the sim states it and no pilot can get it wrong.
+_TYPE = re.compile(r"\[([^\]]+)\]\s*\(([^)]+)\)")
+
+
+def aircraft_type_on_scope(scope: str, cs: str) -> str:
+    """What HE is flying, off the radar line. "" when the scope does not say."""
+    from marshall.atc import callsign as C
+    want = C.parse(cs).flight.lower()
+    for tag, typ in _TYPE.findall(scope or ""):
+        if C.parse(tag).flight.lower() == want:
+            return typ.strip()
+    return ""
+
+
 def true_heading(grid_hdg: float, profile) -> float:
     """A radar heading, out of the sim's grid frame and into true.
 
@@ -1108,6 +1124,17 @@ def separation_context(ctl, transcript: str, scope: str = "",
             return (f"POSITION REJECTED: he reports over the beacon but radar "
                     f"shows him {nm:.0f} miles out. Correct him and have him "
                     f"continue inbound; he has NOT reached the fix.", "")
+
+        # WHAT HE IS FLYING, before the engine decides anything about him.
+        # In the real world a controller reads the equipment suffix off the IFR
+        # flight plan; here the sim states the airframe on every radar return,
+        # which is better -- nobody declares it and no pilot can get it wrong.
+        # It decides whether he can be sent to hold at a beacon or has to be
+        # given a racetrack in headings and minutes.
+        _typ = aircraft_type_on_scope(scope, intent.callsign)
+        if _typ:
+            from marshall.atc import equipment as _eq
+            ctl.note_equipment(intent.callsign, _eq.nav_of(_typ))
 
         # Seed the blind engine from the scope BEFORE it decides anything. An
         # aircraft radar shows established on the approach must not be filed as
