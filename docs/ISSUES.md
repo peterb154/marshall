@@ -1168,6 +1168,66 @@ talkdown is "really good", and every complaint left is about how he gets there.
 
 ---
 
+## [ARCH-2] The board is keyed on a mis-transcribable string — #40
+
+labels: architecture, needs-design
+
+**Status:** TODO — design first, and MEASURE before building.
+
+    "the fact that this can happen -- that there is some dictionary with ghost
+     aircraft -- makes me concerned about the foundational architecture of what
+     we've built. My concern is that it's been working well for one human
+     aircraft as long as whisper transcriptions are perfect.. But wait till
+     there are 10 guys on."
+
+The concern is correct and the flaw is one line: `Controller.aircraft` is a
+`dict[callsign -> Aircraft]`, and the callsign arrives through Whisper.
+
+**The primary key of the separation engine is a string a machine guessed at from
+audio.** Everything else follows. A garbled callsign can mint an entry, which is
+the ghost problem — three of them in one evening. But with more than one
+aeroplane the worse failure is not a ghost, it is a COLLISION: a transmission
+from one pilot filed against another's key moves the wrong aircraft's altitude,
+phase and place in the queue. That is a separation error, not noise, and nothing
+in the system would report it.
+
+**What the key should be.** Two identifiers exist that are not spoken and cannot
+be mis-heard: the sim's unit name for a track, and the SRS GUID of a radio. The
+callsign is the wrong thing to key on for exactly the reason [#38] gives — it is
+a POSITION, not an identity. It changes between sorties, it is handed between
+pilots, and it is the only one of the three that arrives as sound.
+
+So the aircraft record should be keyed on the TRACK, with the callsign demoted
+to a label used for addressing him on the radio. Resolution then runs GUID ->
+person -> track, none of which involves parsing words, and a transmission that
+cannot be resolved touches nothing.
+
+**What today's guards do, and what they do not.** Three landed on 27 July: our
+own phraseology cannot become a callsign; only a bound radio or a tagged track
+may become an aeroplane; and nothing unidentified may be sequenced. Together
+they make the single-aircraft case sound and they remove the ghost class. They
+do NOT change the key, so the collision case is untested and unguarded.
+
+**MEASURE FIRST.** `srs/rehearsal.py` already drives synthetic pilots over real
+SRS with real Whisper and Polly. A multi-aircraft rehearsal -- four or six
+radios, overlapping calls, deliberately similar callsigns -- would say what
+actually breaks and how often, and turn this from an architectural worry into a
+number. Refactoring the key before that is guessing at scale, and the last time
+this project guessed at a fix rather than measuring it, three ghosts survived
+four attempts.
+
+**Acceptance criteria**
+1. A multi-aircraft rehearsal exists and reports mis-attributions per hundred
+   transmissions.
+2. A transmission that cannot be resolved to a track changes no aircraft state.
+3. Two aircraft with similar callsigns ("Pony one two" / "Pony one one") cannot
+   have one's report applied to the other.
+4. The state a controller holds survives a callsign being re-heard differently.
+
+Related: [#38] (a callsign is a position), [#13] (ghosts), [#15] (sequencing).
+
+---
+
 ## [PHR-1] Phraseology a real controller would actually use — #30
 labels: bug
 
