@@ -79,19 +79,24 @@ class Aircraft:
     # controller's job shrinks to spacing, and the talk-down must stop -- reading
     # ranges to a man looking at the runway is chatter over somebody busy.
     on_visual: bool = False
-    # WHAT HE CAN NAVIGATE WITH, from the airframe radar reports -- "ins",
-    # "adf", "dr", or "unknown". In the real world this is the equipment suffix
-    # on an IFR flight plan; here the sim tells us the type on every return, so
-    # nobody has to declare it and no pilot can get it wrong. It decides whether
-    # he may be sent to hold at a fix or has to be given a racetrack in headings
-    # and minutes -- see equipment.py.
+    # WHAT HE CAN RECEIVE -- a SET, not a rating. "adf", "tacan", "vor",
+    # "ils", "ins", in any combination, from the airframe radar reports. In the
+    # real world this is the equipment suffix on an IFR flight plan; here the
+    # sim states the type, so nobody declares anything and no pilot can be
+    # wrong about his own aeroplane.
+    #
+    # A set rather than a ladder because capability is not ordered: the DCS
+    # F-16 has TACAN and an inertial platform and no ADF, so it cannot home the
+    # NDB a 1944 Mustang homes easily. See equipment.py.
+    #
+    # None means nobody has told us yet.
     #
     # AT THE END on purpose. Four call sites build an Aircraft positionally, so
     # a field inserted anywhere above shifts every argument after it: putting
     # this after `phase` silently turned `Aircraft(m, Phase.HOLDING, level,
     # self.t)` into an aeroplane holding at zero feet, and twelve tests went red
     # with altitudes of 0.0 rather than anything about equipment.
-    nav: str = "unknown"
+    kit: frozenset | None = None
     # Can this flight maintain VISUAL separation between its own aircraft?
     # None = not asked yet. True = they can see each other, so they may share one
     # holding level. False = IMC, so the controller must separate them himself.
@@ -246,21 +251,21 @@ class Controller:
     def _approach_name(self) -> str:
         return "radar approach" if self._vectored else "beacon approach"
 
-    def note_equipment(self, callsign: str, nav: str) -> None:
-        """Record what he can navigate with, from the airframe on radar.
+    def note_equipment(self, callsign: str, kit) -> None:
+        """Record what he can receive, from the airframe on radar.
 
         Separate from every other write on this class because it is not
         something a pilot AGREED to -- it is a fact about the aeroplane, and the
-        controller is entitled to read it off the scope in the same way he reads
-        a range. It is also the one piece of state here that never changes.
+        controller reads it off the scope the same way he reads a range. It is
+        also the only state here that never changes.
         """
-        if not nav:
+        if kit is None:
             return
         ac = self.aircraft.get(self._resolve(callsign))
         if ac is not None:
-            ac.nav = nav
+            ac.kit = frozenset(kit)
 
-    def _hold_phrase(self, alt_ft: int, nav: str = "unknown") -> str:
+    def _hold_phrase(self, alt_ft: int, kit=None) -> str:
         """Where to wait, said in a way he can actually fly.
 
         Three cases, and the aircraft decides which:
@@ -283,14 +288,21 @@ class Controller:
         # with its homing adapter can; the Spitfire on the next level cannot,
         # and telling it to hold at BATUMI sends it somewhere it cannot find.
         #
-        # Only a KNOWN dead-reckoning aeroplane gets the pattern spelled out.
-        # A published hold is only offered at a field whose approach IS the
-        # beacon letdown, and anything flying that has already shown it can home
-        # the beacon -- so "unknown" here means able, not the reverse. See
-        # equipment.must_be_told_the_pattern.
+        # CAN HE FIND THE PLACE? Two questions that used to be one: whether the
+        # field publishes a hold, and whether THIS aeroplane can navigate to the
+        # station it is held at. A P-51 homes the NDB; the Spitfire on the level
+        # below cannot, and an F-16 -- better equipped in every other respect --
+        # has no ADF either.
+        #
+        # `kit` of None means nobody has told us, and at a beacon field that
+        # means able: a published hold is only ever offered where the approach
+        # IS the beacon letdown, and anything flying that has already shown it
+        # can home the beacon by being in the procedure.
         from marshall.atc import equipment
 
-        if not self._vectored and not equipment.must_be_told_the_pattern(nav):
+        navaid = getattr(self.profile.beacon, "navaid", "ndb")
+        able = kit is None or equipment.can_hold_at(kit, navaid)
+        if not self._vectored and able:
             return (f"hold at {self.profile.beacon.name} as published, "
                     f"maintain {spell_alt(alt_ft)}")
         # A SHAPE AND A CLOCK. He has no navaid, so he cannot hold OVER
@@ -575,7 +587,7 @@ class Controller:
                 ac.assigned_ft = self._free_slot() or self.profile.bottom_ft
             ac.phase, ac.last_report_t = Phase.HOLDING, self.t
             self.say(ac.callsign,
-                     f"{self._addr(ac)}, {self._hold_phrase(ac.assigned_ft, ac.nav)}. "
+                     f"{self._addr(ac)}, {self._hold_phrase(ac.assigned_ft, ac.kit)}. "
                      "Can you maintain visual separation between your aircraft?")
             return
 
@@ -700,7 +712,7 @@ class Controller:
             # thing the phrase function exists to decide. Two ways of saying the
             # same thing is how one of them ends up wrong.
             self.say(ac.callsign,
-                     f"{self._addr(ac)}, {self._hold_phrase(slot, ac.nav)}.")
+                     f"{self._addr(ac)}, {self._hold_phrase(slot, ac.kit)}.")
             self._try_clear()
         elif ac.phase == Phase.CLEARED:
             # Established inbound on the beam: start the station-passage clock.
@@ -848,7 +860,7 @@ class Controller:
         place = len(self._holders())
         words = ["", "one", "two", "three", "four", "five", "six"]
         self.say(ac.callsign,
-                 f"{self._addr(ac)}, {self._hold_phrase(ac.assigned_ft, ac.nav)}. "
+                 f"{self._addr(ac)}, {self._hold_phrase(ac.assigned_ft, ac.kit)}. "
                  f"Expect the visual, you are number "
                  f"{words[place] if place < len(words) else place}.")
 
@@ -881,7 +893,7 @@ class Controller:
                 ac.phase, ac.assigned_ft, ac.last_report_t = Phase.HOLDING, slot, self.t
                 self.say(ac.callsign,
                          f"{self._addr(ac)}, {self.profile.controller}, "
-                         f"{self._hold_phrase(slot, ac.nav)}.")
+                         f"{self._hold_phrase(slot, ac.kit)}.")
         self._try_clear(requested_by=ac.callsign)
 
     # -- the sequencing core ----------------------------------------------

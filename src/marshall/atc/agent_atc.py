@@ -1134,7 +1134,7 @@ def separation_context(ctl, transcript: str, scope: str = "",
         _typ = aircraft_type_on_scope(scope, intent.callsign)
         if _typ:
             from marshall.atc import equipment as _eq
-            ctl.note_equipment(intent.callsign, _eq.nav_of(_typ))
+            ctl.note_equipment(intent.callsign, _eq.receivers(_typ))
 
         # Seed the blind engine from the scope BEFORE it decides anything. An
         # aircraft radar shows established on the approach must not be filed as

@@ -11,6 +11,7 @@ import dataclasses
 import unittest
 
 from marshall.atc import controller as atc
+from marshall.atc import equipment as E
 from marshall.core import route as R
 
 
@@ -834,45 +835,65 @@ class TestWhatHeIsFlyingDecidesTheHold(unittest.TestCase):
         "somehow we need to infer or request what equipment a pilot has. IRL
          it's in the IFR flight plan. In DCS, we could make a module table?"
 
-    A P-51D-30 has the AN/ARA-8 and can hold at a beacon. The Spitfire on the
-    next level down has a compass and a clock, and telling it to hold at BATUMI
-    sends it somewhere it cannot find.
+        "there are some aircraft that can use a vortac or tacan station."
+
+    And that second remark is why capability is a SET rather than a rating. The
+    DCS F-16 carries TACAN, ILS and an inertial platform and NO ADF: better
+    equipped than a Mustang in every respect except the one that matters for
+    homing this field's NDB.
     """
 
-    def hold_for(self, nav, profile=None):
+    def hold_for(self, kit, profile=None):
         c = atc.Controller(profile or R.BATUMI_APPROACH)
         c.report_beacon("Pony 1-1", 6000)
-        c.note_equipment("Pony 1-1", nav)
-        return c._hold_phrase(6000, c.aircraft["Pony 1-1"].nav)
+        c.note_equipment("Pony 1-1", kit)
+        return c._hold_phrase(6000, c.aircraft["Pony 1-1"].kit)
 
     def test_a_homer_may_hold_at_the_beacon(self):
-        self.assertIn("as published", self.hold_for("adf"))
+        self.assertIn("as published", self.hold_for(E.receivers("P-51D-30-NA")))
 
     def test_dead_reckoning_gets_the_pattern_instead(self):
-        said = self.hold_for("dr")
+        said = self.hold_for(E.receivers("P-47D-30"))
         self.assertNotIn("as published", said)
         self.assertIn("outbound", said)
         self.assertIn("minute", said)
 
-    def test_an_unknown_aeroplane_at_a_beacon_field_is_assumed_able(self):
+    def test_an_inertial_platform_can_hold_anywhere(self):
+        """He knows where he is; the ground does not have to help him."""
+        self.assertIn("as published", self.hold_for(E.receivers("F-16C_50")))
+
+    def test_a_jet_with_no_ADF_cannot_home_the_NDB_itself(self):
+        """The asymmetry, stated on its own so it cannot be lost in a refactor.
+        Take the inertial platform away and the F-16 is worse off than the
+        Mustang at this particular field."""
+        kit = E.receivers("F-16C_50") - {"ins"}
+        self.assertFalse(E.can_use(kit, "ndb"))
+        self.assertTrue(E.can_use(E.receivers("P-51D-30-NA"), "ndb"))
+
+    def test_a_vortac_answers_to_either_receiver(self):
+        self.assertTrue(E.can_use(frozenset({"vor"}), "vortac"))
+        self.assertTrue(E.can_use(frozenset({"tacan"}), "vortac"))
+        self.assertFalse(E.can_use(frozenset({"adf"}), "vortac"))
+
+    def test_nobody_has_told_us_at_a_beacon_field_means_able(self):
         """It is flying a beacon letdown; it has already shown it can home the
         beacon by being in the procedure at all."""
-        self.assertIn("as published", self.hold_for("unknown"))
+        self.assertIn("as published", self.hold_for(None))
 
     def test_at_a_radar_field_nobody_holds_at_a_fix(self):
-        """There is nothing to hold over, whatever he is flying."""
-        for nav in ("ins", "adf", "dr", "unknown"):
-            with self.subTest(nav=nav):
-                said = self.hold_for(nav, R.BATUMI_ASR)
+        """There is nothing to hold over, whatever he is carrying."""
+        for t in ("P-51D-30-NA", "P-47D-30", "F-16C_50"):
+            with self.subTest(t=t):
+                said = self.hold_for(E.receivers(t), R.BATUMI_ASR)
                 self.assertNotIn("as published", said)
 
     def test_the_equipment_is_remembered_on_the_aircraft(self):
         c = atc.Controller(R.BATUMI_ASR)
         c.report_beacon("Pony 1-1", 6000)
-        c.note_equipment("Pony 1-1", "adf")
-        self.assertEqual(c.aircraft["Pony 1-1"].nav, "adf")
+        c.note_equipment("Pony 1-1", E.receivers("P-51D-30-NA"))
+        self.assertEqual(c.aircraft["Pony 1-1"].kit, frozenset({"adf"}))
 
     def test_noting_equipment_for_somebody_not_on_the_board_is_harmless(self):
         c = atc.Controller(R.BATUMI_ASR)
-        c.note_equipment("Ghost 9-9", "dr")      # must not raise or create
+        c.note_equipment("Ghost 9-9", frozenset())
         self.assertNotIn("Ghost 9-9", c.aircraft)

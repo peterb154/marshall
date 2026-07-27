@@ -85,6 +85,15 @@ class Fix:
     freq_mhz: float | None = None   # None = not a beacon, dead-reckoning only
     sector: str = ""    # the controller who owns this frequency
     note: str = ""
+    # WHAT KIND OF STATION is here, if any: "ndb", "tacan", "vor", "vortac",
+    # or "" for a point in space that only an inertial platform can find.
+    #
+    # It is not the same question as `freq_mhz`. Which aircraft can navigate to
+    # a fix depends on what sort of station it is, and the answer is not a
+    # ladder: the DCS F-16 carries TACAN and an inertial platform and NO ADF, so
+    # it cannot home the NDB that a 1944 Mustang homes without difficulty.
+    # See atc/equipment.py.
+    navaid: str = "ndb"
 
 
 # Beacon idents must NOT resemble the letters the ARA-8 keys for homing --
