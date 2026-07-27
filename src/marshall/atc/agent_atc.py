@@ -1166,7 +1166,7 @@ def claim_the_frequency(path=None) -> bool:
 
 
 def leaving_my_airspace(base: str, session_id: str, callsign: str, me,
-                        profile, fix) -> "object | None":
+                        profile, fix, mission: str = "default") -> "object | None":
     """The station he should be with now, if he has flown out of mine.
 
     ONLY the outbound direction, deliberately. Arrivals are sequenced by
@@ -1193,7 +1193,8 @@ def leaving_my_airspace(base: str, session_id: str, callsign: str, me,
         return None
     try:
         row = _get_json(f"{base}/flights/airspace?"
-                        + urllib.parse.urlencode({"callsign": callsign}))
+                        + urllib.parse.urlencode({"callsign": callsign,
+                                                  "mission": mission}))
     except Exception:
         return None                    # airspace is an improvement, not a crutch
     want = (row or {}).get("should_be_with") or ""

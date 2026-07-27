@@ -52,9 +52,9 @@ A2 gives silence, stop and tell me — every other test gets harder to report.
 
 | ID | Prio | Test | What should happen | Fix under test |
 |----|------|------|--------------------|----------------|
-| B1 | P2 | Call Approach from ~20 nm NW for the radar approach | Radar contact, altimeter, vectors — **all on 124** | [#7] |
+| B1 | [script] | Call Approach from ~20 nm NW for the radar approach | Radar contact, altimeter, vectors — **all on 124** | [#7] |
 | B1a | [script] | Get handed from Center to Approach, then **wait** before checking in | Approach says **nothing** until you check in — no half-finished instruction | [#6] `_heard_on` |
-| B2 | P2 | Fly it in | Mile calls every mile, one voice, one channel | [#7] `final_hz` |
+| B2 | [script] | Fly it in | Mile calls every mile, one voice, one channel | [#7] `final_hz` |
 | B3 | P2 | Watch the vectors between 20 and 11 nm | Should converge. **A turn away from the field is the known outbound flip — report it** | [#19] — open, see §E |
 | B4 | P1 | At about 4 nm, key the mic and talk for ~15 seconds | Controller **waits**, then makes the call it was holding. It must not be lost | [#5] `channel_is_free` |
 | B5 | P1 | Read back a clearance immediately after he issues one | ~7 s of quiet for you to do it | [#5] readback window |
@@ -109,15 +109,17 @@ It is also the moment the runway frees for whoever is holding behind you, so on 
 | C4d | [script] | Then he names himself — *"Pony one one, level five thousand"* | Answered normally as Pony one one from then on | [#12] `transmitter_callsign` |
 | C4b | [script] | Wingman checks in as "Pony one two" | Addressed as **Pony one two**, distinct from lead, and it sticks | [#12] `transmitter_callsign` |
 | C4c | [script] | **Listen, all sortie**, for the controller mentioning an aeroplane that is not there | Nothing you say creates one. He never sequences you behind a ghost | [#13] `_plausible_callsign` |
-| C5 | P1 | Depart Batumi on the sortie, outbound past 25 nm | Center **keeps you** until you leave his airspace — no early handoff to Approach | [#16] `leaving_my_airspace` |
-| C6 | P1 | Coming home, inbound | Center hands you to Approach normally | [#16] `handoff_from` |
+| C5 | [script] | Depart Batumi on the sortie, outbound past 25 nm | Center **keeps you** until you leave his airspace — no early handoff to Approach | [#16] `leaving_my_airspace` |
+| C6 | [script] | Coming home, inbound | Center hands you to Approach normally | [#16] `handoff_from` |
 | C7 | [script] | Ask Sentry for range to `ingress`, `waypoint three`, and the target | Computed, and **consistent when asked twice** | [#17] `push_fixes` |
 | C8 | [script] | Ask Sentry for something with no fix | *"no fix for that"* — an honest miss, never an invented mile count | [#17] overlord brief |
 | C9 | [script] | Ask Sentry to place a target somewhere | Placed, then tasked onto with a bearing and range | [#17] `spawn_ground` |
 
-**C5 is the one I am least sure of.** It fires on live geometry I could not
-reproduce alone. If Center hands you off on departure anyway, that is the fix
-not working, not you misreading it.
+**C5 and C6 are script-checked now** (`tools/handoff_check.py`). "I could not
+reproduce it alone" turned out to mean "not while somebody was flying" —
+spawned traffic and the airspace view drive it perfectly well, including the
+case that matters: an aircraft that has left Approach's airspace being handed
+back to Center.
 
 
 **What each one is actually checking**
@@ -208,7 +210,7 @@ is two aircraft flying the same intercept — stop and say so.
 | D2 | [script] | Say `Sentry` and `ingress` a few times across the sortie | Transcribed correctly — was coming through as "Century" and "in-grass" | [#13] `whisper_vocabulary` |
 | D6 | P1 | **Say a level out of the blue** — go quiet 2 min, then just *"four thousand level"* | *"Station calling four thousand level, say your callsign"* — he repeats what he heard | [#33] `challenge_for` |
 | D7 | P1 | Same, but during a back-and-forth (reply within ~90 s) | Answered normally. **No** callsign demanded — he knows your voice | [#33] `in_conversation` |
-| D3 | P2 | Call Approach by the wrong name (say "Batumi Tower" on 124) | Corrected **and told which frequency you are on** | [#7] |
+| D3 | [script] | Call Approach by the wrong name (say "Batumi Tower" on 124) | Corrected **and told which frequency you are on** | [#7] |
 | D4 | P3 | Two aircraft airborne, neither cleared | **Neither** gets vectors until one is cleared | [#15] `may_be_vectored` |
 | D5 | [script] | Try to start a second bridge while one runs *(ground test, my end)* | Refuses, names the PID | [#18] `claim_the_frequency` |
 
