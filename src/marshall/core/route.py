@@ -757,7 +757,9 @@ class ApproachProfile:
     # choice here for a reason beyond convention: it keeps him in a small piece
     # of sky. A two-minute leg at 200 knots is nearly seven miles of racetrack,
     # and the whole point of holding him is that the controller knows roughly
-    # where he is.
+    # where he is. Put to the test pilot, who flies it: "1 min hold below 14k is
+    # fine." Confirmed rather than assumed, which is the difference between a
+    # default and a decision.
     #
     # Right turns, also standard, and also the safer default -- everybody in the
     # stack turning the same way keeps the pattern predictable when the only
