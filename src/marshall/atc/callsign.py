@@ -159,6 +159,9 @@ _NOT_A_NAME = {
     "reaching", "through", "gear", "flaps", "fuel", "bingo", "engine", "angel",
     "checking", "check", "ready", "field", "visual", "missed",
     "transmission", "transmitting", "message", "call", "calling", "frequency",
+    # Adjectives and participles that sit in front of "for", which is a digit.
+    # "I am going to be busy for a minute" was answered as "Busy four".
+    "busy", "ready", "standing", "looking", "waiting", "clear", "set", "good",
     # Verbs that take a number straight after them in ordinary speech. "I need
     # two more minutes" became an aeroplane called "Need 2" -- and a "Need 3"
     # reached a live separation stack, where real aircraft were sequenced behind
