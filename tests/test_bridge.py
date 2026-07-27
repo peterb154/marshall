@@ -354,8 +354,11 @@ class TestAsrRangeCall(unittest.TestCase):
         # an aircraft established without one -- being on the centreline says
         # nothing about which way along it you are going, which is exactly how
         # a go-around tracking outbound was once cleared down to minimums.
-        radial = radial if radial is not None else (self.p.final_crs + 180) % 360
-        heading = self.p.final_crs if heading is None else heading
+        # A radial and an aircraft's heading are both TRUE -- that is the frame
+        # radar reports in. Only the number the controller SAYS is magnetic.
+        radial = (radial if radial is not None
+                  else (self.p.final_crs_true + 180) % 360)
+        heading = self.p.final_crs_true if heading is None else heading
         return self.asr.guide(self.asr.Position(nm, radial, 500, heading), self.p)
 
     def test_on_course_call(self):

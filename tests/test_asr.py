@@ -101,7 +101,7 @@ class TestInterceptHeading(unittest.TestCase):
 class TestGuide(unittest.TestCase):
     def setUp(self):
         self.p = profile()
-        self.inbound = (self.p.final_crs + 180) % 360
+        self.inbound = (self.p.final_crs_true + 180) % 360
 
     def at(self, nm, radial=None, alt=2000, hdg=None):
         # Default to flying the approach course: an aeroplane being talked down
@@ -110,7 +110,7 @@ class TestGuide(unittest.TestCase):
         # established and told to descend to minimums.
         return asr.guide(
             asr.Position(nm, radial if radial is not None else self.inbound,
-                         alt, self.p.final_crs if hdg is None else hdg), self.p)
+                         alt, self.p.final_crs_true if hdg is None else hdg), self.p)
 
     VECTORING = ("vector",)
 
@@ -164,7 +164,7 @@ class TestGuide(unittest.TestCase):
         # the ground below, which off this departure end is thirteen thousand
         # feet of Caucasus. It was flown live: an aircraft at six hundred feet
         # was sent to climb thirteen thousand into the mountains, and did.
-        g = self.at(4, radial=self.p.final_crs)
+        g = self.at(4, radial=self.p.final_crs_true)
         self.assertEqual(g.phase, "missed")
         self.assertEqual(g.heading, self.p.missed_hdg)
         self.assertEqual(g.altitude_ft, self.p.missed_climb_ft)
@@ -172,8 +172,8 @@ class TestGuide(unittest.TestCase):
 
     def test_below_the_turn_altitude_he_climbs_straight_ahead_first(self):
         # "At 800 turn left 330" -- so at 500 he is still going straight.
-        g = asr.guide(asr.Position(1.0, self.p.final_crs, 500,
-                                   self.p.final_crs), self.p)
+        g = asr.guide(asr.Position(1.0, self.p.final_crs_true, 500,
+                                   self.p.final_crs_true), self.p)
         self.assertEqual(g.phase, "missed")
         self.assertEqual(g.heading, self.p.final_crs)
 
@@ -197,7 +197,7 @@ class TestGuide(unittest.TestCase):
     def test_on_the_centreline_outside_the_turn_on_continues_inbound(self):
         # It must not send him back OUT to the join point: he is already on the
         # course, he just is not down yet.
-        inbound = (self.p.final_crs + 180) % 360
+        inbound = (self.p.final_crs_true + 180) % 360
         g = self.at(self.p.final_intercept_nm + 2, radial=inbound)
         self.assertEqual(g.heading, self.p.final_crs)
         self.assertEqual(g.altitude_ft, self.p.platform_ft)
@@ -271,10 +271,15 @@ class TestRoomToFly(unittest.TestCase):
     def test_close_in_and_off_the_centreline_is_not_in_position(self):
         pos = asr.Position(range_nm=3.2, radial_deg=329, alt_ft=2898,
                            heading_deg=296)
-        xtk = asr.cross_track(pos, self.p.final_crs)
-        along = asr.along_track(pos, self.p.final_crs)
-        self.assertAlmostEqual(abs(xtk), 1.35, delta=0.1)
-        self.assertAlmostEqual(along, 2.9, delta=0.1)
+        # Measured against the TRUE course. The recorded numbers (1.35 / 2.9)
+        # were taken when the centreline was drawn from the magnetic course, so
+        # they described a line six degrees off the runway. The incident is
+        # unchanged -- this is the same radar position from the same sortie --
+        # but where it sits relative to the real centreline is 1.25 and 2.94.
+        xtk = asr.cross_track(pos, self.p.final_crs_true)
+        along = asr.along_track(pos, self.p.final_crs_true)
+        self.assertAlmostEqual(abs(xtk), 1.25, delta=0.1)
+        self.assertAlmostEqual(along, 2.94, delta=0.1)
         self.assertFalse(asr.in_position(along, xtk, self.p),
                          "squeezed onto a three-mile final it cannot fly")
 
@@ -302,7 +307,7 @@ class TestOnTheGround(unittest.TestCase):
 
     def at(self, nm, radial, alt):
         return asr.Position(range_nm=nm, radial_deg=radial, alt_ft=alt,
-                            heading_deg=self.p.final_crs)
+                            heading_deg=self.p.final_crs_true)
 
     def test_parked_on_the_aerodrome(self):
         self.assertTrue(asr.on_the_ground(self.at(0.0, 124, 30), self.p))

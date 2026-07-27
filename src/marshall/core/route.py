@@ -665,6 +665,32 @@ class ApproachProfile:
     # The controllers who work this approach, enroute inwards. Empty falls back
     # to the beacon-derived stations the NDB letdown uses.
     stations: list[Station] = field(default_factory=list)
+    # Magnetic variation at this field, degrees EAST. On the profile rather than
+    # a module constant because it belongs to a PLACE: point route.py at another
+    # theatre and the variation changes with it, and a controller who carries the
+    # Caucasus figure to the Gulf draws every centreline wrong.
+    #
+    # Measured, not looked up: taxi an aeroplane onto the runway centreline,
+    # stop at both ends, and take the bearing between the two fixes. Batumi's
+    # 13 threshold measured 131.0 TRUE against a briefed 124 magnetic.
+    magvar_deg: float = MAGVAR
+    # The final approach course in TRUE, when somebody has actually MEASURED it.
+    #
+    # Deriving it from the briefed magnetic course plus the variation is a good
+    # estimate and it is still an estimate: at Batumi it gives 130 where the
+    # runway measures 131.0. One degree is 0.17 nm at ten miles, which is inside
+    # the noise -- but the derivation is only as good as a variation figure
+    # nobody has checked for this theatre and epoch, and this is the number every
+    # cross-track in the system hangs off.
+    #
+    # None means "derive it". A figure here means somebody MEASURED it in the
+    # sim -- and measured it well, which is a real caveat: the first attempt
+    # took the bearing between two points an aeroplane stopped at, and came out
+    # 5 degrees wrong because it had only covered 3,900 ft of an 8,000 ft runway
+    # and 100 ft of lateral error over that baseline is 1.5 degrees. The F10
+    # ruler and the aircraft's own radar heading while lined up agreed with each
+    # other and not with it. Prefer those two.
+    final_crs_true_measured: float | None = None
 
     @property
     def vectored(self) -> bool:
@@ -678,7 +704,16 @@ class ApproachProfile:
         return self.kind == "asr"
 
     # Used only by the plate, not by ATC (it is blind and cannot see the field).
-    final_crs: int = 0              # inbound = runway heading
+    # THE COURSE A CONTROLLER SAYS OUT LOUD, which is MAGNETIC, because that is
+    # what the pilot reads off his compass and sets on his gyro.
+    #
+    # It is NOT the number the geometry may compute with. Radar reports position
+    # and heading in TRUE, and comparing a magnetic course against a true bearing
+    # draws the extended centreline in the wrong place -- by exactly the
+    # variation, seven degrees here, which is 1.2 nm of cross-track at ten miles
+    # and a quarter of a mile on short final. Use `final_crs_true` for anything
+    # geometric. See `magvar_deg`.
+    final_crs: int = 0              # inbound = runway heading, MAGNETIC
     hold_turns: str = "RIGHT"
     # The racetrack a holding aircraft flies when it has nothing to hold OVER.
     # Given as two headings because headings are the one thing every aeroplane
@@ -780,6 +815,19 @@ class ApproachProfile:
     missed_turn: str = "LEFT"
     missed_hdg: int = 330
     missed_climb_ft: int = 3000     # below the stack; ATC re-sequences from here
+
+    @property
+    def final_crs_true(self) -> float:
+        """The final approach course as RADAR sees it.
+
+        Everything geometric -- cross-track, along-track, intercept headings,
+        "is he flying the approach" -- happens in true, because that is the
+        frame the sim reports positions and headings in. Only the spoken number
+        is magnetic.
+        """
+        if self.final_crs_true_measured is not None:
+            return self.final_crs_true_measured % 360
+        return (self.final_crs + self.magvar_deg) % 360
 
     @property
     def mda_ft(self) -> int:
@@ -1034,7 +1082,26 @@ BATUMI_ASR = ApproachProfile(
     guidance="talkdown",            # no glidepath: he is talked to the MAP
     stations=list(STATIONS),
     hold_base_ft=4000,
-    final_crs=124,
+    # ASKED THE SIM, 27 July. `Airbase.getByName("Batumi"):getRunways()` returns
+    # the runway named 31 with course 0.950 rad, which is 305.6 TRUE -- so 13 is
+    # 125.6 true. The F10 ruler agreed at 306. Two earlier attempts did not: a
+    # bearing taken between two points an aeroplane stopped at came out 311
+    # because it had covered less than half the runway, and 100 ft of lateral
+    # error over that baseline is 1.5 degrees.
+    #
+    # Ask the authority. It was one gRPC call and it ended an hour of
+    # triangulation.
+    #
+    # The MAGNETIC half is not settled and is tracked separately -- see
+    # magvar_deg. 120 assumes the 6 east this file has always claimed.
+    final_crs=120,
+    # 125.6 rounded, and the rounding is deliberate. Every heading in this system
+    # is issued in WHOLE degrees, because that is what a controller says and what
+    # a pilot can fly -- so a course carrying a spare 0.6 leaves a permanent
+    # fraction the aeroplane can never null out. It shows up as chatter: at 125.6
+    # the sweep dithered on 3 approaches, at 126 on none, for a difference far
+    # inside the measurement.
+    final_crs_true_measured=126.0,
     field_elev_ft=BATUMI_FIELD.elevation_ft,
     runway="13",
     platform_ft=2000,

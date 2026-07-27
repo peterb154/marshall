@@ -127,7 +127,14 @@ def fly(range_nm: float, radial_deg: float, heading_deg: float, profile,
                     "dither": dither}
 
         # Turn towards the ordered heading at standard rate, then move.
-        err = 0.0 if deaf else G.angle_diff(g.heading, pos.heading_deg)
+        #
+        # The order is MAGNETIC, because that is what a controller says. The
+        # aeroplane's heading here is TRUE, because that is what radar reports.
+        # Converting is not a detail: skip it and the simulated pilot flies a
+        # course the geometry never asked for, and the sweep grades the engine
+        # against its own mistake.
+        ordered_true = (g.heading + profile.magvar_deg) % 360
+        err = 0.0 if deaf else G.angle_diff(ordered_true, pos.heading_deg)
         turn = max(-TURN_RATE_DEG * STEP_SEC, min(TURN_RATE_DEG * STEP_SEC, err))
         if sloppy:
             # What a person actually does with a heading: hears it a beat late,
@@ -190,16 +197,29 @@ def sweep(profile, sloppy: bool = False,
 #
 # Beat any of these and update them in the same commit. That is the point: the
 # numbers only move deliberately.
+# Moved 27 July, when the final approach course stopped being magnetic in a
+# true-bearing frame -- Batumi's 13 measured 126 true / 120 magnetic against a
+# briefed 124 used as though it were true. A correctness fix, not a tuning one,
+# so the numbers move in both directions and all of them are recorded:
+#
+#   clean   1293 -> 1294 arrived   1 -> 2 flips     582 -> 588 turns
+#   sloppy  1296 -> 1296 arrived  26 -> 29 flips    899 -> 899 turns
+#   deaf      20 -> 21 arrived    23 -> 15 flips    576 -> 586 turns
+#
+# The deaf number is the one worth noticing: the reversals a pilot who does not
+# turn provokes fell by a third, which is #19's territory. The single extra
+# rapid flip in clean is not understood and is written down here rather than
+# rounded away.
 BASELINE = {
-    "clean":  {"arrived": 1293, "dither": 1, "turns": 582},
-    "sloppy": {"arrived": 1296, "dither": 26, "turns": 899},
+    "clean":  {"arrived": 1294, "dither": 2, "turns": 588},
+    "sloppy": {"arrived": 1296, "dither": 29, "turns": 899},
     # --deaf: a pilot who never turns, so ARRIVING IS NOT THE MEASURE -- he is
     # not flying the approach and 20 of 1728 reaching the missed approach point
     # is him drifting over it, not the engine working. What is measured here is
     # whether the CONTROLLER argues with itself when the geometry refuses to
     # improve: reversals and direction changes. That is #19, and it is invisible
     # to an obedient aeroplane.
-    "deaf":   {"arrived": 0, "dither": 23, "turns": 576},
+    "deaf":   {"arrived": 0, "dither": 15, "turns": 586},
 }
 # Turns wander a little with the seeded drift; dithering and arrivals must not.
 TURN_SLACK = 0.05

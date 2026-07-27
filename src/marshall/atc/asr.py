@@ -276,11 +276,11 @@ def reposition_side(xtk: float, profile) -> int:
 
 def _to_point(pos: Position, profile, along: float, across: float) -> float:
     """Bearing from the aircraft to a point given in (along, cross) miles."""
-    inbound_radial = (profile.final_crs + 180) % 360
+    inbound_radial = (profile.final_crs_true + 180) % 360
     # Rebuild the point in the field's polar frame, which is the only frame the
     # radar picture speaks, so nothing here needs a second coordinate system.
     ae, an = _en(along, inbound_radial)
-    right = (profile.final_crs + 90) % 360
+    right = (profile.final_crs_true + 90) % 360
     ce, cn = _en(across, right)
     pe, pn = ae + ce, an + cn
     fe, fn = _en(pos.range_nm, pos.radial_deg)
@@ -314,17 +314,35 @@ def guide(pos: Position, profile, on_missed: bool = False) -> Guidance:
     what turned a pilot away from the field, orbited another, and flew a third
     out to sea over three sorties.
     """
-    xtk = cross_track(pos, profile.final_crs)
-    along = along_track(pos, profile.final_crs)
+    xtk = cross_track(pos, profile.final_crs_true)
+    along = along_track(pos, profile.final_crs_true)
     tol = on_course_tolerance(pos.range_nm)
     # Is he flying the approach at all? Pointing roughly down the course, on
     # the near side of the field. This is what decides whether the words "of
     # course" mean anything to him -- see below.
-    inbound = (abs(angle_diff(pos.heading_deg, profile.final_crs)) <= 60
+    inbound = (abs(angle_diff(pos.heading_deg, profile.final_crs_true)) <= 60
                and along > 0)
 
+    def as_flown(magnetic_deg: float) -> float:
+        """A PUBLISHED heading, put into the frame `out` expects.
+
+        The plate's missed approach heading is already magnetic -- it is what
+        the chart says and what the pilot sets on his gyro. Everything reaching
+        `out` is true, so it has to go in as true and come back out unchanged.
+        Skipping this quietly turned a published "climb on 330" into 324: a
+        six-degree error in the one instruction given to a pilot who has just
+        gone around and is looking for something to hold on to.
+        """
+        return (magnetic_deg + profile.magvar_deg) % 360
+
     def out(phase, heading, alt):
-        h = round(heading) % 360
+        # EVERYTHING ABOVE IS TRUE; EVERYTHING SPOKEN IS MAGNETIC.
+        #
+        # Radar reports position and heading in true, so that is the frame the
+        # geometry has to work in -- and the pilot flies a compass, so that is
+        # the frame the number has to be said in. One value was doing both jobs
+        # and the centreline was being drawn wherever the difference put it.
+        h = round(heading - profile.magvar_deg) % 360
         # Deviation is a statement ABOUT THE FINAL APPROACH COURSE, so it is
         # only said to someone flying it. Drifting off course while inbound is
         # exactly what he needs to hear; being "left of course" while
@@ -340,14 +358,20 @@ def guide(pos: Position, profile, on_missed: bool = False) -> Guidance:
         on_approach = phase in ("final", "map")
         speed = (profile.speed_kt_at(along, on_approach)
                  if hasattr(profile, "speed_kt_at") else 0.0)
+        # WHICH WAY HE TURNS IS GEOMETRY, so it is worked out in TRUE against
+        # his true heading -- not against the magnetic number we are about to
+        # say. Comparing the two frames put a six degree bias on every turn
+        # decision, and within six degrees of on-course that is a coin toss:
+        # the sweep went from 1 rapid reversal to 139 the moment it was wrong.
         return Guidance(phase, h, alt, pos.range_nm, xtk, dev,
-                        turn_direction(pos.heading_deg, h), speed)
+                        turn_direction(pos.heading_deg, round(heading) % 360),
+                        speed)
 
     # Established: on the course and pointing down it. The heading check is not
     # pedantry -- a go-around tracking outbound sits on the centreline with a
     # tiny cross-track, and was once called established and sent down to
     # minimums while flying away from the field.
-    tracking_in = abs(angle_diff(pos.heading_deg, profile.final_crs)) <= 60
+    tracking_in = abs(angle_diff(pos.heading_deg, profile.final_crs_true)) <= 60
     on_the_course = abs(xtk) <= max(tol, TURN_IN_NM / 4) and tracking_in
     if on_the_course and along > -MAP_OVERSHOOT_NM:
         # The missed approach point is a place on the APPROACH -- so far down
@@ -363,7 +387,7 @@ def guide(pos: Position, profile, on_missed: bool = False) -> Guidance:
         # whether it lands or goes around, and either way it is not still
         # being vectored onto a final it is already past.
         if -MAP_OVERSHOOT_NM <= along <= profile.map_nm:
-            return out("map", intercept_heading(profile.final_crs, xtk, along),
+            return out("map", intercept_heading(profile.final_crs_true, xtk, along),
                        profile.mda_ft)
         # Anything further through than that has flown the approach and missed
         # it, and is a repositioning problem -- so it falls out of this branch
@@ -377,7 +401,7 @@ def guide(pos: Position, profile, on_missed: bool = False) -> Guidance:
         # published one.
         inside = 0 < along <= profile.final_intercept_nm
         return out("final" if inside else "vector",
-                   intercept_heading(profile.final_crs, xtk, along),
+                   intercept_heading(profile.final_crs_true, xtk, along),
                    advisory_altitude(pos.range_nm, profile) if inside
                    else safe_alt(pos, profile))
 
@@ -399,8 +423,8 @@ def guide(pos: Position, profile, on_missed: bool = False) -> Guidance:
             and pos.range_nm <= profile.final_intercept_nm):
         straight_ft = getattr(profile, "missed_straight_ft", 0)
         return out("missed",
-                   profile.final_crs if pos.alt_ft < straight_ft
-                   else profile.missed_hdg,
+                   profile.final_crs_true if pos.alt_ft < straight_ft
+                   else as_flown(profile.missed_hdg),
                    profile.missed_climb_ft)
 
     if in_position(along, xtk, profile):
@@ -410,9 +434,9 @@ def guide(pos: Position, profile, on_missed: bool = False) -> Guidance:
         # distance, blend on proportionally so he rolls out on the course
         # rather than through it.
         if abs(xtk) > TURN_IN_NM:
-            heading = profile.final_crs - INTERCEPT_ANGLE * (1 if xtk > 0 else -1)
+            heading = profile.final_crs_true - INTERCEPT_ANGLE * (1 if xtk > 0 else -1)
         else:
-            heading = intercept_heading(profile.final_crs, xtk, along)
+            heading = intercept_heading(profile.final_crs_true, xtk, along)
         # Down the descent profile as he closes, floored by the minimum
         # vectoring altitude for the ground he is actually over -- so he
         # arrives at the fix at the fix altitude rather than being dropped to
@@ -443,8 +467,8 @@ def guide(pos: Position, profile, on_missed: bool = False) -> Guidance:
             and pos.range_nm <= profile.final_intercept_nm
             and pos.alt_ft < profile.missed_climb_ft):
         straight_ft = getattr(profile, "missed_straight_ft", 0)
-        heading = (profile.final_crs if pos.alt_ft < straight_ft
-                   else profile.missed_hdg)
+        heading = (profile.final_crs_true if pos.alt_ft < straight_ft
+                   else as_flown(profile.missed_hdg))
         return out("missed", heading, profile.missed_climb_ft)
 
     # Not in position: send him to a fixed point that puts him in position. A
