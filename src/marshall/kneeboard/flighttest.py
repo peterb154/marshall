@@ -39,12 +39,13 @@ GUIDS = {
     "F": "{70d25496-b1a8-45e7-f3c9-6eb08acd71f6}",
     "G": "{81e365a7-c2b9-46f8-a4da-7fc19bde82a7}",
     "PLANS": "{92f476b8-d3ca-4709-b5eb-8ad2acef930b}",
+    "H": "{a3b587c9-e4db-481a-c6fc-9be23acf041c}",
 }
 
 # Tab labels. OpenKneeboard's tab strip is narrow and the pilot is reading it
 # at a glance, so these are hand-short rather than a truncated heading.
 SHORT = {"A": "PREFLT", "B": "APPROACH", "C": "NEW", "D": "RADIO",
-         "E": "KNOWN", "F": "2-SHIP", "G": "CLNC"}
+         "E": "KNOWN", "F": "2-SHIP", "G": "CLNC", "H": "APPR-NEW"}
 
 _SECTION = re.compile(r"^## ([A-Z]) — (.+)$", re.M)
 _ROW = re.compile(r"^\|\s*([A-Z]\d+[a-z]?)\s*\|(.+)$")

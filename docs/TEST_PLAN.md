@@ -79,6 +79,76 @@ finished or whether we draw our own.
 
 ---
 
+## H — the approach, rebuilt overnight (fly this first)
+
+Everything in this section changed after the 27 July sortie and **none of it has
+been flown**. It is one approach, start to finish, and it is the whole point of
+tomorrow.
+
+Three things moved, and each has a row that can fail on its own:
+
+* **The approach is flown to the THRESHOLD**, not to the runway centre half a
+  mile beyond it. This is the "I was always too high" fix.
+* **The centreline is in the right frame.** It was six degrees off — the course
+  was in the sim's grid frame and the radials are true.
+* **Corrections on final are RELATIVE.** "Turn left ten degrees", no heading.
+
+**Fly it in the Jug** (its compass is honest) and **reset the DG before you turn
+inbound**. If everything below passes, #19, #20, #35 and #37 all close on your
+name in one sortie.
+
+| ID | Prio | Test | What should happen | Fix under test |
+|----|------|------|--------------------|----------------|
+| H1 | P1 | Inbound from 20 nm, on the centreline. Compare each "left/right of course" call against where the runway actually is | The side he calls is the side you are on, **every call, all the way in**. This is the one that was wrong all night | [#35] frames |
+| H2 | P1 | Fly the descent profile as given and note your altitude crossing the **threshold** | You arrive at the threshold at minimums, not 200 ft high with half a mile of descent owed | [#19] touchdown |
+| H3 | P1 | Listen to the range calls near the end | "One mile from the runway" means one mile from the **threshold**. Previously it meant one mile from the runway centre, which is where you were already landing | touchdown |
+| H4 | P1 | Once established, listen to how he corrects you | **"Turn left ten degrees"** — no heading at all, rounded to five. If he gives you an absolute heading inside the final approach course, that is the failure | [#37] |
+| H5 | P1 | While being vectored (before established), note the headings | Absolute, and ending in **0 or 5** — "heading three one five", never "three one three" | [#37] |
+| H6 | P1 | **Deliberately mis-set your DG by 20 degrees** before you turn inbound, then fly the approach on his corrections alone | You still arrive. This is the whole argument for relative corrections and it could not have been passed yesterday | [#37] |
+| H7 | P2 | Inbound, **2–3 nm off course, between 11 and 16 nm** — get yourself there on purpose | He gives you an intercept heading. If he sends you OUTBOUND to reposition, that is E1 and it is still open | [#19] |
+| H8 | P2 | Arrive from **behind the field**, 8–12 nm on the departure side, and ask for the approach | He takes you out and brings you round. Circling near the field is E2 | [#20] |
+
+**What each one is actually checking**
+
+**H1** — The bug that cost the whole night. The final approach course was taken
+from the F10 map and the aircraft compass, which are in DCS's x/z grid frame,
+while the radials come from lat/lon and are true. At Batumi those differ by 5.74
+degrees, so every centreline this system ever drew sat south of the runway. It
+is confirmed against your own two calls from last night; what it has never had
+is somebody flying it afterwards.
+
+**H2** — Your catch, and the most satisfying fix of the night. The descent was
+aimed at the runway centre, half a mile past the threshold, so the profile
+always had you high by whatever half a mile of glidepath is worth — about 200 ft
+at two miles. Note the altitude as the threshold goes under the nose.
+
+**H3** — The same fix heard rather than felt. If "one mile" still sounds like it
+arrives late, say so.
+
+**H4** — The relative corrections. Absolute headings are only as good as the
+gyro you set them on, and yours drifted seven degrees while the wet compass read
+sixteen off the map. A difference between two headings cancels all of that.
+
+**H5** — And the other half of the rule: while repositioning you have time to
+set a gyro, so those stay absolute — but rounded, because a round number is
+easier to hold and to read back.
+
+**H6** — The test that proves the point. Set the DG deliberately wrong, do not
+correct it, and fly what he tells you. If relative corrections work, the error
+is irrelevant and you land anyway. **Do this one at altitude first if you would
+rather not find out on short final.**
+
+**H7** — E1, mapped: inbound, 2 nm or more off, between 11 and 16 nm, and he
+sends you outbound to reposition rather than giving you a heading. Under 1.5 nm
+off, or beyond 18 nm, it behaves. You will have to put yourself there on purpose
+— it is a narrow band and you did not meet it last night.
+
+**H8** — E2. Two starts in 1,296 still orbit on the sweep, both 12 nm behind the
+field. The touchdown fix took it from three to two, so it may already be gone
+from the air; this is the cheapest way to find out.
+
+---
+
 ## G — clearance delivery, at the ramp (before B)
 
 Flown before you start the engine, on **118** — Tower also works ground and
