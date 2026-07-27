@@ -700,7 +700,28 @@ number — which is every other test on this list.
 
 labels: feature, needs-flight-test
 
-**Status:** TODO
+**Status:** SHIPPED/UNVERIFIED — the pilot was right, it is a setting, and it is
+now set. Card **A7**.
+
+OpenKneeboard's ink layer IS available to a web dashboard; the page just has to
+ask. By default the tab runs in `MouseEmulation` and every pen stroke is
+delivered to the document as a mouse drag, which draws nothing. Requesting the
+`DoodlesOnly` and `SetCursorEventsMode` experimental features (v1.9+) and calling
+`SetCursorEventsMode("DoodlesOnly")` hands the cursor to the ink instead. No
+canvas, no persistence layer, no rendering to files.
+
+Two things it has to get right, and both are about not making something worse:
+
+* **The mode follows the PAGE.** The E6B is a working wind-triangle calculator
+  with plus and minus buttons on it, and DoodlesOnly takes its clicks away. A
+  chart, a plate and a test card are things to write ON; a calculator is a thing
+  to PRESS. Switched on every page turn, and only when it actually changes.
+* **Doodling is requested only after page navigation is working.** An older
+  OpenKneeboard rejects the whole `EnableExperimentalFeatures` call if it does
+  not know one of the names, and losing page turns to gain ink is a bad trade.
+  If the page API failed we are navigating by the on-screen buttons, and taking
+  clicks away there would leave a pilot on page one of a document he cannot
+  turn.
 
     "I want to doodle on the OpenKneeboard pages."
 

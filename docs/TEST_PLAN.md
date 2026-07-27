@@ -32,6 +32,7 @@ Priority column: **P1** never flown, this sortie is the first real test ·
 
 | ID | Test | What should happen | Fix under test |
 |----|------|--------------------|----------------|
+| A7 | P1 | On the ramp, draw on a chart page with a pen or the mouse, turn the page and come back, then go to the **E6B** page and press a button | Ink appears; the E6B still **works**, because that page is a calculator and keeps its clicks | [#34] `SetCursorEventsMode` |
 | A6 | P1 | On the go-around, listen to every instruction | Nothing named that is not on your chart. **"Proceed Kobuleti, contact Kobuleti Departure" is the failure** — it exists nowhere | [#30] |
 
 **A1–A5 are closed** — flown on the ramp on 27 July and attested on #4 and #25.
@@ -46,6 +47,15 @@ What is left in this section is A6, and it needs you airborne.
 
 
 
+
+**A7** — You said it was a setting, and it was. The tab defaults to mouse
+emulation, so a pen stroke arrives as a mouse drag and draws nothing; the page
+now asks for `DoodlesOnly` instead. What to check is the pair: ink on the pages
+you write on, AND the E6B still taking button presses, because that one is a
+calculator and switching the whole tab to ink would have quietly broken it. If
+the strokes vanish on a page turn, say so — that is OpenKneeboard's ink and how
+long it keeps it is its business, not ours, but it decides whether this is
+finished or whether we draw our own.
 
 **A6** — The one you asked to fly next, and the reason is the pattern: it has landed on the **missed approach both times**. That is when the model has least to work with and the most pressure to say something, so it invents a procedure — a field, a frequency and a handoff that exist nowhere in the plan, offered to a pilot who has just gone around and is looking for instructions. Go around, then read back every name he says and check it against your chart. Say exactly what he named; the specific words are the evidence.
 

@@ -80,6 +80,35 @@ PAGES = pages()
 PAGE_W, PAGE_H = 1024, 1365
 PAGE_FEATURE_VERSION = 2024073001
 
+# Letting a pilot WRITE on the page. OpenKneeboard's ink layer is available to a
+# web dashboard, but only if the page asks for it: by default the tab is in
+# "MouseEmulation" and every pen stroke is delivered to the document as a mouse
+# drag, which draws nothing.
+#
+#     "I want to doodle on the OpenKneeboard pages."
+#
+# DoodlesOnly hands the cursor to OKB's ink instead. The cost is that the page
+# stops receiving clicks -- which is why this is requested only AFTER the page
+# API is working, since page turns then come from OpenKneeboard itself and the
+# on-page buttons are a fallback nobody needs. If the page API failed we are
+# navigating by those buttons, and taking clicks away would leave a pilot on
+# page one of a document he cannot turn.
+#
+# v1.9 and above. Requested separately from PageBasedContent on purpose: an
+# older OpenKneeboard rejects the whole EnableExperimentalFeatures call if it
+# does not know one of the names, and losing page navigation to gain doodling
+# is a bad trade.
+DOODLE_FEATURES = (("DoodlesOnly", 2024071802),
+                   ("SetCursorEventsMode", 2024071801))
+
+# ...except where the page is a TOOL rather than a document. The E6B is a working
+# wind-triangle calculator with plus and minus buttons on it, and DoodlesOnly
+# takes its clicks away -- so the mode follows the PAGE. A chart, a plate and a
+# test card are things to write on; a calculator is a thing to press.
+#
+# By slug, because the guid is a constant nobody should have to match by eye.
+INTERACTIVE_SLUGS = {"e6b"}
+
 
 def split(doc: str) -> tuple[str, str, str]:
     """Pull a generated chart apart into (css, html, js)."""
@@ -144,6 +173,11 @@ def build(page_list=None) -> str:
     buttons = "".join(f'<button data-guid="{guid}">{name}</button>'
                       for guid, name, _, _ in page_list)
     nl = chr(10)
+    doodle_js = "[" + ", ".join(
+        f'{{name: "{name}", version: {ver}}}' for name, ver in DOODLE_FEATURES) + "]"
+    clicky_js = "[" + ", ".join(
+        f'"{guid.strip("{}").lower()}"'
+        for guid, _, slug, _ in page_list if slug in INTERACTIVE_SLUGS) + "]"
 
     return f"""<title>362nd Kneeboard</title>
 <style>
@@ -194,6 +228,26 @@ def build(page_list=None) -> str:
     secs.forEach(s => s.classList.toggle("on", norm(s.dataset.guid) === want));
   }}
 
+  // WRITE ON IT, unless the page is a tool. DoodlesOnly hands the cursor to
+  // OpenKneeboard's ink; MouseEmulation gives it back to the document, which the
+  // E6B needs because it has buttons. Switched on every page turn, and only when
+  // it actually changes -- a pilot turning pages should not be waiting on a
+  // promise per turn for no reason.
+  const CLICKY = {clicky_js};
+  let API = null, cursorMode = null;
+
+  async function setCursorMode(guid) {{
+    if (!API || !API.SetCursorEventsMode) return;
+    const want = CLICKY.includes(norm(guid)) ? "MouseEmulation" : "DoodlesOnly";
+    if (want === cursorMode) return;
+    try {{
+      await API.SetCursorEventsMode(want);
+      cursorMode = want;
+    }} catch (err) {{
+      note("cursor mode " + want + ": " + err);
+    }}
+  }}
+
   function useButtons(why) {{
     note("fell back to on-screen buttons: " + why);
     const nav = document.getElementById("nav");
@@ -220,10 +274,20 @@ def build(page_list=None) -> str:
         await api.SetPreferredPixelSize({PAGE_W}, {PAGE_H});
       api.addEventListener("pageChanged", e => {{
         const guid = e?.detail?.page?.guid;
-        if (guid) show(guid);
+        if (guid) {{ show(guid); setCursorMode(guid); }}
       }});
     }} catch (err) {{
       useButtons("page API: " + err);
+      return;                          // clicks are the only way to navigate
+    }}
+    // Pages work. NOW ask for ink -- see DOODLE_FEATURES. Its own try/catch, so
+    // an OpenKneeboard that has never heard of it still turns pages.
+    try {{
+      await api.EnableExperimentalFeatures({doodle_js});
+      API = api;
+      await setCursorMode(PAGES[0].guid);
+    }} catch (err) {{
+      console.log("doodling unavailable: " + err);
     }}
   }}
 
