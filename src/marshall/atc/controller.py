@@ -283,6 +283,27 @@ class Controller:
         """
         return ac.radar_identified or not self._vectored
 
+    def board(self) -> list[dict]:
+        """Every entity the engine currently believes exists.
+
+        There was no way to ask this. `tools/whats_out_there.py` asks the SIM
+        what is flying; nothing asked the CONTROLLER what it thinks is flying,
+        and the difference between those two answers is the entire ghost
+        problem. An aeroplane called "Maintained 2" took a level in the stack
+        and held a real pilot behind it for a whole approach, and the only
+        evidence it had ever existed was a phrase in a transcript.
+
+        Written to the flight recorder on every transmission, so a ghost is
+        timestamped and attached to the words that minted it, rather than being
+        reconstructed afterwards from prose. Cheap enough to do unconditionally:
+        a handful of dicts, once per push-to-talk.
+        """
+        return [{"callsign": cs, "phase": ac.phase.name,
+                 "assigned_ft": ac.assigned_ft, "identified": ac.radar_identified,
+                 "members": list(ac.members), "approaches": ac.approaches,
+                 "in_letdown": cs == self._letdown}
+                for cs, ac in sorted(self.aircraft.items())]
+
     def note_equipment(self, callsign: str, kit) -> None:
         """Record what he can receive, from the airframe on radar.
 

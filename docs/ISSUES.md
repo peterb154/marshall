@@ -1216,13 +1216,47 @@ number. Refactoring the key before that is guessing at scale, and the last time
 this project guessed at a fix rather than measuring it, three ghosts survived
 four attempts.
 
+**MEASURED, 27 July.** `srs/crowd.py` replays every flight recording on disk.
+846 real transmissions; the extractor would bind a radio to **37 distinct
+names, of which 10 were aeroplanes**. The corpus is now `tests/test_ghosts.py`.
+
+Three classes, and only the first is closed:
+
+  OUR OWN WORDS       "Maintained 2", "Left 3-0", "Busy 4". Closed by the
+                      27 July phraseology guard -- none survive the replay.
+
+  ORDINARY ENGLISH    "You 4" (from "with you 4,100 level"), "Bound 4",
+                      "Here 4", "The 2", "Paired 4", "Nearest 5". This class
+                      REPLACED the first one and cannot be blacklisted: the
+                      supply of English content words is unbounded.
+
+  A REAL CALLSIGN,    "Tony 1-1" for Pony 1-1. "Hammer 1-3" and "Pony 1-4"
+  MISHEARD            for Hammer 1-1 and Pony 1-1. THE DANGEROUS CLASS: these
+                      have the exact shape of aeroplanes, and on a frequency
+                      with a four-ship up they ARE aeroplanes -- so the same
+                      transcript that makes a harmless ghost with one pilot
+                      makes a MIS-ATTRIBUTION with four, and moves somebody
+                      else's altitude.
+
+**Corroboration is the only filter that can work, and the obvious version of it
+is circular.** Requiring the spoken name to appear on the radar picture kills
+43% of legitimate bindings, because the scope is tagged with the callsign the
+binding produced -- an aeroplane cannot be corroborated until it has already
+been believed. The corroborating authority has to be something nobody spoke:
+the sim's unit names, or a FILED FLIGHT PLAN. Which is the same conclusion
+[#38] reached from the other direction.
+
 **Acceptance criteria**
 1. A multi-aircraft rehearsal exists and reports mis-attributions per hundred
-   transmissions.
-2. A transmission that cannot be resolved to a track changes no aircraft state.
-3. Two aircraft with similar callsigns ("Pony one two" / "Pony one one") cannot
+   transmissions.  DONE -- `srs/crowd.py`, both synthetic and retrospective.
+2. The engine can be asked what it believes exists.  DONE -- `Controller.board()`,
+   written to the flight recorder on every transmission, so a ghost is
+   timestamped against the words that minted it.
+3. A transmission that cannot be resolved to a track changes no aircraft state.
+4. Two aircraft with similar callsigns ("Pony one two" / "Pony one one") cannot
    have one's report applied to the other.
-4. The state a controller holds survives a callsign being re-heard differently.
+5. The state a controller holds survives a callsign being re-heard differently.
+6. `tests/test_ghosts.py` baseline goes DOWN and never up.
 
 Related: [#38] (a callsign is a position), [#13] (ghosts), [#15] (sequencing).
 

@@ -2416,6 +2416,12 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                radial=_fix.radial_deg if _fix else None,
                alt_ft=_fix.alt_ft if _fix else None,
                heading=_fix.heading_deg if _fix else None, scope=scope)
+        # ...and what the ENGINE thinks is out there, at this instant. Recorded
+        # beside the words that produced it: a ghost is created by a
+        # transmission, so the transmission and the board have to be adjacent in
+        # the record or the pairing is guesswork after the fact.
+        record(session_id, kind="board", callsign=known or srs,
+               board=ctl.board())
 
         # Engage the deterministic engine only with real traffic (or forced on for
         # the voice-only rehearsal, or once a stack already exists). A single ship
