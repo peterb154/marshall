@@ -211,7 +211,7 @@ is two aircraft flying the same intercept — stop and say so.
 | D6 | P1 | **Say a level out of the blue** — go quiet 2 min, then just *"four thousand level"* | *"Station calling four thousand level, say your callsign"* — he repeats what he heard | [#33] `challenge_for` |
 | D7 | P1 | Same, but during a back-and-forth (reply within ~90 s) | Answered normally. **No** callsign demanded — he knows your voice | [#33] `in_conversation` |
 | D3 | [script] | Call Approach by the wrong name (say "Batumi Tower" on 124) | Corrected **and told which frequency you are on** | [#7] |
-| D4 | P3 | Two aircraft airborne, neither cleared | **Neither** gets vectors until one is cleared | [#15] `may_be_vectored` |
+| D4 | **P1** | Both of you check in with Approach. **Neither asks for the approach yet.** Wait a minute | He talks to you both, but issues **no vectors to either**. First vector comes only after somebody is cleared | [#15] `may_be_vectored` |
 | D5 | [script] | Try to start a second bridge while one runs *(ground test, my end)* | Refuses, names the PID | [#18] `claim_the_frequency` |
 
 
@@ -227,7 +227,13 @@ is two aircraft flying the same intercept — stop and say so.
 
 **D3** — He corrects you rather than accepting whatever he is called, and tells you which frequency you are on — agreeing would put Tower on a frequency Tower is not on.
 
-**D4** — With traffic and nobody cleared, a vector is an invitation that two aircraft accept at once.
+**D4** — **The safety one, and the reason the deterministic engine exists at all.** With traffic on frequency a vector is not information, it is an *invitation to start the approach* — so issuing one to two aircraft that have not been sequenced is two aeroplanes flying the same intercept to the same fix at the same altitude. That is not a talk-down, it is a collision brief.
+
+To set it up: both check in, neither requests the approach. He should be perfectly happy to talk to you — altimeter, radar contact, questions — while issuing **no turn to anybody**. The moment one of you is cleared, that one starts getting vectors and the other should hear only his hold.
+
+**What the failure looks like:** you both get *"turn right heading..."*, usually with different headings and different altitudes, seconds apart on one frequency. If that happens, **stop and say so immediately** — do not fly it and see what happens.
+
+It has happened, and the cause is worth knowing because it makes this a regression watch rather than a one-off: the guard asked the *blind* engine how many aircraft existed, and that engine only learns of an aeroplane when somebody says its name on the radio. A bridge restart emptied it, so the very next radar sweep saw "fewer than two aircraft known" and vectored both. **Anything that restarts the bridge mid-sortie re-opens this**, which is why it is worth a minute of a two-ship sortie every time.
 
 **D5** — Two bridges on one frequency was the most-repeated failure of squadron night, and killing the launcher does not kill the process.
 
@@ -235,21 +241,52 @@ is two aircraft flying the same intercept — stop and say so.
 
 ## E — known broken. Do not report these as new
 
-These are open bugs with repros. Seeing them means the world is as expected;
-they are on the card so you do not spend a sortie re-finding them.
+Open bugs with repros. Seeing one means the world is as expected — they are on
+the card so you do not spend a sortie re-finding something already understood.
 
-| What you will see | Status |
-|---|---|
-| An outbound turn around 14 nm while inbound and >2 nm off course | [#19] — open. Four attempts, all regressed the sweep |
-| Circling near the field instead of being taken out (rare; behind the field) | [#20] — open, 3 of 1,296 on the sweep |
-| The controller naming a field or frequency that is not on your chart | [#21] — open. "proceed KOBULETI, contact Kobuleti Departure" was invented whole |
+**Each has an ID so you can still call it.** "E1 again, eighteen miles" is worth
+saying: it tells me the conditions, and I have never had a repro for E1 from a
+real aeroplane. What is *not* worth a call is discovering it.
 
-**The go-around reversal is FIXED** — it was on this list for three sessions and
-is now test B8. If it comes back, that is a regression and the most important
-thing you can tell me.
+| ID | Prio | What you will see | Where the line is — what would be NEW | Issue |
+|----|------|-------------------|----------------------------------------|-------|
+| E1 | note | Inbound, more than ~2 nm off course, somewhere around 14 nm: one vector turns you **away** from the field | A turn away when you are ON course, or inside 11 nm, or on the second attempt after correcting | [#19] |
+| E2 | note | After a go-around or arriving from behind the field: he circles you near the field instead of taking you out | Circling while you are **inbound and established** — E2 is a repositioning bug, not an approach one | [#20] |
+| E3 | note | A field, frequency or fix named that is not on your chart — *"proceed KOBULETI, contact Kobuleti Departure one two four"* | Any of it. Say what he named; every instance is a separate escape | [#21] |
 
-**If a reversal happens that is not one of these**, that is new and worth the
-radio call — say what you were doing and roughly where.
+**What each one actually is**
+
+**E1** — The last reversal, and the one that has beaten four attempts. Between 20
+and 11 miles he is closing you onto the final approach course and each vector
+should bring you nearer to it; one that swings further out is this bug. Every fix
+tried made the synthetic sweep worse, so the geometry you are flying is
+deliberately the old known one. **Worth calling anyway** — your range and rough
+offset let me re-run the exact geometry afterwards, and four failed attempts is
+what having no repro costs.
+
+**E2** — Three starts in 1,296 on the sweep, all of them 8–12 nm *behind* the
+field on the departure side. The aircraft is sent to reposition, the bearing to
+the entry gate rotates the same way it is turning, and it chases it round — a
+stable orbit that, sampled once a revolution, looks like an aeroplane frozen in
+the sky. You are unlikely to meet it: it needs you to arrive from the wrong side
+at holding altitude. If you do, it will feel like being ignored rather than being
+turned.
+
+**E3** — The model inventing a procedure whole. Three have reached the air:
+clearing a Mustang with no ADF for a *beacon* approach and asking him to report a
+fix he had no receiver for; "landing assured", which is your determination and not
+his; and the Kobuleti handoff, which named a field, a frequency and a procedure
+that exist nowhere in the plan. **All three were caught by a pilot and none by
+anything here**, because a test can check that a call was made, not that it is
+something a controller would ever say. That is why every instance is worth
+reporting even though the class is known — the specific words are the evidence.
+
+**The go-around reversal is FIXED.** It sat on this list for three sessions and is
+now test B8. If it comes back, that is a regression and the most important thing
+you can tell me all sortie.
+
+**A reversal that is not E1 or E2 is new** — say what you were doing and roughly
+where. New is more valuable than confirming.
 
 ---
 
