@@ -287,6 +287,30 @@ def _to_point(pos: Position, profile, along: float, across: float) -> float:
     return math.degrees(math.atan2(pe - fe, pn - fn)) % 360
 
 
+def at_touchdown(pos: Position, profile) -> Position:
+    """The same aircraft, measured from the TOUCHDOWN POINT.
+
+    Radar reports range and bearing from a reference the sim gives us, and at
+    Batumi that is the runway centre. What an approach is flown to is the
+    threshold. The two differ by half the runway, which is 0.56 nm here, and the
+    difference lands squarely on the descent profile: aim at the centre and the
+    pilot is half a mile of glidepath high over the threshold, every time.
+
+    A plain translation along the course. Cross-track is untouched, because the
+    touchdown point is on the centreline -- only how far he has left to run
+    changes, which is the number the altitude comes from.
+    """
+    off = getattr(profile, "touchdown_offset_nm", 0.0)
+    if not off:
+        return pos
+    # The touchdown point sits `off` miles UP the course from the reference.
+    te, tn = _en(off, (profile.final_crs_true + 180) % 360)
+    ae, an = _en(pos.range_nm, pos.radial_deg)
+    de, dn = ae - te, an - tn
+    return Position(math.hypot(de, dn), math.degrees(math.atan2(de, dn)) % 360,
+                    pos.alt_ft, pos.heading_deg)
+
+
 def guide(pos: Position, profile, on_missed: bool = False) -> Guidance:
     """One radar look -> the next instruction.
 
@@ -314,6 +338,18 @@ def guide(pos: Position, profile, on_missed: bool = False) -> Guidance:
     what turned a pilot away from the field, orbited another, and flew a third
     out to sea over three sorties.
     """
+    # MEASURE FROM THE TOUCHDOWN POINT, not from whatever the radar reference
+    # happens to be. At Batumi they are half a mile apart -- the reference is the
+    # runway CENTRE -- and every range call, and therefore the entire descent
+    # profile, was aimed at a point beyond the far end of the runway. A pilot
+    # flying it arrives over the threshold with half a mile of descent still
+    # owed to him, which is exactly what "I was always too high" means.
+    #
+    # One translation, here, so everything downstream -- along, cross, range,
+    # the altitude table, the missed approach point -- is relative to the place
+    # the wheels are meant to touch.
+    pos = at_touchdown(pos, profile)
+
     xtk = cross_track(pos, profile.final_crs_true)
     along = along_track(pos, profile.final_crs_true)
     tol = on_course_tolerance(pos.range_nm)
@@ -365,7 +401,7 @@ def guide(pos: Position, profile, on_missed: bool = False) -> Guidance:
         # the sweep went from 1 rapid reversal to 139 the moment it was wrong.
         return Guidance(phase, h, alt, pos.range_nm, xtk, dev,
                         turn_direction(pos.heading_deg, round(heading) % 360),
-                        speed)
+                        speed, heading_true=round(heading) % 360)
 
     # Established: on the course and pointing down it. The heading check is not
     # pedantry -- a go-around tracking outbound sits on the centreline with a

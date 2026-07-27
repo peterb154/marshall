@@ -146,7 +146,7 @@ class Position:
 class Guidance:
     """What the controller should do about it. Pure geometry, no phrasing."""
     phase: str                  # "vector" | "final" | "map"
-    heading: int                # the heading to assign
+    heading: int                # the heading to assign, MAGNETIC -- it is spoken
     altitude_ft: int | None     # the altitude to assign, or None to leave him
     range_nm: float             # range to the field, for the range call
     xtk_nm: float               # cross-track: +right of course, -left of course
@@ -154,6 +154,12 @@ class Guidance:
                                 # the course is not what he is flying
     turn: str = ""              # "left" | "right", the short way round
     speed_kt: float = 0.0       # the speed this leg should be flown at
+    # The same heading in TRUE. A RELATIVE correction ("turn left ten degrees")
+    # is the difference between the heading assigned and the one he is flying,
+    # and his comes off radar in true -- converting one of them to magnetic just
+    # to subtract them again would put the variation back into a number whose
+    # whole value is being free of it.
+    heading_true: float = 0.0
 
     @property
     def off_course(self) -> bool:

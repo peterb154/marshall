@@ -347,7 +347,13 @@ class TestAsrContext(unittest.TestCase):
 
     def test_no_bare_digits_in_the_range_call(self):
         # Range reaches Polly as words; a bare "6" would be read as a digit.
-        out = agent_atc.asr_context(self.asr, self.scope(6, 304), "Pony 1-1")
+        #
+        # Six miles TO TOUCHDOWN, which is further out on radar -- the reference
+        # the sim gives us is the runway centre and the wheels go down half a
+        # mile before it. The test says which one it means rather than assuming
+        # they are the same number, because for a while they were.
+        radar_nm = 6 + self.asr.touchdown_offset_nm
+        out = agent_atc.asr_context(self.asr, self.scope(radar_nm), "Pony 1-1")
         self.assertIn("six miles", out)
 
 
@@ -374,7 +380,7 @@ class TestAsrRangeCall(unittest.TestCase):
         return self.asr.guide(self.asr.Position(nm, radial, 500, heading), self.p)
 
     def test_on_course_call(self):
-        out = agent_atc.asr_call("Pony 1-1", self.g(6))
+        out = agent_atc.asr_call("Pony 1-1", self.g(6 + self.p.touchdown_offset_nm))
         self.assertIn("six miles from the runway, on course", out)
         self.assertIn("altitude should be", out)
 
@@ -1258,3 +1264,67 @@ class TestTheReadBackOfAClearanceIsAnswered(unittest.TestCase):
 
     def test_nobody_is_owed_one_by_default(self):
         self.assertFalse(agent_atc.readback_due("Pony 1-1"))
+
+
+class TestARelativeCorrection(unittest.TestCase):
+    """"Turn left ten degrees" -- Hoover's, and it removes a class of error.
+
+        "when in the final phases they say left 10 right 5 and don't bother with
+         headings... this would avoid all dg drift and mag compass problems"
+
+    An absolute heading is only as good as the gyro he sets it on, and his read
+    seven degrees off the compass while the compass read sixteen off the map. A
+    relative correction is the DIFFERENCE between two headings, so every
+    constant frame offset -- grid convergence, magnetic variation, a mis-set
+    gyro -- cancels out of it.
+    """
+
+    def setUp(self):
+        from marshall.atc import asr
+        from marshall.core import route as R
+        self.asr, self.p = asr, R.BATUMI_ASR
+        self.inbound = (self.p.final_crs_true + 180) % 360
+
+    def at(self, nm, off_deg, hdg):
+        pos = self.asr.Position(nm + self.p.touchdown_offset_nm,
+                                (self.inbound + off_deg) % 360, 1500, hdg)
+        return self.asr.guide(pos, self.p), pos
+
+    def test_it_names_a_turn_a_pilot_can_fly(self):
+        g, pos = self.at(6, 1.5, 145)
+        said = agent_atc.relative_correction(g, pos)
+        self.assertIn("turn left", said)
+        self.assertIn("degrees", said)
+
+    def test_it_is_words_not_digits(self):
+        """Everything here reaches Polly as text; a bare 10 is read as a digit."""
+        g, pos = self.at(6, 1.5, 145)
+        self.assertNotRegex(agent_atc.relative_correction(g, pos), r"\d")
+
+    def test_it_rounds_to_five(self):
+        for hdg in range(100, 165, 3):
+            g, pos = self.at(5, 1.0, hdg)
+            said = agent_atc.relative_correction(g, pos)
+            if not said:
+                continue
+            n = said.split("turn ")[1].split(" ", 1)[1].replace(" degrees", "")
+            self.assertIn(n, ("five", "ten", "fifteen", "twenty", "twenty five",
+                              "thirty", "thirty five", "forty", "forty five"))
+
+    def test_nothing_to_say_when_he_is_already_on_it(self):
+        g, pos = self.at(5, 0.0, int(self.p.final_crs_true))
+        self.assertEqual(agent_atc.relative_correction(g, pos), "")
+
+    def test_a_constant_frame_error_cancels(self):
+        """The whole point. Shift his heading and the assigned heading by the
+        same amount -- a mis-set gyro, a variation, a grid convergence -- and
+        the correction is unchanged, because it is a difference."""
+        g, pos = self.at(6, 1.5, 145)
+        plain = agent_atc.relative_correction(g, pos)
+        shifted = self.asr.Position(pos.range_nm, pos.radial_deg, pos.alt_ft,
+                                    (pos.heading_deg + 17) % 360)
+        from marshall.atc.geometry import Guidance
+        g2 = Guidance(g.phase, g.heading, g.altitude_ft, g.range_nm, g.xtk_nm,
+                      g.deviation, g.turn, g.speed_kt,
+                      heading_true=(g.heading_true + 17) % 360)
+        self.assertEqual(agent_atc.relative_correction(g2, shifted), plain)

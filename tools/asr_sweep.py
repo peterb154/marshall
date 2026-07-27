@@ -208,22 +208,35 @@ def sweep(profile, sloppy: bool = False,
 #
 # Moved AGAIN the same night, when the course moved from 126 to 131 -- the
 # first correction had it in the DCS grid frame rather than the true one the
-# radials use. See route.py. These are the numbers at 131.
+# radials use. See route.py.
+#
+# And once more when the approach was re-anchored on the TOUCHDOWN POINT rather
+# than the radar reference half a mile beyond it:
+#
+#   clean   1294 -> 1296 arrived    1 -> 1 flips
+#   sloppy  1296 -> 1296 arrived   32 -> 38 flips
+#   deaf      21 -> 22 arrived     17 -> 20 flips
+#
+# CLEAN IS NOW PERFECT: 1296 of 1296. The last two stragglers were the orbiters
+# behind the field that #20 has been about since the beginning -- they were
+# chasing an entry gate computed from the wrong point. The dither counts rise
+# because half a mile of geometry moved under a metronome that calls every whole
+# mile; arrivals are the number that matters and they went up in all three.
 #
 # The deaf number is the one worth noticing: the reversals a pilot who does not
 # turn provokes fell by a third, which is #19's territory. The single extra
 # rapid flip in clean is not understood and is written down here rather than
 # rounded away.
 BASELINE = {
-    "clean":  {"arrived": 1294, "dither": 1, "turns": 588},
-    "sloppy": {"arrived": 1296, "dither": 32, "turns": 899},
+    "clean":  {"arrived": 1296, "dither": 1, "turns": 588},
+    "sloppy": {"arrived": 1296, "dither": 38, "turns": 899},
     # --deaf: a pilot who never turns, so ARRIVING IS NOT THE MEASURE -- he is
     # not flying the approach and 20 of 1728 reaching the missed approach point
     # is him drifting over it, not the engine working. What is measured here is
     # whether the CONTROLLER argues with itself when the geometry refuses to
     # improve: reversals and direction changes. That is #19, and it is invisible
     # to an obedient aeroplane.
-    "deaf":   {"arrived": 0, "dither": 17, "turns": 586},
+    "deaf":   {"arrived": 0, "dither": 20, "turns": 586},
 }
 # Turns wander a little with the seeded drift; dithering and arrivals must not.
 TURN_SLACK = 0.05

@@ -521,7 +521,26 @@ _FIX = re.compile(
     r"[^|]*?([\d,]+)\s*ft(?:[^|]*?heading\s*(\d+))?", re.I)
 
 
-def radar_fix(scope: str, cs: str) -> object | None:
+def true_heading(grid_hdg: float, profile) -> float:
+    """A radar heading, out of the sim's grid frame and into true.
+
+    DCS reports an aircraft's heading in its own x/z grid, which is a transverse
+    Mercator; the RADIALS in the same radar line come from lat/lon and are true.
+    At Batumi they differ by 5.74 degrees, and mixing the two is what drew every
+    centreline six degrees off the runway.
+
+    The conversion belongs HERE, where a radar line becomes a Position, and not
+    in the geometry. Everything downstream of this point -- `asr.guide`, the
+    sweep, the tests -- lives in one frame and should not have to know that a
+    simulator has an opinion about north. Putting it in `guide` instead made the
+    sweep fly one frame while the engine graded it in another, and the dither
+    count went from 1 to 118 in a single run, which is the sound of that
+    mistake.
+    """
+    return (grid_hdg + getattr(profile, "grid_convergence_deg", 0.0)) % 360
+
+
+def radar_fix(scope: str, cs: str, profile=None) -> object | None:
     """Range, radial, altitude and heading of the track bound to this callsign.
 
     Only radar-IDENTIFIED contacts (the [tagged] ones) -- guidance computed from
@@ -534,9 +553,10 @@ def radar_fix(scope: str, cs: str) -> object | None:
     want = C.parse(cs).flight.lower()
     for tag, nm, radial, alt, hdg in _FIX.findall(scope):
         if C.parse(tag).flight.lower() == want:
+            h = float(hdg) if hdg else 0.0
             return asr.Position(float(nm), float(radial),
                                 int(alt.replace(",", "")),
-                                float(hdg) if hdg else 0.0)
+                                true_heading(h, profile) if profile else h)
     return None
 
 
@@ -553,7 +573,7 @@ VECTOR_CHANGE_DEG = 12
 VECTOR_MIN_SEC = 20.0
 
 
-def radar_fixes(scope: str) -> list[tuple[str, object]]:
+def radar_fixes(scope: str, profile=None) -> list[tuple[str, object]]:
     """Every radar-IDENTIFIED contact as (callsign, Position).
 
     Untagged blips are deliberately skipped: an unidentified aircraft on final
@@ -563,9 +583,10 @@ def radar_fixes(scope: str) -> list[tuple[str, object]]:
     from marshall.atc import asr
     out = []
     for tag, nm, radial, alt, hdg in _FIX.findall(scope or ""):
+        h = float(hdg) if hdg else 0.0
         out.append((tag, asr.Position(float(nm), float(radial),
                                       int(alt.replace(",", "")),
-                                      float(hdg) if hdg else 0.0)))
+                                      true_heading(h, profile) if profile else h)))
     return out
 
 
@@ -595,7 +616,43 @@ def spoken_deviation(g) -> str:
     return f"{words[n] if n < len(words) else n} miles {g.deviation}"
 
 
-def asr_call(cs: str, g) -> str:
+def relative_correction(g, pos) -> str:
+    """"Turn left ten degrees" -- a correction against what he is FLYING.
+
+    Hoover's, and it removes a whole class of error at a stroke:
+
+        "when in the final phases they say left 10 right 5 and don't bother with
+         headings... this would avoid all dg drift and mag compass problems"
+
+    An absolute heading is only as good as the gyro he sets it on, and a
+    directional gyro DRIFTS -- his read seven degrees off the compass on the
+    runway, and the compass read sixteen off the map. Every absolute heading we
+    give is computed in true, converted to magnetic, and then flown against an
+    instrument that is wrong by an unknown amount.
+
+    A relative correction needs none of that. It is the difference between two
+    headings, so every constant frame offset -- grid convergence, magnetic
+    variation, a mis-set gyro -- cancels. The controller watches the track on
+    radar; the pilot just turns.
+
+    Rounded to five, because "turn left seven degrees" is not something anybody
+    flies, and returns "" when there is nothing worth saying.
+    """
+    from marshall.atc.geometry import angle_diff
+    delta = angle_diff(g.heading_true, pos.heading_deg)
+    step = int(round(delta / 5.0)) * 5
+    if step == 0:
+        return ""
+    # Words, not digits. Everything here reaches Polly as text and a bare "10"
+    # is read out as a digit; a controller says "ten degrees".
+    words = {5: "five", 10: "ten", 15: "fifteen", 20: "twenty",
+             25: "twenty five", 30: "thirty", 35: "thirty five",
+             40: "forty", 45: "forty five"}
+    n = min(abs(step), 45)          # more than forty five is a vector, not a nudge
+    return f"turn {'right' if step > 0 else 'left'} {words[n]} degrees"
+
+
+def asr_call(cs: str, g, pos=None) -> str:
     """The controller's spoken range call. Deterministic on purpose.
 
     A talk-down is the most rote transmission in aviation -- "six miles from the
@@ -614,6 +671,14 @@ def asr_call(cs: str, g) -> str:
         return (f"{who}, over the missed approach point. Runway in sight, land; "
                 f"if not, execute missed approach.")
     if g.off_course:
+        # ESTABLISHED: correct him relative to what he is flying. Absolute
+        # headings belong to the vectoring phase, where he has time to set a
+        # gyro; inside the final approach course they put an instrument we
+        # cannot see between the controller and the aeroplane. See #37.
+        turn = relative_correction(g, pos) if pos is not None else ""
+        if g.phase in ("final", "map") and turn:
+            return (f"{who}, {rng} miles from the runway, {spoken_deviation(g)}, "
+                    f"{turn}, altitude should be {alt}.")
         return (f"{who}, {rng} miles from the runway, {spoken_deviation(g)}, "
                 f"turn heading {ctl.spell_hdg(g.heading)}, altitude "
                 f"should be {alt}.")
@@ -628,7 +693,11 @@ def vector_call(cs: str, g) -> str:
     who = C.parse(cs).spoken
     turn = f"turn {g.turn} " if g.turn else "fly "
     alt = f", maintain {ctl.spell_alt(g.altitude_ft)}" if g.altitude_ft else ""
-    return f"{who}, {turn}heading {ctl.spell_hdg(g.heading)}{alt}."
+    # Rounded to five while vectoring. A pilot repositioning has to set this on
+    # a gyro and read it back, and "one three zero" is easier to do both with
+    # than "one two eight" -- which is also how it is issued for real.
+    hdg = int(round(g.heading / 5.0)) * 5 % 360
+    return f"{who}, {turn}heading {ctl.spell_hdg(hdg)}{alt}."
 
 
 def asr_context(profile, scope: str, cs: str) -> str:
@@ -645,7 +714,7 @@ def asr_context(profile, scope: str, cs: str) -> str:
     from marshall.atc import asr
     if not getattr(profile, "vectored", False):
         return ""
-    pos = radar_fix(scope, cs)
+    pos = radar_fix(scope, cs, profile)
     if pos is None:
         return ""
     g = asr.guide(pos, profile)
@@ -1004,7 +1073,7 @@ def separation_context(ctl, transcript: str, scope: str = "",
         # Seed the blind engine from the scope BEFORE it decides anything. An
         # aircraft radar shows established on the approach must not be filed as
         # a new arrival and stacked -- see Controller.seen_on_final.
-        fix = radar_fix(scope, intent.callsign)
+        fix = radar_fix(scope, intent.callsign, ctl.profile)
         if fix is not None:
             from marshall.atc import asr as _asr
             g = _asr.guide(fix, ctl.profile,
@@ -1842,7 +1911,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 # it does.
 
 
-                fixes = radar_fixes(scope)
+                fixes = radar_fixes(scope, profile)
                 # Two contacts is traffic, and traffic means one at a time.
                 traffic = len(fixes) >= 2
                 for cs, pos in fixes:
@@ -1982,7 +2051,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                               f"{why}", flush=True)
                         continue        # not marked as called; it repeats
                     called[cs] = mile
-                    text = for_voice(asr_call(cs, g))
+                    text = for_voice(asr_call(cs, g, pos))
                     with radio_lock:
                         print(f"  ATC[asr] {text}", flush=True)
                         record(session_id, kind="atc/range", callsign=cs,
@@ -2078,7 +2147,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         n_contacts = count_contacts(scope)
         tag = f" [RADAR: {scope}]" if scope else ""
         print(f"PILOT [{known or srs}]: {transcript}{tag}", flush=True)
-        _fix = radar_fix(scope, known)
+        _fix = radar_fix(scope, known, profile)
         record(session_id, kind="pilot", callsign=known or srs,
                freq_mhz=(heard_hz or freq_hz) / 1_000_000, transcript=transcript,
                range_nm=_fix.range_nm if _fix else None,
@@ -2118,7 +2187,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # The track name only goes in once radar has actually tied the callsign
         # to a blip -- binding a guess would attach one aeroplane's history to
         # another's, which is worse than being unidentified.
-        _fix = radar_fix(scope, known) if known else None
+        _fix = radar_fix(scope, known, profile) if known else None
         _flight = flight_bind(
             srs_guid=client.last_sender_guid or None,
             srs_name=srs or None,
@@ -2301,7 +2370,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # Center's frequency and the sector split is decoration.
         on_mhz = (heard_hz or freq_hz) / 1_000_000
         me = profile.station_on(on_mhz) if hasattr(profile, "station_on") else None
-        fix = radar_fix(scope, known)
+        fix = radar_fix(scope, known, profile)
         nxt = (profile.handoff_from(on_mhz, fix.range_nm)
                if me and fix is not None else None)
         if nxt is None and me is not None and known:

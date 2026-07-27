@@ -583,7 +583,33 @@ class ApproachProfile:
     # flyable; a single gradient from the gate has him descending the whole way.
     final_intercept_nm: float = 11.0     # the IF -- established by here
     fap_nm: float = 6.0                  # descent begins
-    map_nm: float = 0.6             # missed approach point, range from the field
+    map_nm: float = 0.6             # missed approach point, range from the TOUCHDOWN point
+    # How far the TOUCHDOWN POINT is from the reference the radar measures
+    # against, along the approach course. Positive means the aircraft reaches
+    # the touchdown point FIRST.
+    #
+    # It is not a nicety. The radar reference at Batumi is the runway CENTRE --
+    # `Airbase:getRunways()` returns the centre and route.py's BATUMI fix is that
+    # point to within a metre -- so every range call, and with it the whole
+    # descent profile, was aimed half a mile beyond where the wheels go:
+    #
+    #     "I was always too high because he's trying to get me to zero at
+    #      runway center point, not threshold."
+    #
+    # Half the runway length. Batumi's is 2,070 m, so 0.559 nm.
+    touchdown_offset_nm: float = 0.0
+    # GRID CONVERGENCE: how far the sim's idea of north is from true north here.
+    #
+    # DCS reports an aircraft's heading in its own x/z grid, which is a
+    # transverse Mercator, while radar RADIALS come from lat/lon and are true.
+    # Mixing them is what drew every centreline six degrees off. The radials
+    # were fixed by putting the course in the true frame; this is the other
+    # half, because a HEADING arrives in the grid frame too.
+    #
+    # Measured, like everything else here: the geodesic bearing between the two
+    # runway thresholds is 311.30, and `getRunways().course` for the same runway
+    # is 305.56.
+    grid_convergence_deg: float = 0.0
     approach_hands_over_nm: float = 25.0   # Center gives him to Approach here
     # The initial approach fix: where he must be established, on course and at
     # iaf_alt_ft, before the approach proper begins. A published fix rather than
@@ -1110,6 +1136,9 @@ BATUMI_ASR = ApproachProfile(
     # never null out, and it comes back as chatter -- 16 rapid reversals across
     # the sweep at 131.3, 2 at 131, for a third of a degree.
     final_crs_true_measured=131.0,
+    # Half of Batumi's 2,070 m runway: the 13 threshold, from the centre.
+    touchdown_offset_nm=0.559,
+    grid_convergence_deg=5.74,
     field_elev_ft=BATUMI_FIELD.elevation_ft,
     runway="13",
     platform_ft=2000,
