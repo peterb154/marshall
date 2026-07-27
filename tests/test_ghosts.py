@@ -35,7 +35,7 @@ work is corroboration against something nobody spoke.
 import unittest
 
 from marshall.atc import agent_atc as A
-from marshall.atc import callsign
+from marshall.atc import callsign, identity
 
 # (transcript exactly as Whisper produced it, who was ACTUALLY talking).
 # "" means nobody -- an engineering call, a debug note, or a fragment that names
@@ -133,6 +133,58 @@ def bind(transcript: str) -> str:
     real = [c for c in callsign.extract_all(transcript)
             if A._plausible_callsign(c, transcript)]
     return real[1] if len(real) > 1 else (real[0] if real else "")
+
+
+class TestNothingBecomesAnAeroplaneOnItsOwn(unittest.TestCase):
+    """The same 33 transcripts, put through the identity ladder.
+
+    This is the claim the architectural fix makes, and it is stronger and much
+    simpler than "the extractor gets it right":
+
+        no transmission ever produces a name that is not a real aeroplane.
+
+    The extractor may still mis-hear -- it always will, it is a speech model --
+    but a mis-hearing now has only two possible outcomes: the right aeroplane,
+    or nobody. It can no longer invent a third one, and with several ships up it
+    can no longer hand one pilot's report to another.
+    """
+
+    # The ten aeroplanes that were actually flying across these recordings.
+    FLYING = ["Pony 1", "Pony 1-1", "Pony 1-2", "Hammer 1", "Hammer 1-1",
+              "Hammer 1-2", "Hoover 1-1", "Falcon 1", "Falcon 1-1", "Shooter 1-1"]
+
+    def test_no_third_name_is_ever_invented(self):
+        invented = []
+        for transcript, who in CORPUS:
+            reg = identity.Registry()
+            got = reg.resolve("guid", "unknown-radio", spoken=bind(transcript),
+                              plans=self.FLYING)
+            if got.callsign and got.callsign != who:
+                invented.append((who or "<nobody>", got.callsign, transcript))
+        if invented:
+            lines = "\n".join(f"    really {w:12} became {g:12}  {t[:60]}"
+                              for w, g, t in invented)
+            self.fail(f"{len(invented)} transmissions invented an aeroplane:\n{lines}")
+
+    def test_the_radio_settles_it_when_radar_has_him(self):
+        """With the physical chain closed, the words cannot move the identity at
+        all -- which is the case that matters with ten pilots up."""
+        scope = ("362nd_sockeye [Pony 1-1] (P-47D-30): 4.1 nm on the 281 "
+                 "radial, 4,659 ft, heading 026")
+        reg = identity.Registry()
+        for transcript, _who in CORPUS:
+            with self.subTest(transcript[:40]):
+                got = reg.resolve("guid-a", "Sockeye", spoken=bind(transcript),
+                                  scope=scope)
+                self.assertEqual(got.track, "362nd_sockeye")
+
+    def test_a_refusal_is_the_correct_answer_not_a_gap(self):
+        """Worth stating plainly because it looks like a failure in a
+        scoreboard: a transmission nobody could identify moved nobody's
+        altitude and nobody's place in the queue."""
+        reg = identity.Registry()
+        self.assertFalse(reg.resolve("g", "nobody", spoken="You 4",
+                                     plans=self.FLYING))
 
 
 class TestTheGhostCorpus(unittest.TestCase):

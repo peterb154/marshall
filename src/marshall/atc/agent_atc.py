@@ -32,6 +32,7 @@ import urllib.parse
 import urllib.request
 
 from marshall import config
+from marshall.atc import identity
 
 BASE_URL = "http://localhost:8000"
 AGENT_URL = f"{BASE_URL}/atc"          # two-tier routed turn (tier picks the model)
@@ -399,6 +400,14 @@ def fetch_due(session_id: str, url: str = HOOKS_URL, timeout: float = 5.0) -> li
 # a radar track), every later transmission from it is Rifle 1-1 even when
 # Whisper mangles the callsign or the pilot omits it entirely.
 _transmitters: dict[str, str] = {}
+
+# ...and the layer above it, which decides whether that vote is BELIEVED.
+#
+# `_transmitters` answers "what has this radio called itself", which is still a
+# question about words. The registry answers "which aeroplane is this radio
+# sitting in", which is a question about the sim, and only accepts the vote when
+# a track or a filed strip agrees. See identity.py and [ARCH-2] / #40.
+_identity = identity.Registry()
 
 
 def transmitter_callsign(guid: str | None, transcript: str) -> str:
@@ -1774,6 +1783,31 @@ def plan_labels(url: str = f"{BASE_URL}/plans") -> list[str]:
     return _plan_labels
 
 
+# WHO HAS A STRIP. The second authority on identity, and the only one a
+# procedural controller has -- see identity.py.
+#
+# Not `plan_labels`, which was the near-miss: those are ROUTE names ("Samovar
+# Three") and the same function goes on to register them as explicitly NOT
+# aircraft. What is wanted here is the callsigns of flights on the board, which
+# were typed before the sortie and so cannot be mis-heard.
+_filed: dict[str, object] = {"at": 0.0, "names": []}
+FILED_TTL_SEC = 45.0            # pilots bind mid-session; a strip is not static
+
+
+def filed_plans(url: str = f"{BASE_URL}/flights", now: float | None = None) -> list[str]:
+    """Callsigns with a flight on the board. Never costs a transmission."""
+    t = time.time() if now is None else now
+    if t - float(_filed["at"]) < FILED_TTL_SEC:
+        return list(_filed["names"])          # type: ignore[arg-type]
+    _filed["at"] = t
+    try:
+        got = [f.get("callsign") for f in _get_json(url, timeout=2.5).get("flights") or []]
+        _filed["names"] = [c for c in got if c]
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+        pass                                   # keep the last good list
+    return list(_filed["names"])               # type: ignore[arg-type]
+
+
 def whisper_vocabulary(profile) -> str:
     """The priming text for the transcriber, from what is actually on the air.
 
@@ -2393,9 +2427,30 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                   flush=True)
             continue
 
-        # Who this RADIO is, from what it has called itself before. Survives a
-        # garbled or omitted callsign, which is the whole point.
-        known = transmitter_callsign(client.last_sender_guid, transcript)
+        # WHO IS TALKING, decided by something other than what he said.
+        #
+        # The scope is fetched FIRST now, because the strongest evidence about
+        # identity is in it: SRS names a client after the human, DCS names the
+        # unit after the slot he took, and one contains the other. That chain --
+        # radio GUID to client name to unit to track -- has no microphone in it
+        # anywhere, so a garbled callsign cannot move it. See identity.py and
+        # [ARCH-2] / #40; 846 recorded transmissions say the words alone would
+        # bind a radio to 37 distinct names, of which ten were aeroplanes.
+        scope = fetch_radar(session_id) if radar_on else ""
+
+        # What the WORDS claim, still by vote across the sortie: real callsigns
+        # repeat and noise does not. Demoted from the answer to a claim, which
+        # is then matched against a track or a filed strip.
+        claim = transmitter_callsign(client.last_sender_guid, transcript)
+        _ident = _identity.resolve(
+            client.last_sender_guid or "", srs, spoken=claim, scope=scope,
+            plans=filed_plans(), roster=list(ctl.aircraft))
+        known = _ident.callsign
+        if _ident.authority and _ident.authority != "radar":
+            # Worth a line in the log every time it is NOT the physical chain:
+            # the day this reads "roster" for a pilot who should be on radar,
+            # something upstream has broken.
+            print(f"  (identity: {_ident.why})", flush=True)
         if known:
             # He has checked in HERE. Until he does, no controller on this
             # channel may start working him -- see may_be_vectored.
@@ -2405,12 +2460,20 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             # spoken where somebody is listening.
             _last_active_hz[0] = heard_hz or freq_hz
 
-        scope = fetch_radar(session_id) if radar_on else ""
         n_contacts = count_contacts(scope)
         tag = f" [RADAR: {scope}]" if scope else ""
         print(f"PILOT [{known or srs}]: {transcript}{tag}", flush=True)
         _fix = radar_fix(scope, known, profile)
         record(session_id, kind="pilot", callsign=known or srs,
+               # The provenance of the identity, not just the answer. Without
+               # it a recording cannot be scored after the fact: "Pony 1-1" in
+               # the log looks identical whether radar put it there or a
+               # transcript did, and those are the two cases worth telling
+               # apart. srs_name is here for the same reason -- it is the
+               # strongest link and was not being preserved, so the replay of
+               # every earlier sortie could only measure the weak paths.
+               srs_name=srs, claimed=claim, authority=_ident.authority,
+               track=_ident.track, why=_ident.why,
                freq_mhz=(heard_hz or freq_hz) / 1_000_000, transcript=transcript,
                range_nm=_fix.range_nm if _fix else None,
                radial=_fix.radial_deg if _fix else None,
