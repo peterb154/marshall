@@ -35,7 +35,12 @@ _WORD = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight",
 # one too" -- so the wingman's radio bound itself to "Pony 1", the FLIGHT, which
 # is precisely the confusion this module exists to prevent. Whisper cannot know
 # that "too" is a number; here, after a callsign name, it can only be one.
-_HOMOPHONES = {"niner": "9", "too": "2", "to": "2", "won": "1", "for": "4",
+# "to" is deliberately NOT here. It is the commonest preposition in English and
+# mapping it to a digit turned "a deliberately long transmission to hold the
+# frequency" into an aeroplane called "Transmission 2" -- a ghost created by the
+# very fix meant to stop them. "too" carries the same mis-hearing at a fraction
+# of the risk, and the precision rule means a later correct callsign wins anyway.
+_HOMOPHONES = {"niner": "9", "too": "2", "won": "1", "for": "4",
                "fore": "4", "ate": "8", "tree": "3", "fife": "5", "sex": "6"}
 _SPOKEN = {w: str(i) for i, w in enumerate(_WORD)} | _HOMOPHONES
 _SPOKEN_RE = re.compile(r"\b(" + "|".join(_SPOKEN) + r")\b", re.I)
@@ -153,6 +158,7 @@ _NOT_A_NAME = {
     "inbound", "outbound", "established", "holding", "turning", "leaving",
     "reaching", "through", "gear", "flaps", "fuel", "bingo", "engine", "angel",
     "checking", "check", "ready", "field", "runway", "visual", "missed",
+    "transmission", "transmitting", "message", "call", "calling", "frequency",
     # Verbs that take a number straight after them in ordinary speech. "I need
     # two more minutes" became an aeroplane called "Need 2" -- and a "Need 3"
     # reached a live separation stack, where real aircraft were sequenced behind

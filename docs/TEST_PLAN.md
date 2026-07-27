@@ -170,17 +170,19 @@ instruction the wrong man hears, or nobody hears at all**.
 
 | ID | Prio | Test | What should happen | Fix under test |
 |----|------|------|--------------------|----------------|
-| F1 | P1 | Both check in. Watch who each reply is addressed to | Every reply names the man who actually spoke | [#14] the FROM line |
-| F2 | P1 | **One of you on final taking mile calls, the other calls Approach with a long request** | The mile calls **pause** and resume — not lost, not on top of him | [#5] `channel_is_free` |
-| F3 | P1 | Same, but transmit again the moment the other man stops, before ATC answers | ATC answers the first man. The metronome must **not** fill the thinking time | [#5] `answering` |
-| F6 | P1 | **Talk to each other on frequency** — *"Pony one two, Pony one one, join up"* | ATC says **nothing**. It is not his call | [#33] ship-to-ship |
-| F4 | P1 | Number two, while holding | Hears the hold and **nothing else**. No vectors until it is his turn | [#15] `may_be_vectored` |
+| F1 | [script] | Both check in. Watch who each reply is addressed to | Every reply names the man who actually spoke | [#14] the FROM line |
+| F2 | [script] | **One of you on final taking mile calls, the other calls Approach with a long request** | The mile calls **pause** and resume — not lost, not on top of him | [#5] `channel_is_free` |
+| F3 | [script] | Same, but transmit again the moment the other man stops, before ATC answers | ATC answers the first man. The metronome must **not** fill the thinking time | [#5] `answering` |
+| F6 | [script] | **Talk to each other on frequency** — *"Pony one two, Pony one one, join up"* | ATC says **nothing**. It is not his call | [#33] ship-to-ship |
+| F4 | [script] | Number two, while holding | Hears the hold and **nothing else**. No vectors until it is his turn | [#15] `may_be_vectored` |
 | F5 | [script] | Break up, then each say his own callsign once | Addressed individually from then on | [#12] `transmitter_callsign` |
 
-**F2 and F3 are the ones I could not prove alone.** Synthetic pilots take turns
-politely and my AI aircraft drifted past the field, so the metronome never had
-much to say and never really contested the channel. The failure mode to watch
-for is a mile call landing where your answer should have been.
+**F2 and F3 are script-checked now** (`tools/channel_check.py`). "Synthetic
+pilots take turns too politely" was true of my harness and not of scripts: one
+can contest a channel far more precisely than two people, transmitting exactly
+when a call is due and again the instant the other man stops. Still worth a
+listen in the air — a mile call landing where your answer should have been is
+the thing to notice.
 
 **F4 matters most for safety.** If the man holding starts getting vectors, that
 is two aircraft flying the same intercept — stop and say so.
