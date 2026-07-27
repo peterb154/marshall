@@ -102,6 +102,7 @@ name in one sortie.
 | H1 | P1 | Inbound from 20 nm, on the centreline. Compare each "left/right of course" call against where the runway actually is | The side he calls is the side you are on, **every call, all the way in**. This is the one that was wrong all night | [#35] frames |
 | H2 | P1 | Fly the descent profile as given and note your altitude crossing the **threshold** | You arrive at the threshold at minimums, not 200 ft high with half a mile of descent owed | [#19] touchdown |
 | H3 | P1 | Listen to the range calls near the end | "One mile from the runway" means one mile from the **threshold**. Previously it meant one mile from the runway centre, which is where you were already landing | touchdown |
+| H10 | P1 | Arrive high — **5,000 ft or above, 30 nm out** — and ask for the approach. Note where he starts you down | He keeps you high, then sends you down **once**, timed so you reach 2,000 arriving at the initial fix. Not levelled at 2,000 ten miles early | [#37] descent |
 | H9 | P1 | Once established, listen to the **altitude** part of each mile call | *"four miles, on course, **descend to** one thousand three hundred"* — an instruction for the NEXT mile, arriving in time to fly it. Not "altitude should be", which tells you where you already ought to be | anticipatory |
 | H4 | P1 | Once established, listen to how he corrects you | **"Turn left ten degrees"** — no heading at all, rounded to five. If he gives you an absolute heading inside the final approach course, that is the failure | [#37] |
 | H5 | P1 | While being vectored (before established), note the headings | Absolute, and ending in **0 or 5** — "heading three one five", never "three one three" | [#37] |
@@ -125,6 +126,15 @@ at two miles. Note the altitude as the threshold goes under the nose.
 
 **H3** — The same fix heard rather than felt. If "one mile" still sounds like it
 arrives late, say so.
+
+**H10** — Yours too, and it needed a whole engine. The old profile was 318 feet
+per mile, which is a three-degree path at exactly one speed and wrong for
+everything else; 500 fpm costs five miles in the Jug and ten in a jet. It now
+computes minutes from the rate and miles from your groundspeed, and holds you up
+until the last responsible moment. **Note the range where "descend to two
+thousand" arrives** — that number is the whole test, and it should be further in
+than it used to be for a slow aeroplane and further out for a fast one. Worth
+flying twice, once slow and once fast, if you have the fuel.
 
 **H9** — Yours, and it pairs with H2. The old call was an observation about the
 present — "three miles, altitude should be twelve hundred" — so by the time you
