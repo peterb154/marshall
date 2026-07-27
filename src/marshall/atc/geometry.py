@@ -160,6 +160,10 @@ class Guidance:
     # to subtract them again would put the variation back into a number whose
     # whole value is being free of it.
     heading_true: float = 0.0
+    # The altitude to ISSUE, which is the one he should reach by the NEXT mile.
+    # `altitude_ft` is where he should be NOW; this is what to tell him to do
+    # about it, and they are a mile apart on purpose -- see `asr.descend_to`.
+    descend_to_ft: int | None = None
 
     @property
     def off_course(self) -> bool:

@@ -100,6 +100,28 @@ def advisory_altitude(range_nm: float, profile) -> int:
                                    int(round(want / 100) * 100)))
 
 
+def descend_to(range_nm: float, profile) -> int:
+    """The altitude to ISSUE at this range -- the one he should be at NEXT mile.
+
+        "at 4 miles out he should say 4 miles out, on course, descend to 1200.
+         This is an anticipatory call so I can be there on time rather than a
+         reactive call."
+
+    Which is how a talkdown is actually flown. "Three miles, altitude should be
+    twelve hundred" tells a pilot where he ought to ALREADY be: by the time he
+    has heard it, started down and got there, he is a mile further in and low.
+    An instruction has to arrive before the point it applies to, or the pilot is
+    permanently chasing the profile from above -- which is what he was doing.
+
+    So the call at four miles carries the three-mile altitude, and he has a mile
+    in which to fly it.
+
+    Floored at the missed approach point: the last call does not invent a step
+    below minimums.
+    """
+    return advisory_altitude(max(profile.map_nm, range_nm - 1.0), profile)
+
+
 def _from_table(range_nm: float, table: list) -> float:
     """Read a published descent table, straight-lining between its rows.
 
@@ -399,9 +421,15 @@ def guide(pos: Position, profile, on_missed: bool = False) -> Guidance:
         # say. Comparing the two frames put a six degree bias on every turn
         # decision, and within six degrees of on-course that is a coin toss:
         # the sweep went from 1 rapid reversal to 139 the moment it was wrong.
+        # The anticipatory altitude rides along beside the advisory one. Only
+        # on the approach itself: while repositioning there is no profile to be
+        # ahead of.
+        nxt = (descend_to(pos.range_nm, profile)
+               if phase in ("final", "map") else None)
         return Guidance(phase, h, alt, pos.range_nm, xtk, dev,
                         turn_direction(pos.heading_deg, round(heading) % 360),
-                        speed, heading_true=round(heading) % 360)
+                        speed, heading_true=round(heading) % 360,
+                        descend_to_ft=nxt)
 
     # Established: on the course and pointing down it. The heading check is not
     # pedantry -- a go-around tracking outbound sits on the centreline with a

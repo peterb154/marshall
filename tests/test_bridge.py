@@ -1328,3 +1328,62 @@ class TestARelativeCorrection(unittest.TestCase):
                       g.deviation, g.turn, g.speed_kt,
                       heading_true=(g.heading_true + 17) % 360)
         self.assertEqual(agent_atc.relative_correction(g2, shifted), plain)
+
+
+class TestTheAltitudeCallIsAnInstruction(unittest.TestCase):
+    """A talk-down tells a pilot what to DO, one mile before he has to do it.
+
+        "at 4 miles out he should say 4 miles out, on course, descend to 1200.
+         This is an anticipatory call so I can be there on time rather than a
+         reactive call."
+
+    "Three miles, altitude should be twelve hundred" describes where he ought
+    already to be. By the time he has heard it, started down and got there, he
+    is a mile further in and behind the profile -- chasing it from above, for
+    the whole approach.
+    """
+
+    def setUp(self):
+        from marshall.atc import asr
+        from marshall.core import route as R
+        self.asr, self.p = asr, R.BATUMI_ASR
+        self.inbound = (self.p.final_crs_true + 180) % 360
+
+    def call_at(self, miles_to_run):
+        pos = self.asr.Position(miles_to_run + self.p.touchdown_offset_nm,
+                                self.inbound, 1500, self.p.final_crs_true)
+        g = self.asr.guide(pos, self.p)
+        return agent_atc.asr_call("Pony 1-1", g, pos, self.p), g
+
+    def test_the_call_carries_the_NEXT_miles_altitude(self):
+        for miles in (5, 4, 3, 2):
+            with self.subTest(miles=miles):
+                _, g = self.call_at(miles)
+                self.assertEqual(g.descend_to_ft,
+                                 self.asr.advisory_altitude(miles - 1, self.p))
+
+    def test_it_is_phrased_as_an_order_not_an_observation(self):
+        said, _ = self.call_at(4)
+        self.assertIn("descend to", said)
+        self.assertNotIn("altitude should be", said)
+
+    def test_a_level_segment_says_maintain(self):
+        said, _ = self.call_at(7)
+        self.assertIn("maintain", said)
+        self.assertNotIn("descend", said)
+
+    def test_the_bottom_step_is_minimums_not_an_odd_number(self):
+        """Nobody sets 732 on a subscale."""
+        said, _ = self.call_at(1)
+        self.assertIn("minimums", said)
+        self.assertNotIn("seven hundred", said)
+
+    def test_it_never_steps_below_minimums(self):
+        for miles in (3, 2, 1):
+            with self.subTest(miles=miles):
+                _, g = self.call_at(miles)
+                self.assertGreaterEqual(g.descend_to_ft, self.p.mda_ft)
+
+    def test_one_mile_is_not_one_miles(self):
+        said, _ = self.call_at(1)
+        self.assertIn("one mile from the runway", said)

@@ -652,7 +652,35 @@ def relative_correction(g, pos) -> str:
     return f"turn {'right' if step > 0 else 'left'} {words[n]} degrees"
 
 
-def asr_call(cs: str, g, pos=None) -> str:
+def altitude_instruction(g, profile) -> str:
+    """What to SAY about his altitude -- an instruction, not an observation.
+
+        "this is an anticipatory call so I can be there on time rather than a
+         reactive call"
+
+    "Altitude should be twelve hundred" describes where he ought to already be.
+    By the time he has heard it, started down and got there, he is a mile
+    further in and behind the profile again -- permanently chasing it from
+    above, which is what "I was always too high" partly was.
+
+    So the call carries the NEXT mile's altitude as an instruction he has a mile
+    to fly. "Descend to" when it is a step down, "maintain" when it is not, and
+    "minimums" at the bottom rather than an odd number nobody sets on a
+    subscale.
+    """
+    from marshall.atc import controller as ctl
+    want = g.descend_to_ft
+    if not want:
+        return (f", altitude should be {ctl.spell_alt(g.altitude_ft)}"
+                if g.altitude_ft else "")
+    if want <= profile.mda_ft:
+        return ", descend to minimums"
+    if g.altitude_ft and want < g.altitude_ft:
+        return f", descend to {ctl.spell_alt(want)}"
+    return f", maintain {ctl.spell_alt(want)}"
+
+
+def asr_call(cs: str, g, pos=None, profile=None) -> str:
     """The controller's spoken range call. Deterministic on purpose.
 
     A talk-down is the most rote transmission in aviation -- "six miles from the
@@ -665,8 +693,13 @@ def asr_call(cs: str, g, pos=None) -> str:
     from marshall.atc import asr, callsign as C, controller as ctl
     who = C.parse(cs).spoken
     rng = asr.spoken_range(g.range_nm)
+    # "one miles from the runway" is the sort of thing that is invisible in a
+    # diff and unmissable over a radio.
+    miles = "mile" if rng.strip() in ("one",) else "miles"
     # Spelled, not printed: "1900" reaches Polly as digits.
-    alt = ctl.spell_alt(g.altitude_ft) if g.altitude_ft else ""
+    alt = altitude_instruction(g, profile) if profile else (
+        f"altitude should be {ctl.spell_alt(g.altitude_ft)}"
+        if g.altitude_ft else "")
     if g.phase == "map":
         return (f"{who}, over the missed approach point. Runway in sight, land; "
                 f"if not, execute missed approach.")
@@ -677,12 +710,11 @@ def asr_call(cs: str, g, pos=None) -> str:
         # cannot see between the controller and the aeroplane. See #37.
         turn = relative_correction(g, pos) if pos is not None else ""
         if g.phase in ("final", "map") and turn:
-            return (f"{who}, {rng} miles from the runway, {spoken_deviation(g)}, "
-                    f"{turn}, altitude should be {alt}.")
-        return (f"{who}, {rng} miles from the runway, {spoken_deviation(g)}, "
-                f"turn heading {ctl.spell_hdg(g.heading)}, altitude "
-                f"should be {alt}.")
-    return (f"{who}, {rng} miles from the runway, on course, altitude should be "
+            return (f"{who}, {rng} {miles} from the runway, {spoken_deviation(g)}, "
+                    f"{turn}{alt}.")
+        return (f"{who}, {rng} {miles} from the runway, {spoken_deviation(g)}, "
+                f"turn heading {ctl.spell_hdg(g.heading)}{alt}.")
+    return (f"{who}, {rng} {miles} from the runway, on course"
             f"{alt}.")
 
 
@@ -2051,7 +2083,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                               f"{why}", flush=True)
                         continue        # not marked as called; it repeats
                     called[cs] = mile
-                    text = for_voice(asr_call(cs, g, pos))
+                    text = for_voice(asr_call(cs, g, pos, profile))
                     with radio_lock:
                         print(f"  ATC[asr] {text}", flush=True)
                         record(session_id, kind="atc/range", callsign=cs,

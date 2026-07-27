@@ -102,6 +102,7 @@ name in one sortie.
 | H1 | P1 | Inbound from 20 nm, on the centreline. Compare each "left/right of course" call against where the runway actually is | The side he calls is the side you are on, **every call, all the way in**. This is the one that was wrong all night | [#35] frames |
 | H2 | P1 | Fly the descent profile as given and note your altitude crossing the **threshold** | You arrive at the threshold at minimums, not 200 ft high with half a mile of descent owed | [#19] touchdown |
 | H3 | P1 | Listen to the range calls near the end | "One mile from the runway" means one mile from the **threshold**. Previously it meant one mile from the runway centre, which is where you were already landing | touchdown |
+| H9 | P1 | Once established, listen to the **altitude** part of each mile call | *"four miles, on course, **descend to** one thousand three hundred"* — an instruction for the NEXT mile, arriving in time to fly it. Not "altitude should be", which tells you where you already ought to be | anticipatory |
 | H4 | P1 | Once established, listen to how he corrects you | **"Turn left ten degrees"** — no heading at all, rounded to five. If he gives you an absolute heading inside the final approach course, that is the failure | [#37] |
 | H5 | P1 | While being vectored (before established), note the headings | Absolute, and ending in **0 or 5** — "heading three one five", never "three one three" | [#37] |
 | H6 | P1 | **Deliberately mis-set your DG by 20 degrees** before you turn inbound, then fly the approach on his corrections alone | You still arrive. This is the whole argument for relative corrections and it could not have been passed yesterday | [#37] |
@@ -124,6 +125,14 @@ at two miles. Note the altitude as the threshold goes under the nose.
 
 **H3** — The same fix heard rather than felt. If "one mile" still sounds like it
 arrives late, say so.
+
+**H9** — Yours, and it pairs with H2. The old call was an observation about the
+present — "three miles, altitude should be twelve hundred" — so by the time you
+had heard it, started down and arrived, you were a mile further in and behind
+again. Chasing the profile from above for the whole approach. Now the four-mile
+call carries the three-mile altitude and you have a mile to fly it. The last
+step says **"descend to minimums"** rather than 732, because nobody sets that on
+a subscale.
 
 **H4** — The relative corrections. Absolute headings are only as good as the
 gyro you set them on, and yours drifted seven degrees while the wet compass read
