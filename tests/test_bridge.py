@@ -1153,3 +1153,35 @@ class TestTalkingAboutAControllerIsNotCallingHim(unittest.TestCase):
                      "that last one came from Batumi Tower and it was wrong"):
             with self.subTest(said=said):
                 self.assertFalse(self._addressed(said))
+
+
+class TestWhereAPromisedCallbackIsSpoken(unittest.TestCase):
+    """A promise kept on a channel nobody is listening to is worse than never
+    promising: the pilot cannot tell it from a timer that never fired.
+
+    Hoover asked Georgia Center on 139 for a call in sixty seconds. The hook
+    fired on time and the controller made the call on 124, because that is the
+    frequency the bridge was started on.
+    """
+
+    CENTER, APPROACH = 139.0e6, 124.0e6
+    WHY = "Call back Pony 1-1 as he requested on Georgia Center 139.0"
+
+    def test_it_follows_the_man_it_is_owed_to(self):
+        got = agent_atc.hook_frequency(self.WHY, {"Pony 1-1": self.CENTER},
+                                       self.APPROACH)
+        self.assertEqual(got, self.CENTER)
+
+    def test_a_reason_naming_nobody_falls_back_to_the_live_channel(self):
+        got = agent_atc.hook_frequency("check the weather again", {},
+                                       self.CENTER)
+        self.assertEqual(got, self.CENTER)
+
+    def test_a_callsign_we_have_never_heard_does_not_pick_a_channel_for_him(self):
+        """He may be named in the reason and have never keyed a mic here."""
+        got = agent_atc.hook_frequency(self.WHY, {"Viper 2-1": self.APPROACH},
+                                       self.CENTER)
+        self.assertEqual(got, self.CENTER)
+
+    def test_with_nothing_known_it_says_so_rather_than_guessing(self):
+        self.assertIsNone(agent_atc.hook_frequency(self.WHY, {}, None))

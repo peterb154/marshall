@@ -1324,6 +1324,30 @@ def known_flight_names() -> set[str]:
 _last_active_hz: list[float | None] = [None]
 
 
+def hook_frequency(why: str, heard_on: dict, last_hz: float | None) -> float | None:
+    """Which channel a promised callback is spoken on.
+
+    A5, live: Hoover asked Georgia Center on 139 for a call in sixty seconds.
+    The hook fired on time and the controller said "calling as requested" -- on
+    124, the frequency the bridge happened to be started on. He waited eighty
+    seconds on 139 and reported no callback, which from the cockpit is
+    indistinguishable from a hook that never fired.
+
+    So the frequency comes from the man it is owed to. The hook's own reason
+    names him ("Call back Pony 1-1 as he requested on Georgia Center 139.0"), and
+    the bridge already knows which channel it last heard that callsign on.
+    Failing that, the last channel anybody spoke on -- a hook whose reason names
+    nobody still has to be spoken where somebody is listening. Failing that,
+    None, and the caller falls back to its own default.
+    """
+    from marshall.atc import callsign as C
+
+    for cs in C.extract_all(why or ""):
+        if cs in heard_on:
+            return heard_on[cs]
+    return last_hz
+
+
 def _plausible_callsign(cs: str, said: str = "") -> bool:
     """May this name become an aeroplane the controller sequences?
 
@@ -1676,13 +1700,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 # The frequency comes from the man it is owed to: the channel we
                 # last heard HIM on. Falling back to the last channel anybody
                 # spoke on, and only then to the primary.
-                from marshall.atc import callsign as _C
-                on_hz = None
-                for cs in _C.extract_all(why):
-                    if cs in _heard_on:
-                        on_hz = _heard_on[cs]
-                        break
-                on_hz = on_hz or _last_active_hz[0]
+                on_hz = hook_frequency(why, _heard_on, _last_active_hz[0])
                 print(f"HOOK fired (+{hook.get('seconds')}s) on "
                       f"{(on_hz or freq_hz) / 1e6:.3f}: {why}", flush=True)
                 interact(

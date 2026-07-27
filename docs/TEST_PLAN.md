@@ -35,7 +35,6 @@ Priority column: **P1** never flown, this sortie is the first real test ·
 | A1 | **Ask** for engineering, in your own words, on 124 — then again on 118 | Answer on **both**, same voice, within a second | [#4] `engineering_ack` |
 | A2 | Have engineering step away (`tools/bench.py off`), then ask for him | *"not at the bench right now, keep talking, every word is recorded"* — **never silence** | [#4] `engineering_attended` |
 | A3 | After A1, say something with no `debug log` prefix | *"Copied, logged."* — and **Approach must not answer it** | [#4] `_ENG_CALL` |
-| A5 | P1 | **Ask for a callback** — *"I'll be busy a minute, call me back in about a minute"* | He calls you **unprompted** about a minute later, and the call **refers to what he promised** | [#25] `set_hook` |
 | A6 | P1 | On the go-around, listen to every instruction | Nothing named that is not on your chart. **"Proceed Kobuleti, contact Kobuleti Departure" is the failure** — it exists nowhere | [#30] |
 | A4 | Say `thanks engineering`, then call Approach normally | Released; the next call goes to ATC | [#4] `_ENG_DONE` |
 
@@ -50,7 +49,6 @@ A2 gives silence, stop and tell me — every other test gets harder to report.
 
 **A3** — Once you have called engineering up, your words come to me and **not** to the controller. Without this the ATC answers your bug report, and the report ends up buried in its reply.
 
-**A5** — Triage found the timer works: asked for a callback, got one 64 seconds later, unprompted. What is NOT proven is whether the call keeps the PROMISE — the one that came back said "you have left our airspace, contact Georgia Center", which is a callback but not the one that was owed. So listen to the content, not just that the radio breaks squelch. A controller who calls back and says something unrelated has technically kept a timer and actually forgotten you.
 
 **A6** — The one you asked to fly next, and the reason is the pattern: it has landed on the **missed approach both times**. That is when the model has least to work with and the most pressure to say something, so it invents a procedure — a field, a frequency and a handoff that exist nowhere in the plan, offered to a pilot who has just gone around and is looking for instructions. Go around, then read back every name he says and check it against your chart. Say exactly what he named; the specific words are the evidence.
 
