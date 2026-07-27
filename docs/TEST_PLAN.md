@@ -28,31 +28,27 @@ Priority column: **P1** never flown, this sortie is the first real test ·
 
 ---
 
-## A — before you start the engine
+## A — before you start the engine (one row left)
 
 | ID | Test | What should happen | Fix under test |
 |----|------|--------------------|----------------|
-| A1 | **Ask** for engineering, in your own words, on 124 — then again on 118 | Answer on **both**, same voice, within a second | [#4] `engineering_ack` |
-| A2 | Have engineering step away (`tools/bench.py off`), then ask for him | *"not at the bench right now, keep talking, every word is recorded"* — **never silence** | [#4] `engineering_attended` |
-| A3 | After A1, say something with no `debug log` prefix | *"Copied, logged."* — and **Approach must not answer it** | [#4] `_ENG_CALL` |
 | A6 | P1 | On the go-around, listen to every instruction | Nothing named that is not on your chart. **"Proceed Kobuleti, contact Kobuleti Departure" is the failure** — it exists nowhere | [#30] |
-| A4 | Say `thanks engineering`, then call Approach normally | Released; the next call goes to ATC | [#4] `_ENG_DONE` |
 
-**P1.** A1–A4 are the tool you will use for everything else, so they go first. If
-A2 gives silence, stop and tell me — every other test gets harder to report.
+**A1–A5 are closed** — flown on the ramp on 27 July and attested on #4 and #25.
+The engineering channel itself is the tool you use for everything else and it is
+working: ask for it in your own words, talk, say thanks or goodbye, and the
+frequency goes back to the controller. Their regression checks live in
+`tools/` and `tests/test_bridge.py`.
 
-**What each one is actually checking**
+What is left in this section is A6, and it needs you airborne.
 
-**A1** — Say it however you like: *"get engineering on the line"*, *"engineering, you there?"*, *"Hoover one one for engineering"*, *"need engineering"* — it is looking for you ASKING, not for a magic phrase. Merely mentioning the word does not summon him, so *"engineering said the vectors are fixed"* still reaches the controller. Engineering has to be reachable on **more than one channel** — it used to be a process launched by hand per frequency, so when you changed radio there was simply nothing there.
+**What it is actually checking**
 
-**A2** — Somebody has to arrange this: while an engineer holds the bench you will always get the cheerful answer. `tools/bench.py off` vacates it (`on` claims it, no argument asks) — say so on the radio and engineering will do it. Silence is the actual bug. You could not tell a dead channel from an engineer with his head in the code, so it now always tells you which world you are in.
 
-**A3** — Once you have called engineering up, your words come to me and **not** to the controller. Without this the ATC answers your bug report, and the report ends up buried in its reply.
 
 
 **A6** — The one you asked to fly next, and the reason is the pattern: it has landed on the **missed approach both times**. That is when the model has least to work with and the most pressure to say something, so it invents a procedure — a field, a frequency and a handoff that exist nowhere in the plan, offered to a pilot who has just gone around and is looking for instructions. Go around, then read back every name he says and check it against your chart. Say exactly what he named; the specific words are the evidence.
 
-**A4** — And you can hand the frequency back without restarting anything — otherwise talking to engineering costs you the controller for the rest of the sortie.
 
 ---
 
