@@ -249,18 +249,45 @@ def add_testbed(m, usa) -> None:
     """
     start = Point(R.AIR_START.x, R.AIR_START.z, m.terrain)
     alt_m = R.CRUISE_ALT_FT * 0.3048
+    # ITS OWN SPEED, because the squadron's is a Mustang's.
+    #
+    # The air start inherited R.CRUISE_TAS_MPH -- 220 mph, about 190 knots --
+    # which is a comfortable cruise in a P-51 and below an F-16's clean stall
+    # with fuel aboard. It spawned and fell out of the sky.
+    #
+    # 300 knots: a normal jet holding speed, well clear of the stall at this
+    # weight, and slow enough to be useful for approach work without having to
+    # bleed off half of it first.
+    jet_kt = 300.0
     jet = m.flight_group(
         country=usa, name="Testbed", aircraft_type=F_16C_50,
         airport=None, position=start, altitude=alt_m,
-        speed=R.CRUISE_TAS_MPH * 0.44704, maintask=CAP,
+        speed=jet_kt * 0.514444, maintask=CAP,
         start_type=StartType.Runway, group_size=1)
     jet.frequency = R.APPROACH.freq_mhz
     for n, unit in enumerate(jet.units, start=1):
         unit.name = f"Testbed 1-{n}"
         unit.set_client()
+        # The UNIT's own spawn speed, which is a different field from the route
+        # waypoints and defaults to about 83 knots. Both have to be set: the
+        # waypoints decide what he flies TO, this decides what he is doing the
+        # instant he appears, and 83 knots is below an F-16's stall. This is the
+        # third place the same trap has bitten in this file.
+        unit.speed = jet_kt * 0.514444
     set_channels(jet)
     for fix in R.FIXES[1:]:
         jet.add_waypoint(Point(fix.x, fix.z, m.terrain), alt_m)
+
+    # SPEED ON EVERY WAYPOINT, AND AFTER THEY ALL EXIST.
+    #
+    # Setting it before `add_waypoint` covers only the spawn point; pydcs gives
+    # each new waypoint its own default of about 83 knots, which an F-16 cannot
+    # fly. The jet spawned at 300 and then obediently slowed towards a speed it
+    # stalls at -- so the first fix looked right in the file and still fell out
+    # of the sky. The same trap is documented on the Mustang flight below and I
+    # walked into it anyway, one function further up.
+    for wp in jet.points:
+        wp.speed = jet_kt * 0.514444
 
 
 def build(weather: str = "light", traffic: bool = False,
@@ -592,6 +619,22 @@ def channels_for(profile=None) -> list[tuple[int, float]]:
     return list(enumerate(freqs, start=1))
 
 
+def _band_of(mhz: float) -> str | None:
+    """"vhf" or "uhf", by what the number IS rather than by what a radio happens
+    to have on it today.
+
+    The first attempt used the min and max of a radio's STOCK presets as its
+    band, which is not the same thing at all: the F-16's VHF box ships with
+    121-141 on its buttons and tunes 108-152, so Tower on 118 was quietly
+    dropped for being outside a range that was never the radio's range.
+    """
+    if 108.0 <= mhz <= 156.0:
+        return "vhf"
+    if 225.0 <= mhz <= 400.0:
+        return "uhf"
+    return None
+
+
 def set_channels(group) -> None:
     """Write the controller frequencies into a group's radio presets.
 
@@ -602,13 +645,56 @@ def set_channels(group) -> None:
     what left the Jugs with the stock 105/124/139/131 presets while the
     kneeboard said 119/120/131.
     """
+    # BOTH RADIOS, not just the first.
+    #
+    # A WW2 set has one four-button box and radio 1 is the whole story. A modern
+    # aeroplane has two -- on the F-16, UHF on 1 and VHF on 2 -- and every
+    # frequency this field uses (118, 124, 131, 139) is VHF. Writing only radio
+    # 1 put the controllers on the UHF set, which cannot tune them, so buttons
+    # 1-4 in the Viper did nothing at all while the same buttons in the Mustang
+    # worked.
+    #
+    #     "set the f16 radio 1 2 3 4 same as a b c d in ww2"
+    #
+    # Setting both is right rather than clever: a preset on a radio that cannot
+    # reach the frequency is inert, and a pilot who finds the controllers on
+    # whichever box he happens to be using is the point.
+    # ONLY ON A RADIO THAT CAN ACTUALLY TUNE IT.
+    #
+    # A preset a radio cannot reach is not a preset. The F-16 carries UHF on box
+    # 1 (its stock presets run 250-305) and VHF on box 2 (121-141), and this
+    # field's controllers are all VHF -- so writing the card to both put four
+    # unreachable numbers on the UHF set and overwrote the stock UHF presets
+    # that are actually useful for anything above the field.
+    #
+    # The band comes from pydcs's own defaults for that airframe rather than a
+    # table here, so a new module needs no edit and a wrong guess is impossible.
+    # The AIRFRAME's radio spec, looked up by the type string on the unit.
+    # `type(unit)` is pydcs's Unit class and has no panel_radio at all, so that
+    # silently produced an empty band table, every frequency passed the "can it
+    # reach" test, and the whole card landed on the UHF box -- the exact fault
+    # this check exists to prevent, introduced by the check itself.
+    from dcs.planes import plane_map
+    airframe = plane_map.get(getattr(group.units[0], "type", ""))
+    bands = getattr(airframe, "panel_radio", None) or {}
     for unit in group.units:
         unit.set_radio_preset()                 # start from the airframe default
-        for ch, mhz in channels_for():
-            try:
-                unit.set_radio_channel_preset(1, ch, mhz)
-            except (TypeError, KeyError):
-                break                           # no configurable radio; leave it
+        for radio_id, spec in (bands.items() or [(1, None)]):
+            stock = list((spec or {}).get("channels", {}).values())
+            # A COMM BOX, not any receiver that happens to have a frequency.
+            # The Mustang's second "radio" is a single-channel set; writing the
+            # controller card to it retuned something that was never a preset
+            # panel. If it cannot hold the whole card it is not the card's home.
+            if len(stock) < len(channels_for()):
+                continue
+            box = _band_of(sum(stock) / len(stock)) if stock else None
+            for ch, mhz in channels_for():
+                if box and _band_of(mhz) != box:
+                    continue                    # wrong box for this frequency
+                try:
+                    unit.set_radio_channel_preset(radio_id, ch, mhz)
+                except (TypeError, KeyError, IndexError):
+                    break                       # this radio has no such preset
 
 
 def write_presets(miz: Path, slots: list[tuple[int, str]]) -> None:
