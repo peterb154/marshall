@@ -1666,6 +1666,18 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
     # started. A distinct voice, because a pilot must never mistake engineering
     # for a controller.
     engineering_line: dict[str, float] = {}
+    # The same pilots, by CALLSIGN, because the metronome works aeroplanes and
+    # does not know a radio GUID from a hole in the ground.
+    #
+    #     "when I'm talking to you on engineering, the controller continues to
+    #      talk to me"
+    #
+    # Reported airborne, at seven miles, while a vector call landed on top of
+    # every sentence -- both on 124, because engineering answers wherever he
+    # called from. A pilot who has stopped flying the approach to report a bug
+    # has stopped flying the approach; talking over him loses the report AND the
+    # vector, since he is not writing either one down.
+    engineering_callsigns: set[str] = set()
     eng_voice = tts.Voice(voice_id="Amy")
 
     # CALLING A CONTROLLER BY NAME LETS YOU GO.
@@ -1865,6 +1877,13 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                         # same bug as an engineering channel that says nothing,
                         # and it is worse here because it is the last thing that
                         # happens on every flight.
+                        if cs in engineering_callsigns:
+                            # Not recorded as issued: he never heard it, and
+                            # marking it sent would suppress the repeat once he
+                            # comes back to the frequency.
+                            print(f"  .. holding a vector for {cs}: he is on "
+                                  f"the engineering line", flush=True)
+                            continue
                         free, why = channel_is_free()
                         if not free:
                             print(f"  .. holding {cs}'s goodbye: {why}", flush=True)
@@ -1923,6 +1942,13 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                                       f" degree reversal for {cs} to see if it "
                                       "persists", flush=True)
                                 continue
+                        if cs in engineering_callsigns:
+                            # Not recorded as issued: he never heard it, and
+                            # marking it sent would suppress the repeat once he
+                            # comes back to the frequency.
+                            print(f"  .. holding a vector for {cs}: he is on "
+                                  f"the engineering line", flush=True)
+                            continue
                         free, why = channel_is_free()
                         if not free:
                             # Do NOT record it as issued -- he never heard it,
@@ -2175,12 +2201,14 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             # "clear" call here would be engineering talking over the very
             # transmission it just got out of the way of.
             engineering_line.pop(client.last_sender_guid, None)
+            engineering_callsigns.discard(known)
             print(f"  ENGINEERING released {known or srs} — he called a controller",
                   flush=True)
             _on_the_line = False
 
         if _on_the_line and _ENG_DONE.search(transcript):
             engineering_line.pop(client.last_sender_guid, None)
+            engineering_callsigns.discard(known)
             print(f"  ENGINEERING released {known or srs}", flush=True)
             with radio_lock:
                 client.transmit(
@@ -2190,6 +2218,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         _summoned = bool(_ENG_CALL.search(transcript))
         if _summoned or _on_the_line:
             engineering_line[client.last_sender_guid] = _eng_hz
+            if known:
+                engineering_callsigns.add(known)
             stamp = time.strftime("%H:%M:%S")
             who = known or srs
             print(f"  ENGINEERING [{stamp}] {who}: {transcript}", flush=True)
