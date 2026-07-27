@@ -85,7 +85,7 @@ class SRSClient:
         self.last_sender_guid: str | None = None
 
     # --- registration ---------------------------------------------------
-    def connect(self, radios: list[dict]) -> "SRSClient":
+    def connect(self, radios: list[dict]) -> SRSClient:
         self.radios = radios
         self.tcp = socket.create_connection((self.host, self.port), timeout=10)
         # Unconnected UDP: the server relays voice from its own socket, which may
@@ -248,7 +248,7 @@ class SRSClient:
         while time.monotonic() < end:
             try:
                 data, _src = self.udp.recvfrom(1500)
-            except socket.timeout:
+            except TimeoutError:
                 continue
             except OSError:
                 break
@@ -275,7 +275,7 @@ class SRSClient:
         while time.monotonic() < end:
             try:
                 data, _src = self.udp.recvfrom(1500)
-            except socket.timeout:
+            except TimeoutError:
                 continue
             except OSError:
                 break
@@ -316,7 +316,7 @@ class SRSClient:
                 break
             try:
                 data, _src = self.udp.recvfrom(1500)
-            except socket.timeout:
+            except TimeoutError:
                 continue
             except OSError:
                 return None, None

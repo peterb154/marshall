@@ -46,7 +46,7 @@ for m in re.finditer(
 
 print("labels")
 for x, y, w, fs, txt in rows:
-    check(0 <= x and x + w <= P.W and fs <= y <= P.H,
+    check(x >= 0 and x + w <= P.W and fs <= y <= P.H,
           f"{txt[:32]!r} within canvas (x {x:.0f}..{x + w:.0f})")
 
 overlaps = []

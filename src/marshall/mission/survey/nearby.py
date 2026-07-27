@@ -17,7 +17,6 @@ Usage:
 import argparse
 import math
 import re
-from pathlib import Path
 
 from marshall import config
 DCS = config.DCS_INSTALL

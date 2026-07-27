@@ -35,12 +35,7 @@ from strands_pg import (
 
 # DCS-gRPC live-world tools (stubs vendored under _grpc, on PYTHONPATH).
 from tools.dcs import (
-    call_in_traffic,
     spawn_ground,
-    get_current_mission,
-    get_player_units,
-    load_mission,
-    radar,
     radar_picture,
 )
 from tools.approaches import (
@@ -53,7 +48,6 @@ from tools.approaches import (
 )
 from tools.hooks import due_hooks, hook_tools
 from tools.identify import bindings_for, identify_tools
-from tools.ops import escalate
 from tools.tracks import start_streamer, vector
 
 # TODO (identity): uncomment when you have per-user profile docs.

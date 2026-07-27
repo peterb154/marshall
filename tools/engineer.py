@@ -38,7 +38,7 @@ if "dcs" not in sys.modules:                     # see asr_autopilot.py
     _pkg.__path__ = [str(ROOT / "director" / "_grpc" / "dcs")]
     sys.modules["dcs"] = _pkg
 
-from marshall import config                                     # noqa: E402
+from marshall import config
 
 SPOOL = Path("/tmp/marshall-say")
 SRS_HOST = os.environ.get("SRS_HOST", "192.168.0.35")

@@ -255,7 +255,7 @@ def pages() -> list[tuple[str, str, str, object]]:
     out = [(GUIDS["ISSUES"], "ISSUES", "ft-issues", build_issues)]
     # A to F, whatever order the card happens to be written in -- a pilot flies
     # them in order and the tabs should match the card, not the file.
-    for letter, title, _rows in sorted(sections(), key=lambda s: s[0]):
+    for letter, _title, _rows in sorted(sections(), key=lambda s: s[0]):
         guid = GUIDS.get(letter)
         if not guid:
             continue

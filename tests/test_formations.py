@@ -9,7 +9,6 @@ The rules being pinned down here:
   * a break-up that will not fit under the ceiling is refused, not half-done
 """
 
-import dataclasses
 import unittest
 
 from marshall.atc import controller as atc

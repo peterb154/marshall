@@ -176,7 +176,7 @@ def make_app(
         Only called when auth_verifier is configured. Raises 401 on any
         failure. The returned dict must carry a ``session_id`` key.
         """
-        assert auth_verifier is not None  # noqa: S101 — guarded by caller
+        assert auth_verifier is not None
         if not authorization.startswith("Bearer "):
             raise HTTPException(status_code=401, detail="Missing bearer token")
         token = authorization[len("Bearer ") :].strip()
@@ -184,7 +184,7 @@ def make_app(
             raise HTTPException(status_code=401, detail="Empty bearer token")
         try:
             ctx = auth_verifier(token)
-        except Exception as exc:  # noqa: BLE001 — upstream verifier errors → 401
+        except Exception as exc:
             logger.warning("auth_verifier raised: %s", exc)
             ctx = None
         if not ctx or "session_id" not in ctx:
@@ -199,7 +199,7 @@ def make_app(
                 extras = health_info() or {}
                 if isinstance(extras, dict):
                     out.update(extras)
-            except Exception:  # noqa: BLE001 — health must never fail
+            except Exception:
                 logger.exception("health_info() raised; returning bare status")
         return out
 
@@ -221,7 +221,7 @@ def make_app(
             result = agent(req.message)
         except HTTPException:
             raise
-        except Exception as exc:  # noqa: BLE001 — surface as 500 to the client
+        except Exception as exc:
             logger.exception("chat failed for session_id=%s", session_id)
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -351,7 +351,7 @@ async def _stream_agent(
         agent = get_agent(session_id, context=context)
         seen_tool_ids: set[str] = set()
         async for ev in agent.stream_async(message):
-            if "reasoningText" in ev and ev["reasoningText"]:
+            if ev.get("reasoningText"):
                 yield {"event": "thinking", "data": ev["reasoningText"]}
             elif "current_tool_use" in ev:
                 tool = ev["current_tool_use"] or {}
@@ -359,9 +359,9 @@ async def _stream_agent(
                 if tool_id and tool_id not in seen_tool_ids:
                     seen_tool_ids.add(tool_id)
                     yield {"event": "tool_use", "data": tool.get("name", "") or ""}
-            elif "data" in ev and ev["data"]:
+            elif ev.get("data"):
                 yield {"event": "text", "data": ev["data"]}
         yield {"event": "done", "data": ""}
-    except Exception as exc:  # noqa: BLE001 — surface via SSE error event
+    except Exception as exc:
         logger.exception("/chat/stream failed for session_id=%s", session_id)
         yield {"event": "error", "data": str(exc)}

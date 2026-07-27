@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import shutil
 import subprocess
 import sys
 import time
@@ -35,7 +34,10 @@ PY = sys.executable
 
 # (name, argv, what it guards, needs the sim/SRS)
 CHECKS = [
-    ("unit suite", [PY, "-m", "unittest", "discover", "-s", "tests", "-t", "."],
+    ("lint", [PY, "-m", "ruff", "check", "src", "tools", "tests", "director"],
+     "undefined names, dead locals, loop-variable closures — it found two real "
+     "bugs the first time it ran", False),
+    ("unit suite", [PY, "-m", "pytest", "-q"],
      "the separation engine, callsign identity, phraseology, the geometry", False),
     ("approach sweep", [PY, "tools/asr_sweep.py"],
      "1,296 approaches: arrivals, dithering, where they establish", False),

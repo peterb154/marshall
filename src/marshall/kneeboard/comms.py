@@ -61,7 +61,7 @@ def build(profile=P) -> str:
         # What this seat covers, said in the pilot's language rather than the
         # phase table's. He does not care that "arrival" and "holding" are
         # different states; he cares which button to press.
-        covers = [s.role] + list(getattr(s, "also", ()))
+        covers = [s.role, *getattr(s, "also", ())]
         when = [label for label, ph in LADDER
                 if any(phases.owner_of(p) in covers for p in ph)]
         rows.append(

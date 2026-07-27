@@ -22,9 +22,10 @@ from dcs.task import CAP
 from dcs.terrain import Caucasus
 from dcs.triggers import TriggerStart
 
+from marshall import config
+
 HERE = Path(__file__).parent
 OUT = config.MISSION_OUT / "Terrain-Survey.miz"
-from marshall import config
 MISSIONS = config.DCS_MISSIONS
 
 FIELDS = {

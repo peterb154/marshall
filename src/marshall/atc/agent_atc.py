@@ -506,7 +506,7 @@ _FIX = re.compile(
     r"[^|]*?([\d,]+)\s*ft(?:[^|]*?heading\s*(\d+))?", re.I)
 
 
-def radar_fix(scope: str, cs: str) -> "object | None":
+def radar_fix(scope: str, cs: str) -> object | None:
     """Range, radial, altitude and heading of the track bound to this callsign.
 
     Only radar-IDENTIFIED contacts (the [tagged] ones) -- guidance computed from
@@ -538,7 +538,7 @@ VECTOR_CHANGE_DEG = 12
 VECTOR_MIN_SEC = 20.0
 
 
-def radar_fixes(scope: str) -> list[tuple[str, "object"]]:
+def radar_fixes(scope: str) -> list[tuple[str, object]]:
     """Every radar-IDENTIFIED contact as (callsign, Position).
 
     Untagged blips are deliberately skipped: an unidentified aircraft on final
@@ -1146,7 +1146,10 @@ def claim_the_frequency(path=None) -> bool:
 
     path = pathlib.Path(path) if path else BRIDGE_LOCK
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd = open(path, "a+")
+    # Deliberately NOT a context manager: the handle is held for the life of
+    # the process, because closing it releases the lock. That is the whole
+    # mechanism.
+    fd = open(path, "a+")  # noqa: SIM115
     try:
         fcntl.flock(fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
@@ -1166,7 +1169,7 @@ def claim_the_frequency(path=None) -> bool:
 
 
 def leaving_my_airspace(base: str, session_id: str, callsign: str, me,
-                        profile, fix, mission: str = "default") -> "object | None":
+                        profile, fix, mission: str = "default") -> object | None:
     """The station he should be with now, if he has flown out of mine.
 
     ONLY the outbound direction, deliberately. Arrivals are sequenced by
@@ -1388,7 +1391,7 @@ def push_fixes(base: str, profile) -> int:
 
 def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
              session_id: str | None = None, url: str = AGENT_URL) -> None:
-    from marshall.atc import asr, callsign as C, controller
+    from marshall.atc import asr, controller
     from marshall.core import route as R
     from marshall.srs import stt, tts
     from marshall.srs.client import AM, SRSClient, radio
@@ -1401,7 +1404,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
     # different person -- that is most of what makes a sector split feel real,
     # and it costs nothing but picking the right Voice before transmitting.
     voice = tts.Voice(voice_id=voice_id)
-    voices: dict[float, "tts.Voice"] = {}
+    voices: dict[float, tts.Voice] = {}
     for _s in getattr(profile, "stations", None) or []:
         voices[round(_s.freq_mhz, 3)] = tts.Voice(voice_id=_s.voice)
 

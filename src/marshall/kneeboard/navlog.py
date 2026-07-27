@@ -122,7 +122,6 @@ def build() -> str:
 
     for i, leg in enumerate(legs):
         elapsed += leg.minutes
-        eta = f"{int(elapsed)}:{round((elapsed % 1) * 60):02d}"
         rows.append(
             f'<tr><td class="fix">{R.steerpoint(leg.to)}. {leg.to.name}</td>'
             f'<td>{leg.to.ident or "&mdash;"}</td>'

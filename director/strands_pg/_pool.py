@@ -48,7 +48,7 @@ def _configure_connection(conn: Connection) -> None:
     """
     try:
         register_vector(conn)
-    except Exception:  # noqa: BLE001 — extension may not be installed yet on fresh DB
+    except Exception:
         logger.warning(
             "pgvector adapter not registered; memory queries will fail "
             "until the 'vector' extension is loaded"

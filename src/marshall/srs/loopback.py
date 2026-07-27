@@ -41,7 +41,9 @@ def main() -> int:
     heard_ok = 0
     for phrase in PHRASES:
         box: dict = {}
-        t = threading.Thread(target=lambda: box.__setitem__("pcm", ears.recv_utterance(max_wait=15)))
+        t = threading.Thread(
+            target=lambda b=box: b.__setitem__(
+                "pcm", ears.recv_utterance(max_wait=15)))
         t.start()
         time.sleep(0.5)
         mouth.transmit(tts.Voice().frames(phrase), freq_hz, AM)

@@ -708,7 +708,6 @@ class TestEngineeringChannel(unittest.TestCase):
             agent_atc._ENG_DONE.search("engineering the vectors are wrong"))
 
     def test_an_unattended_bench_says_so_rather_than_going_quiet(self):
-        import time as _t
         try:
             agent_atc.ENG_ATTENDED.unlink()
         except OSError:
@@ -728,7 +727,8 @@ class TestEngineeringChannel(unittest.TestCase):
             agent_atc.ENG_ATTENDED.unlink(missing_ok=True)
 
     def test_a_stale_claim_counts_as_nobody_home(self):
-        import os as _os, time as _t
+        import os as _os
+        import time as _t
         agent_atc.ENG_ATTENDED.parent.mkdir(parents=True, exist_ok=True)
         agent_atc.ENG_ATTENDED.touch()
         old = _t.time() - agent_atc.ENG_ATTENDED_SEC - 60

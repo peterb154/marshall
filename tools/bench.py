@@ -35,7 +35,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from marshall import config                                    # noqa: E402
+from marshall import config
 
 CLAIM = config.BUILD_DIR / "engineering.attended"
 PID = config.BUILD_DIR / "engineering.keepalive.pid"

@@ -36,7 +36,7 @@ class IntentKind(str, Enum):
     UNKNOWN = "unknown"             # hand to the LLM fallback, or ask again
 
     @classmethod
-    def coerce(cls, value: str) -> "IntentKind":
+    def coerce(cls, value: str) -> IntentKind:
         """A model's answer -> a kind, without ever raising.
 
         Structured output is not a guarantee: given an enum of seven values,

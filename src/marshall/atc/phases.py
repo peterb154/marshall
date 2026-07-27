@@ -25,7 +25,7 @@ be and is visible from here rather than discovered in flight.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)

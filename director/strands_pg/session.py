@@ -71,7 +71,7 @@ def session_lock(session_id: str, dsn: str | None = None) -> Iterator[None]:
                 conn.execute(
                     "SELECT pg_advisory_unlock(hashtext(%s))", (session_id,)
                 )
-            except Exception:  # noqa: BLE001
+            except Exception:
                 logger.exception(
                     "advisory unlock failed for session_id=%s; "
                     "Postgres will release on session close",

@@ -27,7 +27,6 @@ off the field), so this adds no new source of truth.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
 
 # The phase-agnostic half now lives in geometry.py, because it is the same
 # question whether the target is a final approach course, an airway or a run-in

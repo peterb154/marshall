@@ -10,7 +10,6 @@ useful in the log, so it is far cheaper to check here.
 import re
 import sys
 import zipfile
-from pathlib import Path
 
 from marshall.core import route as R
 from marshall import config

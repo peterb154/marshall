@@ -58,8 +58,17 @@ Live ops specifics — hosts, credentials, the current running state — live in
 **private memory notes**, not here.
 
 ## Regression: `tools/check.py`
-`uv run python tools/check.py` runs everything that needs no sim — the unit
-suite and the approach sweep, a few seconds, no excuse for skipping. `--live`
+`uv run python tools/check.py` runs everything that needs no sim — **ruff**, the
+unit suite under **pytest**, and the approach sweep. A few seconds, no excuse for
+skipping.
+
+Both are dev dependencies (`uv pip install -e ".[dev]"`). The suite is
+`unittest.TestCase` throughout and stays that way — pytest runs it unchanged and
+the win is the failure OUTPUT, since most of these tests are about what a
+controller said and `assertEqual` will not show you which two strings differed.
+Ruff's config lists what is switched OFF and why: this codebase catches broadly
+on purpose in the voice threads, and binds the gRPC stub path before importing
+from it, and neither is a defect. `--live`
 adds the voice rehearsals and the sim-backed checks, which need DCS, SRS and the
 bridge and cost model calls, so they are run before a session rather than on
 every edit.

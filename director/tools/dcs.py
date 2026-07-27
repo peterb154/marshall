@@ -11,6 +11,7 @@ The gRPC stubs are generated from the DCS-gRPC protos and vendored under `_grpc/
 from __future__ import annotations
 
 import math
+import logging
 import os
 
 import grpc
@@ -28,6 +29,8 @@ from dcs.hook.v0 import hook_pb2, hook_pb2_grpc
 
 # Your DCS server's gRPC endpoint. LAN-only, never public -- and this repo is,
 # so the address belongs in the environment (see director/.env), not here.
+log = logging.getLogger(__name__)
+
 DCS_GRPC_ADDR = os.environ.get("DCS_GRPC_ADDR", "127.0.0.1:50051")
 _TIMEOUT = 8.0
 
@@ -217,7 +220,6 @@ def spawn_ground(what: str, bearing_deg: float, range_nm: float,
     Refuses to put ground units in the sea. Returns what was actually created,
     read back from the sim -- not what was asked for.
     """
-    import math
     dcs_type = SPAWNABLE.get(what.lower().strip())
     if not dcs_type:
         return (f"'{what}' is not something I can place. Options: "

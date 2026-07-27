@@ -21,7 +21,6 @@ come down the descent profile to the missed approach point.
 from __future__ import annotations
 
 import argparse
-import math
 import os
 import sys
 import time
@@ -47,10 +46,10 @@ if "dcs" not in sys.modules:
     _pkg.__path__ = [str(ROOT / "director" / "_grpc" / "dcs")]
     sys.modules["dcs"] = _pkg
 
-import grpc                                                    # noqa: E402
+import grpc
 
-from marshall.atc import asr                                   # noqa: E402
-from marshall.core import route as R                           # noqa: E402
+from marshall.atc import asr
+from marshall.core import route as R
 
 ADDR = os.environ.get("DCS_GRPC_ADDR", "127.0.0.1:50051")
 POLL_SEC = 4.0
@@ -183,7 +182,7 @@ def main() -> int:
         import queue
         import threading
 
-        pending: "queue.Queue[str]" = queue.Queue(maxsize=1)
+        pending: queue.Queue[str] = queue.Queue(maxsize=1)
         dropped = 0
 
         def radio_worker():

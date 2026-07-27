@@ -27,7 +27,6 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-import time
 import types
 from pathlib import Path
 
@@ -41,8 +40,8 @@ if "dcs" not in sys.modules:                     # see asr_autopilot.py
     _pkg.__path__ = [str(ROOT / "director" / "_grpc" / "dcs")]
     sys.modules["dcs"] = _pkg
 
-from marshall import config                                     # noqa: E402
-from marshall.core import route as R                            # noqa: E402
+from marshall import config
+from marshall.core import route as R
 
 SRS_HOST = os.environ.get("SRS_HOST", "192.168.0.35")
 

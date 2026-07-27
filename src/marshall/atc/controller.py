@@ -149,7 +149,7 @@ def spell_hdg(deg: float) -> str:
     heading anyone flies, and a pilot hearing it wonders what was garbled.
     """
     d = {c: w for c, w in zip("0123456789",
-         "zero one two three four five six seven eight nine".split())}
+         ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"])}
     hdg = int(round(deg)) % 360 or 360
     return " ".join(d[c] for c in f"{hdg:03d}")
 
@@ -157,7 +157,7 @@ def spell_hdg(deg: float) -> str:
 def spell_time(t: float) -> str:
     """Minutes past the hour, spoken as digits: 'at four five'."""
     d = {c: w for c, w in zip("0123456789",
-         "zero one two three four five six seven eight nine".split())}
+         ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"])}
     return " ".join(d[c] for c in f"{(int(t) // 60) % 60:02d}")
 
 
@@ -168,7 +168,7 @@ def spell_freq(mhz: float) -> str:
     dropped because nobody says "one three two decimal zero".
     """
     d = {c: w for c, w in zip("0123456789",
-         "zero one two three four five six seven eight nine".split())}
+         ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"])}
     whole, _, frac = f"{mhz:.3f}".rstrip("0").rstrip(".").partition(".")
     out = " ".join(d[c] for c in whole)
     if frac:
@@ -179,7 +179,7 @@ def spell_freq(mhz: float) -> str:
 def spell_dur(sec: float) -> str:
     """A duration as aviation timing: 204 -> 'three plus two four'."""
     d = {c: w for c, w in zip("0123456789",
-         "zero one two three four five six seven eight nine".split())}
+         ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"])}
     m, s = divmod(int(round(sec)), 60)
     minutes = d[str(m)] if m < 10 else str(m)
     return f"{minutes} plus " + " ".join(d[c] for c in f"{s:02d}")

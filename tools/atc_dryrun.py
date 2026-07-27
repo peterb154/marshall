@@ -21,8 +21,8 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from marshall.atc import agent_atc, controller as atc  # noqa: E402
-from marshall.core import route as R  # noqa: E402
+from marshall.atc import agent_atc, controller as atc
+from marshall.core import route as R
 
 # (SRS transmitter identity, what the pilot says). The SRS name is deliberately
 # not the callsign -- that three-way correlation is part of what we're testing.

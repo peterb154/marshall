@@ -56,7 +56,6 @@ def find(mission: str = "default", *, callsign: str | None = None,
     aeroplane. The callsign is last and is the least reliable of the three,
     which is exactly why it must not be the key.
     """
-    where, args = [], []
     for col, val in (("srs_guid", srs_guid), ("track_name", track_name),
                      ("callsign", callsign)):
         if not val:
@@ -103,7 +102,7 @@ def bind(mission: str = "default", **names) -> dict:
     row = _merge(rows) if len(rows) > 1 else (rows[0] if rows else None)
     with get_pool().connection() as c:
         if row is None:
-            cols = ["mission"] + list(known)
+            cols = ["mission", *known]
             vals = [mission] + [known[k] for k in known]
             ph = ", ".join(["%s"] * len(cols))
             cur = c.execute(
@@ -160,7 +159,7 @@ def _merge(rows: list[dict]) -> dict:
         if fill:
             sets = ", ".join(f"{k} = %s" for k in fill)
             c.execute(f"UPDATE flights SET {sets}, updated_at = now() "
-                      "WHERE id = %s", list(fill.values()) + [keep["id"]])
+                      "WHERE id = %s", [*fill.values(), keep["id"]])
     log.info("merged %d duplicate flight rows into %s", len(rest), keep["id"])
     return get(keep["id"]) or keep
 
@@ -188,7 +187,7 @@ def agree(flight_id: int, **fields) -> dict | None:
     sets = ", ".join(f"{k} = %s" for k in known)
     with get_pool().connection() as c:
         c.execute(f"UPDATE flights SET {sets}, updated_at = now() WHERE id = %s",
-                  list(known.values()) + [flight_id])
+                  [*known.values(), flight_id])
     return get(flight_id)
 
 

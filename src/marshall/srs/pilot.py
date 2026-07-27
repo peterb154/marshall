@@ -68,7 +68,6 @@ def live_script(group: str, profile=None) -> list[str]:
     it is. What stays scripted is the part that is genuinely the pilot's choice:
     what he asks for.
     """
-    import math
     import sys
     from pathlib import Path
 

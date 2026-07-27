@@ -44,8 +44,8 @@ if "dcs" not in sys.modules:                     # see asr_autopilot.py
     _pkg.__path__ = [str(ROOT / "director" / "_grpc" / "dcs")]
     sys.modules["dcs"] = _pkg
 
-from marshall.atc import agent_atc as A          # noqa: E402
-from marshall.core import route as R             # noqa: E402
+from marshall.atc import agent_atc as A
+from marshall.core import route as R
 
 BASE = os.environ.get("MARSHALL_BASE", "http://localhost:8000")
 MISSION = "handoff-check"

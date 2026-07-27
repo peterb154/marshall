@@ -21,7 +21,6 @@ import numpy as np
 import opuslib
 import soxr
 
-from marshall import config
 
 # SRS voice: Opus, mono, 40 ms frames at 16 kHz ("wideband"). Confirmed against
 # SkyEye's simpleradio client -- both ends must agree on the rate or the audio

@@ -58,9 +58,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from marshall.atc import asr                                  # noqa: E402
-from marshall.atc import geometry as G                        # noqa: E402
-from marshall.core import route as R                          # noqa: E402
+from marshall.atc import asr
+from marshall.atc import geometry as G
+from marshall.core import route as R
 
 STEP_SEC = 5.0
 TURN_RATE_DEG = 3.0            # standard rate, and all a heavy fighter will give

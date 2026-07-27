@@ -274,7 +274,7 @@ def agentmail_operator_notify(
                 },
                 timeout=timeout,
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.exception(
                 "failed to send operator notification to %s for inbound %s",
                 to_email, event.inbound_message.message_id,
@@ -447,7 +447,7 @@ def attach_email_webhook(
         # shouldn't see 5xx for what's effectively a misconfiguration.
         try:
             session_id = session_id_for(msg) if session_id_for else sender
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.exception(
                 "session_id_for raised for inbound %s; falling back to sender",
                 msg.message_id,
@@ -528,7 +528,7 @@ def _process(
             # below. Don't move this line up.
             agent.hooks.add_callback(MessageAddedEvent, _capture)
             agent(body)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.exception("agent processing failed for message %s", msg.message_id)
         failure_reason = f"Python exception: {type(e).__name__}: {e}"
 
@@ -561,7 +561,7 @@ def _process(
                 failure_reason=failure_reason,
                 trace_lines=trace_lines,
             ))
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.exception(
                 "on_failure callback raised for inbound %s", msg.message_id,
             )

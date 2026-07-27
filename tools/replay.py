@@ -19,9 +19,9 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from marshall import config  # noqa: E402
-from marshall.atc import asr  # noqa: E402
-from marshall.core import route as R  # noqa: E402
+from marshall import config
+from marshall.atc import asr
+from marshall.core import route as R
 
 
 def newest() -> str | None:
@@ -59,7 +59,7 @@ def replay(path: str, profile=R.BATUMI_ASR) -> None:
         said = (r.get("transcript") or "")[:44]
         print(f"{pos.range_nm:6.1f} {pos.radial_deg:7.0f} {pos.alt_ft:6d} "
               f"{pos.heading_deg:5.0f} | {g.phase:7} {g.heading:4d} "
-              f"{g.turn:>5} {str(g.altitude_ft):>5} | {said}")
+              f"{g.turn:>5} {g.altitude_ft!s:>5} | {said}")
 
     if not n:
         print("\nNo positions recorded -- was radar identifying him?")

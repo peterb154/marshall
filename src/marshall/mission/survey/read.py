@@ -60,7 +60,7 @@ def main() -> int:
 
     # x increases north, so print north at the top.
     print("      " + "west".ljust(len(rows[0][3]) // 2) + "east")
-    for x, z0, dz, heights in sorted(rows, key=lambda r: -r[0]):
+    for x, _z0, _dz, heights in sorted(rows, key=lambda r: -r[0]):
         nm_ns = (x - cx) / NM
         line = "".join(glyph(h * FT) for h in heights)
         print(f"{nm_ns:+5.0f} {line}")

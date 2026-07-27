@@ -29,7 +29,6 @@ says so in as many words.
 from __future__ import annotations
 
 import os
-import re
 import subprocess
 import sys
 import time

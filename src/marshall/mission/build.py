@@ -375,7 +375,7 @@ def build(weather: str = "light", traffic: bool = False,
     # Every one of them is a client. An empty slot costs nothing; a missing one
     # costs a squadron mate the sortie.
     client_slots: list[tuple[int, str]] = []
-    for name, kind, cruise, howmany in SQUADRON:
+    for name, kind, _cruise, howmany in SQUADRON:
         sq = m.flight_group_from_airport(
             country=usa, name=name, aircraft_type=kind,
             airport=m.terrain.airports["Batumi"],

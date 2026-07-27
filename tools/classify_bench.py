@@ -20,7 +20,7 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from marshall.atc import bedrock_intent, intents  # noqa: E402
+from marshall.atc import bedrock_intent, intents
 
 K = intents.IntentKind
 

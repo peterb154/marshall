@@ -35,7 +35,7 @@ if "dcs" not in sys.modules:                     # see asr_autopilot.py
     _pkg.__path__ = [str(ROOT / "director" / "_grpc" / "dcs")]
     sys.modules["dcs"] = _pkg
 
-import grpc                                                     # noqa: E402
+import grpc
 
 ADDR = os.environ.get("DCS_GRPC_ADDR", "127.0.0.1:50051")
 

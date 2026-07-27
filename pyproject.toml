@@ -20,7 +20,8 @@ server = ["fastapi>=0.110", "uvicorn[standard]>=0.29"]
 voice = ["opuslib>=3.0", "numpy>=1.26", "soxr>=0.5", "boto3>=1.34",
          "faster-whisper>=1.0"]
 mission = ["pydcs>=0.15.0"]
-dev = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "pydcs>=0.15.0", "luaparser>=3.2"]
+dev = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "pydcs>=0.15.0",
+       "luaparser>=3.2", "pytest>=8.0", "ruff>=0.6"]
 
 # Entry points are run as modules (python -m marshall.<pkg>.<mod>); no console
 # scripts yet.
@@ -31,3 +32,83 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/marshall"]
+
+
+# --- linting -----------------------------------------------------------------
+#
+# Ruff's default rule set finds 405 things here, most of which are opinions
+# rather than defects -- import ordering, string-concat style, a shebang on a
+# file nobody executes. This selection is the part that catches BUGS, plus the
+# tidiness that actually costs something when it rots.
+#
+# The two that justified turning it on at all were undefined names: a logger
+# that did not exist inside `spawn_ground`'s exception handler, so a failure
+# raised NameError from the very code meant to absorb it; and a module using
+# `config` on the line before importing it.
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+extend-exclude = ["director/_grpc"]      # generated protobuf stubs
+
+[tool.ruff.lint]
+select = [
+    "E", "W",      # pycodestyle
+    "F",           # pyflakes: undefined names, unused imports, dead locals
+    "B",           # bugbear: mutable defaults, loop-variable closures
+    "SIM",         # obvious simplifications
+    "UP",          # outdated idioms
+    "RUF",         # ruff's own, incl. unused noqa
+]
+ignore = [
+    # A radio is not worth crashing for. Every background thread in the voice
+    # stack catches broadly ON PURPOSE -- its failure mode is silence, not a
+    # stack trace, and a bare `except Exception` beside a comment saying why is
+    # the correct shape here. See docs/GOTCHAS.md.
+    "BLE001",
+    # Long prose in docstrings and radio phraseology; wrapping them to please a
+    # linter would make the phrasing worse, and the phrasing is the product.
+    "E501",
+    # `l` for a line and `p` for a profile read fine in this codebase and
+    # renaming twenty-two of them would churn history for no reader's benefit.
+    "E741",
+    # zip(strict=) everywhere is noise here: the sequences are built together a
+    # line earlier, and where length matters the code already checks it.
+    "B905",
+    # contextlib.suppress in place of try/except/pass. The explicit form sits
+    # beside a comment saying WHY the failure is ignored, and that comment is
+    # worth more than the two saved lines.
+    "SIM105",
+    # int() on something already integral. Harmless, and the casts document
+    # intent where a float would be a bug.
+    "RUF046",
+    # `class IntentKind(str, Enum)` is load-bearing: the classifier's JSON
+    # schema and the director both compare these to plain strings, and StrEnum
+    # would change that behaviour on a hot path for a style point.
+    "UP042",
+    # itertools.pairwise over zip(x, x[1:]). The zip form reads as "each leg and
+    # the next" to anyone looking at a route, which is what it is.
+    "RUF007",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# The tools bind the `dcs` namespace before importing anything from it, so the
+# imports genuinely cannot come first. The reason is commented in each.
+"tools/*.py" = ["E402", "E702"]
+"src/marshall/kneeboard/*.py" = ["E402", "E702"]
+"src/marshall/srs/*.py" = ["E402", "E702"]
+"src/marshall/mission/*.py" = ["E402", "E702"]
+"director/*.py" = ["E402"]
+# A one-line stamp helper beside its only use; a def would be further
+# from the loop that reads it.
+"src/marshall/srs/atc_session.py" = ["E731"]
+# Test fixtures declare mutable class attributes on purpose.
+"tests/*.py" = ["RUF012"]
+"director/tools/*.py" = ["E402"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# The suite is unittest.TestCase throughout and stays that way -- pytest runs it
+# unchanged, and the win is the failure OUTPUT: "assertEqual failed" tells you
+# nothing about which two strings differed, and most of these tests are about
+# what a controller said.
+python_files = ["test_*.py"]

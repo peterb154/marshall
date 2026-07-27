@@ -52,7 +52,6 @@ class TestCrossTrack(unittest.TestCase):
     def test_sign_is_right_of_course_positive(self):
         # Radial 296 sits clockwise-of-nothing: it is to the RIGHT of a 124
         # inbound. Hand-checked with vectors; this pins the convention.
-        p = profile()
         self.assertGreater(asr.cross_track(asr.Position(6, 296, 2000), 124), 0)
         self.assertLess(asr.cross_track(asr.Position(6, 312, 2000), 124), 0)
 

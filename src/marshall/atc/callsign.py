@@ -157,15 +157,14 @@ _NOT_A_NAME = {
     "waypoint", "steerpoint", "position", "range", "bearing", "distance",
     "inbound", "outbound", "established", "holding", "turning", "leaving",
     "reaching", "through", "gear", "flaps", "fuel", "bingo", "engine", "angel",
-    "checking", "check", "ready", "field", "runway", "visual", "missed",
+    "checking", "check", "ready", "field", "visual", "missed",
     "transmission", "transmitting", "message", "call", "calling", "frequency",
     # Verbs that take a number straight after them in ordinary speech. "I need
     # two more minutes" became an aeroplane called "Need 2" -- and a "Need 3"
     # reached a live separation stack, where real aircraft were sequenced behind
     # something nobody had ever flown.
-    "need", "needs", "want", "wants", "got", "give", "take", "make", "call",
-    "see", "seen", "hear", "heard", "count", "counting", "about", "around",
-    "another", "only", "just", "maybe", "like", "than", "then", "over",
+    "need", "needs", "want", "wants", "got", "give", "take", "make", "see", "seen", "hear", "heard", "count", "counting", "about", "around",
+    "another", "only", "just", "maybe", "like", "than", "then",
 }
 
 _CANDIDATE = re.compile(
@@ -237,5 +236,5 @@ if __name__ == "__main__":
     for s in ["Pony 1-1", "Pony 1-2", "Pony 1", "Pony 1 flight",
               "Pony one one flight", "Pony 2", "Sockeye", "Enfield11", ""]:
         c = parse(s)
-        print(f"  {s!r:22} -> flight {c.flight!r:10} member {str(c.member):5} "
+        print(f"  {s!r:22} -> flight {c.flight!r:10} member {c.member!s:5} "
               f"canonical {c.canonical!r:10} spoken {c.spoken!r:22} as-flight {c.spoken_flight!r}")
