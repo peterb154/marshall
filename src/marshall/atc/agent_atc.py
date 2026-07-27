@@ -703,6 +703,44 @@ def altitude_instruction(g, profile) -> str:
     return f", maintain {ctl.spell_alt(want)}"
 
 
+# A talkdown call the AGENT should never have made: a range, or a heading, while
+# the engine owns the approach.
+_TALKDOWN_WORDS = re.compile(
+    r"\b(miles? from the runway|of course|come (?:left|right)|"
+    r"turn (?:left|right) heading|fly heading|heading (?:one|two|three|zero|"
+    r"four|five|six|seven|eight|niner)\b|descend (?:and maintain |to )|"
+    r"altitude should be)", re.I)
+
+
+def hush_a_second_talkdown(reply: str, g) -> tuple[str, str]:
+    """Keep the agent OFF the talkdown while the engine is flying it.
+
+    The metronome is transmitting a range, a correction and an altitude every
+    mile. The agent kept transmitting its own beside it -- "six miles from the
+    runway, mile left of course, come right heading one three zero" -- and the
+    brief has told it not to since the day the pilot called it "too chatty on
+    final". It does it anyway, and the cost is not merely noise:
+
+    THE AGENT'S CHATTER SUPPRESSES THE ENGINE'S CALLS. The metronome holds its
+    transmission while the channel is busy, and by the time the channel clears
+    the aeroplane is into the next mile -- so the 6, 5, 4 and 3 mile calls never
+    went out at all, and with them the descent instructions for those miles. The
+    pilot heard nothing about coming down until two miles:
+
+        "he missed the descent call until the last 900'"
+
+    So it stops being advice. On final the agent may acknowledge and nothing
+    else; anything that looks like a talkdown call is replaced with the
+    acknowledgement it should have been. Returns (reply, why) so the log can say
+    what was taken out rather than silently editing the controller.
+    """
+    if g is None or getattr(g, "phase", "") not in ("final", "map"):
+        return reply, ""
+    if not reply or not _TALKDOWN_WORDS.search(reply):
+        return reply, ""
+    return "", "the engine is flying the talkdown"
+
+
 def asr_call(cs: str, g, pos=None, profile=None) -> str:
     """The controller's spoken range call. Deterministic on purpose.
 
@@ -1828,15 +1866,15 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                    if _station_names else None)
 
     def interact(message: str, kind: str, tier: str = "sonnet",
-                 on_hz: float | None = None) -> None:
+                 on_hz: float | None = None, guide=None) -> None:
         answering[0] = True
         try:
-            _interact(message, kind, tier, on_hz)
+            _interact(message, kind, tier, on_hz, guide)
         finally:
             answering[0] = False
 
     def _interact(message: str, kind: str, tier: str = "sonnet",
-                  on_hz: float | None = None) -> None:
+                  on_hz: float | None = None, guide=None) -> None:
         with radio_lock:
             t0 = time.monotonic()
             try:
@@ -1846,6 +1884,12 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 reply = "Standby."
             dt = time.monotonic() - t0
             reply = for_voice(reply, agent=True)
+            # THE ENGINE OWNS THE TALKDOWN. See hush_a_second_talkdown: the
+            # agent's parallel mile calls do not merely duplicate, they hold the
+            # metronome off the air and take the descent instructions with it.
+            reply, hushed = hush_a_second_talkdown(reply, guide)
+            if hushed:
+                print(f"  .. hushed the agent on final: {hushed}", flush=True)
             if not reply or reply.lower() in NO_CALL:
                 print(f"  ATC[{kind}/{tier}] ({dt:.1f}s): (no call)", flush=True)
                 return
@@ -2588,8 +2632,16 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 "again. Silence is not an option here: he is on the ground with "
                 "a pencil and no way to know whether you heard him.")
         parts.append(f"PILOT: {transcript}")
+        # The current geometry goes with it so the transmit path can tell
+        # whether the engine is already flying him down.
+        _g = None
+        if _fix is not None:
+            from marshall.atc import asr as _asr2
+            _g = _asr2.guide(_fix, profile,
+                             on_missed=flying_the_missed(known, _fix, profile, ctl)
+                             if known else False)
         interact("\n".join(parts), "pilot", route_tier(transcript),
-                 on_hz=heard_hz)
+                 on_hz=heard_hz, guide=_g)
         # If that answer WAS a clearance, his next transmission is the read-back.
         if known and is_a_clearance(_last_said[0]):
             _awaiting_readback[known] = time.time()

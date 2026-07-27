@@ -80,11 +80,37 @@ def unbind(session_id: str, callsign: str) -> None:
                      (session_id, callsign))
 
 
+# HOW LONG A POSITIVE IDENTIFICATION IS WORTH ANYTHING.
+#
+# A radar tag is a statement about an aeroplane that is flying NOW. It survived
+# twelve hours and a mission restart: Hoover took an F-16 slot, called himself
+# Falcon 1-1, and the scope still tagged his track "Hammer 1-1" from a Jug
+# sortie the previous morning. The geometry then could not match his callsign to
+# any track, so it fell silent, and the model improvised an entire approach --
+# two of them -- while the pilot wondered why he was being flown into the sea.
+#
+#     "initially he was running on stale data.. that shouldn't be possible."
+#
+# Quite. A session's identifications are good for one sortie. Two hours is
+# longer than any approach here and far shorter than the gap between them, and
+# an expired binding costs one transmission to re-establish -- the controller
+# asks who is calling, which he should be willing to do anyway.
+BINDING_TTL_SEC = 2 * 60 * 60
+
+
 def bindings_for(session_id: str) -> dict[str, str]:
-    """Current {track_label: callsign} for this session, for radar annotation."""
+    """Current {track_label: callsign} for this session, for radar annotation.
+
+    Expired bindings are not returned AND are deleted, so a stale tag cannot
+    come back the moment somebody re-reads the table.
+    """
     try:
         _ensure_table()
         with get_pool().connection() as conn:
+            conn.execute(
+                "DELETE FROM contacts WHERE session_id=%s "
+                "AND identified_at < now() - make_interval(secs => %s)",
+                (session_id, BINDING_TTL_SEC))
             rows = conn.execute(
                 "SELECT track_label, callsign FROM contacts WHERE session_id=%s",
                 (session_id,)).fetchall()

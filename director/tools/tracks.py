@@ -155,7 +155,7 @@ def _upsert(u) -> None:
             """
             INSERT INTO tracks (name, label, type, coalition, geog, alt_ft, heading, speed_kt, last_seen)
             VALUES (%s, %s, %s, %s, ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography,
-                    %s, %s, now())
+                    %s, %s, %s, now())
             ON CONFLICT (name) DO UPDATE SET
                 label=EXCLUDED.label, type=EXCLUDED.type, coalition=EXCLUDED.coalition,
                 geog=EXCLUDED.geog, alt_ft=EXCLUDED.alt_ft, heading=EXCLUDED.heading,

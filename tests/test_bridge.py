@@ -1387,3 +1387,63 @@ class TestTheAltitudeCallIsAnInstruction(unittest.TestCase):
     def test_one_mile_is_not_one_miles(self):
         said, _ = self.call_at(1)
         self.assertIn("one mile from the runway", said)
+
+
+class TestTheEngineOwnsTheTalkdown(unittest.TestCase):
+    """The agent ran a second talkdown beside the engine's, and it cost the
+    pilot his descent.
+
+        "He switched between right/left and headings on final. Also missed the
+         descent call until the last 900'"
+
+    Both from one cause. The metronome was giving relative corrections every
+    mile; the agent was giving absolute headings between them -- and because the
+    channel courtesy holds the metronome while somebody is transmitting, the 6,
+    5, 4 and 3 mile calls never went out at all. The descent instructions live in
+    those calls, so the first he heard about coming down was at two miles.
+    """
+
+    class G:
+        def __init__(self, phase):
+            self.phase = phase
+
+    AGENT_TALKDOWN = [
+        "Falcon one one, six miles from the runway, mile left of course, "
+        "come right heading one three zero.",
+        "Falcon one one, four miles from the runway, slightly left of course, "
+        "come right heading one three three.",
+        "Falcon one one, turn left heading two nine five, maintain two thousand.",
+        "Falcon one one, descend and maintain two thousand.",
+    ]
+
+    def test_a_second_talkdown_is_hushed(self):
+        for said in self.AGENT_TALKDOWN:
+            with self.subTest(said=said):
+                out, why = agent_atc.hush_a_second_talkdown(said, self.G("final"))
+                self.assertEqual(out, "")
+                self.assertTrue(why)
+
+    def test_an_acknowledgement_still_goes_out(self):
+        """He is allowed to answer the pilot -- just not to fly him."""
+        for said in ("Falcon one one, roger.",
+                     "Falcon one one, roger, cleared to land runway one three, "
+                     "wind two seven zero at two zero.",
+                     "Falcon one one, say again."):
+            with self.subTest(said=said):
+                out, why = agent_atc.hush_a_second_talkdown(said, self.G("final"))
+                self.assertEqual(out, said)
+                self.assertEqual(why, "")
+
+    def test_off_the_approach_he_may_vector_normally(self):
+        """This is a rule about the FINAL, not a muzzle. While repositioning the
+        agent's headings are the only ones there are."""
+        said = "Falcon one one, turn left heading two nine five, maintain two thousand."
+        for phase in ("vector", "missed", ""):
+            with self.subTest(phase=phase):
+                out, _ = agent_atc.hush_a_second_talkdown(said, self.G(phase))
+                self.assertEqual(out, said)
+
+    def test_no_geometry_means_no_opinion(self):
+        said = "Falcon one one, six miles from the runway, come right heading one three zero."
+        out, _ = agent_atc.hush_a_second_talkdown(said, None)
+        self.assertEqual(out, said)
