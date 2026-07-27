@@ -140,6 +140,11 @@ class Position:
     radial_deg: float           # bearing FROM the field TO the aircraft
     alt_ft: int
     heading_deg: float = 0.0
+    # Groundspeed in knots, when radar has it. The vertical engine cannot plan
+    # a descent without it -- 500 fpm is 2.5 miles at 150 knots and 5 at 300 --
+    # and 0 means "not known", which `descent` handles by assuming a slow
+    # aeroplane and therefore starting down early.
+    speed_kt: float = 0.0
 
 
 @dataclass

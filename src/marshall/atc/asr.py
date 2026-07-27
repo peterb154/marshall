@@ -170,12 +170,24 @@ def safe_alt(pos: Position, profile) -> int:
     # aircraft over the beach.
     msa = (profile.min_safe_ft(pos.radial_deg, pos.range_nm)
            if hasattr(profile, "min_safe_ft") else profile.platform_ft)
+    # WHEN to start down is its own problem -- see descent.py. The old answer
+    # here was a fixed feet-per-mile gradient, which is only right at one
+    # groundspeed: it started a fast aeroplane down far too early and a slow one
+    # too late. "Still taking me down to 2000 well before the initial fix."
+    #
+    # The point he has to be at platform by is the INITIAL FIX, not the runway.
+    from marshall.atc import descent as D
+
     to_go = max(0.0, pos.range_nm - profile.final_intercept_nm)
+    d = D.plan(pos.alt_ft or profile.platform_ft, profile.platform_ft,
+               to_go, getattr(pos, "speed_kt", 0.0))
     # Rounded to five hundred: a controller assigns "four thousand five
     # hundred", never "four thousand five hundred and forty-four".
-    on_profile = _round_to(profile.platform_ft + to_go * FT_PER_NM, 500)
+    want = _round_to(d.assign_ft, 500)
     here = _round_to(pos.alt_ft, 500) if pos.alt_ft else 0
-    return max(msa, min(on_profile, here) if here else on_profile)
+    # Never above where he already is: this is a descent, and an aeroplane that
+    # is low is not asked to climb back onto a profile.
+    return max(msa, min(want, here) if here else want)
 
 
 def iaf_nm(profile) -> float:

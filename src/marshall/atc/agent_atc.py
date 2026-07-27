@@ -516,9 +516,14 @@ OVERHEAD_NM = 4.0
 _RANGE = re.compile(r"\[([^\]]+)\][^|]*?(\d+(?:\.\d+)?)\s*nm", re.I)
 
 
+# Groundspeed is optional on the end: the sim gives it, but a picture built
+# before the streamer had it -- or a hand-written one in a test -- must still
+# parse. A missing speed is 0, which the descent planner reads as "not known"
+# and handles by assuming a slow aeroplane.
 _FIX = re.compile(
     r"\[([^\]]+)\][^|]*?(\d+(?:\.\d+)?)\s*nm[^|]*?on the (\d+)\s*radial"
-    r"[^|]*?([\d,]+)\s*ft(?:[^|]*?heading\s*(\d+))?", re.I)
+    r"[^|]*?([\d,]+)\s*ft(?:[^|]*?heading\s*(\d+))?"
+    r"(?:[^|]*?(\d+)\s*knots)?", re.I)
 
 
 def true_heading(grid_hdg: float, profile) -> float:
@@ -551,12 +556,13 @@ def radar_fix(scope: str, cs: str, profile=None) -> object | None:
         return None
     from marshall.atc import asr, callsign as C
     want = C.parse(cs).flight.lower()
-    for tag, nm, radial, alt, hdg in _FIX.findall(scope):
+    for tag, nm, radial, alt, hdg, kt in _FIX.findall(scope):
         if C.parse(tag).flight.lower() == want:
             h = float(hdg) if hdg else 0.0
             return asr.Position(float(nm), float(radial),
                                 int(alt.replace(",", "")),
-                                true_heading(h, profile) if profile else h)
+                                true_heading(h, profile) if profile else h,
+                                speed_kt=float(kt) if kt else 0.0)
     return None
 
 
@@ -582,11 +588,12 @@ def radar_fixes(scope: str, profile=None) -> list[tuple[str, object]]:
     """
     from marshall.atc import asr
     out = []
-    for tag, nm, radial, alt, hdg in _FIX.findall(scope or ""):
+    for tag, nm, radial, alt, hdg, kt in _FIX.findall(scope or ""):
         h = float(hdg) if hdg else 0.0
         out.append((tag, asr.Position(float(nm), float(radial),
                                       int(alt.replace(",", "")),
-                                      true_heading(h, profile) if profile else h)))
+                                      true_heading(h, profile) if profile else h,
+                                      speed_kt=float(kt) if kt else 0.0)))
     return out
 
 

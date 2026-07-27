@@ -535,13 +535,30 @@ class TestTerrain(unittest.TestCase):
         self.assertLess(g.altitude_ft, R.mva_for(75, 20))
 
     def test_he_reaches_platform_at_the_turn_on_and_not_before(self):
-        # "No sense descending so early": platform at twenty miles means flying
-        # twelve miles low and slow for nothing.
-        far = asr.guide(asr.Position(20, 304, 5500, 124), self.p)
+        """"No sense descending so early" -- but early is now a computed point.
+
+        It used to be a fixed feet-per-mile gradient, which is only right at one
+        groundspeed. What decides it now is how long the descent TAKES: 1,000 ft
+        at 500 fpm is two minutes, which is five miles at 150 knots, so an
+        aeroplane with nine miles to run keeps its altitude. See descent.py.
+        """
+        inbound = (self.p.final_crs_true + 180) % 360
+        far = asr.guide(asr.Position(20, inbound, 3000, self.p.final_crs_true,
+                                     speed_kt=150), self.p)
         at_turn_on = asr.guide(
-            asr.Position(self.p.final_intercept_nm, 304, 2500, 124), self.p)
-        self.assertGreater(far.altitude_ft, self.p.platform_ft)
+            asr.Position(self.p.final_intercept_nm, inbound, 2500,
+                         self.p.final_crs_true, speed_kt=150), self.p)
+        self.assertGreater(far.altitude_ft, self.p.platform_ft,
+                           "sent to platform with nine miles still to run")
         self.assertEqual(at_turn_on.altitude_ft, self.p.platform_ft)
+
+    def test_a_fast_aeroplane_starts_down_earlier_than_a_slow_one(self):
+        """The whole reason this stopped being a gradient. Same height, same
+        distance, same 500 fpm -- and the jet needs twice the room."""
+        from marshall.atc import descent as D
+        slow = D.top_of_descent_nm(6000, 2000, 150)
+        fast = D.top_of_descent_nm(6000, 2000, 300)
+        self.assertGreater(fast, slow * 1.8)
 
     def test_the_descent_is_monotonic(self):
         alt, last = 5500, None
@@ -775,3 +792,56 @@ class TestTheReversalHooverFlew(unittest.TestCase):
         for a, b in zip(got, got[1:]):
             self.assertLessEqual(abs(G.angle_diff(b, a)), 90,
                                  f"reversed from {a} to {b} in one call: {got}")
+
+
+class TestTheDescentPlanner(unittest.TestCase):
+    """When to start down. Its own engine, because a RATE is not a GRADIENT.
+
+        "It should try to time my altitude so I arrive at the if 2000 from
+         wherever I was... take current alt, ground speed and distance from IF
+         to calculate a 500fpm descent and start down point."
+
+    500 fpm is a comfortable descent in anything; what it costs in MILES depends
+    entirely on how fast he is going. The old code used a fixed feet-per-mile
+    figure, which is correct at exactly one groundspeed and wrong for every
+    other aeroplane.
+    """
+
+    def test_the_distance_a_descent_takes_scales_with_speed(self):
+        from marshall.atc import descent as D
+        self.assertAlmostEqual(D.miles_to_lose(1000, 150), 5.0, places=1)
+        self.assertAlmostEqual(D.miles_to_lose(1000, 300), 10.0, places=1)
+
+    def test_high_and_far_keeps_his_altitude(self):
+        from marshall.atc import descent as D
+        d = D.plan(alt_ft=6000, target_ft=2000, to_go_nm=40, groundspeed_kt=150)
+        self.assertFalse(d.descending)
+        self.assertEqual(d.assign_ft, 6000)
+
+    def test_past_the_top_of_descent_he_is_sent_down(self):
+        from marshall.atc import descent as D
+        d = D.plan(alt_ft=6000, target_ft=2000, to_go_nm=10, groundspeed_kt=150)
+        self.assertTrue(d.descending)
+        self.assertEqual(d.assign_ft, 2000)
+
+    def test_the_start_point_is_where_the_descent_actually_fits(self):
+        """Arrive AT the fix at the target, not five miles before it."""
+        from marshall.atc import descent as D
+        d = D.plan(alt_ft=4000, target_ft=2000, to_go_nm=99, groundspeed_kt=180)
+        self.assertAlmostEqual(d.needed_nm, 12.0, places=1)
+        self.assertGreater(d.start_nm, d.needed_nm)     # a little lead
+
+    def test_already_low_is_left_alone(self):
+        """An aeroplane below the profile is not asked to climb back onto it."""
+        from marshall.atc import descent as D
+        d = D.plan(alt_ft=1500, target_ft=2000, to_go_nm=5, groundspeed_kt=150)
+        self.assertFalse(d.descending)
+        self.assertEqual(d.assign_ft, 1500)
+
+    def test_an_unknown_speed_is_assumed_SLOW(self):
+        """Guessing low starts him down early, which costs fuel. Guessing high
+        starts him late, which does not work."""
+        from marshall.atc import descent as D
+        unknown = D.miles_to_lose(2000, 0)
+        self.assertAlmostEqual(unknown, D.miles_to_lose(2000, D.ASSUMED_KT))
+        self.assertLess(unknown, D.miles_to_lose(2000, 300))

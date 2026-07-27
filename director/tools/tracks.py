@@ -31,6 +31,7 @@ except ImportError:
 from strands_pg._pool import get_pool
 from tools.dcs import BATUMI_LAT, BATUMI_LON, DCS_GRPC_ADDR, _M_TO_FT
 
+_MS_TO_KT = 1.94384
 _MAGVAR = 6.0   # Caucasus magnetic variation (E); pilots fly magnetic headings
 # Named fixes we can vector to, as lat/lon.
 #
@@ -139,6 +140,7 @@ def _ensure_table() -> None:
                 geog       geography(Point, 4326),
                 alt_ft     DOUBLE PRECISION,
                 heading    DOUBLE PRECISION,
+                speed_kt   DOUBLE PRECISION,
                 last_seen  TIMESTAMPTZ NOT NULL DEFAULT now()
             )
             """)
@@ -151,16 +153,22 @@ def _upsert(u) -> None:
     with get_pool().connection() as conn:
         conn.execute(
             """
-            INSERT INTO tracks (name, label, type, coalition, geog, alt_ft, heading, last_seen)
+            INSERT INTO tracks (name, label, type, coalition, geog, alt_ft, heading, speed_kt, last_seen)
             VALUES (%s, %s, %s, %s, ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography,
                     %s, %s, now())
             ON CONFLICT (name) DO UPDATE SET
                 label=EXCLUDED.label, type=EXCLUDED.type, coalition=EXCLUDED.coalition,
                 geog=EXCLUDED.geog, alt_ft=EXCLUDED.alt_ft, heading=EXCLUDED.heading,
+                speed_kt=EXCLUDED.speed_kt,
                 last_seen=now()
             """,
             (u.name, label, u.type, u.coalition, u.position.lon, u.position.lat,
-             u.position.alt * _M_TO_FT, u.orientation.heading))
+             u.position.alt * _M_TO_FT, u.orientation.heading,
+             # GROUNDSPEED, in knots. The sim gives metres per second; the
+             # descent planner needs to know how long a mile takes, because a
+             # 500 fpm descent covers a very different distance at 150 knots
+             # than at 300.
+             u.velocity.speed * _MS_TO_KT))
 
 
 def _delete(name: str) -> None:
@@ -272,7 +280,7 @@ def radar_cached(bindings: dict | None = None) -> list[str] | None:
                 """
                 WITH bcn AS (
                     SELECT ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography AS g)
-                SELECT t.label, t.type, t.alt_ft, t.heading,
+                SELECT t.label, t.type, t.alt_ft, t.heading, t.speed_kt,
                        ST_Distance(t.geog, bcn.g) / 1852.0 AS nm,
                        degrees(ST_Azimuth(bcn.g, t.geog)) AS radial
                 FROM tracks t, bcn
@@ -374,16 +382,22 @@ def in_formation(label: str) -> bool:
 def _render(rows: list, bindings: dict) -> list[str]:
     lines = []
     for group in _clusters(rows):
-        label, typ, alt_ft, heading, nm, radial = group[0]
+        label, typ, alt_ft, heading, speed_kt, nm, radial = group[0]
+        # Groundspeed is in the picture because the vertical engine cannot plan
+        # a descent without it: 500 fpm is a very different gradient at 150
+        # knots than at 300. Omitted when the sim has not given us one, rather
+        # than printed as zero -- a controller who reads out a speed he does not
+        # have is worse than one who says nothing.
+        spd = f", {speed_kt:.0f} knots" if speed_kt else ""
         tag = f" [{bindings[label]}]" if label in bindings else ""
         if len(group) > 1:
             others = ", ".join(r[0] for r in group[1:])
             lines.append(
                 f"{label}{tag} ({typ}) IN FORMATION with {others} — "
                 f"{len(group)} ships, lead {nm:.1f} nm on the {radial:03.0f} "
-                f"radial, {alt_ft:,.0f} ft, heading {heading:03.0f}")
+                f"radial, {alt_ft:,.0f} ft, heading {heading:03.0f}{spd}")
         else:
             lines.append(
                 f"{label}{tag} ({typ}): {nm:.1f} nm on the {radial:03.0f} radial, "
-                f"{alt_ft:,.0f} ft, heading {heading:03.0f}")
+                f"{alt_ft:,.0f} ft, heading {heading:03.0f}{spd}")
     return lines
