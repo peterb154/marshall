@@ -67,17 +67,34 @@ VISUAL = [
 # picks the likelier one sounds decisive and clears him on somebody else's
 # sortie.
 CLEARANCE = [
-    ("Sockeye", "Batumi Ground, Pony one one, at the ramp, request IFR clearance, "
-                "Samovar Three."),
-    ("Sockeye", "Pony one one, cleared to Batumi as filed, seven thousand, one two "
-                "four decimal zero, squawk as assigned."),
-    ("Bandit",  "Batumi Ground, Pony one two, request clearance for the CAS over "
-                "Tsutsnvati."),
-    ("Bandit",  "Pony one two, the beacon letdown one, please."),
+    # Card section G, in the order a pilot flies it, so the dry run and the
+    # cockpit are testing the same conversation. Two radios, because G9 is two
+    # men asking for the same sortie.
+    ("Sockeye", "Batumi Ground, Hoover one one, request IFR clearance, Marlin."),
+    # G2. Read back what he ACTUALLY said -- the squawk is derived from the
+    # flight id and cannot be written into a script, which is the same reason a
+    # correct read-back is a thing only a pilot can test. @readback echoes the
+    # controller's last transmission, so the path gets exercised here too.
+    ("Sockeye", "@readback"),
+    ("Sockeye", "Hoover one one, cleared to Batumi as filed, three thousand, "
+                "departure one two four decimal zero, squawk four one two six."),
+    ("Sockeye", "Hoover one one, request clearance for the weather run out to "
+                "Ingress."),
+    ("Sockeye", "Hoover one one, request clearance for the CAS over Tsutsnvati."),
+    ("Sockeye", "Hoover one one, the beacon letdown one."),
+    ("Sockeye", "Hoover one one, request clearance to Vaziani."),
+    ("Sockeye", "Hoover one one, request a change, make it Anvil."),
+    ("Bandit",  "Batumi Ground, Shooter one one, request clearance, Marlin."),
 ]
 
+# G1 and G2 alone. A correct read-back must be ANSWERED, and the rule that says
+# so competes with the airborne one that says a correct read-back is met with
+# silence -- so it is worth being able to run those two exchanges on their own,
+# several times, rather than inferring stability from one pass of a ten-row card.
+READBACK = CLEARANCE[:2]
+
 SCRIPTS = {"formation": FORMATION, "single": SINGLE, "visual": VISUAL,
-           "clearance": CLEARANCE}
+           "clearance": CLEARANCE, "readback": READBACK}
 
 
 def run(script, session_id: str, sep_always: bool = True,
@@ -104,7 +121,13 @@ def run(script, session_id: str, sep_always: bool = True,
     # callsigns -- the live bridge does this when it primes the transcriber.
     agent_atc.plan_labels()
 
+    last = ""
     for srs, text in script:
+        if text.startswith("@readback"):
+            # A read-back is the pilot saying the numbers back. Strip the
+            # controller's opening callsign and lead with the pilot's own.
+            body = last.split(",", 2)[-1].strip() if last else "say again"
+            text = f"Hoover one one, {body}"
         print(f"\nPILOT [SRS:{srs}]: {text}", flush=True)
         engaged = sep_always or len(ctl.aircraft) >= 2
         directive, stack = (agent_atc.separation_context(ctl, text, scope)
@@ -153,7 +176,8 @@ def run(script, session_id: str, sep_always: bool = True,
             print(f"  !! agent error: {type(e).__name__}: {e}", flush=True)
             continue
         dt = time.monotonic() - t0
-        print(f"  ATC ({dt:.1f}s): {agent_atc.for_voice(reply)}", flush=True)
+        last = agent_atc.for_voice(reply)
+        print(f"  ATC ({dt:.1f}s): {last}", flush=True)
 
     print("\n--- controller state ---")
     for cs, ac in sorted(ctl.aircraft.items()):
@@ -173,5 +197,5 @@ if __name__ == "__main__":
     # Clearance delivery is Tower's other hat -- one man has ground, delivery and
     # tower at a field this size -- so the clearance script is answered by him.
     run(SCRIPTS[name], session_id=f"dryrun-{name}-{stamp}",
-        sep_always=name != "clearance",
-        station="tower" if name == "clearance" else "approach")
+        sep_always=name not in ("clearance", "readback"),
+        station=("tower" if name in ("clearance", "readback") else "approach"))

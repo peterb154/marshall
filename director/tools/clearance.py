@@ -266,8 +266,12 @@ def clearance_tools(mission: str = "default") -> list:
         return (f"SAY THIS, verbatim and complete, after his callsign: {words}\n"
                 f"(matched on {why}; plan {got.get('label') or plan.get('name')}. "
                 f"Every element above is read out -- the departure frequency is "
-                f"not optional. Expect a read-back and correct him if he gets a "
-                f"number wrong.)")
+                f"not optional.\n"
+                f"HIS NEXT TRANSMISSION WILL BE THE READ-BACK. Answer it: call "
+                f"clearance_read_back and say \"readback correct\" if he got it, "
+                f"or name the element he got wrong and ask for that one again. "
+                f"Silence is not an answer here -- he is on the ground with a "
+                f"pencil and no way to tell whether you heard him.)")
 
     @tool
     def clearance_read_back(callsign: str, correct: bool = True) -> str:

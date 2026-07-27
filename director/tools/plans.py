@@ -7,13 +7,17 @@ Here they do not. A sortie leaves Batumi, does something, and comes back to
 Batumi, so every plan on file shares an origin and a destination and the civil
 key separates nothing:
 
-    Samovar One    to Batumi   CAS over Tsutsnvati
-    Samovar Two    to Batumi   Night patrol, coast
-    Samovar Three  to Batumi   Ferry spares to Kutaisi
+    Samovar  to Batumi   CAS over Tsutsnvati
+    Kettle   to Batumi   CAS over Tsutsnvati, beacon letdown on return
+    Lantern  to Batumi   Weather reconnaissance out to Ingress
+    Marlin   to Batumi   Night patrol of the coastline
+    Anvil    to Batumi   Escort a transport as far as Kobuleti
 
 What separates them is what a pilot would say anyway -- WHAT he is doing and
-WHERE. "CAS over Tsutsnvati" names one of those three and nothing else, without
-anybody being taught a syntax.
+WHERE. "The weather run out to Ingress" names one of those five and nothing
+else, without anybody being taught a syntax. And where two really are alike --
+Samovar and Kettle are the same sortie flown two ways -- the answer is a
+question, not the better-scoring guess.
 
 So the match runs over the task, the places in the route, the label and the
 destination, in that order of usefulness. The label stays as the unambiguous
@@ -150,7 +154,12 @@ def ask_which(plans: list[dict]) -> str:
     for p in plans[:4]:
         task = (p.get("task") or "").strip()
         label = (p.get("label") or p.get("name") or "").strip()
-        bits.append(f"{task}, {label}" if task else label)
+        # "filed as" rather than a bare name. Handed the label on its own, the
+        # controller reached for the only word he had for a name on a radio and
+        # called it a CALLSIGN -- which is a specific thing that this is not, and
+        # a pilot hearing "callsign Kettle" has been told there is an aeroplane
+        # out there called Kettle.
+        bits.append(f"{task}, filed as {label}" if task else f"filed as {label}")
     return "I have " + "; or ".join(bits) + ". Say which."
 
 

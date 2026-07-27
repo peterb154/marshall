@@ -221,3 +221,21 @@ class TestNamingSomethingNobodyFiled(unittest.TestCase):
         got = P.pick("Hoover one one, request clearance to Vaziani", FILED)
         self.assertTrue(got.get("ambiguous"))
         self.assertFalse(got.get("none"))
+
+
+class TestTheWordsOfTheQuestion(unittest.TestCase):
+    """A plan's name is not a callsign, and the controller has to be given the
+    word for it. Handed a bare label he reached for the only name-on-a-radio he
+    knows and said "callsign Kettle", which tells a pilot there is an aeroplane
+    out there called Kettle."""
+
+    def test_the_label_is_offered_as_something_FILED(self):
+        said = P.ask_which(FILED[:2])
+        self.assertIn("filed as", said)
+        self.assertNotIn("callsign", said.lower())
+
+    def test_it_describes_them_before_it_names_them(self):
+        """A pilot recognises what he is doing faster than a name he was given
+        yesterday, so the task comes first in each option."""
+        said = P.ask_which(FILED[:1])
+        self.assertLess(said.index("CAS over Tsutsnvati"), said.index("filed as"))

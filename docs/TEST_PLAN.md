@@ -65,47 +65,86 @@ clearance delivery, because a field this size does not staff a seat per phase of
 flight. Everything here is new and has never been said to a human.
 
 **The board is on the PLANS tab** of this kneeboard, read live from the director
-— five plans, one word each. Two of them share a task on purpose (the CAS over
-Tsutsnvati, flown two ways) and are marked as such: that pair is what G3 is for.
+— five plans, one word each. Samovar and Kettle share a task on purpose (the CAS
+over Tsutsnvati, flown two ways) and are marked as such; that pair is G5.
+
+Ten to fifteen minutes on the ramp, in order — each row sets up the next, so
+they read as one conversation rather than eight. **Have something to write on.**
+The whole point of G2 is whether you can get it down.
 
 Most of this is script-checked already: which plan a request resolves to
-(`tools/plan_sweep.py`, twelve phrasings), and that two flights can hold two
-plans without treading on each other (`tools/plan_assign_check.py`). What a
-script cannot judge is whether the clearance is **copyable** — whether a man with
-a pencil, in a cockpit, can actually get it down at the pace it is read.
+(`tools/plan_sweep.py`, twelve phrasings) and that two flights can hold two plans
+without treading on each other (`tools/plan_assign_check.py`). What no script can
+judge is whether a clearance is **copyable** — whether a man with a pencil, in a
+cockpit, can actually get it down at the pace it is read.
 
 | ID | Prio | Test | What should happen | Fix under test |
 |----|------|------|--------------------|----------------|
-| G1 | P1 | Ask for your clearance in your own words — *"Batumi Ground, Hoover one one, request IFR clearance, Marlin"* | The full CRAFT clearance: cleared to, route, altitude, **departure frequency**, squawk. Write it down as he says it | [#1] `request_clearance` |
-| G2 | P1 | Read it back, and get one number **wrong** on purpose | He corrects the number you missed and asks for that part again — not the whole clearance | [#1] `clearance_read_back` |
-| G3 | P1 | Ask for something two plans fit — *"request clearance for the CAS over Tsutsnvati"* | A **question**, not a clearance. He must not pick one for you | [#1] `plans.pick` |
-| G4 | P2 | Ask for a clearance to somewhere nobody filed — *"request clearance to Vaziani"* | *"nothing on file"* and an ask, not the nearest plan read out | [#1] `plans.pick` |
-| G5 | P2 | Airborne later, ask *"what am I doing"* or *"where am I going next"* | He answers from your plan without you repeating it, and does not read you ranges if you are in something with a moving map | [#1] `flight_plan_help` |
+| G1 | P1 | *"Batumi Ground, Hoover one one, request IFR clearance, Marlin"* | The **whole** CRAFT clearance: cleared to Batumi, as filed, three thousand, departure frequency one two four decimal zero, and a squawk | [#1] `request_clearance` |
+| G2 | P1 | Write G1 down as he says it, then read it back **correctly** | You got all five elements without asking for a repeat, and he says *"readback correct"* and stops talking | [#1] copyable |
+| G3 | P1 | Ask again for Marlin, and read it back with **one number wrong** | He corrects **that number only** and asks for it again — not the whole clearance, and never a shrug | [#1] `clearance_read_back` |
+| G4 | P1 | Ask by what you are DOING, no name — *"request clearance for the weather run out to Ingress"* | Lantern's clearance, five thousand. You should never have had to say a plan name | [#1] `plans.pick` |
+| G5 | P1 | *"request clearance for the CAS over Tsutsnvati"* | A **question** naming both — the plain one, and the one with the beacon letdown on return. He must not pick for you | [#1] `plans.pick` |
+| G6 | P1 | Answer it — *"the beacon letdown one"* | Kettle: eleven thousand, and the route out through Ingress to Tsutsnvati | [#1] `plans.pick` |
+| G7 | P2 | *"request clearance to Vaziani"* | *"nothing on file"* and a question. **Not** the nearest plan read out as though you had asked for it | [#1] `plans.pick` |
+| G8 | P2 | After a clearance, change your mind — *"request a change, make it Anvil"* | A **complete** new clearance (four thousand), read back again. He must not say only what changed | [#1] `assign` amends |
+| G9 | P2 | With Shooter: both of you ask for **Marlin**, one after the other | Both get it, both are cleared to three thousand, and neither clearance changes the other's | [#1] one plan, two flights |
+| G10 | P3 | Airborne later — *"what am I doing"* or *"where am I going next"* | He answers from your plan without you repeating it, and does not read you ranges you do not need | [#1] `flight_plan_help` |
 
 **What each one is actually checking**
 
-**G1** — The one that matters. The words come back from a tool already finished,
+**G1** — The one that matters. The words come back from a tool already finished
 and the question is whether the controller reads them or improvises around them.
-The **departure frequency is the element to watch**: it was dropped in the first
-dry run, twice, and a pilot who never hears it is airborne not knowing whom to
-call. Copyable at speaking pace is the other half — if you cannot write it down
-without asking for a repeat, say so, that is a real finding.
+The **departure frequency is the element to watch**: it went missing in the dry
+run twice, and a pilot who never hears it is airborne not knowing whom to call.
+The squawk is worth a glance too — it is invented, because DCS has no
+transponder, but it is invented in octal, so **a digit above seven is a bug**.
 
-**G2** — "Readback correct" is a ground phrase and this is the one place it
-belongs. Getting a number wrong on purpose is the test: a controller who accepts
-a wrong read-back has recorded an agreement that was never made.
+**G2** — Not a formality. A clearance is the one long transmission on the
+frequency and it exists to be written down; if you cannot get five elements down
+at the pace he reads them, that is a real finding and the fix is his pacing, not
+your pencil. A correct read-back is also the only place *"readback correct"*
+belongs — airborne, silence is the acknowledgement.
 
-**G3** — Two plans on file are the same sortie flown two ways, differing only in
-the approach at the end. Asking is the correct answer and the hard one — the
-easy failure sounds decisive and clears you on somebody else's plan.
+**G3** — A controller who accepts a wrong read-back has recorded an agreement
+that was never made. Get the squawk wrong, or the altitude; the failure to watch
+for is him reading the entire clearance again, which on a busy frequency is how a
+read-back correction becomes worse than the error.
 
-**G4** — The opposite failure. A resolver that always picks its best match never
-says "nothing on file", which looks perfect until the night it routes you
-somewhere you did not ask to go.
+**G4** — The whole design bet. A pilot says what he is DOING, not a database
+name — "the weather run out to Ingress" is how he would ask a real controller,
+and it names one plan here. If you have to fall back on the label, say so: the
+labels are the escape hatch, not the interface.
 
-**G5** — What the aeroplane can do decides how much help you get: a moving map
+**G5** — Two plans on file are the same sortie flown two ways, differing only in
+the recovery at the end. Asking is the correct answer and the hard one; the easy
+failure sounds decisive and clears you on somebody else's plan. Listen for
+whether he describes them by what they ARE — a name you were given yesterday is
+not something to recognise under a running engine.
+
+**G6** — And having asked, he has to use your answer. Check the **level**: eleven
+thousand is Kettle, three thousand is Marlin, and getting Samovar instead is
+invisible until you are on the wrong approach at the end of the sortie.
+
+**G7** — The opposite failure to G5. A resolver that always picks its best match
+never says "nothing on file", which looks perfect right up until the night it
+routes you somewhere you never asked to go.
+
+**G8** — An amendment REPLACES; it does not accumulate. Two live plans for one
+aeroplane is the ambiguity the whole design removes, and a controller who reads
+you only the changed part leaves you holding half of one clearance and half of
+another. Your read-back also stops counting — you agreed to the old one.
+
+**G9** — The reason plans became templates. Assignment COPIES, so one plan can be
+flown by two aeroplanes at once and by the squadron again next week. Script-
+checked already; what a script cannot tell you is whether it sounds right on the
+radio when two men ask for the same sortie a minute apart.
+
+**G10** — What the aeroplane can do decides how much help you get: a moving map
 wants the fix named and nothing else, a Mustang wants position reports and
-vectors. It is keyed on the type radar reports, so nobody has to declare it.
+vectors. It is keyed on the type radar reports, so nobody has to declare it — if
+you are in the Mustang and he is terse, or in something modern and he will not
+stop reading you ranges, that is the bug.
 
 ---
 

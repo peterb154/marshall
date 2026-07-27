@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from pathlib import Path
 
 # Logging: so every iteration's transcript -- prompts, tool calls with args and
@@ -21,6 +22,7 @@ logging.basicConfig(
 )
 logging.getLogger("strands").setLevel(
     logging.DEBUG if os.environ.get("STRANDS_DEBUG") else logging.INFO)
+log = logging.getLogger(__name__)
 
 from strands import Agent
 from strands.agent.conversation_manager import SlidingWindowConversationManager
@@ -143,18 +145,39 @@ _FAST = _bedrock(FAST_MODEL_ID)
 _SMART = _bedrock(MODEL_ID)
 _atc_agents: dict[str, Agent] = {}
 
+# One agent per session, and an agent cannot take two calls at once. The bridge
+# gives up on a slow answer and moves on; the agent does not, so the NEXT
+# transmission arrives while it is still thinking and strands raises
+# ConcurrencyException -- which surfaced as an HTTP 500. One slow call then
+# poisoned every transmission after it, and the pilot got silence with no way to
+# tell why. Seen in a dry run: one 30-second answer, then three 500s in a row.
+_atc_busy: dict[str, threading.Lock] = {}
+
 
 @app.post("/atc")
 def atc_endpoint(body: dict) -> dict:
     session_id, message = body["session_id"], body["message"]
     tier = body.get("tier", "sonnet")
-    agent = _atc_agents.get(session_id)
-    if agent is None:
-        agent = build_agent(session_id)
-        _atc_agents[session_id] = agent
-    agent.model = _FAST if tier == "haiku" else _SMART
-    result = agent(message)
-    return {"session_id": session_id, "response": str(result), "tier": tier}
+    lock = _atc_busy.setdefault(session_id, threading.Lock())
+    # Non-blocking on purpose. QUEUEING would be worse on a radio than dropping:
+    # the caller has already given up and moved on, so a queued answer arrives
+    # after the next exchange has started and the controller replies to a
+    # transmission two ago. Better to say nothing and let him ask again.
+    if not lock.acquire(blocking=False):
+        log.warning("session %s is still answering the previous call; "
+                    "dropping this one rather than queueing it", session_id)
+        return {"session_id": session_id, "response": "", "busy": True,
+                "tier": tier}
+    try:
+        agent = _atc_agents.get(session_id)
+        if agent is None:
+            agent = build_agent(session_id)
+            _atc_agents[session_id] = agent
+        agent.model = _FAST if tier == "haiku" else _SMART
+        result = agent(message)
+        return {"session_id": session_id, "response": str(result), "tier": tier}
+    finally:
+        lock.release()
 
 
 # The voice bridge reads this before every /chat and prepends it, so the
