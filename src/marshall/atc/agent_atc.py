@@ -1095,9 +1095,21 @@ _ENG_CALL = re.compile(
     r"\b.{0,20}?\bengineering\b"
     r"|\bengineering\b[\s,]*(?:radio )?check\b"
     r"|\bis engineering\b", re.I)
+# Letting him go. The release vocabulary has to be as wide as the summons, and
+# it was not: it knew "thanks" and "clear" and did not know GOODBYE, which is the
+# most ordinary way in English to end a conversation. Hoover said "goodbye,
+# engineering" twice on the ramp and stayed on the channel both times, so his
+# next transmission -- a bug report -- went to the engineer instead of the
+# controller he thought he was calling.
+#
+# Being wrong in this direction is cheap: he says it again, or asks for
+# engineering back. Being wrong the other way holds a pilot on a channel the
+# controller cannot hear him on.
+_ENG_FAREWELL = (r"clear|out|thanks|thank you|done|goodbye|good bye|bye|"
+                 r"so long|see you|cheers|that.s all|all set|we.re good")
 _ENG_DONE = re.compile(
-    r"\bengineering\b.{0,16}?\b(?:clear|out|thanks|thank you|done)\b|"
-    r"\b(?:clear|out|thanks|thank you|done)[,\s]+engineering\b|"
+    rf"\bengineering\b.{{0,16}}?\b(?:{_ENG_FAREWELL})\b|"
+    rf"\b(?:{_ENG_FAREWELL})[,\s]+engineering\b|"
     r"\bback to (?:approach|tower|center|centre|the controller)\b", re.I)
 
 # Where a human says "I am at the bench". Touched while an engineer is actually
@@ -2084,7 +2096,13 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     fh.write(f"- `{stamp}` **{who}** {transcript}\n")
             except OSError as e:
                 print(f"  !! could not write the note: {e}", flush=True)
-            reply = engineering_ack(_summoned)
+            # Greet him once, on the way IN. Already on the line, any sentence
+            # that happens to mention engineering re-triggered the summons and
+            # he got the whole "engineering is up, go ahead" again -- "I'm going
+            # to ask that engineering go off the line" was answered with a
+            # greeting. Once he is on the channel the right answer to everything
+            # is "copied, logged", which is what the card has always said.
+            reply = engineering_ack(_summoned and not _on_the_line)
             with radio_lock:
                 print(f"  ENG[tx] {reply}", flush=True)
                 client.transmit(eng_voice.frames(reply), _eng_hz, AM)

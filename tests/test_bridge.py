@@ -1050,3 +1050,47 @@ class TestAFiledPlanIsNotAnAeroplane(unittest.TestCase):
         self.assertEqual(C.extract_all(said), ["Hoover 1-2"])
         self.assertEqual(agent_atc.transmitter_callsign("guid-two", said),
                          "Hoover 1-2")
+
+
+class TestLettingEngineeringGo(unittest.TestCase):
+    """The release vocabulary has to be as wide as the summons.
+
+    It knew "thanks" and "clear" and did not know GOODBYE -- the most ordinary
+    way in English to end a conversation. On the ramp, Hoover said "goodbye,
+    engineering" twice and stayed on the channel both times, so his next
+    transmission, a bug report, went to the engineer instead of the controller
+    he thought he was calling.
+
+    Being wrong in this direction costs one transmission: he says it again, or
+    asks for engineering back. Being wrong the other way holds a pilot on a
+    channel the controller cannot hear him on.
+    """
+
+    RELEASES = ("Goodbye, engineering", "Engineering, goodbye",
+                "goodbye engineering", "thanks engineering",
+                "engineering, thank you", "engineering out",
+                "engineering clear", "bye engineering", "cheers engineering",
+                "that's all engineering", "engineering, we're good",
+                "back to approach")
+
+    HOLDS = ("Engineering, that vector was four miles early",
+             "Hoover one one, request clearance",
+             "the engineering channel is what I am reporting on")
+
+    def test_the_ordinary_ways_of_saying_goodbye(self):
+        for said in self.RELEASES:
+            with self.subTest(said=said):
+                self.assertTrue(agent_atc._ENG_DONE.search(said))
+
+    def test_a_bug_report_does_not_release_the_channel(self):
+        """He is mid-report; hanging up on him loses the rest of it."""
+        for said in self.HOLDS:
+            with self.subTest(said=said):
+                self.assertFalse(agent_atc._ENG_DONE.search(said))
+
+    def test_asking_for_him_is_never_read_as_dismissing_him(self):
+        for said in ("Get engineering on the line", "engineering, you there",
+                     "need engineering"):
+            with self.subTest(said=said):
+                self.assertTrue(agent_atc._ENG_CALL.search(said))
+                self.assertFalse(agent_atc._ENG_DONE.search(said))
