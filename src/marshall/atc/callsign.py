@@ -162,6 +162,12 @@ _NOT_A_NAME = {
     # Adjectives and participles that sit in front of "for", which is a digit.
     # "I am going to be busy for a minute" was answered as "Busy four".
     "busy", "standing", "looking", "waiting", "clear", "set", "good",
+    # Aircraft TYPES, which are a name followed by a number and are the one
+    # thing that looks exactly like a callsign by shape. Cheap to list and the
+    # cost of missing one is a ghost: an optional separator means "MiG21" in a
+    # tally call would otherwise become an aeroplane called Mig 2-1.
+    "mig", "sukhoi", "yak", "lavochkin", "junkers", "heinkel", "messerschmitt",
+    "focke", "wulf", "spitfire", "mustang", "thunderbolt", "corsair",
     # Verbs that take a number straight after them in ordinary speech. "I need
     # two more minutes" became an aeroplane called "Need 2" -- and a "Need 3"
     # reached a live separation stack, where real aircraft were sequenced behind
@@ -188,8 +194,21 @@ def these_are_not_aircraft(names) -> None:
                             for n in names if n and n.strip())
 
 
+# The separator is OPTIONAL, and each digit is taken one at a time.
+#
+# It used to require whitespace or a hyphen between the name and the number, and
+# to match one separated digit per repetition -- which is what "Pony one one"
+# looks like when the transcriber spells it out. It is not the only thing the
+# transcriber writes. On the ramp, Whisper turned a perfectly clear radio check
+# into "Pony11", and a moment later "Pony 11": one has no separator at all, the
+# other has a two-digit run where the pattern wanted "1" then " 1". Neither
+# matched, so a pilot who had said his callsign correctly was answered "station
+# calling".
+#
+# Both now parse to the same thing, which is the point -- Pony 1-1 is Pony 1-1
+# however the transcriber chose to spell it.
 _CANDIDATE = re.compile(
-    r"\b([A-Za-z]{3,})((?:[\s-]+(?:" + "|".join(_SPOKEN) + r"|\d))+)\b", re.I)
+    r"\b([A-Za-z]{3,})((?:[\s-]*(?:" + "|".join(_SPOKEN) + r"|\d))+)\b", re.I)
 
 
 def extract_all(text: str) -> list[str]:

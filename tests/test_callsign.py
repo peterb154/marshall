@@ -139,3 +139,30 @@ class TestWhoIsTalkingByConvention(unittest.TestCase):
 
     def test_nothing_said_is_nobody(self):
         self.assertEqual(C.speaker_in("four thousand level"), "")
+
+
+class TestHoweverTheTranscriberSpellsIt(unittest.TestCase):
+    """"Pony one one" reaches this code in whatever shape Whisper chose.
+
+    On the ramp it wrote "Pony11" -- no separator at all -- and a moment later
+    "Pony 11", a two-digit run where the pattern wanted "1" then " 1". Neither
+    matched, so a pilot who had said his callsign perfectly clearly was answered
+    "station calling", which reads to him as the controller not hearing him.
+    """
+
+    SHAPES = ("Pony 1-1", "Pony one one", "Pony11", "Pony 11", "Pony-1-1",
+              "pony 1 1")
+
+    def test_every_shape_is_the_same_aeroplane(self):
+        for said in self.SHAPES:
+            with self.subTest(said=said):
+                self.assertEqual(C.parse(C.extract(f"{said}, radio check")).canonical,
+                                 "Pony 1-1")
+
+    def test_an_aircraft_TYPE_is_still_not_an_aeroplane_of_ours(self):
+        """The optional separator is what makes this worth guarding: a type is a
+        name with a number stuck to it, which is a callsign by shape."""
+        for said in ("two MiG21s low on the deck", "MiG 21 in the break",
+                     "a Yak9 crossing left to right"):
+            with self.subTest(said=said):
+                self.assertEqual(C.extract_all(said), [])

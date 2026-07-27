@@ -5,6 +5,9 @@ radio. They exist because both failures below were found on the air, in the
 controller's voice, mid-sortie.
 """
 
+import pathlib
+import shutil
+import tempfile
 import time
 import os
 import unittest
@@ -708,37 +711,54 @@ class TestEngineeringChannel(unittest.TestCase):
         self.assertIsNone(
             agent_atc._ENG_DONE.search("engineering the vectors are wrong"))
 
+    # THE BENCH FILE IS LIVE STATE. These used to touch and unlink the real
+    # `build/engineering.attended`, which is the same file a human claims when
+    # he sits down at the bench -- so running the unit suite VACATED THE BENCH,
+    # silently, from anywhere.
+    #
+    # It cost a live test. Hoover called for engineering on the ramp and was
+    # told nobody was there while I was sitting at the keyboard; the difference
+    # between the two was that I had run pytest ninety seconds earlier. He
+    # reported A1 as failing, which it was, for a reason that had nothing to do
+    # with A1.
+    #
+    # A test may not write anywhere a running system reads. The path is swapped
+    # for a temporary one and put back.
+
+    def setUp(self):
+        self._real_attended = agent_atc.ENG_ATTENDED
+        self._tmp = tempfile.mkdtemp(prefix="marshall-bench-")
+        agent_atc.ENG_ATTENDED = pathlib.Path(self._tmp) / "engineering.attended"
+
+    def tearDown(self):
+        agent_atc.ENG_ATTENDED = self._real_attended
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def test_the_real_bench_is_never_touched_by_a_test(self):
+        """The guard for the guard. If this class ever writes to the live path
+        again, this is the test that says so."""
+        self.assertNotEqual(agent_atc.ENG_ATTENDED, self._real_attended)
+        self.assertNotIn("build", str(agent_atc.ENG_ATTENDED))
+
     def test_an_unattended_bench_says_so_rather_than_going_quiet(self):
-        try:
-            agent_atc.ENG_ATTENDED.unlink()
-        except OSError:
-            pass
         self.assertFalse(agent_atc.engineering_attended())
         ack = agent_atc.engineering_ack(summoned=True)
         self.assertIn("not at the bench", ack)
         self.assertIn("recorded", ack, "silence is the thing being fixed")
 
     def test_an_attended_bench_invites_him_to_talk(self):
-        agent_atc.ENG_ATTENDED.parent.mkdir(parents=True, exist_ok=True)
         agent_atc.ENG_ATTENDED.touch()
-        try:
-            self.assertTrue(agent_atc.engineering_attended())
-            self.assertIn("go ahead", agent_atc.engineering_ack(summoned=True))
-        finally:
-            agent_atc.ENG_ATTENDED.unlink(missing_ok=True)
+        self.assertTrue(agent_atc.engineering_attended())
+        self.assertIn("go ahead", agent_atc.engineering_ack(summoned=True))
 
     def test_a_stale_claim_counts_as_nobody_home(self):
         import os as _os
         import time as _t
-        agent_atc.ENG_ATTENDED.parent.mkdir(parents=True, exist_ok=True)
         agent_atc.ENG_ATTENDED.touch()
         old = _t.time() - agent_atc.ENG_ATTENDED_SEC - 60
         _os.utime(agent_atc.ENG_ATTENDED, (old, old))
-        try:
-            self.assertFalse(agent_atc.engineering_attended(),
-                             "a stale claim is worse than an honest 'not here'")
-        finally:
-            agent_atc.ENG_ATTENDED.unlink(missing_ok=True)
+        self.assertFalse(agent_atc.engineering_attended(),
+                         "a stale claim is worse than an honest 'not here'")
 
 
 class TestChannelCourtesy(unittest.TestCase):

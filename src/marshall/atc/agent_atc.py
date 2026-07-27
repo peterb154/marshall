@@ -2096,13 +2096,19 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     fh.write(f"- `{stamp}` **{who}** {transcript}\n")
             except OSError as e:
                 print(f"  !! could not write the note: {e}", flush=True)
-            # Greet him once, on the way IN. Already on the line, any sentence
-            # that happens to mention engineering re-triggered the summons and
-            # he got the whole "engineering is up, go ahead" again -- "I'm going
-            # to ask that engineering go off the line" was answered with a
-            # greeting. Once he is on the channel the right answer to everything
-            # is "copied, logged", which is what the card has always said.
-            reply = engineering_ack(_summoned and not _on_the_line)
+            # An explicit summons is ALWAYS answered with the greeting, even when
+            # he is already on the line. Suppressing it because he was already
+            # connected was tried for one minute of a live test and was much
+            # worse: he asked for engineering, got "copied, logged", could not
+            # tell whether the channel was open, and asked twice more. The whole
+            # point of this ack is that a pilot never has to wonder.
+            #
+            # The cost is that a sentence merely MENTIONING engineering can
+            # re-greet him -- "I'm going to ask that engineering go off the
+            # line" did. That is a wasted sentence. The other way is a pilot
+            # talking into what he believes is a dead radio, which is the bug
+            # this whole channel exists to kill.
+            reply = engineering_ack(_summoned)
             with radio_lock:
                 print(f"  ENG[tx] {reply}", flush=True)
                 client.transmit(eng_voice.frames(reply), _eng_hz, AM)
