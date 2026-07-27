@@ -32,11 +32,7 @@ DOCS = Path(__file__).resolve().parents[3] / "docs"
 GUIDS = {
     "ISSUES": "{1a7c9e30-5b42-4f81-9d63-0e5a24c71b90}",
     "A": "{2b8d0f41-6c53-4092-ae74-1f6b35d82ca1}",
-    "B": "{3c9e1052-7d64-41a3-bf85-2a7c46e93db2}",
-    "C": "{4daf2163-8e75-42b4-c096-3b8d57fa4ec3}",
-    "D": "{5eb03274-9f86-43c5-d1a7-4c9e68ab5fd4}",
     "E": "{6fc14385-a097-44d6-e2b8-5daf79bc60e5}",
-    "F": "{70d25496-b1a8-45e7-f3c9-6eb08acd71f6}",
     "G": "{81e365a7-c2b9-46f8-a4da-7fc19bde82a7}",
     "PLANS": "{92f476b8-d3ca-4709-b5eb-8ad2acef930b}",
     "H": "{a3b587c9-e4db-481a-c6fc-9be23acf041c}",
@@ -44,8 +40,11 @@ GUIDS = {
 
 # Tab labels. OpenKneeboard's tab strip is narrow and the pilot is reading it
 # at a glance, so these are hand-short rather than a truncated heading.
-SHORT = {"A": "PREFLT", "B": "APPROACH", "C": "NEW", "D": "RADIO",
-         "E": "KNOWN", "F": "2-SHIP", "G": "CLNC", "H": "APPR-NEW"}
+# Sections B, C, D and F are gone -- every row in them was closed and their
+# scripts run from tools/check.py. Their GUIDs are NOT reused: OpenKneeboard
+# remembers the page a pilot was on, and handing an old identifier to a new
+# document would drop him somewhere he did not choose.
+SHORT = {"A": "PREFLT", "E": "KNOWN", "G": "CLNC", "H": "APPROACH"}
 
 _SECTION = re.compile(r"^## ([A-Z]) — (.+)$", re.M)
 _ROW = re.compile(r"^\|\s*([A-Z]\d+[a-z]?)\s*\|(.+)$")
@@ -265,7 +264,10 @@ def pages() -> list[tuple[str, str, str, object]]:
            (GUIDS["ISSUES"], "ISSUES", "ft-issues", build_issues)]
     # A to F, whatever order the card happens to be written in -- a pilot flies
     # them in order and the tabs should match the card, not the file.
-    for letter, _title, _rows in sorted(sections(), key=lambda s: s[0]):
+    # IN THE ORDER HE FLIES THEM, which is the order the card is written in --
+    # ramp, clearance, approach, then the known-broken reference. Sorting them
+    # alphabetically put the approach before the clearance that precedes it.
+    for letter, _title, _rows in sections():
         guid = GUIDS.get(letter)
         if not guid:
             # LOUD, not silent. A section with no GUID simply does not appear on

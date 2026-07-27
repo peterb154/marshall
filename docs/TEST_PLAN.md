@@ -8,10 +8,11 @@ criteria. **Everything a script can close has been taken off this card.** Thirty
 went as their issues closed; they live on in `tools/` and run from
 `tools/check.py`, so nothing is unguarded — it is simply no longer yours to fly.
 
-What is left is the engineering channel, which is the one thing on this project
-a script genuinely cannot judge (whether a human on the other end is USEFUL), and
-the three known-broken rows in section E, which are there so you do not spend a
-sortie re-finding them. A test that fails is a comment on that issue; a section that passes
+**Sections B, C, D and F are gone** — every row in them was closed and its
+script lives in `tools/`, run by `tools/check.py`. What is left is what a human
+is still the only instrument for, in the order you fly it: the ramp (A), the
+clearance (G), the approach (H), and section E, which exists so you do not spend
+a sortie re-finding something already understood. A test that fails is a comment on that issue; a section that passes
 closes it. Nothing here is closed by a green unit test — that is the point.
 
 Report by ID over the radio. Say `engineering, come up` first, then
@@ -77,7 +78,103 @@ finished or whether we draw our own.
 
 ---
 
-## H — the approach, rebuilt overnight (fly this first)
+## G — clearance delivery, at the ramp
+
+Flown before you start the engine, on **118** — Tower also works ground and
+clearance delivery, because a field this size does not staff a seat per phase of
+flight. Everything here is new and has never been said to a human.
+
+**The board is on the PLANS tab** of this kneeboard, read live from the director
+— five plans, one word each. Samovar and Kettle share a task on purpose (the CAS
+over Tsutsnvati, flown two ways) and are marked as such; that pair is G5.
+
+Ten to fifteen minutes on the ramp, in order — each row sets up the next, so
+they read as one conversation rather than eight. **Have something to write on.**
+The whole point of G2 is whether you can get it down.
+
+Most of this is script-checked already: which plan a request resolves to
+(`tools/plan_sweep.py`, twelve phrasings) and that two flights can hold two plans
+without treading on each other (`tools/plan_assign_check.py`). What no script can
+judge is whether a clearance is **copyable** — whether a man with a pencil, in a
+cockpit, can actually get it down at the pace it is read.
+
+| ID | Prio | Test | What should happen | Fix under test |
+|----|------|------|--------------------|----------------|
+| G1 | P1 | *"Batumi Ground, Hoover one one, request IFR clearance, Marlin"* | The **whole** CRAFT clearance: cleared to Batumi, as filed, three thousand, departure frequency one two four decimal zero, and a squawk | [#1] `request_clearance` |
+| G2 | P1 | Write G1 down as he says it, then read it back **correctly** | You got all five elements without asking for a repeat, and he says *"readback correct"* and stops talking | [#1] copyable |
+| G3 | P1 | Ask again for Marlin, and read it back with **one number wrong** | He corrects **that number only** and asks for it again — not the whole clearance, and never a shrug | [#1] `clearance_read_back` |
+| G4 | P1 | Ask by what you are DOING, no name — *"request clearance for the weather run out to Ingress"* | Lantern's clearance, five thousand. You should never have had to say a plan name | [#1] `plans.pick` |
+| G5 | P1 | *"request clearance for the CAS over Tsutsnvati"* | A **question** naming both — the plain one, and the one with the beacon letdown on return. He must not pick for you | [#1] `plans.pick` |
+| G6 | P1 | Answer it — *"the beacon letdown one"* | Kettle: eleven thousand, and the route out through Ingress to Tsutsnvati | [#1] `plans.pick` |
+| G7 | P2 | *"request clearance to Vaziani"* | *"nothing on file"* and a question. **Not** the nearest plan read out as though you had asked for it | [#1] `plans.pick` |
+| G8 | P2 | After a clearance, change your mind — *"request a change, make it Anvil"* | A **complete** new clearance (four thousand), read back again. He must not say only what changed | [#1] `assign` amends |
+| G9 | P2 | With Shooter: both of you ask for **Marlin**, one after the other | Both get it, both are cleared to three thousand, and neither clearance changes the other's | [#1] one plan, two flights |
+| G10 | P3 | Airborne later — *"what am I doing"* or *"where am I going next"* | He answers from your plan without you repeating it, and does not read you ranges you do not need | [#1] `flight_plan_help` |
+
+**What each one is actually checking**
+
+**G1** — The one that matters. The words come back from a tool already finished
+and the question is whether the controller reads them or improvises around them.
+The **departure frequency is the element to watch**: it went missing in the dry
+run twice, and a pilot who never hears it is airborne not knowing whom to call.
+The squawk is worth a glance too — it is invented, because DCS has no
+transponder, but it is invented in octal, so **a digit above seven is a bug**.
+
+**G2** — Not a formality. A clearance is the one long transmission on the
+frequency and it exists to be written down; if you cannot get five elements down
+at the pace he reads them, that is a real finding and the fix is his pacing, not
+your pencil. A correct read-back is also the only place *"readback correct"*
+belongs — airborne, silence is the acknowledgement.
+
+**G3** — A controller who accepts a wrong read-back has recorded an agreement
+that was never made. Get the squawk wrong, or the altitude; the failure to watch
+for is him reading the entire clearance again, which on a busy frequency is how a
+read-back correction becomes worse than the error.
+
+**G4** — The whole design bet. A pilot says what he is DOING, not a database
+name — "the weather run out to Ingress" is how he would ask a real controller,
+and it names one plan here. If you have to fall back on the label, say so: the
+labels are the escape hatch, not the interface.
+
+**G5** — Two plans on file are the same sortie flown two ways, differing only in
+the recovery at the end. Asking is the correct answer and the hard one; the easy
+failure sounds decisive and clears you on somebody else's plan. Listen for
+whether he describes them by what they ARE — a name you were given yesterday is
+not something to recognise under a running engine.
+
+**G6** — And having asked, he has to use your answer. Check the **level**: eleven
+thousand is Kettle, three thousand is Marlin, and getting Samovar instead is
+invisible until you are on the wrong approach at the end of the sortie.
+
+**G7** — The opposite failure to G5. A resolver that always picks its best match
+never says "nothing on file", which looks perfect right up until the night it
+routes you somewhere you never asked to go.
+
+**G8** — An amendment REPLACES; it does not accumulate. Two live plans for one
+aeroplane is the ambiguity the whole design removes, and a controller who reads
+you only the changed part leaves you holding half of one clearance and half of
+another. Your read-back also stops counting — you agreed to the old one.
+
+**G9** — The reason plans became templates. Assignment COPIES, so one plan can be
+flown by two aeroplanes at once and by the squadron again next week. Script-
+checked already; what a script cannot tell you is whether it sounds right on the
+radio when two men ask for the same sortie a minute apart.
+
+**G10** — What the aeroplane can do decides how much help you get: a moving map
+wants the fix named and nothing else, a Mustang wants position reports and
+vectors. It is keyed on the type radar reports, so nobody has to declare it — if
+you are in the Mustang and he is terse, or in something modern and he will not
+stop reading you ranges, that is the bug.
+
+---
+
+---
+
+---
+
+---
+
+## H — the approach, rebuilt overnight (the main event)
 
 Everything in this section changed after the 27 July sortie and **none of it has
 been flown**. It is one approach, start to finish, and it is the whole point of
@@ -187,153 +284,6 @@ field. The touchdown fix took it from three to two, so it may already be gone
 from the air; this is the cheapest way to find out.
 
 ---
-
-## G — clearance delivery, at the ramp (before B)
-
-Flown before you start the engine, on **118** — Tower also works ground and
-clearance delivery, because a field this size does not staff a seat per phase of
-flight. Everything here is new and has never been said to a human.
-
-**The board is on the PLANS tab** of this kneeboard, read live from the director
-— five plans, one word each. Samovar and Kettle share a task on purpose (the CAS
-over Tsutsnvati, flown two ways) and are marked as such; that pair is G5.
-
-Ten to fifteen minutes on the ramp, in order — each row sets up the next, so
-they read as one conversation rather than eight. **Have something to write on.**
-The whole point of G2 is whether you can get it down.
-
-Most of this is script-checked already: which plan a request resolves to
-(`tools/plan_sweep.py`, twelve phrasings) and that two flights can hold two plans
-without treading on each other (`tools/plan_assign_check.py`). What no script can
-judge is whether a clearance is **copyable** — whether a man with a pencil, in a
-cockpit, can actually get it down at the pace it is read.
-
-| ID | Prio | Test | What should happen | Fix under test |
-|----|------|------|--------------------|----------------|
-| G1 | P1 | *"Batumi Ground, Hoover one one, request IFR clearance, Marlin"* | The **whole** CRAFT clearance: cleared to Batumi, as filed, three thousand, departure frequency one two four decimal zero, and a squawk | [#1] `request_clearance` |
-| G2 | P1 | Write G1 down as he says it, then read it back **correctly** | You got all five elements without asking for a repeat, and he says *"readback correct"* and stops talking | [#1] copyable |
-| G3 | P1 | Ask again for Marlin, and read it back with **one number wrong** | He corrects **that number only** and asks for it again — not the whole clearance, and never a shrug | [#1] `clearance_read_back` |
-| G4 | P1 | Ask by what you are DOING, no name — *"request clearance for the weather run out to Ingress"* | Lantern's clearance, five thousand. You should never have had to say a plan name | [#1] `plans.pick` |
-| G5 | P1 | *"request clearance for the CAS over Tsutsnvati"* | A **question** naming both — the plain one, and the one with the beacon letdown on return. He must not pick for you | [#1] `plans.pick` |
-| G6 | P1 | Answer it — *"the beacon letdown one"* | Kettle: eleven thousand, and the route out through Ingress to Tsutsnvati | [#1] `plans.pick` |
-| G7 | P2 | *"request clearance to Vaziani"* | *"nothing on file"* and a question. **Not** the nearest plan read out as though you had asked for it | [#1] `plans.pick` |
-| G8 | P2 | After a clearance, change your mind — *"request a change, make it Anvil"* | A **complete** new clearance (four thousand), read back again. He must not say only what changed | [#1] `assign` amends |
-| G9 | P2 | With Shooter: both of you ask for **Marlin**, one after the other | Both get it, both are cleared to three thousand, and neither clearance changes the other's | [#1] one plan, two flights |
-| G10 | P3 | Airborne later — *"what am I doing"* or *"where am I going next"* | He answers from your plan without you repeating it, and does not read you ranges you do not need | [#1] `flight_plan_help` |
-
-**What each one is actually checking**
-
-**G1** — The one that matters. The words come back from a tool already finished
-and the question is whether the controller reads them or improvises around them.
-The **departure frequency is the element to watch**: it went missing in the dry
-run twice, and a pilot who never hears it is airborne not knowing whom to call.
-The squawk is worth a glance too — it is invented, because DCS has no
-transponder, but it is invented in octal, so **a digit above seven is a bug**.
-
-**G2** — Not a formality. A clearance is the one long transmission on the
-frequency and it exists to be written down; if you cannot get five elements down
-at the pace he reads them, that is a real finding and the fix is his pacing, not
-your pencil. A correct read-back is also the only place *"readback correct"*
-belongs — airborne, silence is the acknowledgement.
-
-**G3** — A controller who accepts a wrong read-back has recorded an agreement
-that was never made. Get the squawk wrong, or the altitude; the failure to watch
-for is him reading the entire clearance again, which on a busy frequency is how a
-read-back correction becomes worse than the error.
-
-**G4** — The whole design bet. A pilot says what he is DOING, not a database
-name — "the weather run out to Ingress" is how he would ask a real controller,
-and it names one plan here. If you have to fall back on the label, say so: the
-labels are the escape hatch, not the interface.
-
-**G5** — Two plans on file are the same sortie flown two ways, differing only in
-the recovery at the end. Asking is the correct answer and the hard one; the easy
-failure sounds decisive and clears you on somebody else's plan. Listen for
-whether he describes them by what they ARE — a name you were given yesterday is
-not something to recognise under a running engine.
-
-**G6** — And having asked, he has to use your answer. Check the **level**: eleven
-thousand is Kettle, three thousand is Marlin, and getting Samovar instead is
-invisible until you are on the wrong approach at the end of the sortie.
-
-**G7** — The opposite failure to G5. A resolver that always picks its best match
-never says "nothing on file", which looks perfect right up until the night it
-routes you somewhere you never asked to go.
-
-**G8** — An amendment REPLACES; it does not accumulate. Two live plans for one
-aeroplane is the ambiguity the whole design removes, and a controller who reads
-you only the changed part leaves you holding half of one clearance and half of
-another. Your read-back also stops counting — you agreed to the old one.
-
-**G9** — The reason plans became templates. Assignment COPIES, so one plan can be
-flown by two aeroplanes at once and by the squadron again next week. Script-
-checked already; what a script cannot tell you is whether it sounds right on the
-radio when two men ask for the same sortie a minute apart.
-
-**G10** — What the aeroplane can do decides how much help you get: a moving map
-wants the fix named and nothing else, a Mustang wants position reports and
-vectors. It is keyed on the type radar reports, so nobody has to declare it — if
-you are in the Mustang and he is terse, or in something modern and he will not
-stop reading you ranges, that is the bug.
-
----
-
-## B — the approach (the one that has been flown most, and broken most)
-
-| ID | Prio | Test | What should happen | Fix under test |
-|----|------|------|--------------------|----------------|
-
-**B4 is the headline test of this sortie.** It is the "talks over us constantly"
-fix and it has only ever been proven against a synthetic pilot.
-
-**What each one is actually checking**
-
----
-
-## C — the things never flown by a human
-
-| ID | Prio | Test | What should happen | Fix under test |
-|----|------|------|--------------------|----------------|
-
-**C5 and C6 are script-checked now** (`tools/handoff_check.py`). "I could not
-reproduce it alone" turned out to mean "not while somebody was flying" —
-spawned traffic and the airspace view drive it perfectly well, including the
-case that matters: an aircraft that has left Approach's airspace being handed
-back to Center.
-
-**What each one is actually checking**
-
----
-
-## F — two pilots at once (needs Hoover + one more)
-
-The case with the least evidence behind it. One controller, two aeroplanes, one
-frequency — and the failure is not a wrong instruction, it is a **right
-instruction the wrong man hears, or nobody hears at all**.
-
-| ID | Prio | Test | What should happen | Fix under test |
-|----|------|------|--------------------|----------------|
-
-**F2 and F3 are script-checked now** (`tools/channel_check.py`). "Synthetic
-pilots take turns too politely" was true of my harness and not of scripts: one
-can contest a channel far more precisely than two people, transmitting exactly
-when a call is due and again the instant the other man stops. Still worth a
-listen in the air — a mile call landing where your answer should have been is
-the thing to notice.
-
-**F4 matters most for safety.** If the man holding starts getting vectors, that
-is two aircraft flying the same intercept — stop and say so.
-
-**What each one is actually checking**
-
----
-
-## D — identity and the radio
-
-| ID | Prio | Test | What should happen | Fix under test |
-|----|------|------|--------------------|----------------|
-
-**What each one is actually checking**
 
 ---
 

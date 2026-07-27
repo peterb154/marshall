@@ -20,6 +20,9 @@ Three things are checked:
   FILED      every issue in the markdown has a number
   CARD       no cockpit test row cites a CLOSED issue -- a pilot's attention is
              the scarcest thing here and a closed row is spending it on nothing
+  UNFLOWN    no issue labelled `needs-flight-test` is missing from the card. The
+             label says a human is the only instrument that can close it; if it
+             is not on the card, nobody will ever pick it up
 
 `--fix` only ever writes the STATUS line, and only from closed-on-GitHub to
 CLOSED. It will not reopen anything and it will not touch prose: a status is
@@ -48,6 +51,22 @@ ROW = re.compile(r"^\|\s*(~~)?([A-Z]\d+)~?~?\s*\|.*?\[#(\d+)\]", re.M)
 
 # Statuses that mean "this is finished". Everything else is live work.
 DONE = {"VALIDATED", "CLOSED", "DONE"}
+
+
+def gh_flight_test() -> dict[int, list[str]]:
+    """Open issues a human is the only instrument for."""
+    gh = shutil.which("gh") or str(Path.home() / ".local" / "bin" / "gh")
+    out = subprocess.run(
+        [gh, "issue", "list", "--state", "open", "--limit", "200",
+         "--json", "number,labels"], capture_output=True, text=True)
+    if out.returncode != 0:
+        return {}
+    got = {}
+    for i in json.loads(out.stdout or "[]"):
+        labs = [l["name"] for l in i.get("labels", [])]
+        if "needs-flight-test" in labs:
+            got[i["number"]] = labs
+    return got
 
 
 def gh_states() -> dict[int, str]:
@@ -85,6 +104,7 @@ def main() -> int:
     text = ISSUES.read_text(encoding="utf-8")
     card = CARD.read_text(encoding="utf-8")
     state = gh_states()
+    flight_test = gh_flight_test()
     items = entries(text)
 
     drift, unfiled, stale_rows = [], [], []
@@ -105,6 +125,15 @@ def main() -> int:
         if state.get(int(num)) == "CLOSED":
             stale_rows.append((rid, int(num)))
 
+    # ...and the other way round. An issue that only a pilot can close, with no
+    # row telling him to fly it, is a job nobody has been given. This direction
+    # was unguarded, and #39 sat labelled `needs-design` after it had shipped --
+    # which is how a thing gets built, put on the card, and still read as
+    # unstarted.
+    on_card = {int(n) for _, _, n in ROW.findall(card)}
+    unflown = [n for n, labs in flight_test.items()
+               if state.get(n) == "OPEN" and n not in on_card]
+
     print(f"{len(items)} issues in ISSUES.md, {len(state)} on GitHub\n")
     if unfiled:
         print("NOT FILED (run tools/file_issues.py)")
@@ -120,7 +149,11 @@ def main() -> int:
             print(f"  row {rid} cites #{n}, which is closed")
         print("  A pilot's attention is the scarcest thing here; retire the row")
         print("  (strike the ID through) and keep its script as the regression.")
-    if not (drift or unfiled or stale_rows):
+    if unflown:
+        print("NEEDS A PILOT, BUT IS NOT ON THE CARD")
+        for n in sorted(unflown):
+            print(f"  #{n} is labelled needs-flight-test and no row cites it")
+    if not (drift or unfiled or stale_rows or unflown):
         print("in step: statuses match, everything filed, no closed rows on the card")
         return 0
 
