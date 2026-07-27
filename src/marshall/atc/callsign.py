@@ -157,7 +157,7 @@ _NOT_A_NAME = {
     "waypoint", "steerpoint", "position", "range", "bearing", "distance",
     "inbound", "outbound", "established", "holding", "turning", "leaving",
     "reaching", "through", "gear", "flaps", "fuel", "bingo", "engine", "angel",
-    "checking", "check", "ready", "field", "visual", "missed",
+    "checking", "check", "ready", "field", "visual", "missed", "clearance",
     "transmission", "transmitting", "message", "call", "calling", "frequency",
     # Adjectives and participles that sit in front of "for", which is a digit.
     # "I am going to be busy for a minute" was answered as "Busy four".
@@ -169,6 +169,24 @@ _NOT_A_NAME = {
     "need", "needs", "want", "wants", "got", "give", "take", "make", "see", "seen", "hear", "heard", "count", "counting", "about", "around",
     "another", "only", "just", "maybe", "like", "than", "then",
 }
+
+# Proper nouns that are real, are said on the radio, take a number after them,
+# and are NOT aeroplanes. A filed flight plan has a spoken name for exactly the
+# reasons a callsign does -- short, ordinary, phonetically distinct -- so
+# "Samovar Three" is a callsign by shape and nothing but knowing the list can
+# tell you otherwise.
+#
+# This is the same argument as the roster in `_plausible_callsign`: a denylist of
+# English words cannot converge, but an enumerable list of names we ourselves
+# assigned is not a guess. Populated by the bridge from the plans on file.
+_NOT_AN_AIRCRAFT: set[str] = set()
+
+
+def these_are_not_aircraft(names) -> None:
+    """Register names that must never be read as a callsign. Additive."""
+    _NOT_AN_AIRCRAFT.update(n.strip().split()[0].lower()
+                            for n in names if n and n.strip())
+
 
 _CANDIDATE = re.compile(
     r"\b([A-Za-z]{3,})((?:[\s-]+(?:" + "|".join(_SPOKEN) + r"|\d))+)\b", re.I)
@@ -184,7 +202,7 @@ def extract_all(text: str) -> list[str]:
     """
     out = []
     for m in _CANDIDATE.finditer(_digits(text or "")):
-        if m.group(1).lower() in _NOT_A_NAME:
+        if m.group(1).lower() in _NOT_A_NAME or m.group(1).lower() in _NOT_AN_AIRCRAFT:
             continue
         got = parse(m.group(0)).canonical
         if got not in out:
@@ -220,7 +238,7 @@ def extract(text: str) -> str:
     stays unidentified until the agent correlates it properly.
     """
     for m in _CANDIDATE.finditer(_digits(text or "")):
-        if m.group(1).lower() in _NOT_A_NAME:
+        if m.group(1).lower() in _NOT_A_NAME or m.group(1).lower() in _NOT_AN_AIRCRAFT:
             continue
         return parse(m.group(0)).canonical
     return ""

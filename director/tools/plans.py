@@ -32,17 +32,35 @@ import re
 
 # Words that carry no signal about WHICH plan. Without these, "request" and
 # "clearance" match a task field containing either.
+#
+# The list is long on purpose and it earns its length twice. It stops a plan
+# being matched on the words every request contains -- and it is also what tells
+# "request clearance" (he named nothing, offer him what is on file) apart from
+# "request clearance to Vaziani" (he named somewhere nobody filed for, and the
+# answer is that nothing matches, not a menu).
 _NOISE = {
     "request", "requesting", "clearance", "cleared", "ready", "copy", "ifr",
     "vfr", "flight", "plan", "filed", "file", "the", "a", "an", "for", "to",
     "over", "on", "at", "and", "with", "my", "our", "is", "am", "we", "i",
     "please", "approach", "tower", "ground", "center", "centre", "delivery",
+    # ordinary connective English, which arrives in every transmission
+    "as", "of", "in", "by", "from", "this", "that", "it", "us", "you", "he",
+    "his", "have", "has", "had", "be", "been", "will", "can", "could", "do",
+    "does", "did", "are", "was", "were", "not", "no", "yes", "or", "but", "if",
+    "then", "so", "just", "now", "like", "want", "need", "looking", "take",
+    "get", "got", "give", "say", "how", "what", "which", "where", "when",
+    "re", "ve", "ll", "sir", "good", "day", "morning", "afternoon", "evening",
+    "thanks", "thank", "affirm", "roger", "wilco", "standby", "stand", "again",
+    # spoken digits. A plan is never identified by a number, and these arrive
+    # inside every callsign, altitude and frequency he says.
+    "zero", "one", "two", "three", "four", "five", "six", "seven", "eight",
+    "nine", "niner", "ten", "hundred", "thousand",
 }
 
 
-def _words(text: str) -> set[str]:
+def _words(text: str, drop: set[str] = frozenset()) -> set[str]:
     return {w for w in re.findall(r"[a-z0-9]+", (text or "").lower())
-            if w not in _NOISE and len(w) > 1}
+            if w not in _NOISE and w not in drop and len(w) > 1}
 
 
 def score(said: str, plan: dict) -> tuple[int, list[str]]:
@@ -95,6 +113,18 @@ def pick(said: str, plans: list[dict], callsign: str | None = None) -> dict:
     best = max((s for s, _, _ in scored), default=0)
 
     if best == 0:
+        # He NAMED something and nothing on file is it. "Request clearance to
+        # Vaziani" is not an ambiguous request, it is a request that cannot be
+        # filled, and offering him a menu of three plans that all go somewhere
+        # else answers a question he did not ask.
+        #
+        # Only when his callsign is known, because that is what lets his own name
+        # be taken out of what he said -- without it "Hoover" is a word that
+        # matches no plan, and every request would read as a request for
+        # somewhere nobody filed for. Asking is the safe way to be wrong.
+        if callsign and _words(said, drop=_words(callsign)):
+            return {"none": True}
+
         # Nothing in what he said points at a plan. If exactly one is filed
         # against his callsign that is the civil case -- "as filed" -- and it is
         # not a guess: it is the only thing on file for him.

@@ -26,7 +26,8 @@ WHISPER_PROMPT = (
     "do you read.")
 
 
-def domain_prompt(stations=(), fixes=(), callsigns=(), field: str = "Batumi") -> str:
+def domain_prompt(stations=(), fixes=(), callsigns=(), field: str = "Batumi",
+                  plans=()) -> str:
     """Prime Whisper with the proper nouns that are actually on the air.
 
     Priming is not a spell-checker: it biases the decoder toward words it has
@@ -50,6 +51,12 @@ def domain_prompt(stations=(), fixes=(), callsigns=(), field: str = "Batumi") ->
     if fixes:
         bits.append("Fixes: "
                     + ", ".join(dict.fromkeys(f.title() for f in fixes)) + ".")
+    if plans:
+        # The spoken name of a filed plan -- "Samovar One". It is said early in a
+        # transmission and it is the whole key to which plan he wants, so a
+        # mangled one does not cost a word, it clears him on somebody else's
+        # route.
+        bits.append("Flight plans: " + ", ".join(dict.fromkeys(plans)) + ".")
     bits.append(
         "Numbers are spoken as digits. Terms: checking in, request approach, "
         "holding, established, platform, missed approach, going around, field "

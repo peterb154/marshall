@@ -10,6 +10,7 @@ import os
 import unittest
 
 from marshall.atc import agent_atc
+from marshall.atc import callsign as C
 
 
 class TestForVoice(unittest.TestCase):
@@ -996,3 +997,56 @@ class TestOnlyRealNamesBecomeAeroplanes(unittest.TestCase):
 
     def test_with_no_transcript_it_does_not_block_on_nothing(self):
         self.assertTrue(agent_atc._plausible_callsign("Viper 2-1"))
+
+
+class TestAFiledPlanIsNotAnAeroplane(unittest.TestCase):
+    """A flight plan's spoken name is a callsign by shape.
+
+    It is chosen the way a callsign is chosen -- short, ordinary, phonetically
+    distinct -- so "Samovar Three" and "Pony Three" are indistinguishable to any
+    rule that looks at the string. A dry run of clearance delivery bound the
+    pilot's radio to his own flight plan on the first transmission: everything
+    afterwards came from an aeroplane that had never flown, and the controller
+    spent the exchange asking a man who had said his callsign twice to say it
+    again.
+
+    Two defences, and both are enumerable rather than a guess at English:
+    the names we assigned ourselves are registered as not-aircraft, and identity
+    binding runs the same roster-or-position test that guards the stack.
+    """
+
+    def setUp(self):
+        os.environ["MARSHALL_CALLSIGNS"] = "Hoover"
+        agent_atc._transmitters.clear()
+        agent_atc._order.clear()
+        C._NOT_AN_AIRCRAFT.clear()
+
+    def tearDown(self):
+        C._NOT_AN_AIRCRAFT.clear()
+
+    SAID = "Batumi Ground, Hoover one one, request clearance, Samovar Three"
+
+    def test_without_the_list_the_plan_looks_exactly_like_a_callsign(self):
+        """Stated so the next person does not mistake the fix for a coincidence:
+        the shape alone cannot tell them apart, which is WHY there is a list."""
+        self.assertIn("Samovar 3", C.extract_all(self.SAID))
+
+    def test_a_registered_plan_name_is_not_extracted(self):
+        C.these_are_not_aircraft(["Samovar One", "Samovar Two", "Samovar Three"])
+        self.assertEqual(C.extract_all(self.SAID), ["Hoover 1-1"])
+        self.assertEqual(C.extract(self.SAID), "Hoover 1-1")
+
+    def test_the_radio_binds_to_the_pilot_not_to_his_plan(self):
+        """Even with no list registered. The plan name is late in the sentence
+        and is not on the roster, so position refuses it."""
+        got = agent_atc.transmitter_callsign("guid-sockeye", self.SAID)
+        self.assertEqual(got, "Hoover 1-1")
+
+    def test_asking_for_a_clearance_does_not_invent_clearance_four(self):
+        """"for" is a homophone of "four", so "clearance for the CAS" produced an
+        aeroplane called Clearance 4 -- in the one exchange where every pilot
+        says those exact words."""
+        said = "Batumi Ground, Hoover one two, request clearance for the CAS"
+        self.assertEqual(C.extract_all(said), ["Hoover 1-2"])
+        self.assertEqual(agent_atc.transmitter_callsign("guid-two", said),
+                         "Hoover 1-2")

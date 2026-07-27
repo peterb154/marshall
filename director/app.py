@@ -46,6 +46,7 @@ from tools.approaches import (
     upsert_approach,
     upsert_flight_plan,
 )
+from tools.clearance import clearance_tools
 from tools.hooks import due_hooks, hook_tools
 from tools.identify import bindings_for, identify_tools
 from tools.tracks import start_streamer, vector
@@ -101,6 +102,11 @@ def build_agent(session_id: str) -> Agent:
             *identify_tools(session_id),  # correlate a voice callsign to a radar track
             vector,                       # heading + distance to a fix or another aircraft
             *hook_tools(session_id),      # "wake me in N seconds" — proactive callbacks
+            # Clearance delivery. The words come back finished because the
+            # numbers in a clearance — route, altitude, frequency, squawk — are
+            # facts about what was filed, and a controller who improvises them
+            # has cleared somebody to an altitude nobody wrote down.
+            *clearance_tools(),
             *memory_tools(namespace=session_id),
             # The OVERLORD's hands. One agent covers every position and picks
             # its manner from which frequency was called, so the tool is here
@@ -245,6 +251,50 @@ def flights_clear_endpoint(mission: str = "default") -> dict:
 @app.get("/flightplan/active")
 def active_flightplan_endpoint() -> dict:
     return active_flight_plan() or {}
+
+
+# --- filed plans, and giving one to a flight --------------------------------
+# `flight_plans` is what was FILED; `assigned_plans` is what an aeroplane was
+# GIVEN. Assignment copies, so amending one flight's routing never edits the plan
+# somebody else is flying. See migrations/009 and tools/clearance.py.
+@app.get("/plans")
+def plans_endpoint() -> dict:
+    """Everything on file. Unfiltered: any pilot may request any plan."""
+    from tools.clearance import filed
+    return {"plans": filed()}
+
+
+@app.get("/plans/resolve")
+def resolve_plan_endpoint(said: str, callsign: str = "") -> dict:
+    """Which plan he means, without assigning it. The dry run for the radio, and
+    what the sweep script scores against."""
+    from tools.clearance import resolve
+    return resolve(said, callsign or None)
+
+
+@app.post("/flights/{flight_id}/assign-plan")
+def assign_plan_endpoint(flight_id: int, body: dict) -> dict:
+    """Copy a filed plan onto this flight, by name or by what he said."""
+    from tools.clearance import assign, filed, resolve
+    plan = None
+    if body.get("plan"):
+        plan = next((p for p in filed() if p["name"] == body["plan"]), None)
+        if plan is None:
+            return {"error": f"no plan on file called {body['plan']}"}
+    else:
+        hit = resolve(body.get("said", ""), body.get("callsign"))
+        if not hit.get("plan"):
+            return hit
+        plan = hit["plan"]
+    return assign(flight_id, plan, mission=body.get("mission", "default"),
+                  route=body.get("route"))
+
+
+@app.post("/flights/{flight_id}/clearance-ack")
+def clearance_ack_endpoint(flight_id: int) -> dict:
+    """He read it back. Cleared and agreed are not the same thing."""
+    from tools.clearance import ack
+    return ack(flight_id)
 
 
 # Named fixes, pushed from route.py at bridge startup. The bridge owns WHERE a

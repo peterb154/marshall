@@ -43,6 +43,12 @@ CHECKS = [
      "1,296 approaches: arrivals, dithering, where they establish", False),
     ("approach sweep, sloppy pilot", [PY, "tools/asr_sweep.py", "--sloppy"],
      "the same, flown by somebody who lags and overshoots", False),
+    ("filed plans, resolved", [PY, "tools/plan_sweep.py"],
+     "#1 G3/G4 — which plan a spoken request means, and when to ASK instead of "
+     "picking one", False),
+    ("filed plans, assigned", [PY, "tools/plan_assign_check.py"],
+     "#1 — two flights, two plans, and an amendment that touches neither the "
+     "other aeroplane nor what was filed", False),
     ("wait for the check-in", [PY, "tools/checkin_check.py"],
      "#6 B1a — a controller works the men on HIS frequency and nobody else",
      False),
@@ -106,6 +112,16 @@ def main() -> int:
         r = subprocess.run(argv, cwd=ROOT, capture_output=True, text=True,
                            env={**os.environ, "PYTHONPATH": str(ROOT / "src")})
         dt = time.monotonic() - t0
+        # 2 means the check could not run -- no director, nothing on file.
+        # Reported as SKIPPED rather than passed, for the same reason as the
+        # live tier: a check that quietly does not run reads exactly like one
+        # that passed.
+        if r.returncode == 2:
+            skipped.append((name, guards,
+                            (r.stdout or r.stderr or "").strip().splitlines()[-1]
+                            if (r.stdout or r.stderr).strip() else "could not run"))
+            print("   SKIP\n")
+            continue
         ok = r.returncode == 0
         results.append((name, ok))
         tail = (r.stdout or r.stderr or "").strip().splitlines()[-3:]

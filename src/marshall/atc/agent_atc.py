@@ -415,7 +415,22 @@ def transmitter_callsign(guid: str | None, transcript: str) -> str:
     from marshall.atc.callsign import parse as C_parse
     # By the convention, not by position -- see callsign.speaker_in. Taking the
     # first callsign bound a pilot's radio to the wingman he was calling.
-    heard = callsign.speaker_in(transcript)
+    # The same roster-or-position test that guards the separation stack, applied
+    # where a radio is actually BOUND to a name -- and applied to the CANDIDATES,
+    # before the speaker convention runs on them. Without it, "request clearance,
+    # Samovar Three" bound the pilot's radio to his own flight PLAN: a proper
+    # noun with a number after it is indistinguishable from a callsign by shape,
+    # the convention says the second name is the speaker, and so the second name
+    # won. Everything afterwards came from an aeroplane that had never flown, and
+    # the controller spent the exchange asking a man who had said his callsign
+    # twice to say it again.
+    #
+    # Filtering first rather than filtering the answer matters: throwing away an
+    # implausible SPEAKER leaves the radio unidentified even though the pilot
+    # named himself perfectly well one clause earlier.
+    real = [cs for cs in callsign.extract_all(transcript)
+            if _plausible_callsign(cs, transcript)]
+    heard = real[1] if len(real) > 1 else (real[0] if real else "")
     seen = _transmitters.setdefault(guid, Counter())
     order = _order.setdefault(guid, {})
 
@@ -1334,6 +1349,33 @@ def _plausible_callsign(cs: str, said: str = "") -> bool:
     return name.lower() in opening
 
 
+_plan_labels: list[str] = []
+
+
+def plan_labels(url: str = f"{BASE_URL}/plans") -> list[str]:
+    """The spoken names of the plans on file, for priming the transcriber.
+
+    Cached after the first success and never re-fetched on failure, because this
+    runs inside the transcribe path: a director that is slow to answer must cost
+    a plan name, not a transmission.
+    """
+    if _plan_labels:
+        return _plan_labels
+    try:
+        for p in _get_json(url, timeout=3.0).get("plans") or []:
+            if p.get("label"):
+                _plan_labels.append(p["label"])
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+        pass
+    if _plan_labels:
+        # And the same list keeps them from becoming aeroplanes. "Samovar Three"
+        # is a callsign by shape -- an ordinary word with a number after it --
+        # and only knowing the names we assigned ourselves can say otherwise.
+        from marshall.atc import callsign as C
+        C.these_are_not_aircraft(_plan_labels)
+    return _plan_labels
+
+
 def whisper_vocabulary(profile) -> str:
     """The priming text for the transcriber, from what is actually on the air.
 
@@ -1362,7 +1404,7 @@ def whisper_vocabulary(profile) -> str:
     stations = [s.name for s in (getattr(profile, "stations", None) or [])]
     fixes = [f.name for _, f in R.sortie_points()]
     field = getattr(getattr(profile, "beacon", None), "name", "Batumi")
-    return stt.domain_prompt(stations, fixes, spoken, field)
+    return stt.domain_prompt(stations, fixes, spoken, field, plan_labels())
 
 
 def push_fixes(base: str, profile) -> int:
@@ -1401,9 +1443,17 @@ def push_fixes(base: str, profile) -> int:
         _pkg.__path__ = [str(_stubs / "dcs")]
         sys.modules["dcs"] = _pkg
 
-    fixes = {f.name: f for _, f in R.sortie_points()}
-    if getattr(profile, "beacon", None) is not None:
-        fixes.setdefault(profile.beacon.name, profile.beacon)
+    # EVERY fix route.py publishes, not only the ones on tonight's sortie. A
+    # filed flight plan may route via any of them -- a ferry up the coast goes to
+    # KOBULETI, which no sortie leg touches -- and a plan naming a fix the table
+    # does not hold is refused at clearance delivery. The rule is the simple one:
+    # if route.py publishes it as a Fix, the controller can compute against it.
+    fixes = {f.name: f for f in vars(R).values() if isinstance(f, R.Fix)}
+    fixes.update({f.name: f for _, f in R.sortie_points()})
+    for attr in ("beacon", "outer_hold", "arrival_fix"):
+        f = getattr(profile, attr, None)
+        if f is not None and getattr(f, "name", None):
+            fixes.setdefault(f.name, f)
     if not fixes:
         return 0
     lua = "local o = {} "
@@ -2156,6 +2206,22 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 "he is holding, and a pilot who has lost track of that gets it "
                 "wrong again on the next call. He is flying an aeroplane; do "
                 "not make him ask twice.")
+            also = [r for r in (getattr(me, "also", ()) or ()) if r]
+            if also:
+                # The other hats this man wears, read off the station rather than
+                # remembered. A field this size does not staff a seat per phase
+                # of flight: one man has ground, delivery and tower. Without this
+                # he refuses work that is his and sends the pilot to a frequency
+                # he invented -- a clearance request on Tower was answered with
+                # "you want Ground, try one two one decimal five", which is a
+                # channel with nobody on it.
+                parts.append(
+                    f"YOU ALSO WORK: {', '.join(also)} — on this same "
+                    f"frequency, because this field does not staff a separate "
+                    f"position for them. A pilot who calls you by one of those "
+                    f"names has the RIGHT button pressed. Do the work; do not "
+                    f"send him to another frequency for it, and never name a "
+                    f"frequency that is not on the plate.")
             if getattr(me, "role", "") == "overlord":
                 parts.append(OVERLORD_BRIEF)
         if nxt:

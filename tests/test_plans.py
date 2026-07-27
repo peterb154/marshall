@@ -184,3 +184,40 @@ class TestHowMuchHelpHeNeeds(unittest.TestCase):
         for nav in ("ins", "adf", "dr"):
             with self.subTest(nav=nav):
                 self.assertTrue(P.help_level(nav).strip())
+
+
+class TestNamingSomethingNobodyFiled(unittest.TestCase):
+    """"Request clearance" and "request clearance to Vaziani" are different
+    questions. The first names nothing and deserves the list; the second names
+    somewhere nobody filed for, and answering it with a list of three plans that
+    all go elsewhere answers a question he did not ask."""
+
+    def test_a_destination_nobody_filed_for_matches_nothing(self):
+        got = P.pick("Hoover one one, request clearance to Vaziani",
+                     FILED, callsign="Hoover 1-1")
+        self.assertTrue(got.get("none"))
+
+    def test_a_task_nobody_filed_matches_nothing(self):
+        got = P.pick("Hoover one one, clearance for the tanker track",
+                     FILED, callsign="Hoover 1-1")
+        self.assertTrue(got.get("none"))
+
+    def test_naming_nothing_at_all_still_gets_the_list(self):
+        got = P.pick("Hoover one one, request clearance", FILED,
+                     callsign="Hoover 1-1")
+        self.assertEqual(len(got.get("ambiguous") or []), len(FILED))
+
+    def test_his_own_callsign_is_not_a_place(self):
+        """Without taking his name out of what he said, "Hoover" is a word that
+        matches no plan and every request reads as a request for somewhere
+        nobody filed for."""
+        got = P.pick("Hoover one one, request clearance for the ferry",
+                     FILED, callsign="Hoover 1-1")
+        self.assertEqual((got.get("plan") or {}).get("name"), "ferry")
+
+    def test_an_unknown_caller_is_asked_rather_than_refused(self):
+        """With no callsign there is no way to tell his name from a place, so
+        the rule stands down. Asking is the safe way to be wrong."""
+        got = P.pick("Hoover one one, request clearance to Vaziani", FILED)
+        self.assertTrue(got.get("ambiguous"))
+        self.assertFalse(got.get("none"))

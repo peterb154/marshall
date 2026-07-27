@@ -58,6 +58,53 @@ A2 gives silence, stop and tell me — every other test gets harder to report.
 
 ---
 
+## G — clearance delivery, at the ramp (before B)
+
+Flown before you start the engine, on **118** — Tower also works ground and
+clearance delivery, because a field this size does not staff a seat per phase of
+flight. Everything here is new and has never been said to a human.
+
+Most of this is script-checked already: which plan a request resolves to
+(`tools/plan_sweep.py`, eleven phrasings), and that two flights can hold two
+plans without treading on each other (`tools/plan_assign_check.py`). What a
+script cannot judge is whether the clearance is **copyable** — whether a man with
+a pencil, in a cockpit, can actually get it down at the pace it is read.
+
+| ID | Prio | Test | What should happen | Fix under test |
+|----|------|------|--------------------|----------------|
+| G1 | P1 | Ask for your clearance in your own words — *"Batumi Ground, Hoover one one, request IFR clearance, Samovar Three"* | The full CRAFT clearance: cleared to, route, altitude, **departure frequency**, squawk. Write it down as he says it | [#1] `request_clearance` |
+| G2 | P1 | Read it back, and get one number **wrong** on purpose | He corrects the number you missed and asks for that part again — not the whole clearance | [#1] `clearance_read_back` |
+| G3 | P1 | Ask for something two plans fit — *"request clearance for the CAS over Tsutsnvati"* | A **question**, not a clearance. He must not pick one for you | [#1] `plans.pick` |
+| G4 | P2 | Ask for a clearance to somewhere nobody filed — *"request clearance to Vaziani"* | *"nothing on file"* and an ask, not the nearest plan read out | [#1] `plans.pick` |
+| G5 | P2 | Airborne later, ask *"what am I doing"* or *"where am I going next"* | He answers from your plan without you repeating it, and does not read you ranges if you are in something with a moving map | [#1] `flight_plan_help` |
+
+**What each one is actually checking**
+
+**G1** — The one that matters. The words come back from a tool already finished,
+and the question is whether the controller reads them or improvises around them.
+The **departure frequency is the element to watch**: it was dropped in the first
+dry run, twice, and a pilot who never hears it is airborne not knowing whom to
+call. Copyable at speaking pace is the other half — if you cannot write it down
+without asking for a repeat, say so, that is a real finding.
+
+**G2** — "Readback correct" is a ground phrase and this is the one place it
+belongs. Getting a number wrong on purpose is the test: a controller who accepts
+a wrong read-back has recorded an agreement that was never made.
+
+**G3** — Two plans on file are the same sortie flown two ways, differing only in
+the approach at the end. Asking is the correct answer and the hard one — the
+easy failure sounds decisive and clears you on somebody else's plan.
+
+**G4** — The opposite failure. A resolver that always picks its best match never
+says "nothing on file", which looks perfect until the night it routes you
+somewhere you did not ask to go.
+
+**G5** — What the aeroplane can do decides how much help you get: a moving map
+wants the fix named and nothing else, a Mustang wants position reports and
+vectors. It is keyed on the type radar reports, so nobody has to declare it.
+
+---
+
 ## B — the approach (the one that has been flown most, and broken most)
 
 | ID | Prio | Test | What should happen | Fix under test |

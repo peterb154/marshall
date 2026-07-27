@@ -52,9 +52,38 @@ suite has never been sufficient for it.
 ---
 
 ## [FP-1] Flight plans: many on file, assigned per flight — #1
-labels: feature
+labels: feature, needs-flight-test
 
-**Status:** TODO
+**Status:** SHIPPED/UNVERIFIED — built, script-checked, never said to a human.
+Card section **G**.
+
+**What is in.** `flight_plans` are filed templates with routes, cruise levels,
+tasks and a spoken label; `assigned_plans` is the per-flight copy, one row per
+flight by unique index. A spoken request resolves against task, route places,
+label and destination-last (`plans.pick`), and where two plans fit the controller
+ASKS. The clearance comes back finished in CRAFT — clearance limit, route,
+altitude, departure frequency, squawk — and the brief says to voice it whole.
+Route fixes resolve through the `fixes` table rather than being stored on the
+plan, so a plan and a chart cannot disagree about where INGRESS is, and a route
+naming a fix nobody holds is refused at delivery instead of discovered on the
+third leg. How much navigation help a pilot gets is keyed on the aircraft type
+radar already reports.
+
+**What the scripts cover.** `tools/plan_sweep.py` (eleven phrasings: match, ask,
+and nothing-on-file, offline or `--live`), `tools/plan_assign_check.py`
+(criteria 1, 2, 5, 7 against a running director on a scratch mission), and
+`tools/atc_dryrun.py --script clearance` for the seam that matters — whether the
+agent voices the tool's numbers or improvises. The dry run is what found the
+departure frequency going missing, twice.
+
+**What is left for a human:** whether the clearance is COPYABLE at speaking
+pace, which no script can judge. G1–G5.
+
+**Found on the way**, both fixed here: a plan's spoken name is a callsign by
+shape, so "request clearance, Samovar Three" bound the pilot's radio to his own
+flight plan — see [#13]; and "clearance for the CAS" produced an aeroplane
+called Clearance 4, since "for" is a homophone of "four", in the one exchange
+where every pilot says those exact words.
 
 Today there is exactly one flight plan and it is mission-wide — `flight_plans`
 carries `active`, and every insert does `UPDATE flight_plans SET active=false`
