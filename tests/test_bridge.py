@@ -1114,3 +1114,42 @@ class TestLettingEngineeringGo(unittest.TestCase):
             with self.subTest(said=said):
                 self.assertTrue(agent_atc._ENG_CALL.search(said))
                 self.assertFalse(agent_atc._ENG_DONE.search(said))
+
+
+class TestTalkingAboutAControllerIsNotCallingHim(unittest.TestCase):
+    """Engineering steps aside when the pilot calls a controller. It has to know
+    the difference between calling him and mentioning him.
+
+    Hoover's A5 bug report -- "requested a call back, got no call back on one
+    three nine Georgia Center" -- contained a station name in the middle of a
+    sentence. Engineering stepped out of the way, the controller answered the
+    bug report with "say your callsign", and the report went nowhere. An
+    ADDRESS opens a transmission; that is how radio works.
+    """
+
+    STATIONS = ("Georgia Center", "Batumi Approach", "Batumi Tower")
+
+    def _addressed(self, said: str) -> bool:
+        """The predicate as the bridge computes it: whoever is named FIRST in the
+        opening of the transmission is who he is calling."""
+        import re
+        pattern = re.compile("|".join(re.escape(n) for n in self.STATIONS), re.I)
+        opening = " ".join(said.split()[:6])
+        atc = pattern.search(opening)
+        eng = re.search(r"\bengineering\b", opening, re.I)
+        return bool(atc) and not (eng and eng.start() < atc.start())
+
+    def test_calling_a_controller_steps_engineering_aside(self):
+        for said in ("Georgia Center, Pony one one, checking in",
+                     "Batumi Approach Pony one one request the approach",
+                     "Batumi Tower, Pony one one, ready to taxi"):
+            with self.subTest(said=said):
+                self.assertTrue(self._addressed(said))
+
+    def test_a_bug_report_that_names_one_does_not(self):
+        for said in ("Engineering, A5 failed, no call back on one three nine "
+                     "Georgia Center",
+                     "engineering, Batumi Approach vectored me into the hill",
+                     "that last one came from Batumi Tower and it was wrong"):
+            with self.subTest(said=said):
+                self.assertFalse(self._addressed(said))

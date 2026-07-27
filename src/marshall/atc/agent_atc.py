@@ -1317,6 +1317,13 @@ def known_flight_names() -> set[str]:
     return out
 
 
+# The channel the last transmission was on. A one-element list because it is
+# written from the pilot thread and read from the scheduler thread, and a bare
+# module global rebound in a closure is the kind of thing that works until
+# somebody adds a `global` and it does not.
+_last_active_hz: list[float | None] = [None]
+
+
 def _plausible_callsign(cs: str, said: str = "") -> bool:
     """May this name become an aeroplane the controller sequences?
 
@@ -1655,14 +1662,35 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             time.sleep(HOOK_POLL_SEC)
             for hook in fetch_due(session_id):
                 scope = fetch_radar(session_id) if radar_on else ""
-                print(f"HOOK fired (+{hook.get('seconds')}s): {hook.get('why')}",
-                      flush=True)
+                why = hook.get("why") or ""
+                # WHICH CHANNEL THE PROMISE WAS MADE ON.
+                #
+                # Without this the callback went out on the bridge's primary
+                # frequency whatever channel the pilot was actually on. Hoover
+                # asked Georgia Center on 139 for a call in sixty seconds; the
+                # hook fired on time, the controller said "calling as requested,
+                # go ahead" -- on 124, where nobody was listening. From the
+                # cockpit that is indistinguishable from a hook that never
+                # fired, and it is worse than never promising.
+                #
+                # The frequency comes from the man it is owed to: the channel we
+                # last heard HIM on. Falling back to the last channel anybody
+                # spoke on, and only then to the primary.
+                from marshall.atc import callsign as _C
+                on_hz = None
+                for cs in _C.extract_all(why):
+                    if cs in _heard_on:
+                        on_hz = _heard_on[cs]
+                        break
+                on_hz = on_hz or _last_active_hz[0]
+                print(f"HOOK fired (+{hook.get('seconds')}s) on "
+                      f"{(on_hz or freq_hz) / 1e6:.3f}: {why}", flush=True)
                 interact(
                     f"EVENT -- your scheduled hook just fired. Reason you set it: "
-                    f"{hook.get('why')}\nRADAR: {scope}\n"
+                    f"{why}\nRADAR: {scope}\n"
                     f"Make the radio call now if it is warranted. If nothing is "
                     f"needed, reply exactly: (no call).",
-                    "hook")
+                    "hook", on_hz=on_hz)
 
     def asr_monitor() -> None:
         """Talk him down: a range call every mile while he is on final.
@@ -1960,6 +1988,10 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             # He has checked in HERE. Until he does, no controller on this
             # channel may start working him -- see may_be_vectored.
             _heard_on[known] = heard_hz or freq_hz
+            # And the channel the conversation is on, for anything owed to a
+            # pilot later -- a hook whose reason names nobody still has to be
+            # spoken where somebody is listening.
+            _last_active_hz[0] = heard_hz or freq_hz
 
         scope = fetch_radar(session_id) if radar_on else ""
         n_contacts = count_contacts(scope)
@@ -2064,7 +2096,25 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # both contain the word, so a summons that matched on the word alone
         # would re-open the line the pilot was trying to close and he could
         # never get back to the controller.
-        _addressed_atc = bool(_ADDRESSING and _ADDRESSING.search(transcript))
+        # ADDRESSED, not merely MENTIONED. A controller's name in the OPENING of
+        # a transmission is a pilot calling him; the same name in the middle of
+        # a sentence is a pilot talking ABOUT him.
+        #
+        # Hoover's bug report -- "requested a call back, got no call back on one
+        # three nine Georgia Center" -- was read as him calling Georgia Center,
+        # so engineering stepped aside and the controller answered a bug report
+        # with "say your callsign". The report was lost and the pilot got an
+        # interrogation. Same rule as a callsign: an address opens a
+        # transmission, which is how radio works and not a heuristic.
+        # WHOEVER IS NAMED FIRST is who he is calling. Opening a transmission
+        # with "engineering" and then naming a controller inside the sentence --
+        # "engineering, Batumi Approach vectored me into the hill" -- is a bug
+        # report about that controller, not a call to him.
+        _opening = " ".join(transcript.split()[:6])
+        _atc_at = _ADDRESSING.search(_opening) if _ADDRESSING else None
+        _eng_at = re.search(r"\bengineering\b", _opening, re.I)
+        _addressed_atc = bool(_atc_at) and not (
+            _eng_at and _eng_at.start() < _atc_at.start())
         if _on_the_line and _addressed_atc and not _ENG_CALL.search(transcript):
             # He is talking to a controller. Step out of the way silently -- a
             # "clear" call here would be engineering talking over the very
