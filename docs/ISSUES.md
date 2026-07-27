@@ -827,7 +827,29 @@ shape rather than a sentence.
 
 labels: bug, needs-flight-test
 
-**Status:** OPEN — partly explained, not solved.
+**Status:** FIXED/UNVERIFIED — cause found and confirmed against the pilot's own
+calls twice. Needs one approach flown to close.
+
+**It was GRID CONVERGENCE.** DCS's x/z grid is a transverse Mercator and its
+north is not true north; at Batumi the difference is 5.74 degrees. Our radials
+come from `ST_Azimuth` on lat/lon and are TRUE. The final approach course was
+taken from the F10 ruler, the aircraft compass and `getRunways().course` — all
+of which are in the GRID frame. So every centreline this system drew was six
+degrees off, and it sat SOUTH of the runway, which is exactly what he said:
+"flying me in south of the field".
+
+Confirmed twice from his own radio calls. On final he reported himself right of
+course while the controller said left; at the corrected course he was 683 ft and
+729 ft RIGHT at those two fixes.
+
+**It also closed [#19].** The outbound trace that reversed 144 degrees now walks
+round smoothly — that trace sat exactly where the six-degree error changed which
+side of the course he was on, so the engine kept changing its mind.
+
+**Still to do**, and it is Hoover's: the approach is anchored on the runway
+CENTRE, half a mile past the 13 threshold, so range calls and the missed
+approach point are 0.56 nm late. Separate from the frame error and worth fixing
+next.
 
     "Only major complaint is that he thinks I'm left of course when right of
      course." ... "It shows up as him always vectoring me about .25 miles south."
@@ -886,6 +908,55 @@ published — it is on the plate — so it should be quoted, not remembered.
    maintain two thousand" — rather than issuing a different number as though it
    were the first one.
 3. A regression check drives a go-around and compares the two transmissions.
+
+---
+
+## [ASR-2] On final, correct him RELATIVE to what he is flying — #37
+
+labels: feature, needs-flight-test
+
+**Status:** TODO — Hoover's, and it removes a whole class of error.
+
+    "when in the final phases they say left 10 right 5 and don't bother with
+     headings... once established, doing this would avoid all dg drift and mag
+     compass problems"
+
+    "vectors to the [FAF] should be with headings (rounded to the nearest 5) and
+     once established, just corrections relative to current course"
+
+This is how a real surveillance approach is flown, and it is also the only form
+of guidance that cannot be broken by the pilot's instruments. An absolute
+heading is only as good as the gyro he sets it on, and a directional gyro
+DRIFTS — Hoover's read seven degrees off the compass on the runway, and the
+compass in the same airframe read sixteen off the map. A relative correction
+needs none of that: "turn left ten degrees" means the same thing whatever his
+gyro says, because the controller is watching the track on radar and the pilot
+only has to turn.
+
+It also fixes a real asymmetry. We compute a heading in true, convert it to
+magnetic, and speak it — and every one of those steps can be wrong. A relative
+correction is computed from the SHAPE of his track and needs no frame at all.
+
+**Two phases, two forms**
+
+* **Vectoring to the final approach course**: absolute headings, rounded to the
+  nearest 5. A pilot repositioning has time to set a gyro, and a round number is
+  easier to hold and read back.
+* **Once established**: relative only. "Turn left ten degrees." "Turn right
+  five." No heading, no altitude repetition — the mile calls carry those.
+
+**Acceptance criteria**
+1. Outside the final approach fix, headings are absolute and end in 0 or 5.
+2. Inside it, corrections are relative and no absolute heading is spoken.
+3. The relative correction is derived from observed TRACK, not from a heading
+   the controller believes he is flying.
+4. A pilot with a deliberately mis-set gyro can still fly the approach to
+   minimums — which is the whole point, and is a flight test nobody could have
+   passed before.
+
+Related: [#35] and the frame work in `route.py` — this is the belt to that
+braces, because it makes the approach immune to the class of bug that cost a
+night.
 
 ---
 
