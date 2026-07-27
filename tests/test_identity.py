@@ -221,3 +221,45 @@ class TestBorrowedAuthorityCannotBeSelfMade(unittest.TestCase):
         self.assertEqual(
             reg.resolve("g", "nobody", spoken="Pony 1-1",
                         roster=ctl.identified()).authority, "roster")
+
+
+class TestTheRealNamesThisProjectHasSeen(unittest.TestCase):
+    """The physical link, checked against every pairing actually recorded.
+
+    The chain only holds if the SRS client name and the name radar prints are
+    the same human, and that is an empirical claim about two systems nobody
+    coordinated -- so it is measured here rather than assumed.
+
+    It holds because the radar line leads with `player_name or callsign or
+    name`: for an occupied seat that is the PLAYER, not the slot. Which matters
+    for the F-16 testbed, whose slot is called "Testbed 1-1" -- a name no
+    pilot's radio will ever match. Flying it, he still appears under his own
+    player name, and the chain closes anyway.
+    """
+
+    PAIRS = [
+        ("Sockeye", "362nd_sockeye"),      # squadron tag, underscore, lower case
+        ("Shooter", "362nd Shooter"),      # squadron tag, space
+        ("Hoover", "Hoover 1-1-1"),        # slot suffix on the end
+    ]
+
+    def test_every_radio_finds_its_pilot(self):
+        for srs, unit in self.PAIRS:
+            with self.subTest(f"{srs} -> {unit}"):
+                units = [identity.Unit(unit)]
+                self.assertIsNotNone(identity.unit_for_radio(srs, units))
+
+    def test_and_does_not_find_somebody_elses(self):
+        """The same list is a negative test for free: three different humans,
+        and no radio may match a unit that is not his."""
+        units = [identity.Unit(u) for _s, u in self.PAIRS]
+        for srs, unit in self.PAIRS:
+            with self.subTest(srs):
+                self.assertEqual(identity.unit_for_radio(srs, units).name, unit)
+
+    def test_a_client_slot_name_is_not_what_a_pilot_matches_on(self):
+        """The F-16 case stated outright. If radar ever started printing the
+        slot instead of the player, identity for that aeroplane would silently
+        fall back to the weaker rungs -- so this is the canary."""
+        self.assertIsNone(
+            identity.unit_for_radio("Sockeye", [identity.Unit("Testbed 1-1")]))
