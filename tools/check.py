@@ -46,6 +46,9 @@ CHECKS = [
     ("approach sweep, pilot not turning", [PY, "tools/asr_sweep.py", "--deaf"],
      "#19 — whether the controller argues with itself when the geometry refuses "
      "to improve, which an obedient aeroplane can never show", False),
+    ("issues and the card in step", [PY, "tools/issue_sync.py"],
+     "#27 — that ISSUES.md, GitHub and the cockpit card still agree. Twenty of "
+     "thirty-seven had drifted before anyone looked", False),
     ("filed plans, resolved", [PY, "tools/plan_sweep.py"],
      "#1 G3/G4 — which plan a spoken request means, and when to ASK instead of "
      "picking one", False),

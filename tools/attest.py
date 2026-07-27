@@ -86,5 +86,23 @@ def main() -> int:
     return 0
 
 
+# Closing on GitHub is only half of it: `docs/ISSUES.md` is the copy that reads
+# with no network and the one the kneeboard renders, and for a fortnight it was
+# the one that went stale. A close that does not write the status back leaves
+# the two disagreeing, and both look authoritative.
+def _sync_back() -> None:
+    import subprocess as _sp
+    import sys as _sys
+    from pathlib import Path as _P
+    tool = _P(__file__).with_name("issue_sync.py")
+    r = _sp.run([_sys.executable, str(tool), "--fix"],
+                capture_output=True, text=True)
+    tail = (r.stdout or "").strip().splitlines()
+    if tail:
+        print("  " + tail[-1])
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    _rc = main()
+    _sync_back()
+    raise SystemExit(_rc)

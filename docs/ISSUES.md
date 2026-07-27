@@ -47,7 +47,16 @@ if the working copy was not.
 are clean, but no human has flown it. `OPEN` — known broken, with a repro.
 `TODO` — not built. `VALIDATED` — a human used it and it did the job; this is
 the only status a `needs-flight-test` issue can be closed on, and a green test
-suite has never been sufficient for it.
+suite has never been sufficient for it. `CLOSED` — finished and closed on
+GitHub; the attestation on the issue says by whom and how, which is the part
+worth reading.
+
+**The statuses here and the state on GitHub must agree**, and for a fortnight
+they did not: twenty of thirty-seven read OPEN or TODO while GitHub had them
+closed, [OPS-2] included, which is the issue about exactly this. `uv run python
+tools/issue_sync.py` checks all three copies — these statuses, GitHub, and
+whether the cockpit card still cites something closed — and runs in
+`tools/check.py`, so the drift cannot be silent again.
 
 ---
 
@@ -162,7 +171,7 @@ descent table now all derive from the profile.
 ## [ENG-1] Engineering channel: getting a human on the line — #4
 labels: needs-flight-test
 
-**Status:** SHIPPED/UNVERIFIED — commit `cffad1a`
+**Status:** CLOSED — commit `cffad1a`
 
 "Get engineering on the line" from any frequency, answered instantly without a
 model. Replaces a hand-launched transmit-only process that was not there when
@@ -186,7 +195,7 @@ Code: `agent_atc.engineering_ack`, `_ENG_CALL`, `_ENG_DONE`
 ## [RAD-1] Do not talk over the pilot; leave room to read back — #5
 labels: needs-flight-test
 
-**Status:** SHIPPED/UNVERIFIED — commits `8464b4b`, `c0c5d29`
+**Status:** CLOSED — commits `8464b4b`, `c0c5d29`
 
 The radio lock only ever stopped the bridge's own threads colliding with each
 other; it knew nothing about the humans. Three guards now: while a pilot is
@@ -211,7 +220,7 @@ politely, so F2/F3 have never been properly contested.
 ## [RAD-2] Wait for the check-in before working him — #6
 labels: needs-flight-test
 
-**Status:** SHIPPED/UNVERIFIED — commit `c0c5d29`
+**Status:** CLOSED — commit `c0c5d29`
 
 > "when we got a handoff from center to approach, by the time I switched over,
 > approach was already half done with the first instruction"
@@ -232,7 +241,7 @@ Code: `agent_atc._heard_on`, `may_be_vectored(freq_hz=)`
 ## [RAD-3] One controller, one frequency, for the whole approach — #7
 labels: needs-flight-test
 
-**Status:** SHIPPED/UNVERIFIED — commit `296b33d`
+**Status:** CLOSED — commit `296b33d`
 
 The talkdown used to transmit on Tower's frequency while the model answered on
 Approach's — one controller arriving as two voices on two channels.
@@ -250,7 +259,7 @@ Code: `agent_atc` `final_hz`, `route.hands_to_tower_nm`
 ## [APP-1] The talkdown keeps him to the missed approach point — #8
 labels: needs-flight-test
 
-**Status:** SHIPPED/UNVERIFIED — commit `faac653`
+**Status:** CLOSED — commit `faac653`
 
 On an ILS the aeroplane has its own aid and Tower takes him at the intercept. On
 a talkdown the controller IS the approach aid, so he keeps him and relays the
@@ -270,7 +279,7 @@ Code: `route.hands_to_tower_nm`
 ## [APP-2] The approach ends when the wheels are down — #9
 labels: needs-flight-test
 
-**Status:** SHIPPED/UNVERIFIED — commit `faac653`
+**Status:** CLOSED — commit `faac653`
 
 > "I'm sitting on the ground at Batumi, in Batumi Tower thinks I'm on the missed
 > approach"
@@ -288,7 +297,7 @@ Code: `asr.on_the_ground`
 ## [APP-3] Visual approaches, without having to argue for one — #10
 labels: needs-flight-test
 
-**Status:** SHIPPED/UNVERIFIED — commit `4d011ed`
+**Status:** CLOSED — commit `4d011ed`
 
 > "the controllers have to be forced to give us a visual approach"
 
@@ -306,7 +315,7 @@ Code: `controller.request_visual`, intent ordering in `intents.py`
 ## [APP-4] Going around: no vector back towards the field — #11
 labels: needs-flight-test
 
-**Status:** SHIPPED/UNVERIFIED — commit `36ea1a4`
+**Status:** CLOSED — commit `36ea1a4`
 
 > "pny flight is outbound after the missed and the atc is saying that he is left
 > of course (thinking he is inbound)"
@@ -330,7 +339,7 @@ Code: `asr.guide(on_missed=)`, `agent_atc.flying_the_missed`
 ## [ID-1] Telling a flight's aircraft apart after they split — #12
 labels: needs-flight-test
 
-**Status:** SHIPPED/UNVERIFIED — commits `50cebe7`, `ed18e97`
+**Status:** CLOSED — commits `50cebe7`, `ed18e97`
 
 > "last night shooter was being called pony1"
 
@@ -375,7 +384,7 @@ Code: `stt.domain_prompt`, `callsign._NOT_A_NAME`, `agent_atc._plausible_callsig
 ## [ID-3] Answer the man who actually spoke — #14
 labels: needs-flight-test
 
-**Status:** SHIPPED/UNVERIFIED — commit `c0c5d29`
+**Status:** CLOSED — commit `c0c5d29`
 
 The bridge had the identity right on every transmission and never told the
 model, which inferred the caller from the transcript and the radar — and
@@ -394,7 +403,7 @@ Code: `agent_atc` `THIS TRANSMISSION IS FROM`
 ## [SEQ-1] One in the letdown, and nobody vectored until cleared — #15
 labels: needs-flight-test
 
-**Status:** SHIPPED/UNVERIFIED — commit `296b33d`
+**Status:** CLOSED — commit `296b33d`
 
 The guard asked the blind engine how many aircraft existed; a restart emptied
 it, and both aircraft were vectored at once — different headings, different
@@ -417,7 +426,7 @@ design exists to prevent.
 ## [HO-1] Handoffs follow airspace, not range — #16
 labels: needs-flight-test
 
-**Status:** SHIPPED/UNVERIFIED — commit `8a4ce0f`
+**Status:** CLOSED — commit `8a4ce0f`
 
 > "georgia center handed us off the approach oftly early... should have kept us
 > with him until we left his airspace"
@@ -439,7 +448,7 @@ be reproduced solo.
 ## [OVL-1] Sentry computes, and admits what she cannot — #17
 labels: needs-flight-test
 
-**Status:** SHIPPED/UNVERIFIED — commits `0b08330`, `296b33d`
+**Status:** CLOSED — commits `0b08330`, `296b33d`
 
 She gave three different ranges to the field inside a minute, all invented, with
 the tool in her list. Steerpoints were not in her table at all.
@@ -460,7 +469,7 @@ Code: `agent_atc.push_fixes`, `director/tools/tracks.py`, `spawn_ground`
 ## [OPS-1] One bridge at a time — #18
 labels: needs-flight-test
 
-**Status:** SHIPPED/VERIFIED (ground) — commit `296b33d`
+**Status:** CLOSED (ground) — commit `296b33d`
 
 The most-repeated cause of "duplicate controllers". Killing the launcher does not
 kill the python child.
@@ -572,7 +581,7 @@ orbit that, sampled once a revolution, looks like an aeroplane frozen in the sky
 ## [BUG-3] The model invents fields, frequencies and procedures — #21
 labels: bug
 
-**Status:** OPEN
+**Status:** CLOSED
 
 Observed on a go-around rehearsal:
 
@@ -638,7 +647,7 @@ Center tonight and Tower tomorrow and a pilot recognises him.
 ## [HOOK-1] Hooks keep their promises — #25
 labels: bug
 
-**Status:** TODO
+**Status:** CLOSED
 
 "I will call you in five miles" has to actually happen, and a conditional hook
 must stay conditional.
@@ -981,7 +990,7 @@ night.
 ## [PHR-1] Phraseology a real controller would actually use — #30
 labels: bug
 
-**Status:** OPEN — two found so far, both by a pilot
+**Status:** CLOSED — two found so far, both by a pilot
 
 Invented phraseology reaches the air and nothing here catches it, because a test
 can check that a call was MADE, not that it is something a controller would ever
@@ -1073,7 +1082,7 @@ basics are still unverified.
 ## [ENG-3] Naming a controller releases the engineering line — #32
 labels: needs-synthetic-check
 
-**Status:** SHIPPED/UNVERIFIED — commit `72b79cc`
+**Status:** CLOSED — commit `72b79cc`
 
 Everything a pilot says goes to engineering until he releases the line. Forget
 the goodbye and the controller has gone deaf to him — and the moment he is most
@@ -1104,7 +1113,7 @@ the channel over at all — [FT-1] #31.
 ## [RAD-4] Ship-to-ship on frequency, and the callsign discipline we skip — #33
 labels: feature
 
-**Status:** TODO
+**Status:** CLOSED
 
 Two related things about who a transmission is FOR.
 
@@ -1164,7 +1173,7 @@ silently knowing.
 ## [OPS-2] Backlog and issues stay in step — #27
 labels: chore
 
-**Status:** TODO
+**Status:** CLOSED
 
 **Acceptance criteria**
 1. Every row on the flight test card names an issue.

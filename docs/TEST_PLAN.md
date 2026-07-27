@@ -28,14 +28,13 @@ Priority column: **P1** never flown, this sortie is the first real test ·
 
 ---
 
-## A — before you start the engine (one row left)
+## A — before you start the engine
 
 | ID | Test | What should happen | Fix under test |
 |----|------|--------------------|----------------|
 | A8 | P1 | **In an F-16**, fly the approach from 20 nm and compare every "left/right of course" call against your HSI | The side he calls matches the needle, all the way in. This is the one that settles whether the P-51's instruments were the story | [#35] frames |
 | A9 | P1 | Go around, and write down the altitude in the go-around instruction AND the one on the next check-in | The **same number** both times, and it is the plate's missed approach altitude | [#36] |
 | A7 | P1 | On the ramp, draw on a chart page with a pen or the mouse, turn the page and come back, then go to the **E6B** page and press a button | Ink appears; the E6B still **works**, because that page is a calculator and keeps its clicks | [#34] `SetCursorEventsMode` |
-| A6 | P1 | On the go-around, listen to every instruction | Nothing named that is not on your chart. **"Proceed Kobuleti, contact Kobuleti Departure" is the failure** — it exists nowhere | [#30] |
 
 **A1–A5 are closed** — flown on the ramp on 27 July and attested on #4 and #25.
 The engineering channel itself is the tool you use for everything else and it is
@@ -43,7 +42,8 @@ working: ask for it in your own words, talk, say thanks or goodbye, and the
 frequency goes back to the controller. Their regression checks live in
 `tools/` and `tests/test_bridge.py`.
 
-What is left in this section is A6, and it needs you airborne.
+**A6 closed 27 July** — two go-arounds, nothing invented either time. What is
+left in this section is A7 (doodling), A8 and A9.
 
 **What it is actually checking**
 
@@ -73,8 +73,6 @@ calculator and switching the whole tab to ink would have quietly broken it. If
 the strokes vanish on a page turn, say so — that is OpenKneeboard's ink and how
 long it keeps it is its business, not ours, but it decides whether this is
 finished or whether we draw our own.
-
-**A6** — The one you asked to fly next, and the reason is the pattern: it has landed on the **missed approach both times**. That is when the model has least to work with and the most pressure to say something, so it invents a procedure — a field, a frequency and a handoff that exist nowhere in the plan, offered to a pilot who has just gone around and is looking for instructions. Go around, then read back every name he says and check it against your chart. Say exactly what he named; the specific words are the evidence.
 
 
 ---
@@ -340,8 +338,7 @@ real aeroplane. What is *not* worth a call is discovering it.
 |----|------|-------------------|----------------------------------------|-------|
 | E1 | note | Inbound and **2 nm or more off course between 11 and 16 nm**: he sends you outbound to reposition instead of giving you an intercept. Mapped exactly — inside 1.5 nm off, or beyond 18 nm, it behaves | A turn away when you are **under 2 nm off**, or beyond 18 nm, or a REVERSAL rather than a reposition | [#19] |
 | E2 | note | After a go-around or arriving from behind the field: he circles you near the field instead of taking you out | Circling while you are **inbound and established** — E2 is a repositioning bug, not an approach one | [#20] |
-| ~~E3~~ | — | **CLOSED 27 July** — flown clean twice, nothing invented on either go-around | — | [#30] |
-| E3 | note | A field, frequency or fix named that is not on your chart — *"proceed KOBULETI, contact Kobuleti Departure one two four"* | Any of it. Say what he named; every instance is a separate escape | [#30] |
+| ~~E3~~ | — | **CLOSED 27 July** — flown clean twice, nothing invented on either go-around. Guarded by `tools/atc_dryrun.py` | — | — |
 
 **What each one actually is**
 
