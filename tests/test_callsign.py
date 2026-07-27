@@ -166,3 +166,51 @@ class TestHoweverTheTranscriberSpellsIt(unittest.TestCase):
                      "a Yak9 crossing left to right"):
             with self.subTest(said=said):
                 self.assertEqual(C.extract_all(said), [])
+
+
+class TestOurOwnPhraseologyIsNotAnAeroplane(unittest.TestCase):
+    """Every vector a controller speaks can come back as a ghost.
+
+    A pilot reads the instruction back BEFORE he says who he is, so the first
+    words of his transmission are ours, not his name -- which defeats the
+    position rule that catches ghosts mid-sentence:
+
+        "Right two one five, Falcon one one"      -> an aeroplane called Right 2-5
+        "turn left three zero eight"              -> an aeroplane called Left 3-8
+
+    Both reached a live separation stack. The engine counted three aircraft,
+    decided there was traffic, and held a real pilot as number two behind two
+    things that do not exist. He aborted the sortie.
+
+    This is not the denylist-of-English that cannot converge. These are the
+    words WE choose to say -- the phraseology is ours, it is small, and it is
+    enumerable in a way that "any word before a digit" never was.
+    """
+
+    READBACKS = [
+        ("Right two one five, Falcon one one", "Falcon 1-1"),
+        ("Write 215 to send maintain 2000, Falcon one one", "Falcon 1-1"),
+        ("Left one four zero, two thousand, Falcon one one", "Falcon 1-1"),
+        ("Turn right heading one three zero, Pony one one", "Pony 1-1"),
+        ("Descend two thousand, Hammer one two", "Hammer 1-2"),
+        ("Holding five thousand, Falcon one one", "Falcon 1-1"),
+    ]
+
+    def test_a_readback_yields_only_the_aeroplane(self):
+        for said, who in self.READBACKS:
+            with self.subTest(said=said):
+                self.assertEqual(C.extract_all(said), [who])
+
+    def test_an_instruction_on_its_own_names_nobody(self):
+        for said in ("turn left three zero eight, maintain two thousand",
+                     "Left 3-0 cleared", "right two one five",
+                     "descend and maintain two thousand"):
+            with self.subTest(said=said):
+                self.assertEqual(C.extract_all(said), [])
+
+    def test_real_callsigns_still_survive_all_of_it(self):
+        for said, who in (("Pony one two, checking in", "Pony 1-2"),
+                          ("Batumi Approach, Hoover one one, request", "Hoover 1-1"),
+                          ("Falcon one one, level five thousand", "Falcon 1-1")):
+            with self.subTest(said=said):
+                self.assertIn(who, C.extract_all(said))

@@ -174,6 +174,24 @@ _NOT_A_NAME = {
     # something nobody had ever flown.
     "need", "needs", "want", "wants", "got", "give", "take", "make", "see", "seen", "hear", "heard", "count", "counting", "about", "around",
     "another", "only", "just", "maybe", "like", "than", "then",
+    # OUR OWN VOCABULARY. Every word in this group is one the CONTROLLER says,
+    # in an instruction, immediately before a number -- and a pilot reads the
+    # instruction back before he says who he is:
+    #
+    #     "Right two one five, Falcon one one"   -> an aeroplane called Right 2-5
+    #     "turn left three zero eight"           -> an aeroplane called Left 3-8
+    #
+    # Both reached a live separation stack, where the engine counted three
+    # aircraft, decided there was traffic, and held a real pilot as number two
+    # behind two things that do not exist. He aborted the sortie.
+    #
+    # This is not the denylist-of-English that cannot converge. These are the
+    # words WE choose to say: the phraseology is ours, it is small, and it is
+    # enumerable in a way that "any word before a digit" never was.
+    "left", "right", "write", "turn", "degree",
+    "amend", "amended", "expect", "expecting", "vector", "vectors",
+    "crossing", "join",
+    "hold", "holds", "intercept", "final", "base",
 }
 
 # Proper nouns that are real, are said on the radio, take a number after them,
