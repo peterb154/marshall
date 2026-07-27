@@ -696,6 +696,67 @@ number — which is every other test on this list.
 
 ---
 
+## [KB-2] Doodle on the kneeboard pages — #34
+
+labels: feature, needs-flight-test
+
+**Status:** TODO
+
+    "I want to doodle on the OpenKneeboard pages."
+
+A kneeboard you cannot write on is a poster. The whole reason a pilot straps one
+to his leg is to copy a clearance onto it, tick a test row as he flies it, circle
+the fix he is worried about, and scribble the number the controller just gave
+him. Section G exists to find out whether a CRAFT clearance is copyable at
+speaking pace, and right now the answer has to be copied onto something else.
+
+**The thing to establish first**, before any design: OpenKneeboard's ink layer
+works on its own page-based tabs (files, images, its own doodle tab). Our pages
+are a **Web Dashboard** tab, which is a browser view, and whether OKB will ink
+over it — or pass pen and mouse input through to the page — is not something to
+assume. That answer decides which of these this becomes, so it is step one and it
+is twenty minutes with a stylus, not a design meeting.
+
+**Three shapes, in the order they are worth trying**
+
+1. **OKB inks it natively.** If the web tab accepts ink, there is nothing to
+   build but a note in the docs saying which pen mode to use. Best outcome and
+   costs nothing; find out first.
+2. **We draw it ourselves.** If OKB passes pointer events to the page, an
+   overlay canvas on the pages we already own — with the strokes saved per page
+   so they survive a page turn, a reconnect and a server restart. This is the
+   one that composes with everything else: strokes are just another thing the
+   page can persist, so a ticked test row and a circled fix are the same
+   mechanism, and a doodle can be read back off the server after the sortie
+   instead of being a photograph of a screen.
+3. **Render to a file tab.** Generate the pages as PNG or PDF and serve them as
+   an OKB file tab, which inks natively today. Costs the live rendering that
+   [KB-1] was built for — the card and the charts would go back to being
+   generated rather than read — so this is the fallback, not the plan.
+
+**Acceptance criteria**
+1. A pilot can draw on the flight-test pages and the charts with a stylus or
+   mouse, in the aeroplane, without alt-tabbing out of the sim.
+2. Strokes survive a page turn and come back when he returns to that page.
+3. They survive an OpenKneeboard reconnect and a kneeboard server restart —
+   a clearance copied onto the page is *the* copy, and losing it is worse than
+   never having offered.
+4. Clearing is deliberate and per page. A pilot must never lose a page of notes
+   by tapping the wrong thing.
+5. Whatever he drew is retrievable on the ground, so a debrief can look at the
+   page he was actually reading.
+6. The live rendering from [KB-1] still works — editing a doc still shows up on
+   the next page turn.
+
+**Not in scope**: shared or synchronised doodles between two pilots. One pilot,
+one kneeboard, same as the real thing.
+
+Depends on nothing. Related: [KB-1] for the rendering, [FT-1] for reporting a
+result by radio — doodling is the other half of that, since some findings are a
+shape rather than a sentence.
+
+---
+
 ## [PHR-1] Phraseology a real controller would actually use — #30
 labels: bug
 
