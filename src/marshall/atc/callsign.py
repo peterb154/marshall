@@ -166,6 +166,37 @@ _CANDIDATE = re.compile(
     r"\b([A-Za-z]{3,})((?:[\s-]+(?:" + "|".join(_SPOKEN) + r"|\d))+)\b", re.I)
 
 
+def extract_all(text: str) -> list[str]:
+    """Every plausible callsign in a transcript, in the order spoken.
+
+    Radio convention is "[who you are calling], [who you are], [message]", so
+    the ORDER carries meaning and a caller who throws it away learns the wrong
+    name. "Hoover one two, Hoover one one, join up" rebound the speaker to his
+    own wingman, because the first callsign was the only one anybody looked at.
+    """
+    out = []
+    for m in _CANDIDATE.finditer(_digits(text or "")):
+        if m.group(1).lower() in _NOT_A_NAME:
+            continue
+        got = parse(m.group(0)).canonical
+        if got not in out:
+            out.append(got)
+    return out
+
+
+def speaker_in(text: str) -> str:
+    """WHO IS TALKING, by the convention rather than by position.
+
+    One callsign is his own. Two means he addressed somebody first and named
+    himself second, which is exactly how a pilot calls his wingman -- and taking
+    the first would bind his radio to the man he was calling.
+    """
+    found = extract_all(text)
+    if not found:
+        return ""
+    return found[1] if len(found) > 1 else found[0]
+
+
 def extract(text: str) -> str:
     """Pull the first plausible callsign out of a transcript, or "".
 

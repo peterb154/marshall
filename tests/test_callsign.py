@@ -108,3 +108,34 @@ class TestOrdinarySpeechIsNotAnAeroplane(unittest.TestCase):
         self.assertEqual(C.extract("Pony one one, checking in"), "Pony 1-1")
         self.assertEqual(C.extract("Hoover one two, level five"), "Hoover 1-2")
         self.assertEqual(C.extract("Hammer one, flight of two"), "Hammer 1")
+
+
+class TestWhoIsTalkingByConvention(unittest.TestCase):
+    """"[who you are calling], [who you are], [message]" -- the ORDER carries
+    meaning, and taking the first callsign bound a pilot's radio to the wingman
+    he was calling.
+
+    Found live: "Hoover one two, Hoover one one, join up" rebound the speaker to
+    Hoover 1-2, which then made the ship-to-ship check compare him with himself
+    and answer a call that was never his.
+    """
+
+    def test_two_callsigns_means_the_second_is_him(self):
+        self.assertEqual(C.speaker_in("Hoover one two, Hoover one one, join up"),
+                         "Hoover 1-1")
+        self.assertEqual(
+            C.speaker_in("Pony one two, Pony one one, you are cleared to cross"),
+            "Pony 1-1")
+
+    def test_one_callsign_is_his_own(self):
+        self.assertEqual(C.speaker_in("Hoover one one, request the approach"),
+                         "Hoover 1-1")
+
+    def test_a_station_does_not_count_as_a_callsign(self):
+        for said in ("Batumi Approach, Hoover one one, checking in",
+                     "Sentry, Hammer one one, request a target"):
+            with self.subTest(said=said):
+                self.assertEqual(len(C.extract_all(said)), 1)
+
+    def test_nothing_said_is_nobody(self):
+        self.assertEqual(C.speaker_in("four thousand level"), "")

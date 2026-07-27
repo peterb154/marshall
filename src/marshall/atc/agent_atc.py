@@ -413,7 +413,9 @@ def transmitter_callsign(guid: str | None, transcript: str) -> str:
         return ""
     from marshall.atc import callsign
     from marshall.atc.callsign import parse as C_parse
-    heard = callsign.extract(transcript)
+    # By the convention, not by position -- see callsign.speaker_in. Taking the
+    # first callsign bound a pilot's radio to the wingman he was calling.
+    heard = callsign.speaker_in(transcript)
     seen = _transmitters.setdefault(guid, Counter())
     order = _order.setdefault(guid, {})
 
@@ -780,6 +782,36 @@ def note_missed(cs: str, phase: str, ctl=None) -> None:
     """The geometry has just handed out the missed approach. Remember it."""
     if phase == "missed":
         _flying_missed.add(ctl._resolve(cs) if ctl is not None else cs)
+
+
+# HOW LONG A CONVERSATION STAYS OPEN.
+#
+# Real ATC does not harass a man for his callsign during a quick back and forth
+# -- he knows the voice, and demanding identification on every "roger" would be
+# its own kind of unrealistic. But "four thousand level" out of a silent
+# frequency gets "who is calling level four thousand?", because the controller
+# genuinely does not know and will not act on a report he cannot attribute.
+#
+# Ninety seconds is a readback, a follow-up question and a moment to think. Past
+# that he has stopped talking to you and started again.
+CONVERSATION_SEC = 90.0
+_last_heard: dict[str, float] = {}      # per RADIO, not per callsign
+
+
+def in_conversation(guid: str, now: float | None = None) -> bool:
+    return (now or time.time()) - _last_heard.get(guid, 0.0) < CONVERSATION_SEC
+
+
+def challenge_for(transcript: str) -> str:
+    """"Who is calling ...?" -- quoting back what was actually heard.
+
+    Repeating it matters: it tells the pilot he WAS heard and only the identity
+    is missing, which is a different problem from a dead radio and should not
+    sound like one.
+    """
+    said = " ".join((transcript or "").split())[:60].rstrip(" ,.")
+    return (f"Station calling {said}, say your callsign." if said
+            else "Station calling, say your callsign.")
 
 
 # Which frequency each aircraft was last heard on. A controller works the men on
@@ -1958,6 +1990,26 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 print(f"  ENG[tx] {reply}", flush=True)
                 client.transmit(eng_voice.frames(reply), _eng_hz, AM)
             continue
+        # OUT OF THE BLUE, WITH NO CALLSIGN. We know who it is from his radio,
+        # and a real controller does not -- so he asks, and does not act on a
+        # report he cannot attribute. Inside a conversation he does not ask,
+        # because by then he knows the voice.
+        from marshall.atc import callsign as _C
+        _guid = client.last_sender_guid or ""
+        _said_who = bool(_C.extract(transcript))
+        _open = in_conversation(_guid)
+        _last_heard[_guid] = time.time()
+        if not _said_who and not _open and known:
+            reply = challenge_for(transcript)
+            with radio_lock:
+                print(f"  ATC[who] {reply}   (out of the blue, no callsign)",
+                      flush=True)
+                record(session_id, kind="atc/challenge", callsign=known,
+                       text=reply)
+                client.transmit(voice_for(heard_hz).frames(reply),
+                                heard_hz or freq_hz, AM)
+            continue
+
         # Not addressed to us. Two aircraft on our frequency talking to each
         # other -- a real controller hears it, understands, and says nothing.
         _other = addressed_to_another_aircraft(

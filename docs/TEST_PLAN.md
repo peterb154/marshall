@@ -206,6 +206,8 @@ is two aircraft flying the same intercept — stop and say so.
 |----|------|------|--------------------|----------------|
 | D1 | [script] | Say your callsign clearly on the first call, then mumble one later | He keeps calling you the right thing | [#13] `transmitter_callsign` |
 | D2 | [script] | Say `Sentry` and `ingress` a few times across the sortie | Transcribed correctly — was coming through as "Century" and "in-grass" | [#13] `whisper_vocabulary` |
+| D6 | P1 | **Say a level out of the blue** — go quiet 2 min, then just *"four thousand level"* | *"Station calling four thousand level, say your callsign"* — he repeats what he heard | [#33] `challenge_for` |
+| D7 | P1 | Same, but during a back-and-forth (reply within ~90 s) | Answered normally. **No** callsign demanded — he knows your voice | [#33] `in_conversation` |
 | D3 | P2 | Call Approach by the wrong name (say "Batumi Tower" on 124) | Corrected **and told which frequency you are on** | [#7] |
 | D4 | P3 | Two aircraft airborne, neither cleared | **Neither** gets vectors until one is cleared | [#15] `may_be_vectored` |
 | D5 | [script] | Try to start a second bridge while one runs *(ground test, my end)* | Refuses, names the PID | [#18] `claim_the_frequency` |
@@ -216,6 +218,10 @@ is two aircraft flying the same intercept — stop and say so.
 **D1** — Your identity is anchored to the RADIO, not to the words, so it survives a mangled or missing callsign.
 
 **D2** — The transcriber is primed with the names actually in play — these came through as 'Century' and 'in-grass', and one garble hijacked a radio for a whole sortie.
+
+**D6** — Out of a silent frequency a controller genuinely does not know who spoke, and will not act on a report he cannot attribute. He repeats the words back on purpose: it tells you that you WERE heard and only the identity is missing, which is a different problem from a dead radio and should not sound like one. Ours knows perfectly well who you are from your radio — this is manner, not ignorance, and the identity behind it never changes.
+
+**D7** — The other side of the same timer, and the one that would be annoying if wrong. Ninety seconds is a readback, a follow-up and a moment to think; inside that he does not harass you for a callsign, because he knows the voice. If he demands one on every "roger", say so.
 
 **D3** — He corrects you rather than accepting whatever he is called, and tells you which frequency you are on — agreeing would put Tower on a frequency Tower is not on.
 

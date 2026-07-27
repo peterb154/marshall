@@ -5,6 +5,7 @@ radio. They exist because both failures below were found on the air, in the
 controller's voice, mid-sortie.
 """
 
+import time
 import os
 import unittest
 
@@ -919,3 +920,37 @@ class TestShipToShipIsNotOurs(unittest.TestCase):
         not -- the pilot gets silence and no way to tell why."""
         self.assertEqual(self.f("Pony one two, Pony one one, join up",
                                 "", self.st), "")
+
+
+class TestWhoIsCallingLevelFourThousand(unittest.TestCase):
+    """A controller does not harass a man for his callsign mid-conversation --
+    he knows the voice. But a report out of a silent frequency gets asked.
+
+        "when a quick back and forth is happening, atc knows the pilots voice
+         and doesn't harass him for his callsign. But 4000 level out of the
+         blue! That will get a 'who's calling level 4000?' kind of call"
+    """
+
+    def setUp(self):
+        agent_atc._last_heard.clear()
+
+    def test_a_reply_inside_a_conversation_is_not_challenged(self):
+        agent_atc._last_heard["g"] = time.time()
+        self.assertTrue(agent_atc.in_conversation("g"))
+
+    def test_out_of_the_blue_is(self):
+        agent_atc._last_heard["g"] = time.time() - agent_atc.CONVERSATION_SEC - 5
+        self.assertFalse(agent_atc.in_conversation("g"))
+
+    def test_a_radio_never_heard_from_is_out_of_the_blue(self):
+        self.assertFalse(agent_atc.in_conversation("never-spoken"))
+
+    def test_the_challenge_repeats_what_was_heard(self):
+        """So he knows he WAS heard and only the identity is missing -- a
+        different problem from a dead radio, and it should not sound like one."""
+        said = agent_atc.challenge_for("four thousand level")
+        self.assertIn("four thousand level", said)
+        self.assertIn("say your callsign", said)
+
+    def test_it_copes_with_nothing_worth_repeating(self):
+        self.assertIn("say your callsign", agent_atc.challenge_for(""))
