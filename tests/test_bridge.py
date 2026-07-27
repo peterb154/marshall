@@ -954,3 +954,45 @@ class TestWhoIsCallingLevelFourThousand(unittest.TestCase):
 
     def test_it_copes_with_nothing_worth_repeating(self):
         self.assertIn("say your callsign", agent_atc.challenge_for(""))
+
+
+class TestOnlyRealNamesBecomeAeroplanes(unittest.TestCase):
+    """Six ghosts reached a live separation stack before this was structural.
+
+    21-2, Have 2, Waypoint 3, Need 3, Transmission 2, Busy 4 -- and every fix
+    was another word on a denylist, which cannot converge: any English word in
+    front of a digit is a candidate, and one of those fixes CREATED the next
+    ghost. #13 was closed on that denylist and had to be reopened within the
+    hour.
+
+    Two things ARE enumerable where English words are not: the roster, and
+    POSITION. A callsign opens a transmission; noise sits mid-sentence. Every
+    ghost here was mid-sentence and every real callsign was in the first few
+    words, which is how radio works rather than a coincidence.
+    """
+
+    def setUp(self):
+        os.environ["MARSHALL_CALLSIGNS"] = "Hoover"
+
+    def test_a_roster_name_is_an_aeroplane_on_sight(self):
+        self.assertTrue(agent_atc._plausible_callsign("Pony 1-1", "Pony one one, level"))
+
+    def test_a_name_from_the_command_line_too(self):
+        self.assertTrue(agent_atc._plausible_callsign(
+            "Hoover 1-1", "Batumi Approach, Hoover one one, checking in"))
+
+    def test_an_unknown_name_that_OPENS_a_call_is_admitted(self):
+        """A visiting pilot must not be refused for being new."""
+        self.assertTrue(agent_atc._plausible_callsign(
+            "Viper 2-1", "Viper two one, checking in"))
+
+    def test_an_unknown_name_mid_sentence_is_not(self):
+        for cs, said in (("Busy 4", "I am going to be busy for a minute"),
+                         ("Transmission 2",
+                          "a deliberately long transmission to hold the frequency"),
+                         ("Minute 2", "give me a minute two sort this out")):
+            with self.subTest(said=said):
+                self.assertFalse(agent_atc._plausible_callsign(cs, said))
+
+    def test_with_no_transcript_it_does_not_block_on_nothing(self):
+        self.assertTrue(agent_atc._plausible_callsign("Viper 2-1"))

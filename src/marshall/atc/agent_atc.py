@@ -940,7 +940,7 @@ def separation_context(ctl, transcript: str, scope: str = "",
         # -- so hold the model to the same bar. Rejecting leaves him unidentified
         # for one transmission, which costs nothing; accepting invents an
         # aeroplane the controller then sequences.
-        if intent.callsign and not _plausible_callsign(intent.callsign):
+        if intent.callsign and not _plausible_callsign(intent.callsign, transcript):
             print(f"  .. ignoring '{intent.callsign}' -- that is not a callsign",
                   flush=True)
             intent = dataclasses.replace(intent, callsign=known or "")
@@ -1275,18 +1275,63 @@ def addressed_to_another_aircraft(transcript: str, speaker: str,
     return first
 
 
-def _plausible_callsign(cs: str) -> bool:
-    """Does this look like something a pilot would actually be called?
+# Names that are allowed to become an aeroplane on the strength of one
+# transmission: the mission roster, plus anyone named on the command line.
+# Everything else has to earn it -- see `_plausible_callsign`.
+_heard_names: dict[str, int] = {}
 
-    A name and a number. The offline extractor has always required it, for the
-    reason in its docstring -- a false positive silently reassigns a transmitter
-    to an aircraft that does not exist -- and the model on the same hot path was
-    never held to it.
+
+def known_flight_names() -> set[str]:
+    from marshall.core import route as R
+    out = {n.lower() for n in getattr(R, "SQUADRON_CALLSIGNS", ())}
+    out |= {n.strip().lower()
+            for n in os.environ.get("MARSHALL_CALLSIGNS", "").split(",")
+            if n.strip()}
+    return out
+
+
+def _plausible_callsign(cs: str, said: str = "") -> bool:
+    """May this name become an aeroplane the controller sequences?
+
+    A name and a number is not enough, and six ghosts proved it: 21-2, Have 2,
+    Waypoint 3, Need 3, Transmission 2, Busy 4. Each was fixed by adding a word
+    to a denylist, which cannot converge -- any English word in front of a digit
+    is a candidate, and one of those fixes CREATED the next ghost.
+
+    Two things are enumerable where English words are not.
+
+    The ROSTER: route.py knows the squadron and the command line adds visitors,
+    so those names are aeroplanes on sight.
+
+    And POSITION. A callsign opens a transmission -- "Hoover one one, request
+    the approach", or "Batumi Approach, Hoover one one" after a station. Noise
+    sits in the middle of a sentence: "I am going to be busy for a minute", "I
+    have two aircraft in sight", "a deliberately long transmission to hold the
+    frequency". Every ghost this project has produced was mid-sentence and every
+    real callsign was in the first few words, which is not a coincidence -- it
+    is how radio works.
+
+    Repetition was tried first and is weaker: the same mis-hearing repeats
+    happily if the pilot says the same phrase twice.
+
+    The cost of being wrong is one transmission answered as "station calling".
+    The cost of the old behaviour was a ghost at the head of a holding stack
+    with real aeroplanes queued behind it.
     """
     from marshall.atc import callsign as C
     flight = C.parse(cs).flight
     name = flight.split()[0] if flight else ""
-    return len(name) >= 3 and name.isalpha()
+    if len(name) < 3 or not name.isalpha():
+        return False
+    if name.lower() in known_flight_names():
+        return True
+    if not said:
+        return True          # no transcript to judge by; do not block on nothing
+    # Three words, not four. "Batumi Approach, Hoover one one" puts a real
+    # callsign third and that is the longest legitimate run-up; a fourth word
+    # lets "give me a minute two sort this out" in as "Minute 2".
+    opening = " ".join(said.split()[:3]).lower()
+    return name.lower() in opening
 
 
 def whisper_vocabulary(profile) -> str:
