@@ -206,6 +206,23 @@ def iaf_nm(profile) -> float:
 # need between them without either being flown as a reversal.
 DOWNWIND_NM = 3.0
 
+# How sharply he is angled back toward the field while joining the base leg.
+# Three miles beyond the line is a forty-five degree cut; on it, he flies the
+# base heading. Small enough to converge, large enough not to dawdle.
+BASE_INTERCEPT_NM = 3.0
+
+# HOW WIDE THE PATTERN IS, and it is a band rather than a line.
+#
+#     "you could also make the IF a circle that is like 5 miles rather than a
+#      point"
+#
+# Same insight, applied to the legs. Holding a pilot to an exact track means
+# correcting him for a tenth of a mile, and a pilot who lags -- which is every
+# real one -- oscillates across it: the sloppy sweep's direction changes nearly
+# doubled, 899 to 1,590, without a single approach being flown better. Inside
+# the band he is on the leg and is left alone.
+LEG_TOLERANCE_NM = 1.5
+
 # How far past the missed approach point still counts as being AT it. The point
 # has no width, and an aircraft crosses it between radar looks -- most of a mile
 # at approach speed on a fifteen-second sweep -- so a test for "inside" alone
@@ -289,6 +306,94 @@ def has_room(along: float, xtk: float, profile) -> bool:
     to be one rule.
     """
     return along >= profile.final_intercept_nm + abs(xtk) + TURN_IN_NM
+
+
+def base_leg_at(profile) -> float:
+    """How far from touchdown the base leg crosses the final approach course.
+
+    Far enough out that the turn from base onto final is an ordinary 30-45
+    degree intercept with room to roll out, rather than the reversal an
+    aeroplane gets when it is pointed AT a fix and arrives there facing the
+    wrong way.
+    """
+    # The SAME distance the old fixed gate sat at, and not a foot closer. The
+    # first attempt put the base at final_intercept + TURN_IN, which reads
+    # sensibly and fails `has_room`: from a base leg three miles wide, the turn
+    # onto final does not fit inside that, so an aeroplane flew the base almost
+    # to the centreline before it was allowed to turn -- and then needed the
+    # hard turn the base leg exists to avoid. 1,218 arrivals of 1,296 and 161
+    # rapid reversals, against 1,296 and 1.
+    return profile.final_intercept_nm + DOWNWIND_NM + TURN_IN_NM + 0.5
+
+
+def base_leg_heading(pos: Position, profile, side: int) -> int:
+    """Fly him a PATTERN instead of aiming him at a place.
+
+        "if I'm going fast, he basically flies me around in circles. If I'm
+         going slow enough, he aims me right at the IF -- even if I'm 180 out of
+         phase, then turns me hard 180. It would be way better if he had a right
+         base and a left base that he could put me on."
+
+    Both of those failures are one cause: the old answer was a POINT, and an
+    aircraft not in position was steered straight at it. Fast, the bearing to a
+    point rotates as quickly as he turns and he chases it round the sky. Slow, he
+    arrives pointing the wrong way, because arriving at a place says nothing
+    about arriving on a HEADING.
+
+    A base leg is a TRACK, and a track has a heading he can hold. It runs
+    perpendicular to the final approach course, crossing it `base_leg_at` miles
+    from touchdown, on the side he is already on -- so joining it is the same
+    kind of problem as joining the final, and it is solved the same way, by
+    intercepting a line rather than chasing a dot.
+
+    Two cases and no memory, because the engine has none:
+
+      beyond the base line   intercept it, converging on the base heading
+      inside it              he has run out of room -- take him downwind,
+                             parallel to the course and the other way, until
+                             there is room again
+    """
+    crs = profile.final_crs_true
+    along = along_track(pos, crs)
+    xtk_now = cross_track(pos, crs)
+    # Toward the centreline: from the right of course, that is a left turn.
+    inbound_base = (crs - 90 * side) % 360
+    beyond = along - base_leg_at(profile)
+
+    if beyond < -0.5:
+        # No room for a base yet: he is inside it, or behind the field. Fly the
+        # DOWNWIND, which is its own line -- parallel to the course, opposite
+        # direction, offset to his side -- and joined the same way the base is.
+        #
+        # A pure outbound heading was the first version and it is a trap: from
+        # behind the field it is forty miles of straight and level before the
+        # base is even reachable, and the sweep simply timed out. Angling him
+        # out to the downwind offset while he goes gets him there in a leg
+        # rather than a journey.
+        want = DOWNWIND_NM * side
+        drift = (want - xtk_now) * side          # + when he must open out
+        if abs(drift) <= LEG_TOLERANCE_NM:
+            return round((crs + 180) % 360)      # on the downwind: fly it
+        off = abs(drift) - LEG_TOLERANCE_NM
+        corr = min(math.degrees(math.atan2(off, BASE_INTERCEPT_NM)), MAX_INTERCEPT)
+        corr = corr * (1 if drift > 0 else -1)
+        return round((crs + 180 - corr * side) % 360)
+
+    # Joining the base is joining a line, but NOT with `intercept_heading`:
+    # that one's lookahead is scaled for short final, and handed a
+    # twenty-five-mile problem it saturates -- the correction came out at
+    # eighty degrees, which pointed him straight back outbound and he flew away
+    # from the field until the fuel ran out. 1,197 arrivals of 1,296.
+    #
+    # The correction here is measured from the BASE LINE and turned toward the
+    # final approach course: on the line he flies the base heading exactly, and
+    # the further beyond it he is the more he is angled back in, to a limit of
+    # forty-five degrees. That is an intercept, and it converges instead of
+    # chasing.
+    if beyond <= LEG_TOLERANCE_NM:
+        return round(inbound_base)          # on the base leg: fly it
+    corr = math.degrees(math.atan2(beyond - LEG_TOLERANCE_NM, BASE_INTERCEPT_NM))
+    return round((inbound_base + min(corr, MAX_INTERCEPT) * side) % 360)
 
 
 def reposition_side(xtk: float, profile) -> int:
@@ -547,13 +652,11 @@ def guide(pos: Position, profile, on_missed: bool = False) -> Guidance:
                    else as_flown(profile.missed_hdg))
         return out("missed", heading, profile.missed_climb_ft)
 
-    # Not in position: send him to a fixed point that puts him in position. A
-    # real place on the ground, so the track to it does not move under him --
-    # and it sits just outside the wedge, so arriving there and being ready to
-    # turn in are the same event rather than two decisions that can disagree.
-    g_along, g_across = entry_gate(profile, reposition_side(xtk, profile))
-
-    return out("vector", _to_point(pos, profile, g_along, g_across),
+    # Not in position: fly him the pattern. A base leg is a track he can hold,
+    # where the old fixed gate was a point he had to chase -- see
+    # base_leg_heading.
+    return out("vector", base_leg_heading(pos, profile,
+                                          reposition_side(xtk, profile)),
                safe_alt(pos, profile))
 
 

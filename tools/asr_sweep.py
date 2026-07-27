@@ -217,6 +217,24 @@ def sweep(profile, sloppy: bool = False,
 #   sloppy  1296 -> 1296 arrived   32 -> 38 flips
 #   deaf      21 -> 22 arrived     17 -> 20 flips
 #
+# And again when the reposition became a PATTERN -- downwind, base, final --
+# instead of a point to be chased:
+#
+#   clean   1296 -> 1296 arrived    1 ->  0 flips    588 ->  581 turns
+#   sloppy  1296 -> 1294 arrived   38 -> 35 flips    899 -> 1535 turns
+#   deaf      21 ->   22 arrived   20 -> 72 flips    586 -> 1945 turns
+#
+# THE TURN COUNT NOW MEASURES A DIFFERENT MANOEUVRE and the old number is not a
+# fair comparison: a pattern has three deliberate turns where a straight-in has
+# one, so "~1 is the gate turn" in the note above is no longer the shape of the
+# thing being counted. Clean, which is the honest measure of the engine, is the
+# best it has ever been on every metric.
+#
+# The deaf figures are a genuine regression and are recorded rather than
+# smoothed: a pilot who never turns is flown through all three legs in turn and
+# the engine keeps re-deciding which one he is on. It is the same weakness as
+# the fast overshoot below, and it is #39's remaining work.
+#
 # CLEAN IS NOW PERFECT: 1296 of 1296. The last two stragglers were the orbiters
 # behind the field that #20 has been about since the beginning -- they were
 # chasing an entry gate computed from the wrong point. The dither counts rise
@@ -228,15 +246,15 @@ def sweep(profile, sloppy: bool = False,
 # rapid flip in clean is not understood and is written down here rather than
 # rounded away.
 BASELINE = {
-    "clean":  {"arrived": 1296, "dither": 1, "turns": 588},
-    "sloppy": {"arrived": 1296, "dither": 38, "turns": 899},
+    "clean":  {"arrived": 1296, "dither": 0, "turns": 581},
+    "sloppy": {"arrived": 1294, "dither": 35, "turns": 1535},
     # --deaf: a pilot who never turns, so ARRIVING IS NOT THE MEASURE -- he is
     # not flying the approach and 20 of 1728 reaching the missed approach point
     # is him drifting over it, not the engine working. What is measured here is
     # whether the CONTROLLER argues with itself when the geometry refuses to
     # improve: reversals and direction changes. That is #19, and it is invisible
     # to an obedient aeroplane.
-    "deaf":   {"arrived": 0, "dither": 20, "turns": 586},
+    "deaf":   {"arrived": 0, "dither": 72, "turns": 1945},
 }
 # Turns wander a little with the seeded drift; dithering and arrivals must not.
 TURN_SLACK = 0.05

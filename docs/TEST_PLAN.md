@@ -101,6 +101,8 @@ name in one sortie.
 | H2 | P1 | Fly the descent profile as given and note your altitude crossing the **threshold** | You arrive at the threshold at minimums, not 200 ft high with half a mile of descent owed | [#19] touchdown |
 | H3 | P1 | Listen to the range calls near the end | "One mile from the runway" means one mile from the **threshold**. Previously it meant one mile from the runway centre, which is where you were already landing | touchdown |
 | H11 | P2 | With Shooter, or by asking for the approach while somebody else is on it: **get yourself held** | *"hold at five thousand, right turns, one eight zero outbound one minute, then three six zero inbound one minute"* — a shape and a clock you can actually fly with no navaid. Not "hold at BATUMI as published" | hold |
+| H12 | P1 | Arrive **180 out of phase** — on the centreline heading away from the field — and ask for the approach | Downwind, base, then a 30-45 degree turn onto final. Recognisable legs and no reversal. Previously he was aimed at the fix and turned hard 180 | [#39] |
+| H13 | P2 | Fly the approach **fast** — 400 kt or more — and watch the turn from base onto final | He may overshoot: this is **known open**, criterion 2. Report how far through you go, that number is the fix | [#39] |
 | H10 | P1 | Arrive high — **5,000 ft or above, 30 nm out** — and ask for the approach. Note where he starts you down | He keeps you high, then sends you down **once**, timed so you reach 2,000 arriving at the initial fix. Not levelled at 2,000 ten miles early | [#37] descent |
 | H9 | P1 | Once established, listen to the **altitude** part of each mile call | *"four miles, on course, **descend to** one thousand three hundred"* — an instruction for the NEXT mile, arriving in time to fly it. Not "altitude should be", which tells you where you already ought to be | anticipatory |
 | H4 | P1 | Once established, listen to how he corrects you | **"Turn left ten degrees"** — no heading at all, rounded to five. If he gives you an absolute heading inside the final approach course, that is the failure | [#37] |
@@ -134,6 +136,16 @@ also turned up a second code path that wrote its own hold and told you to hold
 at BATUMI *as published* on a radar approach — over a beacon you have no
 receiver for. Both go through one phrase now. **If you hear "as published" at
 Batumi on the radar approach, that is the bug back.**
+
+**H12** — Yours, and the biggest change to the approach since the frames. The
+engine used to steer at a POINT, which is why fast meant circles (the bearing to
+a point rotates as fast as you turn) and slow meant a hard 180 (arriving at a
+place says nothing about arriving on a heading). It now flies you legs.
+
+**H13** — The half of it that is not fixed, written down so you do not report it
+as new. At 450 knots the turn from base onto final still overshoots, and the
+number you give me — how far through the centreline you went — is what sizes the
+fix, because the intercept has to scale with your groundspeed.
 
 **H10** — Yours too, and it needed a whole engine. The old profile was 318 feet
 per mile, which is a three-degree path at exactly one speed and wrong for

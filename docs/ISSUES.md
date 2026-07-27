@@ -1078,9 +1078,36 @@ lesson, that a name is not an aeroplane), and the two-hour expiry now in
 
 ## [ASR-4] Vector him onto a BASE LEG, not at a point — #39
 
-labels: bug, needs-design
+labels: bug, needs-flight-test
 
-**Status:** TODO — the pilot's design, and it is better than what is there.
+**Status:** SHIPPED/UNVERIFIED for the pattern; **criterion 2 still open**.
+
+Built 27 July. The reposition is now three legs — downwind, base, final — each a
+TRACK with a heading he can hold, joined by intercepting a line rather than
+chasing a dot. The clean sweep is the best it has ever been: 1296 of 1296
+arrived, **zero** rapid reversals, and fewer direction changes than the old
+point-chasing gate.
+
+The pilot's own second idea went in with it: the legs are **bands**, not lines.
+
+    "you could also make the IF a circle that is like 5 miles rather than a
+     point"
+
+Holding a pilot to an exact track means correcting him for a tenth of a mile,
+and a pilot who lags oscillates across it — the sloppy sweep's direction changes
+nearly doubled before a 1.5 nm tolerance was added.
+
+**What is NOT fixed, and it is criterion 2.** A fast aircraft still overshoots
+the centreline on the turn from base to final — at 450 knots a 45-degree
+intercept from five miles is not enough, he crosses to eight miles the other
+side, and the engine correctly but expensively sends him round again. The
+circling he reported is gone; the overshoot that can cause a second circuit is
+not. The intercept angle and the turn-in distance need to scale with
+groundspeed, which the engine now has (see descent.py).
+
+**Also recorded rather than smoothed:** the `--deaf` sweep's reversals went from
+20 to 72. A pilot who never turns is flown through all three legs and the engine
+keeps re-deciding which one he is on. Same root as the overshoot.
 
     "He has a very hard time getting me to the IF, then it works well... right
      now, if I'm going fast, he basically flies me around in circles. If I'm
