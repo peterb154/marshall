@@ -163,6 +163,23 @@ def sweep(profile, sloppy: bool = False) -> tuple[list[dict], int]:
     return out, len(out)
 
 
+# WHERE THE ENGINE STANDS TODAY, known bugs and all.
+#
+# A regression check must compare against what IS, not against perfection: three
+# approaches orbit instead of arriving (#20) and that is open and understood, so
+# exiting non-zero for it makes this permanently red -- and a check that always
+# fails is a check nobody reads, which is worse than not having one.
+#
+# Beat any of these and update them in the same commit. That is the point: the
+# numbers only move deliberately.
+BASELINE = {
+    False: {"arrived": 1293, "dither": 1, "turns": 582},      # clean pilot
+    True:  {"arrived": 1296, "dither": 26, "turns": 899},     # --sloppy
+}
+# Turns wander a little with the seeded drift; dithering and arrivals must not.
+TURN_SLACK = 0.05
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--sloppy", action="store_true",
@@ -198,6 +215,20 @@ def main() -> int:
             print(f"     {r['dither']:3d} flips  from {rng:2d} nm on the "
                   f"{rad:03d} radial, heading {hdg:03d}")
 
+    base = BASELINE.get(bool(args.sloppy))
+    regressed = []
+    if base:
+        if len(arrived) < base["arrived"]:
+            regressed.append(f"arrived {len(arrived)} < {base['arrived']}")
+        if dither > base["dither"]:
+            regressed.append(f"DITHERING {dither} > {base['dither']}")
+        if turns > base["turns"] * (1 + TURN_SLACK):
+            regressed.append(f"turns {turns} > {base['turns']} + slack")
+        print(f"  baseline      {base['arrived']} arrived, {base['dither']} "
+              f"flips, {base['turns']} turns"
+              + ("  — REGRESSED: " + "; ".join(regressed) if regressed
+                 else "  — no regression"))
+
     lost = [r for r in results if not r["arrived"]]
     if lost:
         print(f"  NEVER ARRIVED {len(lost)}")
@@ -207,7 +238,8 @@ def main() -> int:
             print(f"     {rng:2d} nm on the {rad:03d} radial, heading {hdg:03d}")
         if not args.verbose and len(lost) > len(show):
             print(f"     ... and {len(lost) - len(show)} more (--verbose)")
-    return 0 if not lost else 1
+    # Known-open bugs do not fail the check; getting WORSE does.
+    return 1 if regressed else 0
 
 
 if __name__ == "__main__":

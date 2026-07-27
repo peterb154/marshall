@@ -57,6 +57,24 @@ for the voice-only rehearsal).
 Live ops specifics — hosts, credentials, the current running state — live in the
 **private memory notes**, not here.
 
+## Regression: `tools/check.py`
+`uv run python tools/check.py` runs everything that needs no sim — the unit
+suite and the approach sweep, a few seconds, no excuse for skipping. `--live`
+adds the voice rehearsals and the sim-backed checks, which need DCS, SRS and the
+bridge and cost model calls, so they are run before a session rather than on
+every edit.
+
+**Skipped is reported, never silent**, and it names what is unguarded — a check
+that quietly does not run reads exactly like one that passed.
+
+The sweep exits non-zero on a REGRESSION against its recorded baseline, not on
+the known-open bugs, because a check that is always red is a check nobody reads.
+Beat the baseline and move it in the same commit.
+
+**A tested thing is not deleted, it becomes the regression check.** Closed issues
+drop off the cockpit list so they stop competing for a pilot's attention, but
+their card row and their script stay — that is what tells us if a fix rots.
+
 ## Testing, cheapest first
 1. **`uv run python -m unittest discover -s tests -t .`** — the separation
    engine and callsign parsing, pure stdlib, no LLM/network/sim. Milliseconds.
