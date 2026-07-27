@@ -178,3 +178,46 @@ class TestIdentityPersists(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestBorrowedAuthorityCannotBeSelfMade(unittest.TestCase):
+    """The weakest rung, and the hole it would open if fed the wrong list.
+
+    Rung 3 recognises a pilot because the name he claims is already on the
+    board. Handed the raw `Controller.aircraft` dict, a ghost would corroborate
+    ITSELF -- mis-heard once it takes a slot, and every repeat of the same
+    mis-hearing then matches an entry and is believed. A wrong name that grows
+    more convincing each time it is said is precisely what is being designed
+    out, so only aircraft radar has actually seen may vouch for anybody.
+    """
+
+    def _controller(self):
+        from marshall.atc.controller import Controller
+        from marshall.core import route as R
+        return Controller(R.BATUMI_ASR)
+
+    def test_only_radar_identified_aircraft_may_vouch(self):
+        ctl = self._controller()
+        ctl.get("Pony 1-1")
+        ctl.note_radar_contact("Pony 1-1")
+        ctl.get("Maintained 2")                 # a ghost that got in
+        self.assertEqual(ctl.identified(), ["Pony 1-1"])
+
+    def test_a_ghost_cannot_confirm_itself_on_the_second_hearing(self):
+        ctl = self._controller()
+        ctl.get("Maintained 2")
+        reg = identity.Registry()
+        again = reg.resolve("g", "nobody", spoken="Maintained 2",
+                            roster=ctl.identified())
+        self.assertFalse(again)
+
+    def test_a_real_aeroplane_still_vouches(self):
+        """The rung has to keep working, or a pilot radar has seen but whose
+        radio we never matched would be refused for the rest of the sortie."""
+        ctl = self._controller()
+        ctl.get("Pony 1-1")
+        ctl.note_radar_contact("Pony 1-1")
+        reg = identity.Registry()
+        self.assertEqual(
+            reg.resolve("g", "nobody", spoken="Pony 1-1",
+                        roster=ctl.identified()).authority, "roster")

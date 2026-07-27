@@ -283,6 +283,25 @@ class Controller:
         """
         return ac.radar_identified or not self._vectored
 
+    def identified(self) -> list[str]:
+        """Aeroplanes something other than a voice has vouched for.
+
+        Not the same as `self.aircraft.keys()`, and the difference is a real
+        hole rather than a nicety. The identity ladder's weakest rung lets a
+        pilot be recognised because the name he claims is already on the board
+        -- borrowed authority. Handing it the raw dict would let a ghost
+        corroborate ITSELF: mis-heard once it takes a slot, and from then on
+        every repeat of the same mis-hearing matches an entry and is believed.
+        A wrong name that gets more convincing each time it is said is the exact
+        failure mode being designed out.
+
+        So only aircraft radar has actually seen may vouch for anybody. On a
+        procedural approach there are none, which is correct -- there the
+        authority is the filed strip, and it is checked one rung higher.
+        """
+        return sorted(cs for cs, ac in self.aircraft.items()
+                      if ac.radar_identified)
+
     def board(self) -> list[dict]:
         """Every entity the engine currently believes exists.
 

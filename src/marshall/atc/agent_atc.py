@@ -2444,7 +2444,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         claim = transmitter_callsign(client.last_sender_guid, transcript)
         _ident = _identity.resolve(
             client.last_sender_guid or "", srs, spoken=claim, scope=scope,
-            plans=filed_plans(), roster=list(ctl.aircraft))
+            plans=filed_plans(), roster=ctl.identified())
         known = _ident.callsign
         if _ident.authority and _ident.authority != "radar":
             # Worth a line in the log every time it is NOT the physical chain:
