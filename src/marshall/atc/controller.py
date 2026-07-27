@@ -97,6 +97,18 @@ class Aircraft:
     # self.t)` into an aeroplane holding at zero feet, and twelve tests went red
     # with altitudes of 0.0 rather than anything about equipment.
     kit: frozenset | None = None
+    # HAS RADAR ACTUALLY SEEN HIM? On a radar approach this is a precondition
+    # for everything, not a nicety: "radar contact" is a specific thing a
+    # controller says, and until he has said it nobody can be vectored,
+    # sequenced or cleared.
+    #
+    # Without it the engine sequenced a SENTENCE. A mis-heard read-back became
+    # an aircraft called "Maintained 2", took a level in the stack and the
+    # letdown with it, and a real pilot was held as number two behind something
+    # that had never been identified, never been on the scope, and could never
+    # be contradicted -- because the engine is blind, and a thing that was never
+    # on radar cannot leave it.
+    radar_identified: bool = False
     # Can this flight maintain VISUAL separation between its own aircraft?
     # None = not asked yet. True = they can see each other, so they may share one
     # holding level. False = IMC, so the controller must separate them himself.
@@ -250,6 +262,26 @@ class Controller:
 
     def _approach_name(self) -> str:
         return "radar approach" if self._vectored else "beacon approach"
+
+    def note_radar_contact(self, callsign: str, seen: bool = True) -> None:
+        """Radar has this aircraft, or has lost him.
+
+        The one fact that separates an aeroplane from a sentence. Set from the
+        scope by the bridge; never inferred from anything a pilot says, because
+        what a pilot says is exactly what produced the sentences.
+        """
+        ac = self.aircraft.get(self._resolve(callsign))
+        if ac is not None:
+            ac.radar_identified = bool(seen)
+
+    def may_be_sequenced(self, ac) -> bool:
+        """Can this aircraft take a place in the stack?
+
+        On a radar approach, only if radar has him. On a beacon letdown the
+        controller is procedural and works position reports, so being unseen is
+        the normal condition and this cannot apply.
+        """
+        return ac.radar_identified or not self._vectored
 
     def note_equipment(self, callsign: str, kit) -> None:
         """Record what he can receive, from the airframe on radar.
@@ -886,6 +918,15 @@ class Controller:
             self.say(ac.callsign,
                      f"{self._addr(ac)}, cleared {self._approach_name()} runway "
                      f"{self.profile.runway or 'in use'}, continue.")
+            return
+        if not self.may_be_sequenced(ac):
+            # NOT RADAR IDENTIFIED. He does not get a level, he does not get a
+            # place in the queue, and nobody is held behind him -- because we
+            # cannot see him and may not even have him. Ask, which is what a
+            # controller does.
+            self.say(ac.callsign,
+                     f"{self._addr(ac)}, not radar identified, say your "
+                     f"position and altitude.")
             return
         if ac.phase in (Phase.UNKNOWN, Phase.ENROUTE):
             slot = self._free_slot()

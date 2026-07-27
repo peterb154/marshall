@@ -421,10 +421,22 @@ class TestTheBlindEngineIsToldWhatRadarSees(unittest.TestCase):
         self.assertTrue(self.c.seen_on_final("Pony 1-1"))
         self.assertFalse(self.c.seen_on_final("Pony 1-1"))
 
+    def _seen(self, c, *callsigns):
+        """What the bridge does on every transmission: tell the blind engine
+        what the scope shows. Without it nothing can be sequenced on a radar
+        approach, which is the point -- see Controller.may_be_sequenced."""
+        for cs in callsigns:
+            c.get(cs)
+            c.note_radar_contact(cs, True)
+
     def test_a_second_aircraft_still_gets_separated(self):
         # Seeding must not switch the engine off: the one behind still holds.
         self.c.seen_on_final("Pony 1-1")
         self.c.check_in("Viper 2-1")
+        # Radar has them both. On a radar approach that is what makes them
+        # aircraft rather than callsigns, and the bridge says so on every
+        # transmission.
+        self._seen(self.c, "Pony 1-1", "Viper 2-1")
         self.c.request_approach("Viper 2-1")
         self.assertTrue(any("hold" in l.lower() for l in self.said),
                         "the following aircraft was not separated")
@@ -897,3 +909,69 @@ class TestWhatHeIsFlyingDecidesTheHold(unittest.TestCase):
         c = atc.Controller(R.BATUMI_ASR)
         c.note_equipment("Ghost 9-9", frozenset())
         self.assertNotIn("Ghost 9-9", c.aircraft)
+
+
+class TestNobodyIsSequencedUntilRadarHasHim(unittest.TestCase):
+    """"That aircraft hasn't been positively ID'd and assigned an association.
+    Something is fundamentally broken here."
+
+    It was, and this is it. "Radar contact" is a specific thing a controller
+    says, and in a radar environment EVERYTHING depends on it: a pilot cannot be
+    vectored, sequenced or cleared for the approach until he has been identified.
+    The engine had no such precondition -- anything with a callsign got a level
+    in the stack -- so a mis-heard read-back became an aircraft called
+    "Maintained 2", took the letdown, and held a real pilot as number two behind
+    a sentence.
+
+    The deeper reason it was so damaging: the engine is BLIND. A real aeroplane
+    lands or leaves radar cover, and something removes it. A thing that was
+    never on radar cannot leave it, so nothing could ever contradict it.
+    """
+
+    def out(self, c):
+        return " | ".join(str(t) for t in c.out)
+
+    def seen(self, c, cs):
+        c.get(cs)
+        c.note_radar_contact(cs, True)
+
+    def test_an_unidentified_callsign_gets_no_place_in_the_queue(self):
+        c = atc.Controller(R.BATUMI_ASR)
+        c.request_approach("Maintained 2")
+        said = self.out(c)
+        self.assertIn("not radar identified", said)
+        self.assertNotIn("hold at", said)
+        self.assertIsNone(c.aircraft["Maintained 2"].assigned_ft)
+
+    def test_and_holds_nobody_behind_it(self):
+        """The whole cost of the bug: a real pilot queued behind a sentence."""
+        c = atc.Controller(R.BATUMI_ASR)
+        c.request_approach("Maintained 2")
+        c.out.clear()
+        self.seen(c, "Falcon 1-1")
+        c.request_approach("Falcon 1-1")
+        said = self.out(c)
+        self.assertIn("cleared", said)
+        self.assertNotIn("number two", said)
+
+    def test_a_radar_identified_aircraft_is_worked_normally(self):
+        c = atc.Controller(R.BATUMI_ASR)
+        self.seen(c, "Falcon 1-1")
+        c.request_approach("Falcon 1-1")
+        self.assertIn("cleared", self.out(c))
+
+    def test_losing_radar_contact_is_as_visible_as_finding_it(self):
+        c = atc.Controller(R.BATUMI_ASR)
+        self.seen(c, "Falcon 1-1")
+        c.note_radar_contact("Falcon 1-1", False)
+        self.assertFalse(c.may_be_sequenced(c.aircraft["Falcon 1-1"]))
+
+    def test_a_procedural_field_is_untouched(self):
+        """A beacon letdown has no radar at all. Being unseen is the NORMAL
+        condition there and this rule must not apply, or the controller refuses
+        to work anybody."""
+        c = atc.Controller(R.BATUMI_APPROACH)
+        c.request_approach("Pony 1-1")
+        said = self.out(c)
+        self.assertNotIn("not radar identified", said)
+        self.assertTrue("hold" in said.lower() or "cleared" in said.lower())

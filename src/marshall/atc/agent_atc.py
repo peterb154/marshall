@@ -1290,6 +1290,15 @@ def separation_context(ctl, transcript: str, scope: str = "",
         # which is better -- nobody declares it and no pilot can get it wrong.
         # It decides whether he can be sent to hold at a beacon or has to be
         # given a racetrack in headings and minutes.
+        # RADAR CONTACT, or its absence. The blind engine cannot see, and this
+        # is the fact everything else on a radar approach depends on -- see
+        # Controller.may_be_sequenced. Told on every transmission, so losing him
+        # is as visible as finding him.
+        if intent.callsign:
+            ctl.note_radar_contact(
+                intent.callsign,
+                radar_fix(scope, intent.callsign, ctl.profile) is not None)
+
         _typ = aircraft_type_on_scope(scope, intent.callsign)
         if _typ:
             from marshall.atc import equipment as _eq
