@@ -746,6 +746,24 @@ class ApproachProfile:
     # can fly, navaid or not. Aligned with the approach so that leaving the hold
     # points him roughly the right way; the inbound leg is the reciprocal.
     hold_outbound_hdg: int = 180
+    # How long each leg of a timed hold takes, and which way he turns.
+    #
+    # An aeroplane with no navaid cannot hold OVER anything, so the hold is a
+    # shape and a clock: fly this heading for this long, turn, fly the
+    # reciprocal for this long, repeat. Without the clock he has a heading and
+    # no idea when to turn, which is what he was being given.
+    #
+    # One minute is the standard leg at or below 14,000 ft, and it is the right
+    # choice here for a reason beyond convention: it keeps him in a small piece
+    # of sky. A two-minute leg at 200 knots is nearly seven miles of racetrack,
+    # and the whole point of holding him is that the controller knows roughly
+    # where he is.
+    #
+    # Right turns, also standard, and also the safer default -- everybody in the
+    # stack turning the same way keeps the pattern predictable when the only
+    # thing separating them is altitude.
+    hold_leg_minutes: float = 1.0
+    hold_turns: str = "right"
     field_elev_ft: int = 0
     runway: str = ""
 

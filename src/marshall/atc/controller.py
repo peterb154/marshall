@@ -141,6 +141,22 @@ def spell_alt(ft: int) -> str:
     return out
 
 
+def spell_minutes(mins: float) -> str:
+    """"one minute", "two minutes", "one and a half minutes".
+
+    Words, because everything here reaches Polly as text and a bare "1" is read
+    out as a digit. Halves because a minute and a half is a real leg length and
+    "one point five minutes" is not something a controller says.
+    """
+    if abs(mins - round(mins)) < 0.01:
+        n = int(round(mins))
+        names = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five"}
+        return f"{names.get(n, str(n))} minute" + ("" if n == 1 else "s")
+    if abs(mins - 1.5) < 0.01:
+        return "one and a half minutes"
+    return f"{mins:g} minutes"
+
+
 def spell_hdg(deg: float) -> str:
     """A heading, digit by digit: 127 -> 'one two seven'. Polly reads a bare
     127 as 'one hundred twenty seven', which is not a heading.
@@ -238,10 +254,25 @@ class Controller:
         if not self._vectored:
             return (f"hold at {self.profile.beacon.name} as published, "
                     f"maintain {spell_alt(alt_ft)}")
+        # A SHAPE AND A CLOCK. He has no navaid, so he cannot hold OVER
+        # anything -- and a heading with no leg time is not a hold, it is a
+        # vector he will fly until somebody stops him.
+        #
+        #     "When ATC asks an airplane with no navaids to hold, it's going to
+        #      need to help him... 'turn 180 heading fly 2 mins, then right turn
+        #      to 360 and fly 2 minutes'. Right now he just says to hold."
+        #
+        # Everything he needs, in one transmission and in the order he flies it:
+        # the level that keeps him off the others, which way he turns, and the
+        # two headings with the time on each.
         out = self.profile.hold_outbound_hdg
-        return (f"hold at {spell_alt(alt_ft)}, {spell_hdg(out)} outbound, "
-                f"{spell_hdg((out + 180) % 360)} inbound, expect vectors for "
-                "the approach, I will call you")
+        mins = getattr(self.profile, "hold_leg_minutes", 1.0)
+        turns = getattr(self.profile, "hold_turns", "right")
+        leg = spell_minutes(mins)
+        return (f"hold at {spell_alt(alt_ft)}, {turns} turns, "
+                f"{spell_hdg(out)} outbound {leg}, then "
+                f"{spell_hdg((out + 180) % 360)} inbound {leg}, "
+                f"expect vectors for the approach, I will call you")
 
     def _report_phrase(self) -> str:
         """What he should call next. Never a fix he cannot navigate to."""
@@ -624,9 +655,13 @@ class Controller:
                          f"{self._addr(ac)}, no holding available, remain clear.")
                 return
             ac.phase, ac.assigned_ft = Phase.HOLDING, slot
+            # Through `_hold_phrase`, not around it. This path wrote its own
+            # "hold at BATUMI as published" and so told a pilot on a RADAR
+            # approach to hold over a beacon he has no receiver for -- the exact
+            # thing the phrase function exists to decide. Two ways of saying the
+            # same thing is how one of them ends up wrong.
             self.say(ac.callsign,
-                     f"{self._addr(ac)}, hold at {self.profile.beacon.name} as "
-                     f"published, maintain {spell_alt(slot)}.")
+                     f"{self._addr(ac)}, {self._hold_phrase(slot)}.")
             self._try_clear()
         elif ac.phase == Phase.CLEARED:
             # Established inbound on the beam: start the station-passage clock.

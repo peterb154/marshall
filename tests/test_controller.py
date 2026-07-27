@@ -753,3 +753,76 @@ class TestPhraseologyIsAControllersNotAPilots(unittest.TestCase):
         said = " ".join(t.text for t in self.ctl.out).lower()
         self.assertIn("cleared to land", said)
         self.assertIn("wind", said)
+
+
+class TestAHoldHeCanActuallyFly(unittest.TestCase):
+    """An aeroplane with no navaid cannot hold OVER anything.
+
+        "When ATC asks an airplane with no navaids to hold, it's going to need
+         to help him... 'turn 180 heading fly 2 mins, then right turn to 360 and
+         fly 2 minutes'. Right now he just says to hold."
+
+    So the hold is a shape and a clock. A heading with no leg time is not a
+    hold at all -- it is a vector he flies until somebody stops him, and he ends
+    up wherever that put him.
+    """
+
+    def setUp(self):
+        self.radar = atc.Controller(R.BATUMI_ASR)          # no navaid
+        self.beacon = atc.Controller(R.BATUMI_APPROACH)    # he can find the fix
+
+    def test_it_carries_both_headings_and_the_time_on_each(self):
+        said = self.radar._hold_phrase(6000)
+        self.assertIn("one eight zero outbound", said)
+        self.assertIn("three six zero inbound", said)
+        self.assertEqual(said.count("one minute"), 2, said)
+
+    def test_it_says_which_way_he_turns(self):
+        """Everybody turning the same way keeps the pattern predictable when the
+        only thing separating them is altitude."""
+        self.assertIn("right turns", self.radar._hold_phrase(6000))
+
+    def test_it_still_carries_the_level(self):
+        self.assertIn("six thousand", self.radar._hold_phrase(6000))
+
+    def test_no_bare_digits_reach_the_voice(self):
+        said = self.radar._hold_phrase(6000)
+        self.assertNotRegex(said, r"\d")
+
+    def test_a_field_with_a_beacon_holds_as_published(self):
+        """He can find the place, so describing a racetrack at him is noise."""
+        said = self.beacon._hold_phrase(6000)
+        self.assertIn("as published", said)
+        self.assertNotIn("outbound", said)
+
+    def test_the_leg_length_is_spoken_as_words(self):
+        self.assertEqual(atc.spell_minutes(1), "one minute")
+        self.assertEqual(atc.spell_minutes(2), "two minutes")
+        self.assertEqual(atc.spell_minutes(1.5), "one and a half minutes")
+
+
+class TestEveryHoldGoesThroughOnePhrase(unittest.TestCase):
+    """There were two ways to say "hold", and one of them was wrong.
+
+    A second path wrote its own "hold at BATUMI as published" instead of asking
+    `_hold_phrase`, so on a RADAR approach -- where the pilot has no receiver
+    for that beacon -- he was told to hold over something he cannot find. Two
+    ways of saying the same thing is how one of them ends up wrong.
+    """
+
+    def test_the_second_aircraft_gets_a_hold_he_can_fly(self):
+        c = atc.Controller(R.BATUMI_ASR)
+        c.report_beacon("Pony 1-1", 6000)
+        c.out.clear()
+        c.report_beacon("Hammer 1-2", 5000)
+        said = " ".join(str(t) for t in c.out)
+        self.assertIn("outbound", said)
+        self.assertIn("turns", said)
+        self.assertNotIn("as published", said)
+
+    def test_on_a_beacon_field_it_is_still_the_published_hold(self):
+        c = atc.Controller(R.BATUMI_APPROACH)
+        c.report_beacon("Pony 1-1", 6000)
+        c.out.clear()
+        c.report_beacon("Hammer 1-2", 5000)
+        self.assertIn("as published", " ".join(str(t) for t in c.out))
