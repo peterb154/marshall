@@ -38,6 +38,7 @@ GUIDS = {
     "E": "{6fc14385-a097-44d6-e2b8-5daf79bc60e5}",
     "F": "{70d25496-b1a8-45e7-f3c9-6eb08acd71f6}",
     "G": "{81e365a7-c2b9-46f8-a4da-7fc19bde82a7}",
+    "PLANS": "{92f476b8-d3ca-4709-b5eb-8ad2acef930b}",
 }
 
 # Tab labels. OpenKneeboard's tab strip is narrow and the pilot is reading it
@@ -253,7 +254,14 @@ def build_issues() -> str:
 
 def pages() -> list[tuple[str, str, str, object]]:
     """Tabs for the flight-test kneeboard, in the order they are flown."""
-    out = [(GUIDS["ISSUES"], "ISSUES", "ft-issues", build_issues)]
+    from marshall.kneeboard import plans as fp
+
+    # The board a pilot is asking FROM, first, because section G asks him to
+    # request a plan by name and he cannot do that from memory. Temporary: it
+    # comes off when a pilot is handed the plan he is flying instead of
+    # shopping from a list.
+    out = [(GUIDS["PLANS"], "PLANS", "ft-plans", fp.build),
+           (GUIDS["ISSUES"], "ISSUES", "ft-issues", build_issues)]
     # A to F, whatever order the card happens to be written in -- a pilot flies
     # them in order and the tabs should match the card, not the file.
     for letter, _title, _rows in sorted(sections(), key=lambda s: s[0]):

@@ -45,7 +45,14 @@ services:
     volumes:
       - ../src:/app/src:ro
       - ../docs:/app/docs:ro
+    # The PLANS page reads the filed flight plans from the director LIVE, and
+    # the director is published on the HOST -- inside this container `localhost`
+    # is this container. Without the gateway alias the page renders "nobody
+    # answered", which is at least honest, but it is not the board.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       # Make the mounted source win over the copy pip installed into
       # site-packages, or the mount is decorative.
       PYTHONPATH: /app/src
+      MARSHALL_DIRECTOR_URL: http://host.docker.internal:8000

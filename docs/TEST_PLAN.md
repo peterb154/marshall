@@ -64,15 +64,19 @@ Flown before you start the engine, on **118** — Tower also works ground and
 clearance delivery, because a field this size does not staff a seat per phase of
 flight. Everything here is new and has never been said to a human.
 
+**The board is on the PLANS tab** of this kneeboard, read live from the director
+— five plans, one word each. Two of them share a task on purpose (the CAS over
+Tsutsnvati, flown two ways) and are marked as such: that pair is what G3 is for.
+
 Most of this is script-checked already: which plan a request resolves to
-(`tools/plan_sweep.py`, eleven phrasings), and that two flights can hold two
+(`tools/plan_sweep.py`, twelve phrasings), and that two flights can hold two
 plans without treading on each other (`tools/plan_assign_check.py`). What a
 script cannot judge is whether the clearance is **copyable** — whether a man with
 a pencil, in a cockpit, can actually get it down at the pace it is read.
 
 | ID | Prio | Test | What should happen | Fix under test |
 |----|------|------|--------------------|----------------|
-| G1 | P1 | Ask for your clearance in your own words — *"Batumi Ground, Hoover one one, request IFR clearance, Samovar Three"* | The full CRAFT clearance: cleared to, route, altitude, **departure frequency**, squawk. Write it down as he says it | [#1] `request_clearance` |
+| G1 | P1 | Ask for your clearance in your own words — *"Batumi Ground, Hoover one one, request IFR clearance, Marlin"* | The full CRAFT clearance: cleared to, route, altitude, **departure frequency**, squawk. Write it down as he says it | [#1] `request_clearance` |
 | G2 | P1 | Read it back, and get one number **wrong** on purpose | He corrects the number you missed and asks for that part again — not the whole clearance | [#1] `clearance_read_back` |
 | G3 | P1 | Ask for something two plans fit — *"request clearance for the CAS over Tsutsnvati"* | A **question**, not a clearance. He must not pick one for you | [#1] `plans.pick` |
 | G4 | P2 | Ask for a clearance to somewhere nobody filed — *"request clearance to Vaziani"* | *"nothing on file"* and an ask, not the nearest plan read out | [#1] `plans.pick` |

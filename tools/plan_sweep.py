@@ -35,42 +35,52 @@ sys.path.insert(0, str(ROOT / "director"))
 
 from tools import plans as P
 
-# Mirrors migrations/011. Kept here so the sweep runs with no database, no
+# Mirrors migrations/012. Kept here so the sweep runs with no database, no
 # container and no network -- the point of a tier-1 check is that there is
 # nothing to bring up first. `--live` reads the real rows instead, which is how
 # you catch this copy drifting from what is actually on file.
 FILED = [
-    {"name": "362nd-batumi-asr", "label": "Samovar One", "callsign": None,
+    {"name": "362nd-batumi-asr", "label": "Samovar", "callsign": None,
      "origin": "Batumi", "destination": "Batumi", "cruise_ft": 11000,
      "route": "BATUMI, FEET WET, INGRESS, TSUTSNVATI, EGRESS, BATUMI",
      "task": "CAS over Tsutsnvati"},
-    {"name": "362nd-batumi-ndb", "label": "Samovar Two", "callsign": None,
+    {"name": "362nd-batumi-ndb", "label": "Kettle", "callsign": None,
      "origin": "Batumi", "destination": "Batumi", "cruise_ft": 11000,
      "route": "BATUMI, FEET WET, INGRESS, TSUTSNVATI, EGRESS, BATUMI",
      "task": "CAS over Tsutsnvati, beacon letdown on return"},
-    {"name": "362nd-kutaisi-transit", "label": "Samovar Three", "callsign": None,
-     "origin": "Batumi", "destination": "Batumi", "cruise_ft": 7000,
-     "route": "BATUMI, FEET WET, KUTAISI, BATUMI",
-     "task": "Transit up the coast, turning at Kutaisi"},
+    {"name": "362nd-ingress-weather", "label": "Lantern", "callsign": None,
+     "origin": "Batumi", "destination": "Batumi", "cruise_ft": 5000,
+     "route": "BATUMI, FEET WET, INGRESS, FEET WET, BATUMI",
+     "task": "Weather reconnaissance out to Ingress"},
+    {"name": "362nd-coast-patrol", "label": "Marlin", "callsign": None,
+     "origin": "Batumi", "destination": "Batumi", "cruise_ft": 3000,
+     "route": "BATUMI, FEET WET, KOBULETI, BATUMI",
+     "task": "Night patrol of the coastline"},
+    {"name": "362nd-kobuleti-escort", "label": "Anvil", "callsign": None,
+     "origin": "Batumi", "destination": "Batumi", "cruise_ft": 4000,
+     "route": "BATUMI, KOBULETI, BATUMI",
+     "task": "Escort a transport as far as Kobuleti"},
 ]
 
 # (what he says, what should happen, why this phrasing is in the list)
 CASES = [
     # -- named outright. The escape hatch, and it has to be exact-proof.
-    ("Batumi Approach, Hoover one one, request clearance, Samovar Three",
-     "362nd-kutaisi-transit", "the label, said plainly"),
-    ("Hoover one one, IFR clearance on file, Samovar Three, ready to copy",
-     "362nd-kutaisi-transit", "the label buried in the middle of a request"),
+    ("Batumi Ground, Hoover one one, request clearance, Marlin",
+     "362nd-coast-patrol", "the label, said plainly"),
+    ("Hoover one one, IFR clearance on file, Lantern, ready to copy",
+     "362nd-ingress-weather", "the label buried in the middle of a request"),
 
     # -- by the task, which is how a pilot thinks about it.
-    ("Hoover one one, request clearance for the transit to Kutaisi",
-     "362nd-kutaisi-transit", "the task in his own words"),
-    ("Hoover one one, ready to copy IFR, we're going up the coast today",
-     "362nd-kutaisi-transit", "the task, paraphrased"),
+    ("Hoover one one, request clearance for the weather run out to Ingress",
+     "362nd-ingress-weather", "the task in his own words"),
+    ("Hoover one one, ready to copy, we're escorting a transport up to Kobuleti",
+     "362nd-kobuleti-escort", "the task, paraphrased"),
+    ("Hoover one one, clearance for the night patrol",
+     "362nd-coast-patrol", "half the task, and only one plan has it"),
 
-    # -- by a place on the route. "CAS over Tsutsnvati" names two plans, so the
-    #    controller must ASK. This is the case a best-score-wins resolver gets
-    #    confidently and silently wrong.
+    # -- "CAS over Tsutsnvati" names TWO plans, so the controller must ASK. This
+    #    is the case a best-score-wins resolver gets confidently and silently
+    #    wrong: the two differ only in the approach flown at the end.
     ("Hoover one one, request clearance for the CAS over Tsutsnvati",
      "ASK", "a task that fits two plans"),
     ("Hoover one one, clearance for the Tsutsnvati mission",
@@ -81,7 +91,7 @@ CASES = [
     # -- the civil form, which separates nothing here: everything comes home to
     #    Batumi, so a destination match must not be enough on its own.
     ("Hoover one one, IFR to Batumi, ready to copy",
-     "ASK", "destination alone, which two plans share"),
+     "ASK", "destination alone, which every plan shares"),
 
     # -- nothing on file. Saying so is the correct answer and the hard one.
     ("Hoover one one, request clearance to Vaziani",
