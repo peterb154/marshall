@@ -37,15 +37,16 @@ GUIDS = {
     "D": "{5eb03274-9f86-43c5-d1a7-4c9e68ab5fd4}",
     "E": "{6fc14385-a097-44d6-e2b8-5daf79bc60e5}",
     "F": "{70d25496-b1a8-45e7-f3c9-6eb08acd71f6}",
+    "G": "{81e365a7-c2b9-46f8-a4da-7fc19bde82a7}",
 }
 
 # Tab labels. OpenKneeboard's tab strip is narrow and the pilot is reading it
 # at a glance, so these are hand-short rather than a truncated heading.
 SHORT = {"A": "PREFLT", "B": "APPROACH", "C": "NEW", "D": "RADIO",
-         "E": "KNOWN", "F": "2-SHIP"}
+         "E": "KNOWN", "F": "2-SHIP", "G": "CLNC"}
 
-_SECTION = re.compile(r"^## ([A-F]) — (.+)$", re.M)
-_ROW = re.compile(r"^\|\s*([A-F]\d+[a-z]?)\s*\|(.+)$")
+_SECTION = re.compile(r"^## ([A-Z]) — (.+)$", re.M)
+_ROW = re.compile(r"^\|\s*([A-Z]\d+[a-z]?)\s*\|(.+)$")
 _ISSUE = re.compile(r"^## \[([A-Z]+-\d+)\]\s+(.*?)(?:\s+—\s+#(\d+))?\s*$", re.M)
 # "**A1** — what this row is actually checking." The table has to stay terse to
 # be readable as a table; the sentence is what makes it flyable by somebody who
@@ -55,8 +56,8 @@ _ISSUE = re.compile(r"^## \[([A-Z]+-\d+)\]\s+(.*?)(?:\s+—\s+#(\d+))?\s*$", re.
 # single-line capture silently drops everything after the first paragraph --
 # which it did, losing the half of B3 that says what to actually report.
 _WHY = re.compile(
-    r"^\*\*([A-F]\d+[a-z]?)\*\*\s+—\s+(.*?)"
-    r"(?=\n\*\*[A-F]\d+[a-z]?\*\*\s+—|\n---|\n## |\Z)", re.M | re.S)
+    r"^\*\*([A-Z]\d+[a-z]?)\*\*\s+—\s+(.*?)"
+    r"(?=\n\*\*[A-Z]\d+[a-z]?\*\*\s+—|\n---|\n## |\Z)", re.M | re.S)
 
 
 def _read(name: str) -> str:
@@ -258,6 +259,12 @@ def pages() -> list[tuple[str, str, str, object]]:
     for letter, _title, _rows in sorted(sections(), key=lambda s: s[0]):
         guid = GUIDS.get(letter)
         if not guid:
+            # LOUD, not silent. A section with no GUID simply does not appear on
+            # the kneeboard, and a page that is missing looks exactly like a page
+            # the pilot has not scrolled to -- he flies the sortie without ever
+            # knowing there were tests on it.
+            print(f"!! flight test section {letter} has no GUID and will NOT "
+                  f"appear on the kneeboard -- add one to GUIDS", flush=True)
             continue
         out.append((guid, f"{letter} {SHORT.get(letter, '')}",
                     f"ft-{letter.lower()}",
