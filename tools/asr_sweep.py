@@ -202,24 +202,28 @@ def sweep(profile, sloppy: bool = False,
 # briefed 124 used as though it were true. A correctness fix, not a tuning one,
 # so the numbers move in both directions and all of them are recorded:
 #
-#   clean   1293 -> 1294 arrived   1 -> 2 flips     582 -> 588 turns
-#   sloppy  1296 -> 1296 arrived  26 -> 29 flips    899 -> 899 turns
-#   deaf      20 -> 21 arrived    23 -> 15 flips    576 -> 586 turns
+#   clean   1293 -> 1294 arrived   1 -> 1 flips     582 -> 588 turns
+#   sloppy  1296 -> 1296 arrived  26 -> 32 flips    899 -> 899 turns
+#   deaf      20 -> 21 arrived    23 -> 17 flips    576 -> 586 turns
+#
+# Moved AGAIN the same night, when the course moved from 126 to 131 -- the
+# first correction had it in the DCS grid frame rather than the true one the
+# radials use. See route.py. These are the numbers at 131.
 #
 # The deaf number is the one worth noticing: the reversals a pilot who does not
 # turn provokes fell by a third, which is #19's territory. The single extra
 # rapid flip in clean is not understood and is written down here rather than
 # rounded away.
 BASELINE = {
-    "clean":  {"arrived": 1294, "dither": 2, "turns": 588},
-    "sloppy": {"arrived": 1296, "dither": 29, "turns": 899},
+    "clean":  {"arrived": 1294, "dither": 1, "turns": 588},
+    "sloppy": {"arrived": 1296, "dither": 32, "turns": 899},
     # --deaf: a pilot who never turns, so ARRIVING IS NOT THE MEASURE -- he is
     # not flying the approach and 20 of 1728 reaching the missed approach point
     # is him drifting over it, not the engine working. What is measured here is
     # whether the CONTROLLER argues with itself when the geometry refuses to
     # improve: reversals and direction changes. That is #19, and it is invisible
     # to an obedient aeroplane.
-    "deaf":   {"arrived": 0, "dither": 15, "turns": 586},
+    "deaf":   {"arrived": 0, "dither": 17, "turns": 586},
 }
 # Turns wander a little with the seeded drift; dithering and arrivals must not.
 TURN_SLACK = 0.05

@@ -275,9 +275,18 @@ class TestAsrContext(unittest.TestCase):
         self.asr = R.BATUMI_ASR
         self.ndb = R.BATUMI_APPROACH
 
-    def scope(self, nm, radial, alt=2000, tag="Pony one one"):
-        return (f"Enfield11 [{tag}] (P-51D-30-NA): {nm} nm on the {radial} "
-                f"radial, {alt:,} ft, heading 124")
+    def scope(self, nm, radial=None, alt=2000, tag="Pony one one"):
+        """A radar line. `radial` defaults to the inbound centreline.
+
+        Derived from the profile rather than written as 304, because 304 was
+        the reciprocal of a course that turned out to be six degrees off -- it
+        was in the DCS grid frame while radials are true. Positions written as
+        constants silently stop meaning what they were chosen to mean.
+        """
+        if radial is None:
+            radial = (self.asr.final_crs_true + 180) % 360
+        return (f"Enfield11 [{tag}] (P-51D-30-NA): {nm} nm on the {radial:.0f} "
+                f"radial, {alt:,} ft, heading {self.asr.final_crs_true:.0f}")
 
     def test_parses_a_tagged_fix(self):
         pos = agent_atc.radar_fix(self.scope(6.4, 304, 2000), "Pony 1-1")
@@ -294,14 +303,14 @@ class TestAsrContext(unittest.TestCase):
         self.assertEqual(agent_atc.asr_context(self.asr, bogey, "Pony 1-1"), "")
 
     def test_a_wingman_uses_his_flights_track(self):
-        pos = agent_atc.radar_fix(self.scope(6, 304), "Pony 1-3")
+        pos = agent_atc.radar_fix(self.scope(6), "Pony 1-3")
         self.assertIsNotNone(pos)
 
     def test_silent_on_a_non_vectored_approach(self):
         # A beacon letdown must never receive vectors: the homing adapter points
         # the nose at the beacon, so a heading destroys his only reference.
         self.assertEqual(
-            agent_atc.asr_context(self.ndb, self.scope(6, 304), "Pony 1-1"), "")
+            agent_atc.asr_context(self.ndb, self.scope(6), "Pony 1-1"), "")
 
     def test_far_out_is_vectoring(self):
         out = agent_atc.asr_context(self.asr, self.scope(14, 300), "Pony 1-1")
@@ -312,13 +321,16 @@ class TestAsrContext(unittest.TestCase):
         # The mile calls already go out automatically; the agent reporting range
         # and heading too meant the pilot heard the same numbers twice from the
         # same controller. That is what "too chatty on final" meant.
-        out = agent_atc.asr_context(self.asr, self.scope(6, 304), "Pony 1-1")
+        out = agent_atc.asr_context(self.asr, self.scope(6), "Pony 1-1")
         self.assertIn("on final", out)
         self.assertIn("do NOT repeat", out)
 
     def test_off_course_is_named(self):
-        right = agent_atc.asr_context(self.asr, self.scope(6, 296), "Pony 1-1")
-        left = agent_atc.asr_context(self.asr, self.scope(6, 312), "Pony 1-1")
+        inbound = (self.asr.final_crs_true + 180) % 360
+        right = agent_atc.asr_context(
+            self.asr, self.scope(6, inbound - 8), "Pony 1-1")
+        left = agent_atc.asr_context(
+            self.asr, self.scope(6, inbound + 8), "Pony 1-1")
         self.assertIn("right of course", right)
         self.assertIn("left of course", left)
 
@@ -531,7 +543,12 @@ class TestOneAircraftOneInstruction(unittest.TestCase):
     VEC = "ASR: vectoring, eight miles. Fly heading 120."
 
     def test_a_hold_is_suppressed_for_an_aircraft_on_the_approach(self):
-        g = self.g(8, 304, 124)          # established, inbound
+        # Established and inbound: on the centreline, pointing down it. Both
+        # numbers come from the profile because both used to be written out --
+        # 304 and 124 -- against a course that was six degrees off.
+        from marshall.core import route as _R
+        crs = _R.BATUMI_ASR.final_crs_true
+        g = self.g(8, (crs + 180) % 360, crs)
         self.assertTrue(g.established or g.phase in ("final", "map"))
         directive, _, vectoring, dropped = agent_atc.reconcile(
             self.HOLD, "", self.VEC, g)

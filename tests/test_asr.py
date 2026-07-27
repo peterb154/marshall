@@ -269,19 +269,40 @@ class TestRoomToFly(unittest.TestCase):
         self.p = R.BATUMI_ASR
 
     def test_close_in_and_off_the_centreline_is_not_in_position(self):
-        pos = asr.Position(range_nm=3.2, radial_deg=329, alt_ft=2898,
+        """The RULE: inside a few miles, a mile and a bit off the line is not a
+        base leg, it is a squeeze. Closing it costs the cross-track and rolling
+        out costs the turn-in distance on top, which is more approach than is
+        left."""
+        pos = asr.Position(range_nm=3.2, radial_deg=336, alt_ft=2898,
                            heading_deg=296)
-        # Measured against the TRUE course. The recorded numbers (1.35 / 2.9)
-        # were taken when the centreline was drawn from the magnetic course, so
-        # they described a line six degrees off the runway. The incident is
-        # unchanged -- this is the same radar position from the same sortie --
-        # but where it sits relative to the real centreline is 1.25 and 2.94.
         xtk = asr.cross_track(pos, self.p.final_crs_true)
         along = asr.along_track(pos, self.p.final_crs_true)
-        self.assertAlmostEqual(abs(xtk), 1.25, delta=0.1)
-        self.assertAlmostEqual(along, 2.94, delta=0.1)
+        self.assertGreater(abs(xtk), 1.3)
+        self.assertLess(along, 3.2)
         self.assertFalse(asr.in_position(along, xtk, self.p),
                          "squeezed onto a three-mile final it cannot fly")
+
+    def test_the_recorded_P47_position_reads_differently_now(self):
+        """The radar fix from the sortie this class was written for.
+
+        The complaint was "he turned me around way, way, way too soon, and that
+        left me way south of the field", and the position was 1.35 nm off the
+        centreline as we then drew it. Measured against the corrected course it
+        is 0.99 nm off, and that IS in position -- so by today's geometry the
+        turn was reasonable.
+
+        Which is the point of keeping it. That centreline was six degrees off
+        and sat SOUTH of the runway, which is both the direction he said he
+        ended up and the likeliest reason the turn felt early. The incident is
+        therefore unexplained again rather than fixed, and wants re-flying.
+        """
+        pos = asr.Position(range_nm=3.2, radial_deg=329, alt_ft=2898,
+                           heading_deg=296)
+        xtk = asr.cross_track(pos, self.p.final_crs_true)
+        along = asr.along_track(pos, self.p.final_crs_true)
+        self.assertAlmostEqual(abs(xtk), 0.99, delta=0.1)
+        self.assertAlmostEqual(along, 3.05, delta=0.1)
+
 
     def test_the_run_has_to_fit_the_offset_plus_the_roll_out(self):
         # Just enough room, and just too little, either side of the same rule.
@@ -730,14 +751,20 @@ class TestTheReversalHooverFlew(unittest.TestCase):
         return [asr.guide(G.Position(rng, rad, alt, hdg), p).heading
                 for rng, rad, alt, hdg in self.TRACE]
 
-    def test_the_trace_still_produces_the_reversal(self):
-        """Characterisation, not approval. When this stops being true the fix
-        has landed and this test should be rewritten as the assertion below."""
+    def test_the_headings_progress_instead_of_reversing(self):
+        """It was 126, 142, 149, 160, 165, then 309 -- a 144-degree flip. It is
+        now 111, 122, 128, 140, 145, 156: the same trace, walking round.
+
+        The cause was never the vectoring logic. The centreline was drawn six
+        degrees off because the course was in the DCS grid frame and the radials
+        were true, and this trace sat exactly where that error changed which
+        side of the course he was on -- so the engine kept switching its mind
+        about which way to send him. Fix the frame and the flip has nothing to
+        stand on."""
         got = self.headings()
         biggest = max(abs(G.angle_diff(b, a)) for a, b in zip(got, got[1:]))
-        self.assertGreater(biggest, 90, f"the reversal is gone: {got}")
+        self.assertLessEqual(biggest, 20, f"reversing again: {got}")
 
-    @unittest.expectedFailure
     def test_a_vector_should_never_reverse_on_a_man_holding_his_heading(self):
         """What SHOULD happen. Nothing about his flying changed between one call
         and the next -- same heading, a mile further out -- so nothing about the

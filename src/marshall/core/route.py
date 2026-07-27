@@ -1082,26 +1082,34 @@ BATUMI_ASR = ApproachProfile(
     guidance="talkdown",            # no glidepath: he is talked to the MAP
     stations=list(STATIONS),
     hold_base_ft=4000,
-    # ASKED THE SIM, 27 July. `Airbase.getByName("Batumi"):getRunways()` returns
-    # the runway named 31 with course 0.950 rad, which is 305.6 TRUE -- so 13 is
-    # 125.6 true. The F10 ruler agreed at 306. Two earlier attempts did not: a
-    # bearing taken between two points an aeroplane stopped at came out 311
-    # because it had covered less than half the runway, and 100 ft of lateral
-    # error over that baseline is 1.5 degrees.
+    final_crs=125,
+    # 131.3, AND THE FRAME IS THE WHOLE POINT.
     #
-    # Ask the authority. It was one gRPC call and it ended an hour of
-    # triangulation.
+    # DCS's x/z grid is a transverse Mercator and its north is not true north:
+    # at Batumi the convergence is 5.74 degrees. So there are two right answers
+    # to "which way does this runway point", and they differ by six degrees:
     #
-    # The MAGNETIC half is not settled and is tracked separately -- see
-    # magvar_deg. 120 assumes the 6 east this file has always claimed.
-    final_crs=120,
-    # 125.6 rounded, and the rounding is deliberate. Every heading in this system
-    # is issued in WHOLE degrees, because that is what a controller says and what
-    # a pilot can fly -- so a course carrying a spare 0.6 leaves a permanent
-    # fraction the aeroplane can never null out. It shows up as chatter: at 125.6
-    # the sweep dithered on 3 approaches, at 126 on none, for a difference far
-    # inside the measurement.
-    final_crs_true_measured=126.0,
+    #   305.6  the F10 ruler, the aircraft compass, and `getRunways().course`
+    #          -- all in the DCS GRID frame
+    #   311.3  the geodesic bearing between the two thresholds, computed from
+    #          lat/lon -- TRUE
+    #
+    # Our radials come from `ST_Azimuth` on lat/lon, so they are TRUE. The
+    # course must be in the same frame or the centreline is drawn six degrees
+    # off, which is what it was: on final Hoover reported himself right of
+    # course twice while the controller said left, and at 131.3 he was 683 ft
+    # and 729 ft RIGHT -- exactly as he called it.
+    #
+    # The first measurement of the night, a bearing between two points an
+    # aeroplane stopped at, gave 311.02. It was taken in the right frame and
+    # was correct to a third of a degree, and I threw it away in favour of two
+    # readings taken in the wrong one. If a number disagrees with the geometry
+    # you are debugging, check the FRAME before you check the number.
+    # 131 rather than 131.3: every heading is issued in whole degrees, so a
+    # course carrying a fraction leaves a permanent error the aeroplane can
+    # never null out, and it comes back as chatter -- 16 rapid reversals across
+    # the sweep at 131.3, 2 at 131, for a third of a degree.
+    final_crs_true_measured=131.0,
     field_elev_ft=BATUMI_FIELD.elevation_ft,
     runway="13",
     platform_ft=2000,
