@@ -239,8 +239,9 @@ real aeroplane. What is *not* worth a call is discovering it.
 
 | ID | Prio | What you will see | Where the line is — what would be NEW | Issue |
 |----|------|-------------------|----------------------------------------|-------|
-| E1 | note | Inbound, more than ~2 nm off course, somewhere around 14 nm: one vector turns you **away** from the field | A turn away when you are ON course, or inside 11 nm, or on the second attempt after correcting | [#19] |
+| E1 | note | Inbound and **2 nm or more off course between 11 and 16 nm**: he sends you outbound to reposition instead of giving you an intercept. Mapped exactly — inside 1.5 nm off, or beyond 18 nm, it behaves | A turn away when you are **under 2 nm off**, or beyond 18 nm, or a REVERSAL rather than a reposition | [#19] |
 | E2 | note | After a go-around or arriving from behind the field: he circles you near the field instead of taking you out | Circling while you are **inbound and established** — E2 is a repositioning bug, not an approach one | [#20] |
+| ~~E3~~ | — | **CLOSED 27 July** — flown clean twice, nothing invented on either go-around | — | [#30] |
 | E3 | note | A field, frequency or fix named that is not on your chart — *"proceed KOBULETI, contact Kobuleti Departure one two four"* | Any of it. Say what he named; every instance is a separate escape | [#30] |
 
 **What each one actually is**

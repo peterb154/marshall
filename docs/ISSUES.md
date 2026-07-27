@@ -477,7 +477,25 @@ Code: `agent_atc.claim_the_frequency`
 ## [BUG-1] Outbound vector at ~14 nm while inbound — #19
 labels: bug
 
-**Status:** OPEN — **reproduced**, 27 July, and criterion 3 is met.
+**Status:** OPEN — reproduced, narrowed, and now MAPPED. 27 July.
+
+**The remaining bug is the `in_position` room test, not the vectoring.** Inbound
+on the course, a heading that would fix it in thirty seconds, and instead he is
+sent outbound to reposition:
+
+```
+        1.5 nm off   2.5 nm off   3.5 nm off
+11 nm      in          AWAY         AWAY
+14 nm      in          AWAY         AWAY
+16 nm      in          in           AWAY
+18 nm      in          in           in
+```
+
+At 14 nm and 2.5 nm off that is a ten degree offset. Real ATC gives a heading.
+
+The frame fix (grid convergence, see [#35]) killed the 144-degree REVERSAL on
+Hoover's trace and took the deaf sweep from 23 reversals to 17 — but it did not
+touch this, and saying it had was my error.
 
 Inbound, more than 2 nm off course, and the engine turns him away. Four attempts
 across two sessions, all of which regressed the sweep and none of which ever
