@@ -24,7 +24,7 @@ from dcs.action import DoScriptFile
 from dcs.forcedoptions import ForcedOptions
 from dcs.mission import Mission, StartType
 from dcs.mapping import Point
-from dcs.planes import MosquitoFBMkVI, P_47D_30, P_51D_30_NA, SpitfireLFMkIX  # noqa: F401
+from dcs.planes import F_16C_50, MosquitoFBMkVI, P_47D_30, P_51D_30_NA, SpitfireLFMkIX  # noqa: F401
 from dcs.planes import PlaneType
 from dcs.task import CAP, OrbitAction
 from dcs.terrain import Caucasus
@@ -219,8 +219,52 @@ def add_formation(m: Mission, country, size: int = R.FLIGHT_SIZE) -> None:
         u.name = f"{group_name}-{n}"
 
 
+def add_testbed(m, usa) -> None:
+    """An air-start F-16, for measuring the controller rather than flying the war.
+
+    Deliberately anachronistic and deliberately behind a flag: a 1944 Caucasus
+    mission has no business containing a Viper, and this one does not unless
+    somebody asks for it.
+
+    It exists because of what a P-51 cannot tell us. Asked which side of the
+    final approach course he was on, Hoover could only answer by looking out of
+    the window -- and the instruments that might have helped were worse than no
+    help at all. On the runway, his wet compass read 139 where the F10 map said
+    123 magnetic, and the DG beside it had drifted seven degrees the other way.
+
+        "I steer by the DG. The mag compass is not reliable in turns."
+
+    Which is correct airmanship and is also the whole problem: a directional
+    gyro drifts, so the error between the heading a controller SAYS and the
+    heading an aeroplane FLIES is not a constant to be calibrated out -- it
+    wanders with time since the pilot last reset it against the compass.
+
+    An F-16's HSI is slaved and does not drift. Flying the same approach in one
+    turns "which side am I on" from a judgement into an instrument reading, and
+    that is the only way to tell a real error in our geometry from a gyro that
+    needed resetting. See #35 and card row A8.
+
+    Air start over the same fix as the rehearsal flight, on Approach's
+    frequency, so it can be taken straight to the part under test.
+    """
+    start = Point(R.AIR_START.x, R.AIR_START.z, m.terrain)
+    alt_m = R.CRUISE_ALT_FT * 0.3048
+    jet = m.flight_group(
+        country=usa, name="Testbed", aircraft_type=F_16C_50,
+        airport=None, position=start, altitude=alt_m,
+        speed=R.CRUISE_TAS_MPH * 0.44704, maintask=CAP,
+        start_type=StartType.Runway, group_size=1)
+    jet.frequency = R.APPROACH.freq_mhz
+    for n, unit in enumerate(jet.units, start=1):
+        unit.name = f"Testbed 1-{n}"
+        unit.set_client()
+    set_channels(jet)
+    for fix in R.FIXES[1:]:
+        jet.add_waypoint(Point(fix.x, fix.z, m.terrain), alt_m)
+
+
 def build(weather: str = "light", traffic: bool = False,
-          formation: bool = False) -> tuple[Mission, list[int]]:
+          formation: bool = False, testbed: bool = False) -> tuple[Mission, list[int]]:
     m = Mission(terrain=Caucasus())
     # The brief goes IN the mission as well as on the kneeboard. A pilot who
     # joins without OpenKneeboard, or who wants to read it while the aeroplane
@@ -391,6 +435,8 @@ def build(weather: str = "light", traffic: bool = False,
         add_traffic(m, usa)
     if formation:
         add_formation(m, usa)
+    if testbed:
+        add_testbed(m, usa)
 
     # NO BEACON TRANSMITTERS.
     #
@@ -630,6 +676,10 @@ if __name__ == "__main__":
     ap.add_argument("--traffic", action="store_true",
                     help="add a late-activated AI contact off Batumi (call in "
                          "with group.Activate('Traffic') over gRPC)")
+    ap.add_argument("--testbed", action="store_true",
+                    help="add an air-start F-16 client 'Testbed 1-1' -- an HSI "
+                         "that does not drift, for measuring the controller "
+                         "rather than flying the war (#35, card A8)")
     ap.add_argument("--formation", action="store_true",
                     help="add a late-activated AI four-ship 'Pony 1' for "
                          "formation testing (units Pony 1-1 .. Pony 1-4)")
@@ -637,7 +687,7 @@ if __name__ == "__main__":
     weather = "hard" if args.hard else "clear" if args.clear else "light"
 
     mission, ids = build(weather, traffic=args.traffic,
-                        formation=args.formation)
+                        formation=args.formation, testbed=args.testbed)
     mission.save(str(OUT))
     write_presets(OUT, ids)
     deploy(OUT)
