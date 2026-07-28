@@ -440,6 +440,15 @@ def _unique_labels(rows: list) -> dict:
 def _render(rows: list, bindings: dict) -> list[str]:
     lines = []
     naming = _unique_labels(rows)
+    # WHO THE SIM SAYS IS DOWN. Carried in the picture rather than looked up per
+    # contact, because this is rendered on every transmission and the answer is
+    # already in memory. Empty when the event stream has told us nothing, which
+    # is a third answer -- see events.ground_state.
+    try:
+        from tools.events import on_the_ground
+        down = on_the_ground()
+    except Exception:
+        down = set()
     for group in _clusters(rows):
         label, name, typ, alt_ft, heading, speed_kt, nm, radial = group[0][:8]
         label = naming.get(name, label)
@@ -449,6 +458,10 @@ def _render(rows: list, bindings: dict) -> list[str]:
         # against it -- see atc/identity.py. A controller wants it anyway: he
         # works participating aircraft, not every return on the scope.
         manned = ", manned" if (len(group[0]) > 8 and group[0][8]) else ""
+        # "on the ground" comes from the sim's land/takeoff events, not from a
+        # guess at altitude and speed.
+        if name in down:
+            manned += ", on the ground"
         # Groundspeed is in the picture because the vertical engine cannot plan
         # a descent without it: 500 fpm is a very different gradient at 150
         # knots than at 300. Omitted when the sim has not given us one, rather

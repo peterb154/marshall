@@ -68,6 +68,11 @@ class Unit:
     callsign: str = ""         # what something has already correlated it to
     type: str = ""             # the airframe, which is where equipment comes from
     manned: bool = False       # is there a person in it? see `by_elimination`
+    # THE SIM SAID SO, from its land/takeoff events -- not inferred from
+    # altitude and speed. False means either "airborne" or "nothing has told
+    # us", and the caller keeps its own fallback for the second; see
+    # director/tools/events.py and [ARCH-3] / #41.
+    on_ground: bool = False
 
 
 @dataclass(frozen=True)
@@ -107,9 +112,11 @@ def units_on(scope: str) -> list[Unit]:
         # it. The sim knows, because a client-occupied unit reports a player
         # name and an AI does not.
         kind = (m.group(3) or "").strip()
-        manned = "manned" in kind.lower()
+        low = kind.lower()
+        manned = "manned" in low
+        grounded = "on the ground" in low
         kind = kind.split(",")[0].strip()
-        out.append(Unit(name, (m.group(2) or "").strip(), kind, manned))
+        out.append(Unit(name, (m.group(2) or "").strip(), kind, manned, grounded))
     return out
 
 

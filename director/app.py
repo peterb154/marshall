@@ -51,6 +51,7 @@ from tools.approaches import (
 from tools.clearance import clearance_tools
 from tools.hooks import due_hooks, hook_tools
 from tools.identify import bindings_for, identify_tools
+from tools.events import start_events
 from tools.tracks import start_streamer, vector
 
 # TODO (identity): uncomment when you have per-user profile docs.
@@ -135,6 +136,9 @@ app = make_app(build_agent, prompt_store=prompts)
 # Mirror the sim's unit stream into the PostGIS `tracks` cache so radar reads a
 # single local query instead of fanning out gRPC on every call.
 start_streamer()
+# The sim's own account of what happened, beside its account of where
+# everything is. See tools/events.py and [ARCH-3] / #41.
+start_events()
 
 
 # --- two-tier routed ATC turn -----------------------------------------------

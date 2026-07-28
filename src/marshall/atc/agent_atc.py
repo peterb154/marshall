@@ -1063,14 +1063,24 @@ def asr_context(profile, scope: str, cs: str, track: str = "") -> str:
     # cannot (a warbird taxis at what a Spitfire flies a base leg at). Together
     # they are unambiguous, and neither is a guess -- both come off radar.
     #
-    # IT IS STILL AN INFERENCE, and the sim would simply tell us: there is a
-    # `land` event on mission.StreamEvents, along with takeoff, birth and
-    # player_change_slot, and nothing in this system subscribes to any of them.
-    # See [ARCH-3] / #41. This is a sample of a continuous quantity used to
-    # detect a discrete change, which is the shape of bug this project keeps
-    # producing -- right position, wrong conclusion at the boundary. Keep it as
-    # the fallback when no event has been seen; do not keep it as the answer.
-    if pos.alt_ft < GROUND_ALT_FT and 0 < pos.speed_kt < GROUND_SPEED_KT:
+    # THE SIM'S ANSWER FIRST. `land` and `takeoff` come off StreamEvents and
+    # say outright what altitude and speed could only imply -- see
+    # director/tools/events.py and [ARCH-3] / #41. The guess below stays as the
+    # fallback, because the stream drops whenever the sim pauses and a director
+    # restart begins knowing nothing: silence must not read as "airborne".
+    if any(u.on_ground for u in identity.units_on(scope)
+           if _key_name(u.name) == _key_name(track or cs)):
+        return ""
+    # ZERO IS THE COMMONEST GROUND SPEED THERE IS, and excluding it was a bug I
+    # shipped an hour ago. The `0 <` was meant to stop a MISSING speed reading
+    # as slow -- but a parked aeroplane reports exactly zero, so the one case
+    # this guard most obviously exists for was the one it let through. Sitting
+    # on the ramp at thirty-nine feet, he was told he had gone around and to
+    # fly the missed approach.
+    #
+    # Below two hundred feet the ambiguity it was guarding against does not
+    # arise: nothing in the air at that height is doing zero knots.
+    if pos.alt_ft < GROUND_ALT_FT and pos.speed_kt < GROUND_SPEED_KT:
         return ""
     g = asr.guide(pos, profile)
     rng = asr.spoken_range(g.range_nm)
@@ -1678,6 +1688,41 @@ def claim_the_frequency(path=None) -> bool:
     fd.flush()
     _lock_fd = fd            # keep the handle; closing it drops the lock
     return True
+
+
+def handoff_on_the_event(scope: str, track: str, me, profile) -> object | None:
+    """Touching down ends the approach. Getting airborne ends Tower's business.
+
+        "Landing / takeoff event should be triggers to switch to/from tower"
+
+    Which is what the real thing does, and what a RANGE could never express: a
+    go-around at half a mile is closer than a landing at one, so the two states
+    that most need telling apart are the two a distance cannot separate. The
+    range rule had already been special-cased once for exactly this -- handing
+    a man to Tower mid-talkdown abandoned him at the moment the procedure
+    began.
+
+    Both directions, because only one was ever wired. A departing flight was
+    given to Approach at twenty-five miles and never handed back, since nothing
+    marked the moment Tower was done with him.
+
+    Silent unless the sim has actually said so. `on_ground` is False both for an
+    aeroplane in the air and for one nothing has been reported about, and this
+    must not fire on the second -- see events.ground_state.
+    """
+    if me is None or not track:
+        return None
+    unit = next((u for u in identity.units_on(scope)
+                 if _key_name(u.name) == _key_name(track)), None)
+    if unit is None:
+        return None
+    role = getattr(me, "role", "")
+    if unit.on_ground and role == "approach":
+        return profile.station_for("tower")
+    if not unit.on_ground and role == "tower":
+        # Airborne again: Tower owns the runway, not the departure.
+        return profile.station_for("approach")
+    return None
 
 
 def leaving_my_airspace(base: str, session_id: str, callsign: str, me,
@@ -2945,8 +2990,11 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # guard below as well.
         fix = (radar_fix_by_track(scope, _ident.track, profile)
                or radar_fix(scope, known, profile))
-        nxt = (profile.handoff_from(on_mhz, fix.range_nm)
-               if me and fix is not None else None)
+        # THE EVENT OUTRANKS THE RANGE. See handoff_on_the_event.
+        nxt = handoff_on_the_event(scope, _ident.track, me, profile)
+        if nxt is None:
+            nxt = (profile.handoff_from(on_mhz, fix.range_nm)
+                   if me and fix is not None else None)
         if nxt is None and me is not None and known:
             # He may be on his way OUT rather than in -- the case range cannot
             # answer. Costs one lookup and only ever fires when the approach
