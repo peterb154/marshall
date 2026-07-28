@@ -1021,6 +1021,13 @@ def vector_call(cs: str, g, pos=None) -> str:
     return f"{who}, {turn}heading {ctl.spell_hdg(hdg)}{alt}."
 
 
+# What "he is on the ground" looks like on radar. Generous on altitude because
+# Batumi is near sea level, and strict on speed because that is the half that
+# actually separates taxiing from flying.
+GROUND_ALT_FT = 200
+GROUND_SPEED_KT = 60
+
+
 def asr_context(profile, scope: str, cs: str, track: str = "") -> str:
     """Radar guidance for a vectored approach -- the controller's next call.
 
@@ -1040,6 +1047,22 @@ def asr_context(profile, scope: str, cs: str, track: str = "") -> str:
     # stale while radar could see him perfectly.
     pos = radar_fix_by_track(scope, track, profile) or radar_fix(scope, cs, profile)
     if pos is None:
+        return ""
+    # ON THE GROUND IS NOT A PHASE OF FLIGHT.
+    #
+    # After landing, the geometry still reads "past the missed approach point,
+    # low, near the field" -- which is what a go-around looks like, so the
+    # engine went on telling a taxiing aeroplane to fly heading one two five
+    # and climb to three thousand. He heard Tower trying to turn him back and
+    # correctly ignored it:
+    #
+    #     "i had tower attempt to reverse me on go-arround again - i just
+    #      ignored him and things went fine"
+    #
+    # Altitude alone cannot say it (he is low on final too) and speed alone
+    # cannot (a warbird taxis at what a Spitfire flies a base leg at). Together
+    # they are unambiguous, and neither is a guess -- both come off radar.
+    if pos.alt_ft < GROUND_ALT_FT and 0 < pos.speed_kt < GROUND_SPEED_KT:
         return ""
     g = asr.guide(pos, profile)
     rng = asr.spoken_range(g.range_nm)
@@ -1650,7 +1673,8 @@ def claim_the_frequency(path=None) -> bool:
 
 
 def leaving_my_airspace(base: str, session_id: str, callsign: str, me,
-                        profile, fix, mission: str = "default") -> object | None:
+                        profile, fix, mission: str = "default",
+                        under_our_vectors: bool = False) -> object | None:
     """The station he should be with now, if he has flown out of mine.
 
     ONLY the outbound direction, deliberately. Arrivals are sequenced by
@@ -1666,6 +1690,26 @@ def leaving_my_airspace(base: str, session_id: str, callsign: str, me,
     Batumi on a CAS sortie was given to Approach at 25 miles and then never
     handed back, because leaving resolved to nobody. It does now.
     """
+    # A MAN I AM VECTORING IS NOT LEAVING MY AIRSPACE.
+    #
+    #     "when flying around the IF area, several times he tried to hand me off
+    #      to georgia center -- i never went.. have a feeling this is a separate
+    #      thread than the one flying the approach"
+    #
+    # He was right about the shape of it: this is a different decision path from
+    # the one flying the approach, and the two disagreed. The guard below only
+    # protected him INSIDE the final intercept range, so while approach control
+    # was vectoring him downwind at eleven to eighteen miles -- taking him
+    # outbound ON PURPOSE, as part of the approach -- the airspace rule saw an
+    # aeroplane heading away and offered him to Center. Eight times in one
+    # sortie.
+    #
+    # Being taken outbound by MY OWN vectors is the opposite of leaving, and no
+    # range test can tell the two apart because the geometry is identical. What
+    # separates them is whether this controller is working him, which is a fact
+    # we have and were not using.
+    if under_our_vectors:
+        return None
     # A talkdown in progress outranks any question of geography. Tower's volume
     # has a 4,000 ft ceiling, so an aircraft descending the final sits inside it
     # -- and handing him over there is precisely the bug that took a pilot off
@@ -2703,7 +2747,14 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             srs_guid=client.last_sender_guid or None,
             srs_name=srs or None,
             callsign=known or None,
-            track_name=known if _fix is not None else None,
+            # THE TRACK, not the callsign. This bound a flight's track_name to
+            # its own CALLSIGN, so the airspace view's join to `tracks` never
+            # matched, every aeroplane came back with no geography, and the
+            # COALESCE fell through to "Center owns the rest" -- which is how a
+            # pilot being vectored at eleven miles was offered to Georgia Center
+            # eight times in one approach. He was never leaving anybody's
+            # airspace; he had no airspace at all.
+            track_name=(_ident.track or None) if _fix is not None else None,
         ) if (client.last_sender_guid or known) else {}
         _fid = _flight.get("id")
 
@@ -2881,7 +2932,11 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # Center's frequency and the sector split is decoration.
         on_mhz = (heard_hz or freq_hz) / 1_000_000
         me = profile.station_on(on_mhz) if hasattr(profile, "station_on") else None
-        fix = radar_fix(scope, known, profile)
+        # By track, for the same reason everything else is: a stale label made
+        # this None for a whole approach, which silently disabled the talkdown
+        # guard below as well.
+        fix = (radar_fix_by_track(scope, _ident.track, profile)
+               or radar_fix(scope, known, profile))
         nxt = (profile.handoff_from(on_mhz, fix.range_nm)
                if me and fix is not None else None)
         if nxt is None and me is not None and known:
@@ -2889,7 +2944,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             # answer. Costs one lookup and only ever fires when the approach
             # rules had nothing to say.
             nxt = leaving_my_airspace(BASE_URL, session_id, known, me,
-                                      profile, fix)
+                                      profile, fix,
+                                      under_our_vectors=bool(vectoring))
         if directive:
             print(f"  CONTROLLER: {directive}", flush=True)
         if stack:

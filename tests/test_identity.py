@@ -494,3 +494,30 @@ class TestGarbleProtectionLivesInTheVote(unittest.TestCase):
         self.assertEqual(
             self.A.transmitter_callsign("g", "Falcon one one, request approach"),
             "Falcon 1-1")
+
+
+class TestAManUnderVectorsIsNotLeaving(unittest.TestCase):
+    """Eight offers to Georgia Center in one approach.
+
+        "when flying around the IF area, several times he tried to hand me off
+         to georgia center -- i never went.. have a feeling this is a separate
+         thread than the one flying the approach"
+
+    Right about the shape: a different decision path from the one flying the
+    approach, and the two disagreed. Approach control was vectoring him
+    downwind at eleven to eighteen miles -- taking him outbound ON PURPOSE --
+    while the airspace path saw an aeroplane heading away and offered him on.
+
+    Being taken outbound by MY OWN vectors is the opposite of leaving, and no
+    range test can tell the two apart because the geometry is identical.
+    """
+
+    class _Me:
+        role = "approach"
+
+    def test_no_handoff_while_we_are_vectoring_him(self):
+        from marshall.atc import agent_atc as A
+        self.assertIsNone(
+            A.leaving_my_airspace("http://unused", "s", "Falcon 1-1",
+                                  self._Me(), None, None,
+                                  under_our_vectors=True))

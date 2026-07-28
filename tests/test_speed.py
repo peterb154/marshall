@@ -127,8 +127,24 @@ class TestNeverBelowWhatTheAeroplaneCanFly(unittest.TestCase):
     """
 
     def test_the_f16_is_never_asked_for_the_mustangs_speed(self):
+        """His own numbers: 300 to fly, 250 the slowest he would accept."""
         from marshall.atc import equipment as E
-        self.assertGreaterEqual(E.safe_speed_kt(174, "F-16C_50"), 200)
+        self.assertGreaterEqual(E.safe_speed_kt(174, "F-16C_50"), 250)
+
+    def test_an_f16_already_at_three_hundred_is_left_alone(self):
+        """The correction. A floor of 210 told a pilot doing a perfectly
+        reasonable 300 to slow down, so the number has to be a TARGET -- said
+        only to somebody going faster than it."""
+        A._speed_asked.clear()
+        self.assertEqual(
+            A.speed_instruction(G(209), P(300), "v", now=1.0,
+                                aircraft_type="F-16C_50"), "")
+
+    def test_an_f16_at_four_fifty_is_asked_for_three_hundred(self):
+        A._speed_asked.clear()
+        said = A.speed_instruction(G(209), P(450), "v", now=1.0,
+                                   aircraft_type="F-16C_50")
+        self.assertIn("three zero zero", said)
 
     def test_the_mustang_still_gets_the_published_profile(self):
         """The floor must not become a second, wrong speed profile."""
@@ -137,16 +153,17 @@ class TestNeverBelowWhatTheAeroplaneCanFly(unittest.TestCase):
 
     def test_an_unknown_airframe_is_assumed_fast(self):
         """Assigning too fast costs a wider circuit. Too slow costs an
-        aeroplane, so the unknown case errs upward."""
+        aeroplane -- and the one time this was set low, the aeroplane it hit
+        was the one flying."""
         from marshall.atc import equipment as E
-        self.assertGreaterEqual(E.safe_speed_kt(174, ""), 200)
-        self.assertGreaterEqual(E.safe_speed_kt(174, "Su-57-Whatever"), 200)
+        self.assertGreaterEqual(E.safe_speed_kt(174, ""), 250)
+        self.assertGreaterEqual(E.safe_speed_kt(174, "Su-57-Whatever"), 250)
 
     def test_the_floor_is_applied_to_what_is_actually_said(self):
         A._speed_asked.clear()
-        said = A.speed_instruction(G(174), P(320), "Viper 1-1", now=1000.0,
+        said = A.speed_instruction(G(174), P(400), "Viper 1-1", now=1000.0,
                                    aircraft_type="F-16C_50")
-        self.assertIn("two one zero", said)
+        self.assertIn("three zero zero", said)
         self.assertNotIn("one seven", said)
 
 
@@ -192,3 +209,47 @@ class TestSpeedControlStopsOnFinal(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestOnTheGroundIsNotAPhaseOfFlight(unittest.TestCase):
+    """After landing the engine went on flying the approach.
+
+        "i had tower attempt to reverse me on go-arround again - i just ignored
+         him and things went fine"
+
+    Taxiing, the geometry still reads "past the missed approach point, low,
+    near the field" -- which is exactly what a go-around looks like. So a
+    parked aeroplane was told to fly heading one two five and climb to three
+    thousand, three times, while it rolled to the ramp.
+
+    Altitude alone cannot separate the two (he is low on final as well) and
+    speed alone cannot (a warbird taxis at what a Spitfire flies a base leg
+    at). Together they are unambiguous, and both come off radar rather than
+    from anything anybody said.
+    """
+
+    TAXI = ("362nd_sockeye [Falcon 1-1] (F-16C_50, manned): 0.5 nm on the 112 "
+            "radial, 45 ft, heading 216, 12 knots")
+    FLYING = ("362nd_sockeye [Falcon 1-1] (F-16C_50, manned): 4.0 nm on the 300 "
+              "radial, 1,500 ft, heading 130, 200 knots")
+
+    def _ctx(self, scope):
+        from marshall.core import route as R
+        return A.asr_context(R.BATUMI_ASR, scope, "Falcon 1-1", "362nd_sockeye")
+
+    def test_a_taxiing_aeroplane_gets_no_guidance(self):
+        self.assertEqual(self._ctx(self.TAXI), "")
+
+    def test_an_aeroplane_in_the_air_still_does(self):
+        """The guard must not silence the approach it was added beside."""
+        self.assertTrue(self._ctx(self.FLYING))
+
+    def test_low_and_fast_is_still_flying(self):
+        """Over the threshold at a hundred and forty knots is not taxiing."""
+        low = self.TAXI.replace("12 knots", "140 knots")
+        self.assertTrue(self._ctx(low))
+
+    def test_high_and_slow_is_still_flying(self):
+        """A Cub at fifty knots is airborne if it is at two thousand feet."""
+        slow = self.FLYING.replace("200 knots", "50 knots")
+        self.assertTrue(self._ctx(slow))

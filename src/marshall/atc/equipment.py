@@ -94,21 +94,35 @@ ASSUMED_MODERN = frozenset({"tacan", "ils", "ins"})
 # to choose between obeying the controller and staying airborne, and a
 # controller who puts a pilot in that position has stopped being useful.
 #
-# These are ASSIGNMENT floors while being vectored -- clean or partly
-# configured, still manoeuvring -- not final approach speeds. An aeroplane on
-# final flies whatever its pilot knows it needs, which is why speed control is
-# dropped there entirely; see `speed_instruction`.
+# These are the speed to ASSIGN while vectoring -- clean or partly configured,
+# still manoeuvring -- not final approach speeds. An aeroplane on final flies
+# whatever its pilot knows it needs, which is why speed control is dropped
+# there entirely; see `speed_instruction`.
+#
+# A TARGET, NOT MERELY A FLOOR, and the difference is the whole correction.
+# Setting the F-16's floor at 210 meant a pilot already doing a perfectly
+# reasonable 300 was told to slow to 210, which he flew and then reported:
+#
+#     "he's asking me in an F-16 to slow down to 210 knots, which is way too
+#      slow... F16 should be at 300 kts -- 250 at the slowest except in final
+#      approach phase"
+#
+# So the number here is what a controller should ASK FOR, and it is only ever
+# said to somebody going faster than it. At 300 the F-16 is at target and hears
+# nothing; at 450 he is asked for 300. That is the instruction that was wanted
+# all along, and a floor could not express it.
 MIN_VECTOR_KT: dict[str, float] = {
-    # Fast jets: comfortably above on-speed AoA with something in hand for a
-    # turn. The F-16 is the one that prompted this.
-    "F-16C_50": 210.0,
-    "FA-18C_hornet": 200.0,
-    "F-15ESE": 210.0,
-    "F-14B": 200.0,
-    "M-2000C": 200.0,
-    "AV8BNA": 180.0,
-    "A-10C_2": 160.0,
-    "A-10C": 160.0,
+    # Fast jets. The F-16 number is the pilot's own: 300 to fly, 250 the
+    # slowest he would accept, so 300 satisfies both and never crowds the
+    # bottom of the envelope.
+    "F-16C_50": 300.0,
+    "FA-18C_hornet": 280.0,
+    "F-15ESE": 300.0,
+    "F-14B": 280.0,
+    "M-2000C": 280.0,
+    "AV8BNA": 220.0,
+    "A-10C_2": 180.0,
+    "A-10C": 180.0,
     # Warbirds, which is what the published profile was written for.
     "P-51D-30-NA": 140.0,
     "P-51D": 140.0,
@@ -128,8 +142,9 @@ MIN_VECTOR_KT: dict[str, float] = {
 }
 
 # An airframe nobody has listed. Deliberately HIGH: assigning too fast costs a
-# wider circuit, and assigning too slow costs an aeroplane.
-ASSUMED_MIN_KT = 200.0
+# wider circuit, and assigning too slow costs an aeroplane -- and the one time
+# this was set low, the aeroplane it hit was the one flying.
+ASSUMED_MIN_KT = 250.0
 
 
 def min_speed_kt(aircraft_type: str | None) -> float:
