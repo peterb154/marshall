@@ -316,7 +316,7 @@ it. The column that matters is **authority**.
 | ID | Prio | Test | What should happen | Fix under test |
 |----|------|------|--------------------|----------------|
 | J1 | P1 | Fly with your **usual** SRS name and check in normally. Read the `authority` column | **`radar`** — the chain with no microphone in it: SRS name → the name radar prints → your track. If it reads `plan` or `roster` on every call, the roster fix did not take and I want to know before Andre, not after | [#40] `unit_for_radio` |
-| J2 | P1 | Change your SRS client name to something **unrelated** to your DCS name, then check in cold — nothing filed for you | You are still identified and still vectored. This is Andre's path exactly: unknown radio, names that do not match, no setup. Resolved by **elimination** — one unaccounted person flying, one unidentified radio | [#40] `by_elimination` |
+| J2 | P1 | **Andre checks in cold** — a radio this controller has never heard, nothing filed for him, no setup of any kind | He is identified and vectored on his first call. Ask engineering what `authority` said. `radar` means his SRS name matched his DCS name, which is the expected and best case; `plan` or elimination means the chain did not close and I want the reason | [#40] |
 | J3 | P1 | Garble or omit your callsign on one call — mumble it, or say only *"request the approach"* | He answers, and your identity does **not** move. The aeroplane you are in decides who you are; the words are only a claim | [#40] |
 | J4 | P1 | With a second aircraft up, say **his** callsign by mistake on one of your calls | Your report must not be filed against his aeroplane. That is a separation error, and it is the one nothing in the system used to report | [#40] |
 | J5 | P2 | Read back an instruction sloppily — *"maintained two thousand"*, *"left three sixty"* | **No new aeroplane appears.** Ask engineering for the board if unsure. These exact phrases each invented an aircraft that took a holding level | [#40] guards |
@@ -331,6 +331,19 @@ is a fallback for when it does not close.
 originally going to need a flight plan filed for him in advance — which is
 setup, and therefore not an answer to "he should work without setting anything
 up".
+
+It was also, briefly, written as *"change your SRS name to something unrelated
+to your DCS name"* — which cannot be done. **With DCS running, the SRS client
+takes its name from the DCS export**, so a pilot cannot set the two
+independently. Only a standalone client not attached to DCS can choose its own
+name, which is how the synthetic pilots in `srs/crowd.py` connect.
+
+That is worth having straight, because it makes the identity chain STRONGER
+than it was designed for: the radio's name and the name radar prints are the
+same string, so the match is exact rather than approximate. The elimination
+rung stays as the fallback for a pilot radar has not painted yet — and it is
+exercised by `crowd.py`, not by a human, since a human cannot produce the
+mismatch it handles.
 
 **J4** is the failure that made all of this worth doing. With one pilot a
 mis-heard callsign is a ghost, which is untidy. With two it moves the wrong

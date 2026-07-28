@@ -57,12 +57,30 @@ class TestThePhysicalLink(unittest.TestCase):
         """Two characters would match half the mission."""
         self.assertIsNone(identity.unit_for_radio("So", self.units))
 
+    VIPERS = ("Viper 1 (F-16C_50): 1 nm on the 090 radial, 100 ft, heading 010 | "
+              "Viper 11 (F-16C_50): 2 nm on the 090 radial, 100 ft, heading 010")
+
     def test_ambiguity_is_refused_rather_than_tie_broken(self):
-        """Picking the first is how a controller vectors somebody's wingman."""
-        us = identity.units_on(
-            "Viper 1 (F-16C_50): 1 nm on the 090 radial, 100 ft, heading 010 | "
-            "Viper 11 (F-16C_50): 2 nm on the 090 radial, 100 ft, heading 010")
-        self.assertIsNone(identity.unit_for_radio("Viper1", us))
+        """Picking the first is how a controller vectors somebody's wingman.
+
+        A radio calling itself "Viper" against Viper 1 and Viper 11 matches
+        both by substring and neither exactly, which is a genuine choice and so
+        gets no answer.
+        """
+        self.assertIsNone(
+            identity.unit_for_radio("Viper", identity.units_on(self.VIPERS)))
+
+    def test_an_exact_match_is_not_ambiguous_even_among_lookalikes(self):
+        """This used to refuse, and refusing was wrong.
+
+        "Viper1" normalises to exactly one of those two units. Substring
+        matching could not see that and threw the answer away -- which is the
+        same flaw that would have refused BOTH of two squadron mates called
+        Hoover and Hoover2.
+        """
+        got = identity.unit_for_radio("Viper1", identity.units_on(self.VIPERS))
+        self.assertIsNotNone(got)
+        self.assertEqual(got.name, "Viper 1")
 
 
 class TestTheLadder(unittest.TestCase):
@@ -380,3 +398,50 @@ class TestAGuestNeedsNothingSetUpInAdvance(unittest.TestCase):
                         scope=self.ONE)
         self.assertEqual(a.track, "Nobody-We-Know")
         self.assertFalse(b)
+
+
+class TestOverlappingPilotNames(unittest.TestCase):
+    """Two squadron mates with similar handles, which is not exotic.
+
+        "How do you change your SRS name independent of DCS? I think it comes
+         right out of DCS exports?"
+
+    He is right, and it changes what the matching rule should be. With DCS
+    running the SRS client takes its name from the DCS export, so the radio's
+    name and the name radar prints are the SAME STRING -- an exact match is the
+    normal case, and substring matching is only needed where decoration differs
+    ("Sockeye" against "362nd_sockeye").
+
+    Trying substrings FIRST does not merely loosen it, it fails outright: with
+    "Hoover" and "Hoover2" both flying, each radio matches both units, the
+    ambiguity rule refuses, and NEITHER pilot is identified. It takes out the
+    man whose name is a prefix as well as the one whose name contains it.
+    """
+
+    OVERLAP = [identity.Unit("Hoover", manned=True),
+               identity.Unit("Hoover2", manned=True)]
+
+    def test_both_pilots_are_identified_despite_the_overlap(self):
+        self.assertEqual(identity.unit_for_radio("Hoover", self.OVERLAP).name,
+                         "Hoover")
+        self.assertEqual(identity.unit_for_radio("Hoover2", self.OVERLAP).name,
+                         "Hoover2")
+
+    def test_decoration_still_matches_where_there_is_no_exact_hit(self):
+        """The fallback has to survive: DCS and SRS decorate differently when
+        the player name carries a squadron tag."""
+        units = [identity.Unit("362nd_sockeye", manned=True)]
+        self.assertEqual(identity.unit_for_radio("Sockeye", units).name,
+                         "362nd_sockeye")
+
+    def test_an_exact_match_beats_a_longer_substring_hit(self):
+        units = [identity.Unit("Andre", manned=True),
+                 identity.Unit("AndreTheGiant", manned=True)]
+        self.assertEqual(identity.unit_for_radio("Andre", units).name, "Andre")
+
+    def test_two_units_with_one_name_is_still_refused(self):
+        """units_on should have made these distinct; if it did not, refusing is
+        the correct answer and not a tie-break."""
+        same = [identity.Unit("Hoover", manned=True),
+                identity.Unit("Hoover", manned=True)]
+        self.assertIsNone(identity.unit_for_radio("Hoover", same))

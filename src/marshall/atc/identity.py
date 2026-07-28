@@ -139,6 +139,25 @@ def unit_for_radio(srs_name: str, units: list[Unit]) -> Unit | None:
     k = _key(srs_name)
     if len(k) < 3:                    # too short to be evidence of anything
         return None
+
+    # AN EXACT MATCH FIRST, and it is the normal case rather than a special one.
+    # With DCS running, the SRS client takes its name from the DCS export -- a
+    # pilot cannot set it independently -- so the radio's name and the name
+    # radar prints are the SAME STRING, and the substring rule below is only
+    # needed where decoration differs ("Sockeye" against "362nd_sockeye").
+    #
+    # Trying substrings first is not merely loose, it fails outright on names
+    # that overlap: with "Hoover" and "Hoover2" both flying, each radio matches
+    # BOTH units, the ambiguity rule refuses, and NEITHER pilot is identified.
+    # Two squadron mates with similar handles is not an exotic case, and the
+    # failure takes out the man whose name is a prefix as well as the one whose
+    # name contains it.
+    exact = [u for u in units if _key(u.name) == k]
+    if len(exact) == 1:
+        return exact[0]
+    if exact:
+        return None                   # two units with one name: see units_on
+
     hits = [u for u in units if k in _key(u.name) or _key(u.name) in k]
     return hits[0] if len(hits) == 1 else None
 
