@@ -1256,8 +1256,30 @@ quantity standing in for a discrete fact the sim publishes.
    fallback when no event has been seen for that aircraft.
 3. `land` / `runway_touch` triggers the handoff to Tower; `takeoff` triggers
    the handoff away from it. The range rule stays as the fallback.
-4. `player_change_slot` clears the radio binding without an engineer -- [#38].
+4. `player_leave_unit` / `player_change_slot` clears the slot-to-callsign
+   association -- [#38].
+
+       "Player leaving slot event can clear database for slot association to
+        callsign"
+
+   This is the answer to the question he asked days ago and nobody had one for:
+
+       "how do I reset it without engineering help? What happens in the future
+        if a pilot changes slots and call signs?"
+
+   The stand-in today is a TWO HOUR TTL on the binding (`identify.py`,
+   `BINDING_TTL_SEC`), which is the same mistake as the landing guess wearing
+   different clothes -- a timer approximating an event. Two hours is far too
+   long for a man who swapped aeroplanes between sorties and far too short for
+   one flying a long mission, and it can never be right because the quantity it
+   measures is not the one that matters. Leaving the slot IS the moment the
+   association stops being true, and the sim says so.
+
+   It also completes [#38]'s thesis rather than merely serving it: a callsign
+   is a POSITION, and a position is vacated. The event is the vacating.
 5. Events are recorded where a sortie can be replayed against them.
+6. `BINDING_TTL_SEC` is retired, or demoted to the fallback for a session where
+   no event stream was available.
 
 Related: [#38] (a callsign is a position), [#40] (identity).
 
