@@ -413,6 +413,49 @@ def load_and_push_plate(profile, base: str = BASE_URL):
     return profile
 
 
+DEPARTED_URL = f"{BASE_URL}/events/departed"
+# What we have already acted on, so a slot that was left ten minutes ago is not
+# re-released on every tick.
+_released: set[str] = set()
+
+
+def release_departed(ctl, registry, base: str = BASE_URL) -> list[str]:
+    """Take off the board anybody who has left his aeroplane.
+
+    The sim publishes `player_leave_unit`; the separation board lives in this
+    process and cannot see it, so the director is asked on the tick that
+    already polls for hooks.
+
+    IT IS NOT TIDYING. Two entries are what makes the deterministic engine
+    engage, so ONE leftover callsign turns a single-ship approach into a
+    sequencing problem between a pilot and his own former self. Live: he flew
+    as Falcon 1-1, came back an hour later as Pony 1-1, and was assigned ten
+    thousand, held at five thousand and banished to Kobuleti -- each a correct
+    answer to a question about two aeroplanes, asked about one, and all of it
+    over the top of vectors that were right.
+    """
+    try:
+        got = _get_json(f"{base}/events/departed?since_sec=1800",
+                        timeout=3.0).get("departed") or []
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+        return []
+    freed = []
+    for row in got:
+        unit = (row.get("unit") or "").strip()
+        if not unit or unit in _released:
+            continue
+        _released.add(unit)
+        # He is known to the board by CALLSIGN and to the sim by unit, so the
+        # registry is what joins them -- the same track the identity ladder
+        # resolved him to.
+        for guid, ident in list(registry.by_guid.items()):
+            if _key_name(ident.track) in (_key_name(unit), _key_name(row.get("player") or "")):
+                if ctl.release(ident.callsign):
+                    freed.append(ident.callsign)
+                registry.forget(guid)
+    return freed
+
+
 def fetch_due(session_id: str, url: str = HOOKS_URL, timeout: float = 5.0) -> list:
     """Poll the agent for hooks whose timer has expired (each is removed server
     side). Best-effort -- a poll failure just means we try again next tick."""
@@ -2418,6 +2461,13 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # with the hook's reason so it makes the call it scheduled.
         while True:
             time.sleep(HOOK_POLL_SEC)
+            # Anybody who has left his aeroplane comes off the board first, so
+            # a stale callsign cannot make the separation engine engage against
+            # a pilot who is alone. Rides this tick because it is already here;
+            # it costs one request and usually returns nothing.
+            for gone in release_departed(ctl, _identity):
+                print(f"  .. {gone} left his aircraft — off the board", flush=True)
+                record(session_id, kind="released", callsign=gone)
             for hook in fetch_due(session_id):
                 scope = fetch_radar(session_id) if radar_on else ""
                 why = hook.get("why") or ""

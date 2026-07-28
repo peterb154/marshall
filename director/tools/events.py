@@ -244,3 +244,30 @@ def recent_events(limit: int = 20) -> str:
         f"{t} {kind} {unit}" + (f" ({who})" if who else "")
         + (f" at {place}" if place else "")
         for t, kind, unit, who, place in rows)
+
+
+def departed_since(seconds: float = 900.0) -> list[dict]:
+    """Who has vacated a slot lately, and what they were flying.
+
+    The bridge needs this because an aeroplane nobody is sitting in must leave
+    the SEPARATION board, and that board lives in another process. A stale
+    entry is not merely untidy: two entries make the deterministic engine
+    engage, so one leftover callsign turns a single-ship approach into a
+    sequencing problem between a pilot and his own former self -- holds,
+    stack levels and a banishment, all issued over the top of correct vectors.
+    """
+    try:
+        _ensure_table()
+        with get_pool().connection() as conn:
+            rows = conn.execute(
+                "SELECT unit_name, COALESCE(player,''), "
+                "       extract(epoch FROM (now() - at)) "
+                "  FROM events "
+                " WHERE kind = 'player_leave_unit' "
+                "   AND at > now() - make_interval(secs => %s) "
+                " ORDER BY at DESC", (seconds,)).fetchall()
+    except Exception as e:
+        log.warning("departed_since: %s", e)
+        return []
+    return [{"unit": u, "player": p, "ago_sec": round(float(a), 1)}
+            for u, p, a in rows]

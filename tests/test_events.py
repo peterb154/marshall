@@ -164,3 +164,53 @@ class TestATouchAndGoIsNotALanding(unittest.TestCase):
         self.assertEqual(ns["DOWN"], ("land",))
         self.assertNotIn("runway_touch", ns["DOWN"])
         self.assertIn("takeoff", ns["UP"])
+
+
+class TestLeavingTheAeroplaneClearsTheBoard(unittest.TestCase):
+    """One stale callsign turned a single-ship approach into a sequencing
+    problem between a pilot and his own former self.
+
+    He flew as Falcon 1-1, landed, left the slot. An hour later he came back as
+    Pony 1-1 -- and Falcon 1-1 was still on the board. TWO entries are what
+    makes the deterministic engine engage, so it began separating him from
+    himself: assigned ten thousand, held at five, banished to Kobuleti. Every
+    one of those is a correct answer to a question about two aeroplanes, asked
+    about one, and all of it went out over vectors that were right.
+
+    The sim had already said so -- `player_leave_unit`, an hour earlier. The
+    board simply had no way to hear it.
+    """
+
+    def _ctl(self):
+        from marshall.atc.controller import Controller
+        from marshall.core import route as R2
+        c = Controller(R2.BATUMI_ASR)
+        c.get("Falcon 1-1")
+        c.get("Pony 1-1")
+        c.note_radar_contact("Pony 1-1")
+        return c
+
+    def test_he_comes_off_the_board(self):
+        c = self._ctl()
+        self.assertTrue(c.release("Falcon 1-1"))
+        self.assertEqual(sorted(c.aircraft), ["Pony 1-1"])
+
+    def test_releasing_twice_is_not_an_error(self):
+        """The event may be replayed, and the poll is repeated."""
+        c = self._ctl()
+        c.release("Falcon 1-1")
+        self.assertFalse(c.release("Falcon 1-1"))
+
+    def test_the_letdown_is_freed_if_he_owned_it(self):
+        """Otherwise the next arrival queues behind somebody who went home."""
+        c = self._ctl()
+        c._letdown = "Falcon 1-1"
+        c.release("Falcon 1-1")
+        self.assertIsNone(c._letdown)
+
+    def test_one_aeroplane_left_means_the_engine_stays_out(self):
+        """The whole point. Engagement is `len(aircraft) >= 2`, so removing the
+        ghost is what stops a lone pilot being sequenced at all."""
+        c = self._ctl()
+        c.release("Falcon 1-1")
+        self.assertLess(len(c.aircraft), 2)

@@ -194,6 +194,18 @@ def radar_endpoint(session_id: str = "") -> dict[str, str]:
 
 # The bridge scheduler polls this; each returned hook is due and has been
 # removed (one-shot). The bridge then re-invokes the agent with the hook's `why`.
+@app.get("/events/departed")
+def events_departed(since_sec: float = 900.0) -> dict:
+    """Units a player has left recently.
+
+    The bridge holds the separation board in its own process, so the sim's
+    `player_leave_unit` cannot reach it without being asked for. It already
+    polls /hooks/due every couple of seconds; this rides the same tick.
+    """
+    from tools.events import departed_since
+    return {"departed": departed_since(since_sec)}
+
+
 @app.get("/hooks/due")
 def hooks_due_endpoint(session_id: str) -> dict[str, list]:
     return {"due": due_hooks(session_id)}

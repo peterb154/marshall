@@ -292,6 +292,33 @@ class Controller:
     def _approach_name(self) -> str:
         return "radar approach" if self._vectored else "beacon approach"
 
+    def release(self, callsign: str) -> bool:
+        """Take him off the board. Nobody is sitting in that aeroplane.
+
+        A LEFTOVER ENTRY IS NOT MERELY UNTIDY. Two entries are what makes this
+        engine engage at all, so one stale callsign turns a single-ship
+        approach into a sequencing problem between a pilot and HIS OWN FORMER
+        SELF: he flew as Falcon 1-1, came back an hour later as Pony 1-1, and
+        was assigned ten thousand, held at five, and banished to Kobuleti --
+        every one of those a correct answer to a question about two aeroplanes,
+        asked about one.
+
+        Driven by the sim's `player_leave_unit`, because vacating the slot is
+        exactly when he stops being that aeroplane (#38, #41). Nothing else
+        knows: he does not say goodbye, and a controller with no traffic has no
+        reason to notice.
+        """
+        key = self._resolve(callsign)
+        if key not in self.aircraft:
+            return False
+        if self._letdown == key:
+            # He owned the approach. Free it or the next arrival waits behind
+            # somebody who has gone home.
+            self._letdown = None
+            self._letdown_since = self.t
+        self.aircraft.pop(key, None)
+        return True
+
     def note_radar_contact(self, callsign: str, seen: bool = True) -> None:
         """Radar has this aircraft, or has lost him.
 
