@@ -119,5 +119,51 @@ class TestTheClustererDoesNotDemandAFixedWidth(unittest.TestCase):
                          "near() unpacks a fixed-width row: " + "; ".join(offenders))
 
 
+
+class TestALabelNamesExactlyOneAeroplane(unittest.TestCase):
+    """Found by activating two AI groups and looking at the scope.
+
+    Every AI flight in the mission carries a DCS callsign, the label prefers
+    that callsign over the unit name, and two separate groups both came up
+    "Enfield11" -- so the picture showed one name at four miles and the same
+    name at fifteen. Everything downstream reads it by name: the controller,
+    the range calls, and radar_fix, which takes the first match and would have
+    been vectoring whichever of the two it happened to parse first.
+
+    Almost certainly what put "Pony one one" on an AI unit in an earlier
+    recording. It looked like a correlation bug and it was a naming collision.
+    """
+
+    def _fn(self):
+        # The function is pure and has no imports of its own, so it can be
+        # lifted out of the source rather than dragging PostGIS and the gRPC
+        # stubs into this suite. See the module docstring.
+        text = SRC.read_text(encoding="utf-8")
+        start = text.index("def _unique_labels")
+        end = text.index("def _render")
+        ns: dict = {}
+        exec(compile(text[start:end], str(SRC), "exec"), ns)
+        return ns["_unique_labels"]
+
+    def test_a_collision_falls_back_to_the_unit_name(self):
+        rows = [("Enfield11", "Pony 1-1"), ("Enfield11", "Traffic Pilot #1")]
+        got = self._fn()(rows)
+        self.assertEqual(got["Pony 1-1"], "Pony 1-1")
+        self.assertEqual(got["Traffic Pilot #1"], "Traffic Pilot #1")
+
+    def test_a_name_that_is_already_unique_is_kept(self):
+        """Only the colliding ones change: a mission whose callsigns are
+        distinct keeps the friendlier name."""
+        rows = [("Enfield11", "Pony 1-1"), ("Enfield12", "Pony 1-2")]
+        got = self._fn()(rows)
+        self.assertEqual(got["Pony 1-1"], "Enfield11")
+        self.assertEqual(got["Pony 1-2"], "Enfield12")
+
+    def test_every_contact_ends_up_with_a_distinct_name(self):
+        rows = [("Enfield11", "Pony 1-1"), ("Enfield11", "Traffic Pilot #1"),
+                ("Enfield12", "Pony 1-2"), ("Enfield12", "Pony 1-3")]
+        got = self._fn()(rows)
+        self.assertEqual(len(set(got.values())), len(rows))
+
 if __name__ == "__main__":
     unittest.main()

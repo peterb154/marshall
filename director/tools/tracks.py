@@ -294,7 +294,7 @@ def radar_cached(bindings: dict | None = None) -> list[str] | None:
                 """
                 WITH bcn AS (
                     SELECT ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography AS g)
-                SELECT t.label, t.type, t.alt_ft, t.heading, t.speed_kt,
+                SELECT t.label, t.name, t.type, t.alt_ft, t.heading, t.speed_kt,
                        ST_Distance(t.geog, bcn.g) / 1852.0 AS nm,
                        degrees(ST_Azimuth(bcn.g, t.geog)) AS radial,
                        COALESCE(t.player, '') AS player
@@ -352,8 +352,8 @@ def _clusters(rows: list) -> list[list]:
         #
         # The clustering wants five numbers and does not care what else the row
         # carries, so it takes the five it wants.
-        a_alt, a_hdg, a_nm, a_radial = a[2], a[3], a[5], a[6]
-        b_alt, b_hdg, b_nm, b_radial = b[2], b[3], b[5], b[6]
+        a_alt, a_hdg, a_nm, a_radial = a[3], a[4], a[6], a[7]
+        b_alt, b_hdg, b_nm, b_radial = b[3], b[4], b[6], b[7]
         ax, ay = xy(a_nm, a_radial)
         bx, by = xy(b_nm, b_radial)
         return (math.hypot(ax - bx, ay - by) <= FORM_NM
@@ -388,9 +388,10 @@ def in_formation(label: str) -> bool:
                 """
                 WITH bcn AS (
                     SELECT ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography AS g)
-                SELECT t.label, t.type, t.alt_ft, t.heading, t.speed_kt,
+                SELECT t.label, t.name, t.type, t.alt_ft, t.heading, t.speed_kt,
                        ST_Distance(t.geog, bcn.g) / 1852.0,
-                       degrees(ST_Azimuth(bcn.g, t.geog))
+                       degrees(ST_Azimuth(bcn.g, t.geog)),
+                       COALESCE(t.player, '')
                 FROM tracks t, bcn
                 WHERE t.last_seen > now() - make_interval(secs => %s)
                 """, (BATUMI_LON, BATUMI_LAT, FRESH_SEC)).fetchall()
@@ -401,8 +402,8 @@ def in_formation(label: str) -> bool:
         #
         # Postgres hands back Decimal for the numerics and the clustering does
         # float arithmetic on them; mixing the two raises rather than coercing.
-        rows = [(r[0], r[1], float(r[2] or 0), float(r[3] or 0),
-                 float(r[4] or 0), float(r[5] or 0), float(r[6] or 0))
+        rows = [(r[0], r[1], r[2], float(r[3] or 0), float(r[4] or 0),
+                 float(r[5] or 0), float(r[6] or 0), float(r[7] or 0), r[8])
                 for r in rows]
         for group in _clusters(rows):
             if any(r[0] == label for r in group):
@@ -412,16 +413,42 @@ def in_formation(label: str) -> bool:
     return False
 
 
+def _unique_labels(rows: list) -> dict:
+    """A label has to name exactly ONE aeroplane.
+
+    It did not. Every AI flight in the mission carries a DCS callsign, the
+    label prefers that callsign over the unit name, and two separate groups
+    both came up "Enfield11" -- so the scope showed one name at four miles and
+    the same name at fifteen. Everything downstream reads that picture by name:
+    the controller, the range calls, and `radar_fix`, which takes the first
+    match and would have been vectoring whichever of the two it happened to
+    parse first.
+
+    Almost certainly what put "Pony one one" on an AI unit in an earlier
+    recording, which looked like a correlation bug and was a naming collision.
+
+    The unit name is the table's primary key, so it is unique by construction.
+    Colliding labels fall back to it, and only the colliding ones -- a mission
+    whose callsigns are distinct keeps the friendlier name.
+    """
+    seen: dict = {}
+    for r in rows:
+        seen[r[0]] = seen.get(r[0], 0) + 1
+    return {r[1]: (r[0] if seen[r[0]] == 1 else r[1]) for r in rows}
+
+
 def _render(rows: list, bindings: dict) -> list[str]:
     lines = []
+    naming = _unique_labels(rows)
     for group in _clusters(rows):
-        label, typ, alt_ft, heading, speed_kt, nm, radial = group[0][:7]
+        label, name, typ, alt_ft, heading, speed_kt, nm, radial = group[0][:8]
+        label = naming.get(name, label)
         # IS THERE A HUMAN IN IT? Written into the picture because it is the
         # one fact that separates a pilot who can be talked to from an AI that
         # cannot, and because an unknown radio is identified by ELIMINATION
         # against it -- see atc/identity.py. A controller wants it anyway: he
         # works participating aircraft, not every return on the scope.
-        manned = ", manned" if (len(group[0]) > 7 and group[0][7]) else ""
+        manned = ", manned" if (len(group[0]) > 8 and group[0][8]) else ""
         # Groundspeed is in the picture because the vertical engine cannot plan
         # a descent without it: 500 fpm is a very different gradient at 150
         # knots than at 300. Omitted when the sim has not given us one, rather
@@ -430,7 +457,7 @@ def _render(rows: list, bindings: dict) -> list[str]:
         spd = f", {speed_kt:.0f} knots" if speed_kt else ""
         tag = f" [{bindings[label]}]" if label in bindings else ""
         if len(group) > 1:
-            others = ", ".join(r[0] for r in group[1:])
+            others = ", ".join(naming.get(r[1], r[0]) for r in group[1:])
             lines.append(
                 f"{label}{tag} ({typ}{manned}) IN FORMATION with {others} — "
                 f"{len(group)} ships, lead {nm:.1f} nm on the {radial:03.0f} "
