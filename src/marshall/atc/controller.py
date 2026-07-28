@@ -147,6 +147,20 @@ class Tx:
                 f"{self.to}: {self.text}")
 
 
+def spell_speed(kt: float) -> str:
+    """180 -> 'one eight zero'. A speed, not a heading.
+
+    Its own function rather than borrowing spell_hdg, which pads to three
+    figures: a heading of ninety is "zero nine zero" and a speed of ninety is
+    "nine zero", and a controller who pads a speed sounds like he is reading a
+    heading. Rounded to the nearest ten, because nobody assigns 183 knots.
+    """
+    d = {c: w for c, w in zip("0123456789",
+         ["zero", "one", "two", "three", "four", "five", "six", "seven",
+          "eight", "nine"])}
+    return " ".join(d[c] for c in str(int(round(kt / 10.0)) * 10))
+
+
 def spell_alt(ft: int) -> str:
     """7000 -> 'seven thousand', 3500 -> 'three thousand five hundred'.
 

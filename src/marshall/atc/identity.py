@@ -67,6 +67,7 @@ class Unit:
     name: str                  # the sim's unit name -- never spoken, never garbled
     callsign: str = ""         # what something has already correlated it to
     type: str = ""             # the airframe, which is where equipment comes from
+    manned: bool = False       # is there a person in it? see `by_elimination`
 
 
 @dataclass(frozen=True)
@@ -102,7 +103,13 @@ def units_on(scope: str) -> list[Unit]:
         name = m.group(1).strip()
         if not name:
             continue
-        out.append(Unit(name, (m.group(2) or "").strip(), (m.group(3) or "").strip()))
+        # "(P-51D-30-NA, manned)" -- the airframe, and whether a person is in
+        # it. The sim knows, because a client-occupied unit reports a player
+        # name and an AI does not.
+        kind = (m.group(3) or "").strip()
+        manned = "manned" in kind.lower()
+        kind = kind.split(",")[0].strip()
+        out.append(Unit(name, (m.group(2) or "").strip(), kind, manned))
     return out
 
 
@@ -156,6 +163,40 @@ class Registry:
         this has to be possible without an engineer -- see the acceptance
         criteria on that issue."""
         self.by_guid.pop(guid, None)
+
+    def claimed_tracks(self, except_guid: str = "") -> set[str]:
+        """Tracks another radio has already been resolved to."""
+        return {i.track for g, i in self.by_guid.items()
+                if i.track and g != except_guid}
+
+    def by_elimination(self, guid: str, units: list[Unit]) -> Unit | None:
+        """The aeroplane that must be his, because there is no other.
+
+        A visiting pilot has to work with NOTHING set up in advance. His radio
+        is one we have never heard, and his SRS name may look nothing like his
+        DCS player name, so the name-matching chain does not close for him --
+        and requiring somebody to file him a strip first is exactly the "set it
+        up beforehand" this is meant to remove.
+
+        But the sim still says how many PEOPLE are flying. If one human on the
+        scope is unaccounted for and one radio is unidentified, there is no
+        choice to make: that is him. This is not a guess, it is elimination,
+        and it is the same reasoning a controller uses when one aeroplane
+        answers on a quiet frequency.
+
+        It refuses the moment it becomes a choice. Two unclaimed humans and an
+        unknown radio is genuinely ambiguous -- and the correct behaviour then
+        is to ask, which is what a controller does and what the caller falls
+        through to.
+
+        AI is excluded, which is the whole reason the sim's player name is
+        carried through the radar picture: an aeroplane nobody is sitting in
+        cannot be the one talking, and matching a radio to one would hand a
+        pilot's clearances to a machine that never asked for them.
+        """
+        taken = self.claimed_tracks(except_guid=guid)
+        free = [u for u in units if u.manned and u.name not in taken]
+        return free[0] if len(free) == 1 else None
 
     @staticmethod
     def _label(spoken: str, prior: Identity | None, u: Unit,
@@ -215,14 +256,22 @@ class Registry:
         #    cache, because he may have swapped slots -- but a prior physical
         #    resolution survives a sweep that simply did not paint him.
         u = unit_for_radio(srs_name, units)
+        why = f"radio {srs_name!r} is in {{}} on radar"
+        if u is None and (prior is None or not prior.track):
+            # 1b. NOBODY ELSE IT COULD BE. A guest whose SRS name and DCS name
+            #     do not resemble each other still gets identified, with
+            #     nothing set up for him in advance -- which is the requirement.
+            u = self.by_elimination(guid, units)
+            if u is not None:
+                why = ("the only person flying who is not already accounted "
+                       "for is in {}")
         if u is not None:
             # His callsign is what he SAYS he is, once we know which aeroplane
             # is talking. That is safe in a way the reverse never was: the
             # label can be wrong without the identity being wrong, and a label
             # is only ever used to address him.
             label = self._label(spoken, prior, u, plans)
-            ident = Identity(label, u.name, "radar",
-                             f"radio {srs_name!r} is in {u.name!r} on radar")
+            ident = Identity(label, u.name, "radar", why.format(repr(u.name)))
             self.by_guid[guid] = ident
             return ident
 

@@ -312,3 +312,71 @@ class TestTheStripIsTheOnlyPreSortieEvidence(unittest.TestCase):
         i = reg.resolve("g", "Sockeye", spoken="Pony 1-1", scope=SCOPE,
                         plans=["Pony 1-1"])
         self.assertEqual(i.authority, "radar")
+
+
+class TestAGuestNeedsNothingSetUpInAdvance(unittest.TestCase):
+    """"Andre should work without setting anything up in advance."
+
+    His radio is one we have never heard, and his SRS handle may look nothing
+    like his DCS player name, so the name-matching chain does not close. Asking
+    somebody to file him a strip first is precisely the setup being removed.
+
+    The sim still says how many PEOPLE are flying. One unaccounted human and
+    one unidentified radio is not a choice -- it is elimination, the same
+    reasoning a controller uses when one aeroplane answers on a quiet
+    frequency.
+    """
+
+    ONE = ("Nobody-We-Know (F-16C_50, manned): 12.0 nm on the 300 radial, "
+           "8,000 ft, heading 130")
+    TWO = (ONE + " | Sockeye (P-51D-30-NA, manned): 4.1 nm on the 281 radial, "
+           "4,000 ft, heading 026")
+    WITH_AI = (ONE + " | Enfield11 (Su-25T): 20.0 nm on the 010 radial, "
+               "15,000 ft, heading 200")
+
+    def test_the_scope_says_who_has_a_person_in_it(self):
+        us = {u.name: u for u in identity.units_on(self.WITH_AI)}
+        self.assertTrue(us["Nobody-We-Know"].manned)
+        self.assertFalse(us["Enfield11"].manned)
+        self.assertEqual(us["Nobody-We-Know"].type, "F-16C_50")   # marker stripped
+
+    def test_a_stranger_alone_is_identified(self):
+        reg = identity.Registry()
+        i = reg.resolve("guid-guest", "AndreSomething", spoken="Falcon 2-1",
+                        scope=self.ONE)
+        self.assertEqual(i.track, "Nobody-We-Know")
+        self.assertEqual(i.callsign, "Falcon 2-1")
+
+    def test_an_ai_is_never_the_one_talking(self):
+        """A machine that never asked for a clearance must not be handed one."""
+        reg = identity.Registry()
+        i = reg.resolve("guid-guest", "AndreSomething", spoken="Falcon 2-1",
+                        scope=self.WITH_AI)
+        self.assertEqual(i.track, "Nobody-We-Know")
+
+    def test_a_stranger_beside_a_known_pilot_is_still_identified(self):
+        """The realistic case: one regular whose names match, one guest whose
+        names do not. The regular is claimed by name, so the guest is the only
+        person left."""
+        reg = identity.Registry()
+        reg.resolve("guid-hoover", "Sockeye", spoken="Pony 1-1", scope=self.TWO)
+        i = reg.resolve("guid-guest", "AndreSomething", spoken="Falcon 2-1",
+                        scope=self.TWO)
+        self.assertEqual(i.track, "Nobody-We-Know")
+
+    def test_two_strangers_at_once_is_refused_rather_than_guessed(self):
+        """It stops being elimination the moment it becomes a choice, and the
+        correct answer then is to ask."""
+        scope = self.TWO.replace("Sockeye", "Someone-Else")
+        reg = identity.Registry()
+        i = reg.resolve("guid-a", "UnknownA", spoken="Falcon 2-1", scope=scope)
+        self.assertFalse(i)
+
+    def test_it_does_not_steal_a_track_already_resolved(self):
+        reg = identity.Registry()
+        a = reg.resolve("guid-a", "Nobody-We-Know", spoken="Falcon 2-1",
+                        scope=self.ONE)
+        b = reg.resolve("guid-b", "SomebodyElse", spoken="Falcon 2-2",
+                        scope=self.ONE)
+        self.assertEqual(a.track, "Nobody-We-Know")
+        self.assertFalse(b)

@@ -712,6 +712,52 @@ def altitude_instruction(g, profile) -> str:
     return f", maintain {ctl.spell_alt(want)}"
 
 
+# SPEED CONTROL.
+#
+#     "An airplane going any speed should get sequenced. If that's not
+#      reasonable, have the controller tell the aircraft to slow down. It's not
+#      reasonable to fly an approach at 500 kts anyway."
+#
+# Both halves of that are right, and the second is the one that was missing.
+# route.py has always known what speed each leg wants -- `speed_kt_at`, which
+# the descent planner and the mission's AI tasking both read -- and the
+# controller had no way to SAY it. So an F-16 arriving at three hundred knots
+# was flown as though it were a Mustang at a hundred and fifty, and the base
+# turn to final that works at pattern speed overshoots at twice it (#39).
+#
+# Speed is the cheapest instrument a controller has. It is also the realistic
+# one: real approach control assigns speed on nearly every vector, and a pilot
+# who is asked to slow down is being helped rather than corrected.
+SPEED_TOLERANCE_KT = 30.0     # below this he is fast, not wrong -- do not nag
+SPEED_REPEAT_SEC = 75.0       # ...and do not say it again every radar sweep
+
+# Callsign -> (speed we asked for, when). Repetition is the failure mode here:
+# the guidance is recomputed on every transmission, so an unguarded instruction
+# is repeated in every single call and reads as the controller not listening.
+_speed_asked: dict[str, tuple[float, float]] = {}
+
+
+def speed_instruction(g, pos=None, cs: str = "", now: float | None = None) -> str:
+    """"reduce speed to one eight zero" -- when, and only when, it is needed.
+
+    Silent unless the sim gives a real groundspeed AND the leg wants one AND he
+    is meaningfully faster than it. Guessing at a speed he might be doing would
+    be worse than saying nothing: an instruction to slow down issued to an
+    aeroplane already at approach speed is a controller who cannot see.
+    """
+    from marshall.atc import controller as ctl
+    want = float(getattr(g, "speed_kt", 0.0) or 0.0)
+    have = float(getattr(pos, "speed_kt", 0.0) or 0.0) if pos is not None else 0.0
+    if want <= 0 or have <= 20 or have <= want + SPEED_TOLERANCE_KT:
+        return ""
+    t = time.time() if now is None else now
+    asked, when = _speed_asked.get(cs, (0.0, 0.0))
+    if abs(asked - want) < 10 and t - when < SPEED_REPEAT_SEC:
+        return ""                       # already told him, and it still stands
+    _speed_asked[cs] = (want, t)
+    return f", reduce speed to {ctl.spell_speed(want)} knots"
+
+
 # A talkdown call the AGENT should never have made: a range, or a heading, while
 # the engine owns the approach.
 _TALKDOWN_WORDS = re.compile(
@@ -852,6 +898,11 @@ def asr_call(cs: str, g, pos=None, profile=None) -> str:
     alt = altitude_instruction(g, profile) if profile else (
         f"altitude should be {ctl.spell_alt(g.altitude_ft)}"
         if g.altitude_ft else "")
+    # Appended to the ALTITUDE clause rather than made its own transmission:
+    # a controller says "descend to two thousand, reduce speed to one eight
+    # zero" in one breath, and an extra call per sweep would crowd a frequency
+    # that already carries a range every mile.
+    alt += speed_instruction(g, pos, cs)
     if g.phase == "map":
         return (f"{who}, over the missed approach point. Runway in sight, land; "
                 f"if not, execute missed approach.")
@@ -870,13 +921,17 @@ def asr_call(cs: str, g, pos=None, profile=None) -> str:
             f"{alt}.")
 
 
-def vector_call(cs: str, g) -> str:
+def vector_call(cs: str, g, pos=None) -> str:
     """An unprompted turn, issued because he has reached the point -- not
     because he said something."""
     from marshall.atc import callsign as C, controller as ctl
     who = C.parse(cs).spoken
     turn = f"turn {g.turn} " if g.turn else "fly "
     alt = f", maintain {ctl.spell_alt(g.altitude_ft)}" if g.altitude_ft else ""
+    # The turn onto base is where speed matters most: it is the leg the
+    # overshoot happens on, and a man told to slow down BEFORE the turn can
+    # make it. Told during it, he cannot.
+    alt += speed_instruction(g, pos, cs)
     # Rounded to five while vectoring. A pilot repositioning has to set this on
     # a gyro and read it back, and "one three zero" is easier to do both with
     # than "one two eight" -- which is also how it is issued for real.
@@ -2339,7 +2394,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                             continue
                         pending.pop(cs, None)
                         vectored[cs], vec_at[cs] = want, time.time()
-                        text = for_voice(vector_call(cs, g))
+                        text = for_voice(vector_call(cs, g, pos))
                         note_issued(cs, text)
                         with radio_lock:
                             print(f"  ATC[vec] {text}", flush=True)
