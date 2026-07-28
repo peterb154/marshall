@@ -100,6 +100,18 @@ def script_for(spoken: str, i: int) -> list[str]:
 # Whisper, Bedrock and a running bridge, and a scoring rule that can only be
 # exercised by flying is a scoring rule nobody checks.
 
+def _looks_like_a_guid(name: str) -> str | bool:
+    """An SRS client we have no name for yet.
+
+    `client.name_for` falls back to the first six characters of the GUID, which
+    is base57 -- mixed case, no spaces, and never a callsign. Belt and braces
+    beside the recorded authority, for recordings made before that field
+    existed.
+    """
+    n = (name or "").strip()
+    return len(n) == 6 and " " not in n and n.lower() != n and n.upper() != n
+
+
 CORRECT = "correct"
 DROPPED = "dropped"           # a guard fired and nothing moved -- the SAFE failure
 MISATTRIBUTED = "MIS-ATTRIBUTED"   # somebody else's state moved -- the dangerous one
@@ -107,7 +119,7 @@ GHOST = "GHOST"               # an aeroplane was invented
 
 
 def classify(spoke: str, attributed: str, roster: set[str],
-             radios: set[str]) -> str:
+             radios: set[str], authority: str | None = None) -> str:
     """What happened to one transmission.
 
     `attributed` is what the recorder wrote: the resolved callsign, or -- when
@@ -120,7 +132,20 @@ def classify(spoke: str, attributed: str, roster: set[str],
     again" is doing his job. The failure worth counting is a transmission
     confidently filed against the wrong aeroplane.
     """
-    if not attributed or attributed in radios:
+    # THE RECORDED AUTHORITY SETTLES IT, when the recording has one. Nothing
+    # else can: on a real run the recorder writes whatever the radio is called,
+    # and an SRS client whose name has not reached us yet is logged as a short
+    # GUID stub -- so a transmission the system correctly REFUSED came out
+    # looking like an invented aeroplane.
+    #
+    # That mattered the first time this ran for real. Whisper turned "Pony one
+    # two" into "Pony wants you", the controller said "station calling, say
+    # your callsign again" -- exactly right, an aeroplane was not invented --
+    # and this scored it a GHOST. A harness that cries wolf on correct
+    # behaviour gets switched off, and then it is not measuring anything.
+    if authority is not None and not authority:
+        return DROPPED
+    if not attributed or attributed in radios or _looks_like_a_guid(attributed):
         return DROPPED
     if attributed == spoke:
         return CORRECT
@@ -142,6 +167,19 @@ def ghost_census(entries: list[dict], real: set[str] | None = None) -> dict:
     ghost. `real`, when the caller knows it, only sharpens the report; the
     census stands without it.
     """
+    # WHAT VOUCHED FOR EACH NAME, from the transmissions themselves. Radar is
+    # the strongest authority but not the only one: a procedural controller has
+    # no radar at all and works filed strips, and a pilot identified off a strip
+    # who radar has not painted yet is a normal arrival, not an invention.
+    #
+    # Scoring on radar alone called two correctly-identified aeroplanes ghosts
+    # on the first real run, which is the same cry-wolf failure as `classify`
+    # had -- and a census nobody believes is a census nobody reads.
+    vouched: dict[str, set[str]] = {}
+    for e in entries:
+        if e.get("kind") == "pilot" and e.get("authority"):
+            vouched.setdefault(e.get("callsign") or "", set()).add(e["authority"])
+
     seen: dict[str, dict] = {}
     for e in entries:
         if e.get("kind") != "board":
@@ -158,6 +196,8 @@ def ghost_census(entries: list[dict], real: set[str] | None = None) -> dict:
             g["held_letdown"] |= bool(row.get("in_letdown"))
     for g in seen.values():
         g["seconds"] = round(g["last_t"] - g["first_t"], 1)
+        g["authority"] = ", ".join(sorted(vouched.get(g["callsign"], ()))) or ""
+        g["ever_identified"] |= bool(g["authority"])
         g["ghost"] = not g["ever_identified"]
         if real is not None and g["callsign"] in real:
             g["ghost"] = False
@@ -259,7 +299,8 @@ def report(entries: list[dict], truth: list[dict] | None = None,
                 continue
             pilots.remove(match)
             got = match.get("callsign") or ""
-            v = classify(t["callsign"], got, roster, radios or set())
+            v = classify(t["callsign"], got, roster, radios or set(),
+                         match.get("authority"))
             tally[v] = tally.get(v, 0) + 1
             heard = cs_mod.extract(match.get("transcript") or "")
             flag = "" if heard == t["callsign"] else f"   (whisper heard {heard or '-'})"

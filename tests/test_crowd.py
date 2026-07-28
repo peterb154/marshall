@@ -160,5 +160,55 @@ class TestTheBoardSnapshot(unittest.TestCase):
         json.dumps(ctl.board())
 
 
+
+class TestTheHarnessDoesNotCryWolf(unittest.TestCase):
+    """Both scorers called correct behaviour a failure on the first real run.
+
+    Whisper turned "Pony one two" into "Pony wants you"; the controller replied
+    "station calling, say your callsign again" -- exactly right, no aeroplane
+    was invented -- and this scored it a GHOST, because the recorder had logged
+    the radio as a six-character GUID stub rather than a name.
+
+    The census made the mirror-image mistake, calling two correctly identified
+    aeroplanes ghosts because radar had not painted them. Radar is the
+    strongest authority, not the only one: a procedural controller has none at
+    all and works filed strips.
+
+    A harness that cries wolf gets switched off, and then it measures nothing.
+    """
+
+    def test_a_refusal_is_read_off_the_recorded_authority(self):
+        self.assertEqual(
+            crowd.classify("Pony 1-2", "MrfGeW", ROSTER, RADIOS, authority=""),
+            crowd.DROPPED)
+
+    def test_an_unnamed_radio_is_recognised_even_without_the_authority(self):
+        """Recordings made before the field existed still have to score."""
+        self.assertEqual(crowd.classify("Pony 1-2", "MrfGeW", ROSTER, RADIOS),
+                         crowd.DROPPED)
+
+    def test_a_real_callsign_is_not_mistaken_for_a_guid(self):
+        for name in ("Pony 1-1", "Colt 2-1", "Hoover 1-1"):
+            with self.subTest(name):
+                self.assertFalse(crowd._looks_like_a_guid(name))
+
+    def test_a_filed_strip_is_identification_too(self):
+        c = crowd.ghost_census([
+            {"t": 1.0, "kind": "pilot", "callsign": "Pony 1-1",
+             "authority": "plan"},
+            board(1.1, entity("Pony 1-1", identified=False)),
+        ])
+        self.assertFalse(c["Pony 1-1"]["ghost"])
+        self.assertEqual(c["Pony 1-1"]["authority"], "plan")
+
+    def test_a_name_nothing_ever_vouched_for_is_still_a_ghost(self):
+        """The guard must not swallow the thing it was built to find."""
+        c = crowd.ghost_census([
+            {"t": 1.0, "kind": "pilot", "callsign": "Maintained 2",
+             "authority": ""},
+            board(1.1, entity("Maintained 2", identified=False)),
+        ])
+        self.assertTrue(c["Maintained 2"]["ghost"])
+
 if __name__ == "__main__":
     unittest.main()
