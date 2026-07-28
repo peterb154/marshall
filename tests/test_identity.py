@@ -263,3 +263,52 @@ class TestTheRealNamesThisProjectHasSeen(unittest.TestCase):
         fall back to the weaker rungs -- so this is the canary."""
         self.assertIsNone(
             identity.unit_for_radio("Sockeye", [identity.Unit("Testbed 1-1")]))
+
+
+class TestTheStripIsTheOnlyPreSortieEvidence(unittest.TestCase):
+    """Why rung 2 reads /flightplans and not /flights.
+
+    `/flights` is the LIVE BOARD -- rows created BY the binding this rung is
+    meant to corroborate. Believing it is circular in exactly the way that made
+    the naive radar check useless: an aeroplane cannot vouch for the process
+    that invented it. Wiring it that way was a real defect in the first cut of
+    this work and it would have been invisible in testing, because with one
+    pilot flying every day the board is always right.
+
+    A flight plan is typed by a human at a keyboard before the sortie. It is
+    the only identity evidence in the system that exists before anybody keys a
+    microphone -- which is what makes it the right authority for a FIRST
+    transmission, when radar has correlated nobody and there is nothing else.
+    """
+
+    def test_a_visitor_on_an_unknown_radio_resolves_on_his_first_call(self):
+        """The case that decides whether a guest's first impression works.
+
+        His radio is one we have never heard, his DCS player name may be
+        nothing like it, and radar has not tagged him because nothing has
+        correlated him yet. A filed strip is all there is, and it is enough.
+        """
+        reg = identity.Registry()
+        i = reg.resolve("guid-visitor", "a-name-we-do-not-know",
+                        spoken="Pony 1-2", scope="no contacts",
+                        plans=["Pony 1-1", "Pony 1-2"])
+        self.assertEqual(i.callsign, "Pony 1-2")
+        self.assertEqual(i.authority, "plan")
+
+    def test_with_no_strip_on_file_he_is_refused(self):
+        """Stated so the mitigation is obvious rather than folklore: if a
+        visitor is not on file, he does not get identified off his own say-so.
+        File the strip before he flies -- which is what a real controller has
+        in front of him anyway."""
+        reg = identity.Registry()
+        self.assertFalse(reg.resolve("guid-visitor", "unknown",
+                                     spoken="Pony 1-2", scope="no contacts",
+                                     plans=["Pony 1-1"]))
+
+    def test_a_strip_does_not_outrank_radar(self):
+        """Filing a plan must not become a way to be believed over the sim: if
+        the radio is physically in an aeroplane, that wins."""
+        reg = identity.Registry()
+        i = reg.resolve("g", "Sockeye", spoken="Pony 1-1", scope=SCOPE,
+                        plans=["Pony 1-1"])
+        self.assertEqual(i.authority, "radar")

@@ -1791,18 +1791,36 @@ def plan_labels(url: str = f"{BASE_URL}/plans") -> list[str]:
 # aircraft. What is wanted here is the callsigns of flights on the board, which
 # were typed before the sortie and so cannot be mis-heard.
 _filed: dict[str, object] = {"at": 0.0, "names": []}
-FILED_TTL_SEC = 45.0            # pilots bind mid-session; a strip is not static
+FILED_TTL_SEC = 45.0            # a plan can be filed mid-session
 
 
-def filed_plans(url: str = f"{BASE_URL}/flights", now: float | None = None) -> list[str]:
-    """Callsigns with a flight on the board. Never costs a transmission."""
+def filed_plans(url: str = f"{BASE_URL}/flightplans",
+                now: float | None = None) -> list[str]:
+    """Callsigns on a filed flight plan. Never costs a transmission.
+
+    /flightplans, NOT /flights, and the difference is the whole value of this
+    rung. `/flights` is the live board -- rows CREATED BY the binding this is
+    supposed to corroborate, so believing it is circular in exactly the way
+    that made the naive radar check useless: an aeroplane cannot vouch for the
+    process that invented it.
+
+    A flight plan is typed, before the sortie, by a human at a keyboard. It is
+    the only identity evidence in the system that exists before anybody keys a
+    microphone, which is what makes it the right authority for a FIRST
+    transmission -- the moment when radar has not correlated anyone yet and
+    there is nothing else to go on.
+
+    So a visiting pilot gets a clean first approach by having a plan on file
+    before he flies, which is also what a real controller would have.
+    """
     t = time.time() if now is None else now
     if t - float(_filed["at"]) < FILED_TTL_SEC:
         return list(_filed["names"])          # type: ignore[arg-type]
     _filed["at"] = t
     try:
-        got = [f.get("callsign") for f in _get_json(url, timeout=2.5).get("flights") or []]
-        _filed["names"] = [c for c in got if c]
+        got = [p.get("callsign")
+               for p in _get_json(url, timeout=2.5).get("flight_plans") or []]
+        _filed["names"] = sorted({c for c in got if c})
     except (urllib.error.URLError, TimeoutError, OSError, ValueError):
         pass                                   # keep the last good list
     return list(_filed["names"])               # type: ignore[arg-type]
