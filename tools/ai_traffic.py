@@ -18,8 +18,13 @@ not flying, and they cost nothing until asked for.
     uv run python tools/ai_traffic.py --down     # remove them, clean board
 
 `--down` DESTROYS rather than deactivates, because DCS has no un-activate: once
-a late-activated group is in the world the only way out is to remove it. They
-come back with the next mission load, which is what `deploy_mission.sh` does.
+a late-activated group is in the world the only way out is to remove it.
+
+Which means `--up` cannot simply re-activate what `--down` removed -- the group
+is GONE until the next mission load, and the first version of this tool
+cheerfully reported "no such group" and left you with an empty sky. So `--up`
+SPAWNS when the mission's own groups are not there, using the same mechanism as
+tools/spawn.py. A test instrument that only works once is not one.
 
 A clean board is the default a guest should meet, so `--down` is the state to
 leave things in unless somebody is deliberately testing separation.
@@ -30,6 +35,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import time
 import types
 from pathlib import Path
 
@@ -46,6 +52,26 @@ if "dcs" not in sys.modules or not hasattr(sys.modules.get("dcs"), "__path__"):
 # discovered: "activate everything late-activated" would also wake whatever a
 # future mission parks for its own reasons.
 GROUPS = ("Pony 1", "Traffic")
+
+# What to conjure when the mission's own groups have already been used up. Two
+# aeroplanes, because every bug worth catching this week needed TWO -- the
+# clusterer, the colliding labels, the ghost that holds somebody.
+SPAWN = [("mustang", 300.0, 14.0, 5000),
+         ("jug",     320.0, 18.0, 6000)]
+SPAWN_NAMES = tuple(f"Traffic {i + 1}" for i in range(len(SPAWN)))
+
+
+def _spawn(typ: str, bearing: float, range_nm: float, alt_ft: int,
+           name: str) -> None:
+    """Place one aeroplane, via the same path tools/spawn.py uses."""
+    import subprocess
+    subprocess.run(
+        [sys.executable, str(Path(__file__).parent / "spawn.py"),
+         "--name", name, "--type", typ, "--at", "BATUMI",
+         "--bearing", str(bearing), "--range", str(range_nm),
+         "--alt", str(alt_ft), "--heading", "120"],
+        check=False, capture_output=True)
+
 
 LIST = """
 local out={}
@@ -77,14 +103,34 @@ def main() -> int:
     import grpc
     from dcs.custom.v0 import custom_pb2, custom_pb2_grpc
 
+    spawned: list[str] = []
     addr = os.environ.get("DCS_GRPC_ADDR", "192.168.0.35:50051")
     with grpc.insecure_channel(addr) as ch:
         stub = custom_pb2_grpc.CustomServiceStub(ch)
-        for name in GROUPS if (args.up or args.down) else ():
+        # DOWN must be able to remove everything UP can create, including the
+        # groups this tool spawned itself. Otherwise it is a tool that makes
+        # traffic it cannot clear, and "clean board" stops being achievable --
+        # which is the state a guest is supposed to meet.
+        targets = GROUPS if args.up else GROUPS + SPAWN_NAMES
+        for name in targets if (args.up or args.down) else ():
             verb = "activate" if args.up else "destroy"
             lua = (f"local g=Group.getByName('{name}') "
                    f"if g then g:{verb}() return 'ok' end return 'no such group'")
-            print(f"{verb} {name!r}: {_eval(stub, custom_pb2, lua)}")
+            got = _eval(stub, custom_pb2, lua)
+            if args.down and got != "ok":
+                continue          # already gone is the desired state, not news
+            print(f"{verb} {name!r}: {got}")
+            if args.up and got != "ok":
+                spawned.append(name)
+        if spawned:
+            # The mission's groups are gone for this load. Conjure equivalents
+            # rather than reporting an empty sky and stopping -- what the caller
+            # wants is TRAFFIC, not those particular aeroplanes.
+            print(f"  ({', '.join(spawned)} not in this mission load -- spawning "
+                  f"replacements)")
+            for i, (typ, brg, rng, alt) in enumerate(SPAWN):
+                _spawn(typ, brg, rng, alt, f"Traffic {i + 1}")
+            time.sleep(6)
         raw = _eval(stub, custom_pb2, LIST)
 
     rows = [r.split("|") for r in raw.split(";") if r.count("|") == 4]

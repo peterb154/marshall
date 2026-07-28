@@ -1747,6 +1747,25 @@ _awaiting_readback: dict[str, float] = {}
 READBACK_WINDOW_SEC = 150
 
 
+def addressed_to(said: str) -> str:
+    """Who the controller just spoke TO, off his own words.
+
+    The FIRST callsign, not the speaker convention `callsign.extract` uses --
+    that one takes the second name, which is right for a pilot saying "Batumi
+    Approach, Pony one one" and exactly wrong for a controller saying "Pony one
+    one, turn left". A controller leads with the addressee.
+
+    Deliberately reports what he SAID rather than who we resolved, because the
+    interesting failure is the two disagreeing: a reply that answers the right
+    pilot by the wrong name is a different bug from one that answers the wrong
+    pilot, and a log that records only our own conclusion cannot tell them
+    apart.
+    """
+    from marshall.atc import callsign as C
+    names = C.extract_all(said or "")
+    return names[0] if names else ""
+
+
 def is_a_clearance(said: str) -> bool:
     """Did we just issue an IFR clearance? Read off the words, because that is
     what a clearance IS -- there is no other transmission on this frequency that
@@ -2187,7 +2206,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             if to_callsign:
                 note_issued(to_callsign, reply)
             record(session_id, kind=f"atc/{kind}", tier=tier,
-                   seconds=round(dt, 1),
+                   seconds=round(dt, 1), to=addressed_to(reply),
                    freq_mhz=(on_hz or freq_hz) / 1_000_000, text=reply)
             # Answer on the channel he called from -- that is the beacon he is
             # homing, and therefore the only one he can hear.
