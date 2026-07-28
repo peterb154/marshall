@@ -290,7 +290,8 @@ def add_testbed(m, usa) -> None:
         wp.speed = jet_kt * 0.514444
 
 
-def add_session_slots(m, usa) -> None:
+def add_session_slots(m, usa, air_alt_ft: dict | None = None,
+                      each: int = 2) -> None:
     """Eight client slots for a two-pilot session: half on the ramp, half airborne.
 
         "two F-16's on the ground and 2 P-51s on the ground, two F-16s in the
@@ -333,7 +334,7 @@ def add_session_slots(m, usa) -> None:
                             ("Pony", P_51D_30_NA, StartType.Cold)):
         grp = m.flight_group_from_airport(
             country=usa, name=name, aircraft_type=kind, airport=ramp,
-            start_type=how, group_size=2)
+            start_type=how, group_size=each)
         # Cold on the ramp means Ground and Tower, not Approach -- he has not
         # taken off yet and the frequency he needs first is the one that gives
         # him a clearance.
@@ -348,16 +349,18 @@ def add_session_slots(m, usa) -> None:
     # Separated in altitude as well as type. Two flights spawning at one point
     # and one height is a mid-air before anybody has said a word, and it is the
     # sort of thing that reads fine in a diff.
-    for name, kind, kt, alt_ft in (("Viper", F_16C_50, 300.0, R.CRUISE_ALT_FT + 3000),
-                                   ("Pony", P_51D_30_NA, R.CRUISE_TAS_MPH * 0.868,
-                                    R.CRUISE_ALT_FT)):
+    air = air_alt_ft or {}
+    for name, kind, kt, alt_ft in (
+            ("Viper", F_16C_50, 300.0, air.get("Viper", R.CRUISE_ALT_FT + 3000)),
+            ("Pony", P_51D_30_NA, R.CRUISE_TAS_MPH * 0.868,
+             air.get("Pony", R.CRUISE_ALT_FT))):
         speed_ms = kt * 0.514444
         alt_m = alt_ft * 0.3048
         start = Point(R.AIR_START.x, R.AIR_START.z, m.terrain)
         grp = m.flight_group(
             country=usa, name=f"{name} Air", aircraft_type=kind, airport=None,
             position=start, altitude=alt_m, speed=speed_ms, maintask=CAP,
-            start_type=StartType.Runway, group_size=2)
+            start_type=StartType.Runway, group_size=each)
         grp.frequency = R.APPROACH.freq_mhz
         for n, unit in enumerate(grp.units, start=1):
             unit.name = f"{name} 2-{n}"
@@ -376,7 +379,9 @@ def add_session_slots(m, usa) -> None:
 def build(weather: str = "light", traffic: bool = False,
           formation: bool = False, testbed: bool = False,
           session: bool = False, ceiling_ft: int = 0,
-          tops_ft: int = 0) -> tuple[Mission, list[int]]:
+          tops_ft: int = 0, visibility_m: int = 0,
+          air_alt_ft: dict | None = None,
+          session_each: int = 2) -> tuple[Mission, list[int]]:
     m = Mission(terrain=Caucasus())
     # The brief goes IN the mission as well as on the kneeboard. A pilot who
     # joins without OpenKneeboard, or who wants to read it while the aeroplane
@@ -419,7 +424,19 @@ def build(weather: str = "light", traffic: bool = False,
         m.weather.clouds_base = int(base * 0.3048)         # ft -> m
         m.weather.clouds_thickness = int(thick * 0.3048)
         m.weather.clouds_density = 9
-        m.weather.visibility_distance = 4000 if weather == "hard" else 8000
+        # VISIBILITY IS A SEPARATE DIAL FROM THE CEILING, and confusing them
+        # cost a sortie. The deck was built at eight hundred feet and the pilot
+        # broke out below two hundred -- because `hard` also drops visibility
+        # to four kilometres, and under a dense overcast that keeps the runway
+        # invisible long after the aeroplane is technically clear of cloud.
+        #
+        #     "raise the bases a little if you can. It was below 200 that time"
+        #
+        # The base was never the problem. Overridable now, so a low ceiling and
+        # decent visibility underneath -- which is what a real instrument
+        # approach usually is -- can actually be asked for.
+        m.weather.visibility_distance = (
+            visibility_m or (4000 if weather == "hard" else 8000))
     for w in (m.weather.wind_at_ground, m.weather.wind_at_2000,
               m.weather.wind_at_8000):
         # Wind is what makes timed legs hard; it must match the briefed value
@@ -568,6 +585,7 @@ def build(weather: str = "light", traffic: bool = False,
     if testbed:
         add_testbed(m, usa)
     if session:
+        _air = air_alt_ft or {}
         # EXCLUSIVE, not additive. The standing sortie puts four Mustangs and
         # two Thunderbolts in the air and seventeen more on the ramp, and a
         # session mission asked for eight slots -- so the rest are not company,
@@ -580,7 +598,7 @@ def build(weather: str = "light", traffic: bool = False,
         keep = [g for g in usa.plane_group
                 if g.name not in ("Pony", "Hammer")]
         usa.plane_group = keep
-        add_session_slots(m, usa)
+        add_session_slots(m, usa, _air, each=session_each)
 
     # NO BEACON TRANSMITTERS.
     #
@@ -883,6 +901,10 @@ if __name__ == "__main__":
                     help="add an air-start F-16 client 'Testbed 1-1' -- an HSI "
                          "that does not drift, for measuring the controller "
                          "rather than flying the war (#35, card A8)")
+    ap.add_argument("--each", type=int, default=2,
+                    help="client slots per type per position (default 2, so "
+                         "--each 4 gives sixteen: four of each type on the "
+                         "ramp and four of each airborne)")
     ap.add_argument("--session", action="store_true",
                     help="eight client slots for a two-pilot session: 2 F-16 "
                          "and 2 P-51 cold on the ramp, 2 of each airborne")
@@ -890,6 +912,12 @@ if __name__ == "__main__":
                     help="overcast base in feet (with --tops)")
     ap.add_argument("--tops", type=int, default=0,
                     help="cloud tops in feet, so the layer has a real thickness")
+    ap.add_argument("--visibility", type=int, default=0,
+                    help="metres below the deck; separate dial from the ceiling")
+    ap.add_argument("--viper-alt", type=int, default=0,
+                    help="air-start altitude for the F-16 slots, feet MSL")
+    ap.add_argument("--pony-alt", type=int, default=0,
+                    help="air-start altitude for the P-51 slots, feet MSL")
     ap.add_argument("--out", default="",
                     help="write the .miz here instead of the default name")
     ap.add_argument("--formation", action="store_true",
@@ -901,7 +929,11 @@ if __name__ == "__main__":
     mission, ids = build(weather, traffic=args.traffic,
                         formation=args.formation, testbed=args.testbed,
                         session=args.session, ceiling_ft=args.ceiling,
-                        tops_ft=args.tops)
+                        tops_ft=args.tops, visibility_m=args.visibility,
+                        air_alt_ft={k: v for k, v in
+                                    (("Viper", args.viper_alt),
+                                     ("Pony", args.pony_alt)) if v},
+                        session_each=args.each)
     out = Path(args.out) if args.out else OUT
     mission.save(str(out))
     write_presets(out, ids)
