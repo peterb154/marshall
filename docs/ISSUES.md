@@ -1226,13 +1226,38 @@ proves itself -- with the heuristic kept as the fallback for a stream that
 drops, because the sim pausing is a normal event here and a dead subscription
 must not read as "nobody ever lands".
 
+**THE HANDOFF IS THE BEST EXAMPLE, and the pilot named it:**
+
+    "Landing / takeoff event should be triggers to switch to/from tower"
+
+Which is what the real thing does. Right now Approach gives him up at a RANGE
+(`hands_to_tower_nm`), and that number has already had to be special-cased once
+because handing a man over mid-talkdown abandons him at the exact moment the
+procedure starts -- "contact Batumi Tower now" while the same controller was
+still reading his range every mile. The range is standing in for an event that
+exists.
+
+    landing:    Approach keeps him through the talkdown. `land` -- or
+                `runway_touch` -- is what moves him to Tower, because touching
+                down is precisely when the approach is over. Nothing about
+                distance can express that; a go-around at half a mile is closer
+                than a landing at one.
+    departure:  `takeoff` / `runway_takeoff` moves him OFF Tower. Today nothing
+                does, which is why a departing flight was given to Approach at
+                25 miles and never handed back.
+
+Both are the same mistake as the landing guess: a threshold on a continuous
+quantity standing in for a discrete fact the sim publishes.
+
 **Acceptance criteria**
 1. A `StreamEvents` consumer runs beside the track streamer and survives the
    sim pausing, a director restart, and a mission reload.
 2. `land` retires the altitude/speed guess in `asr_context`, which stays as the
    fallback when no event has been seen for that aircraft.
-3. `player_change_slot` clears the radio binding without an engineer -- [#38].
-4. Events are recorded where a sortie can be replayed against them.
+3. `land` / `runway_touch` triggers the handoff to Tower; `takeoff` triggers
+   the handoff away from it. The range rule stays as the fallback.
+4. `player_change_slot` clears the radio binding without an engineer -- [#38].
+5. Events are recorded where a sortie can be replayed against them.
 
 Related: [#38] (a callsign is a position), [#40] (identity).
 

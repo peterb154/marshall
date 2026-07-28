@@ -222,18 +222,33 @@ def spell_time(t: float) -> str:
 
 
 def spell_freq(mhz: float) -> str:
-    """132.0 -> 'one three two', 128.5 -> 'one two eight decimal five'.
+    """132.0 -> 'one three two decimal zero', 128.5 -> 'one two eight decimal five'.
 
-    Digit by digit, the way a controller reads a frequency; a trailing .0 is
-    dropped because nobody says "one three two decimal zero".
+    Digit by digit, the way a controller reads a frequency, and ALWAYS with the
+    decimal.
+
+    This used to drop a trailing .0, on the reasoning that nobody says "one
+    three two decimal zero". They do, and the pilot asked for it twice --
+    first as a debug note in the middle of an approach, then plainly:
+
+        "when the controllers give me frequencies, they should give it to me
+         with full decimal, like 134.00"
+
+        "Make frequency instructions include decimal always."
+
+    The reason is that a bare "one two four" has to be RECOGNISED as a
+    frequency from context, and a pilot reaching for a radio while flying an
+    approach in cloud should not have to do that work. The decimal makes it
+    unambiguous the moment it is heard, which is the whole job of the
+    phraseology. Consistency also means he can read it back the same way every
+    time, and a read-back that is always the same shape is one a controller can
+    check at a glance.
     """
     d = {c: w for c, w in zip("0123456789",
          ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"])}
     whole, _, frac = f"{mhz:.3f}".rstrip("0").rstrip(".").partition(".")
     out = " ".join(d[c] for c in whole)
-    if frac:
-        out += " decimal " + " ".join(d[c] for c in frac)
-    return out
+    return out + " decimal " + " ".join(d[c] for c in (frac or "0"))
 
 
 def spell_dur(sec: float) -> str:

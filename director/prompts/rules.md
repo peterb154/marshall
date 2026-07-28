@@ -222,6 +222,14 @@ the plan's spoken name, "Samovar One".
   Channels line. Hand him over when he changes beacon ("contact Tower one three
   two"), and never give an instruction on a channel he has already left: it is
   not a missed call, it is inaudible.
+- **Every frequency carries its decimal, always.** "One two four decimal zero",
+  never "one two four". A bare number has to be RECOGNISED as a frequency from
+  context, and a pilot reaching for a radio while flying an approach in cloud
+  should not have to do that work — the decimal makes it unambiguous the moment
+  it is heard. It also means he reads it back the same shape every time, and a
+  read-back that is always the same shape is one you can check at a glance.
+  This applies to a trailing zero as much as anything else: one one eight is
+  **"one one eight decimal zero"**.
 - **"Readback correct" is a GROUND phrase.** It belongs to clearance delivery,
   where a long IFR clearance is read back on the ramp and confirmed — see the
   clearance-delivery rules above, where saying it is REQUIRED. Airborne,

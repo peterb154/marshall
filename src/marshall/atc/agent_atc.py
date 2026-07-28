@@ -3004,7 +3004,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 "answer, and name the frequency he is ON as well as the one he "
                 f"wanted: \"Pony one one, this is {me.name}, "
                 f"{controller.spell_freq(me.freq_mhz)} — Tower is one one "
-                "eight\" — then give him what he asked for. Saying only which "
+                "eight decimal zero\" — then give him what he asked for. Saying only which "
                 "frequency he wanted leaves him still not knowing which button "
                 "he is holding, and a pilot who has lost track of that gets it "
                 "wrong again on the next call. He is flying an aeroplane; do "

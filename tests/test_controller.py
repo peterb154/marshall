@@ -201,7 +201,12 @@ class TestSpokenNumbers(unittest.TestCase):
                              atc.spell_alt(ft))
 
     def test_frequencies(self):
-        self.assertEqual(atc.spell_freq(132.0), "one three two")
+        # A whole number keeps its decimal now. It used to be dropped, on the
+        # reasoning that nobody says "one three two decimal zero" -- and the
+        # pilot asked for it twice, because a bare number has to be recognised
+        # as a frequency from context and he is busy flying. See
+        # tests/test_frequency.py.
+        self.assertEqual(atc.spell_freq(132.0), "one three two decimal zero")
         self.assertEqual(atc.spell_freq(128.5), "one two eight decimal five")
         self.assertEqual(atc.spell_freq(121.75),
                          "one two one decimal seven five")
