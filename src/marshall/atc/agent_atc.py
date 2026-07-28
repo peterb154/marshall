@@ -413,46 +413,63 @@ def load_and_push_plate(profile, base: str = BASE_URL):
     return profile
 
 
-DEPARTED_URL = f"{BASE_URL}/events/departed"
-# What we have already acted on, so a slot that was left ten minutes ago is not
-# re-released on every tick.
-_released: set[str] = set()
+# HOW LONG A BOARD ENTRY MAY SURVIVE WITHOUT EVIDENCE.
+#
+# Long enough that a pilot who goes quiet on a long downwind is never dropped,
+# short enough that last sortie's callsign is gone before the next one starts.
+STALE_BOARD_SEC = 8 * 60
+
+# callsign -> when we last had any evidence he exists.
+_seen_at: dict[str, float] = {}
 
 
-def release_departed(ctl, registry, base: str = BASE_URL) -> list[str]:
-    """Take off the board anybody who has left his aeroplane.
+def note_alive(callsign: str, now: float | None = None) -> None:
+    """He transmitted, or radar painted him."""
+    if callsign:
+        _seen_at[callsign] = time.time() if now is None else now
 
-    The sim publishes `player_leave_unit`; the separation board lives in this
-    process and cannot see it, so the director is asked on the tick that
-    already polls for hooks.
 
-    IT IS NOT TIDYING. Two entries are what makes the deterministic engine
-    engage, so ONE leftover callsign turns a single-ship approach into a
-    sequencing problem between a pilot and his own former self. Live: he flew
-    as Falcon 1-1, came back an hour later as Pony 1-1, and was assigned ten
-    thousand, held at five thousand and banished to Kobuleti -- each a correct
-    answer to a question about two aeroplanes, asked about one, and all of it
-    over the top of vectors that were right.
+def release_stale(ctl, scope: str = "", now: float | None = None) -> list[str]:
+    """Drop board entries nothing can account for any more.
+
+    THE PROBLEM THIS SOLVES, and it is not hypothetical: a pilot flew as
+    Falcon 1-1, landed, left the slot, and came back an hour later as Pony 1-1.
+    Falcon 1-1 stayed on the board -- and TWO ENTRIES ARE WHAT MAKES THE
+    DETERMINISTIC ENGINE ENGAGE, so a single-ship approach became a sequencing
+    problem between a pilot and his own former self: assigned ten thousand,
+    held at five, banished to Kobuleti, all over the top of correct vectors.
+
+    WHY NOT THE DEPARTURE EVENT, which the sim publishes and which says exactly
+    this. Because the two identifiers do not join. `player_leave_unit` names
+    the UNIT ("Pony 1-1"); the radar picture labels a manned contact by PLAYER
+    ("362nd_sockeye"), and that is what identity resolves a track to. Matching
+    on the player instead was a live outage -- a pilot's own track matches every
+    slot he has EVER left, so his identity was released and re-derived every
+    two seconds, his callsign flickered between the one he had an hour ago and
+    the one he was using, and the board emptied under a live approach. The
+    person is precisely the thing that persists across a slot change.
+
+    So this asks the question that needs no join: is there any evidence this
+    aeroplane still exists? Radar sees him, or he has spoken recently. Neither,
+    for eight minutes, and he comes off. It cannot misfire on somebody flying,
+    because flying is what the evidence IS. See [#41] for doing it properly on
+    the event once the identifiers are reconciled.
     """
-    try:
-        got = _get_json(f"{base}/events/departed?since_sec=1800",
-                        timeout=3.0).get("departed") or []
-    except (urllib.error.URLError, TimeoutError, OSError, ValueError):
-        return []
+    t = time.time() if now is None else now
+    here = {_key_name(u.name) for u in identity.units_on(scope)}
+    for cs, ac in list(ctl.aircraft.items()):
+        # Start the clock the first time we ever see an entry, so one that
+        # arrives with no evidence at all still ages out. Without this the
+        # default "assume seen now" made every unaccounted entry immortal --
+        # which is precisely the leftover this exists to remove.
+        _seen_at.setdefault(cs, t)
+        if ac.radar_identified or _key_name(cs) in here:
+            _seen_at[cs] = t
     freed = []
-    for row in got:
-        unit = (row.get("unit") or "").strip()
-        if not unit or unit in _released:
-            continue
-        _released.add(unit)
-        # He is known to the board by CALLSIGN and to the sim by unit, so the
-        # registry is what joins them -- the same track the identity ladder
-        # resolved him to.
-        for guid, ident in list(registry.by_guid.items()):
-            if _key_name(ident.track) in (_key_name(unit), _key_name(row.get("player") or "")):
-                if ctl.release(ident.callsign):
-                    freed.append(ident.callsign)
-                registry.forget(guid)
+    for cs in list(ctl.aircraft):
+        if t - _seen_at.get(cs, t) > STALE_BOARD_SEC and ctl.release(cs):
+            _seen_at.pop(cs, None)
+            freed.append(cs)
     return freed
 
 
@@ -1421,7 +1438,7 @@ def may_be_vectored(ctl, cs: str, traffic: bool = False,
 
 
 def separation_context(ctl, transcript: str, scope: str = "",
-                       known: str = "") -> tuple[str, str]:
+                       known: str = "", track: str = "") -> tuple[str, str]:
     """The two-brain seam. Advance the deterministic Controller from the call and
     return its authoritative (next-step directive, holding stack).
 
@@ -1558,9 +1575,21 @@ def separation_context(ctl, transcript: str, scope: str = "",
         # Controller.may_be_sequenced. Told on every transmission, so losing him
         # is as visible as finding him.
         if intent.callsign:
-            ctl.note_radar_contact(
-                intent.callsign,
-                radar_fix(scope, intent.callsign, ctl.profile) is not None)
+            # BY TRACK. This asked the scope for the CALLSIGN, and the picture
+            # labels a manned contact by player name -- so unless something had
+            # already tagged the line, radar_fix found nobody and he was marked
+            # NOT radar identified on every single transmission. Everything on a
+            # vectored approach depends on that flag, so he was never really on
+            # the approach at all:
+            #
+            #     "im not sure batumi approach ever REALLY had me on the
+            #      approach until the very end"
+            #
+            # The board bears him out: UNSEEN for the whole sortie.
+            seen = (radar_fix_by_track(scope, track, ctl.profile) is not None
+                    if track else
+                    radar_fix(scope, intent.callsign, ctl.profile) is not None)
+            ctl.note_radar_contact(intent.callsign, seen)
 
         _typ = aircraft_type_on_scope(scope, intent.callsign)
         if _typ:
@@ -2465,8 +2494,10 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             # a stale callsign cannot make the separation engine engage against
             # a pilot who is alone. Rides this tick because it is already here;
             # it costs one request and usually returns nothing.
-            for gone in release_departed(ctl, _identity):
-                print(f"  .. {gone} left his aircraft — off the board", flush=True)
+            for gone in release_stale(
+                    ctl, fetch_radar(session_id) if radar_on else ""):
+                print(f"  .. {gone} — nothing has accounted for him in "
+                      f"{STALE_BOARD_SEC // 60} minutes, off the board", flush=True)
                 record(session_id, kind="released", callsign=gone)
             for hook in fetch_due(session_id):
                 scope = fetch_radar(session_id) if radar_on else ""
@@ -2595,7 +2626,18 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     # landing is one of the few places the scope may simply
                     # overrule the conversation, because an aeroplane at zero
                     # feet on the aerodrome is not a matter of opinion.
-                    if asr.on_the_ground(pos, profile):
+                    # THE EVENT FIRST. `asr.on_the_ground` is geometry, and it
+                    # called the approach complete NINETEEN SECONDS before the
+                    # sim's own `land` -- so the goodbye went out while he was
+                    # still in the flare:
+                    #
+                    #     "Pretty sure it called me 'down' before the landed
+                    #      event"
+                    #
+                    # The geometry stays as the fallback for a session where no
+                    # event has been seen; it must not be the answer when the
+                    # sim has one.
+                    if is_on_the_ground(scope, cs, pos):
                         if cs in grounded:
                             continue
                         # Only somebody we were actually working. `report_landed`
@@ -2860,6 +2902,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # the record or the pairing is guesswork after the fact.
         record(session_id, kind="board", callsign=known or srs,
                board=ctl.board())
+        note_alive(known)          # he just spoke; that is evidence he exists
 
         # Engage the deterministic engine only with real traffic (or forced on for
         # the voice-only rehearsal, or once a stack already exists). A single ship
@@ -2887,7 +2930,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                                 heard_hz or freq_hz, AM)
             continue
 
-        directive, stack = (separation_context(ctl, transcript, scope, known) if engaged
+        directive, stack = (separation_context(ctl, transcript, scope, known,
+                                              _ident.track) if engaged
                             else ("", ""))
         # Radar guidance for a vectored approach. Costs no model call, so it
         # runs for a single ship too -- which is the case that was flying with

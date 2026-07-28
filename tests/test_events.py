@@ -214,3 +214,87 @@ class TestLeavingTheAeroplaneClearsTheBoard(unittest.TestCase):
         c = self._ctl()
         c.release("Falcon 1-1")
         self.assertLess(len(c.aircraft), 2)
+
+
+class TestDownIsNotAGuessAnyMore(unittest.TestCase):
+    """"Pretty sure it called me 'down' before the landed event"
+
+    He was right: the goodbye went out nineteen seconds before the sim's own
+    `land`, because the trigger was `asr.on_the_ground` -- geometry that reads
+    "at the aerodrome, low" and is therefore true in the flare.
+
+    The replacement asks the event first and falls back to altitude AND speed
+    together, which cannot fire at a hundred and forty knots.
+    """
+
+    FLARE = ("362nd_sockeye [Pony 1-1] (P-51D-30-NA, manned): 0.3 nm on the "
+             "116 radial, 60 ft, heading 130, 120 knots")
+    STOPPED = ("362nd_sockeye [Pony 1-1] (P-51D-30-NA, manned): 0.4 nm on the "
+               "116 radial, 45 ft, heading 130, 5 knots")
+
+    def _pos(self, scope):
+        return A.radar_fix_by_track(scope, "362nd_sockeye", R.BATUMI_ASR)
+
+    def test_still_flying_in_the_flare(self):
+        self.assertFalse(
+            A.is_on_the_ground(self.FLARE, "362nd_sockeye", self._pos(self.FLARE)))
+
+    def test_down_once_he_has_stopped(self):
+        self.assertTrue(
+            A.is_on_the_ground(self.STOPPED, "362nd_sockeye",
+                               self._pos(self.STOPPED)))
+
+    def test_the_event_beats_the_geometry_outright(self):
+        """At a hundred and twenty knots the fallback says flying. If the sim
+        has said `land`, that wins."""
+        said = self.FLARE.replace("manned)", "manned, on the ground)")
+        self.assertTrue(
+            A.is_on_the_ground(said, "362nd_sockeye", self._pos(said)))
+
+
+class TestABoardEntryNeedsEvidence(unittest.TestCase):
+    """Replaces an event-driven release that misfired live.
+
+    `player_leave_unit` names the UNIT ("Pony 1-1"); the radar picture labels a
+    manned contact by PLAYER ("362nd_sockeye"), and that is what identity
+    resolves a track to. The two do not join, and matching on the player
+    instead released a pilot's live identity every two seconds -- his callsign
+    flickered between the one he had an hour ago and the one he was using, and
+    the board emptied under a live approach.
+
+    This asks the question that needs no join: is there any evidence this
+    aeroplane still exists? It cannot misfire on somebody flying, because
+    flying is what the evidence IS.
+    """
+
+    def _ctl(self):
+        from marshall.atc.controller import Controller
+        from marshall.core import route as R2
+        c = Controller(R2.BATUMI_ASR)
+        c.get("Falcon 1-1")
+        c.get("Pony 1-1")
+        c.note_radar_contact("Pony 1-1")
+        return c
+
+    def test_the_leftover_goes_and_the_live_one_stays(self):
+        c = self._ctl()
+        A._seen_at.clear()
+        A.release_stale(c, "", now=0.0)                 # seed
+        gone = A.release_stale(c, "", now=A.STALE_BOARD_SEC + 1)
+        self.assertEqual(gone, ["Falcon 1-1"])
+        self.assertIn("Pony 1-1", c.aircraft)
+
+    def test_nobody_goes_while_radar_still_sees_him(self):
+        c = self._ctl()
+        A._seen_at.clear()
+        scope = ("Falcon 1-1 (P-51D-30-NA, manned): 4.0 nm on the 300 radial, "
+                 "3,000 ft, heading 130, 200 knots")
+        A.release_stale(c, scope, now=0.0)
+        self.assertEqual(A.release_stale(c, scope, now=A.STALE_BOARD_SEC + 1), [])
+
+    def test_a_recent_transmission_keeps_him(self):
+        c = self._ctl()
+        A._seen_at.clear()
+        A.release_stale(c, "", now=0.0)
+        A.note_alive("Falcon 1-1", now=A.STALE_BOARD_SEC)
+        self.assertEqual(A.release_stale(c, "", now=A.STALE_BOARD_SEC + 1), [])
