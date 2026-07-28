@@ -303,7 +303,21 @@ class TestAsrContext(unittest.TestCase):
         self.assertEqual(agent_atc.asr_context(self.asr, bogey, "Pony 1-1"), "")
 
     def test_a_wingman_uses_his_flights_track(self):
-        pos = agent_atc.radar_fix(self.scope(6), "Pony 1-3")
+        """Tagged with the FLIGHT, which is what a joined formation is.
+
+        This used to pass with the scope tagged "Pony one one" -- the LEAD --
+        because the lookup matched on flight number alone. That is
+        indistinguishable from two pilots who merely share one, and it cost a
+        sortie: Falcon 1-1 and Falcon 1-2 were each handed the other's
+        position, so one was told "one mile from the runway" at thirty six
+        miles while the other was told he was thirty eight miles out as he
+        touched down.
+
+        A member may share his FLIGHT's track. He may not share another
+        member's. See tests/test_wingmen.py.
+        """
+        scope = self.scope(6).replace("Pony one one", "Pony one flight")
+        pos = agent_atc.radar_fix(scope, "Pony 1-3")
         self.assertIsNotNone(pos)
 
     def test_silent_on_a_non_vectored_approach(self):

@@ -636,9 +636,20 @@ _TYPE = re.compile(r"\[([^\]]+)\]\s*\(([^)]+)\)")
 def aircraft_type_on_scope(scope: str, cs: str) -> str:
     """What HE is flying, off the radar line. "" when the scope does not say."""
     from marshall.atc import callsign as C
-    want = C.parse(cs).flight.lower()
-    for tag, typ in _TYPE.findall(scope or ""):
-        if C.parse(tag).flight.lower() == want:
+    # THE AEROPLANE, NOT THE FLIGHT -- the same word that gave two pilots each
+    # other's position gave them each other's AIRFRAME, which decides the speed
+    # he is assigned and what he can receive. A wingman in a Mustang beside a
+    # lead in a Viper would have been told to fly three hundred knots.
+    me = C.parse(cs)
+    rows = _TYPE.findall(scope or "")
+    hits = [r for r in rows
+            if C.parse(r[0]).canonical.lower() == me.canonical.lower()]
+    if not hits:
+        hits = [r for r in rows
+                if C.parse(r[0]).is_flight
+                and C.parse(r[0]).flight.lower() == me.flight.lower()]
+    for _tag, typ in hits:
+        if True:
             # "(P-51D-30-NA, manned)" -- the marker saying a human is in it
             # rides in the same brackets, and everything downstream looks the
             # type up by EXACT string. Left on, it turned a Mustang into an
@@ -727,9 +738,44 @@ def radar_fix(scope: str, cs: str, profile=None) -> object | None:
     if not scope or not cs:
         return None
     from marshall.atc import asr, callsign as C
-    want = C.parse(cs).flight.lower()
-    for tag, nm, radial, alt, hdg, kt in _FIX.findall(scope):
-        if C.parse(tag).flight.lower() == want:
+    me = C.parse(cs)
+    # THE AEROPLANE, NOT THE FLIGHT. This matched on `.flight`, and Falcon 1-1
+    # and Falcon 1-2 ARE THE SAME FLIGHT -- so with two pilots up, each one's
+    # lookup returned whichever of them appeared first in the picture. Every
+    # range, every off-course call and every altitude for one was computed from
+    # the other's position.
+    #
+    # Live, with two humans on the frequency: one was told "one mile from the
+    # runway, descend to minimums" at thirty six miles, while the other was
+    # told he was thirty eight miles northwest and not on final -- as he
+    # touched down. It reads as the controller having lost his mind, and it is
+    # a single word.
+    #
+    # A JOINED WINGMAN STILL USES HIS FLIGHT'S TRACK, and that is not the same
+    # thing. Four aeroplanes in formation are ONE contact -- only the flight is
+    # tagged, the members have no track of their own, and asking for Pony 1-3
+    # must find it. Two pilots who merely share a flight NUMBER are a different
+    # case entirely, and the scope says which is which:
+    #
+    #     if he has his own tagged track, he is his own aeroplane.
+    #
+    # So EXACT first, across the whole picture, and the flight only as a
+    # fallback when nothing matched him individually. That keeps the formation
+    # behaviour the tests were written for and stops two humans being handed
+    # each other's geometry.
+    rows = _FIX.findall(scope)
+    hits = [r for r in rows
+            if C.parse(r[0]).canonical.lower() == me.canonical.lower()]
+    if not hits:
+        # ONLY A FLIGHT TAG, never another member's. A formation is tagged with
+        # the FLIGHT designator and its members have no track of their own, so
+        # Pony 1-3 legitimately finds "Pony one flight". Falling back to any
+        # matching flight number would hand Falcon 1-1 the track of Falcon 1-2,
+        # which is the bug this whole change is about.
+        hits = [r for r in rows
+                if C.parse(r[0]).is_flight
+                and C.parse(r[0]).flight.lower() == me.flight.lower()]
+    for _tag, nm, radial, alt, hdg, kt in hits:
             h = float(hdg) if hdg else 0.0
             return asr.Position(float(nm), float(radial),
                                 int(alt.replace(",", "")),
