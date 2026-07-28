@@ -82,12 +82,29 @@ class SRSClient:
         # ties a voice to a person before they say a callsign. roster maps client
         # GUID -> friendly name ("Sockeye"), learned from the server's client list.
         self.roster: dict[str, str] = {}
+        # Why roster tracking stopped, if it has. "" while healthy.
+        self.roster_ended = ""
         self.last_sender_guid: str | None = None
 
     # --- registration ---------------------------------------------------
     def connect(self, radios: list[dict]) -> SRSClient:
         self.radios = radios
         self.tcp = socket.create_connection((self.host, self.port), timeout=10)
+        # ...and then CLEAR it. create_connection's timeout is meant to bound
+        # the connect, but it stays on the socket afterwards, and `_drain_tcp`
+        # blocks on recv waiting for a server that is quiet whenever nobody is
+        # joining. Ten seconds of quiet raised, the drain loop caught it as an
+        # OSError and exited, and the GUID -> name roster froze for the rest of
+        # the session -- so every client that joined later was a six-character
+        # GUID stub forever.
+        #
+        # That is not cosmetic. The strongest identity evidence in the system is
+        # the radio's NAME matched against the name radar prints (identity.py);
+        # with a stub it can never match, and every pilot silently falls through
+        # to the weaker rungs. Measured: a fresh client learns a late joiner in
+        # two seconds, and one that had been quiet for twenty never learns it at
+        # all.
+        self.tcp.settimeout(None)
         # Unconnected UDP: the server relays voice from its own socket, which may
         # not be the same source port we send to -- a connect()ed socket would
         # drop those. Bind an ephemeral port and accept from any source.
@@ -156,10 +173,20 @@ class SRSClient:
         # keep the socket drained so it never wedges, and harvest GUID -> Name so
         # a voice packet's origin GUID can be resolved to "Sockeye".
         buf = b""
+        why = "stopped"
         try:
             while not self._stop.is_set():
-                chunk = self.tcp.recv(4096)
+                try:
+                    chunk = self.tcp.recv(4096)
+                except TimeoutError:
+                    # Belt and braces beside `settimeout(None)`. A timeout means
+                    # the server had nothing to say, which is the NORMAL state
+                    # of a quiet frequency -- it is not a reason to stop
+                    # listening, and treating it as one is what killed this
+                    # thread silently for a fortnight.
+                    continue
                 if not chunk:
+                    why = "server closed the connection"
                     break
                 buf += chunk
                 while b"\n" in buf:
@@ -174,8 +201,16 @@ class SRSClient:
                         self._harvest_roster(line)
                     except Exception:
                         continue
-        except OSError:
-            pass
+        except OSError as e:
+            why = f"{type(e).__name__}: {e}"
+        # NEVER SILENTLY. This thread is the only thing that knows what the
+        # radios are called, and when it stops the system does not fail -- it
+        # keeps working with worse evidence, which is the failure mode nobody
+        # catches. If it ends, say so where somebody will see it.
+        self.roster_ended = why
+        print(f"  !! SRS roster tracking stopped ({why}); radios will read as "
+              f"GUID stubs and identity falls back to weaker evidence",
+              flush=True)
 
     def _harvest_roster(self, line: bytes) -> None:
         """Pull {GUID: Name} out of any client records in one TCP message.
