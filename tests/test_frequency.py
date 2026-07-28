@@ -52,3 +52,66 @@ class TestAFrequencyAlwaysCarriesItsDecimal(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestNoWrittenCallsignReachesThePilot(unittest.TestCase):
+    """"batumi tower thought I was falcon 121 again.. approach never did that"
+
+    "Falcon 1-1" is how this system WRITES a callsign. Polly reads the hyphen
+    and says "Falcon one TO one", which a pilot hears as a different aeroplane
+    and reports as the controller not knowing who he is.
+
+    One path did it -- the canned replies, a radio check and a closing
+    acknowledgement -- and everything else happened to spell the callsign
+    properly, which is luck rather than design. So it is caught in `for_voice`,
+    where every transmission passes, as well as fixed at the source.
+
+    It took most of an evening because that path TRANSMITTED WITHOUT RECORDING.
+    The words the pilot heard were nowhere in the flight recorder, so the hunt
+    went to the sim's own ATC and to Polly's voices -- anything except the line
+    we had actually said. It records now.
+    """
+
+    def test_the_hyphen_never_reaches_the_air(self):
+        from marshall.atc.agent_atc import for_voice
+        self.assertEqual(for_voice("Falcon 1-1, roger, taxi to parking."),
+                         "Falcon one one, roger, taxi to parking.")
+
+    def test_a_wingman_too(self):
+        from marshall.atc.agent_atc import for_voice
+        self.assertIn("Pony one two", for_voice("Pony 1-2, turn left."))
+
+    def test_an_already_spoken_callsign_is_untouched(self):
+        from marshall.atc.agent_atc import for_voice
+        self.assertEqual(for_voice("Hoover one one, cleared to land."),
+                         "Hoover one one, cleared to land.")
+
+    def test_the_canned_replies_spell_it_at_the_source(self):
+        """The backstop must not be the only defence: a reply composed wrongly
+        is still wrong in the log, which is what anybody debugging reads."""
+        from marshall.atc.agent_atc import simple_response
+        said = simple_response("Batumi Tower, Falcon one one, taxi to parking, "
+                               "good day.")
+        self.assertIsNotNone(said)
+        self.assertNotIn("1-1", said)
+        self.assertIn("Falcon one one", said)
+
+    def test_a_runway_written_the_same_way_is_fixed_too(self):
+        """Not a false positive -- the same defect wearing a different word.
+
+        Polly reads EVERY digit-hyphen-digit as "to", so "Runway 1-3" comes out
+        "runway one to three" exactly as the callsign did. The rule is about
+        what the hyphen does to speech, not about callsigns specifically, so
+        catching this as well is correct rather than incidental.
+        """
+        from marshall.atc.agent_atc import for_voice
+        self.assertEqual(for_voice("Runway 1-3 is in use."),
+                         "Runway one three is in use.")
+
+    def test_ordinary_prose_is_left_alone(self):
+        from marshall.atc.agent_atc import for_voice
+        for text in ("Descend to two thousand.",
+                     "Wind two seven zero at two zero.",
+                     "Contact Tower one one eight decimal zero."):
+            with self.subTest(text):
+                self.assertEqual(for_voice(text), text)

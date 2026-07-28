@@ -90,10 +90,23 @@ def simple_response(transcript: str) -> str | None:
     nothing -- a radio check, a closing acknowledgement. Returns None for anything
     with substance, which goes to the agent. Deterministic simple responses inside
     the rich experience, at zero cost/latency."""
-    from marshall.atc import intents
+    from marshall.atc import callsign as C, intents
     m = re.search(r"\b([A-Za-z]+(?:\s+(?:one|two|three|four|five|six|seven|eight|"
                   r"niner|nine|\d+))+)", transcript, re.I)
+    # SPOKEN, not canonical. This interpolated "Falcon 1-1" straight into
+    # speech, and Polly reads the hyphen: it comes out "Falcon one TO one",
+    # which a pilot hears as "Falcon one two one" and reports as the controller
+    # not knowing who he is.
+    #
+    #     "batumi tower thought I was falcon 121 again.. approach never did that"
+    #
+    # Approach never did it because every other path spells the callsign with
+    # .spoken. Only the canned replies -- a radio check, a closing
+    # acknowledgement -- took the shortcut, and closing calls are exactly what
+    # Tower gets. Verified through Polly and Whisper rather than guessed at.
     cs = intents.normalize_callsign(m.group(1)) if m else "Station calling"
+    if m:
+        cs = C.parse(cs).spoken or cs
     if _CHECK.search(transcript):
         return f"{cs}, loud and clear."
     if _CLOSE.search(transcript):
@@ -103,6 +116,16 @@ def simple_response(transcript: str) -> str | None:
 # When woken by a hook (or asked anything) the agent may decide no call is
 # warranted; it replies with this and the bridge stays off the air.
 NO_CALL = {"(no call)", "no call", "(none)", "standby."}
+
+
+# "Falcon 1-1" -- the way a callsign is WRITTEN. It must never reach Polly.
+_SPOKEN_CALLSIGN = re.compile(r"\b([A-Z][a-z]+)\s+(\d)-(\d)\b")
+
+
+def _digit_words(digits: str) -> str:
+    words = ["zero", "one", "two", "three", "four", "five", "six", "seven",
+             "eight", "nine"]
+    return " ".join(words[int(d)] for d in digits)
 
 
 def for_voice(text: str, agent: bool = False) -> str:
@@ -139,6 +162,15 @@ def for_voice(text: str, agent: bool = False) -> str:
     text = re.sub(r"[*_`#>]+", "", text)          # emphasis / code / heading marks
     text = re.sub(r"(?m)^\s*[-•]\s+", "", text)    # list bullets
     text = re.sub(r"\s*\n+\s*", " ", text)          # collapse newlines to one line
+    # NO CANONICAL CALLSIGNS OVER THE AIR. "Falcon 1-1" is how this system
+    # WRITES a callsign; Polly reads the hyphen and says "Falcon one TO one",
+    # which a pilot hears as a different aeroplane. One path did this and the
+    # rest happened to spell it properly, which is luck rather than design --
+    # so it is caught here, where every transmission passes, instead of in each
+    # place that composes one.
+    text = _SPOKEN_CALLSIGN.sub(
+        lambda m: f"{m.group(1)} {_digit_words(m.group(2))} "
+                  f"{_digit_words(m.group(3))}", text)
     return re.sub(r"\s{2,}", " ", text).strip()
 
 
@@ -1068,8 +1100,7 @@ def asr_context(profile, scope: str, cs: str, track: str = "") -> str:
     # director/tools/events.py and [ARCH-3] / #41. The guess below stays as the
     # fallback, because the stream drops whenever the sim pauses and a director
     # restart begins knowing nothing: silence must not read as "airborne".
-    if any(u.on_ground for u in identity.units_on(scope)
-           if _key_name(u.name) == _key_name(track or cs)):
+    if is_on_the_ground(scope, track or cs, pos):
         return ""
     # ZERO IS THE COMMONEST GROUND SPEED THERE IS, and excluding it was a bug I
     # shipped an hour ago. The `0 <` was meant to stop a MISSING speed reading
@@ -1080,8 +1111,7 @@ def asr_context(profile, scope: str, cs: str, track: str = "") -> str:
     #
     # Below two hundred feet the ambiguity it was guarding against does not
     # arise: nothing in the air at that height is doing zero knots.
-    if pos.alt_ft < GROUND_ALT_FT and pos.speed_kt < GROUND_SPEED_KT:
-        return ""
+
     g = asr.guide(pos, profile)
     rng = asr.spoken_range(g.range_nm)
     if g.phase == "map":
@@ -1688,6 +1718,24 @@ def claim_the_frequency(path=None) -> bool:
     fd.flush()
     _lock_fd = fd            # keep the handle; closing it drops the lock
     return True
+
+
+def is_on_the_ground(scope: str, track: str, pos=None) -> bool:
+    """Is he down? The sim's answer if it has one, otherwise the old guess.
+
+    One function so the two callers cannot drift: what silences the approach
+    guidance and what hands him to Tower have to be the same fact, or he gets
+    told to taxi while still being vectored.
+    """
+    if track:
+        for u in identity.units_on(scope):
+            if _key_name(u.name) == _key_name(track) and u.on_ground:
+                return True
+    # The fallback, for a session where no event has been seen -- the stream
+    # drops when the sim pauses and a director restart begins knowing nothing.
+    return bool(pos is not None
+                and pos.alt_ft < GROUND_ALT_FT
+                and pos.speed_kt < GROUND_SPEED_KT)
 
 
 def handoff_on_the_event(scope: str, track: str, me, profile) -> object | None:
@@ -2774,6 +2822,15 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         canned = simple_response(transcript)
         if canned and not engaged:
             canned = for_voice(canned)
+            # RECORDED, like every other transmission. This one was not, and it
+            # cost most of an evening: the pilot reported the controller
+            # calling him by the wrong name, and the offending words were
+            # nowhere in the flight recorder -- so the search went to the sim's
+            # own ATC, to Polly's voices, to anything except the line we had
+            # actually said. A transmission nobody can see is one nobody can
+            # debug.
+            record(session_id, kind="atc/simple", to=addressed_to(canned),
+                   freq_mhz=(heard_hz or freq_hz) / 1_000_000, text=canned)
             print(f"  ATC[simple] (0.0s): {canned}", flush=True)
             with radio_lock:
                 client.transmit(voice_for(heard_hz).frames(canned),
@@ -2995,6 +3052,23 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         if nxt is None:
             nxt = (profile.handoff_from(on_mhz, fix.range_nm)
                    if me and fix is not None else None)
+            # ...but NOT to Tower on a talkdown, where landing is the trigger
+            # and a range is only a proxy for it. Two nits, one cause:
+            #
+            #   "approach called me down BEFORE the landing trigger"
+            #   "on the missed, approach switched me to tower"
+            #
+            # He was inside the handoff range at the missed approach point,
+            # which is true of a landing and a go-around alike -- so he was
+            # given to Tower at half a mile whether he landed or not, and on
+            # the go-around Tower promptly sent him back. The range cannot tell
+            # those apart; being on the ground can.
+            if (nxt is not None
+                    and getattr(nxt, "role", "") == "tower"
+                    and getattr(me, "role", "") == "approach"
+                    and getattr(profile, "guidance", "") == "talkdown"
+                    and not is_on_the_ground(scope, _ident.track, fix)):
+                nxt = None
         if nxt is None and me is not None and known:
             # He may be on his way OUT rather than in -- the case range cannot
             # answer. Costs one lookup and only ever fires when the approach

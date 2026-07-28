@@ -18,6 +18,24 @@ end
 
 local BAT = fixByName('BATUMI')
 
+-- SILENCE THE SIM'S OWN ATC.
+--
+-- NOT the cause of anything reported -- this went in on a wrong diagnosis and
+-- is kept on its own merits, which is worth saying plainly so the next reader
+-- does not inherit the mistake. The "Falcon one two one" a pilot heard was
+-- OURS: a canned reply handed Polly the written form of the callsign and it
+-- read the hyphen as "to". He said it was our bot over SRS and he was right;
+-- DCS's own ATC is in-game radio and cannot reach an SRS receiver at all.
+--
+-- Kept because two controllers on one field is still a hazard. DCS ships a
+-- built-in ATC on every airfield, it does not know this mission has one, and a
+-- pilot using in-game comms rather than SRS would hear both. Every airbase,
+-- not just this one: the theatre has twenty-one and any of them may be tuned
+-- by somebody who has wandered.
+for _, ab in pairs(world.getAirbases() or {}) do
+  if ab.setRadioSilentMode then ab:setRadioSilentMode(true) end
+end
+
 -- Send a group to a point as a fresh Mission route, replacing whatever it was
 -- doing (an orbit, its old route). Enough to drive a visible, deliberate track.
 local function flyTo(groupName, x, y, altM, speedMs)
