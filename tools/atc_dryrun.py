@@ -129,15 +129,34 @@ def run(script, session_id: str, sep_always: bool = True,
             body = last.split(",", 2)[-1].strip() if last else "say again"
             text = f"Hoover one one, {body}"
         print(f"\nPILOT [SRS:{srs}]: {text}", flush=True)
+        # IDENTITY FIRST, then separation -- the order the live loop uses, and
+        # the order matters rather than being tidiness. `separation_context`
+        # takes the resolved callsign, and called without it the engine refuses
+        # the transmission as unidentified: this tool was printing "neither a
+        # radio we have identified nor a track on the scope" for a pilot the
+        # bridge would have known perfectly well. A mirror that fails where the
+        # real thing succeeds is worse than no mirror, because it sends you
+        # hunting a bug that is not there.
+        #
+        # The words are a CLAIM; the ladder decides whether to believe it,
+        # preferring the radio-to-track chain that has no microphone in it.
+        # See identity.py and [ARCH-2] / #40.
+        claim = agent_atc.transmitter_callsign(f"guid-{srs}", text)
+        ident = agent_atc._identity.resolve(
+            f"guid-{srs}", srs, spoken=claim, scope=scope,
+            plans=agent_atc.filed_plans(), roster=ctl.identified())
+        known = ident.callsign
+        if ident.authority != "radar":
+            print(f"  IDENTITY: {ident.why}", flush=True)
+
         engaged = sep_always or len(ctl.aircraft) >= 2
-        directive, stack = (agent_atc.separation_context(ctl, text, scope)
+        directive, stack = (agent_atc.separation_context(ctl, text, scope, known)
                             if engaged else ("", ""))
         if directive:
             print(f"  CONTROLLER: {directive}", flush=True)
         if stack:
             print(f"  SEPARATION: {stack}", flush=True)
 
-        known = agent_atc.transmitter_callsign(f"guid-{srs}", text)
         # A flight exists on the board because a radio was heard and bound to a
         # name. The live bridge does this on every transmission, and the tools
         # that work a FLIGHT -- clearance delivery among them -- answer "no

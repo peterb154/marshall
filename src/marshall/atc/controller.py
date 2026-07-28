@@ -968,13 +968,43 @@ class Controller:
                      f"{self._addr(ac)}, not radar identified, say your "
                      f"position and altitude.")
             return
+        # ENTER HIM IN THE STACK SILENTLY, THEN SEE IF HE IS ABOUT TO BE CLEARED.
+        #
+        # Holding him is a state change; SAYING so is a separate decision, and
+        # they were the same statement. A lone arrival with the letdown free got
+        # both transmissions in one breath:
+        #
+        #   "hold at five thousand, right turns, one eight zero outbound one
+        #    minute, then three six zero inbound one minute, I will call you."
+        #   "cleared radar approach runway one three."
+        #
+        #     "then issued me a hold for some reason"
+        #
+        # He was right, and it was not a mis-heard callsign or a ghost -- the
+        # engine meant it. Entering the stack is how an arrival is sequenced
+        # even when the sequence is one aeroplane long, and the hold was the
+        # bookkeeping leaking onto the radio. A pattern nobody will fly, read to
+        # a pilot who is already cleared, is worse than noise: he has to decide
+        # which of two instructions to obey.
+        held_at = None
         if ac.phase in (Phase.UNKNOWN, Phase.ENROUTE):
             slot = self._free_slot()
             if slot is not None:
                 ac.phase, ac.assigned_ft, ac.last_report_t = Phase.HOLDING, slot, self.t
-                self.say(ac.callsign,
-                         f"{self._addr(ac)}, {self.profile.controller}, "
-                         f"{self._hold_phrase(slot, ac.kit)}.")
+                held_at = slot
+        # Asked BEFORE anything is said, rather than reordering the outbox
+        # afterwards: the answer is knowable, and a rule that reaches past `say`
+        # to shuffle what it queued would not survive the first caller that
+        # routes transmissions somewhere else.
+        #
+        # It also lands the two in the right order for free -- the pattern, and
+        # then "continue holding, number two", which is a sequence number that
+        # has to follow the instructions it refers to.
+        if held_at is not None and not (self._letdown is None
+                                        and self._next_up() is ac):
+            self.say(ac.callsign,
+                     f"{self._addr(ac)}, {self.profile.controller}, "
+                     f"{self._hold_phrase(held_at, ac.kit)}.")
         self._try_clear(requested_by=ac.callsign)
 
     # -- the sequencing core ----------------------------------------------

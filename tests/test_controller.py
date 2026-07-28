@@ -975,3 +975,62 @@ class TestNobodyIsSequencedUntilRadarHasHim(unittest.TestCase):
         said = self.out(c)
         self.assertNotIn("not radar identified", said)
         self.assertTrue("hold" in said.lower() or "cleared" in said.lower())
+
+
+class TestAHoldNobodyWillFly(unittest.TestCase):
+    """"then issued me a hold for some reason" -- and he was right.
+
+    Not a mis-heard callsign and not a ghost: the engine meant it. Entering the
+    stack is how an arrival gets sequenced even when the sequence is one
+    aeroplane long, and SAYING so was the same statement as doing so. A lone
+    arrival with the letdown free therefore got a full holding pattern and a
+    clearance for the approach in one breath.
+
+    That is worse than noise. A pattern nobody will fly, read to a pilot who
+    has just been cleared, makes him choose which of two instructions to obey.
+    """
+
+    def setUp(self):
+        self.ctl = atc.Controller(R.BATUMI_ASR)
+
+    def _admit(self, *names):
+        for cs in names:
+            self.ctl.get(cs)
+            self.ctl.note_radar_contact(cs)
+
+    def test_a_lone_arrival_is_cleared_and_not_told_to_hold(self):
+        self._admit("Pony 1-1")
+        self.ctl.request_approach("Pony 1-1")
+        said = " | ".join(t.text for t in self.ctl.out)
+        self.assertIn("cleared", said.lower())
+        self.assertNotIn("outbound one minute", said)
+
+    def test_the_hold_survives_where_it_is_real(self):
+        """Silencing it must not delete it: the second arrival genuinely has to
+        hold, and he needs the pattern -- headings and leg times -- because he
+        may have no navaid to hold on."""
+        self._admit("Pony 1-1", "Pony 1-2")
+        self.ctl.request_approach("Pony 1-1")
+        self.ctl.out.clear()
+        self.ctl.request_approach("Pony 1-2")
+        said = " | ".join(t.text for t in self.ctl.out).lower()
+        self.assertIn("minute", said)
+        self.assertIn("number two", said)
+
+    def test_the_pattern_comes_before_the_sequence_number(self):
+        """"Continue holding, number two" has to follow the instructions it
+        refers to. Reversed, the controller numbers him in a queue before
+        telling him what the queue is."""
+        self._admit("Pony 1-1", "Pony 1-2")
+        self.ctl.request_approach("Pony 1-1")
+        self.ctl.out.clear()
+        self.ctl.request_approach("Pony 1-2")
+        said = " | ".join(t.text for t in self.ctl.out).lower()
+        self.assertLess(said.index("minute"), said.index("number two"))
+
+    def test_he_is_still_holding_even_though_nobody_said_so(self):
+        """The state change is not what was removed -- only the transmission.
+        A third arrival must still be stacked above him."""
+        self._admit("Pony 1-1")
+        self.ctl.request_approach("Pony 1-1")
+        self.assertIs(self.ctl.aircraft["Pony 1-1"].phase, atc.Phase.CLEARED)
