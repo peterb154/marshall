@@ -121,7 +121,14 @@ def main() -> int:
         elif gs == "OPEN" and e["status"] in DONE:
             drift.append((e, n, f"open on GitHub, reads {e['status']}"))
 
-    for _, rid, num in ROW.findall(card):
+    for struck, rid, num in ROW.findall(card):
+        # A STRUCK ROW IS ALREADY RETIRED. The regex captured the marker and
+        # the loop threw it away, so every row a pilot had just flown and
+        # crossed off was reported as a finding -- the check telling you to do
+        # the thing you had done. Its own comment said struck IDs are not a
+        # finding; the code did not act on it.
+        if struck:
+            continue
         if state.get(int(num)) == "CLOSED":
             stale_rows.append((rid, int(num)))
 

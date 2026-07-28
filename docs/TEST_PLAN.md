@@ -31,15 +31,29 @@ Everything on the approach — vectors, mile calls, landing clearance — is on
 Priority column: **P1** never flown, this sortie is the first real test ·
 **P2** seen working live once, confirming it stuck · **P3** nice to have.
 
+**Flown and struck on 28 July** — A7, A8, A9, G1, G2, H1, H2, H3 and H12, by
+Hoover, attested on their issues at commit `8a01149`. **#34, #35 and #36 are
+CLOSED**: every row they own has been flown.
+
+The other three stay open because a row is not an issue. G1 and G2 passed and
+[#1] still owns G3–G10, which is the awkward half — a wrong read-back corrected
+on one element only, asking by task rather than by name, the deliberate
+ambiguity, an amendment, two aircraft on one plan. H2 passed and [#19] still
+owns H7 and E1, and the outbound reposition they describe was seen again the
+same evening. H12 passed and [#39] still owns the fast overshoot, which the
+sweep predicts will fail at 450 kt.
+
+A struck row keeps its script. That is what tells us if the fix rots.
+
 ---
 
 ## A — before you start the engine
 
 | ID | Test | What should happen | Fix under test |
 |----|------|--------------------|----------------|
-| A8 | P1 | **In an F-16**, fly the approach from 20 nm and compare every "left/right of course" call against your HSI | The side he calls matches the needle, all the way in. This is the one that settles whether the P-51's instruments were the story | [#35] frames |
-| A9 | P1 | Go around, and write down the altitude in the go-around instruction AND the one on the next check-in | The **same number** both times, and it is the plate's missed approach altitude | [#36] |
-| A7 | P1 | On the ramp, draw on a chart page with a pen or the mouse, turn the page and come back, then go to the **E6B** page and press a button | Ink appears; the E6B still **works**, because that page is a calculator and keeps its clicks | [#34] `SetCursorEventsMode` |
+| ~~A8~~ | P1 | **In an F-16**, fly the approach from 20 nm and compare every "left/right of course" call against your HSI | The side he calls matches the needle, all the way in. This is the one that settles whether the P-51's instruments were the story | [#35] frames |
+| ~~A9~~ | P1 | Go around, and write down the altitude in the go-around instruction AND the one on the next check-in | The **same number** both times, and it is the plate's missed approach altitude | [#36] |
+| ~~A7~~ | P1 | On the ramp, draw on a chart page with a pen or the mouse, turn the page and come back, then go to the **E6B** page and press a button | Ink appears; the E6B still **works**, because that page is a calculator and keeps its clicks | [#34] `SetCursorEventsMode` |
 
 **A1–A5 are closed** — flown on the ramp on 27 July and attested on #4 and #25.
 The engineering channel itself is the tool you use for everything else and it is
@@ -104,8 +118,8 @@ cockpit, can actually get it down at the pace it is read.
 
 | ID | Prio | Test | What should happen | Fix under test |
 |----|------|------|--------------------|----------------|
-| G1 | P1 | *"Batumi Ground, Hoover one one, request IFR clearance, Marlin"* | The **whole** CRAFT clearance: cleared to Batumi, as filed, three thousand, departure frequency one two four decimal zero, and a squawk | [#1] `request_clearance` |
-| G2 | P1 | Write G1 down as he says it, then read it back **correctly** | You got all five elements without asking for a repeat, and he says *"readback correct"* and stops talking | [#1] copyable |
+| ~~G1~~ | P1 | *"Batumi Ground, Hoover one one, request IFR clearance, Marlin"* | The **whole** CRAFT clearance: cleared to Batumi, as filed, three thousand, departure frequency one two four decimal zero, and a squawk | [#1] `request_clearance` |
+| ~~G2~~ | P1 | Write G1 down as he says it, then read it back **correctly** | You got all five elements without asking for a repeat, and he says *"readback correct"* and stops talking | [#1] copyable |
 | G3 | P1 | Ask again for Marlin, and read it back with **one number wrong** | He corrects **that number only** and asks for it again — not the whole clearance, and never a shrug | [#1] `clearance_read_back` |
 | G4 | P1 | Ask by what you are DOING, no name — *"request clearance for the weather run out to Ingress"* | Lantern's clearance, five thousand. You should never have had to say a plan name | [#1] `plans.pick` |
 | G5 | P1 | *"request clearance for the CAS over Tsutsnvati"* | A **question** naming both — the plain one, and the one with the beacon letdown on return. He must not pick for you | [#1] `plans.pick` |
@@ -198,11 +212,11 @@ name in one sortie.
 
 | ID | Prio | Test | What should happen | Fix under test |
 |----|------|------|--------------------|----------------|
-| H1 | P1 | Inbound from 20 nm, on the centreline. Compare each "left/right of course" call against where the runway actually is | The side he calls is the side you are on, **every call, all the way in**. This is the one that was wrong all night | [#35] frames |
-| H2 | P1 | Fly the descent profile as given and note your altitude crossing the **threshold** | You arrive at the threshold at minimums, not 200 ft high with half a mile of descent owed | [#19] touchdown |
-| H3 | P1 | Listen to the range calls near the end | "One mile from the runway" means one mile from the **threshold**. Previously it meant one mile from the runway centre, which is where you were already landing | touchdown |
+| ~~H1~~ | P1 | Inbound from 20 nm, on the centreline. Compare each "left/right of course" call against where the runway actually is | The side he calls is the side you are on, **every call, all the way in**. This is the one that was wrong all night | [#35] frames |
+| ~~H2~~ | P1 | Fly the descent profile as given and note your altitude crossing the **threshold** | You arrive at the threshold at minimums, not 200 ft high with half a mile of descent owed | [#19] touchdown |
+| ~~H3~~ | P1 | Listen to the range calls near the end | "One mile from the runway" means one mile from the **threshold**. Previously it meant one mile from the runway centre, which is where you were already landing | touchdown |
 | H11 | P2 | With Shooter, or by asking for the approach while somebody else is on it: **get yourself held** | *"hold at five thousand, right turns, one eight zero outbound one minute, then three six zero inbound one minute"* — a shape and a clock you can actually fly with no navaid. Not "hold at BATUMI as published" | hold |
-| H12 | P1 | Arrive **180 out of phase** — on the centreline heading away from the field — and ask for the approach | Downwind, base, then a 30-45 degree turn onto final. Recognisable legs and no reversal. Previously he was aimed at the fix and turned hard 180 | [#39] |
+| ~~H12~~ | P1 | Arrive **180 out of phase** — on the centreline heading away from the field — and ask for the approach | Downwind, base, then a 30-45 degree turn onto final. Recognisable legs and no reversal. Previously he was aimed at the fix and turned hard 180 | [#39] |
 | H13 | P2 | Fly the approach **fast** — 400 kt or more — and watch the turn from base onto final | He may overshoot: **known open**, criterion 2. The sweep at 450 kt says 181 dithering events and a 5.1 nm turn radius against a 3 nm base leg — so expect **left/right reversals**, not a clean overshoot. Report how far through you go | [#39] |
 | H10 | P1 | Arrive high — **5,000 ft or above, 30 nm out** — and ask for the approach. Note where he starts you down | He keeps you high, then sends you down **once**, timed so you reach 2,000 arriving at the initial fix. Not levelled at 2,000 ten miles early | [#37] descent |
 | H9 | P1 | Once established, listen to the **altitude** part of each mile call | *"four miles, on course, **descend to** one thousand three hundred"* — an instruction for the NEXT mile, arriving in time to fly it. Not "altitude should be", which tells you where you already ought to be | anticipatory |

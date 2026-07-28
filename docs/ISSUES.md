@@ -772,7 +772,7 @@ number — which is every other test on this list.
 
 labels: feature, needs-flight-test
 
-**Status:** SHIPPED/UNVERIFIED — the pilot was right, it is a setting, and it is
+**Status:** CLOSED — the pilot was right, it is a setting, and it is
 now set. Card **A7**.
 
 OpenKneeboard's ink layer IS available to a web dashboard; the page just has to
@@ -854,7 +854,7 @@ shape rather than a sentence.
 
 labels: bug, needs-flight-test
 
-**Status:** FIXED/UNVERIFIED — cause found and confirmed against the pilot's own
+**Status:** CLOSED — cause found and confirmed against the pilot's own
 calls twice. Needs one approach flown to close.
 
 **It was GRID CONVERGENCE.** DCS's x/z grid is a transverse Mercator and its
@@ -911,7 +911,7 @@ does not, the residual is real and we have a clean measurement of it.
 
 labels: bug, needs-flight-test
 
-**Status:** OPEN — seen once, live, 27 July.
+**Status:** CLOSED — seen once, live, 27 July.
 
 On the go-around the controller said **"fly heading three three zero, climb and
 maintain three thousand"**. Hoover read it back and started up. Thirty seconds
