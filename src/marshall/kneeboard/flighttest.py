@@ -36,6 +36,11 @@ GUIDS = {
     "G": "{81e365a7-c2b9-46f8-a4da-7fc19bde82a7}",
     "PLANS": "{92f476b8-d3ca-4709-b5eb-8ad2acef930b}",
     "H": "{a3b587c9-e4db-481a-c6fc-9be23acf041c}",
+    # Section J, added 28 July: who the controller thinks you are.
+    # A fresh GUID, never one recycled from a retired section --
+    # OpenKneeboard remembers the page a pilot was on, and reusing an
+    # identifier drops him somewhere he did not choose.
+    "J": "{c5d2916a-7e48-4b3f-91ac-2d06f8b4e77c}",
 }
 
 # Tab labels. OpenKneeboard's tab strip is narrow and the pilot is reading it
@@ -44,7 +49,8 @@ GUIDS = {
 # scripts run from tools/check.py. Their GUIDs are NOT reused: OpenKneeboard
 # remembers the page a pilot was on, and handing an old identifier to a new
 # document would drop him somewhere he did not choose.
-SHORT = {"A": "PREFLT", "E": "KNOWN", "G": "CLNC", "H": "APPROACH"}
+SHORT = {"A": "PREFLT", "E": "KNOWN", "G": "CLNC", "H": "APPROACH",
+         "J": "WHO"}
 
 _SECTION = re.compile(r"^## ([A-Z]) — (.+)$", re.M)
 _ROW = re.compile(r"^\|\s*([A-Z]\d+[a-z]?)\s*\|(.+)$")

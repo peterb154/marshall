@@ -11,8 +11,12 @@ went as their issues closed; they live on in `tools/` and run from
 **Sections B, C, D and F are gone** — every row in them was closed and its
 script lives in `tools/`, run by `tools/check.py`. What is left is what a human
 is still the only instrument for, in the order you fly it: the ramp (A), the
-clearance (G), the approach (H), and section E, which exists so you do not spend
-a sortie re-finding something already understood. A test that fails is a comment on that issue; a section that passes
+clearance (G), the approach (H), **identity (J)**, and section E, which exists
+so you do not spend a sortie re-finding something already understood.
+
+**Section J is new on 28 July** and is the one to fly first if time is short. It
+tests the change that re-keyed the whole board off a spoken callsign onto
+evidence nobody speaks, and not one of its rows has ever run in the air. A test that fails is a comment on that issue; a section that passes
 closes it. Nothing here is closed by a green unit test — that is the point.
 
 Report by ID over the radio. Say `engineering, come up` first, then
@@ -199,7 +203,7 @@ name in one sortie.
 | H3 | P1 | Listen to the range calls near the end | "One mile from the runway" means one mile from the **threshold**. Previously it meant one mile from the runway centre, which is where you were already landing | touchdown |
 | H11 | P2 | With Shooter, or by asking for the approach while somebody else is on it: **get yourself held** | *"hold at five thousand, right turns, one eight zero outbound one minute, then three six zero inbound one minute"* — a shape and a clock you can actually fly with no navaid. Not "hold at BATUMI as published" | hold |
 | H12 | P1 | Arrive **180 out of phase** — on the centreline heading away from the field — and ask for the approach | Downwind, base, then a 30-45 degree turn onto final. Recognisable legs and no reversal. Previously he was aimed at the fix and turned hard 180 | [#39] |
-| H13 | P2 | Fly the approach **fast** — 400 kt or more — and watch the turn from base onto final | He may overshoot: this is **known open**, criterion 2. Report how far through you go, that number is the fix | [#39] |
+| H13 | P2 | Fly the approach **fast** — 400 kt or more — and watch the turn from base onto final | He may overshoot: **known open**, criterion 2. The sweep at 450 kt says 181 dithering events and a 5.1 nm turn radius against a 3 nm base leg — so expect **left/right reversals**, not a clean overshoot. Report how far through you go | [#39] |
 | H10 | P1 | Arrive high — **5,000 ft or above, 30 nm out** — and ask for the approach. Note where he starts you down | He keeps you high, then sends you down **once**, timed so you reach 2,000 arriving at the initial fix. Not levelled at 2,000 ten miles early | [#37] descent |
 | H9 | P1 | Once established, listen to the **altitude** part of each mile call | *"four miles, on course, **descend to** one thousand three hundred"* — an instruction for the NEXT mile, arriving in time to fly it. Not "altitude should be", which tells you where you already ought to be | anticipatory |
 | H4 | P1 | Once established, listen to how he corrects you | **"Turn left ten degrees"** — no heading at all, rounded to five. If he gives you an absolute heading inside the final approach course, that is the failure | [#37] |
@@ -207,6 +211,11 @@ name in one sortie.
 | H6 | P1 | **Deliberately mis-set your DG by 20 degrees** before you turn inbound, then fly the approach on his corrections alone | You still arrive. This is the whole argument for relative corrections and it could not have been passed yesterday | [#37] |
 | H7 | P2 | Inbound, **2–3 nm off course, between 11 and 16 nm** — get yourself there on purpose | He gives you an intercept heading. If he sends you OUTBOUND to reposition, that is E1 and it is still open | [#19] |
 | H8 | P2 | Arrive from **behind the field**, 8–12 nm on the departure side, and ask for the approach | He takes you out and brings you round. Circling near the field is E2 | [#20] |
+| H14 | P1 | **The ladder, step 1.** F-16, whole approach at **300 kt or less** | Clean. The sweep flies this exact grid at 300 kt: 1296/1296 arrive, **zero** dithering. Anything else here is new and matters more than H16 | [#39] |
+| H15 | P1 | **The ladder, step 2.** Same approach in the **P-51** | Clean, and for a different reason than H14 — this is the speed the engine was built at, so a failure here is a regression, not a limit | [#39] |
+| H16 | P1 | **The ladder, step 3.** F-16, **450 kt or more** inbound | **Predicted to fail**, and how: reversals. At 450 kt a 30° bank gives a 5.1 nm turn radius and the base leg is built around 3, so the engine orders a turn he cannot make and then orders the opposite. If it fails any OTHER way, that is new information and worth more than the expected one | [#39] |
+| H17 | P1 | Note **every speed instruction** you are given, and the number | You are asked to slow down at all — this has never been heard on the radio. In the F-16 **never below 210 kt**; the published profile wanted 174, which is the P-51's number | [#39] |
+| H18 | P1 | Once established on final, listen for what happens to the speed restriction | *"Resume normal speed"*, **once**, and no further speed assignments. On final the pilot owns his own speed — the controller does not know your fuel or stores | [#39] |
 
 **What each one is actually checking**
 
@@ -284,6 +293,48 @@ field. The touchdown fix took it from three to two, so it may already be gone
 from the air; this is the cheapest way to find out.
 
 ---
+
+---
+
+## J — who the controller thinks you are
+
+The board used to be keyed on a string Whisper guessed at from audio. It is now
+keyed on evidence nobody speaks: the radio's SRS name, matched against the name
+radar prints, and the sim's own account of who has a person in the seat. See
+[#40].
+
+**None of this has ever run in the air.** It could not until the morning of
+28 July, because the bridge did not know what any radio was CALLED — a socket
+timeout had been quietly killing the roster thread, so every client read as a
+six-character GUID stub and the strongest evidence in the system was never
+available. These rows are the first real exercise of it.
+
+**Run `uv run python tools/identity_watch.py` in a second window.** One line per
+transmission: the radio, what the words claimed, and which authority resolved
+it. The column that matters is **authority**.
+
+| ID | Prio | Test | What should happen | Fix under test |
+|----|------|------|--------------------|----------------|
+| J1 | P1 | Fly with your **usual** SRS name and check in normally. Read the `authority` column | **`radar`** — the chain with no microphone in it: SRS name → the name radar prints → your track. If it reads `plan` or `roster` on every call, the roster fix did not take and I want to know before Andre, not after | [#40] `unit_for_radio` |
+| J2 | P1 | Change your SRS client name to something **unrelated** to your DCS name, then check in cold — nothing filed for you | You are still identified and still vectored. This is Andre's path exactly: unknown radio, names that do not match, no setup. Resolved by **elimination** — one unaccounted person flying, one unidentified radio | [#40] `by_elimination` |
+| J3 | P1 | Garble or omit your callsign on one call — mumble it, or say only *"request the approach"* | He answers, and your identity does **not** move. The aeroplane you are in decides who you are; the words are only a claim | [#40] |
+| J4 | P1 | With a second aircraft up, say **his** callsign by mistake on one of your calls | Your report must not be filed against his aeroplane. That is a separation error, and it is the one nothing in the system used to report | [#40] |
+| J5 | P2 | Read back an instruction sloppily — *"maintained two thousand"*, *"left three sixty"* | **No new aeroplane appears.** Ask engineering for the board if unsure. These exact phrases each invented an aircraft that took a holding level | [#40] guards |
+| J6 | P2 | Get radar to lose you — sit on the ramp, or go well out — then call in | *"Not radar identified, say your position and altitude"*, and **nobody is held behind you**. Being unseen must cost you a place in the queue, not give you one | [#40] `may_be_sequenced` |
+
+**What it is actually checking**
+
+**J1** is the whole architecture in one column. Everything else in this section
+is a fallback for when it does not close.
+
+**J2** is the one that decides whether a guest can just turn up. It was
+originally going to need a flight plan filed for him in advance — which is
+setup, and therefore not an answer to "he should work without setting anything
+up".
+
+**J4** is the failure that made all of this worth doing. With one pilot a
+mis-heard callsign is a ghost, which is untidy. With two it moves the wrong
+aeroplane's altitude and place in the queue, and nothing reports it.
 
 ---
 
