@@ -69,10 +69,20 @@ _ready = False
 # answer and not a synonym for either.
 _on_ground: dict[str, bool] = {}
 
-# The events that move an aeroplane between the ground and the air. `birth` is
-# in neither list on purpose: an aircraft can be born on a ramp or in the air
-# and the event does not say which, so it is recorded and not acted on.
-DOWN = ("land", "runway_touch")
+# The events that move an aeroplane between the ground and the air.
+#
+# `land` ONLY, and `runway_touch` deliberately left out of it. A touch-and-go
+# raises runway_touch and never lands, so acting on it would hand a man doing a
+# low approach to Tower for the few seconds until `takeoff` put it right --
+# which is the same "he went around and got given to Tower anyway" the range
+# rule had just been fixed for. Seen in the recording: a real landing raised
+# runway_touch seventeen seconds before `land`, so the two are genuinely
+# different moments and only the second one means he is staying.
+#
+# `birth` is out for the same reason: an aircraft can be born on a ramp or in
+# the air and the event does not say which. Both are still RECORDED; the
+# question is only what state they are allowed to set.
+DOWN = ("land",)
 UP = ("takeoff", "runway_takeoff")
 
 # Everything worth writing down. Wider than what is acted on, because the

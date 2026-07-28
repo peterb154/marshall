@@ -141,3 +141,26 @@ class TestZeroIsTheCommonestGroundSpeed(unittest.TestCase):
         """Over the threshold at a hundred and forty knots is not parked."""
         slow = self.RAMP.replace("0 knots", "140 knots")
         self.assertTrue(A.asr_context(R.BATUMI_ASR, slow, "", "362nd_sockeye"))
+
+
+class TestATouchAndGoIsNotALanding(unittest.TestCase):
+    """Caught from a real recording before it was ever reported.
+
+    A landing raised `runway_touch` seventeen seconds before `land`, so the two
+    are genuinely different moments -- and a touch-and-go raises the first
+    without ever reaching the second. Treating a touch as "down" would hand a
+    man flying a low approach to Tower for the seconds until `takeoff` put it
+    right, which is the same failure the range rule was just fixed for.
+    """
+
+    def test_only_land_means_he_is_staying(self):
+        import pathlib
+        src = (pathlib.Path(__file__).resolve().parents[1]
+               / "director" / "tools" / "events.py").read_text(encoding="utf-8")
+        ns: dict = {}
+        for line in src.splitlines():
+            if line.startswith(("DOWN =", "UP =")):
+                exec(line, ns)
+        self.assertEqual(ns["DOWN"], ("land",))
+        self.assertNotIn("runway_touch", ns["DOWN"])
+        self.assertIn("takeoff", ns["UP"])
