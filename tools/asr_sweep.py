@@ -65,6 +65,31 @@ from marshall.core import route as R
 STEP_SEC = 5.0
 TURN_RATE_DEG = 3.0            # standard rate, and all a heavy fighter will give
 SPEED_MPH = 200.0              # what a P-47 flies an approach at
+
+# THE SWEEP ONLY EVER FLEW A WARBIRD. 1,296 approaches, every one of them at
+# 200 mph, because that is what this field was built around -- so the base-leg
+# geometry has never once been exercised at jet speed, which is exactly where
+# #39 lives. A green sweep meant "correct for a P-47" and was read as "correct".
+#
+# TURN RATE IS NOT A CONSTANT EITHER, and pretending it is hides the whole
+# problem. Standard rate is 3 degrees a second, but holding it needs bank that
+# grows with speed, and past about 250 knots that bank is no longer something
+# anybody flies on an approach. The usual limit is 30 degrees, which gives
+#
+#     rate = 1091 * tan(bank) / V     ~= 630 / V  at 30 degrees of bank
+#
+# 4.2 deg/s at 150 knots (so standard rate is comfortably available), 2.1 at
+# 300, and 1.4 at 450 -- a turn radius near three miles, which is wider than
+# the base leg it is being asked to turn inside.
+MAX_BANK_DEG = 30.0
+
+
+def turn_rate_deg_s(speed_kt: float) -> float:
+    """The best rate this speed can actually give, in a bank a pilot will hold."""
+    import math as _m
+    if speed_kt <= 0:
+        return TURN_RATE_DEG
+    return min(TURN_RATE_DEG, 1091.0 * _m.tan(_m.radians(MAX_BANK_DEG)) / speed_kt)
 MAX_MINUTES = 25.0
 # An aeroplane does not change height in one radar sweep, and pretending it does
 # is not a harmless simplification. It made the missed approach -- climb to
@@ -76,7 +101,8 @@ DESCEND_FPM = 700.0
 
 
 def fly(range_nm: float, radial_deg: float, heading_deg: float, profile,
-        sloppy: bool = False, seed: int = 0, deaf: bool = False) -> dict:
+        sloppy: bool = False, seed: int = 0, deaf: bool = False,
+        speed_kt: float = 0.0) -> dict:
     """One approach, from one start, until it arrives or runs out of fuel.
 
     `deaf` is a pilot who does not turn. Not a bad pilot -- a BUSY one: head
@@ -92,9 +118,12 @@ def fly(range_nm: float, radial_deg: float, heading_deg: float, profile,
     while the controller keeps talking, and an obedient aeroplane never lets it.
     """
     rnd = random.Random(seed)              # seeded: a failure must be repeatable
-    speed_nm_s = SPEED_MPH / 3600.0 * 0.868      # mph -> knots -> nm/sec
+    kt = speed_kt or (SPEED_MPH * 0.868)
+    speed_nm_s = kt / 3600.0
+    rate_deg_s = turn_rate_deg_s(kt)
     pos = asr.Position(range_nm=range_nm, radial_deg=radial_deg,
-                       alt_ft=profile.hold_base_ft, heading_deg=heading_deg)
+                       alt_ft=profile.hold_base_ft, heading_deg=heading_deg,
+                       speed_kt=kt)
     steps = int(MAX_MINUTES * 60 / STEP_SEC)
     last_turn, established_at = "", None
     turns = 0
@@ -135,7 +164,7 @@ def fly(range_nm: float, radial_deg: float, heading_deg: float, profile,
         # against its own mistake.
         ordered_true = (g.heading + profile.magvar_deg) % 360
         err = 0.0 if deaf else G.angle_diff(ordered_true, pos.heading_deg)
-        turn = max(-TURN_RATE_DEG * STEP_SEC, min(TURN_RATE_DEG * STEP_SEC, err))
+        turn = max(-rate_deg_s * STEP_SEC, min(rate_deg_s * STEP_SEC, err))
         if sloppy:
             # What a person actually does with a heading: hears it a beat late,
             # rolls out past it, and wanders a degree or two in between. None of
@@ -169,7 +198,7 @@ def fly(range_nm: float, radial_deg: float, heading_deg: float, profile,
 
 
 def sweep(profile, sloppy: bool = False,
-          deaf: bool = False) -> tuple[list[dict], int]:
+          deaf: bool = False, speed_kt: float = 0.0) -> tuple[list[dict], int]:
     # A deaf pilot is flown from CLOSE IN as well. That is where he was when he
     # reported it -- "between the inner, near the runway, going the opposite
     # direction. This is where he gets very very confused" -- and the ordinary
@@ -182,7 +211,7 @@ def sweep(profile, sloppy: bool = False,
         for rad in radials:
             for hdg in headings:
                 r = fly(rng, rad, hdg, profile, sloppy=sloppy, deaf=deaf,
-                        seed=rng * 100000 + rad * 100 + hdg)
+                        seed=rng * 100000 + rad * 100 + hdg, speed_kt=speed_kt)
                 r["start"] = (rng, rad, hdg)
                 out.append(r)
     return out, len(out)
@@ -255,6 +284,24 @@ BASELINE = {
     # improve: reversals and direction changes. That is #19, and it is invisible
     # to an obedient aeroplane.
     "deaf":   {"arrived": 0, "dither": 72, "turns": 1945},
+    # SPEED. The sweep only ever flew a warbird -- 1,296 approaches, all of
+    # them at 200 mph -- so a green run meant "correct for a P-47" and was read
+    # as "correct". These fly the identical grid at jet speeds, with the turn
+    # rate a 30-degree bank actually gives at each one.
+    #
+    # 300 is clean, which says the pattern holds for anything that flies a
+    # normal approach. 450 is NOT, and the shape of the failure is the point:
+    # almost everybody still arrives, but the controller argues with itself 181
+    # times getting them there. A 5.1 nm turn radius cannot turn inside a base
+    # leg built around 3, so the engine orders a turn, the aeroplane cannot
+    # make it, and the engine orders the opposite -- which is exactly what a
+    # pilot reports as "he switched between left and right on final".
+    #
+    # Recorded as a KNOWN-OPEN number rather than a target, in the same spirit
+    # as the deaf figures: this is #39, and the fix is to scale the intercept
+    # with groundspeed. Beat it and move it in the same commit.
+    "fast300": {"arrived": 1296, "dither": 0, "turns": 765},
+    "fast450": {"arrived": 1290, "dither": 181, "turns": 3976},
 }
 # Turns wander a little with the seeded drift; dithering and arrivals must not.
 TURN_SLACK = 0.05
