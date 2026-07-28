@@ -78,6 +78,77 @@ RECEIVERS: dict[str, frozenset[str]] = {
 ASSUMED_MODERN = frozenset({"tacan", "ils", "ins"})
 
 
+# THE SLOWEST A CONTROLLER MAY ASSIGN, by airframe.
+#
+#     "How slow will the F-16 be asked to fly? It falls out of the sky around
+#      170 kts."
+#
+# The approach profile asked for 174 knots on final, and that number is the
+# P-51's -- 200 mph, written for the aeroplane this field was built around and
+# then applied to everything that ever flies the approach. Exactly the mistake
+# the descent planner made with a fixed feet-per-mile gradient: one number that
+# is right for one aeroplane and wrong for all the others, and wrong in the
+# direction that hurts.
+#
+# A speed a pilot cannot fly is worse than no speed assignment at all. He has
+# to choose between obeying the controller and staying airborne, and a
+# controller who puts a pilot in that position has stopped being useful.
+#
+# These are ASSIGNMENT floors while being vectored -- clean or partly
+# configured, still manoeuvring -- not final approach speeds. An aeroplane on
+# final flies whatever its pilot knows it needs, which is why speed control is
+# dropped there entirely; see `speed_instruction`.
+MIN_VECTOR_KT: dict[str, float] = {
+    # Fast jets: comfortably above on-speed AoA with something in hand for a
+    # turn. The F-16 is the one that prompted this.
+    "F-16C_50": 210.0,
+    "FA-18C_hornet": 200.0,
+    "F-15ESE": 210.0,
+    "F-14B": 200.0,
+    "M-2000C": 200.0,
+    "AV8BNA": 180.0,
+    "A-10C_2": 160.0,
+    "A-10C": 160.0,
+    # Warbirds, which is what the published profile was written for.
+    "P-51D-30-NA": 140.0,
+    "P-51D": 140.0,
+    "P-47D-30": 150.0,
+    "SpitfireLF Mk IX": 130.0,
+    "SpitfireLFMkIX": 130.0,
+    "F4U-1D": 140.0,
+    "MosquitoFBMkVI": 150.0,
+    "Bf-109K-4": 140.0,
+    "FW-190D9": 140.0,
+    "FW-190A8": 140.0,
+    "I-16": 100.0,
+    # Helicopters, where "reduce speed" means something else entirely.
+    "Ka-50": 60.0,
+    "UH-1H": 50.0,
+    "Mi-8MT": 60.0,
+}
+
+# An airframe nobody has listed. Deliberately HIGH: assigning too fast costs a
+# wider circuit, and assigning too slow costs an aeroplane.
+ASSUMED_MIN_KT = 200.0
+
+
+def min_speed_kt(aircraft_type: str | None) -> float:
+    """The slowest this type may be told to fly while under vectors."""
+    if not aircraft_type or not aircraft_type.strip():
+        return ASSUMED_MIN_KT
+    return MIN_VECTOR_KT.get(aircraft_type.strip(), ASSUMED_MIN_KT)
+
+
+def safe_speed_kt(wanted_kt: float, aircraft_type: str | None) -> float:
+    """What the controller may actually ask for, given what he is talking to.
+
+    The published profile says what the APPROACH wants; this says what the
+    AEROPLANE can do, and the aeroplane wins. Never quietly -- a speed the
+    profile wanted and the airframe refuses is worth seeing in a log.
+    """
+    return max(float(wanted_kt or 0.0), min_speed_kt(aircraft_type))
+
+
 def receivers(aircraft_type: str | None) -> frozenset[str]:
     """What he can tune, from the type radar reports.
 

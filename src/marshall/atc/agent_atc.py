@@ -547,7 +547,14 @@ def aircraft_type_on_scope(scope: str, cs: str) -> str:
     want = C.parse(cs).flight.lower()
     for tag, typ in _TYPE.findall(scope or ""):
         if C.parse(tag).flight.lower() == want:
-            return typ.strip()
+            # "(P-51D-30-NA, manned)" -- the marker saying a human is in it
+            # rides in the same brackets, and everything downstream looks the
+            # type up by EXACT string. Left on, it turned a Mustang into an
+            # unknown airframe, which falls back to "assume modern" -- so the
+            # controller believed a 1944 fighter carried TACAN, ILS and an
+            # inertial platform, and would have offered it a hold on a station
+            # it cannot receive.
+            return typ.split(",")[0].strip()
     return ""
 
 
@@ -587,7 +594,8 @@ def radar_fix(scope: str, cs: str, profile=None) -> object | None:
             return asr.Position(float(nm), float(radial),
                                 int(alt.replace(",", "")),
                                 true_heading(h, profile) if profile else h,
-                                speed_kt=float(kt) if kt else 0.0)
+                                speed_kt=float(kt) if kt else 0.0,
+                                type=aircraft_type_on_scope(scope, cs))
     return None
 
 
@@ -737,17 +745,41 @@ SPEED_REPEAT_SEC = 75.0       # ...and do not say it again every radar sweep
 _speed_asked: dict[str, tuple[float, float]] = {}
 
 
-def speed_instruction(g, pos=None, cs: str = "", now: float | None = None) -> str:
+def speed_instruction(g, pos=None, cs: str = "", now: float | None = None,
+                      aircraft_type: str = "") -> str:
     """"reduce speed to one eight zero" -- when, and only when, it is needed.
 
     Silent unless the sim gives a real groundspeed AND the leg wants one AND he
     is meaningfully faster than it. Guessing at a speed he might be doing would
     be worse than saying nothing: an instruction to slow down issued to an
     aeroplane already at approach speed is a controller who cannot see.
+
+    TWO THINGS KEEP IT SAFE, and the second matters more than the first.
+
+    The floor is per-airframe, because the published profile's 174 knots is the
+    P-51's and an F-16 is on the back side of the drag curve there. See
+    equipment.MIN_VECTOR_KT.
+
+    And on FINAL the controller stops assigning speed at all. This is not a
+    concession, it is how it is done: the pilot knows his aeroplane's approach
+    speed, its fuel state and what it is carrying, and the controller knows
+    none of those. Speed control exists to fix the geometry of the turn onto
+    final, and once he is on final there is no geometry left to fix. "Resume
+    normal speed" is a real instruction and this is the moment for it.
     """
-    from marshall.atc import controller as ctl
+    from marshall.atc import controller as ctl, equipment as E
+    phase = str(getattr(g, "phase", "") or "")
+    if phase in ("final", "map", "missed"):
+        # Release him ONCE, and only if we actually had him restricted --
+        # "resume normal speed" to a pilot who was never given a speed is a
+        # controller answering a question nobody asked.
+        if _speed_asked.pop(cs, None):
+            return ", resume normal speed"
+        return ""
     want = float(getattr(g, "speed_kt", 0.0) or 0.0)
     have = float(getattr(pos, "speed_kt", 0.0) or 0.0) if pos is not None else 0.0
+    if want > 0:
+        want = E.safe_speed_kt(want, aircraft_type)
     if want <= 0 or have <= 20 or have <= want + SPEED_TOLERANCE_KT:
         return ""
     t = time.time() if now is None else now
@@ -902,7 +934,8 @@ def asr_call(cs: str, g, pos=None, profile=None) -> str:
     # a controller says "descend to two thousand, reduce speed to one eight
     # zero" in one breath, and an extra call per sweep would crowd a frequency
     # that already carries a range every mile.
-    alt += speed_instruction(g, pos, cs)
+    alt += speed_instruction(g, pos, cs,
+                             aircraft_type=getattr(pos, "type", "") or "")
     if g.phase == "map":
         return (f"{who}, over the missed approach point. Runway in sight, land; "
                 f"if not, execute missed approach.")
@@ -931,7 +964,8 @@ def vector_call(cs: str, g, pos=None) -> str:
     # The turn onto base is where speed matters most: it is the leg the
     # overshoot happens on, and a man told to slow down BEFORE the turn can
     # make it. Told during it, he cannot.
-    alt += speed_instruction(g, pos, cs)
+    alt += speed_instruction(g, pos, cs,
+                             aircraft_type=getattr(pos, "type", "") or "")
     # Rounded to five while vectoring. A pilot repositioning has to set this on
     # a gyro and read it back, and "one three zero" is easier to do both with
     # than "one two eight" -- which is also how it is issued for real.

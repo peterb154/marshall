@@ -237,5 +237,38 @@ class TestTheGhostCorpus(unittest.TestCase):
             self.assertNotEqual(transcript, transcript.upper())
 
 
+
+class TestTheMannedMarkerDoesNotHideTheAirframe(unittest.TestCase):
+    """A bug I introduced and then found an hour later.
+
+    The radar line gained ", manned" so an unknown radio could be identified by
+    elimination. It rides in the SAME brackets as the airframe, and everything
+    downstream looks the type up by exact string -- so "P-51D-30-NA, manned"
+    matched nothing, fell back to "assume modern", and the controller believed
+    a 1944 fighter carried TACAN, ILS and an inertial platform. It would have
+    offered a Mustang a hold on a station it cannot receive, which is the exact
+    failure equipment.py was written to prevent.
+    """
+
+    SCOPE = ("362nd_sockeye [Pony 1-1] (P-51D-30-NA, manned): 8.0 nm on the "
+             "300 radial, 4,000 ft, heading 130, 150 knots")
+
+    def test_the_airframe_survives_the_marker(self):
+        self.assertEqual(A.aircraft_type_on_scope(self.SCOPE, "Pony 1-1"),
+                         "P-51D-30-NA")
+
+    def test_a_mustang_has_an_adf_and_nothing_else(self):
+        from marshall.atc import equipment as E
+        kit = E.receivers(A.aircraft_type_on_scope(self.SCOPE, "Pony 1-1"))
+        self.assertEqual(sorted(kit), ["adf"])
+        self.assertNotIn("tacan", kit)
+
+    def test_the_position_carries_it_too(self):
+        """So the speed floor and the equipment rules ask the same question of
+        the same aeroplane."""
+        from marshall.core import route as R
+        pos = A.radar_fix(self.SCOPE, "Pony 1-1", R.BATUMI_ASR)
+        self.assertEqual(pos.type, "P-51D-30-NA")
+
 if __name__ == "__main__":
     unittest.main()

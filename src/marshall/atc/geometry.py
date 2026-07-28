@@ -145,6 +145,11 @@ class Position:
     # and 0 means "not known", which `descent` handles by assuming a slow
     # aeroplane and therefore starting down early.
     speed_kt: float = 0.0
+    # The airframe, as the sim states it. Carried on the position rather than
+    # looked up separately because everything that needs it -- what he can
+    # receive, and the slowest speed he may be assigned -- is asking a question
+    # about the aeroplane radar is currently looking at.
+    type: str = ""
 
 
 @dataclass
