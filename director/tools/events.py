@@ -107,12 +107,14 @@ def _ensure_table() -> None:
                 at         TIMESTAMPTZ NOT NULL DEFAULT now(),
                 kind       TEXT NOT NULL,
                 unit_name  TEXT,
+                label      TEXT,
                 player     TEXT,
                 place      TEXT
             )
             """)
         conn.execute("CREATE INDEX IF NOT EXISTS events_unit ON events (unit_name, at DESC)")
         conn.execute("CREATE INDEX IF NOT EXISTS events_at ON events (at DESC)")
+        conn.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS label TEXT")
     _ready = True
 
 
@@ -120,9 +122,25 @@ def _record(kind: str, unit_name: str, player: str, place: str) -> None:
     try:
         _ensure_table()
         with get_pool().connection() as conn:
+            # THE LABEL, RESOLVED AT EVENT TIME. An event names the sim's UNIT
+            # ("Pony 1-1"); the radar picture names a manned contact by its
+            # LABEL, player-name first ("362nd_sockeye"), and the label is what
+            # every consumer of that picture knows him by -- including the
+            # identity ladder, which resolves a track to it.
+            #
+            # Those two never joined, and four separate bugs came out of it in
+            # one day: the airspace lookup found nobody and fell through to
+            # "Center owns the rest"; a slot release matched on the player and
+            # cleared a live pilot's identity every two seconds. Resolving it
+            # HERE, while the track row still exists, is the only place it can
+            # be done at all -- moments later he has left and the row is gone.
+            row = conn.execute(
+                "SELECT label FROM tracks WHERE name = %s", (unit_name,)).fetchone()
+            label = (row[0] if row and row[0] else "") or unit_name
             conn.execute(
-                "INSERT INTO events (kind, unit_name, player, place) "
-                "VALUES (%s, %s, %s, %s)", (kind, unit_name, player, place))
+                "INSERT INTO events (kind, unit_name, label, player, place) "
+                "VALUES (%s, %s, %s, %s, %s)",
+                (kind, unit_name, label, player, place))
     except Exception as e:
         # Never let the recorder cost us the state change: the in-memory answer
         # is what the controller actually reads, and a database hiccup must not
@@ -260,7 +278,7 @@ def departed_since(seconds: float = 900.0) -> list[dict]:
         _ensure_table()
         with get_pool().connection() as conn:
             rows = conn.execute(
-                "SELECT unit_name, COALESCE(player,''), "
+                "SELECT COALESCE(label, unit_name), COALESCE(player,''), "
                 "       extract(epoch FROM (now() - at)) "
                 "  FROM events "
                 " WHERE kind = 'player_leave_unit' "
@@ -269,5 +287,7 @@ def departed_since(seconds: float = 900.0) -> list[dict]:
     except Exception as e:
         log.warning("departed_since: %s", e)
         return []
+    # `unit` is the LABEL the radar picture uses, not the sim's raw unit name,
+    # because the caller matches it against a resolved track. See _record.
     return [{"unit": u, "player": p, "ago_sec": round(float(a), 1)}
             for u, p, a in rows]

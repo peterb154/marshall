@@ -23,8 +23,22 @@ MAGVAR = 6.0
 # Briefed conditions. Wind is the direction it blows FROM.
 CRUISE_TAS_MPH = 220.0
 CRUISE_ALT_FT = 5000
-WIND_FROM_DEG = 270.0
-WIND_MPH = 20.0
+# FIVE KNOTS FROM THE SOUTH, and much gentler than what came before.
+#
+# It was 20 mph from 270 -- a stiff, near-direct crosswind on runway 13, which
+# is a fine thing to fly against once the procedure works and a poor thing to
+# debug an approach in. Every heading correction the controller gave had a wind
+# component buried in it, so "he put me left of course" and "I drifted left of
+# course" looked identical from both ends.
+#
+#     "wind should be much much less aggressive. Let's just go with 5 kn from
+#      the south"
+#
+# Changed HERE and nowhere else on purpose: the nav log's timed legs, the
+# plate, the mission file and the controller's landing clearance all read this
+# one number, so they cannot disagree about it.
+WIND_FROM_DEG = 180.0
+WIND_MPH = 5.0 * 1.15078          # five knots, in the mph this file works in
 
 # Altimeter setting. Briefed, written into the mission, and passed on radar
 # contact -- a pilot who never gets one is flying on whatever was in the

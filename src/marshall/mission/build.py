@@ -290,8 +290,93 @@ def add_testbed(m, usa) -> None:
         wp.speed = jet_kt * 0.514444
 
 
+def add_session_slots(m, usa) -> None:
+    """Eight client slots for a two-pilot session: half on the ramp, half airborne.
+
+        "two F-16's on the ground and 2 P-51s on the ground, two F-16s in the
+         air, 2 P-51s in the air"
+
+    The two halves test different things and both are needed in one mission,
+    because swapping missions to change one costs the session its continuity.
+
+    ON THE RAMP exercises the part that has never been flown properly: clearance
+    delivery, taxi, the departure handoff, and -- since 28 July -- the sim's
+    `takeoff` event moving a pilot off Tower. Every one of those was written
+    against an aeroplane that began in the air and therefore skipped all of it.
+
+    AIRBORNE is the approach itself, which is what most of this system is, and
+    starting there costs nobody fifteen minutes of taxiing to reach the bit
+    under test.
+
+    TWO TYPES because they fail differently and the difference is the point: an
+    F-16 has a slaved HSI and flies the pattern at three hundred knots; a P-51
+    has a drifting gyro and flies it at a hundred and fifty. A procedure that
+    works for one and not the other is not a working procedure, and until now
+    the only way to compare them was to fly two sorties an hour apart.
+
+    Callsigns are deliberately distinct per aeroplane -- Viper and Pony, one
+    and two -- so that two humans on one frequency are never ambiguous to a
+    controller keyed on what it hears (#40).
+    """
+    ramp = m.terrain.airports["Batumi"]
+    # -- on the ramp -------------------------------------------------------
+    #
+    # THE JET STARTS HOT, the warbird cold, and that is the pilot's call:
+    #
+    #     "F16 on ground should be hot started"
+    #
+    # A cold F-16 is a ten minute checklist before the radio is even alive, and
+    # the thing under test here is clearance delivery and the departure
+    # handoff, not the INS alignment. A Mustang cold is a couple of minutes and
+    # is worth keeping -- somebody has to exercise the ramp from properly cold.
+    for name, kind, how in (("Viper", F_16C_50, StartType.Warm),
+                            ("Pony", P_51D_30_NA, StartType.Cold)):
+        grp = m.flight_group_from_airport(
+            country=usa, name=name, aircraft_type=kind, airport=ramp,
+            start_type=how, group_size=2)
+        # Cold on the ramp means Ground and Tower, not Approach -- he has not
+        # taken off yet and the frequency he needs first is the one that gives
+        # him a clearance.
+        grp.frequency = R.TOWER.freq_mhz
+        for n, unit in enumerate(grp.units, start=1):
+            unit.name = f"{name} 1-{n}"
+            unit.set_client()
+        set_channels(grp)
+
+    # -- airborne ----------------------------------------------------------
+    #
+    # Separated in altitude as well as type. Two flights spawning at one point
+    # and one height is a mid-air before anybody has said a word, and it is the
+    # sort of thing that reads fine in a diff.
+    for name, kind, kt, alt_ft in (("Viper", F_16C_50, 300.0, R.CRUISE_ALT_FT + 3000),
+                                   ("Pony", P_51D_30_NA, R.CRUISE_TAS_MPH * 0.868,
+                                    R.CRUISE_ALT_FT)):
+        speed_ms = kt * 0.514444
+        alt_m = alt_ft * 0.3048
+        start = Point(R.AIR_START.x, R.AIR_START.z, m.terrain)
+        grp = m.flight_group(
+            country=usa, name=f"{name} Air", aircraft_type=kind, airport=None,
+            position=start, altitude=alt_m, speed=speed_ms, maintask=CAP,
+            start_type=StartType.Runway, group_size=2)
+        grp.frequency = R.APPROACH.freq_mhz
+        for n, unit in enumerate(grp.units, start=1):
+            unit.name = f"{name} 2-{n}"
+            unit.set_client()
+            # THE UNIT'S OWN SPAWN SPEED, which is a different field from the
+            # route waypoints and defaults to about 83 knots -- below an F-16's
+            # stall. This trap has now bitten four times in this file.
+            unit.speed = speed_ms
+        set_channels(grp)
+        for fix in R.FIXES[1:]:
+            grp.add_waypoint(Point(fix.x, fix.z, m.terrain), alt_m)
+        for wp in grp.points:
+            wp.speed = speed_ms
+
+
 def build(weather: str = "light", traffic: bool = False,
-          formation: bool = False, testbed: bool = False) -> tuple[Mission, list[int]]:
+          formation: bool = False, testbed: bool = False,
+          session: bool = False, ceiling_ft: int = 0,
+          tops_ft: int = 0) -> tuple[Mission, list[int]]:
     m = Mission(terrain=Caucasus())
     # The brief goes IN the mission as well as on the kneeboard. A pilot who
     # joins without OpenKneeboard, or who wants to read it while the aeroplane
@@ -317,9 +402,22 @@ def build(weather: str = "light", traffic: bool = False,
         m.weather.clouds_thickness = 0
         m.weather.visibility_distance = 80000
     else:
-        ceiling_ft = P.ceiling_ft if weather == "hard" else P.ceiling_ft + 1500
-        m.weather.clouds_base = int(ceiling_ft * 0.3048)   # ft -> m
-        m.weather.clouds_thickness = 2000
+        # AN EXPLICIT DECK, when one is asked for.
+        #
+        #     "the second mission should have 800 foot ceilings and 3000 foot
+        #      tops"
+        #
+        # The derived modes tie the base to the plate's ceiling, which is right
+        # when the point is to fly minimums and wrong when the point is to
+        # choose the weather. A layer 800 to 3000 is a real instrument approach
+        # -- solid from the platform, breaking out two hundred feet above MDA,
+        # and thin enough to climb out of on a missed rather than staying in it
+        # to the hold.
+        base = ceiling_ft or (P.ceiling_ft if weather == "hard"
+                              else P.ceiling_ft + 1500)
+        thick = (tops_ft - base) if tops_ft > base else 2000
+        m.weather.clouds_base = int(base * 0.3048)         # ft -> m
+        m.weather.clouds_thickness = int(thick * 0.3048)
         m.weather.clouds_density = 9
         m.weather.visibility_distance = 4000 if weather == "hard" else 8000
     for w in (m.weather.wind_at_ground, m.weather.wind_at_2000,
@@ -446,7 +544,12 @@ def build(weather: str = "light", traffic: bool = False,
     # Every one of them is a client. An empty slot costs nothing; a missing one
     # costs a squadron mate the sortie.
     client_slots: list[tuple[int, str]] = []
-    for name, kind, _cruise, howmany in SQUADRON:
+    # A SESSION MISSION REPLACES THE SQUADRON RATHER THAN JOINING IT. Seventeen
+    # warbird slots fill every parking space at Batumi, and an F-16 needs a
+    # bigger one than any that is left -- so the eight slots actually being
+    # flown could not spawn. Two pilots do not need a squadron behind them, and
+    # an empty ramp is also a quieter scope to debug against.
+    for name, kind, _cruise, howmany in ([] if session else SQUADRON):
         sq = m.flight_group_from_airport(
             country=usa, name=name, aircraft_type=kind,
             airport=m.terrain.airports["Batumi"],
@@ -464,6 +567,20 @@ def build(weather: str = "light", traffic: bool = False,
         add_formation(m, usa)
     if testbed:
         add_testbed(m, usa)
+    if session:
+        # EXCLUSIVE, not additive. The standing sortie puts four Mustangs and
+        # two Thunderbolts in the air and seventeen more on the ramp, and a
+        # session mission asked for eight slots -- so the rest are not company,
+        # they are clutter on the scope and four extra callsigns for a
+        # controller to keep apart while two humans are trying to test it.
+        #
+        # Removed by name AFTER they are built rather than by threading a flag
+        # through the whole builder: the standing flight carries a route, a
+        # speed fix and a channel card that would all have to be duplicated.
+        keep = [g for g in usa.plane_group
+                if g.name not in ("Pony", "Hammer")]
+        usa.plane_group = keep
+        add_session_slots(m, usa)
 
     # NO BEACON TRANSMITTERS.
     #
@@ -766,6 +883,15 @@ if __name__ == "__main__":
                     help="add an air-start F-16 client 'Testbed 1-1' -- an HSI "
                          "that does not drift, for measuring the controller "
                          "rather than flying the war (#35, card A8)")
+    ap.add_argument("--session", action="store_true",
+                    help="eight client slots for a two-pilot session: 2 F-16 "
+                         "and 2 P-51 cold on the ramp, 2 of each airborne")
+    ap.add_argument("--ceiling", type=int, default=0,
+                    help="overcast base in feet (with --tops)")
+    ap.add_argument("--tops", type=int, default=0,
+                    help="cloud tops in feet, so the layer has a real thickness")
+    ap.add_argument("--out", default="",
+                    help="write the .miz here instead of the default name")
     ap.add_argument("--formation", action="store_true",
                     help="add a late-activated AI four-ship 'Pony 1' for "
                          "formation testing (units Pony 1-1 .. Pony 1-4)")
@@ -773,10 +899,13 @@ if __name__ == "__main__":
     weather = "hard" if args.hard else "clear" if args.clear else "light"
 
     mission, ids = build(weather, traffic=args.traffic,
-                        formation=args.formation, testbed=args.testbed)
-    mission.save(str(OUT))
-    write_presets(OUT, ids)
-    deploy(OUT)
+                        formation=args.formation, testbed=args.testbed,
+                        session=args.session, ceiling_ft=args.ceiling,
+                        tops_ft=args.tops)
+    out = Path(args.out) if args.out else OUT
+    mission.save(str(out))
+    write_presets(out, ids)
+    deploy(out)
 
     wx = {"clear": "CAVOK (clear)",
           "light": "overcast, base 1500 ft above ceiling",
