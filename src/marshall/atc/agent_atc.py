@@ -577,6 +577,54 @@ def true_heading(grid_hdg: float, profile) -> float:
     return (grid_hdg + getattr(profile, "grid_convergence_deg", 0.0)) % 360
 
 
+# The same line, found by the UNIT NAME instead of the callsign tag. The tag is
+# a label and the unit name is the track, and only one of those can be wrong.
+_FIX_BY_TRACK = re.compile(
+    r"([^|\[(]+?)\s*(?:\[[^\]]*\])?\s*\([^)]*\)\s*:"
+    r"[^|]*?(\d+(?:\.\d+)?)\s*nm[^|]*?on the (\d+)\s*radial"
+    r"[^|]*?([\d,]+)\s*ft(?:[^|]*?heading\s*(\d+))?"
+    r"(?:[^|]*?(\d+)\s*knots)?", re.I)
+
+
+def radar_fix_by_track(scope: str, track: str, profile=None) -> object | None:
+    """Where he is, found by the TRACK the identity ladder resolved.
+
+    The callsign lookup below searches the scope for a bracketed tag, which is
+    a LABEL -- and a label can be stale, mis-heard, or simply not yet applied.
+    That is not theoretical: a pilot checked in as Pony 1-1, renamed himself
+    Falcon 1-1, and radar tagged his track "Falcon one one" while the engine
+    went on looking for "Pony 1-1". It found nobody, so he was told he was not
+    radar identified for an entire approach -- with a clean, correct radar line
+    for him sitting in the picture the whole time.
+
+    The track has no such failure mode. It is the sim's own unit name, it is
+    never spoken, and identity.py has already resolved which one this radio is
+    in. Asking the geometry by track rather than by name closes the gap between
+    the two halves of that work.
+
+    It also finds an UNTAGGED contact, which the callsign regex cannot do at
+    all -- it requires the brackets, so an aeroplane nothing has correlated yet
+    is invisible to it even when radar can see him perfectly.
+    """
+    if not track:
+        return None
+    from marshall.atc import asr
+    want = _key_name(track)
+    for name, nm, radial, alt, hdg, kt in _FIX_BY_TRACK.findall(scope or ""):
+        if _key_name(name) != want:
+            continue
+        h = float(hdg) if hdg else 0.0
+        return asr.Position(float(nm), float(radial), int(alt.replace(",", "")),
+                            true_heading(h, profile) if profile else h,
+                            speed_kt=float(kt) if kt else 0.0,
+                            type=aircraft_type_on_scope(scope, "") or "")
+    return None
+
+
+def _key_name(s: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+
+
 def radar_fix(scope: str, cs: str, profile=None) -> object | None:
     """Range, radial, altitude and heading of the track bound to this callsign.
 
@@ -973,7 +1021,7 @@ def vector_call(cs: str, g, pos=None) -> str:
     return f"{who}, {turn}heading {ctl.spell_hdg(hdg)}{alt}."
 
 
-def asr_context(profile, scope: str, cs: str) -> str:
+def asr_context(profile, scope: str, cs: str, track: str = "") -> str:
     """Radar guidance for a vectored approach -- the controller's next call.
 
     This is what replaces the deterministic engine for a single ship. The engine
@@ -987,7 +1035,10 @@ def asr_context(profile, scope: str, cs: str) -> str:
     from marshall.atc import asr
     if not getattr(profile, "vectored", False):
         return ""
-    pos = radar_fix(scope, cs, profile)
+    # Track first: this is the guidance a pilot actually hears, and it was
+    # silently unavailable for a whole approach because the label had gone
+    # stale while radar could see him perfectly.
+    pos = radar_fix_by_track(scope, track, profile) or radar_fix(scope, cs, profile)
     if pos is None:
         return ""
     g = asr.guide(pos, profile)
@@ -2589,7 +2640,10 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         n_contacts = count_contacts(scope)
         tag = f" [RADAR: {scope}]" if scope else ""
         print(f"PILOT [{known or srs}]: {transcript}{tag}", flush=True)
-        _fix = radar_fix(scope, known, profile)
+        # BY TRACK FIRST. The callsign is a label and can be stale; the track
+        # is the sim's own name for the aeroplane this radio is sitting in.
+        _fix = (radar_fix_by_track(scope, _ident.track, profile)
+                or radar_fix(scope, known, profile))
         record(session_id, kind="pilot", callsign=known or srs,
                # The provenance of the identity, not just the answer. Without
                # it a recording cannot be scored after the fact: "Pony 1-1" in
@@ -2634,7 +2688,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # Radar guidance for a vectored approach. Costs no model call, so it
         # runs for a single ship too -- which is the case that was flying with
         # no deterministic picture at all.
-        vectoring = asr_context(profile, scope, known)
+        vectoring = asr_context(profile, scope, known, _ident.track)
 
         # The one aircraft state. Bind whatever names we have -- the radio GUID
         # always, the callsign once he says it, the track once radar ties them

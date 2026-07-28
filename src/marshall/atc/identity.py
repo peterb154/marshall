@@ -227,27 +227,33 @@ class Registry:
         him. So a wrong label is rude and a wrong track is dangerous, and they
         deserve different rules.
 
-        A LABEL CHANGES ONLY ON CORROBORATION. Once a man has a name, a single
-        garbled transmission does not rename him -- the replay found a pilot
-        being relabelled "Talking 4" and another "Hammer 1-0" off one bad call
-        each, while the physical chain had his aeroplane right the whole time.
-        Same principle as the per-radio vote in `transmitter_callsign`: real
-        callsigns repeat, noise does not.
+        WHAT HE CALLS HIMSELF WINS. `spoken` is not one transmission's guess --
+        it arrives already voted across the whole sortie by
+        `transmitter_callsign`, which weighs how often a radio has used a name
+        against how recently. Real callsigns repeat and noise does not, and
+        that vote is where the protection belongs.
 
-        With no prior name there is nothing to protect and the claim is taken,
-        because on a first call it is usually right and is all anybody has.
+        A SECOND LAYER OF PROTECTION HERE WAS A REAL OUTAGE. It refused any
+        rename that no filed strip agreed with -- so a pilot who checked in as
+        Pony 1-1, then flew as Falcon 1-1 and said so a dozen times, stayed
+        Pony 1-1 forever. Radar had tagged his track "Falcon one one", the
+        engine went looking for "Pony 1-1", found nobody, and told him he was
+        not radar identified for the whole approach while the agent cheerfully
+        vectored Falcon 1-1. Two brains working two different aeroplanes, which
+        is the exact failure this module exists to prevent.
+
+        The evidence for that guard came from replaying the RAW extractor, one
+        transmission at a time, with no vote in front of it. The live path has
+        never worked that way. It was a fix for a problem this code did not
+        have, and it cost an approach.
         """
         known = (prior.callsign if prior else "") or u.callsign
-        if not known:
-            return spoken or u.callsign or u.name
-        if not spoken or _matches(spoken, known):
-            return known
-        # He has named himself as something else. Believe it only if something
-        # that is not this transmission also says that name exists.
-        for other in list(plans or []) + ([u.callsign] if u.callsign else []):
-            if _matches(spoken, other):
-                return other
-        return known
+        # Nothing said this time: keep the name he has been going by. This is
+        # the case the guard was really for -- a clipped or wordless call must
+        # not blank him.
+        if not spoken:
+            return known or u.callsign or u.name
+        return spoken
 
     def resolve(self, guid: str, srs_name: str, spoken: str = "",
                 scope: str = "", plans: list[str] | None = None,

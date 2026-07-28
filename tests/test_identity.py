@@ -161,20 +161,30 @@ class TestIdentityPersists(unittest.TestCase):
         reg.forget("guid-a")
         self.assertFalse(reg.resolve("guid-a", "Sockeye", spoken="", scope=""))
 
-    def test_one_garble_does_not_rename_a_pilot(self):
-        """A label changes only on corroboration.
+    def test_a_pilot_may_rename_himself(self):
+        """THE OUTAGE, 28 July, and it cost an entire approach.
 
-        The asymmetry the design rests on is that a wrong label is rude and a
-        wrong track is dangerous -- but rude is not free either. Replaying the
-        recordings found a pilot relabelled "Talking 4" and another "Hammer
-        1-0" off one bad transmission each, while the physical chain had their
-        aeroplanes right the whole time. Real callsigns repeat; noise does not.
+        He checked in as Pony 1-1, changed to Falcon 1-1 and said so a dozen
+        times. A rule here refused any rename no filed strip agreed with, so he
+        stayed Pony 1-1 forever. Radar had tagged his track "Falcon one one";
+        the engine went looking for "Pony 1-1", found nobody, and told him he
+        was not radar identified for the whole approach -- while the agent
+        cheerfully vectored Falcon 1-1. Two brains, two different aeroplanes.
         """
         reg = identity.Registry()
-        a = reg.resolve("guid-a", "Sockeye", spoken="Pony 1-1", scope=SCOPE)
-        b = reg.resolve("guid-a", "Sockeye", spoken="Tony 1-1", scope=SCOPE)
-        self.assertEqual(b.callsign, a.callsign)
-        self.assertEqual(b.track, a.track)
+        reg.resolve("guid-a", "Sockeye", spoken="Pony 1-1", scope=SCOPE)
+        i = reg.resolve("guid-a", "Sockeye", spoken="Falcon 1-1", scope=SCOPE)
+        self.assertEqual(i.callsign, "Falcon 1-1")
+        self.assertEqual(i.track, "362nd_sockeye")
+
+    def test_a_wordless_call_does_not_blank_him(self):
+        """What the guard was really for. A clipped or callsign-less
+        transmission keeps the name he has been going by."""
+        reg = identity.Registry()
+        reg.resolve("guid-a", "Sockeye", spoken="Falcon 1-1", scope=SCOPE)
+        self.assertEqual(
+            reg.resolve("guid-a", "Sockeye", spoken="", scope=SCOPE).callsign,
+            "Falcon 1-1")
 
     def test_he_may_still_rename_himself_with_corroboration(self):
         """Protecting the label must not freeze it: a pilot who takes a new
@@ -445,3 +455,42 @@ class TestOverlappingPilotNames(unittest.TestCase):
         same = [identity.Unit("Hoover", manned=True),
                 identity.Unit("Hoover", manned=True)]
         self.assertIsNone(identity.unit_for_radio("Hoover", same))
+
+
+class TestGarbleProtectionLivesInTheVote(unittest.TestCase):
+    """Where the protection belongs, and where it does NOT.
+
+    `identity._label` takes what the pilot says, because `spoken` reaches it
+    already voted across the sortie by `transmitter_callsign` -- count weighed
+    against recency, so real callsigns repeat and noise does not.
+
+    A SECOND layer of protection inside the registry was an outage: it refused
+    a legitimate rename and left the engine hunting an aeroplane that no longer
+    answered to that name. The evidence for it came from replaying the RAW
+    extractor one transmission at a time, with no vote in front of it -- a fix
+    for a problem the live path did not have.
+
+    So these test the vote, which is the thing that actually has to be right.
+    """
+
+    def setUp(self):
+        from marshall.atc import agent_atc as A
+        A._transmitters.clear()
+        A._order.clear()
+        self.A = A
+
+    def test_one_garble_does_not_outvote_an_established_name(self):
+        for _ in range(4):
+            self.A.transmitter_callsign("g", "Falcon one one, level four thousand")
+        got = self.A.transmitter_callsign("g", "Talcon one one, say again")
+        self.assertEqual(got, "Falcon 1-1")
+
+    def test_a_repeated_rename_does_win(self):
+        """Said once it is probably noise; said again it is a decision. This is
+        exactly the case the registry was overriding."""
+        self.A.transmitter_callsign("g", "Pony one one, radio check")
+        for _ in range(3):
+            self.A.transmitter_callsign("g", "Falcon one one, with you level")
+        self.assertEqual(
+            self.A.transmitter_callsign("g", "Falcon one one, request approach"),
+            "Falcon 1-1")
