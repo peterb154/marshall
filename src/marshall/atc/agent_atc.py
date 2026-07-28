@@ -1062,6 +1062,14 @@ def asr_context(profile, scope: str, cs: str, track: str = "") -> str:
     # Altitude alone cannot say it (he is low on final too) and speed alone
     # cannot (a warbird taxis at what a Spitfire flies a base leg at). Together
     # they are unambiguous, and neither is a guess -- both come off radar.
+    #
+    # IT IS STILL AN INFERENCE, and the sim would simply tell us: there is a
+    # `land` event on mission.StreamEvents, along with takeoff, birth and
+    # player_change_slot, and nothing in this system subscribes to any of them.
+    # See [ARCH-3] / #41. This is a sample of a continuous quantity used to
+    # detect a discrete change, which is the shape of bug this project keeps
+    # producing -- right position, wrong conclusion at the boundary. Keep it as
+    # the fallback when no event has been seen; do not keep it as the answer.
     if pos.alt_ft < GROUND_ALT_FT and 0 < pos.speed_kt < GROUND_SPEED_KT:
         return ""
     g = asr.guide(pos, profile)

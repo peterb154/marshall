@@ -1168,6 +1168,76 @@ talkdown is "really good", and every complaint left is about how he gets there.
 
 ---
 
+## [ARCH-3] The sim already tells us; we are inferring it instead — #41
+
+labels: architecture, needs-design
+
+**Status:** TODO
+
+    "for landing - isn't there a dcs event that we can use to determine if the
+     pilot landed or not?"
+
+There is, and asking the question turned up a whole stream nobody is using.
+`mission.StreamEvents` carries, among others:
+
+    land, runway_touch, takeoff, runway_takeoff, landing_quality_mark
+    birth, crash, ejection, unit_lost, pilot_dead
+    player_enter_unit, player_leave_unit, player_change_slot
+    engine_startup, engine_shutdown
+    connect, disconnect, srs_connect, srs_disconnect
+
+Only `StreamUnits` is subscribed to. Everything else in this system that wants
+to know a STATE CHANGE infers it from a position sample, which is guessing at
+something the sim would simply state.
+
+**What is currently inferred and should not be:**
+
+  LANDED        inferred from altitude under 200 ft and speed under 60 kt.
+                Reasonable, tested, and still a heuristic -- it exists because
+                a taxiing aeroplane read as a go-around and a parked one was
+                told to climb to three thousand. `land` says it outright.
+
+  AIRBORNE      the same test in reverse, with the same objection.
+
+  A NEW SLOT    [#38] asks how a pilot changes aircraft without an engineer
+                resetting his binding by hand. `player_change_slot` and
+                `player_leave_unit` answer it exactly, and they are the sim
+                telling us rather than us noticing afterwards.
+
+  A NEW CONTACT the radar picture is polled; `birth` is an announcement.
+
+**And the one worth its own line: `srs_connect` / `srs_disconnect`.** The sim
+reports the RADIO joining and leaving. That is the third leg of the identity
+triangle -- person, aeroplane, radio -- arriving as an event rather than being
+correlated from a name match, which is what [ARCH-2] spent two days building
+around.
+
+**Why this is architectural rather than a tidy-up.** Every inference above is a
+sample of a continuous quantity used to detect a discrete change, and that is
+the shape of bug this project keeps producing: the position is right and the
+CONCLUSION drawn from it is wrong at the boundary. An event has no boundary.
+
+**Deliberately not built the afternoon a guest was flying.** The heuristics
+work and are tested; a new streaming subscription, its reconnection behaviour
+and its state are not something to land an hour before somebody arrives. The
+right sequence is a consumer alongside the track streamer, events written where
+`tracks` already is, and the inferences retired one at a time as each event
+proves itself -- with the heuristic kept as the fallback for a stream that
+drops, because the sim pausing is a normal event here and a dead subscription
+must not read as "nobody ever lands".
+
+**Acceptance criteria**
+1. A `StreamEvents` consumer runs beside the track streamer and survives the
+   sim pausing, a director restart, and a mission reload.
+2. `land` retires the altitude/speed guess in `asr_context`, which stays as the
+   fallback when no event has been seen for that aircraft.
+3. `player_change_slot` clears the radio binding without an engineer -- [#38].
+4. Events are recorded where a sortie can be replayed against them.
+
+Related: [#38] (a callsign is a position), [#40] (identity).
+
+---
+
 ## [ARCH-2] The board is keyed on a mis-transcribable string — #40
 
 labels: architecture, needs-design
