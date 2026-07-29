@@ -825,6 +825,27 @@ def radar_fix_by_track(scope: str, track: str, profile=None) -> object | None:
     return None
 
 
+def said_who(transcript: str, names: list[str]) -> bool:
+    """Did he identify himself in this transmission?
+
+    A HANDLE IS A CALLSIGN. `callsign.extract` wants the numbered shape --
+    "Pony 1-1" -- so "Batumi Approach, Sockeye, request creation of Apex
+    flight" read as a man who had not said who he was, and he was challenged
+    for the name he had just given. Under the flight model that is backwards: a
+    person IS his handle, only a flight has a name of its own, and "Sockeye" is
+    complete self-identification.
+
+    Matched against the CLOSED SETS -- the flights that exist and the handle
+    this radio resolved to -- and never against open English, which is the rule
+    the whole design rests on.
+    """
+    from marshall.atc import callsign as _C
+    if _C.extract(transcript or ""):
+        return True
+    return any(re.search(rf"\b{re.escape(n)}\b", transcript or "", re.I)
+               for n in names if n)
+
+
 def _key_name(s: str) -> str:
     return re.sub(r"[^a-z0-9]", "", (s or "").lower())
 
@@ -3351,12 +3372,25 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # and a real controller does not -- so he asks, and does not act on a
         # report he cannot attribute. Inside a conversation he does not ask,
         # because by then he knows the voice.
-        from marshall.atc import callsign as _C
         _guid = client.last_sender_guid or ""
-        _said_who = bool(_C.extract(transcript))
+        # A HANDLE IS A CALLSIGN. `extract` wants the numbered shape -- "Pony
+        # 1-1" -- so "Batumi Approach, Sockeye, request creation of Apex
+        # flight" read as a man who had not said who he was, and got challenged
+        # for the name he had just given. Under the flight model that is
+        # backwards: a person IS his handle, and only a flight has a name of
+        # its own, so "Sockeye" is complete self-identification.
+        #
+        # Matched against the CLOSED SETS -- the flights that exist and the
+        # handle this radio resolved to -- never against open English, which is
+        # the rule the whole design rests on.
+        _said_who = said_who(transcript, [*_flights.names(), _who])
         _open = in_conversation(_guid)
         _last_heard[_guid] = time.time()
-        if not _said_who and not _open and known:
+        # AND NEVER SWALLOW A DECISION. If the flight logic just ruled on this
+        # transmission, that ruling is the answer he is owed -- challenging him
+        # instead throws away a join, a refusal or a dissolve that has already
+        # taken effect, and leaves the roster and the pilot disagreeing.
+        if not _said_who and not _open and known and not _flight_say:
             reply = challenge_for(transcript)
             with radio_lock:
                 print(f"  ATC[who] {reply}   (out of the blue, no callsign)",

@@ -625,3 +625,41 @@ class TestHowAControllerAddressesASingle(unittest.TestCase):
         r = identity.Registry()
         got = r.resolve("guid-s", "sockeye", spoken="", scope=scope)
         self.assertEqual(got.callsign, "Pony 1-1")
+
+
+class TestSayingWhoYouAreWithoutANumber(unittest.TestCase):
+    """"Sockeye" is a complete callsign under the flight model, and the
+    challenge did not think so.
+
+    `callsign.extract` looks for the numbered shape -- "Pony 1-1" -- so
+    "Batumi Approach, Sockeye, request creation of Apex flight" read as a man
+    who had not identified himself, and the bridge challenged him for the name
+    he had just given. It then answered every transmission of the rehearsal
+    that way, which is what hid the working flight logic underneath.
+    """
+
+    def test_a_handle_counts_as_saying_who_you_are(self):
+        from marshall.atc.agent_atc import said_who
+        self.assertTrue(said_who(
+            "Batumi Approach, Sockeye, request creation of Apex flight.",
+            ["Sockeye"]))
+
+    def test_a_flight_name_counts_too(self):
+        from marshall.atc.agent_atc import said_who
+        self.assertTrue(said_who("Batumi Approach, Apex flight, four thousand.",
+                                 ["Apex", "Sockeye"]))
+
+    def test_a_numbered_callsign_still_counts(self):
+        from marshall.atc.agent_atc import said_who
+        self.assertTrue(said_who("Batumi Approach, Pony one one, level.", []))
+
+    def test_a_report_with_no_name_in_it_is_still_anonymous(self):
+        """The challenge has to survive: a controller does not act on a report
+        he cannot attribute."""
+        from marshall.atc.agent_atc import said_who
+        self.assertFalse(said_who("Level four thousand, turning left.",
+                                  ["Sockeye", "Apex"]))
+
+    def test_it_matches_whole_words_only(self):
+        from marshall.atc.agent_atc import said_who
+        self.assertFalse(said_who("Requesting the approach.", ["Apex"]))
