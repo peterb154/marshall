@@ -1314,6 +1314,45 @@ tree. It wants a clean pass, not the end of a long session.
     is otherwise answered as the flight, so the controller vectors the lead --
     the man who needs help gets none and somebody who did not ask gets turned.
 
+**29 July: forming up made both aeroplanes invisible.** The first rehearsal
+scored one record out of seven and looked like a parser fault in
+`parse_create`. It was not — the regex reads every phrasing correctly. The
+radar picture collapses a formation onto ONE line for the controller, and the
+collapse dropped everything but the lead's name:
+
+    362nd_Sockeye-1 (P-51D-30-NA) IN FORMATION with 362nd_Andre-1 — 2 ships,
+    lead 13.5 nm on the 307 radial, 5,952 ft, heading 062, 281 knots
+
+Every scope regex wanted a colon after the type and a formation line has none,
+so the lead did not parse; the wingman is named only inside the prose, so he
+did not either. `units_on` returned neither, `_ident.track` was empty, `_who`
+was empty — and the bridge's whole flight block is gated on `_who`. Create,
+join and break-out were all unreachable.
+
+Backwards in the way that matters: **forming up is what a pilot does
+immediately before asking to join a flight**, so the act made him
+unidentifiable. In the rehearsal Sockeye and Andre were placed a few hundred
+yards apart precisely to exercise the one-mile rule and thereby vanished, while
+Shooter — ten miles out, alone, and written as the REFUSAL — was the only one
+the ladder could see. The single negative case passed and every positive case
+died, which is what made it read as a parser bug.
+
+Fixed on both sides of the seam. `tracks._render` gives each wingman his own
+airframe, manned flag and **distance off the lead**; `identity.units_on` reads
+the formation line; and `identity.flatten_formation` rewrites the line into the
+ordinary shape the four position regexes already parse, so they did not each
+need teaching about formations — and could not each be taught differently.
+
+The offset is not decoration. `FORM_NM` is 2.0 and `JOIN_NM` is 1.0, so "radar
+shows them as a formation" is NOT evidence they are within a mile, and using it
+as evidence would have doubled the join radius silently. An offset the picture
+does not carry reads as **unknown, never zero** — the bridge and the director
+are separate deployables and an older picture is a real thing to be handed.
+Guarded by `tests/test_formation_scope.py`, which lifts `_other_ship` out of
+the director's source and round-trips it through the bridge's parser, because
+the two processes do not import each other and a hand-written fixture would
+only prove the parser can read the test's idea of the line.
+
 Related: [#40] (identity), [#38] (a callsign is a position), [#12] (break-up).
 
 ---

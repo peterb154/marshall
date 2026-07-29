@@ -57,8 +57,76 @@ from dataclasses import dataclass, field
 # him, so it is CORROBORATION and never the primary key -- believing it as
 # primary is circular, and measuring that circularity is what killed the obvious
 # version of this fix (it threw away 43% of legitimate bindings).
+#
+# THE COLON IS NOT ALWAYS THERE, and assuming it was blinded the ladder to
+# every aeroplane in a formation. A lone contact reads "NAME (TYPE): 4.1 nm
+# ..."; a formation collapses onto one line and reads "NAME (TYPE) IN FORMATION
+# with OTHER — 2 ships, lead 13.5 nm ...", with no colon anywhere. So the lead
+# did not parse, the wingman was named only inside the prose, and BOTH vanished.
+#
+# Which is exactly backwards for the flight model: forming up is what a pilot
+# does immediately before asking to join a flight, and the act of forming up
+# made both aeroplanes unidentifiable -- so neither could create a flight, join
+# one, or break out. Found by the rehearsal, where Sockeye and Andre were
+# spawned a few hundred yards apart to exercise the one-mile rule and thereby
+# made themselves invisible, while Shooter ten miles away resolved perfectly.
 _SCOPE_LINE = re.compile(
-    r"([^|\[\(]+?)\s*(?:\[([^\]]+)\])?\s*\(([^)]+)\)\s*:", re.I)
+    r"([^|\[\(]+?)\s*(?:\[([^\]]+)\])?\s*\(([^)]+)\)\s*"
+    r"(?::|(?=\s*IN FORMATION\b))", re.I)
+
+# The other ships on a formation line, between "IN FORMATION with" and the dash
+# that starts the lead's position. Each is a name, optionally followed by its
+# own "(TYPE, manned, 0.3 nm)" -- see tracks._render. The parenthetical is
+# optional because the bridge and the director are separate deployables and one
+# can be restarted without the other; an older picture still yields the NAMES,
+# which is what identity needs, and only the geometry is lost.
+_FORMATION = re.compile(r"IN FORMATION with\s+(.+?)\s*(?:—|--|$)", re.I)
+_OTHER_SHIP = re.compile(r"\s*([^(]+?)\s*(?:\(([^)]*)\))?\s*$")
+
+
+# The whole "IN FORMATION with ... — N ships, lead " span, which is everything
+# standing between a formation's lead and the position that belongs to him.
+_FORM_SPAN = re.compile(
+    r"\s*IN FORMATION with\s+[^|]+?\s*(?:—|--)\s*\d+\s+ships,\s*lead\s*", re.I)
+
+
+def flatten_formation(scope: str) -> str:
+    """Rewrite each formation line as an ordinary contact line for its LEAD.
+
+    Every regex that reads a position out of the picture looks for the first
+    "N nm" after the name. On a formation line the first one is now a WINGMAN'S
+    OFFSET, so each of them would have read 0.3 nm as the lead's range from the
+    field and put a flight three hundred yards off the runway.
+
+    Rather than teach four separate patterns about formations, take the
+    formation out of the line: what is left is exactly the shape they already
+    parse, and the wingmen are read separately by `units_on`. One place to be
+    right instead of four places to be kept in step.
+    """
+    return _FORM_SPAN.sub(": ", scope or "")
+
+
+def _split_ships(text: str) -> list[str]:
+    """Split "A (P-51D, manned, 0.3 nm), B (P-51D)" into its ships.
+
+    ON COMMAS AT DEPTH ZERO. A plain split eats the ones inside the
+    parenthetical, and the type field has two of them -- so "A (P-51D, manned)"
+    became a ship called "A (P-51D" and another called "manned)", and a made-up
+    aeroplane on the scope is worse than a missing one.
+    """
+    out, depth, cur = [], 0, []
+    for ch in text or "":
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth = max(0, depth - 1)
+        if ch == "," and depth == 0:
+            out.append("".join(cur))
+            cur = []
+        else:
+            cur.append(ch)
+    out.append("".join(cur))
+    return [s for s in (p.strip() for p in out) if s]
 
 
 @dataclass(frozen=True)
@@ -117,6 +185,25 @@ def units_on(scope: str) -> list[Unit]:
         grounded = "on the ground" in low
         kind = kind.split(",")[0].strip()
         out.append(Unit(name, (m.group(2) or "").strip(), kind, manned, grounded))
+
+        # THE REST OF THE FORMATION. They are real aeroplanes with real radios
+        # and each one is somebody -- the lead's line is simply where the
+        # picture chose to print them. Left out, the whole flight model dies at
+        # the first thing a flight does.
+        fm = _FORMATION.search(chunk)
+        if not fm:
+            continue
+        for ship in _split_ships(fm.group(1)):
+            om = _OTHER_SHIP.match(ship)
+            if not om:
+                continue
+            oname = (om.group(1) or "").strip()
+            if not oname or oname == name:
+                continue
+            spec = (om.group(2) or "")
+            olow = spec.lower()
+            out.append(Unit(oname, "", spec.split(",")[0].strip(),
+                            "manned" in olow, "on the ground" in olow))
     return out
 
 

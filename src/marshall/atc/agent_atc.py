@@ -525,16 +525,81 @@ def miles_between(scope: str, a_track: str, b_track: str) -> float | None:
     "I cannot see you both" and "you are together" are opposite answers.
     """
     import math
-    want = {_key_name(a_track): None, _key_name(b_track): None}
-    for tag, nm, radial, _alt, _hdg, _kt in _FIX_BY_TRACK.findall(scope or ""):
-        k = _key_name(tag)
-        if k in want and want[k] is None:
-            r, th = float(nm), math.radians(float(radial))
-            want[k] = (r * math.cos(th), r * math.sin(th))
-    p, q = want.get(_key_name(a_track)), want.get(_key_name(b_track))
-    if p is None or q is None:
-        return None
-    return math.hypot(p[0] - q[0], p[1] - q[1])
+    pos, offset = _scope_geometry(scope)
+    a, b = _key_name(a_track), _key_name(b_track)
+    p, q = pos.get(a), pos.get(b)
+    if p is not None and q is not None:
+        return math.hypot(p[0] - q[0], p[1] - q[1])
+
+    # ONE OF THEM IS A WINGMAN, and the picture prints a formation as one
+    # contact -- so he has no position of his own, only a lead and a distance
+    # off it. That is enough, and it is the case the join rule actually runs
+    # in: a man asks to join the flight he has just formed on.
+    #
+    # Where the exact gap is not recoverable the answer is an UPPER BOUND, and
+    # the direction matters. Every caller compares against a radius and refuses
+    # when it is exceeded, so over-estimating costs a false refusal -- he says
+    # it again, or closes up -- while under-estimating puts a man in a formation
+    # radar cannot confirm he is in. Refusing is the recoverable mistake.
+    la, da = offset.get(a, (None, None))
+    lb, db = offset.get(b, (None, None))
+    if la is not None and la == b:
+        return da                          # he is a wingman of the other
+    if lb is not None and lb == a:
+        return db
+    if la is not None and lb is not None and la == lb:
+        return None if da is None or db is None else da + db
+    # A wingman and somebody else entirely: his lead's position plus his own
+    # offset bounds it.
+    if la is not None and da is not None and q is not None \
+            and (r := pos.get(la)) is not None:
+        return math.hypot(r[0] - q[0], r[1] - q[1]) + da
+    if lb is not None and db is not None and p is not None \
+            and (r := pos.get(lb)) is not None:
+        return math.hypot(r[0] - p[0], r[1] - p[1]) + db
+    return None
+
+
+def _scope_geometry(scope: str) -> tuple[dict, dict]:
+    """Where everything is: absolute fixes, and wingmen as lead-plus-offset.
+
+    Two dictionaries because a formation genuinely has two kinds of member. The
+    lead has a range and a radial from the field like any other contact; the
+    others have only "0.3 nm off him", which is what the picture prints and all
+    it can print without un-collapsing the formation the controller reads as one
+    thing.
+    """
+    import math
+    pos: dict[str, tuple[float, float]] = {}
+    offset: dict[str, tuple[str, float]] = {}
+    for chunk in (scope or "").split("|"):
+        m = _FIX_BY_TRACK.search(identity.flatten_formation(chunk))
+        if not m:
+            continue
+        tag, nm, radial = m.group(1), m.group(2), m.group(3)
+        lead = _key_name(tag)
+        r, th = float(nm), math.radians(float(radial))
+        pos.setdefault(lead, (r * math.cos(th), r * math.sin(th)))
+        fm = identity._FORMATION.search(chunk)
+        if not fm:
+            continue
+        for ship in identity._split_ships(fm.group(1)):
+            om = identity._OTHER_SHIP.match(ship)
+            if not om:
+                continue
+            k = _key_name(om.group(1) or "")
+            gap = re.search(r"([\d.]+)\s*nm", om.group(2) or "")
+            if k and k != lead and k not in offset:
+                # None, NOT ZERO, when the picture does not print the offset.
+                # The bridge and the director are separate deployables and one
+                # can be restarted without the other, so an older picture with
+                # no offsets is a real thing to be handed -- and reading it as
+                # zero says "they are touching" when what we know is only "they
+                # are inside the formation threshold", which is twice the join
+                # radius. That is the under-estimate that joins a man to a
+                # flight radar cannot confirm he is with.
+                offset[k] = (lead, float(gap.group(1)) if gap else None)
+    return pos, offset
 
 
 def connected_handles(scope: str, client=None) -> list[str]:
@@ -699,7 +764,7 @@ def aircraft_type_on_scope(scope: str, cs: str) -> str:
     # he is assigned and what he can receive. A wingman in a Mustang beside a
     # lead in a Viper would have been told to fly three hundred knots.
     me = C.parse(cs)
-    rows = _TYPE.findall(scope or "")
+    rows = _TYPE.findall(identity.flatten_formation(scope or ""))
     hits = [r for r in rows
             if C.parse(r[0]).canonical.lower() == me.canonical.lower()]
     if not hits:
@@ -771,7 +836,8 @@ def radar_fix_by_track(scope: str, track: str, profile=None) -> object | None:
         return None
     from marshall.atc import asr
     want = _key_name(track)
-    for name, nm, radial, alt, hdg, kt in _FIX_BY_TRACK.findall(scope or ""):
+    for name, nm, radial, alt, hdg, kt in _FIX_BY_TRACK.findall(
+            identity.flatten_formation(scope or "")):
         if _key_name(name) != want:
             continue
         h = float(hdg) if hdg else 0.0
@@ -821,7 +887,7 @@ def radar_fix(scope: str, cs: str, profile=None) -> object | None:
     # fallback when nothing matched him individually. That keeps the formation
     # behaviour the tests were written for and stops two humans being handed
     # each other's geometry.
-    rows = _FIX.findall(scope)
+    rows = _FIX.findall(identity.flatten_formation(scope))
     hits = [r for r in rows
             if C.parse(r[0]).canonical.lower() == me.canonical.lower()]
     if not hits:
@@ -865,7 +931,8 @@ def radar_fixes(scope: str, profile=None) -> list[tuple[str, object]]:
     """
     from marshall.atc import asr
     out = []
-    for tag, nm, radial, alt, hdg, kt in _FIX.findall(scope or ""):
+    for tag, nm, radial, alt, hdg, kt in _FIX.findall(
+            identity.flatten_formation(scope or "")):
         h = float(hdg) if hdg else 0.0
         out.append((tag, asr.Position(float(nm), float(radial),
                                       int(alt.replace(",", "")),

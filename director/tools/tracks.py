@@ -437,6 +437,31 @@ def _unique_labels(rows: list) -> dict:
     return {r[1]: (r[0] if seen[r[0]] == 1 else r[1]) for r in rows}
 
 
+def _other_ship(row: list, lead: list, naming: dict, down: set) -> str:
+    """One wingman on the lead's line: name, airframe, and how far off he is.
+
+    Compact on purpose. This is read on every transmission and the formation is
+    meant to scan as ONE contact, so a wingman gets the three facts something
+    downstream cannot do without and no more.
+    """
+    import math
+
+    def xy(nm, radial):
+        r = math.radians(radial)
+        return nm * math.sin(r), nm * math.cos(r)
+
+    name = naming.get(row[1], row[0])
+    bits = [row[2] or ""]
+    if len(row) > 8 and row[8]:
+        bits.append("manned")
+    if row[1] in down:
+        bits.append("on the ground")
+    ax, ay = xy(lead[6], lead[7])
+    bx, by = xy(row[6], row[7])
+    bits.append(f"{math.hypot(ax - bx, ay - by):.1f} nm")
+    return f"{name} ({', '.join(b for b in bits if b)})"
+
+
 def _render(rows: list, bindings: dict) -> list[str]:
     lines = []
     naming = _unique_labels(rows)
@@ -470,7 +495,23 @@ def _render(rows: list, bindings: dict) -> list[str]:
         spd = f", {speed_kt:.0f} knots" if speed_kt else ""
         tag = f" [{bindings[label]}]" if label in bindings else ""
         if len(group) > 1:
-            others = ", ".join(naming.get(r[1], r[0]) for r in group[1:])
+            # EACH OTHER SHIP KEEPS WHAT IT IS AND WHERE IT IS. The collapse is
+            # for the CONTROLLER, who should read a formation as one thing; it
+            # was also throwing away every wingman's airframe, his manned flag
+            # and his position, and three separate consumers need those.
+            #
+            # Identity needs the name and the manned flag, or nobody in a
+            # formation can be identified at all -- and forming up is what a
+            # pilot does just before asking to join a flight.
+            #
+            # The OFFSET is here because the join rule measures a real gap
+            # against a one-mile radius, and this detector's own threshold is
+            # two miles (FORM_NM). "Radar shows them as a formation" is
+            # therefore NOT proof they are within a mile, and quietly treating
+            # it as proof would double the join radius by accident. So the
+            # number is printed and the rule keeps measuring.
+            others = ", ".join(_other_ship(r, group[0], naming, down)
+                               for r in group[1:])
             lines.append(
                 f"{label}{tag} ({typ}{manned}) IN FORMATION with {others} — "
                 f"{len(group)} ships, lead {nm:.1f} nm on the {radial:03.0f} "
