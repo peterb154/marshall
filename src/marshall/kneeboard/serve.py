@@ -5,6 +5,8 @@ Layout of the site (room to grow):
 
     /               a small home page (placeholder; the flight planner lands here)
     /kneeboard/     the OpenKneeboard multi-page charts (point the Web Dashboard here)
+    /docs           WIRING.md and the audit, rendered to read at a desk
+    /vendor/        third-party assets, so the LAN needs no internet
     /healthz        liveness
 
 It serves the generated charts in KNEEBOARD_OUT for OpenKneeboard's Web
@@ -165,8 +167,9 @@ _HOME = """<!doctype html><meta charset="utf-8"><title>Marshall</title>
   <p>Procedural radio ATC &middot; kneeboard charts</p>
   <a href="/kneeboard/">&rarr; kneeboard charts</a>
   <a href="/flighttest/">&rarr; flight test card</a>
-  <p class="why">both are OpenKneeboard Web Dashboard pages &mdash;
-     point a tab at each</p>
+  <a href="/docs">&rarr; documents</a>
+  <p class="why">the first two are OpenKneeboard Web Dashboard pages &mdash;
+     point a tab at each. The documents are for a desk.</p>
 </main>
 """
 
@@ -206,6 +209,55 @@ async def flighttest() -> HTMLResponse:
     from marshall.kneeboard import flighttest as ft
     from marshall.kneeboard import site
     return HTMLResponse(site.build(ft.pages()), headers=NO_CACHE)
+
+
+@app.get("/docs", response_class=HTMLResponse)
+async def docs_index() -> HTMLResponse:
+    from marshall.kneeboard import docs
+    return HTMLResponse(docs.index(), headers=NO_CACHE)
+
+
+@app.get("/docs/{slug}", response_class=HTMLResponse)
+async def docs_page(slug: str) -> HTMLResponse:
+    """A long-form document from `docs/`, rendered fresh.
+
+    Not a kneeboard page: these are read at a desk, away from the aeroplane.
+    Rendered per request for the same reason the charts are -- editing
+    `docs/WIRING.md` shows up on the next page turn rather than the next time
+    somebody remembers to bounce the server.
+    """
+    from marshall.kneeboard import docs
+    if slug not in docs.PAGES:
+        raise HTTPException(status_code=404, detail=f"no document {slug!r}")
+    try:
+        return HTMLResponse(docs.render(slug), headers=NO_CACHE)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=f"missing: {e}") from e
+    except ImportError as e:
+        # The renderer needs marshall[server]. Say which, rather than 500.
+        raise HTTPException(
+            status_code=500,
+            detail=f"{e}. Install with: uv pip install -e '.[server]'") from e
+
+
+@app.get("/vendor/{name}")
+async def vendor(name: str):
+    """Third-party assets served from disk so the LAN needs no internet.
+
+    OpenKneeboard's embedded Chromium cannot be assumed to reach a CDN, and a
+    diagram that silently fails to draw looks exactly like a diagram nobody
+    wrote. Fetched by `tools/vendor.sh`; the pages fall back to the CDN and say
+    so when this is missing.
+    """
+    if "/" in name or ".." in name:
+        raise HTTPException(status_code=404, detail="no")
+    from marshall.kneeboard import docs
+    path = docs.VENDOR / name
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail=f"{name} not vendored")
+    # These are content-addressed by version and safe to cache, unlike the
+    # charts -- but the shared NO_CACHE keeps one rule for the whole server.
+    return FileResponse(path, headers=NO_CACHE)
 
 
 @app.get("/kneeboard/{path:path}")
