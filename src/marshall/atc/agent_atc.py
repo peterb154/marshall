@@ -2479,6 +2479,155 @@ def push_fixes(base: str, profile) -> int:
     return len(out)
 
 
+def membership(_who, transcript, scope, _ident, session_id):
+    """Create, join, break out -- and what the controller must SAY about it.
+
+    EXTRACTED VERBATIM, 30 July -- [LAYERS.md] step 1. Not pure: it mutates
+    the roster and writes to the recorder, which is why it returns only the
+    words. The roster is a module global today and becomes a store at step 3;
+    when it does, this signature loses `session_id` and gains the store, and
+    the last of the hidden state goes with it.
+
+    GATED ON `_who` THROUGHOUT, and that is load-bearing rather than
+    defensive: a person is his handle, the handle comes from the TRACK, and
+    a flight formed from a name nobody can corroborate is the ghost problem
+    with a different noun. When identity does not close, nothing here runs --
+    which is exactly what happened when formations were unparseable and the
+    whole flight model was unreachable for two days.
+    """
+    # WHAT THE CONTROLLER MUST SAY ABOUT THE FLIGHT. The verdicts below
+    # are decided here, deterministically, and were recorded and never
+    # VOICED -- so the rehearsal showed a flight created, a wingman
+    # joined and an outsider refused at nine miles, while every pilot
+    # heard "station calling, say your callsign". A decision the pilot
+    # cannot hear has not been made as far as he is concerned.
+    _flight_say = ""
+
+    # CREATING A FLIGHT. He says a name; he is its lead and its only member
+    # until somebody joins.
+    if _who:
+        _name = fl.parse_create(transcript)
+        if _name:
+            _f, _why = _flights.create(_name, _who)
+            print(f"  .. {_name}: "
+                  + (f"created, lead {_who}" if _f else _why), flush=True)
+            if _f is not None:
+                record(session_id, kind="flight/created", callsign=_name,
+                       who=_who)
+                _flight_say = (f"{_who}, you are now the lead of {_name} "
+                               f"flight. Each member of {_name} check in "
+                               f"to be joined.")
+            else:
+                _flight_say = f"{_who}, unable -- {_why}."
+
+        # JOINING ONE, on his own radio and in the right place. A pilot can
+        # only join himself, and only when radar puts him with the flight
+        # -- joining is the moment the controller stops separating him, so
+        # a man who says it from forty miles away would go unseparated and
+        # unwatched believing he was somebody's wingman.
+        _want, _said_name = fl.parse_joining(transcript, _flights.names())
+        if _want:
+            _lead = _flights.flights[_want].lead
+            _gap = miles_between(scope, _ident.track,
+                                 _track_of(scope, _lead))
+            _f, _why = _flights.join(_want, _who, _gap)
+            print(f"  .. {_want}: "
+                  + (f"{_who} joined" if _f else _why), flush=True)
+            record(session_id, kind="flight/joined" if _f else "flight/refused",
+                   callsign=_want, who=_who, miles=round(_gap or 0, 1),
+                   text="" if _f else _why)
+            _flight_say = (f"Roger {_who}, joined to {_want}."
+                           if _f else f"{_why}.")
+        elif _said_name:
+            # HE TRIED TO JOIN SOMETHING THAT IS NOT THERE, and still
+            # deserves an answer -- silence reads as a controller who did
+            # not hear him, which is the one thing worse than "unable".
+            print(f"  .. {_who}: no flight called {_said_name}", flush=True)
+            record(session_id, kind="flight/refused", callsign=_said_name,
+                   who=_who,
+                   text=f"{_who}, unable, {_said_name} flight doesn't exist")
+            _flight_say = (f"{_who}, unable, {_said_name} flight doesn't "
+                           f"exist.")
+
+        # BREAKING HIMSELF OUT, without needing the lead. A lost wingman
+        # who transmits is otherwise answered as the FLIGHT, so the
+        # controller vectors the lead -- the man who needs help gets none
+        # and somebody who did not ask gets turned. It is also the case
+        # where the lead is least likely to be on the ball.
+        _out = fl.parse_leaving(transcript, _flights.names())
+        if _out and (_mine := _flights.of(_who)) is not None:
+            _was_lead = _mine.lead == _who
+            _survivors = [m for m in _mine.members if m != _who]
+            _gone = _flights.leaves(_who)
+            if _was_lead and _gone:
+                print(f"  .. {_gone} dissolved — its lead left", flush=True)
+                record(session_id, kind="flight/dissolved", callsign=_gone,
+                       who=_who,
+                       text=fl.lead_lost_call(_gone, _who, _survivors))
+                _flight_say = fl.lead_lost_call(_gone, _who, _survivors)
+            else:
+                print(f"  .. {_who} is out of {_out}", flush=True)
+                record(session_id, kind="flight/left", callsign=_out,
+                       who=_who,
+                       text=f"Roger {_who}, you are no longer in {_out} "
+                            f"flight, what are your intentions?")
+                _flight_say = (f"Roger {_who}, you are no longer in {_out} "
+                               f"flight, what are your intentions?")
+    return _flight_say
+
+
+def decide(ctl, transcript, scope, known, track, engaged, profile):
+    """What the DETERMINISTIC side says about this transmission.
+
+    EXTRACTED VERBATIM, 30 July -- [LAYERS.md] step 1. Two answers, and they
+    come from different places on purpose:
+
+      directive/stack   the blind engine's next step and the holding stack,
+                        and ONLY when it is engaged -- there is nothing to
+                        separate a lone aeroplane from.
+      vectoring         radar guidance, which costs no model call and so runs
+                        for a single ship too. That case used to fly with no
+                        deterministic picture at all.
+
+    This is the half of the two-brain seam that must never be a model's guess.
+    Whatever comes out of here is phrased by the agent and not invented by it.
+    """
+    directive, stack = (separation_context(ctl, transcript, scope, known,
+                                          track) if engaged
+                        else ("", ""))
+    # Radar guidance for a vectored approach. Costs no model call, so it
+    # runs for a single ship too -- which is the case that was flying with
+    # no deterministic picture at all.
+    vectoring = asr_context(profile, scope, known, track)
+    return directive, stack, vectoring
+
+
+def settle(directive, stack, vectoring, fix, profile, known, ctl):
+    """One aeroplane, one instruction. Which authority owns him this turn.
+
+    EXTRACTED VERBATIM, 30 July. `reconcile` exists because a pilot was once
+    told, in a single transmission, that he was on final AND to climb to five
+    thousand and hold -- so the choice is made here rather than by handing the
+    agent three authorities and hoping.
+
+    NOTE FOR THE NEXT STEP, not fixed here because this commit moves rather
+    than improves: `asr.guide` is called TWICE per transmission. Once here, for
+    reconcile, with `known or "?"`; and again just before `interact`, with
+    `known`. Same geometry, computed twice, and the two calls do not pass the
+    same callsign -- so they can disagree about whether he is flying the missed
+    approach. Worth a look once the stages are out.
+    """
+    from marshall.atc import asr
+
+    guide = (asr.guide(fix, profile,
+                       on_missed=flying_the_missed(known or "?", fix, profile,
+                                                   ctl))
+             if fix is not None else None)
+    directive, stack, vectoring, dropped = reconcile(
+        directive, stack, vectoring, guide)
+    return directive, stack, vectoring, guide, dropped
+
+
 def hear(client, model, profile):
     """One transmission off the radio, as words. [LAYERS.md] L0 -> the turn.
 
@@ -3288,84 +3437,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                    gate="intra-flight", text=transcript)
             continue
 
-        # WHAT THE CONTROLLER MUST SAY ABOUT THE FLIGHT. The verdicts below
-        # are decided here, deterministically, and were recorded and never
-        # VOICED -- so the rehearsal showed a flight created, a wingman
-        # joined and an outsider refused at nine miles, while every pilot
-        # heard "station calling, say your callsign". A decision the pilot
-        # cannot hear has not been made as far as he is concerned.
-        _flight_say = ""
-
-        # CREATING A FLIGHT. He says a name; he is its lead and its only member
-        # until somebody joins.
-        if _who:
-            _name = fl.parse_create(transcript)
-            if _name:
-                _f, _why = _flights.create(_name, _who)
-                print(f"  .. {_name}: "
-                      + (f"created, lead {_who}" if _f else _why), flush=True)
-                if _f is not None:
-                    record(session_id, kind="flight/created", callsign=_name,
-                           who=_who)
-                    _flight_say = (f"{_who}, you are now the lead of {_name} "
-                                   f"flight. Each member of {_name} check in "
-                                   f"to be joined.")
-                else:
-                    _flight_say = f"{_who}, unable -- {_why}."
-
-            # JOINING ONE, on his own radio and in the right place. A pilot can
-            # only join himself, and only when radar puts him with the flight
-            # -- joining is the moment the controller stops separating him, so
-            # a man who says it from forty miles away would go unseparated and
-            # unwatched believing he was somebody's wingman.
-            _want, _said_name = fl.parse_joining(transcript, _flights.names())
-            if _want:
-                _lead = _flights.flights[_want].lead
-                _gap = miles_between(scope, _ident.track,
-                                     _track_of(scope, _lead))
-                _f, _why = _flights.join(_want, _who, _gap)
-                print(f"  .. {_want}: "
-                      + (f"{_who} joined" if _f else _why), flush=True)
-                record(session_id, kind="flight/joined" if _f else "flight/refused",
-                       callsign=_want, who=_who, miles=round(_gap or 0, 1),
-                       text="" if _f else _why)
-                _flight_say = (f"Roger {_who}, joined to {_want}."
-                               if _f else f"{_why}.")
-            elif _said_name:
-                # HE TRIED TO JOIN SOMETHING THAT IS NOT THERE, and still
-                # deserves an answer -- silence reads as a controller who did
-                # not hear him, which is the one thing worse than "unable".
-                print(f"  .. {_who}: no flight called {_said_name}", flush=True)
-                record(session_id, kind="flight/refused", callsign=_said_name,
-                       who=_who,
-                       text=f"{_who}, unable, {_said_name} flight doesn't exist")
-                _flight_say = (f"{_who}, unable, {_said_name} flight doesn't "
-                               f"exist.")
-
-            # BREAKING HIMSELF OUT, without needing the lead. A lost wingman
-            # who transmits is otherwise answered as the FLIGHT, so the
-            # controller vectors the lead -- the man who needs help gets none
-            # and somebody who did not ask gets turned. It is also the case
-            # where the lead is least likely to be on the ball.
-            _out = fl.parse_leaving(transcript, _flights.names())
-            if _out and (_mine := _flights.of(_who)) is not None:
-                _was_lead = _mine.lead == _who
-                _survivors = [m for m in _mine.members if m != _who]
-                _gone = _flights.leaves(_who)
-                if _was_lead and _gone:
-                    print(f"  .. {_gone} dissolved — its lead left", flush=True)
-                    record(session_id, kind="flight/dissolved", callsign=_gone,
-                           who=_who,
-                           text=fl.lead_lost_call(_gone, _who, _survivors))
-                    _flight_say = fl.lead_lost_call(_gone, _who, _survivors)
-                else:
-                    print(f"  .. {_who} is out of {_out}", flush=True)
-                    record(session_id, kind="flight/left", callsign=_out,
-                           who=_who,
-                           text=f"Roger {_who}, you are no longer in {_out} "
-                                f"flight, what are your intentions?")
-                    _flight_say = (f"Roger {_who}, you are no longer in {_out} "
-                                   f"flight, what are your intentions?")
+        _flight_say = membership(_who, transcript, scope, _ident, session_id)
 
         # THERE IS NO ADOPTION, and there was a block here that called
         # `fl.parse_adopting` for it. The design settled the other way: a pilot
@@ -3457,13 +3529,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                                 heard_hz or freq_hz, AM)
             continue
 
-        directive, stack = (separation_context(ctl, transcript, scope, known,
-                                              _ident.track) if engaged
-                            else ("", ""))
-        # Radar guidance for a vectored approach. Costs no model call, so it
-        # runs for a single ship too -- which is the case that was flying with
-        # no deterministic picture at all.
-        vectoring = asr_context(profile, scope, known, _ident.track)
+        directive, stack, vectoring = decide(
+            ctl, transcript, scope, known, _ident.track, engaged, profile)
 
         # The one aircraft state. Bind whatever names we have -- the radio GUID
         # always, the callsign once he says it, the track once radar ties them
@@ -3505,14 +3572,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         ) if (client.last_sender_guid or known) else {}
         _fid = _flight.get("id")
 
-        # One aeroplane, one instruction. Decide here which authority owns him
-        # rather than handing the agent three and hoping -- see reconcile().
-        _g = (asr.guide(_fix, profile,
-                        on_missed=flying_the_missed(known or "?", _fix, profile,
-                                                    ctl))
-              if _fix is not None else None)
-        directive, stack, vectoring, dropped = reconcile(
-            directive, stack, vectoring, _g)
+        directive, stack, vectoring, _g, dropped = settle(
+            directive, stack, vectoring, _fix, profile, known, ctl)
         if dropped:
             print(f"  .. {dropped}", flush=True)
 

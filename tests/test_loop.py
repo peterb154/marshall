@@ -328,3 +328,49 @@ class TestAttributeDirectly(unittest.TestCase):
         -- fetching it twice would let them disagree."""
         scope, *_ = self.attribute("Pony one one", "362nd_sockeye", SCOPE)
         self.assertEqual(scope, SCOPE)
+
+
+class TestMembershipDirectly(unittest.TestCase):
+    """The flight model, reachable without SRS, Polly, Whisper or a sortie.
+
+    Until now this was only exercised by `tools/flight_rehearsal.py`, which
+    needs a running sim, a live bridge and about six minutes. These run in
+    milliseconds and cover the same verdicts.
+    """
+
+    def setUp(self):
+        import marshall.atc.agent_atc as A
+        self.A = A
+        self._saved = (A._flights, A.record)
+        A._flights = A.fl.Roster()
+        A.record = lambda *a, **k: None
+
+    def tearDown(self):
+        self.A._flights, self.A.record = self._saved
+
+    def ident(self, track):
+        return self.A.identity.Identity(callsign="x", track=track,
+                                        authority="radar", why="")
+
+    def say(self, who, words, scope=SCOPE, track="362nd_sockeye"):
+        return self.A.membership(who, words, scope, self.ident(track), "s")
+
+    def test_creating_a_flight_is_voiced(self):
+        said = self.say("sockeye", "approach, sockeye, request creation of Apex flight")
+        self.assertIn("lead of Apex", said)
+        self.assertIn("Apex", self.A._flights.names())
+
+    def test_a_flight_nobody_created_is_refused_by_name(self):
+        said = self.say("sockeye", "approach, sockeye, joining Bolt")
+        self.assertIn("unable", said.lower())
+        self.assertIn("Bolt", said)
+
+    def test_nothing_happens_without_a_person(self):
+        """`_who` empty means identity did not close. A flight formed from a
+        name nobody can corroborate is the ghost problem with a new noun."""
+        said = self.say("", "approach, request creation of Apex flight")
+        self.assertEqual(said, "")
+        self.assertEqual(self.A._flights.names(), [])
+
+    def test_an_ordinary_transmission_says_nothing_about_flights(self):
+        self.assertEqual(self.say("sockeye", "approach, sockeye, ten miles"), "")
