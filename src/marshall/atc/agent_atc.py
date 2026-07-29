@@ -2479,6 +2479,144 @@ def push_fixes(base: str, profile) -> int:
     return len(out)
 
 
+def engineering_turn(client, transcript, srs, known, heard_hz, freq_hz,
+                     eng_voice, engineering_line, engineering_callsigns,
+                     _ADDRESSING, radio_lock, AM, session_id):
+    """The out-of-band channel. Returns True when it owned the transmission.
+
+    EXTRACTED VERBATIM, 30 July -- [LAYERS.md] step 1. The two `continue`s
+    became `return True`, which is the only shape a function can express;
+    the loop's `continue` moved to the call site.
+
+    IT IS NOT PART OF THE ATC TURN AT ALL, which is why it is worth having
+    out. A pilot who has called engineering up is not talking to the
+    controller and must not be answered by one -- so this runs BEFORE the
+    controller sees anything, and the ordering is the whole mechanism. It is
+    a second driver sharing one radio, in the same family as the hook
+    scheduler and the ASR metronome, and it belongs beside them rather than
+    inside the pilot pipeline.
+
+    The thirteen parameters are what "shares one radio" costs when the
+    sharing is implicit. Most are the transport and the lock, which become
+    a store at step 3.
+    """
+    # ENGINEERING. Handled before the controller sees anything, because a
+    # pilot who has called engineering up is not talking to ATC and must not
+    # be answered by it.
+    _eng_hz = heard_hz or freq_hz
+    _on_the_line = client.last_sender_guid in engineering_line
+    # Release is checked FIRST: "thanks engineering" and "engineering, clear"
+    # both contain the word, so a summons that matched on the word alone
+    # would re-open the line the pilot was trying to close and he could
+    # never get back to the controller.
+    # ADDRESSED, not merely MENTIONED. A controller's name in the OPENING of
+    # a transmission is a pilot calling him; the same name in the middle of
+    # a sentence is a pilot talking ABOUT him.
+    #
+    # Hoover's bug report -- "requested a call back, got no call back on one
+    # three nine Georgia Center" -- was read as him calling Georgia Center,
+    # so engineering stepped aside and the controller answered a bug report
+    # with "say your callsign". The report was lost and the pilot got an
+    # interrogation. Same rule as a callsign: an address opens a
+    # transmission, which is how radio works and not a heuristic.
+    # WHOEVER IS NAMED FIRST is who he is calling. Opening a transmission
+    # with "engineering" and then naming a controller inside the sentence --
+    # "engineering, Batumi Approach vectored me into the hill" -- is a bug
+    # report about that controller, not a call to him.
+    _opening = " ".join(transcript.split()[:6])
+    _atc_at = _ADDRESSING.search(_opening) if _ADDRESSING else None
+    _eng_at = re.search(r"\bengineering\b", _opening, re.I)
+    _addressed_atc = bool(_atc_at) and not (
+        _eng_at and _eng_at.start() < _atc_at.start())
+    if _on_the_line and _addressed_atc and not _ENG_CALL.search(transcript):
+        # He is talking to a controller. Step out of the way silently -- a
+        # "clear" call here would be engineering talking over the very
+        # transmission it just got out of the way of.
+        engineering_line.pop(client.last_sender_guid, None)
+        engineering_callsigns.discard(known)
+        print(f"  ENGINEERING released {known or srs} — he called a controller",
+              flush=True)
+        _on_the_line = False
+
+    if _on_the_line and _ENG_DONE.search(transcript):
+        engineering_line.pop(client.last_sender_guid, None)
+        engineering_callsigns.discard(known)
+        print(f"  ENGINEERING released {known or srs}", flush=True)
+        with radio_lock:
+            client.transmit(
+                eng_voice.frames("Engineering clear, back to the controller."),
+                _eng_hz, AM)
+        return True
+    _summoned = bool(_ENG_CALL.search(transcript))
+    if _summoned or _on_the_line:
+        engineering_line[client.last_sender_guid] = _eng_hz
+        if known:
+            engineering_callsigns.add(known)
+        stamp = time.strftime("%H:%M:%S")
+        who = known or srs
+        print(f"  ENGINEERING [{stamp}] {who}: {transcript}", flush=True)
+        record(session_id, kind="engineering", callsign=who, text=transcript)
+        try:
+            config.BUILD_DIR.mkdir(parents=True, exist_ok=True)
+            with open(config.BUILD_DIR / "debug-notes.md", "a",
+                      encoding="utf-8") as fh:
+                fh.write(f"- `{stamp}` **{who}** {transcript}\n")
+        except OSError as e:
+            print(f"  !! could not write the note: {e}", flush=True)
+        # An explicit summons is ALWAYS answered with the greeting, even when
+        # he is already on the line. Suppressing it because he was already
+        # connected was tried for one minute of a live test and was much
+        # worse: he asked for engineering, got "copied, logged", could not
+        # tell whether the channel was open, and asked twice more. The whole
+        # point of this ack is that a pilot never has to wonder.
+        #
+        # The cost is that a sentence merely MENTIONING engineering can
+        # re-greet him -- "I'm going to ask that engineering go off the
+        # line" did. That is a wasted sentence. The other way is a pilot
+        # talking into what he believes is a dead radio, which is the bug
+        # this whole channel exists to kill.
+        reply = engineering_ack(_summoned)
+        with radio_lock:
+            print(f"  ENG[tx] {reply}", flush=True)
+            client.transmit(eng_voice.frames(reply), _eng_hz, AM)
+        return True
+    return False
+
+
+def speak(interact, message, transcript, known, heard_hz, fix, profile, ctl):
+    """Hand the turn to the agent, and mark what it commits us to.
+
+    EXTRACTED VERBATIM, 30 July -- [LAYERS.md] step 1. `interact` is passed in
+    rather than reached for: it is still a closure inside `_run_srs`, over
+    twelve things including the radio lock and the contexts of three threads.
+    Converting THAT to a function changes how state is shared between the loop,
+    the hook scheduler and the metronome, and most of its captures become stores
+    at step 3 -- so writing its signature now means writing it twice. It stays a
+    closure until the stores exist, and this stage takes it as an argument,
+    which at least makes the dependency visible instead of ambient.
+
+    THE `asr.guide` HERE IS THE SECOND CALL of the transmission. `settle` made
+    the first, for reconcile, passing `known or "?"`; this one passes `known`.
+    Same geometry, computed twice, with different callsigns -- so the two can
+    disagree about whether he is flying the missed approach. Preserved exactly
+    as it was, because this step moves rather than improves, and written down in
+    both places so it cannot be lost.
+    """
+    # The current geometry goes with it so the transmit path can tell
+    # whether the engine is already flying him down.
+    _g = None
+    if fix is not None:
+        from marshall.atc import asr as _asr2
+        _g = _asr2.guide(fix, profile,
+                         on_missed=flying_the_missed(known, fix, profile, ctl)
+                         if known else False)
+    interact(message, "pilot", route_tier(transcript),
+             on_hz=heard_hz, guide=_g, to_callsign=known or "")
+    # If that answer WAS a clearance, his next transmission is the read-back.
+    if known and is_a_clearance(_last_said[0]):
+        _awaiting_readback[known] = time.time()
+
+
 def membership(_who, transcript, scope, _ident, session_id):
     """Create, join, break out -- and what the controller must SAY about it.
 
@@ -3607,85 +3745,10 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             if _agreed:
                 flight_agree(_fid, **_agreed)
 
-        # ENGINEERING. Handled before the controller sees anything, because a
-        # pilot who has called engineering up is not talking to ATC and must not
-        # be answered by it.
-        _eng_hz = heard_hz or freq_hz
-        _on_the_line = client.last_sender_guid in engineering_line
-        # Release is checked FIRST: "thanks engineering" and "engineering, clear"
-        # both contain the word, so a summons that matched on the word alone
-        # would re-open the line the pilot was trying to close and he could
-        # never get back to the controller.
-        # ADDRESSED, not merely MENTIONED. A controller's name in the OPENING of
-        # a transmission is a pilot calling him; the same name in the middle of
-        # a sentence is a pilot talking ABOUT him.
-        #
-        # Hoover's bug report -- "requested a call back, got no call back on one
-        # three nine Georgia Center" -- was read as him calling Georgia Center,
-        # so engineering stepped aside and the controller answered a bug report
-        # with "say your callsign". The report was lost and the pilot got an
-        # interrogation. Same rule as a callsign: an address opens a
-        # transmission, which is how radio works and not a heuristic.
-        # WHOEVER IS NAMED FIRST is who he is calling. Opening a transmission
-        # with "engineering" and then naming a controller inside the sentence --
-        # "engineering, Batumi Approach vectored me into the hill" -- is a bug
-        # report about that controller, not a call to him.
-        _opening = " ".join(transcript.split()[:6])
-        _atc_at = _ADDRESSING.search(_opening) if _ADDRESSING else None
-        _eng_at = re.search(r"\bengineering\b", _opening, re.I)
-        _addressed_atc = bool(_atc_at) and not (
-            _eng_at and _eng_at.start() < _atc_at.start())
-        if _on_the_line and _addressed_atc and not _ENG_CALL.search(transcript):
-            # He is talking to a controller. Step out of the way silently -- a
-            # "clear" call here would be engineering talking over the very
-            # transmission it just got out of the way of.
-            engineering_line.pop(client.last_sender_guid, None)
-            engineering_callsigns.discard(known)
-            print(f"  ENGINEERING released {known or srs} — he called a controller",
-                  flush=True)
-            _on_the_line = False
-
-        if _on_the_line and _ENG_DONE.search(transcript):
-            engineering_line.pop(client.last_sender_guid, None)
-            engineering_callsigns.discard(known)
-            print(f"  ENGINEERING released {known or srs}", flush=True)
-            with radio_lock:
-                client.transmit(
-                    eng_voice.frames("Engineering clear, back to the controller."),
-                    _eng_hz, AM)
-            continue
-        _summoned = bool(_ENG_CALL.search(transcript))
-        if _summoned or _on_the_line:
-            engineering_line[client.last_sender_guid] = _eng_hz
-            if known:
-                engineering_callsigns.add(known)
-            stamp = time.strftime("%H:%M:%S")
-            who = known or srs
-            print(f"  ENGINEERING [{stamp}] {who}: {transcript}", flush=True)
-            record(session_id, kind="engineering", callsign=who, text=transcript)
-            try:
-                config.BUILD_DIR.mkdir(parents=True, exist_ok=True)
-                with open(config.BUILD_DIR / "debug-notes.md", "a",
-                          encoding="utf-8") as fh:
-                    fh.write(f"- `{stamp}` **{who}** {transcript}\n")
-            except OSError as e:
-                print(f"  !! could not write the note: {e}", flush=True)
-            # An explicit summons is ALWAYS answered with the greeting, even when
-            # he is already on the line. Suppressing it because he was already
-            # connected was tried for one minute of a live test and was much
-            # worse: he asked for engineering, got "copied, logged", could not
-            # tell whether the channel was open, and asked twice more. The whole
-            # point of this ack is that a pilot never has to wonder.
-            #
-            # The cost is that a sentence merely MENTIONING engineering can
-            # re-greet him -- "I'm going to ask that engineering go off the
-            # line" did. That is a wasted sentence. The other way is a pilot
-            # talking into what he believes is a dead radio, which is the bug
-            # this whole channel exists to kill.
-            reply = engineering_ack(_summoned)
-            with radio_lock:
-                print(f"  ENG[tx] {reply}", flush=True)
-                client.transmit(eng_voice.frames(reply), _eng_hz, AM)
+        if engineering_turn(client, transcript, srs, known, heard_hz,
+                            freq_hz, eng_voice, engineering_line,
+                            engineering_callsigns, _ADDRESSING,
+                            radio_lock, AM, session_id):
             continue
         # OUT OF THE BLUE, WITH NO CALLSIGN. We know who it is from his radio,
         # and a real controller does not -- so he asks, and does not act on a
@@ -3795,19 +3858,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         message = compose_message(
             scope, known, transcript, profile, me, fix, nxt,
             directive, stack, vectoring, _flight, _flight_say)
-        # The current geometry goes with it so the transmit path can tell
-        # whether the engine is already flying him down.
-        _g = None
-        if _fix is not None:
-            from marshall.atc import asr as _asr2
-            _g = _asr2.guide(_fix, profile,
-                             on_missed=flying_the_missed(known, _fix, profile, ctl)
-                             if known else False)
-        interact(message, "pilot", route_tier(transcript),
-                 on_hz=heard_hz, guide=_g, to_callsign=known or "")
-        # If that answer WAS a clearance, his next transmission is the read-back.
-        if known and is_a_clearance(_last_said[0]):
-            _awaiting_readback[known] = time.time()
+        speak(interact, message, transcript, known, heard_hz, _fix, profile, ctl)
 
 
 if __name__ == "__main__":
