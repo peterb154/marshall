@@ -2998,7 +2998,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             # -- joining is the moment the controller stops separating him, so
             # a man who says it from forty miles away would go unseparated and
             # unwatched believing he was somebody's wingman.
-            _want = fl.parse_joining(transcript, _flights.names())
+            _want, _said_name = fl.parse_joining(transcript, _flights.names())
             if _want:
                 _lead = _flights.flights[_want].lead
                 _gap = miles_between(scope, _ident.track,
@@ -3006,9 +3006,39 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 _f, _why = _flights.join(_want, _who, _gap)
                 print(f"  .. {_want}: "
                       + (f"{_who} joined" if _f else _why), flush=True)
-                if _f is not None:
-                    record(session_id, kind="flight/joined", callsign=_want,
-                           who=_who, miles=round(_gap or 0, 1))
+                record(session_id, kind="flight/joined" if _f else "flight/refused",
+                       callsign=_want, who=_who, miles=round(_gap or 0, 1),
+                       text="" if _f else _why)
+            elif _said_name:
+                # HE TRIED TO JOIN SOMETHING THAT IS NOT THERE, and still
+                # deserves an answer -- silence reads as a controller who did
+                # not hear him, which is the one thing worse than "unable".
+                print(f"  .. {_who}: no flight called {_said_name}", flush=True)
+                record(session_id, kind="flight/refused", callsign=_said_name,
+                       who=_who,
+                       text=f"{_who}, unable, {_said_name} flight doesn't exist")
+
+            # BREAKING HIMSELF OUT, without needing the lead. A lost wingman
+            # who transmits is otherwise answered as the FLIGHT, so the
+            # controller vectors the lead -- the man who needs help gets none
+            # and somebody who did not ask gets turned. It is also the case
+            # where the lead is least likely to be on the ball.
+            _out = fl.parse_leaving(transcript, _flights.names())
+            if _out and (_mine := _flights.of(_who)) is not None:
+                _was_lead = _mine.lead == _who
+                _survivors = [m for m in _mine.members if m != _who]
+                _gone = _flights.leaves(_who)
+                if _was_lead and _gone:
+                    print(f"  .. {_gone} dissolved — its lead left", flush=True)
+                    record(session_id, kind="flight/dissolved", callsign=_gone,
+                           who=_who,
+                           text=fl.lead_lost_call(_gone, _who, _survivors))
+                else:
+                    print(f"  .. {_who} is out of {_out}", flush=True)
+                    record(session_id, kind="flight/left", callsign=_out,
+                           who=_who,
+                           text=f"Roger {_who}, you are no longer in {_out} "
+                                f"flight, what are your intentions?")
 
         # ADOPTING SOMEBODY, declared the same way a flight is formed. Any
         # member may do it, not only the lead -- a rule that depends on one

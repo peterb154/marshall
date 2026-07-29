@@ -49,6 +49,12 @@ _CREATE = re.compile(
 # "Andre, joining Apex", "join Apex flight", "Apex, joining".
 _JOINING = re.compile(r"\bjoin(?:ing|s|ed)?\b", re.I)
 
+# "separating from Apex", "breaking out of Apex flight", "detaching from Apex".
+# Several words for it because a pilot in trouble says whichever comes first.
+_LEAVING = re.compile(
+    r"\b(?:separat\w*|break\w*\s+(?:out|away|off)|detach\w*|"
+    r"depart\w*\s+the\s+flight|leav\w*)\b", re.I)
+
 # "Apex 1-2", "Apex two" -- how a flight talks to itself.
 _MEMBER = re.compile(r"^\s*([A-Za-z][A-Za-z'-]*)\s*\d+\s*-\s*\d+\s*$")
 
@@ -86,20 +92,46 @@ def parse_create(said: str) -> str:
     return m.group(1).strip().title() if m else ""
 
 
-def parse_joining(said: str, flight_names: list[str]) -> str:
-    """Read "Approach, Andre, joining Apex". Returns the flight, or "".
+def parse_joining(said: str, flight_names: list[str]) -> tuple[str, str]:
+    """Read "Approach, Andre, joining Apex". Returns (known flight, what he said).
 
     HE DOES NOT NEED TO SAY WHO HE IS. The identity ladder already knows which
-    aeroplane is transmitting, so the only thing this has to find is which
-    flight he means -- one word, matched against the flights that actually
-    exist. Saying his own handle is good radio discipline and a useful
-    cross-check; it is not something the system depends on.
+    aeroplane is transmitting, so the only thing to find is which flight he
+    means -- one word, against the flights that actually exist. Saying his own
+    handle is good radio discipline and a cross-check, not something the system
+    depends on.
 
-    Which is why nobody adopts anybody any more. A man can only join himself,
-    so a rogue join is not possible rather than being a thing the lead sorts
-    out afterwards.
+    THE SECOND VALUE IS FOR THE REFUSAL ONLY. If he names a flight that does
+    not exist he still deserves an answer -- "Shooter, unable, Foo flight
+    doesn't exist" -- and that needs the word he said. Echoing a name back is
+    safe in a way that ACTING on one is not: a mis-heard name in an apology
+    costs nothing, and the same mis-hearing used to put him in a formation
+    costs him his separation.
     """
     if not _JOINING.search(said or ""):
+        return "", ""
+    words = re.findall(r"[A-Za-z][A-Za-z'-]*", said or "")
+    for w in words:
+        for name in flight_names:
+            if _same(w, name):
+                return name, name
+    # Nothing known. Take the word after "joining" as what he probably meant,
+    # for the refusal and for nothing else.
+    m = re.search(r"\bjoin(?:ing|s|ed)?\b\s+(?:up\s+)?(?:with\s+)?"
+                  r"([A-Za-z][A-Za-z'-]*)", said or "", re.I)
+    return "", (m.group(1).title() if m else "")
+
+
+def parse_leaving(said: str, flight_names: list[str]) -> str:
+    """Read "Approach, Shooter separating from Apex flight".
+
+    A member breaking HIMSELF out, which he must be able to do without the
+    lead. A lost wingman who transmits is otherwise answered as the flight, so
+    the controller vectors the LEAD -- the man who needs help gets none and
+    somebody who did not ask gets turned. That is the case this exists for, and
+    it is the case where the lead is least likely to be on the ball.
+    """
+    if not _LEAVING.search(said or ""):
         return ""
     words = re.findall(r"[A-Za-z][A-Za-z'-]*", said or "")
     for w in words:

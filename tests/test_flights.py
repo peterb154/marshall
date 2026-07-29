@@ -65,18 +65,31 @@ class TestJoiningYourself(unittest.TestCase):
         knows which aeroplane is transmitting. Saying his handle is good radio
         discipline and a cross-check, not something the system needs."""
         self.assertEqual(
-            F.parse_joining("Approach, Andre, joining Apex", self.r.names()),
+            F.parse_joining("Approach, Andre, joining Apex", self.r.names())[0],
             "Apex")
         self.assertEqual(
-            F.parse_joining("approach, joining apex flight", self.r.names()),
+            F.parse_joining("approach, joining apex flight", self.r.names())[0],
             "Apex")
 
     def test_a_flight_that_does_not_exist_is_not_joined(self):
-        self.assertEqual(F.parse_joining("joining Bolt", self.r.names()), "")
+        """...but he still gets an answer. The second value is the name he
+        appears to have said, for the refusal and nothing else -- echoing a
+        name back is safe in a way that ACTING on one is not."""
+        known, said = F.parse_joining("joining Bolt", self.r.names())
+        self.assertEqual(known, "")
+        self.assertEqual(said, "Bolt")
+
+    def test_silence_would_be_worse_than_unable(self):
+        """"shooter, unable, foo flight doesn't exist". Saying nothing reads as
+        a controller who did not hear him."""
+        _known, said = F.parse_joining("Approach, Shooter joining Foo",
+                                       self.r.names())
+        self.assertEqual(said, "Foo")
 
     def test_joining_is_not_inferred_from_any_mention(self):
         self.assertEqual(
-            F.parse_joining("Apex, level five thousand", self.r.names()), "")
+            F.parse_joining("Apex, level five thousand", self.r.names()),
+            ("", ""))
 
     def test_he_joins(self):
         _f, why = self.r.join("Apex", "Andre", 0.3)
@@ -289,9 +302,6 @@ class TestLosingTheLead(unittest.TestCase):
         self.assertEqual(self.r.speaking_as("Shooter"), "Shooter")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 # (TestAdoptingSomebody is gone. Nobody adopts anybody now: a pilot can only
 # join himself, which removes the rogue-join problem rather than deferring it
@@ -346,6 +356,66 @@ class TestTellingThemTheLeadIsGone(unittest.TestCase):
         """A two-ship whose lead goes down leaves one man; a single whose lead
         is himself leaves none, and there is nobody to ask."""
         self.assertNotIn("intentions", self.call([]))
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+class TestBreakingYourselfOut(unittest.TestCase):
+    """"Approach, shooter separating (breaking out of, etc) apex flight."
+    "Roger shooter, you are no longer in apex flight, what are your
+     intentions?"
+
+    A member must be able to do this WITHOUT THE LEAD. A lost wingman who
+    transmits is otherwise answered as the flight, so the controller vectors
+    the lead -- the man who needs help gets none and somebody who did not ask
+    gets turned. It is also the case where the lead is least likely to be on
+    the ball.
+    """
+
+    def setUp(self):
+        self.r = F.Roster()
+        self.r.create("Apex", "sockeye", now=1.0)
+        self.r.join("Apex", "Andre", 0.3)
+        self.r.join("Apex", "Shooter", 0.4)
+
+    def test_several_ways_of_saying_it(self):
+        """A pilot in trouble says whichever word comes first."""
+        for said in ("Approach, Shooter separating from Apex flight",
+                     "approach shooter breaking out of apex",
+                     "Shooter detaching Apex",
+                     "Shooter leaving Apex flight"):
+            with self.subTest(said):
+                self.assertEqual(F.parse_leaving(said, self.r.names()), "Apex")
+
+    def test_it_is_not_inferred_from_any_mention(self):
+        self.assertEqual(
+            F.parse_leaving("Apex, level five thousand", self.r.names()), "")
+
+    def test_he_is_out_and_the_flight_survives(self):
+        self.r.leaves("Shooter")
+        self.assertEqual(self.r.speaking_as("Shooter"), "Shooter")
+        self.assertEqual(self.r.speaking_as("Andre"), "Apex")
+
+    def test_he_can_come_back(self):
+        """Rejoining is joining -- no separate concept, and the same one-mile
+        rule applies to a man who has drifted."""
+        self.r.leaves("Shooter")
+        got, why = self.r.join("Apex", "Shooter", 0.5)
+        self.assertIsNotNone(got, why)
+        self.assertEqual(self.r.speaking_as("Shooter"), "Apex")
+
+    def test_he_cannot_come_back_from_ten_miles(self):
+        self.r.leaves("Shooter")
+        got, why = self.r.join("Apex", "Shooter", 10.0)
+        self.assertIsNone(got)
+        self.assertIn("within 1 mile", why)
+
+    def test_the_lead_breaking_out_dissolves_it(self):
+        """His track is the flight's geometry, so there is no flight left to
+        be in -- the same rule as losing him to a crash."""
+        self.assertEqual(self.r.leaves("sockeye"), "Apex")
+        self.assertEqual(self.r.names(), [])
 
 if __name__ == "__main__":
     unittest.main()
