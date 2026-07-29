@@ -46,31 +46,32 @@ class TestSayingASpeed(unittest.TestCase):
 
 class TestWhenItIsSaid(unittest.TestCase):
     def setUp(self):
-        A._speed_asked.clear()
+        # A fresh store IS the reset. See [LAYERS.md] step 2.
+        self.bridge = A.Bridge()
 
     def test_a_fast_aeroplane_is_asked_to_slow_down(self):
         # Named, because an UNKNOWN airframe is now floored upward: these
         # assert the profile's number, so they have to say whose profile.
-        said = A.speed_instruction(G(180), P(300), "Pony 1-1", now=1000.0,
+        said = A.speed_instruction(self.bridge, G(180), P(300), "Pony 1-1", now=1000.0,
                                    aircraft_type="P-51D-30-NA")
         self.assertIn("reduce speed to one eight zero knots", said)
 
     def test_an_aeroplane_already_at_speed_is_left_alone(self):
         """An instruction to slow down issued to somebody already at approach
         speed is a controller who cannot see."""
-        self.assertEqual(A.speed_instruction(G(180), P(175), "x", now=1000.0), "")
+        self.assertEqual(A.speed_instruction(self.bridge, G(180), P(175), "x", now=1000.0), "")
 
     def test_slightly_fast_is_fast_not_wrong(self):
-        self.assertEqual(A.speed_instruction(G(180), P(200), "x", now=1000.0), "")
+        self.assertEqual(A.speed_instruction(self.bridge, G(180), P(200), "x", now=1000.0), "")
 
     def test_nothing_is_said_without_a_real_groundspeed(self):
         """Guessing would be worse than silence: the sim does not always give
         one, and a speed we invented is a speed he is judged against."""
-        self.assertEqual(A.speed_instruction(G(180), P(0), "x", now=1000.0), "")
-        self.assertEqual(A.speed_instruction(G(180), None, "x", now=1000.0), "")
+        self.assertEqual(A.speed_instruction(self.bridge, G(180), P(0), "x", now=1000.0), "")
+        self.assertEqual(A.speed_instruction(self.bridge, G(180), None, "x", now=1000.0), "")
 
     def test_nothing_is_said_where_the_leg_wants_no_speed(self):
-        self.assertEqual(A.speed_instruction(G(0), P(400), "x", now=1000.0), "")
+        self.assertEqual(A.speed_instruction(self.bridge, G(0), P(400), "x", now=1000.0), "")
 
 
 class TestItIsNotRepeatedEverySweep(unittest.TestCase):
@@ -82,32 +83,33 @@ class TestItIsNotRepeatedEverySweep(unittest.TestCase):
     """
 
     def setUp(self):
-        A._speed_asked.clear()
+        # A fresh store IS the reset. See [LAYERS.md] step 2.
+        self.bridge = A.Bridge()
 
     def test_said_once_then_left_alone(self):
-        first = A.speed_instruction(G(180), P(300), "Pony 1-1", now=1000.0)
-        again = A.speed_instruction(G(180), P(300), "Pony 1-1", now=1010.0)
+        first = A.speed_instruction(self.bridge, G(180), P(300), "Pony 1-1", now=1000.0)
+        again = A.speed_instruction(self.bridge, G(180), P(300), "Pony 1-1", now=1010.0)
         self.assertTrue(first)
         self.assertEqual(again, "")
 
     def test_repeated_if_he_still_has_not_complied(self):
-        A.speed_instruction(G(180), P(300), "Pony 1-1", now=1000.0)
-        later = A.speed_instruction(G(180), P(300), "Pony 1-1",
+        A.speed_instruction(self.bridge, G(180), P(300), "Pony 1-1", now=1000.0)
+        later = A.speed_instruction(self.bridge, G(180), P(300), "Pony 1-1",
                                     now=1000.0 + A.SPEED_REPEAT_SEC + 1)
         self.assertTrue(later)
 
     def test_a_new_speed_is_issued_immediately(self):
         """Waiting out the timer to assign a DIFFERENT speed would leave him
         flying the old one through the leg it was wrong for."""
-        A.speed_instruction(G(210), P(320), "Pony 1-1", now=1000.0,
+        A.speed_instruction(self.bridge, G(210), P(320), "Pony 1-1", now=1000.0,
                             aircraft_type="P-51D-30-NA")
-        now = A.speed_instruction(G(150), P(320), "Pony 1-1", now=1005.0,
+        now = A.speed_instruction(self.bridge, G(150), P(320), "Pony 1-1", now=1005.0,
                                   aircraft_type="P-51D-30-NA")
         self.assertIn("one five zero", now)
 
     def test_each_aeroplane_is_tracked_separately(self):
-        A.speed_instruction(G(180), P(300), "Pony 1-1", now=1000.0)
-        other = A.speed_instruction(G(180), P(300), "Pony 1-2", now=1001.0)
+        A.speed_instruction(self.bridge, G(180), P(300), "Pony 1-1", now=1000.0)
+        other = A.speed_instruction(self.bridge, G(180), P(300), "Pony 1-2", now=1001.0)
         self.assertTrue(other)
 
 
@@ -135,14 +137,16 @@ class TestNeverBelowWhatTheAeroplaneCanFly(unittest.TestCase):
         """The correction. A floor of 210 told a pilot doing a perfectly
         reasonable 300 to slow down, so the number has to be a TARGET -- said
         only to somebody going faster than it."""
-        A._speed_asked.clear()
+        # A fresh store IS the reset. See [LAYERS.md] step 2.
+        self.bridge = A.Bridge()
         self.assertEqual(
-            A.speed_instruction(G(209), P(300), "v", now=1.0,
+            A.speed_instruction(self.bridge, G(209), P(300), "v", now=1.0,
                                 aircraft_type="F-16C_50"), "")
 
     def test_an_f16_at_four_fifty_is_asked_for_three_hundred(self):
-        A._speed_asked.clear()
-        said = A.speed_instruction(G(209), P(450), "v", now=1.0,
+        # A fresh store IS the reset. See [LAYERS.md] step 2.
+        self.bridge = A.Bridge()
+        said = A.speed_instruction(self.bridge, G(209), P(450), "v", now=1.0,
                                    aircraft_type="F-16C_50")
         self.assertIn("three zero zero", said)
 
@@ -160,8 +164,9 @@ class TestNeverBelowWhatTheAeroplaneCanFly(unittest.TestCase):
         self.assertGreaterEqual(E.safe_speed_kt(174, "Su-57-Whatever"), 250)
 
     def test_the_floor_is_applied_to_what_is_actually_said(self):
-        A._speed_asked.clear()
-        said = A.speed_instruction(G(174), P(400), "Viper 1-1", now=1000.0,
+        # A fresh store IS the reset. See [LAYERS.md] step 2.
+        self.bridge = A.Bridge()
+        said = A.speed_instruction(self.bridge, G(174), P(400), "Viper 1-1", now=1000.0,
                                    aircraft_type="F-16C_50")
         self.assertIn("three zero zero", said)
         self.assertNotIn("one seven", said)
@@ -178,12 +183,13 @@ class TestSpeedControlStopsOnFinal(unittest.TestCase):
     """
 
     def setUp(self):
-        A._speed_asked.clear()
+        # A fresh store IS the reset. See [LAYERS.md] step 2.
+        self.bridge = A.Bridge()
 
     def _final(self, **kw):
         g = G(150)
         g.phase = "final"
-        return A.speed_instruction(g, P(320), "Viper 1-1", now=1000.0, **kw)
+        return A.speed_instruction(self.bridge, g, P(320), "Viper 1-1", now=1000.0, **kw)
 
     def test_nothing_is_assigned_on_final(self):
         said = self._final()
@@ -192,13 +198,13 @@ class TestSpeedControlStopsOnFinal(unittest.TestCase):
     def test_a_restricted_aeroplane_is_released(self):
         g = G(180)
         g.phase = "vector"
-        A.speed_instruction(g, P(320), "Viper 1-1", now=1000.0)
+        A.speed_instruction(self.bridge, g, P(320), "Viper 1-1", now=1000.0)
         self.assertIn("resume normal speed", self._final())
 
     def test_released_once_and_not_repeated(self):
         g = G(180)
         g.phase = "vector"
-        A.speed_instruction(g, P(320), "Viper 1-1", now=1000.0)
+        A.speed_instruction(self.bridge, g, P(320), "Viper 1-1", now=1000.0)
         self.assertIn("resume normal speed", self._final())
         self.assertEqual(self._final(), "")
 

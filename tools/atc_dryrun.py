@@ -24,6 +24,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from marshall.atc import agent_atc, controller as atc
 from marshall.core import route as R
 
+# One store for this module -- see agent_atc.Bridge.
+_BRIDGE = agent_atc.Bridge()
+
 # (SRS transmitter identity, what the pilot says). The SRS name is deliberately
 # not the callsign -- that three-way correlation is part of what we're testing.
 FORMATION = [
@@ -154,7 +157,7 @@ def run(script, session_id: str, sep_always: bool = True,
             print(f"  IDENTITY: {ident.why}", flush=True)
 
         engaged = sep_always or len(ctl.aircraft) >= 2
-        directive, stack = (agent_atc.separation_context(ctl, text, scope, known)
+        directive, stack = (agent_atc.separation_context(_BRIDGE, ctl, text, scope, known)
                             if engaged else ("", ""))
         if directive:
             print(f"  CONTROLLER: {directive}", flush=True)

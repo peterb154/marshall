@@ -145,6 +145,8 @@ def main() -> int:
         import signal
 
         from marshall.atc import agent_atc
+        # This run's own state -- see agent_atc.Bridge.
+        _BRIDGE = agent_atc.Bridge()
         from marshall.srs import tts
         from marshall.srs.client import AM, SRSClient, radio
 
@@ -256,11 +258,11 @@ def main() -> int:
             # it is a man shouting.
             if say:
                 if g.phase == "map":
-                    say(agent_atc.asr_call(args.callsign, g))
+                    say(agent_atc.asr_call(_BRIDGE, args.callsign, g))
                 elif g.established or turned:
                     mile = int(round(g.range_nm))
                     if turned or mile != last_said_nm:
-                        say(agent_atc.asr_call(args.callsign, g))
+                        say(agent_atc.asr_call(_BRIDGE, args.callsign, g))
                         last_said_nm = mile
 
             if g.phase == "map":

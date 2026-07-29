@@ -492,6 +492,24 @@ def fetch_due(session_id: str, url: str = HOOKS_URL, timeout: float = 5.0) -> li
 # a radar track), every later transmission from it is Rifle 1-1 even when
 # Whisper mangles the callsign or the pilot omits it entirely.
 
+# WHAT IS STILL A MODULE GLOBAL, AND WHY EACH ONE IS RIGHT TO BE. Eighteen of
+# these became `Bridge` fields on 30 July; four did not, and they are not
+# leftovers:
+#
+#   _lock_fd        the frequency lock's file descriptor, held open for the life
+#                   of the PROCESS. Per-process is what it means.
+#   _heard_names    the mission roster -- names allowed to become an aeroplane
+#                   on one transmission. A property of the mission, not of a
+#                   frequency, and two bridges flying the same mission should
+#                   agree about it.
+#   _plan_labels    filed plan labels, read once from the director.
+#   _filed          the filed strips, with the timestamp of the read.
+#
+# The last two are caches of DIRECTOR state. The director is shared, so caching
+# it per bridge would fetch the same rows twice and let two bridges disagree
+# about what is on file. Moving them would be finishing the job wrongly.
+
+
 class Bridge:
     """Everything ONE bridge knows, for one frequency. [LAYERS.md] step 2.
 
@@ -524,6 +542,26 @@ class Bridge:
         self.awaiting_readback: dict[str, float] = {}
         self.last_said: list[str] = [""]
         self.last_active_hz: list[float | None] = [None]
+        # PER AIRCRAFT, AND THIS IS NOT THEIR RIGHT HOME. What we last told each
+        # aeroplane to fly, the speed we asked for and when, and whether he is
+        # latched onto the missed approach -- all keyed by callsign, so they
+        # belong on `controller.Aircraft` beside his phase and his level.
+        #
+        # They cannot go there yet. `controller.py` is BLIND by design -- "no
+        # telemetry, no radar, no connection to DCS; its whole world model is
+        # what pilots report plus a clock" -- and every one of these is derived
+        # from RADAR. Putting them on the board would be smuggling the scope
+        # into the blind engine, which is exactly the thing that already
+        # produced `seen_on_final`, `note_radar_contact` and `release_stale`.
+        #
+        # So they sit here, which is at least per-bridge rather than
+        # per-process, and they move to the aircraft when the engine is allowed
+        # to see -- [LAYERS.md] violation 6, which goes last and alone because
+        # it is a behaviour change wearing an architecture hat.
+        self.issued: dict[str, set[str]] = {}
+        self.speed_asked: dict[str, tuple[float, float]] = {}
+        self.flying_missed: set[str] = set()
+        self.missed_count: dict[str, int] = {}
 
 
 
@@ -1070,10 +1108,9 @@ SPEED_REPEAT_SEC = 75.0       # ...and do not say it again every radar sweep
 # Callsign -> (speed we asked for, when). Repetition is the failure mode here:
 # the guidance is recomputed on every transmission, so an unguarded instruction
 # is repeated in every single call and reads as the controller not listening.
-_speed_asked: dict[str, tuple[float, float]] = {}
 
 
-def speed_instruction(g, pos=None, cs: str = "", now: float | None = None,
+def speed_instruction(bridge, g, pos=None, cs: str = "", now: float | None = None,
                       aircraft_type: str = "") -> str:
     """"reduce speed to one eight zero" -- when, and only when, it is needed.
 
@@ -1101,7 +1138,7 @@ def speed_instruction(g, pos=None, cs: str = "", now: float | None = None,
         # Release him ONCE, and only if we actually had him restricted --
         # "resume normal speed" to a pilot who was never given a speed is a
         # controller answering a question nobody asked.
-        if _speed_asked.pop(cs, None):
+        if bridge.speed_asked.pop(cs, None):
             return ", resume normal speed"
         return ""
     want = float(getattr(g, "speed_kt", 0.0) or 0.0)
@@ -1111,10 +1148,10 @@ def speed_instruction(g, pos=None, cs: str = "", now: float | None = None,
     if want <= 0 or have <= 20 or have <= want + SPEED_TOLERANCE_KT:
         return ""
     t = time.time() if now is None else now
-    asked, when = _speed_asked.get(cs, (0.0, 0.0))
+    asked, when = bridge.speed_asked.get(cs, (0.0, 0.0))
     if abs(asked - want) < 10 and t - when < SPEED_REPEAT_SEC:
         return ""                       # already told him, and it still stands
-    _speed_asked[cs] = (want, t)
+    bridge.speed_asked[cs] = (want, t)
     return f", reduce speed to {ctl.spell_speed(want)} knots"
 
 
@@ -1129,7 +1166,6 @@ _TALKDOWN_WORDS = re.compile(
 
 # What we last TOLD each aeroplane to fly. Not what we want him to fly now --
 # those are different things and confusing them is a bug with a name.
-_issued: dict[str, set[str]] = {}
 # "one four zero" becomes "1 4 0" once the spoken digits are converted, so the
 # number to compare is a RUN of single digits, not a word-bounded integer.
 # Matching \b\d{2,4}\b against "heading 1 4 0" finds nothing at all, which is
@@ -1170,7 +1206,7 @@ def _spoken_numbers(said: str) -> set[str]:
     return {o for o in out if len(o) >= 2}
 
 
-def note_issued(cs: str, said: str) -> None:
+def note_issued(bridge, cs: str, said: str) -> None:
     """Remember the numbers in an instruction, so a read-back can be judged
     against what he was ACTUALLY given."""
     if not cs or not said:
@@ -1180,10 +1216,10 @@ def note_issued(cs: str, said: str) -> None:
     # thing we said, including "say again".
     got = _spoken_numbers(said) - _callsign_numbers(cs)
     if got:
-        _issued[cs] = got
+        bridge.issued[cs] = got
 
 
-def reads_back_what_we_said(cs: str, transcript: str) -> bool:
+def reads_back_what_we_said(bridge, cs: str, transcript: str) -> bool:
     """Is he correctly repeating the last instruction we gave him?
 
     THE BUG THIS EXISTS FOR, and it is a good one because it makes an aeroplane
@@ -1203,7 +1239,7 @@ def reads_back_what_we_said(cs: str, transcript: str) -> bool:
     something different that is not a correction, it is a NEW instruction, and it
     is spoken as an amendment.
     """
-    want = _issued.get(cs)
+    want = bridge.issued.get(cs)
     if not want or not transcript:
         return False
     return bool(want & (_spoken_numbers(transcript) - _callsign_numbers(cs)))
@@ -1238,7 +1274,7 @@ def hush_a_second_talkdown(reply: str, g) -> tuple[str, str]:
     return "", "the engine is flying the talkdown"
 
 
-def asr_call(cs: str, g, pos=None, profile=None) -> str:
+def asr_call(bridge, cs: str, g, pos=None, profile=None) -> str:
     """The controller's spoken range call. Deterministic on purpose.
 
     A talk-down is the most rote transmission in aviation -- "six miles from the
@@ -1262,7 +1298,7 @@ def asr_call(cs: str, g, pos=None, profile=None) -> str:
     # a controller says "descend to two thousand, reduce speed to one eight
     # zero" in one breath, and an extra call per sweep would crowd a frequency
     # that already carries a range every mile.
-    alt += speed_instruction(g, pos, cs,
+    alt += speed_instruction(bridge, g, pos, cs,
                              aircraft_type=getattr(pos, "type", "") or "")
     if g.phase == "map":
         return (f"{who}, over the missed approach point. Runway in sight, land; "
@@ -1282,7 +1318,7 @@ def asr_call(cs: str, g, pos=None, profile=None) -> str:
             f"{alt}.")
 
 
-def vector_call(cs: str, g, pos=None) -> str:
+def vector_call(bridge, cs: str, g, pos=None) -> str:
     """An unprompted turn, issued because he has reached the point -- not
     because he said something."""
     from marshall.atc import callsign as C, controller as ctl
@@ -1292,7 +1328,7 @@ def vector_call(cs: str, g, pos=None) -> str:
     # The turn onto base is where speed matters most: it is the leg the
     # overshoot happens on, and a man told to slow down BEFORE the turn can
     # make it. Told during it, he cannot.
-    alt += speed_instruction(g, pos, cs,
+    alt += speed_instruction(bridge, g, pos, cs,
                              aircraft_type=getattr(pos, "type", "") or "")
     # Rounded to five while vectoring. A pilot repositioning has to set this on
     # a gyro and read it back, and "one three zero" is easier to do both with
@@ -1472,11 +1508,9 @@ def reconcile(directive: str, stack: str, vectoring: str,
 # the aeroplane is on nobody's track -- so every stateless test for it flickers,
 # and every flicker is a reversal on the radio. This is what makes him STAY on
 # it once the geometry has recognised he started.
-_flying_missed: set[str] = set()
-_missed_count: dict[str, int] = {}     # go-arounds already seen, per aircraft
 
 
-def flying_the_missed(cs: str, pos, profile, ctl=None) -> bool:
+def flying_the_missed(bridge, cs: str, pos, profile, ctl=None) -> bool:
     """Maintain and read the missed-approach latch for one aircraft.
 
     Set when the geometry recognises the procedure has begun, or when the pilot
@@ -1488,7 +1522,7 @@ def flying_the_missed(cs: str, pos, profile, ctl=None) -> bool:
     key = ctl._resolve(cs) if ctl is not None else cs
     if (pos.alt_ft >= profile.missed_climb_ft
             or pos.range_nm > profile.final_intercept_nm):
-        _flying_missed.discard(key)
+        bridge.flying_missed.discard(key)
         return False
     if ctl is not None:
         ac = ctl.aircraft.get(key)
@@ -1498,17 +1532,17 @@ def flying_the_missed(cs: str, pos, profile, ctl=None) -> bool:
             # the same breath, so by the time anyone looks he reads as CLEARED
             # again -- correct for sequencing and useless as a signal. The count
             # only ever goes up, and it goes up exactly once per go-around.
-            been = _missed_count.get(key, 0)
+            been = bridge.missed_count.get(key, 0)
             if ac.approaches > been:
-                _missed_count[key] = ac.approaches
-                _flying_missed.add(key)
-    return key in _flying_missed
+                bridge.missed_count[key] = ac.approaches
+                bridge.flying_missed.add(key)
+    return key in bridge.flying_missed
 
 
-def note_missed(cs: str, phase: str, ctl=None) -> None:
+def note_missed(bridge, cs: str, phase: str, ctl=None) -> None:
     """The geometry has just handed out the missed approach. Remember it."""
     if phase == "missed":
-        _flying_missed.add(ctl._resolve(cs) if ctl is not None else cs)
+        bridge.flying_missed.add(ctl._resolve(cs) if ctl is not None else cs)
 
 
 # HOW LONG A CONVERSATION STAYS OPEN.
@@ -1623,7 +1657,7 @@ def may_be_vectored(bridge, ctl, cs: str, traffic: bool = False,
     return ctl._resolve(cs) == turn
 
 
-def separation_context(ctl, transcript: str, scope: str = "",
+def separation_context(bridge, ctl, transcript: str, scope: str = "",
                        known: str = "", track: str = "") -> tuple[str, str]:
     """The two-brain seam. Advance the deterministic Controller from the call and
     return its authoritative (next-step directive, holding stack).
@@ -1789,7 +1823,7 @@ def separation_context(ctl, transcript: str, scope: str = "",
         if fix is not None:
             from marshall.atc import asr as _asr
             g = _asr.guide(fix, ctl.profile,
-                           on_missed=flying_the_missed(intent.callsign, fix,
+                           on_missed=flying_the_missed(bridge, intent.callsign, fix,
                                                        ctl.profile, ctl))
             if g.established and ctl.seen_on_final(intent.callsign):
                 print(f"  .. {intent.callsign} is already on final per radar; "
@@ -2557,7 +2591,7 @@ def speak(bridge, interact, message, transcript, known, heard_hz, fix, profile, 
     if fix is not None:
         from marshall.atc import asr as _asr2
         _g = _asr2.guide(fix, profile,
-                         on_missed=flying_the_missed(known, fix, profile, ctl)
+                         on_missed=flying_the_missed(bridge, known, fix, profile, ctl)
                          if known else False)
     interact(message, "pilot", route_tier(transcript),
              on_hz=heard_hz, guide=_g, to_callsign=known or "")
@@ -2663,7 +2697,7 @@ def membership(bridge, _who, transcript, scope, _ident, session_id):
     return _flight_say
 
 
-def decide(ctl, transcript, scope, known, track, engaged, profile):
+def decide(bridge, ctl, transcript, scope, known, track, engaged, profile):
     """What the DETERMINISTIC side says about this transmission.
 
     EXTRACTED VERBATIM, 30 July -- [LAYERS.md] step 1. Two answers, and they
@@ -2679,7 +2713,7 @@ def decide(ctl, transcript, scope, known, track, engaged, profile):
     This is the half of the two-brain seam that must never be a model's guess.
     Whatever comes out of here is phrased by the agent and not invented by it.
     """
-    directive, stack = (separation_context(ctl, transcript, scope, known,
+    directive, stack = (separation_context(bridge, ctl, transcript, scope, known,
                                           track) if engaged
                         else ("", ""))
     # Radar guidance for a vectored approach. Costs no model call, so it
@@ -2689,7 +2723,7 @@ def decide(ctl, transcript, scope, known, track, engaged, profile):
     return directive, stack, vectoring
 
 
-def settle(directive, stack, vectoring, fix, profile, known, ctl):
+def settle(bridge, directive, stack, vectoring, fix, profile, known, ctl):
     """One aeroplane, one instruction. Which authority owns him this turn.
 
     EXTRACTED VERBATIM, 30 July. `reconcile` exists because a pilot was once
@@ -2707,7 +2741,7 @@ def settle(directive, stack, vectoring, fix, profile, known, ctl):
     from marshall.atc import asr
 
     guide = (asr.guide(fix, profile,
-                       on_missed=flying_the_missed(known or "?", fix, profile,
+                       on_missed=flying_the_missed(bridge, known or "?", fix, profile,
                                                    ctl))
              if fix is not None else None)
     directive, stack, vectoring, dropped = reconcile(
@@ -2967,7 +3001,7 @@ def compose_message(bridge, scope, known, transcript, profile, me, fix, nxt,
     # it often wants a different number -- and the controller, holding the
     # new one, told a pilot he was wrong about something he got right. See
     # reads_back_what_we_said.
-    if known and reads_back_what_we_said(known, transcript):
+    if known and reads_back_what_we_said(bridge, known, transcript):
         parts.append(
             "READ-BACK CORRECT: those numbers are what you actually gave "
             "him. Do NOT say negative and do not correct him -- he got it "
@@ -3141,7 +3175,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             print(f"  ATC[{kind}/{tier}] ({dt:.1f}s): {reply}", flush=True)
             bridge.last_said[0] = reply
             if to_callsign:
-                note_issued(to_callsign, reply)
+                note_issued(bridge, to_callsign, reply)
             record(session_id, kind=f"atc/{kind}", tier=tier,
                    seconds=round(dt, 1), to=addressed_to(reply),
                    freq_mhz=(on_hz or freq_hz) / 1_000_000, text=reply)
@@ -3353,9 +3387,9 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                                            freq_hz=final_hz):
                         continue                # holding, or nobody's turn yet
                     g = asr.guide(pos, profile,
-                                  on_missed=flying_the_missed(cs, pos, profile,
+                                  on_missed=flying_the_missed(bridge, cs, pos, profile,
                                                               ctl))
-                    note_missed(cs, g.phase, ctl)
+                    note_missed(bridge, cs, g.phase, ctl)
 
                     # Being VECTORED. The controller has to turn him when he
                     # reaches the point, not when he next happens to transmit --
@@ -3390,8 +3424,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                             continue
                         pending.pop(cs, None)
                         vectored[cs], vec_at[cs] = want, time.time()
-                        text = for_voice(vector_call(cs, g, pos))
-                        note_issued(cs, text)
+                        text = for_voice(vector_call(bridge, cs, g, pos))
+                        note_issued(bridge, cs, text)
                         with radio_lock:
                             print(f"  ATC[vec] {text}", flush=True)
                             record(session_id, kind="atc/vector", callsign=cs,
@@ -3415,8 +3449,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                               f"{why}", flush=True)
                         continue        # not marked as called; it repeats
                     called[cs] = mile
-                    text = for_voice(asr_call(cs, g, pos, profile))
-                    note_issued(cs, text)
+                    text = for_voice(asr_call(bridge, cs, g, pos, profile))
+                    note_issued(bridge, cs, text)
                     with radio_lock:
                         print(f"  ATC[asr] {text}", flush=True)
                         record(session_id, kind="atc/range", callsign=cs,
@@ -3606,7 +3640,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             continue
 
         directive, stack, vectoring = decide(
-            ctl, transcript, scope, known, _ident.track, engaged, profile)
+            bridge, ctl, transcript, scope, known, _ident.track, engaged, profile)
 
         # The one aircraft state. Bind whatever names we have -- the radio GUID
         # always, the callsign once he says it, the track once radar ties them
@@ -3648,7 +3682,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         ) if (client.last_sender_guid or known) else {}
         _fid = _flight.get("id")
 
-        directive, stack, vectoring, _g, dropped = settle(
+        directive, stack, vectoring, _g, dropped = settle(bridge,
             directive, stack, vectoring, _fix, profile, known, ctl)
         if dropped:
             print(f"  .. {dropped}", flush=True)

@@ -242,7 +242,7 @@ class TestPositionRejection(unittest.TestCase):
 
     def test_a_beacon_report_from_eight_miles_is_rejected(self):
         self.fake(self.intents.IntentKind.REPORT_BEACON, "Pony 1-1")
-        directive, _ = agent_atc.separation_context(
+        directive, _ = agent_atc.separation_context(_BRIDGE,
             self.ctl, "over the beacon", self.scope(8.2))
         self.assertIn("POSITION REJECTED", directive)
         # And crucially the engine never saw it.
@@ -250,7 +250,7 @@ class TestPositionRejection(unittest.TestCase):
 
     def test_a_beacon_report_from_overhead_is_accepted(self):
         self.fake(self.intents.IntentKind.REPORT_BEACON, "Pony 1-1")
-        directive, _ = agent_atc.separation_context(
+        directive, _ = agent_atc.separation_context(_BRIDGE,
             self.ctl, "over the beacon", self.scope(1.2))
         self.assertNotIn("POSITION REJECTED", directive)
         self.assertIn("Pony 1-1", self.ctl.aircraft)
@@ -259,12 +259,12 @@ class TestPositionRejection(unittest.TestCase):
         # No scope, or an unidentified aircraft: the blind procedure is all we
         # have, and refusing every report would ground the whole approach.
         self.fake(self.intents.IntentKind.REPORT_BEACON, "Pony 1-1")
-        directive, _ = agent_atc.separation_context(self.ctl, "over the beacon", "")
+        directive, _ = agent_atc.separation_context(_BRIDGE, self.ctl, "over the beacon", "")
         self.assertNotIn("POSITION REJECTED", directive)
 
     def test_other_intents_are_untouched_by_range(self):
         self.fake(self.intents.IntentKind.REPORT_MISSED, "Pony 1-1")
-        directive, _ = agent_atc.separation_context(
+        directive, _ = agent_atc.separation_context(_BRIDGE,
             self.ctl, "going around", self.scope(8.2))
         self.assertNotIn("POSITION REJECTED", directive)
 
@@ -399,17 +399,17 @@ class TestAsrRangeCall(unittest.TestCase):
         return self.asr.guide(self.asr.Position(nm, radial, 500, heading), self.p)
 
     def test_on_course_call(self):
-        out = agent_atc.asr_call("Pony 1-1", self.g(6 + self.p.touchdown_offset_nm))
+        out = agent_atc.asr_call(_BRIDGE, "Pony 1-1", self.g(6 + self.p.touchdown_offset_nm))
         self.assertIn("six miles from the runway, on course", out)
         self.assertIn("altitude should be", out)
 
     def test_off_course_call_carries_a_heading(self):
-        out = agent_atc.asr_call("Pony 1-1", self.g(6, 296))
+        out = agent_atc.asr_call(_BRIDGE, "Pony 1-1", self.g(6, 296))
         self.assertIn("right of course", out)
         self.assertIn("turn heading", out)
 
     def test_missed_approach_point_call(self):
-        out = agent_atc.asr_call("Pony 1-1", self.g(0.4))
+        out = agent_atc.asr_call(_BRIDGE, "Pony 1-1", self.g(0.4))
         self.assertIn("missed approach point", out)
 
     def test_no_digits_reach_polly(self):
@@ -418,7 +418,7 @@ class TestAsrRangeCall(unittest.TestCase):
         # digits at some point. "127" is read as "one hundred twenty seven".
         for nm in (1, 2, 3, 4, 6, 8):
             for radial in (None, 296, 312):
-                out = agent_atc.asr_call("Pony 1-1", self.g(nm, radial))
+                out = agent_atc.asr_call(_BRIDGE, "Pony 1-1", self.g(nm, radial))
                 with self.subTest(nm=nm, radial=radial):
                     self.assertEqual([c for c in out if c.isdigit()], [], out)
 
@@ -430,7 +430,7 @@ class TestAsrRangeCall(unittest.TestCase):
         self.assertEqual(ctl.spell_alt(1900), "one thousand nine hundred")
 
     def test_the_callsign_is_spoken_not_written(self):
-        self.assertNotIn("1-1", agent_atc.asr_call("Pony 1-1", self.g(6)))
+        self.assertNotIn("1-1", agent_atc.asr_call(_BRIDGE, "Pony 1-1", self.g(6)))
 
 
 class TestRadarFixes(unittest.TestCase):
@@ -527,18 +527,18 @@ class TestCourseTalkOnlyWhenOnCourse(unittest.TestCase):
         self.assertEqual(g.deviation, "")
         # asr_call is what the pilot HEARS; the context is what the agent is
         # told, and it may mention the phrase only to forbid it.
-        self.assertNotIn("of course", agent_atc.asr_call("Pony 1-1", g))
+        self.assertNotIn("of course", agent_atc.asr_call(_BRIDGE, "Pony 1-1", g))
 
     def test_repositioning_outbound_is_not_told_it_is_off_course(self):
         g = self.g(9, 330, 300, alt=3000)
         self.assertFalse(g.off_course)
-        self.assertNotIn("of course", agent_atc.asr_call("Pony 1-1", g))
+        self.assertNotIn("of course", agent_atc.asr_call(_BRIDGE, "Pony 1-1", g))
 
     def test_an_inbound_aircraft_that_drifts_IS_told(self):
         # The whole point of the approach: this one must still be corrected.
         g = self.g(6, 296, 124, alt=1500)
         self.assertTrue(g.off_course)
-        self.assertIn("of course", agent_atc.asr_call("Pony 1-1", g))
+        self.assertIn("of course", agent_atc.asr_call(_BRIDGE, "Pony 1-1", g))
 
 
 class TestOneAircraftOneInstruction(unittest.TestCase):
@@ -1325,7 +1325,7 @@ class TestTheAltitudeCallIsAnInstruction(unittest.TestCase):
         pos = self.asr.Position(miles_to_run + self.p.touchdown_offset_nm,
                                 self.inbound, 1500, self.p.final_crs_true)
         g = self.asr.guide(pos, self.p)
-        return agent_atc.asr_call("Pony 1-1", g, pos, self.p), g
+        return agent_atc.asr_call(_BRIDGE, "Pony 1-1", g, pos, self.p), g
 
     def test_the_call_carries_the_NEXT_miles_altitude(self):
         for miles in (5, 4, 3, 2):
@@ -1434,8 +1434,8 @@ class TestAGoodReadBackIsNotAnError(unittest.TestCase):
     """
 
     def setUp(self):
-        agent_atc._issued.clear()
-        agent_atc.note_issued(
+        _BRIDGE.issued.clear()
+        agent_atc.note_issued(_BRIDGE,
             "Falcon 1-1",
             "Falcon one one, turn left heading one four zero, maintain two thousand.")
 
@@ -1445,10 +1445,10 @@ class TestAGoodReadBackIsNotAnError(unittest.TestCase):
                      "Falcon one one, one four zero"):
             with self.subTest(said=said):
                 self.assertTrue(
-                    agent_atc.reads_back_what_we_said("Falcon 1-1", said))
+                    agent_atc.reads_back_what_we_said(_BRIDGE, "Falcon 1-1", said))
 
     def test_reading_back_something_else_is_not(self):
-        self.assertFalse(agent_atc.reads_back_what_we_said(
+        self.assertFalse(agent_atc.reads_back_what_we_said(_BRIDGE,
             "Falcon 1-1", "Left one three five, Falcon one one"))
 
     def test_his_own_callsign_is_not_a_read_back(self):
@@ -1459,11 +1459,11 @@ class TestAGoodReadBackIsNotAnError(unittest.TestCase):
                      "Falcon one one, request the approach"):
             with self.subTest(said=said):
                 self.assertFalse(
-                    agent_atc.reads_back_what_we_said("Falcon 1-1", said))
+                    agent_atc.reads_back_what_we_said(_BRIDGE, "Falcon 1-1", said))
 
     def test_an_altitude_spoken_as_words_still_matches(self):
-        self.assertTrue(agent_atc.reads_back_what_we_said(
+        self.assertTrue(agent_atc.reads_back_what_we_said(_BRIDGE,
             "Falcon 1-1", "maintain two thousand, Falcon one one"))
 
     def test_nothing_issued_means_nothing_to_read_back(self):
-        self.assertFalse(agent_atc.reads_back_what_we_said("Viper 2-1", "two thousand"))
+        self.assertFalse(agent_atc.reads_back_what_we_said(_BRIDGE, "Viper 2-1", "two thousand"))
