@@ -10,6 +10,13 @@ WIRING says what it actually DOES — what talks to what, in what order, and whi
 of the two brains produced a given transmission. Read it when a sortie did
 something inexplicable; it is organised symptom-first at the end.
 
+`docs/LAYERS.md` says what may depend on what, and is the one to read before
+building something new. One rule — a module may depend only downward — plus the
+stages of a turn, the brief mechanism that keeps procedure out of the system
+prompt, and an honest list of where we break the rule today. Most of the recent
+bug run was one shape: something reaching sideways for a fact it should have
+been handed.
+
 ## The core idea
 **Real ATC by default.** A capable, radar-equipped agent (Bedrock Sonnet) is the
 controller's brain. "Handicaps" — no radar, no DME, blind procedural separation,
