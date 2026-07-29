@@ -1,0 +1,189 @@
+"""What the receive loop does today. Step 0 of the layering work.
+
+`_run_srs` is 1,167 lines, touches every layer, and until this file **no test
+executed one line of it**. That is not a coincidence -- it is the one place
+where nothing could be tested in isolation, so nothing was, and it is where
+every finding at the top of the 29 July audit lives.
+
+CHARACTERISATION, NOT SPECIFICATION. Everything here asserts what the code does
+NOW, including behaviour that is arguably wrong and at least one thing that is
+plainly surprising (see `test_intra_flight_is_caught_by_the_SHIP_TO_SHIP_gate`).
+When the refactor changes one of these on purpose, the diff on the expectation is
+the record of that decision. A test written to describe the INTENDED behaviour
+would prove nothing about a refactor, because it would already disagree with the
+code it is supposed to be protecting.
+
+So: if one of these fails during the extraction, the question is not "is the new
+behaviour better". It is "did I mean to change this, and is it written down".
+
+See `tests/fakeradio.py` for the harness. No production code was changed to make
+any of this testable, which is the other half of the rule -- a safety net woven
+out of edits to the thing it is protecting has a hole exactly where the work is
+about to happen.
+"""
+
+import sys
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from fakeradio import Sortie
+
+# A manned contact ten miles out, tagged -- the shape the picture takes once the
+# agent has bound the callsign with `identify`.
+SCOPE = ("362nd_sockeye [Pony 1-1] (P-51D-30-NA, manned): 10.0 nm on the 281 "
+         "radial, 4,000 ft, heading 100, 180 knots")
+GUID = "pony-guid"
+NAME = "362nd_sockeye"
+
+
+def sortie():
+    return Sortie()
+
+
+class TestATransmissionGetsThrough(unittest.TestCase):
+    def test_a_normal_call_reaches_the_director_and_the_reply_is_sent(self):
+        s = (sortie()
+             .say(GUID, NAME, "Batumi Approach, Pony one one, ten miles")
+             .radar(SCOPE)
+             .replies("RADIO: Pony one one, Batumi Approach, radar contact.")
+             .fly())
+        self.assertEqual(len(s.asked()), 1)
+        self.assertEqual(s.said(), ["Pony one one, Batumi Approach, radar contact."])
+
+    def test_the_reply_goes_out_on_the_frequency_it_arrived_on(self):
+        s = (sortie()
+             .say(GUID, NAME, "Batumi Approach, Pony one one, ten miles")
+             .radar(SCOPE).replies("RADIO: roger").fly())
+        self.assertEqual(s.said_on(124.0), ["roger"])
+
+
+class TestWhatTheDirectorIsHanded(unittest.TestCase):
+    """The prompt seam. The refactor moves this wholesale, so what goes into it
+    is worth pinning line by line."""
+
+    def message(self):
+        s = (sortie()
+             .say(GUID, NAME, "Batumi Approach, Pony one one, ten miles")
+             .radar(SCOPE).replies("RADIO: roger").fly())
+        return s.asked()[0]
+
+    def test_the_scope_is_injected_whole(self):
+        self.assertIn("RADAR: " + SCOPE, self.message())
+
+    def test_the_transmitter_is_named_and_it_is_the_resolved_callsign(self):
+        m = self.message()
+        self.assertIn("TRANSMITTER:", m)
+        self.assertIn("Pony 1-1", m)
+
+    def test_the_pilots_words_come_last(self):
+        """Everything before PILOT: is situation, and [CTX-1] strips exactly
+        that from history. If the marker moves, context.py stops working and
+        nothing else would notice."""
+        m = self.message()
+        self.assertIn("PILOT:", m)
+        self.assertTrue(m.rstrip().endswith("ten miles"), m[-80:])
+
+    def test_the_radar_guidance_is_computed_and_handed_over(self):
+        self.assertIn("ASR", self.message())
+
+
+class TestTheGatesThatDropATransmission(unittest.TestCase):
+    """A dropped transmission is indistinguishable from a dead radio in the
+    cockpit, and it is the most frequent complaint after a sortie. Each gate is
+    pinned with what the pilot HEARS, including silence."""
+
+    def test_our_own_station_is_ignored_silently(self):
+        """Two bridges on one frequency answer each other forever."""
+        s = (sortie().say(GUID, "Marshall", "Batumi Approach, Pony one one")
+             .radar(SCOPE).replies("RADIO: must not be sent").fly())
+        self.assertEqual(s.said(), [])
+        self.assertEqual(s.asked(), [], "the director was asked about our own voice")
+
+    def test_a_call_with_no_callsign_is_challenged_WITHOUT_asking_the_model(self):
+        """The challenge is canned and local. Worth pinning: it means a pilot
+        who mumbles his callsign costs nothing and gets an instant answer."""
+        s = (sortie().say(GUID, NAME, "level four thousand turning left")
+             .radar(SCOPE).replies("RADIO: must not be sent").fly())
+        self.assertEqual(s.asked(), [])
+        self.assertEqual(len(s.said()), 1)
+        self.assertIn("say your callsign", s.said()[0].lower())
+
+    def test_intra_flight_is_caught_by_the_SHIP_TO_SHIP_gate(self):
+        """SURPRISING, AND TRUE TODAY. "Apex two, tighten it up" is caught by
+        `addressed_to_another_aircraft`, not by `is_intra_flight` -- the bridge
+        logs `(ship-to-ship: Apex calling Apex 2 -- not ours)`.
+
+        Both gates drop it and the pilot hears the same silence either way, so
+        nothing has ever revealed which one fires. It matters for the refactor
+        because the two live in different stages: one belongs to membership and
+        one to addressing, and a naive extraction that reorders them changes
+        which gate owns the case.
+        """
+        s = (sortie()
+             .say(GUID, NAME, "Batumi Approach, Pony one one, request creation "
+                              "of Apex flight")
+             .radar(SCOPE).replies("RADIO: you are lead of Apex.")
+             .say(GUID, NAME, "Apex two, tighten it up")
+             .radar(SCOPE).replies("RADIO: must not be sent")
+             .fly())
+        self.assertEqual(len(s.asked()), 1, "the second call reached the model")
+        self.assertEqual(s.said(), ["you are lead of Apex."])
+
+
+class TestTheFlightModelInTheLoop(unittest.TestCase):
+    def test_creating_a_flight_changes_who_he_is_addressed_as(self):
+        """`speaking_as`: once he leads Apex, the TRANSMITTER line names the
+        flight rather than the man."""
+        s = (sortie()
+             .say(GUID, NAME, "Batumi Approach, Pony one one, request creation "
+                              "of Apex flight")
+             .radar(SCOPE).replies("RADIO: you are lead of Apex.")
+             .say(GUID, NAME, "Batumi Approach, Apex, ten miles")
+             .radar(SCOPE).replies("RADIO: Apex, roger.")
+             .fly())
+        self.assertEqual(len(s.asked()), 2)
+        self.assertIn("Apex", s.asked()[1])
+
+    def test_the_verdict_is_put_in_front_of_the_model(self):
+        """Membership is decided here and the agent only voices it -- the same
+        rule as separation. If this stops appearing, the controller goes back to
+        challenging a man whose flight was just created."""
+        s = (sortie()
+             .say(GUID, NAME, "Batumi Approach, Pony one one, request creation "
+                              "of Apex flight")
+             .radar(SCOPE).replies("RADIO: you are lead of Apex.")
+             .fly())
+        self.assertIn("FLIGHT", s.asked()[0])
+        self.assertIn("lead of Apex", s.asked()[0])
+
+
+class TestTheLoopSurvivesTheAwkwardCases(unittest.TestCase):
+    def test_an_empty_scope_does_not_stop_the_sortie(self):
+        s = (sortie().say(GUID, NAME, "Batumi Approach, Pony one one, ten miles")
+             .radar("no contacts").replies("RADIO: not radar identified.").fly())
+        self.assertEqual(len(s.said()), 1)
+
+    def test_an_empty_transcript_is_skipped_without_reaching_anything(self):
+        s = (sortie().say(GUID, NAME, "")
+             .say(GUID, NAME, "Batumi Approach, Pony one one, ten miles")
+             .radar(SCOPE).replies("RADIO: roger").fly())
+        self.assertEqual(len(s.asked()), 1)
+
+    def test_two_pilots_on_one_frequency_are_kept_apart(self):
+        other = ("362nd_andre [Falcon 1-1] (F-16C_50, manned): 20.0 nm on the "
+                 "090 radial, 8,000 ft, heading 270, 300 knots")
+        s = (sortie()
+             .say(GUID, NAME, "Batumi Approach, Pony one one, ten miles")
+             .radar(SCOPE + " | " + other).replies("RADIO: Pony one one, roger.")
+             .say("andre-guid", "362nd_andre", "Batumi Approach, Falcon one one, twenty miles")
+             .radar(SCOPE + " | " + other).replies("RADIO: Falcon one one, roger.")
+             .fly())
+        self.assertEqual(len(s.asked()), 2)
+        self.assertIn("Pony 1-1", s.asked()[0])
+        self.assertIn("Falcon 1-1", s.asked()[1])
+
+
+if __name__ == "__main__":
+    unittest.main()
