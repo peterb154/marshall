@@ -491,7 +491,6 @@ def fetch_due(session_id: str, url: str = HOOKS_URL, timeout: float = 5.0) -> li
 # worked out that this one calls itself Rifle 1-1 (and correlated Rifle 1-1 to
 # a radar track), every later transmission from it is Rifle 1-1 even when
 # Whisper mangles the callsign or the pilot omits it entirely.
-_transmitters: dict[str, str] = {}
 
 class Bridge:
     """Everything ONE bridge knows, for one frequency. [LAYERS.md] step 2.
@@ -514,6 +513,17 @@ class Bridge:
         self.flights = fl.Roster()
         # When each board entry was last accounted for. See release_stale.
         self.seen_at: dict[str, float] = {}
+        # WHAT THIS RADIO HAS BEEN DOING. All per-frequency, all previously
+        # module globals -- which meant two bridges in one process would have
+        # shared one pilot's conversation window, one readback queue and one
+        # callsign vote. See [LAYERS.md] step 2.
+        self.transmitters: dict[str, str] = {}     # GUID -> voted callsign
+        self.order: dict = {}                      # per-GUID recency, tie-break
+        self.last_heard: dict[str, float] = {}     # per RADIO, not per callsign
+        self.heard_on: dict[str, float] = {}       # which channel he was on
+        self.awaiting_readback: dict[str, float] = {}
+        self.last_said: list[str] = [""]
+        self.last_active_hz: list[float | None] = [None]
 
 
 
@@ -612,7 +622,7 @@ def _scope_geometry(scope: str) -> tuple[dict, dict]:
     return pos, offset
 
 
-def transmitter_callsign(guid: str | None, transcript: str) -> str:
+def transmitter_callsign(bridge, guid: str | None, transcript: str) -> str:
     """Who this radio is, learning from the transcript when it says so.
 
     Uses the free offline regex rather than the classifier: this has to work on
@@ -642,8 +652,8 @@ def transmitter_callsign(guid: str | None, transcript: str) -> str:
     real = [cs for cs in callsign.extract_all(transcript)
             if _plausible_callsign(cs, transcript)]
     heard = real[1] if len(real) > 1 else (real[0] if real else "")
-    seen = _transmitters.setdefault(guid, Counter())
-    order = _order.setdefault(guid, {})
+    seen = bridge.transmitters.setdefault(guid, Counter())
+    order = bridge.order.setdefault(guid, {})
 
     # NAMING YOURSELF MORE PRECISELY ALWAYS WINS, IMMEDIATELY.
     #
@@ -685,7 +695,6 @@ def transmitter_callsign(guid: str | None, transcript: str) -> str:
 # garbled call and then overrode every correct "Hammer one two" that followed,
 # which is worse than having no binding at all. Real callsigns repeat; noise
 # does not, so the mode is right and gets righter with every transmission.
-_order: dict = {}          # per-GUID recency, to break count ties
 
 _SHIPS = re.compile(r"(\d+)\s+ships\b", re.I)
 
@@ -1513,11 +1522,10 @@ def note_missed(cs: str, phase: str, ctl=None) -> None:
 # Ninety seconds is a readback, a follow-up question and a moment to think. Past
 # that he has stopped talking to you and started again.
 CONVERSATION_SEC = 90.0
-_last_heard: dict[str, float] = {}      # per RADIO, not per callsign
 
 
-def in_conversation(guid: str, now: float | None = None) -> bool:
-    return (now or time.time()) - _last_heard.get(guid, 0.0) < CONVERSATION_SEC
+def in_conversation(bridge, guid: str, now: float | None = None) -> bool:
+    return (now or time.time()) - bridge.last_heard.get(guid, 0.0) < CONVERSATION_SEC
 
 
 def challenge_for(transcript: str) -> str:
@@ -1534,10 +1542,9 @@ def challenge_for(transcript: str) -> str:
 
 # Which frequency each aircraft was last heard on. A controller works the men on
 # HIS channel, and nobody else -- see `may_be_vectored`.
-_heard_on: dict[str, float] = {}
 
 
-def may_be_vectored(ctl, cs: str, traffic: bool = False,
+def may_be_vectored(bridge, ctl, cs: str, traffic: bool = False,
                     freq_hz: float | None = None) -> bool:
     """May the radar thread turn this aircraft right now?
 
@@ -1598,7 +1605,7 @@ def may_be_vectored(ctl, cs: str, traffic: bool = False,
     # has no way of knowing what he missed. A real controller waits for the
     # check-in; it is what the check-in is FOR.
     if freq_hz is not None:
-        was = _heard_on.get(ctl._resolve(cs))
+        was = bridge.heard_on.get(ctl._resolve(cs))
         if was is None or abs(was - freq_hz) > 1000:
             return False
 
@@ -2161,7 +2168,6 @@ def known_flight_names() -> set[str]:
 # written from the pilot thread and read from the scheduler thread, and a bare
 # module global rebound in a closure is the kind of thing that works until
 # somebody adds a `global` and it does not.
-_last_active_hz: list[float | None] = [None]
 
 
 # What the controller last said, and who is owed an answer to a read-back.
@@ -2175,8 +2181,6 @@ _last_active_hz: list[float | None] = [None]
 #
 # So it stops being a matter of judgement. The bridge SEES the clearance go out,
 # knows the next thing that pilot says is his read-back, and says so.
-_last_said: list[str] = [""]
-_awaiting_readback: dict[str, float] = {}
 
 # How long a clearance stays outstanding. Long enough for a pilot to write five
 # elements down and read them back; short enough that it is not still armed when
@@ -2211,9 +2215,9 @@ def is_a_clearance(said: str) -> bool:
     return "squawk" in low and ("cleared to" in low or "as filed" in low)
 
 
-def readback_due(callsign: str, now: float | None = None) -> bool:
+def readback_due(bridge, callsign: str, now: float | None = None) -> bool:
     """Is this transmission the read-back of a clearance we just gave him?"""
-    when = _awaiting_readback.get(callsign)
+    when = bridge.awaiting_readback.get(callsign)
     if when is None:
         return False
     return ((now if now is not None else time.time()) - when) <= READBACK_WINDOW_SEC
@@ -2371,7 +2375,7 @@ def filed_plans(url: str = f"{BASE_URL}/flightplans",
     return list(_filed["names"])               # type: ignore[arg-type]
 
 
-def whisper_vocabulary(profile) -> str:
+def whisper_vocabulary(bridge, profile) -> str:
     """The priming text for the transcriber, from what is actually on the air.
 
     Rebuilt as radios identify themselves, because the callsigns are the half
@@ -2390,7 +2394,7 @@ def whisper_vocabulary(profile) -> str:
     spoken = list(getattr(R, "SQUADRON_CALLSIGNS", ()))
     spoken += [c for c in os.environ.get("MARSHALL_CALLSIGNS", "").split(",")
                if c.strip()]
-    for seen in _transmitters.values():
+    for seen in bridge.transmitters.values():
         for cs in seen:
             try:
                 spoken.append(C.parse(cs).spoken)
@@ -2528,7 +2532,7 @@ def engineering_turn(client, transcript, srs, known, heard_hz, freq_hz,
     return True
 
 
-def speak(interact, message, transcript, known, heard_hz, fix, profile, ctl):
+def speak(bridge, interact, message, transcript, known, heard_hz, fix, profile, ctl):
     """Hand the turn to the agent, and mark what it commits us to.
 
     EXTRACTED VERBATIM, 30 July -- [LAYERS.md] step 1. `interact` is passed in
@@ -2558,8 +2562,8 @@ def speak(interact, message, transcript, known, heard_hz, fix, profile, ctl):
     interact(message, "pilot", route_tier(transcript),
              on_hz=heard_hz, guide=_g, to_callsign=known or "")
     # If that answer WAS a clearance, his next transmission is the read-back.
-    if known and is_a_clearance(_last_said[0]):
-        _awaiting_readback[known] = time.time()
+    if known and is_a_clearance(bridge.last_said[0]):
+        bridge.awaiting_readback[known] = time.time()
 
 
 def membership(bridge, _who, transcript, scope, _ident, session_id):
@@ -2711,7 +2715,7 @@ def settle(directive, stack, vectoring, fix, profile, known, ctl):
     return directive, stack, vectoring, guide, dropped
 
 
-def hear(client, model, profile):
+def hear(bridge, client, model, profile):
     """One transmission off the radio, as words. [LAYERS.md] L0 -> the turn.
 
     EXTRACTED VERBATIM, 30 July. Returns None where the loop used to
@@ -2730,7 +2734,7 @@ def hear(client, model, profile):
     if pcm is None or not pcm.size:
         return None
     transcript = stt.transcribe(model, pcm,
-                                prompt=whisper_vocabulary(profile))
+                                prompt=whisper_vocabulary(bridge, profile))
     if not transcript:
         return None
     return transcript, client.name_for(client.last_sender_guid), heard_hz
@@ -2756,7 +2760,7 @@ def attribute(bridge, client, transcript, srs, session_id, radar_on, ctl):
     # What the WORDS claim, still by vote across the sortie: real callsigns
     # repeat and noise does not. Demoted from the answer to a claim, which
     # is then matched against a track or a filed strip.
-    claim = transmitter_callsign(client.last_sender_guid, transcript)
+    claim = transmitter_callsign(bridge, client.last_sender_guid, transcript)
     # "APEX 1-2" IS NOT A NAME ANYBODY IS ADDRESSED BY. It is how a flight
     # speaks to itself, and it used to be grounds for DROPPING the
     # transmission -- the controller said nothing at all. That gate is gone:
@@ -2780,7 +2784,7 @@ def attribute(bridge, client, transcript, srs, session_id, radar_on, ctl):
     return scope, claim, _ident, known, _who
 
 
-def compose_message(scope, known, transcript, profile, me, fix, nxt,
+def compose_message(bridge, scope, known, transcript, profile, me, fix, nxt,
                     directive, stack, vectoring, _flight, _flight_say):
     """Everything the controller is handed for one transmission, as one string.
 
@@ -2946,9 +2950,9 @@ def compose_message(scope, known, transcript, profile, me, fix, nxt,
             f"even if the transcript sounds like another callsign.")
     # THE READ-BACK IS ANSWERED. Deterministic, like a separation call:
     # the bridge decides that an answer is owed and the agent supplies the
-    # words. See _awaiting_readback.
-    if known and readback_due(known):
-        _awaiting_readback.pop(known, None)
+    # words. See bridge.awaiting_readback.
+    if known and readback_due(bridge, known):
+        bridge.awaiting_readback.pop(known, None)
         parts.append(
             "READ-BACK EXPECTED: you have just issued this aircraft an IFR "
             "clearance and this transmission is his read-back of it. ANSWER "
@@ -3135,7 +3139,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 print(f"  ATC[{kind}/{tier}] ({dt:.1f}s): (no call)", flush=True)
                 return
             print(f"  ATC[{kind}/{tier}] ({dt:.1f}s): {reply}", flush=True)
-            _last_said[0] = reply
+            bridge.last_said[0] = reply
             if to_callsign:
                 note_issued(to_callsign, reply)
             record(session_id, kind=f"atc/{kind}", tier=tier,
@@ -3180,7 +3184,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 # The frequency comes from the man it is owed to: the channel we
                 # last heard HIM on. Falling back to the last channel anybody
                 # spoke on, and only then to the primary.
-                on_hz = hook_frequency(why, _heard_on, _last_active_hz[0])
+                on_hz = hook_frequency(why, bridge.heard_on, bridge.last_active_hz[0])
                 print(f"HOOK fired (+{hook.get('seconds')}s) on "
                       f"{(on_hz or freq_hz) / 1e6:.3f}: {why}", flush=True)
                 interact(
@@ -3345,7 +3349,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                         continue
                     grounded.discard(cs)        # airborne again: a new sortie
 
-                    if not may_be_vectored(ctl, cs, traffic=traffic,
+                    if not may_be_vectored(bridge, ctl, cs, traffic=traffic,
                                            freq_hz=final_hz):
                         continue                # holding, or nobody's turn yet
                     g = asr.guide(pos, profile,
@@ -3473,7 +3477,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
     threading.Thread(target=asr_monitor, daemon=True).start()
 
     while True:
-        heard = hear(client, model, profile)
+        heard = hear(bridge, client, model, profile)
         if heard is None:
             continue
         transcript, srs, heard_hz = heard
@@ -3539,11 +3543,11 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         if known:
             # He has checked in HERE. Until he does, no controller on this
             # channel may start working him -- see may_be_vectored.
-            _heard_on[known] = heard_hz or freq_hz
+            bridge.heard_on[known] = heard_hz or freq_hz
             # And the channel the conversation is on, for anything owed to a
             # pilot later -- a hook whose reason names nobody still has to be
             # spoken where somebody is listening.
-            _last_active_hz[0] = heard_hz or freq_hz
+            bridge.last_active_hz[0] = heard_hz or freq_hz
 
         n_contacts = count_contacts(scope)
         tag = f" [RADAR: {scope}]" if scope else ""
@@ -3698,8 +3702,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # handle this radio resolved to -- never against open English, which is
         # the rule the whole design rests on.
         _said_who = said_who(transcript, [*bridge.flights.names(), _who])
-        _open = in_conversation(_guid)
-        _last_heard[_guid] = time.time()
+        _open = in_conversation(bridge, _guid)
+        bridge.last_heard[_guid] = time.time()
         # AND NEVER SWALLOW A DECISION. If the flight logic just ruled on this
         # transmission, that ruling is the answer he is owed -- challenging him
         # instead throws away a join, a refusal or a dissolve that has already
@@ -3731,8 +3735,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # handle this radio resolved to -- never against open English, which is
         # the rule the whole design rests on.
         _said_who = said_who(transcript, [*bridge.flights.names(), _who])
-        _open = in_conversation(_guid)
-        _last_heard[_guid] = time.time()
+        _open = in_conversation(bridge, _guid)
+        bridge.last_heard[_guid] = time.time()
         # AND NEVER SWALLOW A DECISION. If the flight logic just ruled on this
         # transmission, that ruling is the answer he is owed -- challenging him
         # instead throws away a join, a refusal or a dissolve that has already
@@ -3824,9 +3828,9 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         if stack:
             print(f"  SEPARATION: {stack}", flush=True)
         message = compose_message(
-            scope, known, transcript, profile, me, fix, nxt,
+            bridge, scope, known, transcript, profile, me, fix, nxt,
             directive, stack, vectoring, _flight, _flight_say)
-        speak(interact, message, transcript, known, heard_hz, _fix, profile, ctl)
+        speak(bridge, interact, message, transcript, known, heard_hz, _fix, profile, ctl)
 
 
 if __name__ == "__main__":

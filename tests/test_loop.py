@@ -231,7 +231,7 @@ class TestComposeMessageDirectly(unittest.TestCase):
                     directive="", stack="", vectoring="", _flight={},
                     _flight_say="")
         args.update(over)
-        return A.compose_message(**args)
+        return A.compose_message(A.Bridge(), **args)
 
     def test_the_pilots_words_are_last(self):
         """[CTX-1] strips everything BEFORE the PILOT: marker out of the
@@ -282,7 +282,7 @@ class TestHearDirectly(unittest.TestCase):
         class Quiet:
             last_sender_guid = None
             def recv_utterance(self, **k): return None, None
-        self.assertIsNone(A.hear(Quiet(), None, None))
+        self.assertIsNone(A.hear(A.Bridge(), Quiet(), None, None))
 
     def test_an_empty_transcript_is_not_a_transmission(self):
         """Whisper returning nothing is the same answer as no audio: both used
@@ -293,7 +293,7 @@ class TestHearDirectly(unittest.TestCase):
         old = stt.transcribe
         stt.transcribe = lambda *a, **k: r.consume()
         try:
-            self.assertIsNone(A.hear(r, None, None))
+            self.assertIsNone(A.hear(A.Bridge(), r, None, None))
         finally:
             stt.transcribe = old
 
@@ -305,7 +305,7 @@ class TestHearDirectly(unittest.TestCase):
         stt.transcribe = lambda *a, **k: r.consume()
         try:
             r.recv_utterance()
-            transcript, srs, _hz = A.hear(r, None, None)
+            transcript, srs, _hz = A.hear(A.Bridge(), r, None, None)
         finally:
             stt.transcribe = old
         self.assertEqual(transcript, "Batumi Approach, Pony one one")

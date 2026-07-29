@@ -475,24 +475,25 @@ class TestGarbleProtectionLivesInTheVote(unittest.TestCase):
 
     def setUp(self):
         from marshall.atc import agent_atc as A
-        A._transmitters.clear()
-        A._order.clear()
         self.A = A
+        # A fresh store IS the reset -- these were module globals that every
+        # case had to clear by hand. See [LAYERS.md] step 2.
+        self.bridge = A.Bridge()
 
     def test_one_garble_does_not_outvote_an_established_name(self):
         for _ in range(4):
-            self.A.transmitter_callsign("g", "Falcon one one, level four thousand")
-        got = self.A.transmitter_callsign("g", "Talcon one one, say again")
+            self.A.transmitter_callsign(self.bridge, "g", "Falcon one one, level four thousand")
+        got = self.A.transmitter_callsign(self.bridge, "g", "Talcon one one, say again")
         self.assertEqual(got, "Falcon 1-1")
 
     def test_a_repeated_rename_does_win(self):
         """Said once it is probably noise; said again it is a decision. This is
         exactly the case the registry was overriding."""
-        self.A.transmitter_callsign("g", "Pony one one, radio check")
+        self.A.transmitter_callsign(self.bridge, "g", "Pony one one, radio check")
         for _ in range(3):
-            self.A.transmitter_callsign("g", "Falcon one one, with you level")
+            self.A.transmitter_callsign(self.bridge, "g", "Falcon one one, with you level")
         self.assertEqual(
-            self.A.transmitter_callsign("g", "Falcon one one, request approach"),
+            self.A.transmitter_callsign(self.bridge, "g", "Falcon one one, request approach"),
             "Falcon 1-1")
 
 

@@ -13,7 +13,12 @@ import os
 import unittest
 
 from marshall.atc import agent_atc
+
 from marshall.atc import callsign as C
+
+# One store per test module -- see agent_atc.Bridge. These used to be
+# module globals and every case had to remember to clear them.
+_BRIDGE = agent_atc.Bridge()
 
 
 class TestForVoice(unittest.TestCase):
@@ -139,51 +144,51 @@ class TestTransmitterIdentity(unittest.TestCase):
     """The radio is the anchor: its NAME is irrelevant, its stability is not."""
 
     def setUp(self):
-        agent_atc._transmitters.clear()
+        _BRIDGE.transmitters.clear()
 
     def test_learns_the_callsign_a_radio_uses(self):
         self.assertEqual(
-            agent_atc.transmitter_callsign("g1", "Batumi Approach, Pony one one, "
+            agent_atc.transmitter_callsign(_BRIDGE, "g1", "Batumi Approach, Pony one one, "
                                            "flight of four, checking in."),
             "Pony 1-1")
 
     def test_remembers_it_when_the_callsign_is_missing(self):
         # The whole point: Whisper drops or mangles callsigns constantly, and
         # the controller should still know who is talking.
-        agent_atc.transmitter_callsign("g1", "Pony one one, checking in.")
+        agent_atc.transmitter_callsign(_BRIDGE, "g1", "Pony one one, checking in.")
         self.assertEqual(
-            agent_atc.transmitter_callsign("g1", "uhh, level four thousand"),
+            agent_atc.transmitter_callsign(_BRIDGE, "g1", "uhh, level four thousand"),
             "Pony 1-1")
 
     def test_a_numbered_phrase_does_not_steal_the_identity(self):
         # "level four thousand" must not rebind the radio to an aircraft called
         # "Level 4" -- a false positive silently reassigns a transmitter.
-        agent_atc.transmitter_callsign("g1", "Pony one one, checking in.")
+        agent_atc.transmitter_callsign(_BRIDGE, "g1", "Pony one one, checking in.")
         for noise in ("descending to four thousand",
                       "heading three zero four",
                       "runway one two in sight",
                       "passing five thousand"):
             with self.subTest(noise=noise):
-                self.assertEqual(agent_atc.transmitter_callsign("g1", noise),
+                self.assertEqual(agent_atc.transmitter_callsign(_BRIDGE, "g1", noise),
                                  "Pony 1-1")
 
     def test_a_radio_can_re_identify(self):
-        agent_atc.transmitter_callsign("g1", "Pony one one, checking in.")
+        agent_atc.transmitter_callsign(_BRIDGE, "g1", "Pony one one, checking in.")
         self.assertEqual(
-            agent_atc.transmitter_callsign("g1", "Pony one two, level five thousand"),
+            agent_atc.transmitter_callsign(_BRIDGE, "g1", "Pony one two, level five thousand"),
             "Pony 1-2")
 
     def test_radios_are_kept_apart(self):
-        agent_atc.transmitter_callsign("g1", "Pony one one, checking in.")
-        agent_atc.transmitter_callsign("g2", "Pony one three, level five thousand.")
-        self.assertEqual(agent_atc.transmitter_callsign("g1", "say again"), "Pony 1-1")
-        self.assertEqual(agent_atc.transmitter_callsign("g2", "say again"), "Pony 1-3")
+        agent_atc.transmitter_callsign(_BRIDGE, "g1", "Pony one one, checking in.")
+        agent_atc.transmitter_callsign(_BRIDGE, "g2", "Pony one three, level five thousand.")
+        self.assertEqual(agent_atc.transmitter_callsign(_BRIDGE, "g1", "say again"), "Pony 1-1")
+        self.assertEqual(agent_atc.transmitter_callsign(_BRIDGE, "g2", "say again"), "Pony 1-3")
 
     def test_an_unheard_radio_is_honestly_unknown(self):
-        self.assertEqual(agent_atc.transmitter_callsign("g9", "mumble"), "")
+        self.assertEqual(agent_atc.transmitter_callsign(_BRIDGE, "g9", "mumble"), "")
 
     def test_no_guid_is_harmless(self):
-        self.assertEqual(agent_atc.transmitter_callsign(None, "Pony one one"), "")
+        self.assertEqual(agent_atc.transmitter_callsign(_BRIDGE, None, "Pony one one"), "")
 
 
 class TestRadarRange(unittest.TestCase):
@@ -616,23 +621,23 @@ class TestNoiseDoesNotStealTheRadio(unittest.TestCase):
     """
 
     def setUp(self):
-        agent_atc._transmitters.clear()
-        agent_atc._order.clear()
+        _BRIDGE.transmitters.clear()
+        _BRIDGE.order.clear()
 
     def test_an_established_binding_survives_one_garble(self):
         for _ in range(3):
-            agent_atc.transmitter_callsign("g9", "Hammer one two, level five thousand")
+            agent_atc.transmitter_callsign(_BRIDGE, "g9", "Hammer one two, level five thousand")
         self.assertEqual(
-            agent_atc.transmitter_callsign("g9", "Waypoint three, say distance"),
+            agent_atc.transmitter_callsign(_BRIDGE, "g9", "Waypoint three, say distance"),
             "Hammer 1-2")
 
     def test_saying_it_twice_re_identifies(self):
         for _ in range(3):
-            agent_atc.transmitter_callsign("g9", "Hammer one two, level five thousand")
-        agent_atc.transmitter_callsign("g9", "Pony one one, checking in")
-        agent_atc.transmitter_callsign("g9", "Pony one one, five thousand")
-        agent_atc.transmitter_callsign("g9", "Pony one one, inbound")
-        self.assertEqual(agent_atc.transmitter_callsign("g9", "say again"),
+            agent_atc.transmitter_callsign(_BRIDGE, "g9", "Hammer one two, level five thousand")
+        agent_atc.transmitter_callsign(_BRIDGE, "g9", "Pony one one, checking in")
+        agent_atc.transmitter_callsign(_BRIDGE, "g9", "Pony one one, five thousand")
+        agent_atc.transmitter_callsign(_BRIDGE, "g9", "Pony one one, inbound")
+        self.assertEqual(agent_atc.transmitter_callsign(_BRIDGE, "g9", "say again"),
                          "Pony 1-1")
 
 
@@ -837,37 +842,37 @@ class TestIdentityThroughBreakUp(unittest.TestCase):
     """
 
     def setUp(self):
-        agent_atc._transmitters.clear()
-        agent_atc._order.clear()
+        _BRIDGE.transmitters.clear()
+        _BRIDGE.order.clear()
 
     def bind(self, guid, said, times=1):
         for _ in range(times):
-            agent_atc.transmitter_callsign(guid, said)
+            agent_atc.transmitter_callsign(_BRIDGE, guid, said)
 
     def test_a_member_callsign_beats_the_flight_at_once(self):
         self.bind("shooter", "Pony one, flight of two, checking in", times=6)
-        self.assertEqual(agent_atc.transmitter_callsign("shooter", ""), "Pony 1")
+        self.assertEqual(agent_atc.transmitter_callsign(_BRIDGE, "shooter", ""), "Pony 1")
         self.assertEqual(
-            agent_atc.transmitter_callsign("shooter", "Pony one two, checking in"),
+            agent_atc.transmitter_callsign(_BRIDGE, "shooter", "Pony one two, checking in"),
             "Pony 1-2",
             "he cannot out-vote himself, so counting must not decide this")
 
     def test_and_it_sticks(self):
         self.bind("shooter", "Pony one, checking in", times=6)
-        agent_atc.transmitter_callsign("shooter", "Pony one two, checking in")
-        self.assertEqual(agent_atc.transmitter_callsign("shooter", "say again"),
+        agent_atc.transmitter_callsign(_BRIDGE, "shooter", "Pony one two, checking in")
+        self.assertEqual(agent_atc.transmitter_callsign(_BRIDGE, "shooter", "say again"),
                          "Pony 1-2")
 
     def test_a_different_flight_does_not_hijack_him(self):
         """Precision only wins WITHIN the flight he already answers to."""
         self.bind("shooter", "Pony one, checking in", times=6)
-        agent_atc.transmitter_callsign("shooter", "Hammer one two, checking in")
-        self.assertEqual(agent_atc.transmitter_callsign("shooter", ""), "Pony 1")
+        agent_atc.transmitter_callsign(_BRIDGE, "shooter", "Hammer one two, checking in")
+        self.assertEqual(agent_atc.transmitter_callsign(_BRIDGE, "shooter", ""), "Pony 1")
 
     def test_noise_still_loses_to_an_established_member_binding(self):
         self.bind("sockeye", "Pony one one, checking in", times=4)
         self.assertEqual(
-            agent_atc.transmitter_callsign("sockeye", "Waypoint three, say range"),
+            agent_atc.transmitter_callsign(_BRIDGE, "sockeye", "Waypoint three, say range"),
             "Pony 1-1")
 
 
@@ -974,18 +979,18 @@ class TestWhoIsCallingLevelFourThousand(unittest.TestCase):
     """
 
     def setUp(self):
-        agent_atc._last_heard.clear()
+        _BRIDGE.last_heard.clear()
 
     def test_a_reply_inside_a_conversation_is_not_challenged(self):
-        agent_atc._last_heard["g"] = time.time()
-        self.assertTrue(agent_atc.in_conversation("g"))
+        _BRIDGE.last_heard["g"] = time.time()
+        self.assertTrue(agent_atc.in_conversation(_BRIDGE, "g"))
 
     def test_out_of_the_blue_is(self):
-        agent_atc._last_heard["g"] = time.time() - agent_atc.CONVERSATION_SEC - 5
-        self.assertFalse(agent_atc.in_conversation("g"))
+        _BRIDGE.last_heard["g"] = time.time() - agent_atc.CONVERSATION_SEC - 5
+        self.assertFalse(agent_atc.in_conversation(_BRIDGE, "g"))
 
     def test_a_radio_never_heard_from_is_out_of_the_blue(self):
-        self.assertFalse(agent_atc.in_conversation("never-spoken"))
+        self.assertFalse(agent_atc.in_conversation(_BRIDGE, "never-spoken"))
 
     def test_the_challenge_repeats_what_was_heard(self):
         """So he knows he WAS heard and only the identity is missing -- a
@@ -1058,8 +1063,8 @@ class TestAFiledPlanIsNotAnAeroplane(unittest.TestCase):
 
     def setUp(self):
         os.environ["MARSHALL_CALLSIGNS"] = "Hoover"
-        agent_atc._transmitters.clear()
-        agent_atc._order.clear()
+        _BRIDGE.transmitters.clear()
+        _BRIDGE.order.clear()
         C._NOT_AN_AIRCRAFT.clear()
 
     def tearDown(self):
@@ -1096,7 +1101,7 @@ class TestAFiledPlanIsNotAnAeroplane(unittest.TestCase):
 
     def test_with_the_plans_registered_the_radio_binds_to_the_pilot(self):
         C.these_are_not_aircraft(["Samovar One", "Samovar Two", "Samovar Three"])
-        got = agent_atc.transmitter_callsign("guid-sockeye", self.SAID)
+        got = agent_atc.transmitter_callsign(_BRIDGE, "guid-sockeye", self.SAID)
         self.assertEqual(got, "Hoover 1-1")
 
     def test_asking_for_a_clearance_does_not_invent_clearance_four(self):
@@ -1105,7 +1110,7 @@ class TestAFiledPlanIsNotAnAeroplane(unittest.TestCase):
         says those exact words."""
         said = "Batumi Ground, Hoover one two, request clearance for the CAS"
         self.assertEqual(C.extract_all(said), ["Hoover 1-2"])
-        self.assertEqual(agent_atc.transmitter_callsign("guid-two", said),
+        self.assertEqual(agent_atc.transmitter_callsign(_BRIDGE, "guid-two", said),
                          "Hoover 1-2")
 
 
@@ -1198,7 +1203,7 @@ class TestTheReadBackOfAClearanceIsAnswered(unittest.TestCase):
                  "squawk seven five six zero.")
 
     def setUp(self):
-        agent_atc._awaiting_readback.clear()
+        _BRIDGE.awaiting_readback.clear()
 
     def test_a_clearance_is_recognised_by_what_it_carries(self):
         self.assertTrue(agent_atc.is_a_clearance(self.CLEARANCE))
@@ -1214,23 +1219,23 @@ class TestTheReadBackOfAClearanceIsAnswered(unittest.TestCase):
                 self.assertFalse(agent_atc.is_a_clearance(said))
 
     def test_the_next_transmission_from_him_is_owed_an_answer(self):
-        agent_atc._awaiting_readback["Pony 1-1"] = 1000.0
-        self.assertTrue(agent_atc.readback_due("Pony 1-1", now=1005.0))
+        _BRIDGE.awaiting_readback["Pony 1-1"] = 1000.0
+        self.assertTrue(agent_atc.readback_due(_BRIDGE, "Pony 1-1", now=1005.0))
 
     def test_it_is_owed_to_HIM_and_not_to_whoever_speaks_next(self):
-        agent_atc._awaiting_readback["Pony 1-1"] = 1000.0
-        self.assertFalse(agent_atc.readback_due("Pony 1-2", now=1005.0))
+        _BRIDGE.awaiting_readback["Pony 1-1"] = 1000.0
+        self.assertFalse(agent_atc.readback_due(_BRIDGE, "Pony 1-2", now=1005.0))
 
     def test_it_stops_being_a_read_back_after_a_while(self):
         """Long enough to write five elements down; short enough that it is not
         still armed when he calls for taxi three minutes later."""
-        agent_atc._awaiting_readback["Pony 1-1"] = 1000.0
+        _BRIDGE.awaiting_readback["Pony 1-1"] = 1000.0
         self.assertFalse(
-            agent_atc.readback_due(
+            agent_atc.readback_due(_BRIDGE,
                 "Pony 1-1", now=1000.0 + agent_atc.READBACK_WINDOW_SEC + 1))
 
     def test_nobody_is_owed_one_by_default(self):
-        self.assertFalse(agent_atc.readback_due("Pony 1-1"))
+        self.assertFalse(agent_atc.readback_due(_BRIDGE, "Pony 1-1"))
 
 
 class TestARelativeCorrection(unittest.TestCase):

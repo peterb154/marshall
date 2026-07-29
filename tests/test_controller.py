@@ -504,8 +504,12 @@ class TestNobodyClearedNobodyVectored(unittest.TestCase):
     """
 
     def setUp(self):
-        from marshall.atc.agent_atc import may_be_vectored
-        self.may = may_be_vectored
+        from marshall.atc import agent_atc as A
+        _b = A.Bridge()
+
+        def may(*a, **k):
+            return A.may_be_vectored(_b, *a, **k)
+        self.may = may
         self.ctl = atc.Controller(profile())
 
     def test_a_single_ship_is_always_vectored(self):
@@ -591,7 +595,10 @@ class TestVisualApproach(unittest.TestCase):
         """Reading ranges to a man looking at the runway is chatter over
         somebody busy -- and it is the difference between a visual approach and
         a talkdown he did not ask for."""
-        from marshall.atc.agent_atc import may_be_vectored
+        from marshall.atc import agent_atc as _A
+
+        def may_be_vectored(*a, **k):
+            return _A.may_be_vectored(_A.Bridge(), *a, **k)
         self.ctl.request_visual("Pony 1-1")
         self.assertFalse(may_be_vectored(self.ctl, "Pony 1-1"))
 
@@ -615,7 +622,9 @@ class TestWaitForTheCheckIn(unittest.TestCase):
     def setUp(self):
         from marshall.atc import agent_atc
         self.A = agent_atc
-        self.A._heard_on.clear()
+        # A fresh store IS the reset -- this used to be `_heard_on.clear()` on a
+        # module global, which every case had to remember. See [LAYERS.md] step 2.
+        self.bridge = agent_atc.Bridge()
         self.ctl = atc.Controller(profile())
         self.ctl.report_beacon("Pony 1-1", 4000)     # known, cleared, being worked
         texts(self.ctl)
@@ -624,22 +633,22 @@ class TestWaitForTheCheckIn(unittest.TestCase):
 
     def test_not_worked_before_he_has_said_a_word_here(self):
         self.assertFalse(
-            self.A.may_be_vectored(self.ctl, "Pony 1-1", freq_hz=self.approach_hz))
+            self.A.may_be_vectored(self.bridge, self.ctl, "Pony 1-1", freq_hz=self.approach_hz))
 
     def test_not_worked_while_he_is_still_on_the_previous_frequency(self):
         """The handoff has been issued; he has not switched yet."""
-        self.A._heard_on["Pony 1-1"] = self.center_hz
+        self.bridge.heard_on["Pony 1-1"] = self.center_hz
         self.assertFalse(
-            self.A.may_be_vectored(self.ctl, "Pony 1-1", freq_hz=self.approach_hz))
+            self.A.may_be_vectored(self.bridge, self.ctl, "Pony 1-1", freq_hz=self.approach_hz))
 
     def test_worked_as_soon_as_he_checks_in(self):
-        self.A._heard_on["Pony 1-1"] = self.approach_hz
+        self.bridge.heard_on["Pony 1-1"] = self.approach_hz
         self.assertTrue(
-            self.A.may_be_vectored(self.ctl, "Pony 1-1", freq_hz=self.approach_hz))
+            self.A.may_be_vectored(self.bridge, self.ctl, "Pony 1-1", freq_hz=self.approach_hz))
 
     def test_the_rule_is_off_when_no_frequency_is_given(self):
         """Callers that do not care about channels must not be broken by it."""
-        self.assertTrue(self.A.may_be_vectored(self.ctl, "Pony 1-1"))
+        self.assertTrue(self.A.may_be_vectored(self.bridge, self.ctl, "Pony 1-1"))
 
 
 class TestTheMissedApproachLatch(unittest.TestCase):

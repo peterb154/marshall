@@ -25,6 +25,10 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from marshall.atc import agent_atc as A
+
+# One store per test module -- see agent_atc.Bridge. These used to be
+# module globals and every case had to remember to clear them.
+_BRIDGE = A.Bridge()
 from marshall.atc import controller as atc
 from marshall.core import route as R
 
@@ -48,34 +52,34 @@ def main() -> int:
     ctl.check_in("Pony 1-2")
     for ac in ctl.aircraft.values():
         ac.phase = atc.Phase.HOLDING
-    A._heard_on.update({"Pony 1-1": hz, "Pony 1-2": hz})
+    _BRIDGE.heard_on.update({"Pony 1-1": hz, "Pony 1-2": hz})
     check("two holding, nobody cleared: Pony 1-1",
-          A.may_be_vectored(ctl, "Pony 1-1", freq_hz=hz), False)
+          A.may_be_vectored(_BRIDGE, ctl, "Pony 1-1", freq_hz=hz), False)
     check("two holding, nobody cleared: Pony 1-2",
-          A.may_be_vectored(ctl, "Pony 1-2", freq_hz=hz), False)
+          A.may_be_vectored(_BRIDGE, ctl, "Pony 1-2", freq_hz=hz), False)
 
     # And the same when the blind engine has been emptied by a restart but the
     # SCOPE still sees two. This is what made it fire live.
     fresh = atc.Controller(p)
     check("stack emptied by a restart, radar still sees two",
-          A.may_be_vectored(fresh, "Pony 1-1", traffic=True, freq_hz=hz), False)
+          A.may_be_vectored(_BRIDGE, fresh, "Pony 1-1", traffic=True, freq_hz=hz), False)
 
     # One cleared: he is worked, the other hears only his hold.
     ctl2 = atc.Controller(p)
     ctl2.report_beacon("Pony 1-1", 4000)
     ctl2.report_beacon("Pony 1-2", 5000)
-    A._heard_on.update({"Pony 1-1": hz, "Pony 1-2": hz})
+    _BRIDGE.heard_on.update({"Pony 1-1": hz, "Pony 1-2": hz})
     check("one cleared: the one who owns the approach",
-          A.may_be_vectored(ctl2, "Pony 1-1", freq_hz=hz), True)
+          A.may_be_vectored(_BRIDGE, ctl2, "Pony 1-1", freq_hz=hz), True)
     check("one cleared: the one holding behind him",
-          A.may_be_vectored(ctl2, "Pony 1-2", freq_hz=hz), False)
+          A.may_be_vectored(_BRIDGE, ctl2, "Pony 1-2", freq_hz=hz), False)
 
     # A single ship is worked normally -- the guard must not strand him.
     solo = atc.Controller(p)
     solo.report_beacon("Pony 1-1", 4000)
-    A._heard_on["Pony 1-1"] = hz
+    _BRIDGE.heard_on["Pony 1-1"] = hz
     check("a single ship is unaffected",
-          A.may_be_vectored(solo, "Pony 1-1", freq_hz=hz), True)
+          A.may_be_vectored(_BRIDGE, solo, "Pony 1-1", freq_hz=hz), True)
 
     print("\nall cases behaved" if ok else "\nSOME CASES FAILED")
     return 0 if ok else 1

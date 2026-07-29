@@ -31,6 +31,10 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from marshall.atc import agent_atc as A
+
+# One store per test module -- see agent_atc.Bridge. These used to be
+# module globals and every case had to remember to clear them.
+_BRIDGE = A.Bridge()
 from marshall.atc import controller as atc
 from marshall.core import route as R
 
@@ -51,10 +55,10 @@ def main() -> int:
     ]
     ok = True
     for name, heard_on, expect in cases:
-        A._heard_on.clear()
+        _BRIDGE.heard_on.clear()
         if heard_on is not None:
-            A._heard_on["Pony 1-1"] = heard_on
-        got = A.may_be_vectored(ctl, "Pony 1-1", freq_hz=approach)
+            _BRIDGE.heard_on["Pony 1-1"] = heard_on
+        got = A.may_be_vectored(_BRIDGE, ctl, "Pony 1-1", freq_hz=approach)
         good = got is expect
         ok = ok and good
         print(f"  {'PASS' if good else 'FAIL'}  {name}")
@@ -63,8 +67,8 @@ def main() -> int:
 
     # And the rule must not fire where no frequency is in play, or every caller
     # that does not care about channels would go silent.
-    A._heard_on.clear()
-    got = A.may_be_vectored(ctl, "Pony 1-1")
+    _BRIDGE.heard_on.clear()
+    got = A.may_be_vectored(_BRIDGE, ctl, "Pony 1-1")
     print(f"  {'PASS' if got else 'FAIL'}  no frequency given: rule is off")
     ok = ok and got
 
