@@ -399,6 +399,34 @@ wrong unit.
 
 ---
 
+## L — one channel, three parties
+
+Changed 30 July. ATC, engineering and the pilots now share the frequency and
+each transmission says who it is for. The gates that used to infer whether a
+call was "for the controller" are gone — ship-to-ship does not belong on this
+channel, because real aircraft carry a second radio and this squadron uses
+Discord.
+
+**The rule is NEVER SILENTLY IGNORE, not always transmit.** A correct read-back
+is still answered with silence, on purpose — an uncorrected read-back is the
+acknowledgement. What changed is that silence is now a decision with a reason
+behind it rather than a gate that ate the transmission.
+
+| ID | Prio | Test | What should happen | Fix under test |
+|----|------|------|--------------------|----------------|
+| L1 | P1 | With a flight formed, say something intra-flight on the ATC frequency — *"Apex two, tighten it up"* | He **answers**. Previously this was dropped and you heard nothing. What he says is the model's judgement; that he says *something* is the fix | [#40] |
+| L2 | P1 | Same, then check how he addresses you on the **next** call | Still your handle or your flight — **never "Apex 1-2"**. A member number is not a name anybody is addressed by, and it must not become your label | [#40] |
+| L3 | P1 | Say *"engineering, L3 check, how do you read"* while on the approach frequency | Engineering answers and logs it, and **you are not put in a mode** — your next call goes to ATC with no "engineering, clear" needed. Say his name again next time you want him | [#40] |
+| L4 | P1 | Read back an instruction **correctly** | **Silence is correct here.** He does not acknowledge your acknowledgement. If he answers every read-back the frequency will fill up with two of you, and it gets worse with four | [#40] |
+| L5 | P2 | Read back an instruction **wrongly** — say the wrong altitude | He corrects you. This is the case the silence in L4 is buying | [#40] |
+| L6 | P2 | Transmit with no callsign at all, out of the blue | *"Station calling, say your callsign"* — a canned local answer that costs no model call. He is not ignoring you | [#40] |
+
+**What it is actually checking.** L1 and L4 look contradictory and are the same
+rule: never silently ignore is about not DROPPING a transmission, not about
+transmitting on every one. L4 is a deliberate silence; L1 was an accidental one.
+
+---
+
 ## E — known broken. Do not report these as new
 
 Open bugs with repros. Seeing one means the world is as expected — they are on

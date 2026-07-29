@@ -2747,6 +2747,18 @@ def attribute(client, transcript, srs, session_id, radar_on, ctl):
     # repeat and noise does not. Demoted from the answer to a claim, which
     # is then matched against a track or a filed strip.
     claim = transmitter_callsign(client.last_sender_guid, transcript)
+    # "APEX 1-2" IS NOT A NAME ANYBODY IS ADDRESSED BY. It is how a flight
+    # speaks to itself, and it used to be grounds for DROPPING the
+    # transmission -- the controller said nothing at all. That gate is gone:
+    # ATC answers everything on this frequency, because ship-to-ship does not
+    # belong on it and a pilot who hears silence cannot tell it from a dead
+    # radio.
+    #
+    # The knowledge is still worth having, one step further in. Left as a
+    # claim it would become his LABEL, and the controller would start calling
+    # a man by a member number nobody uses on the air.
+    if claim and fl.is_intra_flight(claim, _flights.names()):
+        claim = ""
     _ident = _identity.resolve(
         client.last_sender_guid or "", srs, spoken=claim, scope=scope,
         plans=filed_plans(), roster=ctl.identified())
@@ -3483,18 +3495,6 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         scope, claim, _ident, known, _who = attribute(
             client, transcript, srs, session_id, radar_on, ctl)
 
-        # INTRA-FLIGHT TALK IS NOT FOR US. "Apex 1-2" is how a flight speaks to
-        # itself and never lands in ATC, so hearing it is evidence this
-        # transmission is addressed to somebody else. Cheaper and far more
-        # reliable than resolving it: the hardest case to identify becomes one
-        # there is no need to identify. See [ARCH-4] / #42.
-        if claim and fl.is_intra_flight(claim, _flights.names()):
-            print(f"  .. {claim} is intra-flight, not for the controller",
-                  flush=True)
-            record(session_id, kind="ship-to-ship", callsign=_who,
-                   gate="intra-flight", text=transcript)
-            continue
-
         _flight_say = membership(_who, transcript, scope, _ident, session_id)
 
         # THERE IS NO ADOPTION, and there was a block here that called
@@ -3701,17 +3701,53 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                                 heard_hz or freq_hz, AM)
             continue
 
-        # Not addressed to us. Two aircraft on our frequency talking to each
-        # other -- a real controller hears it, understands, and says nothing.
-        _other = addressed_to_another_aircraft(
-            transcript, known, [s.name for s in (getattr(profile, "stations", None) or [])])
-        if _other:
-            print(f"  (ship-to-ship: {known or srs} calling {_other} — not ours)",
-                  flush=True)
-            record(session_id, kind="ship-to-ship", callsign=known,
-                   gate=f"addressed to {_other}",
-                   text=transcript)
+        # OUT OF THE BLUE, WITH NO CALLSIGN. We know who it is from his radio,
+        # and a real controller does not -- so he asks, and does not act on a
+        # report he cannot attribute. Inside a conversation he does not ask,
+        # because by then he knows the voice.
+        _guid = client.last_sender_guid or ""
+        # A HANDLE IS A CALLSIGN. `extract` wants the numbered shape -- "Pony
+        # 1-1" -- so "Batumi Approach, Sockeye, request creation of Apex
+        # flight" read as a man who had not said who he was, and got challenged
+        # for the name he had just given. Under the flight model that is
+        # backwards: a person IS his handle, and only a flight has a name of
+        # its own, so "Sockeye" is complete self-identification.
+        #
+        # Matched against the CLOSED SETS -- the flights that exist and the
+        # handle this radio resolved to -- never against open English, which is
+        # the rule the whole design rests on.
+        _said_who = said_who(transcript, [*_flights.names(), _who])
+        _open = in_conversation(_guid)
+        _last_heard[_guid] = time.time()
+        # AND NEVER SWALLOW A DECISION. If the flight logic just ruled on this
+        # transmission, that ruling is the answer he is owed -- challenging him
+        # instead throws away a join, a refusal or a dissolve that has already
+        # taken effect, and leaves the roster and the pilot disagreeing.
+        if not _said_who and not _open and known and not _flight_say:
+            reply = challenge_for(transcript)
+            with radio_lock:
+                print(f"  ATC[who] {reply}   (out of the blue, no callsign)",
+                      flush=True)
+                record(session_id, kind="atc/challenge", callsign=known,
+                       text=reply)
+                client.transmit(voice_for(heard_hz).frames(reply),
+                                heard_hz or freq_hz, AM)
             continue
+
+        # THERE IS NO SHIP-TO-SHIP GATE. A transmission addressed to another
+        # aeroplane used to be heard, understood and answered with silence,
+        # which is what a real controller does on a busy frequency -- and it
+        # was the wrong model for this one. Ship-to-ship does not belong here:
+        # real aircraft carry a second radio for it and this squadron uses
+        # Discord. So anything arriving on this channel is addressed to
+        # somebody on it, and the controller answers rather than guessing at
+        # intent from the words. Guessing at intent from words is the same
+        # mistake as guessing at identity from words, which cost two days.
+        #
+        # `addressed_to_another_aircraft` has no caller now. It is left in
+        # place with its tests until [LAYERS.md] step 2, when the gates become
+        # one stage and it can go with a clear conscience rather than in the
+        # middle of a behaviour change.
 
         # A debug note: record it and stay off the air entirely. The pilot is
         # talking to the project, not to the controller.

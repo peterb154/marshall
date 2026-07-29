@@ -110,26 +110,51 @@ class TestTheGatesThatDropATransmission(unittest.TestCase):
         self.assertEqual(len(s.said()), 1)
         self.assertIn("say your callsign", s.said()[0].lower())
 
-    def test_intra_flight_is_caught_by_the_SHIP_TO_SHIP_gate(self):
-        """SURPRISING, AND TRUE TODAY. "Apex two, tighten it up" is caught by
-        `addressed_to_another_aircraft`, not by `is_intra_flight` -- the bridge
-        logs `(ship-to-ship: Apex calling Apex 2 -- not ours)`.
+    def test_intra_flight_is_ANSWERED_now_not_dropped(self):
+        """CHANGED ON PURPOSE, 30 July. This test used to assert the opposite,
+        and the diff is the record of the decision.
 
-        Both gates drop it and the pilot hears the same silence either way, so
-        nothing has ever revealed which one fires. It matters for the refactor
-        because the two live in different stages: one belongs to membership and
-        one to addressing, and a naive extraction that reorders them changes
-        which gate owns the case.
+        It was written to pin a surprise: "Apex two, tighten it up" was dropped
+        by the SHIP-TO-SHIP gate rather than by `is_intra_flight`, and since
+        both produced identical silence nothing had ever revealed which fired.
+
+        Both gates are now gone. The pilot's ruling: ship-to-ship does not
+        belong on this frequency at all -- real aircraft carry a second radio
+        and this squadron uses Discord -- so anything arriving here is
+        addressed to somebody here, and the controller answers. Guessing at
+        intent from the words was the same mistake as guessing at identity from
+        the words, which cost two days.
+
+        The RULE is never silently ignore, not always transmit. A correct
+        read-back is still answered with silence, on purpose -- an uncorrected
+        read-back is the acknowledgement -- but that is now a decision with a
+        reason rather than a gate that ate the transmission.
         """
         s = (sortie()
              .say(GUID, NAME, "Batumi Approach, Pony one one, request creation "
                               "of Apex flight")
              .radar(SCOPE).replies("RADIO: you are lead of Apex.")
              .say(GUID, NAME, "Apex two, tighten it up")
-             .radar(SCOPE).replies("RADIO: must not be sent")
+             .radar(SCOPE).replies("RADIO: Apex, say again for the controller.")
              .fly())
-        self.assertEqual(len(s.asked()), 1, "the second call reached the model")
-        self.assertEqual(s.said(), ["you are lead of Apex."])
+        self.assertEqual(len(s.asked()), 2,
+                         "the second call was dropped instead of answered")
+        self.assertEqual(len(s.said()), 2)
+
+    def test_a_member_number_never_becomes_his_label(self):
+        """The knowledge that used to justify the gate is still worth having,
+        one step further in. "Apex 1-2" is how a flight speaks to itself and is
+        not a name anybody is addressed by -- left as a claim it would become
+        his LABEL, and the controller would start calling a man by a member
+        number nobody uses on the air."""
+        s = (sortie()
+             .say(GUID, NAME, "Batumi Approach, Pony one one, request creation "
+                              "of Apex flight")
+             .radar(SCOPE).replies("RADIO: you are lead of Apex.")
+             .say(GUID, NAME, "Apex two, tighten it up")
+             .radar(SCOPE).replies("RADIO: roger.")
+             .fly())
+        self.assertNotIn("Apex 1-2", s.asked()[1])
 
 
 class TestTheFlightModelInTheLoop(unittest.TestCase):
