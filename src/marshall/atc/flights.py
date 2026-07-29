@@ -39,13 +39,12 @@ import re
 import time
 from dataclasses import dataclass, field
 
-# "request creation of Apex flight of 3", "form Apex flight of two".
-# The lead says a NAME and a SIZE. He does not name anybody, which is the whole
-# reason this is simple: there is no member list to mis-hear.
+# "request creation of Apex flight". The lead says a NAME and nothing else --
+# no members, no count -- which is the whole reason this is simple: there is
+# nothing in it for Whisper to get wrong.
 _CREATE = re.compile(
     r"\b(?:creat\w*|form\w*|establish\w*)\s+(?:of\s+|a\s+)?"
-    r"([A-Za-z][A-Za-z'-]*)(?:\s+flight)?"
-    r"(?:\s+of\s+(\w+))?", re.I)
+    r"([A-Za-z][A-Za-z'-]*)(?:\s+flight)?", re.I)
 
 # "Andre, joining Apex", "join Apex flight", "Apex, joining".
 _JOINING = re.compile(r"\bjoin(?:ing|s|ed)?\b", re.I)
@@ -53,16 +52,10 @@ _JOINING = re.compile(r"\bjoin(?:ing|s|ed)?\b", re.I)
 # "Apex 1-2", "Apex two" -- how a flight talks to itself.
 _MEMBER = re.compile(r"^\s*([A-Za-z][A-Za-z'-]*)\s*\d+\s*-\s*\d+\s*$")
 
-_WORD_NUM = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
-             "seven": 7, "eight": 8, "nine": 9, "a": 1, "an": 1}
-
-
-def _count(word: str) -> int:
-    w = (word or "").strip().lower()
-    if w.isdigit():
-        return int(w)
-    return _WORD_NUM.get(w, 0)
-
+# HOW CLOSE HE HAS TO BE. Formation distance, because that is what joining a
+# formation means -- and because joining is the moment the controller stops
+# separating him, so it had better be true.
+JOIN_NM = 1.0
 
 @dataclass
 class Flight:
@@ -71,55 +64,26 @@ class Flight:
     lead: str                                   # a handle
     members: list[str] = field(default_factory=list)   # handles, lead included
     formed_at: float = 0.0
-    # HOW MANY HE SAID, which is the only thing the lead declares about his
-    # members. Until that many have joined, the flight is not yet a flight and
-    # ATC still works everybody as individuals -- so a size that came out of
-    # Whisper wrong is visible at once rather than leaving the controller
-    # believing he is separating three aeroplanes when he is separating two.
-    size: int = 0
-    # ...and once that many have joined, IT STAYS A FLIGHT. Latched rather than
-    # recomputed, because a formation does not stop being one when a member
-    # lands or is shot down -- recomputing from the declared size would drop
-    # the survivors back to individuals at the worst possible moment, which is
-    # the moment they most need to be worked as one.
-    formed: bool = False
 
     def has(self, who: str) -> bool:
         return _same(who, self.lead) or any(_same(who, m) for m in self.members)
-
-    @property
-    def complete(self) -> bool:
-        """Everybody the lead declared has joined, on his own radio.
-
-        Reads the latch rather than recomputing. Set in `join`, at the moment
-        the last man arrives -- computing it here would mean the answer changed
-        depending on WHEN somebody happened to ask, and a flight that had lost
-        a member would quietly report itself unformed.
-        """
-        return self.formed
 
 
 def _same(a: str, b: str) -> bool:
     return (a or "").strip().lower() == (b or "").strip().lower()
 
 
-def parse_create(said: str) -> tuple[str, int]:
-    """Read "Approach, request creation of Apex flight of three".
+def parse_create(said: str) -> str:
+    """Read "Approach, request creation of Apex flight". Returns the name.
 
-    A NAME AND A COUNT, and deliberately nothing else. An earlier version had
-    the lead name his members -- "forming Apex with Shooter and Andre" -- which
-    meant matching two or three spoken names against a roster, reporting the
-    ones it could not place, and being wrong about the flight's size whenever
-    it mis-heard one.
-
-    Each pilot joins himself instead, so the only thing that can be mis-heard
-    here is a number, and a number that comes out wrong is visible immediately:
-    the flight never completes.
+    A NAME AND NOTHING ELSE. It used to read a count as well, so the flight
+    was not treated as one until that many had joined. Once the lead stopped
+    naming his members that guard had nothing to protect -- every member joins
+    on his own radio, so every member has been heard by construction -- and a
+    count is one more thing Whisper can get wrong for no benefit.
     """
     m = _CREATE.search((said or "").strip().rstrip("."))
-    if not m:
-        return "", 0
-    return m.group(1).strip().title(), _count(m.group(2) or "")
+    return m.group(1).strip().title() if m else ""
 
 
 def parse_joining(said: str, flight_names: list[str]) -> str:
@@ -172,29 +136,32 @@ class Roster:
                 return f
         return None
 
-    def create(self, name: str, lead: str, size: int,
+    def create(self, name: str, lead: str,
                now: float | None = None) -> tuple[Flight | None, str]:
-        """Open a flight. The lead is in it; nobody else is, yet.
+        """Open a flight of one. The lead is in it; anybody may join later.
 
-            "approach, request creation of Apex flight of 3"
-            "Roger sockeye, you are now the lead of Apex flight of 3. Each
-             member of apex flight check in to be joined"
+            "approach, request creation of Apex flight"
+            "Roger sockeye, you are the lead of Apex flight. Members join when
+             you are with him."
 
-        A PILOT IS IN ZERO OR ONE FLIGHT, refused rather than resolved: a man
-        in two flights is separated twice and the second answer is always
-        wrong.
+        NO SIZE. An earlier version had the lead declare how many, so the
+        flight was not treated as one until that many had joined -- a state
+        machine guarding against the lead naming men who had never spoken. Once
+        he stopped naming anybody that guard had nothing left to protect: every
+        member joins on his OWN radio, so every member has been heard by
+        construction.
+
+        So there is no count to mis-hear, no pending state, and a flight is a
+        flight from the moment it exists.
         """
         if not name or not lead:
             return None, "a flight needs a name and a lead"
-        if size < 1:
-            return None, "say how many are in the flight"
         if any(_same(name, n) for n in self.flights):
             return None, f"{name} already exists"
         other = self.of(lead)
         if other is not None:
             return None, f"{lead} is already in {other.name}"
-        f = Flight(name, lead, [lead], time.time() if now is None else now,
-                   size=size, formed=(size == 1))
+        f = Flight(name, lead, [lead], time.time() if now is None else now)
         self.flights[name] = f
         return f, ""
 
@@ -207,15 +174,25 @@ class Roster:
                 return self.flights.pop(key).members
         return []
 
-    def join(self, name: str, handle: str) -> tuple[Flight | None, str]:
-        """A pilot joining a flight, on his own radio.
+    def join(self, name: str, handle: str,
+             miles_from_lead: float | None = None) -> tuple[Flight | None, str]:
+        """A pilot joining a flight, on his own radio and in the right place.
 
             "approach, Andre, joining apex"  ->  "Roger Andre, joined to apex"
 
-        HE CAN ONLY JOIN HIMSELF. There is no way to add somebody else, which
-        is why there is no adoption, no rogue join to sort out in the debrief,
-        and no member list for anybody to mis-hear. It is also how a broken-out
-        wingman comes back -- rejoining is this, not a case of its own.
+        HE CAN ONLY JOIN HIMSELF, so a rogue join is impossible rather than
+        something the lead sorts out afterwards, and there is no member list
+        for anybody to mis-hear. It is also how a broken-out wingman comes back.
+
+        AND HE HAS TO BE THERE. Joining means the controller stops separating
+        him, so a man who says it from forty miles away would go unseparated
+        and unwatched while believing he was somebody's wingman. One mile is
+        formation distance: the radio call and the physical fact have to agree,
+        which is the same rule as everywhere else here -- a claim matched
+        against an authority rather than believed on its own.
+
+        A distance we cannot measure is not a pass. If radar cannot see them
+        both, the controller cannot confirm it and says so.
         """
         f = next((c for k, c in self.flights.items() if _same(k, name)), None)
         if f is None:
@@ -225,11 +202,17 @@ class Roster:
         other = self.of(handle)
         if other is not None:
             return None, f"{handle} is already in {other.name}"
-        if f.size and len(f.members) >= f.size:
-            return None, f"{name} is already a flight of {f.size}"
+        if miles_from_lead is None:
+            return None, (f"negative {handle}, radar does not show you both -- "
+                          f"unable to confirm you are with {name}")
+        if miles_from_lead > JOIN_NM:
+            # The observed fact, then the rule. Same order as everything else
+            # the controller says here: he is not being refused on a
+            # technicality, he is being told what radar shows and what it takes.
+            return None, (f"negative {handle}, radar shows you "
+                          f"{miles_from_lead:.0f} miles from {name} -- you must "
+                          f"be within {JOIN_NM:.0f} mile to join")
         f.members.append(handle)
-        if f.size and len(f.members) >= f.size:
-            f.formed = True
         return f, ""
 
     def leaves(self, handle: str) -> str:
@@ -275,14 +258,7 @@ class Roster:
         number: that is intra-flight and does not reach here.
         """
         f = self.of(handle)
-        # ONLY WHEN IT IS COMPLETE. Between "creation of Apex flight of three"
-        # and the third man joining, the ones who have joined are still
-        # individuals to the controller -- because a flight that ATC treats as
-        # one aeroplane while a member has never been heard is exactly the
-        # thing this design removes.
-        if f is not None and f.complete:
-            return f.name
-        return handle or ""
+        return f.name if f is not None else (handle or "")
 
     def names(self) -> list[str]:
         return sorted(self.flights)

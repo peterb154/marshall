@@ -508,6 +508,35 @@ _identity = identity.Registry()
 _flights = fl.Roster()
 
 
+def _track_of(scope: str, handle: str) -> str:
+    """The scope label whose handle is this person."""
+    for u in identity.units_on(scope):
+        if identity.handle(u.name).lower() == (handle or "").lower():
+            return u.name
+    return ""
+
+
+def miles_between(scope: str, a_track: str, b_track: str) -> float | None:
+    """How far apart two contacts are, from the radar picture alone.
+
+    Both positions are a range and a radial from the field, so this is two
+    polar-to-cartesian conversions and a hypotenuse. Returns None when either
+    aeroplane is not on the scope -- which the caller must not read as zero:
+    "I cannot see you both" and "you are together" are opposite answers.
+    """
+    import math
+    want = {_key_name(a_track): None, _key_name(b_track): None}
+    for tag, nm, radial, _alt, _hdg, _kt in _FIX_BY_TRACK.findall(scope or ""):
+        k = _key_name(tag)
+        if k in want and want[k] is None:
+            r, th = float(nm), math.radians(float(radial))
+            want[k] = (r * math.cos(th), r * math.sin(th))
+    p, q = want.get(_key_name(a_track)), want.get(_key_name(b_track))
+    if p is None or q is None:
+        return None
+    return math.hypot(p[0] - q[0], p[1] - q[1])
+
+
 def connected_handles(scope: str, client=None) -> list[str]:
     """Everybody who could be named in a declaration.
 
@@ -2952,21 +2981,34 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                    text=transcript)
             continue
 
-        # FORMING A FLIGHT, declared out loud and matched against the people
-        # who are demonstrably here.
+        # CREATING A FLIGHT. He says a name; he is its lead and its only member
+        # until somebody joins.
         if _who:
-            _name, _members, _unknown = fl.parse_forming(
-                transcript, _who, connected_handles(scope, client))
+            _name = fl.parse_create(transcript)
             if _name:
-                _f, _why = _flights.form(_name, _members)
+                _f, _why = _flights.create(_name, _who)
+                print(f"  .. {_name}: "
+                      + (f"created, lead {_who}" if _f else _why), flush=True)
                 if _f is not None:
-                    print(f"  .. {_name} formed: {', '.join(_f.members)}"
-                          + (f" (not recognised: {', '.join(_unknown)})"
-                             if _unknown else ""), flush=True)
-                    record(session_id, kind="flight/formed", callsign=_name,
-                           members=_f.members, unknown=_unknown)
-                else:
-                    print(f"  .. cannot form {_name}: {_why}", flush=True)
+                    record(session_id, kind="flight/created", callsign=_name,
+                           who=_who)
+
+            # JOINING ONE, on his own radio and in the right place. A pilot can
+            # only join himself, and only when radar puts him with the flight
+            # -- joining is the moment the controller stops separating him, so
+            # a man who says it from forty miles away would go unseparated and
+            # unwatched believing he was somebody's wingman.
+            _want = fl.parse_joining(transcript, _flights.names())
+            if _want:
+                _lead = _flights.flights[_want].lead
+                _gap = miles_between(scope, _ident.track,
+                                     _track_of(scope, _lead))
+                _f, _why = _flights.join(_want, _who, _gap)
+                print(f"  .. {_want}: "
+                      + (f"{_who} joined" if _f else _why), flush=True)
+                if _f is not None:
+                    record(session_id, kind="flight/joined", callsign=_want,
+                           who=_who, miles=round(_gap or 0, 1))
 
         # ADOPTING SOMEBODY, declared the same way a flight is formed. Any
         # member may do it, not only the lead -- a rule that depends on one

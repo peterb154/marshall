@@ -1272,10 +1272,11 @@ tree. It wants a clean pass, not the end of a long session.
    approach as a single.
 9. A flight that is no longer in formation on radar is TOLD SO, and the
    controller declines to work it as one aeroplane -- without forcing a split.
-10. A PILOT CAN ONLY JOIN HIMSELF. The lead declares a name and a COUNT and
-    names nobody; each member joins on his own radio. That removes the member
-    list nobody could reliably hear, removes adoption, and removes the rogue
-    join -- which is not deferred to the debrief, it is impossible.
+10. A PILOT CAN ONLY JOIN HIMSELF, and only from inside one mile. The lead
+    declares a NAME and nothing else -- no members, no count -- so there is
+    nothing in the request for Whisper to get wrong. Joining is the moment the
+    controller stops separating him, so the radio call and the physical fact
+    have to agree; a distance nobody can measure is a refusal, not a pass.
 11. When the LEAD is lost, THE FLIGHT DISSOLVES and the survivors revert to
     individuals. Simpler than promoting somebody and more honest: the flight's
     geometry IS the lead's track, so once he is gone the flight has no
