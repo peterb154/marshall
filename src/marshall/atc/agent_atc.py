@@ -2479,6 +2479,63 @@ def push_fixes(base: str, profile) -> int:
     return len(out)
 
 
+def hear(client, model, profile):
+    """One transmission off the radio, as words. [LAYERS.md] L0 -> the turn.
+
+    EXTRACTED VERBATIM, 30 July. Returns None where the loop used to
+    `continue` -- for no audio and for an empty transcript, which both led to
+    the same `continue` and are therefore the same answer. That is the only
+    change of shape, and it is what a function can express that a loop body
+    cannot.
+
+    Knows nothing about aviation: audio in, a transcript and the name of the
+    radio that keyed the mic out. It is the lowest stage and should stay the
+    most boring one.
+    """
+    from marshall.srs import stt
+
+    pcm, heard_hz = client.recv_utterance(max_wait=3600)
+    if pcm is None or not pcm.size:
+        return None
+    transcript = stt.transcribe(model, pcm,
+                                prompt=whisper_vocabulary(profile))
+    if not transcript:
+        return None
+    return transcript, client.name_for(client.last_sender_guid), heard_hz
+
+
+def attribute(client, transcript, srs, session_id, radar_on, ctl):
+    """WHO is talking, decided by something other than what he said.
+
+    EXTRACTED VERBATIM, 30 July. Returns the five things the rest of the turn
+    keys on: the scope it was decided against, what the words CLAIMED, the
+    identity, the label to address him by, and the person.
+
+    THE SCOPE IS FETCHED FIRST and that ordering is the design, not an
+    accident of where the line sits: the strongest evidence about identity is
+    in it, and the chain radio GUID -> client name -> unit -> track has no
+    microphone in it anywhere. A garbled callsign cannot move it. See
+    identity.py and [ARCH-2] / #40; 846 recorded transmissions say the words
+    alone would bind a radio to 37 distinct names, of which ten were
+    aeroplanes.
+    """
+    scope = fetch_radar(session_id) if radar_on else ""
+
+    # What the WORDS claim, still by vote across the sortie: real callsigns
+    # repeat and noise does not. Demoted from the answer to a claim, which
+    # is then matched against a track or a filed strip.
+    claim = transmitter_callsign(client.last_sender_guid, transcript)
+    _ident = _identity.resolve(
+        client.last_sender_guid or "", srs, spoken=claim, scope=scope,
+        plans=filed_plans(), roster=ctl.identified())
+    known = _ident.callsign
+    # The human, out of the squadron name -- unique per person, never
+    # spoken, and the same whatever callsign he is using. It is what a
+    # formation split falls back to; see identity.handle.
+    _who = identity.handle(_ident.track) if _ident.track else ""
+    return scope, claim, _ident, known, _who
+
+
 def compose_message(scope, known, transcript, profile, me, fix, nxt,
                     directive, stack, vectoring, _flight, _flight_say):
     """Everything the controller is handed for one transmission, as one string.
@@ -3184,14 +3241,10 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
     threading.Thread(target=asr_monitor, daemon=True).start()
 
     while True:
-        pcm, heard_hz = client.recv_utterance(max_wait=3600)
-        if pcm is None or not pcm.size:
+        heard = hear(client, model, profile)
+        if heard is None:
             continue
-        transcript = stt.transcribe(model, pcm,
-                                    prompt=whisper_vocabulary(profile))
-        if not transcript:
-            continue
-        srs = client.name_for(client.last_sender_guid)   # who keyed the mic (free)
+        transcript, srs, heard_hz = heard
 
         # Never answer another controller. A second bridge left running on the
         # same frequency -- trivially easy, since killing the launcher does not
@@ -3220,20 +3273,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # anywhere, so a garbled callsign cannot move it. See identity.py and
         # [ARCH-2] / #40; 846 recorded transmissions say the words alone would
         # bind a radio to 37 distinct names, of which ten were aeroplanes.
-        scope = fetch_radar(session_id) if radar_on else ""
-
-        # What the WORDS claim, still by vote across the sortie: real callsigns
-        # repeat and noise does not. Demoted from the answer to a claim, which
-        # is then matched against a track or a filed strip.
-        claim = transmitter_callsign(client.last_sender_guid, transcript)
-        _ident = _identity.resolve(
-            client.last_sender_guid or "", srs, spoken=claim, scope=scope,
-            plans=filed_plans(), roster=ctl.identified())
-        known = _ident.callsign
-        # The human, out of the squadron name -- unique per person, never
-        # spoken, and the same whatever callsign he is using. It is what a
-        # formation split falls back to; see identity.handle.
-        _who = identity.handle(_ident.track) if _ident.track else ""
+        scope, claim, _ident, known, _who = attribute(
+            client, transcript, srs, session_id, radar_on, ctl)
 
         # INTRA-FLIGHT TALK IS NOT FOR US. "Apex 1-2" is how a flight speaks to
         # itself and never lands in ATC, so hearing it is evidence this

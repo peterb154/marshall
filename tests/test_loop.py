@@ -242,3 +242,89 @@ class TestComposeMessageDirectly(unittest.TestCase):
         """Same arguments, same answer, and nothing observable changed. That is
         why this block could be moved without a behaviour risk."""
         self.assertEqual(self.compose(), self.compose())
+
+
+class TestHearDirectly(unittest.TestCase):
+    """L0 -> the turn. Audio in, words out, no aviation."""
+
+    def radio(self, script):
+        from fakeradio import FakeRadio
+        return FakeRadio(script)
+
+    def test_silence_is_not_a_transmission(self):
+        from marshall.atc import agent_atc as A
+
+        class Quiet:
+            last_sender_guid = None
+            def recv_utterance(self, **k): return None, None
+        self.assertIsNone(A.hear(Quiet(), None, None))
+
+    def test_an_empty_transcript_is_not_a_transmission(self):
+        """Whisper returning nothing is the same answer as no audio: both used
+        to `continue`, so both return None."""
+        import marshall.atc.agent_atc as A
+        from marshall.srs import stt
+        r = self.radio([("g", "sockeye", "")])
+        old = stt.transcribe
+        stt.transcribe = lambda *a, **k: r.consume()
+        try:
+            self.assertIsNone(A.hear(r, None, None))
+        finally:
+            stt.transcribe = old
+
+    def test_it_returns_the_words_and_the_radio_that_said_them(self):
+        import marshall.atc.agent_atc as A
+        from marshall.srs import stt
+        r = self.radio([("g", "362nd_sockeye", "Batumi Approach, Pony one one")])
+        old = stt.transcribe
+        stt.transcribe = lambda *a, **k: r.consume()
+        try:
+            r.recv_utterance()
+            transcript, srs, _hz = A.hear(r, None, None)
+        finally:
+            stt.transcribe = old
+        self.assertEqual(transcript, "Batumi Approach, Pony one one")
+        self.assertEqual(srs, "362nd_sockeye")
+
+
+class TestAttributeDirectly(unittest.TestCase):
+    """The identity ladder, now reachable without a sortie. This is the stage
+    the whole board keys on, and the one that cost two days when it was wrong."""
+
+    def attribute(self, transcript, srs, scope):
+        import marshall.atc.agent_atc as A
+
+        class Radio:
+            last_sender_guid = "guid-1"
+
+        class Ctl:
+            def identified(self): return []
+        saved = (A.fetch_radar, A.filed_plans, A._identity)
+        A.fetch_radar = lambda *a, **k: scope
+        A.filed_plans = lambda *a, **k: []
+        A._identity = A.identity.Registry()
+        try:
+            return A.attribute(Radio(), transcript, srs, "s", True, Ctl())
+        finally:
+            A.fetch_radar, A.filed_plans, A._identity = saved
+
+    def test_the_radio_decides_who_he_is_not_the_words(self):
+        """He says he is Falcon. Radar and SRS say otherwise, and they win."""
+        _scope, claim, ident, _known, who = self.attribute(
+            "Batumi Approach, Falcon one one, ten miles", "362nd_sockeye", SCOPE)
+        self.assertEqual(ident.authority, "radar")
+        self.assertEqual(ident.track, "362nd_sockeye")
+        self.assertEqual(who, "sockeye")
+        self.assertIn("Falcon", claim)
+
+    def test_with_nothing_on_the_scope_the_chain_does_not_close(self):
+        _scope, _claim, ident, _known, who = self.attribute(
+            "Batumi Approach, Pony one one", "362nd_sockeye", "no contacts")
+        self.assertEqual(ident.track, "")
+        self.assertEqual(who, "", "a person was invented from a name")
+
+    def test_the_scope_it_decided_against_is_returned(self):
+        """So the rest of the turn reasons about the same picture identity did
+        -- fetching it twice would let them disagree."""
+        scope, *_ = self.attribute("Pony one one", "362nd_sockeye", SCOPE)
+        self.assertEqual(scope, SCOPE)
