@@ -837,6 +837,121 @@ slot this fills), [ARCH-2] (identity), [ARCH-3] (the events that end a hook).
 
 ---
 
+## [INT-1] The intent classifier is on Sonnet, and it is in the way — #45
+labels: feature
+
+**Status:** TODO
+
+`bedrock_intent.classify` calls **Sonnet** (`bedrock_intent.py:28`, default
+`us.anthropic.claude-sonnet-4-5`) to put a transcript into a fixed taxonomy with
+a fixed schema. The 29 July audit benched it at **2.2 seconds**, and it runs
+BEFORE `intents.dispatch` can advance the deterministic controller — so it is
+not a background cost, it is dead air between the pilot releasing the button and
+anything happening.
+
+THIS IS A LATENCY ISSUE THAT HAPPENS TO SAVE MONEY, not the other way round. A
+fixed label set with a schema is the job Haiku exists for, and the tier is
+already wired and dormant: `FAST_MODEL_ID` in `director/app.py:68` is Haiku 4.5,
+`MARSHALL_FAST_TIER` gates it, and `agent.model` is swapped per call at
+`app.py:189`. Nothing needs building; something needs measuring and switching.
+
+WHAT MAKES THIS SAFE TO TRY. `tools/classify_bench.py` already scores the
+classifier against the phrasing pilots actually use, per model — it was written
+for exactly this question. So the decision is a measurement rather than an
+opinion, and the note in CLAUDE.md is worth heeding while making it: "the
+taxonomy wording moves the score more than the model does." If Haiku scores
+worse, the first thing to try is the prompt, not a bigger model.
+
+AND IT FIRES TOO OFTEN, which is a separate defect on the same path. Audit
+finding 2.x: `count_contacts` counts every ` | ` segment and every "N ships", so
+`engaged = ... or n_contacts >= 2` goes true with ONE aeroplane airborne beside
+any AI traffic — routing every transmission through `separation_context` and
+therefore through this classifier, and defeating the single-ship short-circuit
+the design note at `agent_atc.py:3192` promises. Fixing the count may matter more
+than changing the model, and it is free.
+
+**Acceptance criteria**
+1. `classify_bench.py` is run against Sonnet and Haiku on the same corpus and
+   both scores are recorded in the commit. The decision cites the numbers.
+2. Measured round-trip latency for a classification, before and after, on the
+   same box.
+3. A wrong classification cannot reach the separation engine unchallenged --
+   whatever the tier, `intents.dispatch` still owns what the controller does.
+4. The single-ship path really does skip the classifier, verified with one
+   aeroplane and AI traffic on the scope, which is the case that defeats it
+   today.
+5. If Haiku loses on the bench, the taxonomy wording is tried before the model
+   is. The attempt is recorded either way, so nobody repeats it.
+6. `docs/WIRING.md` says which model classifies intent and what it costs in
+   time -- today it does not mention the classifier's tier at all.
+
+Related: [#1] (the plans it routes to), the 29 July audit findings 2.x and 6.x.
+
+---
+
+## [FP-2] Which plan he means, without a hand-maintained word list — #46
+labels: feature
+
+**Status:** TODO
+
+`plans.pick` matches a spoken request to a filed plan by word overlap, scored
+against `_NOISE` -- **a stop-word list with 126 hand-maintained entries**
+(`director/tools/plans.py`). It works until somebody says an ordinary thing that
+is not on the list, and then it fails in the worst available way: a request that
+names nothing scores zero, hits the "he named somewhere nobody filed for" branch,
+and the pilot is told nothing on file matches.
+
+That is not hypothetical. On 28 July a pilot said *"we'd like to open the flight
+plan"* and was refused, because `open` was not in the list. The fix was to add
+`open`, `activate`, `pick`, `pickup` and four more words -- which is the same
+fix again, and will be the same fix next time.
+
+NOTE WHAT THIS IS AND IS NOT. There is **no model call here today**; this is pure
+Python. Embedding the request would ADD a small cost rather than save one, and
+that is the honest trade: it buys the deletion of a list that has already failed
+once, in the one place in this system where the meaning is genuinely open
+vocabulary even though the ANSWERS are a closed set of six plans. Everywhere else
+that speech is matched -- flight names, handles, callsigns -- the set is small
+and known and edit distance is instant, deterministic and testable. Do not
+generalise this to those.
+
+WHY IT FITS HERE AND NOWHERE ELSE:
+
+  * the answers are six rows, not open ended;
+  * the plans have prose descriptions already (`task`, `route`) that read like
+    what a pilot would say -- "CAS over Tsutsnvati", "weather reconnaissance out
+    to Ingress";
+  * `pgvector` is already an installed extension on that database and nothing
+    uses it. So is `pg_trgm`, which would do the fuzzy half in SQL.
+
+The plan embeddings are computed ONCE -- they change when somebody files a plan,
+not per transmission -- so the per-request cost is one embedding of a short
+utterance.
+
+**Acceptance criteria**
+1. The 126-entry `_NOISE` list is gone, or reduced to something nobody has to
+   maintain by hand.
+2. Every case in `tools/plan_sweep.py` still behaves, including the ones that
+   must ASK rather than guess and the one that must REFUSE a plan nobody filed.
+   Ambiguity is still answered with a question.
+3. "Open the flight plan", "pick up my IFR", "activate my flight plan" and
+   "ready to copy" all resolve without any of those verbs being enumerated
+   anywhere.
+4. A request naming somewhere nobody filed for -- "clearance to Vaziani" -- is
+   still refused rather than matched to the nearest thing. Similarity has a
+   floor, and the floor is chosen from measurement.
+5. Plan embeddings are computed on file/update, not per request, and the
+   per-transmission cost is stated in the commit.
+6. It degrades honestly: if the embedding call fails, the controller asks which
+   plan rather than guessing or erroring.
+7. `docs/WIRING.md`'s flight-plan section describes how matching works after the
+   change.
+
+Related: [#1] (FP-1, the plans themselves), [INT-1] (the other place a model
+belongs), and the 28 July finding recorded under FP-1.
+
+---
+
 ## [CHART-1] Chart the enroute fixes, not just the letdown — #26
 labels: feature
 
