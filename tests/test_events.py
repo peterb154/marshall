@@ -278,23 +278,23 @@ class TestABoardEntryNeedsEvidence(unittest.TestCase):
 
     def test_the_leftover_goes_and_the_live_one_stays(self):
         c = self._ctl()
-        A._seen_at.clear()
-        A.release_stale(c, "", now=0.0)                 # seed
-        gone = A.release_stale(c, "", now=A.STALE_BOARD_SEC + 1)
+        b = A.Bridge()
+        A.release_stale(b, c, "", now=0.0)                 # seed
+        gone = A.release_stale(b, c, "", now=A.STALE_BOARD_SEC + 1)
         self.assertEqual(gone, ["Falcon 1-1"])
         self.assertIn("Pony 1-1", c.aircraft)
 
     def test_nobody_goes_while_radar_still_sees_him(self):
         c = self._ctl()
-        A._seen_at.clear()
+        b = A.Bridge()
         scope = ("Falcon 1-1 (P-51D-30-NA, manned): 4.0 nm on the 300 radial, "
                  "3,000 ft, heading 130, 200 knots")
-        A.release_stale(c, scope, now=0.0)
-        self.assertEqual(A.release_stale(c, scope, now=A.STALE_BOARD_SEC + 1), [])
+        A.release_stale(b, c, scope, now=0.0)
+        self.assertEqual(A.release_stale(b, c, scope, now=A.STALE_BOARD_SEC + 1), [])
 
     def test_a_recent_transmission_keeps_him(self):
         c = self._ctl()
-        A._seen_at.clear()
-        A.release_stale(c, "", now=0.0)
-        A.note_alive("Falcon 1-1", now=A.STALE_BOARD_SEC)
-        self.assertEqual(A.release_stale(c, "", now=A.STALE_BOARD_SEC + 1), [])
+        b = A.Bridge()
+        A.release_stale(b, c, "", now=0.0)
+        A.note_alive(b, "Falcon 1-1", now=A.STALE_BOARD_SEC)
+        self.assertEqual(A.release_stale(b, c, "", now=A.STALE_BOARD_SEC + 1), [])

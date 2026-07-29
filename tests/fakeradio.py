@@ -229,12 +229,12 @@ class Sortie:
         patch(A, "load_and_push_plate", lambda *a, **k: self.profile)
         patch(A, "flight_bind", lambda *a, **k: {})
         patch(A, "filed_plans", lambda *a, **k: [])
-        # Fresh per sortie, or one test's board leaks into the next. These are
-        # module globals today, which is itself one of the reasons for the
-        # refactor -- see the 15 of them in agent_atc.
-        patch(A, "_identity", A.identity.Registry())
-        patch(A, "_flights", A.fl.Roster())
-        patch(A, "_seen_at", {})
+        # Fresh per sortie, or one test's board leaks into the next. The
+        # identity registry, the flight roster and the board clock now live on
+        # a Bridge that `_run_srs` makes for itself, so they need no patching
+        # at all -- which is the point of [LAYERS.md] step 2. What is left here
+        # is the state still module-global, and this list shrinking is the
+        # measure of that work.
         patch(A, "_last_heard", {})
         patch(A, "_heard_on", {})
 

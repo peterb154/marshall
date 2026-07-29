@@ -110,6 +110,10 @@ def run(script, session_id: str, sep_always: bool = True,
     # a clearance with no departure frequency in it.
     profile = agent_atc.load_and_push_plate(R.BATUMI_ASR)
     ctl = atc.Controller(profile)
+    # This run's own state -- see agent_atc.Bridge. It used to reach into the
+    # module for the identity registry, which is the singleton [LAYERS.md]
+    # step 2 removed.
+    bridge = agent_atc.Bridge()
     # Which position is speaking. The live loop derives this from the frequency
     # the transmission arrived on and tells the agent in a YOU ARE line; without
     # it every script is answered by Approach, and a clearance delivery script is
@@ -142,7 +146,7 @@ def run(script, session_id: str, sep_always: bool = True,
         # preferring the radio-to-track chain that has no microphone in it.
         # See identity.py and [ARCH-2] / #40.
         claim = agent_atc.transmitter_callsign(f"guid-{srs}", text)
-        ident = agent_atc._identity.resolve(
+        ident = bridge.identity.resolve(
             f"guid-{srs}", srs, spoken=claim, scope=scope,
             plans=agent_atc.filed_plans(), roster=ctl.identified())
         known = ident.callsign

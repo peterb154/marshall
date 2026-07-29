@@ -324,14 +324,14 @@ class TestAttributeDirectly(unittest.TestCase):
 
         class Ctl:
             def identified(self): return []
-        saved = (A.fetch_radar, A.filed_plans, A._identity)
+        saved = (A.fetch_radar, A.filed_plans)
         A.fetch_radar = lambda *a, **k: scope
         A.filed_plans = lambda *a, **k: []
-        A._identity = A.identity.Registry()
         try:
-            return A.attribute(Radio(), transcript, srs, "s", True, Ctl())
+            return A.attribute(A.Bridge(), Radio(), transcript, srs, "s",
+                               True, Ctl())
         finally:
-            A.fetch_radar, A.filed_plans, A._identity = saved
+            A.fetch_radar, A.filed_plans = saved
 
     def test_the_radio_decides_who_he_is_not_the_words(self):
         """He says he is Falcon. Radar and SRS say otherwise, and they win."""
@@ -366,24 +366,25 @@ class TestMembershipDirectly(unittest.TestCase):
     def setUp(self):
         import marshall.atc.agent_atc as A
         self.A = A
-        self._saved = (A._flights, A.record)
-        A._flights = A.fl.Roster()
+        self._saved = A.record
         A.record = lambda *a, **k: None
+        self.bridge = A.Bridge()
 
     def tearDown(self):
-        self.A._flights, self.A.record = self._saved
+        self.A.record = self._saved
 
     def ident(self, track):
         return self.A.identity.Identity(callsign="x", track=track,
                                         authority="radar", why="")
 
     def say(self, who, words, scope=SCOPE, track="362nd_sockeye"):
-        return self.A.membership(who, words, scope, self.ident(track), "s")
+        return self.A.membership(self.bridge, who, words, scope,
+                                 self.ident(track), "s")
 
     def test_creating_a_flight_is_voiced(self):
         said = self.say("sockeye", "approach, sockeye, request creation of Apex flight")
         self.assertIn("lead of Apex", said)
-        self.assertIn("Apex", self.A._flights.names())
+        self.assertIn("Apex", self.bridge.flights.names())
 
     def test_a_flight_nobody_created_is_refused_by_name(self):
         said = self.say("sockeye", "approach, sockeye, joining Bolt")
@@ -395,7 +396,7 @@ class TestMembershipDirectly(unittest.TestCase):
         name nobody can corroborate is the ghost problem with a new noun."""
         said = self.say("", "approach, request creation of Apex flight")
         self.assertEqual(said, "")
-        self.assertEqual(self.A._flights.names(), [])
+        self.assertEqual(self.bridge.flights.names(), [])
 
     def test_an_ordinary_transmission_says_nothing_about_flights(self):
         self.assertEqual(self.say("sockeye", "approach, sockeye, ten miles"), "")

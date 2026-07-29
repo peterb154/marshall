@@ -420,17 +420,16 @@ def load_and_push_plate(profile, base: str = BASE_URL):
 # short enough that last sortie's callsign is gone before the next one starts.
 STALE_BOARD_SEC = 8 * 60
 
-# callsign -> when we last had any evidence he exists.
-_seen_at: dict[str, float] = {}
+# (callsign -> when we last had any evidence he exists. Now Bridge.seen_at.)
 
 
-def note_alive(callsign: str, now: float | None = None) -> None:
+def note_alive(bridge, callsign: str, now: float | None = None) -> None:
     """He transmitted, or radar painted him."""
     if callsign:
-        _seen_at[callsign] = time.time() if now is None else now
+        bridge.seen_at[callsign] = time.time() if now is None else now
 
 
-def release_stale(ctl, scope: str = "", now: float | None = None) -> list[str]:
+def release_stale(bridge, ctl, scope: str = "", now: float | None = None) -> list[str]:
     """Drop board entries nothing can account for any more.
 
     THE PROBLEM THIS SOLVES, and it is not hypothetical: a pilot flew as
@@ -463,13 +462,13 @@ def release_stale(ctl, scope: str = "", now: float | None = None) -> list[str]:
         # arrives with no evidence at all still ages out. Without this the
         # default "assume seen now" made every unaccounted entry immortal --
         # which is precisely the leftover this exists to remove.
-        _seen_at.setdefault(cs, t)
+        bridge.seen_at.setdefault(cs, t)
         if ac.radar_identified or _key_name(cs) in here:
-            _seen_at[cs] = t
+            bridge.seen_at[cs] = t
     freed = []
     for cs in list(ctl.aircraft):
-        if t - _seen_at.get(cs, t) > STALE_BOARD_SEC and ctl.release(cs):
-            _seen_at.pop(cs, None)
+        if t - bridge.seen_at.get(cs, t) > STALE_BOARD_SEC and ctl.release(cs):
+            bridge.seen_at.pop(cs, None)
             freed.append(cs)
     return freed
 
@@ -494,18 +493,29 @@ def fetch_due(session_id: str, url: str = HOOKS_URL, timeout: float = 5.0) -> li
 # Whisper mangles the callsign or the pilot omits it entirely.
 _transmitters: dict[str, str] = {}
 
-# ...and the layer above it, which decides whether that vote is BELIEVED.
-#
-# `_transmitters` answers "what has this radio called itself", which is still a
-# question about words. The registry answers "which aeroplane is this radio
-# sitting in", which is a question about the sim, and only accepts the vote when
-# a track or a filed strip agrees. See identity.py and [ARCH-2] / #40.
-_identity = identity.Registry()
+class Bridge:
+    """Everything ONE bridge knows, for one frequency. [LAYERS.md] step 2.
 
-# WHICH FLIGHTS EXIST AND WHO IS IN THEM. A person is his handle; a flight has
-# a name; members have neither while it is together. See flights.py and
-# [ARCH-4] / #42.
-_flights = fl.Roster()
+    These were three module globals, which is the same as saying there could
+    only ever be one of each: one identity registry, one flight roster, one
+    board-freshness clock, for the whole process. That is fine while there is
+    one field and one frequency, and it is the wall in front of a second --
+    [ARCH-1] / #2 is usually described as "_run_srs holds a single profile",
+    but the profile was never the only singleton.
+
+    Held rather than global so a second bridge -- another field, another
+    frequency, a test -- has its own. The stages take it as an argument, which
+    is also what makes them testable without reaching into a module to reset
+    state between cases.
+    """
+
+    def __init__(self):
+        self.identity = identity.Registry()
+        self.flights = fl.Roster()
+        # When each board entry was last accounted for. See release_stale.
+        self.seen_at: dict[str, float] = {}
+
+
 
 
 def _track_of(scope: str, handle: str) -> str:
@@ -2552,7 +2562,7 @@ def speak(interact, message, transcript, known, heard_hz, fix, profile, ctl):
         _awaiting_readback[known] = time.time()
 
 
-def membership(_who, transcript, scope, _ident, session_id):
+def membership(bridge, _who, transcript, scope, _ident, session_id):
     """Create, join, break out -- and what the controller must SAY about it.
 
     EXTRACTED VERBATIM, 30 July -- [LAYERS.md] step 1. Not pure: it mutates
@@ -2581,7 +2591,7 @@ def membership(_who, transcript, scope, _ident, session_id):
     if _who:
         _name = fl.parse_create(transcript)
         if _name:
-            _f, _why = _flights.create(_name, _who)
+            _f, _why = bridge.flights.create(_name, _who)
             print(f"  .. {_name}: "
                   + (f"created, lead {_who}" if _f else _why), flush=True)
             if _f is not None:
@@ -2598,12 +2608,12 @@ def membership(_who, transcript, scope, _ident, session_id):
         # -- joining is the moment the controller stops separating him, so
         # a man who says it from forty miles away would go unseparated and
         # unwatched believing he was somebody's wingman.
-        _want, _said_name = fl.parse_joining(transcript, _flights.names())
+        _want, _said_name = fl.parse_joining(transcript, bridge.flights.names())
         if _want:
-            _lead = _flights.flights[_want].lead
+            _lead = bridge.flights.flights[_want].lead
             _gap = miles_between(scope, _ident.track,
                                  _track_of(scope, _lead))
-            _f, _why = _flights.join(_want, _who, _gap)
+            _f, _why = bridge.flights.join(_want, _who, _gap)
             print(f"  .. {_want}: "
                   + (f"{_who} joined" if _f else _why), flush=True)
             record(session_id, kind="flight/joined" if _f else "flight/refused",
@@ -2627,11 +2637,11 @@ def membership(_who, transcript, scope, _ident, session_id):
         # controller vectors the lead -- the man who needs help gets none
         # and somebody who did not ask gets turned. It is also the case
         # where the lead is least likely to be on the ball.
-        _out = fl.parse_leaving(transcript, _flights.names())
-        if _out and (_mine := _flights.of(_who)) is not None:
+        _out = fl.parse_leaving(transcript, bridge.flights.names())
+        if _out and (_mine := bridge.flights.of(_who)) is not None:
             _was_lead = _mine.lead == _who
             _survivors = [m for m in _mine.members if m != _who]
-            _gone = _flights.leaves(_who)
+            _gone = bridge.flights.leaves(_who)
             if _was_lead and _gone:
                 print(f"  .. {_gone} dissolved — its lead left", flush=True)
                 record(session_id, kind="flight/dissolved", callsign=_gone,
@@ -2726,7 +2736,7 @@ def hear(client, model, profile):
     return transcript, client.name_for(client.last_sender_guid), heard_hz
 
 
-def attribute(client, transcript, srs, session_id, radar_on, ctl):
+def attribute(bridge, client, transcript, srs, session_id, radar_on, ctl):
     """WHO is talking, decided by something other than what he said.
 
     EXTRACTED VERBATIM, 30 July. Returns the five things the rest of the turn
@@ -2757,9 +2767,9 @@ def attribute(client, transcript, srs, session_id, radar_on, ctl):
     # The knowledge is still worth having, one step further in. Left as a
     # claim it would become his LABEL, and the controller would start calling
     # a man by a member number nobody uses on the air.
-    if claim and fl.is_intra_flight(claim, _flights.names()):
+    if claim and fl.is_intra_flight(claim, bridge.flights.names()):
         claim = ""
-    _ident = _identity.resolve(
+    _ident = bridge.identity.resolve(
         client.last_sender_guid or "", srs, spoken=claim, scope=scope,
         plans=filed_plans(), roster=ctl.identified())
     known = _ident.callsign
@@ -2973,6 +2983,9 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
 
     freq_hz = freq_mhz * 1_000_000
     session_id = session_id or f"batumi-approach:{freq_mhz:.3f}"
+    # THIS bridge's state. Not a module global, so a second one -- another
+    # field, another frequency, a test -- gets its own. [LAYERS.md] step 2.
+    bridge = Bridge()
     profile = load_and_push_plate(R.BATUMI_ASR)       # DB is the source of truth
     radar_on = profile.atc.radar          # a no-radar mission works purely procedural
     # One voice per controller. Changing frequency should sound like meeting a
@@ -3147,7 +3160,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             # a pilot who is alone. Rides this tick because it is already here;
             # it costs one request and usually returns nothing.
             for gone in release_stale(
-                    ctl, fetch_radar(session_id) if radar_on else ""):
+                    bridge, ctl, fetch_radar(session_id) if radar_on else ""):
                 print(f"  .. {gone} — nothing has accounted for him in "
                       f"{STALE_BOARD_SEC // 60} minutes, off the board", flush=True)
                 record(session_id, kind="released", callsign=gone)
@@ -3493,9 +3506,10 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # [ARCH-2] / #40; 846 recorded transmissions say the words alone would
         # bind a radio to 37 distinct names, of which ten were aeroplanes.
         scope, claim, _ident, known, _who = attribute(
-            client, transcript, srs, session_id, radar_on, ctl)
+            bridge, client, transcript, srs, session_id, radar_on, ctl)
 
-        _flight_say = membership(_who, transcript, scope, _ident, session_id)
+        _flight_say = membership(bridge, _who, transcript, scope, _ident,
+                                 session_id)
 
         # THERE IS NO ADOPTION, and there was a block here that called
         # `fl.parse_adopting` for it. The design settled the other way: a pilot
@@ -3515,8 +3529,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
 
         # WHAT THE CONTROLLER CALLS HIM: the flight while he is in one, his own
         # handle otherwise, and never a member number.
-        if _who and _flights.of(_who) is not None:
-            known = _flights.speaking_as(_who)
+        if _who and bridge.flights.of(_who) is not None:
+            known = bridge.flights.speaking_as(_who)
         if _ident.authority and _ident.authority != "radar":
             # Worth a line in the log every time it is NOT the physical chain:
             # the day this reads "roster" for a pilot who should be on radar,
@@ -3559,7 +3573,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # the record or the pairing is guesswork after the fact.
         record(session_id, kind="board", callsign=known or srs,
                board=ctl.board())
-        note_alive(known)          # he just spoke; that is evidence he exists
+        note_alive(bridge, known)          # he just spoke; that is evidence he exists
 
         # Engage the deterministic engine only with real traffic (or forced on for
         # the voice-only rehearsal, or once a stack already exists). A single ship
@@ -3683,7 +3697,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # Matched against the CLOSED SETS -- the flights that exist and the
         # handle this radio resolved to -- never against open English, which is
         # the rule the whole design rests on.
-        _said_who = said_who(transcript, [*_flights.names(), _who])
+        _said_who = said_who(transcript, [*bridge.flights.names(), _who])
         _open = in_conversation(_guid)
         _last_heard[_guid] = time.time()
         # AND NEVER SWALLOW A DECISION. If the flight logic just ruled on this
@@ -3716,7 +3730,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # Matched against the CLOSED SETS -- the flights that exist and the
         # handle this radio resolved to -- never against open English, which is
         # the rule the whole design rests on.
-        _said_who = said_who(transcript, [*_flights.names(), _who])
+        _said_who = said_who(transcript, [*bridge.flights.names(), _who])
         _open = in_conversation(_guid)
         _last_heard[_guid] = time.time()
         # AND NEVER SWALLOW A DECISION. If the flight logic just ruled on this
