@@ -25,7 +25,6 @@ logging.getLogger("strands").setLevel(
 log = logging.getLogger(__name__)
 
 from strands import Agent
-from strands.agent.conversation_manager import SlidingWindowConversationManager
 from strands.models.bedrock import BedrockModel
 
 from strands_pg import (
@@ -49,6 +48,7 @@ from tools.approaches import (
     upsert_flight_plan,
 )
 from tools.clearance import clearance_tools
+from tools.context import RadioContext, scrub
 from tools.hooks import due_hooks, hook_tools
 from tools.identify import bindings_for, identify_tools
 from tools.events import start_events
@@ -123,11 +123,14 @@ def build_agent(session_id: str) -> Agent:
             spawn_ground,
         ],
         session_manager=PgSessionManager(session_id=session_id),
-        # Bound the context the model sees so latency doesn't compound over a long
-        # approach: the controller re-injects its live state (radar, stack, plate)
-        # every call, so it doesn't need deep history. Postgres still persists the
-        # full transcript; only what's sent to Sonnet is windowed.
-        conversation_manager=SlidingWindowConversationManager(window_size=16),
+        # WHAT HE IS HANDED versus WHAT HE REMEMBERS -- see tools/context.py.
+        # The live state (radar, stack, strip, plate) is re-derived and injected
+        # on every call, so keeping the old copies bought nothing and cost 2,448
+        # characters a turn in stale radar pictures the model could not tell
+        # from the current one. History keeps the words; the window is sized
+        # against the conversation it has to survive, not picked. Postgres still
+        # persists the full transcript -- only what is SENT is trimmed.
+        conversation_manager=RadioContext(),
     )
 
 
@@ -176,6 +179,12 @@ def atc_endpoint(body: dict) -> dict:
         agent = _atc_agents.get(session_id)
         if agent is None:
             agent = build_agent(session_id)
+            # A restart restores the transcript from Postgres exactly as it was
+            # written, situation blocks and all. `apply_management` would clean
+            # it up -- but only AFTER the first call had already paid for it, so
+            # the one turn following a director restart would be the most
+            # expensive of the sortie. Scrub on the way in instead.
+            scrub(agent.messages)
             _atc_agents[session_id] = agent
         agent.model = _FAST if tier == "haiku" else _SMART
         result = agent(message)

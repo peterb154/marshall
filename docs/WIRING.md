@@ -638,7 +638,7 @@ Logs `  ATC[who] Station calling ..., say your callsign.   (out of the blue, no 
 
 **22. The POST.** `interact(...)` (`:3647`) → `_interact` (`:2620`), which takes `radio_lock` — the single lock shared with the hook scheduler, the mile-call metronome and engineering, so ATC can never talk over itself. `ask_agent` (`:210`) POSTs `{session_id, message, tier}` to `http://localhost:8000/atc` with a **30 s timeout**. `tier` comes from `route_tier` (`:61`) and is always `"sonnet"` unless `MARSHALL_FAST_TIER=1`.
 
-On the director: `atc_endpoint` (`director/app.py:161`) takes a **non-blocking** per-session lock. If the agent is still answering the previous transmission it returns `{"response": "", "busy": true}` and logs `session ... is still answering the previous call; dropping this one rather than queueing it` — **in the director's log, not the bridge's.** From the bridge that is indistinguishable from a model that chose to say nothing. The agent is Sonnet with thinking **disabled** (`app.py:91`), a 16-turn sliding window (`app.py:130`), one Postgres session per channel, and tools `identify`, `vector`, `set_hook`, clearance, memory, `spawn_ground` (`app.py:104-124`).
+On the director: `atc_endpoint` (`director/app.py:161`) takes a **non-blocking** per-session lock. If the agent is still answering the previous transmission it returns `{"response": "", "busy": true}` and logs `session ... is still answering the previous call; dropping this one rather than queueing it` — **in the director's log, not the bridge's.** From the bridge that is indistinguishable from a model that chose to say nothing. The agent is Sonnet with thinking **disabled** (`app.py:91`), one Postgres session per channel, and tools `identify`, `vector`, `set_hook`, clearance, memory, `spawn_ground` (`app.py:104-124`). Its context is a `RadioContext` (`director/tools/context.py`, `app.py:133`) — see **What he is handed, and what he remembers** below, because the distinction decides what he can still know about a conversation five calls ago.
 
 **23. The reply, cleaned.** `for_voice(reply, agent=True)` (`:2631`, defined `:132`). The rule that matters: the model's reply must contain a `RADIO:` marker, and everything before the last one is thinking. **A reply from the agent with no marker at all is treated as thinking and becomes silence** (`:151-162`). Then markdown is stripped, newlines collapsed, and `Falcon 1-1` is rewritten to `Falcon one one` so Polly cannot say "Falcon one *to* one".
 
@@ -2530,6 +2530,62 @@ curl -s --get "localhost:8000/plans/resolve" \
 | `tools/atc_dryrun.py --script clearance` | the seam that matters — whether the agent **voices** the tool's numbers or improvises. This is what caught the departure frequency going missing, twice. |
 
 `uv run python tools/check.py` runs the first three tiers. What no script can judge, and what is still open on card section G, is whether the clearance is **copyable at speaking pace**.
+
+---
+
+## What he is handed, and what he remembers
+
+Two different things, and until 29 July they were one. The bridge assembles a
+message per transmission — `RADAR`, `TRANSMITTER`, `STRIP`, `FLIGHT`,
+`CONTROLLER`, `SEPARATION`, `ASR`, then `PILOT:` and the words — and that whole
+block used to be stored in the conversation as well as sent.
+
+Measured across two real sessions before the change: **the average user message
+was 2,522 characters, of which 74 were the pilot's words.** The rest was
+situation. Two consequences, and the second is the one that could produce a
+wrong instruction rather than a large bill:
+
+- `SlidingWindowConversationManager` counts **messages, not turns**, and a
+  transmission averages 2.56 of them — 2 for a plain exchange, 4 with one tool
+  call, 6 with two. A window of 16 therefore held about **six transmissions**,
+  and fewest exactly when the controller was busiest, because that is when he
+  reaches for `identify`, `vector` and `set_hook`.
+- An old turn carried an **old scope**. The model could see `RADAR: no contacts`
+  from five minutes ago beside a current picture with four aircraft in it, with
+  nothing to say which was now.
+
+The rule now, in one line: **everything that is state is injected fresh on every
+call and never stored; only dialogue is remembered.**
+
+| block | source | kept in history? |
+|---|---|---|
+| SITUATION — radar, strip, phase, who you are | re-derived per call | no |
+| CONVERSATION — the pilot's words and the replies | the exchange itself | **yes, and only this** |
+
+`tools/context.py` does it in `apply_management`, which strands calls after every
+event-loop cycle. Two details worth knowing when reading it:
+
+**The newest situation-bearing message is never scrubbed.** `apply_management`
+also runs *between the tool calls inside one turn*, so the newest such message is
+the turn currently in flight — stripping it would have the model compose its
+answer having lost the picture it was handed, which would read as the model
+ignoring radar.
+
+**The trimming itself is inherited, not reimplemented.** `SlidingWindow`
+preserves tool-use/tool-result pairs and refuses invalid window states; an
+orphaned `toolResult` is a hard API error, which on a radio is silence. Only the
+size changed.
+
+`WINDOW = 32` (`context.py`) is derived rather than picked: the interleaved
+standby conversation this exists for is 16 messages at worst, plus five more
+transmissions of margin at the measured 2.56 each. Replaying a real session, that
+costs about **4,565 tokens a call against the old 6,613 — a third less, for twice
+the memory.** Postgres still holds the whole transcript; only what is *sent* is
+trimmed, so a sortie stays replayable.
+
+Guarded by `tests/test_context.py`, and by rows **K1–K5** on the test card —
+K1 and K2 are deliberately the same conversation with and without a tool call,
+because that is the difference a message-counted window is blind to.
 
 ---
 
