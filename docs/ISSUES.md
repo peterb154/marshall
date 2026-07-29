@@ -1220,6 +1220,40 @@ Two creation paths, and both already have somewhere to live:
                     its members are typed rather than spoken.
     IN THE AIR      the declaration above.
 
+**THE SECOND HALF, designed 29 July and NOT yet built.** An approach is flown
+as a flight or as individuals, and which one is the FLIGHT'S choice:
+
+    "It's the flights choice if they want to break up. Not atc problem. So if
+     apex asks for the approach, atc routes them like one. If the flight
+     reports a breakup then 4 pilots check in, they all need to ask for the
+     approach. Atc will treat like 4 airplanes."
+
+Which deletes two things outright. "Can you maintain visual separation between
+your aircraft?" goes, because separation WITHIN a formation is the flight
+lead's and never the controller's -- the real rule as well -- so there was
+never anything to negotiate. And the break-up stops assigning levels: it does
+one thing, the flight stops existing, and each aeroplane then checks in as an
+ordinary arrival through the same path as a single. That removes the capacity
+problem entirely, since there is nothing to fit.
+
+    THE LEAD IS THE DECLARER, and ATC needs him for exactly ONE thing: the
+    track the geometry uses. Not for identifying who is talking (any member may
+    speak) and not for separation (the flight is one entity). When the lead
+    drops out the roster promotes the next member, so the position source
+    follows without anybody saying anything.
+
+    WHEN A FLIGHT FALLS APART IMPLICITLY -- they cannot hold formation -- ATC
+    does NOT force the split, because breaking up is the flight's choice. But
+    it must not pretend either: `tracks.in_formation` already knows, so the
+    honest response is to say what radar shows and decline to keep working them
+    as one thing. The choice stays theirs; the consequence is stated.
+
+ATTEMPTED AND REVERTED, 29 July. The break-up change ripples through
+twenty-two formation tests -- levels, capacity, sequencing after the split, and
+the "ask, do not infer" path all encode the old two-step. Half-done semantics
+left in the tree overnight is worse than none, so it went back to a green
+tree. It wants a clean pass, not the end of a long session.
+
 **Acceptance criteria**
 1. `handle()` identifies the person; the ATC-facing name is a handle or a
    flight name, never a member number.
@@ -1233,6 +1267,11 @@ Two creation paths, and both already have somewhere to live:
 6. On dissolution every member reverts to his handle, and the flight name
    refers to nobody -- which is what real procedure does and what
    `Controller.ambiguous_after_breakup` already assumes.
+7. The visual-separation question is gone.
+8. A break-up assigns nothing; each aeroplane checks in and requests the
+   approach as a single.
+9. A flight that is no longer in formation on radar is TOLD SO, and the
+   controller declines to work it as one aeroplane -- without forcing a split.
 
 Related: [#40] (identity), [#38] (a callsign is a position), [#12] (break-up).
 
