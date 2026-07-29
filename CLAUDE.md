@@ -5,6 +5,11 @@ World. **Before touching anything, read `docs/DESIGN.md`, then `docs/GOTCHAS.md`
 then `docs/BACKLOG.md`.** They hold the architecture, the hard-won gotchas (trust
 them), and the deferred work.
 
+`docs/WIRING.md` is the companion to those: DESIGN says what the system is FOR,
+WIRING says what it actually DOES — what talks to what, in what order, and which
+of the two brains produced a given transmission. Read it when a sortie did
+something inexplicable; it is organised symptom-first at the end.
+
 ## The core idea
 **Real ATC by default.** A capable, radar-equipped agent (Bedrock Sonnet) is the
 controller's brain. "Handicaps" — no radar, no DME, blind procedural separation,
