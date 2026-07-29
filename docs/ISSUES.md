@@ -160,7 +160,10 @@ Code: `director/tools/approaches.py`, `director/migrations/`, `flights` table
 ## [ARCH-1] One approach profile per flight, not per bridge — #2
 labels: architecture
 
-**Status:** TODO — blocked on nothing, but large
+**Status:** TODO — blocked on nothing, but large. **THIS IS THE
+WALL IN FRONT OF MULTIPLE AIRPORTS.** Everything else on this list makes one
+field work better; nothing else lets there be a second one. It has sat
+unprioritised since the beginning while three days went on ghosts
 
 `_run_srs` holds a single `profile`, and `asr.guide`, `controller.py`, the
 metronome and the plate all read it. Two aircraft recovering to different fields
@@ -688,7 +691,8 @@ must stay conditional.
 ## [CTX-1] The controller is handed state; he remembers only the conversation — #43
 labels: feature, needs-flight-test
 
-**Status:** TODO
+**Status:** SHIPPED/UNVERIFIED — `bd2db1b`..`d6d5b11`. Window
+24, situation stripped from history. Unflown. Card section F.
 
 Measured on two real sessions in `session_messages`: the average user message
 sent to Sonnet is **2,522 characters, of which 74 are the pilot's actual words**.
@@ -974,6 +978,76 @@ utterance.
 
 Related: [#1] (FP-1, the plans themselves), [INT-1] (the other place a model
 belongs), and the 28 July finding recorded under FP-1.
+
+---
+
+## [RAD-5] The geometry reads structure, not prose — #47
+labels: architecture
+
+**Status:** TODO
+
+    "we've spent DAYS chasing ghosts (literally)"
+
+We have, and this is where most of them came from. The director holds every
+track in PostGIS with real coordinates, renders them down to one English string,
+and the bridge parses that string back with **six separate regexes** to recover
+numbers that existed as floats one process away.
+
+  producer  `director/tools/tracks.py` — `_clusters`, `_unique_labels`,
+            `_render`, `_other_ship`
+  consumers `identity.units_on` (`_SCOPE_LINE`, `_FORMATION`, `flatten_formation`),
+            and `agent_atc`'s `_FIX`, `_FIX_BY_TRACK`, `_TYPE`, `_scope_geometry`
+
+WHAT IT HAS ALREADY COST, all of it in three days:
+
+  * a formation line defeated **every** parser at once, so both aeroplanes in a
+    formation vanished from the identity ladder -- and forming up is what a pilot
+    does immediately before asking to join a flight;
+  * `flatten_formation`, added to fix that, deletes the wingmen before the
+    position regexes see them, so no aircraft but a lead has a position;
+  * `radar_fix` needs a BRACKETED tag that only exists after `identify` has run,
+    so guidance was None for a pilot radar could see perfectly (finding 1.3);
+  * `count_contacts` cannot tell a T-55 from an F-16, because the streamer knows
+    the category and `tracks` has no column for it.
+
+Every one of those is the same defect: **a presentation decision applied to the
+data.** The collapse is right for the controller -- four ships in trail ARE one
+contact to a human -- and it is nonsense for geometry, which needs every
+aeroplane's position regardless of how it is being drawn.
+
+THE FIX IS ADDITIVE AND CAN BE MIGRATED ONE CONSUMER AT A TIME. `/radar` serves
+both:
+
+    {"picture": "...unchanged prose, for the agent's prompt...",
+     "contacts": [{"name": ..., "label": ..., "callsign": ..., "type": ...,
+                   "category": "airplane", "manned": true, "on_ground": false,
+                   "range_nm": ..., "radial": ..., "alt_ft": ..., "heading": ...,
+                   "speed_kt": ..., "formation": "362nd_Sockeye-1"}]}
+
+The prose stays exactly as it is. The geometry stops being a parser.
+
+AND IT GETS WORSE WITH MORE AIRFIELDS, which is why it belongs before [ARCH-1]
+rather than after: every airport multiplies the contacts on that string, and
+range/radial are relative to ONE beacon today.
+
+**Acceptance criteria**
+1. `miles_between`, `radar_fix_by_track`, `_scope_geometry` and
+   `aircraft_type_on_scope` read the structured contacts. No regex of the
+   picture remains on the geometry path.
+2. `identity.units_on` reads structure too, and `flatten_formation` is deleted
+   rather than fixed -- it exists only to paper over the lossy string.
+3. Every aircraft has a position, formation member or not, which closes the
+   wingman gap without touching the prose.
+4. `category` is carried from the streamer, where it is already known, so
+   `count_contacts` can count aircraft -- closing the half of [INT-1] that is
+   not a model swap.
+5. The prose picture is byte-identical for a scope the agent already handles, so
+   this cannot change what the controller says. Proved by a test, not by eye.
+6. `docs/WIRING.md`'s radar section describes the contract as data plus a
+   rendering of it.
+
+Related: [#40] (identity reads it), [#2] (ARCH-1, which this should precede),
+[#45] (INT-1's counting half), and themes 1 and 4 of the 29 July audit.
 
 ---
 
@@ -1489,9 +1563,12 @@ talkdown is "really good", and every complaint left is about how he gets there.
 
 ## [ARCH-4] A person is his handle; a flight has a name; members have neither — #42
 
-labels: architecture, needs-design
+labels: architecture, needs-flight-test
 
-**Status:** TODO — designed with the pilot 29 July, not yet built.
+**Status:** SHIPPED/UNVERIFIED — designed with the pilot 29 July and built the
+same night, `e0d03a2`..`a17998f`. Create, join, the one-mile rule, break-out,
+lead-loss and the voiced verdicts all work over real SRS against synthetic
+pilots; the manned path and two humans are unflown. Card section D.
 
 Every identity failure this week came from one place: deriving a member's radio
 identity from a flight number. "Falcon 1-1" and "Falcon 1-2" share a flight, so
@@ -1678,9 +1755,11 @@ Related: [#40] (identity), [#38] (a callsign is a position), [#12] (break-up).
 
 ## [ARCH-3] The sim already tells us; we are inferring it instead — #41
 
-labels: architecture, needs-design
+labels: architecture, needs-flight-test
 
-**Status:** TODO
+**Status:** SHIPPED/UNVERIFIED — `7c9ca15`..`91a9d3f`. `land`,
+`takeoff` and `player_leave_unit` are consumed and drive the Tower handoff and
+the slot release. Unflown. Card section E.
 
     "for landing - isn't there a dcs event that we can use to determine if the
      pilot landed or not?"
@@ -1795,9 +1874,12 @@ Related: [#38] (a callsign is a position), [#40] (identity).
 
 ## [ARCH-2] The board is keyed on a mis-transcribable string — #40
 
-labels: architecture, needs-design
+labels: architecture, needs-flight-test
 
-**Status:** TODO — design first, and MEASURE before building.
+**Status:** SHIPPED/UNVERIFIED — `ffb6bab`..`a17998f`. The
+ladder is built and running; no pilot has flown it. Card section B.
+
+**Was:** TODO — design first, and MEASURE before building.
 
     "the fact that this can happen -- that there is some dictionary with ghost
      aircraft -- makes me concerned about the foundational architecture of what

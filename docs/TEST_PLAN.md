@@ -1,98 +1,112 @@
-# Flight test card — squadron-night fixes
+# Flight test card
 
-One sortie, in order. Each test names the change behind it, so **a failure points
-at one commit and one function** instead of at "the ATC was weird".
+One sortie, in order. Every row names an **issue** in `docs/ISSUES.md`, which
+carries the acceptance criteria — so a failure points at one commit and one
+function rather than at "the ATC was weird".
 
-Every row names an **issue** in `docs/ISSUES.md`, which carries the acceptance
-criteria. **Everything a script can close has been taken off this card.** Thirty-five rows
-went as their issues closed; they live on in `tools/` and run from
-`tools/check.py`, so nothing is unguarded — it is simply no longer yours to fly.
+**Everything a script can close is already off this card.** What is left is what
+a human is the only instrument for. Section letters and row IDs are stable: they
+are cited on the issues and in the attestations, so J4 is J4 forever even when
+the sections are reordered.
 
-**Sections B, C, D and F are gone** — every row in them was closed and its
-script lives in `tools/`, run by `tools/check.py`. What is left is what a human
-is still the only instrument for, in the order you fly it: the ramp (A), the
-clearance (G), the approach (H), **identity (J)**, and section E, which exists
-so you do not spend a sortie re-finding something already understood.
+## Fly in this order
 
-**Section J is new on 28 July** and is the one to fly first if time is short. It
-tests the change that re-keyed the whole board off a spoken callsign onto
-evidence nobody speaks, and not one of its rows has ever run in the air. A test that fails is a comment on that issue; a section that passes
-closes it. Nothing here is closed by a green unit test — that is the point.
+| | section | issue | needs | why it is on the card |
+|---|---|---|---|---|
+| 1 | **J — who he thinks you are** | [#40] | solo | the change that re-keyed the whole board off a spoken callsign onto evidence nobody speaks. Fly it first if time is short |
+| 2 | **G — clearance at the ramp** | [#1] | solo | the awkward half: a wrong read-back, a deliberate ambiguity, an amendment |
+| 3 | **D — flights** | [#42] | **two aircraft** | built 29 July, never flown by a human. Skip it solo |
+| 4 | **H — the approach** | [#19] [#37] [#39] | solo | the main event, and where the open bugs live |
+| 5 | **F — landing and the handoff** | [#41] | solo | the sim's own events now drive Tower. Never flown |
+| 6 | **K — does he remember** | [#43] | solo, better with two | shipped 30 July, never flown |
+| — | **E — known broken** | | | read it, so you do not re-find something already understood |
 
-Report by ID over the radio. Say `engineering, come up` first, then
-`test B3 failed, he vectored me at four miles` — the ID is the whole point, and
-you can add detail or not. Engineering answers on whatever channel you called
-from and logs everything to `build/debug-notes.md`.
+**Solo today?** J, G, H, F, K. Section D needs a second aeroplane; leave it.
+
+## How to report
+
+Say `engineering, come up`, then `test H4 failed, he vectored me at four miles`.
+The ID is the whole point; detail is optional. Engineering answers on whatever
+channel you called from and logs to `build/debug-notes.md`.
 
 **Comms:** A 139 Center · B 124 Approach · C 118 Tower · D 131 Sentry.
-Everything on the approach — vectors, mile calls, landing clearance — is on
-**124**. You should not be sent to Tower until you are over the runway.
+Everything on the approach is on **124**. You should not be sent to Tower until
+you are over the runway.
 
-Priority column: **P1** never flown, this sortie is the first real test ·
-**P2** seen working live once, confirming it stuck · **P3** nice to have.
+**Priority:** **P1** never flown, this sortie is the first real test ·
+**P2** seen working once, confirming it stuck · **P3** nice to have.
 
-**Flown and struck on 28 July** — A7, A8, A9, G1, G2, H1, H2, H3 and H12, by
-Hoover, attested on their issues at commit `8a01149`. **#34, #35 and #36 are
-CLOSED**: every row they own has been flown.
+## Three things that are not bugs
 
-The other three stay open because a row is not an issue. G1 and G2 passed and
-[#1] still owns G3–G10, which is the awkward half — a wrong read-back corrected
-on one element only, asking by task rather than by name, the deliberate
-ambiguity, an amendment, two aircraft on one plan. H2 passed and [#19] still
-owns H7 and E1, and the outbound reposition they describe was seen again the
-same evening. H12 passed and [#39] still owns the fast overshoot, which the
-sweep predicts will fail at 450 kt.
+- **~2.2 s of extra delay on every transmission**, including a radio check, when
+  the mission holds armour or distant AI. `count_contacts` cannot tell a T-55
+  from a Viper. [#45]
+- **The board engages while you are alone**, same cause. `/diag` will show it.
+- **The paper nav log is 5.74° out on every leg** — grid convergence is applied
+  on the radar side and not in `bearing_distance`. 2.39 nm of cross-track on
+  KOBULETI→INITIAL.
 
-A struck row keeps its script. That is what tells us if the fix rots.
+**New instrument:** `http://<host>/diag` — who he thinks you are, the board
+against radar with ghosts flagged, the last decision trail, and the flight
+roster, refreshed every two seconds. The fastest way to answer "which brain did
+that?" without reading a log.
 
 ---
 
-## A — before you start the engine
+## J — who the controller thinks you are
 
-| ID | Test | What should happen | Fix under test |
-|----|------|--------------------|----------------|
-| ~~A8~~ | P1 | **In an F-16**, fly the approach from 20 nm and compare every "left/right of course" call against your HSI | The side he calls matches the needle, all the way in. This is the one that settles whether the P-51's instruments were the story | [#35] frames |
-| ~~A9~~ | P1 | Go around, and write down the altitude in the go-around instruction AND the one on the next check-in | The **same number** both times, and it is the plate's missed approach altitude | [#36] |
-| ~~A7~~ | P1 | On the ramp, draw on a chart page with a pen or the mouse, turn the page and come back, then go to the **E6B** page and press a button | Ink appears; the E6B still **works**, because that page is a calculator and keeps its clicks | [#34] `SetCursorEventsMode` |
+The board used to be keyed on a string Whisper guessed at from audio. It is now
+keyed on evidence nobody speaks: the radio's SRS name, matched against the name
+radar prints, and the sim's own account of who has a person in the seat. See
+[#40].
 
-**A1–A5 are closed** — flown on the ramp on 27 July and attested on #4 and #25.
-The engineering channel itself is the tool you use for everything else and it is
-working: ask for it in your own words, talk, say thanks or goodbye, and the
-frequency goes back to the controller. Their regression checks live in
-`tools/` and `tests/test_bridge.py`.
+**None of this has ever run in the air.** It could not until the morning of
+28 July, because the bridge did not know what any radio was CALLED — a socket
+timeout had been quietly killing the roster thread, so every client read as a
+six-character GUID stub and the strongest evidence in the system was never
+available. These rows are the first real exercise of it.
 
-**A6 closed 27 July** — two go-arounds, nothing invented either time. What is
-left in this section is A7 (doodling), A8 and A9.
+**Run `uv run python tools/identity_watch.py` in a second window.** One line per
+transmission: the radio, what the words claimed, and which authority resolved
+it. The column that matters is **authority**.
+
+| ID | Prio | Test | What should happen | Fix under test |
+|----|------|------|--------------------|----------------|
+| J1 | P1 | Fly with your **usual** SRS name and check in normally. Read the `authority` column | **`radar`** — the chain with no microphone in it: SRS name → the name radar prints → your track. If it reads `plan` or `roster` on every call, the roster fix did not take and I want to know before Andre, not after | [#40] `unit_for_radio` |
+| J2 | P1 | **Andre checks in cold** — a radio this controller has never heard, nothing filed for him, no setup of any kind | He is identified and vectored on his first call. Ask engineering what `authority` said. `radar` means his SRS name matched his DCS name, which is the expected and best case; `plan` or elimination means the chain did not close and I want the reason | [#40] |
+| J3 | P1 | Garble or omit your callsign on one call — mumble it, or say only *"request the approach"* | He answers, and your identity does **not** move. The aeroplane you are in decides who you are; the words are only a claim | [#40] |
+| J4 | P1 | With a second aircraft up, say **his** callsign by mistake on one of your calls | Your report must not be filed against his aeroplane. That is a separation error, and it is the one nothing in the system used to report | [#40] |
+| J5 | P2 | Read back an instruction sloppily — *"maintained two thousand"*, *"left three sixty"* | **No new aeroplane appears.** Ask engineering for the board if unsure. These exact phrases each invented an aircraft that took a holding level | [#40] guards |
+| J6 | P2 | Get radar to lose you — sit on the ramp, or go well out — then call in | *"Not radar identified, say your position and altitude"*, and **nobody is held behind you**. Being unseen must cost you a place in the queue, not give you one | [#40] `may_be_sequenced` |
 
 **What it is actually checking**
 
+**J1** is the whole architecture in one column. Everything else in this section
+is a fallback for when it does not close.
 
+**J2** is the one that decides whether a guest can just turn up. It was
+originally going to need a flight plan filed for him in advance — which is
+setup, and therefore not an answer to "he should work without setting anything
+up".
 
+It was also, briefly, written as *"change your SRS name to something unrelated
+to your DCS name"* — which cannot be done. **With DCS running, the SRS client
+takes its name from the DCS export**, so a pilot cannot set the two
+independently. Only a standalone client not attached to DCS can choose its own
+name, which is how the synthetic pilots in `srs/crowd.py` connect.
 
-**A8** — Your idea, and it is the right one. In the Mustang "which side am I
-on" is a judgement made by looking out of the window, and tonight we learned its
-instruments cannot be trusted for this: the wet compass read 139 where the F10
-map said 123 magnetic, and the DG beside it had drifted seven the other way. An
-F-16 has an inertial platform and an HSI, so the same question becomes an
-instrument reading. If the needle agrees with the controller, the P-51 was the
-story and #35 closes. If it does not, the residual is real and we finally have a
-clean measurement of it. Fly the same track both ways if you have the patience —
-the answer must not depend on what aeroplane you are sitting in.
+That is worth having straight, because it makes the identity chain STRONGER
+than it was designed for: the radio's name and the name radar prints are the
+same string, so the match is exact rather than approximate. The elimination
+rung stays as the fallback for a pilot radar has not painted yet — and it is
+exercised by `crowd.py`, not by a human, since a human cannot produce the
+mismatch it handles.
 
-**A9** — Seen once, live: "climb and maintain three thousand" on the go-around,
-then "maintain two thousand" thirty seconds later on the check-in, with your
-read-back in between. Write both numbers down as he says them; the specific pair
-is the evidence.
+**J4** is the failure that made all of this worth doing. With one pilot a
+mis-heard callsign is a ghost, which is untidy. With two it moves the wrong
+aeroplane's altitude and place in the queue, and nothing reports it.
 
-**A7** — You said it was a setting, and it was. The tab defaults to mouse
-emulation, so a pen stroke arrives as a mouse drag and draws nothing; the page
-now asks for `DoodlesOnly` instead. What to check is the pair: ink on the pages
-you write on, AND the E6B still taking button presses, because that one is a
-calculator and switching the whole tab to ink would have quietly broken it. If
-the strokes vanish on a page turn, say so — that is OpenKneeboard's ink and how
-long it keeps it is its business, not ours, but it decides whether this is
-finished or whether we draw our own.
-
+---
 
 ---
 
@@ -118,8 +132,6 @@ cockpit, can actually get it down at the pace it is read.
 
 | ID | Prio | Test | What should happen | Fix under test |
 |----|------|------|--------------------|----------------|
-| ~~G1~~ | P1 | *"Batumi Ground, Hoover one one, request IFR clearance, Marlin"* | The **whole** CRAFT clearance: cleared to Batumi, as filed, three thousand, departure frequency one two four decimal zero, and a squawk | [#1] `request_clearance` |
-| ~~G2~~ | P1 | Write G1 down as he says it, then read it back **correctly** | You got all five elements without asking for a repeat, and he says *"readback correct"* and stops talking | [#1] copyable |
 | G3 | P1 | Ask again for Marlin, and read it back with **one number wrong** | He corrects **that number only** and asks for it again — not the whole clearance, and never a shrug | [#1] `clearance_read_back` |
 | G4 | P1 | Ask by what you are DOING, no name — *"request clearance for the weather run out to Ingress"* | Lantern's clearance, five thousand. You should never have had to say a plan name | [#1] `plans.pick` |
 | G5 | P1 | *"request clearance for the CAS over Tsutsnvati"* | A **question** naming both — the plain one, and the one with the beacon letdown on return. He must not pick for you | [#1] `plans.pick` |
@@ -192,6 +204,38 @@ stop reading you ranges, that is the bug.
 
 ---
 
+---
+
+## D — flights: forming, joining, breaking up
+
+**Needs a second aeroplane. Skip this section solo.**
+
+Built 29 July and exercised over real SRS against synthetic pilots: created,
+joined at 0.2 nm, refused at 8.9 nm, refused an unknown flight, broke out and
+rejoined, every verdict voiced correctly. **No human has flown it.** What
+synthetic pilots cannot test is anything gated on MANNED — an AI unit reports no
+player name, so the elimination rung and the ground-state marker were untouched
+by that rehearsal. See [#42].
+
+| ID | Prio | Test | What should happen | Fix under test |
+|----|------|------|--------------------|----------------|
+| D1 | P1 | Lead: *"approach, &lt;handle&gt;, request creation of Apex flight"* | *"&lt;handle&gt;, you are now the lead of Apex flight. Each member of Apex check in to be joined"* — and he uses your HANDLE, not a slot name | [#42] `parse_create` |
+| D2 | P1 | Wingman, formed up inside a mile: *"approach, &lt;handle&gt;, joining Apex"* | *"Roger &lt;handle&gt;, joined to Apex."* From then on **both** of you are answered as *Apex* | [#42] `join`, `speaking_as` |
+| D3 | P1 | A third aircraft well outside a mile tries to join | Refused **with the number**: *"negative, radar shows you N miles from Apex — you must be within one mile to join"* | [#42] `JOIN_NM` |
+| D4 | P1 | Ask to join a flight that does not exist | *"unable, Bolt flight doesn't exist"* — an answer, not silence | [#42] |
+| D5 | P1 | As a flight, request the approach | Worked as **one aeroplane**: one clearance, one sequence number | [#42] |
+| D6 | P1 | Wingman: *"approach, &lt;handle&gt;, separating from Apex flight"* **while still close to the lead**, then ask for vectors | *"you are no longer in Apex flight, what are your intentions?"*, addressed by his own handle again. If the vectors then fail with "not radar identified", that is the known wingman-position gap — report it as **D6b** | [#42], [#47] |
+| D7 | P2 | Lead leaves the slot or crashes while the flight exists | The flight **dissolves**, survivors are asked their intentions, nobody inherits the name | [#42] lead loss |
+| D8 | P2 | Say something intra-flight — *"Apex two, tighten it up"* | The controller says **nothing**. It was not addressed to him | [#42] `is_intra_flight` |
+
+**What it is actually checking.** D2 and D6 are the pair. Joining is the moment
+the controller stops separating you individually; breaking out is the moment he
+must start again. D6 is also where the known gap lives — a wingman inside the
+2 nm cluster has no radar position of his own, so vectors after a break-out can
+fail for a reason that has nothing to do with the flight model.
+
+---
+
 ## H — the approach, rebuilt overnight (the main event)
 
 Everything in this section changed after the 27 July sortie and **none of it has
@@ -212,11 +256,7 @@ name in one sortie.
 
 | ID | Prio | Test | What should happen | Fix under test |
 |----|------|------|--------------------|----------------|
-| ~~H1~~ | P1 | Inbound from 20 nm, on the centreline. Compare each "left/right of course" call against where the runway actually is | The side he calls is the side you are on, **every call, all the way in**. This is the one that was wrong all night | [#35] frames |
-| ~~H2~~ | P1 | Fly the descent profile as given and note your altitude crossing the **threshold** | You arrive at the threshold at minimums, not 200 ft high with half a mile of descent owed | [#19] touchdown |
-| ~~H3~~ | P1 | Listen to the range calls near the end | "One mile from the runway" means one mile from the **threshold**. Previously it meant one mile from the runway centre, which is where you were already landing | touchdown |
 | H11 | P2 | With Shooter, or by asking for the approach while somebody else is on it: **get yourself held** | *"hold at five thousand, right turns, one eight zero outbound one minute, then three six zero inbound one minute"* — a shape and a clock you can actually fly with no navaid. Not "hold at BATUMI as published" | hold |
-| ~~H12~~ | P1 | Arrive **180 out of phase** — on the centreline heading away from the field — and ask for the approach | Downwind, base, then a 30-45 degree turn onto final. Recognisable legs and no reversal. Previously he was aimed at the fix and turned hard 180 | [#39] |
 | H13 | P2 | Fly the approach **fast** — 400 kt or more — and watch the turn from base onto final | He may overshoot: **known open**, criterion 2. The sweep at 450 kt says 181 dithering events and a 5.1 nm turn radius against a 3 nm base leg — so expect **left/right reversals**, not a clean overshoot. Report how far through you go | [#39] |
 | H10 | P1 | Arrive high — **5,000 ft or above, 30 nm out** — and ask for the approach. Note where he starts you down | He keeps you high, then sends you down **once**, timed so you reach 2,000 arriving at the initial fix. Not levelled at 2,000 ten miles early | [#37] descent |
 | H9 | P1 | Once established, listen to the **altitude** part of each mile call | *"four miles, on course, **descend to** one thousand three hundred"* — an instruction for the NEXT mile, arriving in time to fly it. Not "altitude should be", which tells you where you already ought to be | anticipatory |
@@ -310,58 +350,21 @@ from the air; this is the cheapest way to find out.
 
 ---
 
-## J — who the controller thinks you are
+---
 
-The board used to be keyed on a string Whisper guessed at from audio. It is now
-keyed on evidence nobody speaks: the radio's SRS name, matched against the name
-radar prints, and the sim's own account of who has a person in the seat. See
-[#40].
+## F — landing, and the handoff to Tower
 
-**None of this has ever run in the air.** It could not until the morning of
-28 July, because the bridge did not know what any radio was CALLED — a socket
-timeout had been quietly killing the roster thread, so every client read as a
-six-character GUID stub and the strongest evidence in the system was never
-available. These rows are the first real exercise of it.
-
-**Run `uv run python tools/identity_watch.py` in a second window.** One line per
-transmission: the radio, what the words claimed, and which authority resolved
-it. The column that matters is **authority**.
+The sim now states what used to be inferred from altitude and speed: `land`,
+`takeoff` and `player_leave_unit` are consumed and drive the handoff and the slot
+release. A taxiing aeroplane used to read as a go-around, and a parked one was
+told to climb to three thousand. **Never flown.** See [#41].
 
 | ID | Prio | Test | What should happen | Fix under test |
 |----|------|------|--------------------|----------------|
-| J1 | P1 | Fly with your **usual** SRS name and check in normally. Read the `authority` column | **`radar`** — the chain with no microphone in it: SRS name → the name radar prints → your track. If it reads `plan` or `roster` on every call, the roster fix did not take and I want to know before Andre, not after | [#40] `unit_for_radio` |
-| J2 | P1 | **Andre checks in cold** — a radio this controller has never heard, nothing filed for him, no setup of any kind | He is identified and vectored on his first call. Ask engineering what `authority` said. `radar` means his SRS name matched his DCS name, which is the expected and best case; `plan` or elimination means the chain did not close and I want the reason | [#40] |
-| J3 | P1 | Garble or omit your callsign on one call — mumble it, or say only *"request the approach"* | He answers, and your identity does **not** move. The aeroplane you are in decides who you are; the words are only a claim | [#40] |
-| J4 | P1 | With a second aircraft up, say **his** callsign by mistake on one of your calls | Your report must not be filed against his aeroplane. That is a separation error, and it is the one nothing in the system used to report | [#40] |
-| J5 | P2 | Read back an instruction sloppily — *"maintained two thousand"*, *"left three sixty"* | **No new aeroplane appears.** Ask engineering for the board if unsure. These exact phrases each invented an aircraft that took a holding level | [#40] guards |
-| J6 | P2 | Get radar to lose you — sit on the ramp, or go well out — then call in | *"Not radar identified, say your position and altitude"*, and **nobody is held behind you**. Being unseen must cost you a place in the queue, not give you one | [#40] `may_be_sequenced` |
-
-**What it is actually checking**
-
-**J1** is the whole architecture in one column. Everything else in this section
-is a fallback for when it does not close.
-
-**J2** is the one that decides whether a guest can just turn up. It was
-originally going to need a flight plan filed for him in advance — which is
-setup, and therefore not an answer to "he should work without setting anything
-up".
-
-It was also, briefly, written as *"change your SRS name to something unrelated
-to your DCS name"* — which cannot be done. **With DCS running, the SRS client
-takes its name from the DCS export**, so a pilot cannot set the two
-independently. Only a standalone client not attached to DCS can choose its own
-name, which is how the synthetic pilots in `srs/crowd.py` connect.
-
-That is worth having straight, because it makes the identity chain STRONGER
-than it was designed for: the radio's name and the name radar prints are the
-same string, so the match is exact rather than approximate. The elimination
-rung stays as the fallback for a pilot radar has not painted yet — and it is
-exercised by `crowd.py`, not by a human, since a human cannot produce the
-mismatch it handles.
-
-**J4** is the failure that made all of this worth doing. With one pilot a
-mis-heard callsign is a ghost, which is untidy. With two it moves the wrong
-aeroplane's altitude and place in the queue, and nothing reports it.
+| F1 | P1 | Fly the approach to a full stop | Handed to **Tower over the runway**, not at a range on final, and nothing tells you to climb once you are down | [#41] `land` |
+| F2 | P1 | Go around from short final | **No handoff to Tower**, and no reversal back towards the field while you are climbing out. A go-around at half a mile is closer than a landing at one | [#41], [#19] |
+| F3 | P2 | Touch and go | You are **not** handed to Tower for the few seconds you are on the runway — `runway_touch` is deliberately not acted on | [#41] `DOWN` |
+| F4 | P2 | Land, stop, leave the slot, take a new aeroplane and check in | The old callsign is **gone from the board**. Watch `/diag` — a leftover here is the ghost that held a real pilot in the stack for a whole approach | [#41] `player_leave_unit` |
 
 ---
 
@@ -394,6 +397,8 @@ wrong unit.
 
 ---
 
+---
+
 ## E — known broken. Do not report these as new
 
 Open bugs with repros. Seeing one means the world is as expected — they are on
@@ -407,7 +412,6 @@ real aeroplane. What is *not* worth a call is discovering it.
 |----|------|-------------------|----------------------------------------|-------|
 | E1 | note | Inbound and **2 nm or more off course between 11 and 16 nm**: he sends you outbound to reposition instead of giving you an intercept. Mapped exactly — inside 1.5 nm off, or beyond 18 nm, it behaves | A turn away when you are **under 2 nm off**, or beyond 18 nm, or a REVERSAL rather than a reposition | [#19] |
 | E2 | note | After a go-around or arriving from behind the field: he circles you near the field instead of taking you out | Circling while you are **inbound and established** — E2 is a repositioning bug, not an approach one | [#20] |
-| ~~E3~~ | — | **CLOSED 27 July** — flown clean twice, nothing invented on either go-around. Guarded by `tools/atc_dryrun.py` | — | — |
 
 **What each one actually is**
 
@@ -445,6 +449,39 @@ where. New is more valuable than confirming.
 
 ---
 
+---
+
+## Already flown, and kept as the regression record
+
+A row is not an issue. These passed in the air; their scripts stay in
+`tools/` and run from `tools/check.py`, which is what tells us if a fix
+rots. Flown by Hoover 28 July, attested at `8a01149`.
+
+**Section A**
+
+| ~~A8~~ | P1 | **In an F-16**, fly the approach from 20 nm and compare every "left/right of course" call against your HSI | The side he calls matches the needle, all the way in. This is the one that settles whether the P-51's instruments were the story | [#35] frames |
+| ~~A9~~ | P1 | Go around, and write down the altitude in the go-around instruction AND the one on the next check-in | The **same number** both times, and it is the plate's missed approach altitude | [#36] |
+| ~~A7~~ | P1 | On the ramp, draw on a chart page with a pen or the mouse, turn the page and come back, then go to the **E6B** page and press a button | Ink appears; the E6B still **works**, because that page is a calculator and keeps its clicks | [#34] `SetCursorEventsMode` |
+
+**Section E**
+
+| ~~E3~~ | — | **CLOSED 27 July** — flown clean twice, nothing invented on either go-around. Guarded by `tools/atc_dryrun.py` | — | — |
+
+**Section G**
+
+| ~~G1~~ | P1 | *"Batumi Ground, Hoover one one, request IFR clearance, Marlin"* | The **whole** CRAFT clearance: cleared to Batumi, as filed, three thousand, departure frequency one two four decimal zero, and a squawk | [#1] `request_clearance` |
+| ~~G2~~ | P1 | Write G1 down as he says it, then read it back **correctly** | You got all five elements without asking for a repeat, and he says *"readback correct"* and stops talking | [#1] copyable |
+
+**Section H**
+
+| ~~H1~~ | P1 | Inbound from 20 nm, on the centreline. Compare each "left/right of course" call against where the runway actually is | The side he calls is the side you are on, **every call, all the way in**. This is the one that was wrong all night | [#35] frames |
+| ~~H2~~ | P1 | Fly the descent profile as given and note your altitude crossing the **threshold** | You arrive at the threshold at minimums, not 200 ft high with half a mile of descent owed | [#19] touchdown |
+| ~~H3~~ | P1 | Listen to the range calls near the end | "One mile from the runway" means one mile from the **threshold**. Previously it meant one mile from the runway centre, which is where you were already landing | touchdown |
+| ~~H12~~ | P1 | Arrive **180 out of phase** — on the centreline heading away from the field — and ask for the approach | Downwind, base, then a 30-45 degree turn onto final. Recognisable legs and no reversal. Previously he was aimed at the fix and turned hard 180 | [#39] |
+
+
+---
+
 ## Notes for whoever flies this
 
 - **You do not have to do it all.** A is 3 minutes and makes everything else
@@ -455,33 +492,3 @@ where. New is more valuable than confirming.
 - Everything you say to engineering lands in `build/debug-notes.md` with a
   timestamp, and the bridge log has the radar picture for every call — so a
   bad vector can be re-run against the geometry afterwards without flying again.
-
-## The ladder, and what has been through it
-
-Cheapest first, per CLAUDE.md. Nothing reaches a human until the two tiers
-below it are clean, because a person's time is the expensive one and a
-synthetic pilot never gets bored.
-
-| Tier | What | Cost |
-|------|------|------|
-| 1 | `uv run python -m unittest discover -s tests -t .` | milliseconds |
-| 1b | `tools/asr_sweep.py` (add `--sloppy`) — 1,296 approaches | seconds |
-| 2 | `python -m marshall.srs.rehearsal --srs <host> 124.0 breakup` — synthetic pilots on real radios, real Whisper, real Polly | a few minutes |
-| 3 | AI aircraft in the sim (`tools/spawn.py`) + synthetic pilots — the first tier where a radio, a callsign and a TRACK are three different things | minutes |
-| 4 | **A human.** This card. | a sortie |
-
-**Tier 3 earns its keep too.** It found a crash -- `handoff_phrase` read a
-radar fix that an airspace handoff does not have, and the bridge went down
-silent with pilots on the frequency. Wording took out the process. It also
-caught the controller working a man before he had checked in, and the model
-addressing a wingman as his leader because the scope had a formation bound to
-it as if it were an aeroplane.
-
-**Tier 2 earns its keep.** The break-up identification work passed tier 1 and
-was then rejected by tier 2, which produced "Pony won", "Pony12" and an
-aeroplane called "21-2" that took a place in the holding stack behind two real
-ones. A unit test cannot find that, because the defect only exists once real
-speech is in the loop.
-
-*Correlations are to `main`; `git show <hash>` for the reasoning behind any of
-them.*
