@@ -32,7 +32,6 @@ class IntentKind(str, Enum):
     REQUEST_APPROACH = "request_approach"
     REQUEST_BREAKUP = "request_breakup"   # "Pony 1 requesting break-up"
     REQUEST_VISUAL = "request_visual"     # "Pony 1 requests the visual"
-    REPORT_CONDITIONS = "report_conditions"   # "affirm, we have visual"
     UNKNOWN = "unknown"             # hand to the LLM fallback, or ask again
 
     @classmethod
@@ -67,8 +66,9 @@ class Intent:
     flight_size: int = 1
     # Answer to "can you maintain visual separation?" -- True/False, or None if
     # the transmission was not about conditions at all. Only meaningful on a
-    # REPORT_CONDITIONS intent, and it decides whether a whole flight may share
-    # one holding level, so an unsure model must say None rather than guess.
+    # Only "have you got the field?" now. It used to also answer "can you
+    # maintain visual separation between your aircraft?", which is gone --
+    # separation inside a formation was never the controller's to ask about.
     visual: bool | None = None
 
 
@@ -104,8 +104,6 @@ INTENT_SCHEMA = {
                 "the visual' is asking, 'field in sight' is reporting.\n"
                 "request_breakup: asking to split a formation into individual "
                 "aircraft.\n"
-                "report_conditions: answering whether he can maintain VISUAL "
-                "separation between his own aircraft -- 'affirm', 'we're VMC', "
                 "'negative, in cloud', 'IMC'. Set `visual` on this one.\n"
                 "unknown: unintelligible, or none of the above. Use it rather "
                 "than inventing a value -- the enum above is exhaustive."),
@@ -117,7 +115,7 @@ INTENT_SCHEMA = {
         "altitude_ft": {"type": ["integer", "null"],
                         "description": "reported altitude in feet, or null"},
         "visual": {"type": ["boolean", "null"],
-                   "description": "for report_conditions only: true if the pilot "
+                   "description": "true if the pilot "
                    "says he CAN maintain visual separation / is VMC / has the "
                    "others in sight; false if he cannot / is IMC / in cloud; "
                    "null if the transmission is not about conditions."},
@@ -155,8 +153,6 @@ LLM_SYSTEM = (
     "VISUAL SEPARATION. The controller asks a flight whether it can maintain "
     "visual separation between its own aircraft. An answer to that -- 'affirm', "
     "'affirmative, visual', 'we're VMC', 'negative, we're in cloud', 'IMC', "
-    "'no joy on the others' -- is report_conditions, with `visual` true or "
-    "false. Only set `visual` on that intent.\n"
     "\n"
     "ASKING FOR A VISUAL vs HAVING THE FIELD. These are one word apart and mean "
     "opposite things. 'Request the visual approach' is request_visual -- he "
@@ -298,10 +294,6 @@ def dispatch(ctl: atc.Controller, intent: Intent) -> bool:
             ctl.request_breakup(cs)
         case IntentKind.REQUEST_VISUAL:
             ctl.request_visual(cs, field_in_sight=bool(intent.visual))
-        case IntentKind.REPORT_CONDITIONS:
-            if intent.visual is None:
-                return False            # ask again rather than assume cloud
-            ctl.report_conditions(cs, intent.visual)
         case _:
             return False
     return True

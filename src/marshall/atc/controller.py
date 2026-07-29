@@ -109,13 +109,6 @@ class Aircraft:
     # be contradicted -- because the engine is blind, and a thing that was never
     # on radar cannot leave it.
     radar_identified: bool = False
-    # Can this flight maintain VISUAL separation between its own aircraft?
-    # None = not asked yet. True = they can see each other, so they may share one
-    # holding level. False = IMC, so the controller must separate them himself.
-    # Tri-state on purpose: "we haven't asked" and "they said no" lead to the
-    # same separation but very different transmissions, and defaulting an unasked
-    # flight to "yes" would stack four aeroplanes on one level in cloud.
-    visual: bool | None = None
 
     @property
     def is_flight(self) -> bool:
@@ -268,6 +261,11 @@ class Controller:
     t: float = 0.0
     _letdown: str | None = None         # callsign currently in the letdown
     _letdown_since: float = 0.0
+    # Flights that have been broken up. Remembered because a name that means
+    # nobody still has to be RECOGNISED as meaning nobody -- and once the
+    # break-up stopped putting members on the board, the only evidence a flight
+    # ever existed left with it.
+    _broken_up: dict = field(default_factory=dict)   # flight name -> members
 
     # -- plumbing ----------------------------------------------------------
     # -- phraseology that follows the approach type ------------------------
@@ -520,6 +518,13 @@ class Controller:
         c = callsign.parse(cs)
         if not c.is_flight or c.canonical in self.aircraft:
             return False
+        # He was a flight and is not one now: the name refers to nobody, even
+        # if none of his members has checked in yet. Without this the question
+        # "who is Pony one?" got no answer at all in the window between the
+        # break-up and the first individual call -- which is exactly when it is
+        # most likely to be asked.
+        if any(_n.lower() == c.canonical.lower() for _n in self._broken_up):
+            return True
         return any(callsign.parse(k).flight == c.flight and k != c.canonical
                    for k in self.aircraft)
 
@@ -528,6 +533,15 @@ class Controller:
         c = callsign.parse(cs)
         members = sorted(k for k in self.aircraft
                          if callsign.parse(k).flight == c.flight)
+        if not members:
+            # He asked as a flight that has been broken up and whose members
+            # have not checked in yet. They are still the answer to "which of
+            # you is this?" -- offering no names at all would leave a pilot with
+            # a question and no way to answer it.
+            for _n, _m in self._broken_up.items():
+                if callsign.parse(_n).flight == c.flight:
+                    members = sorted(_m)
+                    break
         names = ", ".join(callsign.parse(m).spoken for m in members)
         self.say(cs, f"{c.spoken_flight}, you are broken up for individual "
                      f"approaches — say your callsign. I have {names}.")
@@ -626,6 +640,28 @@ class Controller:
     def check_in(self, cs: str, size: int = 1) -> None:
         ac = self._enter(cs, size)
         ac.phase, ac.last_report_t = Phase.ENROUTE, self.t
+
+        # OUT OF A FLIGHT THAT HAS JUST SPLIT.
+        #
+        #     "The flight splits, the members check in - response should be -
+        #      radar contact, what are your intentions"
+        #
+        # And that is the whole answer for him. He is not a new arrival to be
+        # told where to report -- he has been on this frequency for twenty
+        # minutes inside a formation, so the standard check-in reply would
+        # brief him on things he already has. What the controller genuinely
+        # does not know is what he wants now that he is his own aeroplane,
+        # because the break-up deliberately assigned him nothing.
+        #
+        # It also stops the controller assuming. Four aeroplanes coming out of
+        # a flight may want four different things -- one for the approach, one
+        # departing, one to hold for his wingman -- and the old flow gave all
+        # four a holding level nobody asked for.
+        if any(callsign.parse(n).flight == callsign.parse(cs).flight
+               for n in self._broken_up):
+            self.say(ac.callsign,
+                     f"{self._addr(ac)}, radar contact, say intentions.")
+            return
         here, here_freq = self.profile.station(enroute=True)
         tower, tower_freq = self.profile.station()
         fix = self.profile.arrival_fix
@@ -696,95 +732,33 @@ class Controller:
         The flight's own slot is released first so its members can reuse it --
         otherwise a four-ship holding at the bottom would step over its own level.
         """
-        # Can they see each other? In VMC a flight may break up into singles in
-        # the SAME pattern at the SAME level -- the pilots accept responsibility
-        # for staying apart, which is what "maintain visual separation" means and
-        # is far quicker than laddering four aeroplanes up the stack. In cloud
-        # that is not available and the controller must separate them himself.
-        # He cannot know which it is from the ground, so he asks, once.
-        # When the hold is above the weather -- which on a vectored approach it
-        # is, by construction -- there is nothing to ask. They can see each
-        # other, so they hold as one aeroplane at one level in trail, and the
-        # levels go to separating FLIGHTS from other flights. Laddering a
-        # formation up the stack in clear air is work that buys nothing and
-        # spends four levels on one arrival.
-        if ac.visual is None and getattr(self.profile, "hold_in_clear_air", False):
-            ac.visual = True
-        if ac.visual is None:
-            if ac.assigned_ft is None:
-                ac.assigned_ft = self._free_slot() or self.profile.bottom_ft
-            ac.phase, ac.last_report_t = Phase.HOLDING, self.t
-            self.say(ac.callsign,
-                     f"{self._addr(ac)}, {self._hold_phrase(ac.assigned_ft, ac.kit)}. "
-                     "Can you maintain visual separation between your aircraft?")
-            return
-
+        # SEPARATION INSIDE A FLIGHT IS NEVER THE CONTROLLER'S.
+        #
+        #     "It's the flights choice if they want to break up. Not atc
+        #      problem... If the flight reports a breakup then 4 pilots check
+        #      in, they all need to ask for the approach."
+        #
+        # Which is also the rule: separation between aircraft WITHIN a
+        # formation rests with the flight lead and the pilots concerned (FAA JO
+        # 7110.65). So there was never anything to negotiate, and the question
+        # "can you maintain visual separation between your aircraft?" is gone
+        # along with the tri-state field it set and the two ways of assigning
+        # levels it chose between.
+        #
+        # The break-up now does ONE thing: the flight stops existing. Each
+        # aeroplane is an ordinary arrival from that moment, checks in, asks
+        # for the approach, and is separated through the same path as any
+        # single -- which also deletes the capacity problem outright, because
+        # there are no longer four levels to find before the split may happen.
         members = list(ac.members)
         self.aircraft.pop(ac.callsign, None)
-        assigned: list[tuple[str, int]] = []
-        if ac.visual:
-            # One level for the whole flight; they keep themselves apart.
-            level = ac.assigned_ft or self._free_slot() or self.profile.bottom_ft
-            for m in members:
-                self.aircraft[m] = Aircraft(m, Phase.HOLDING, level, self.t,
-                                            visual=True)
-                assigned.append((m, level))
-        else:
-            for m in members:
-                slot = self._free_slot()
-                if slot is None:
-                    break
-                self.aircraft[m] = Aircraft(m, Phase.HOLDING, slot, self.t)
-                assigned.append((m, slot))
-
-        if len(assigned) < len(members):
-            # Only the oxygen ceiling can cause this. Half a formation is worse
-            # than none -- the ones without a level would have nowhere legal to
-            # go -- so put it back and keep them together until room appears.
-            for m, _ in assigned:
-                self.aircraft.pop(m, None)
-            self.aircraft[ac.callsign] = ac
-            self.say(ac.callsign, ref=ac, text=
-                     f"{self._addr(ac)}, unable break-up, holding is full to "
-                     f"{spell_alt(self.profile.top_ft)}. Remain as a flight, "
-                     f"maintain {spell_alt(ac.assigned_ft or self.profile.bottom_ft)}, "
-                     f"expect break-up shortly.")
-            return
-
-        # Hand over to the sequencer BEFORE announcing. It may clear the bottom
-        # aircraft -- normally lead -- and settle everyone above him a level
-        # lower, and the break-up call has to state the levels they will actually
-        # fly. Announce first and lead gets assigned a holding altitude and
-        # cleared out of it in the same breath, which is not a thing a controller
-        # says. Its transmissions are held back and replayed after ours.
-        mark = len(self.out)
+        self._broken_up[ac.callsign] = members
+        self.say(ac.callsign, ref=ac, text=
+                 f"{self._addr(ac)}, break up for individual approaches."
+                 f"{self._identify_phrase(members)}")
+        # The flight was holding a slot and has just released it, so somebody
+        # else may now be next for the letdown.
         self._try_clear()
-        followup = self.out[mark:]
-        del self.out[mark:]
-
-        announced = [m for m, _ in assigned
-                     if self.aircraft[m].phase == Phase.HOLDING]
-        call = f"{self._addr(ac)}, break up for individual approaches."
-        if ac.visual and announced:
-            # One level, one instruction -- reading four identical altitudes out
-            # would be noise, and the point is that they stay together.
-            call += (f" Maintain visual separation, all maintain "
-                     f"{spell_alt(self.aircraft[announced[0]].assigned_ft)}, "
-                     f"in trail.{self._identify_phrase([m for m, _ in assigned])}")
-        elif announced:
-            levels = ". ".join(
-                f"{callsign.parse(m).spoken} maintain "
-                f"{spell_alt(self.aircraft[m].assigned_ft)}" for m in announced)
-            call += (f" {levels}."
-                     + self._identify_phrase([m for m, _ in assigned],
-                                             already_named=True))
-        self.say(ac.callsign, call, ref=ac)
-
-        # Drop the sequencer's step-downs for aircraft this call already gave a
-        # level to -- they would repeat, verbatim, the altitude just assigned.
-        # Anything aimed at somebody else (a single already holding behind the
-        # formation) still has to go out.
-        self.out.extend(tx for tx in followup if tx.to not in announced)
 
     def request_breakup(self, cs: str) -> None:
         """Lead asking to split the formation up himself."""
@@ -792,25 +766,6 @@ class Controller:
         if not ac.is_flight:
             self.say(ac.callsign, f"{self._addr(ac)}, roger, no flight to break up.")
             return
-        self._break_up(ac)
-
-    def report_conditions(self, cs: str, visual: bool) -> None:
-        """The flight answering "can you maintain visual separation?".
-
-        Affirmative means the pilots take responsibility for staying apart, so
-        the whole flight can break up inside one holding level. Negative means
-        the controller separates them by altitude. Either way the answer arrives
-        while they are holding as a flight, so it is followed straight by the
-        break-up it was asked for.
-        """
-        ac = self.get(cs)
-        ac.visual, ac.last_report_t = visual, self.t
-        if not ac.is_flight:
-            self.say(ac.callsign, f"{self._addr(ac)}, roger.")
-            return
-        if not visual:
-            self.say(ac.callsign, f"{self._addr(ac)}, roger, instrument "
-                                  f"conditions, I will separate you.")
         self._break_up(ac)
 
     def report_beacon(self, cs: str, altitude_ft: int | None = None,
@@ -1177,10 +1132,6 @@ PATTERNS = [
      lambda c, cs, g: c.check_in(cs, _size(g))),
     (re.compile(r"(?P<cs>\w+ [\d-]+)(?: flight)? break", re.I),
      lambda c, cs, g: c.request_breakup(cs)),
-    (re.compile(r"(?P<cs>\w+ [\d-]+)(?: flight)? (?:affirm|vmc|visual)", re.I),
-     lambda c, cs, g: c.report_conditions(cs, True)),
-    (re.compile(r"(?P<cs>\w+ [\d-]+)(?: flight)? (?:negative|imc|in cloud)", re.I),
-     lambda c, cs, g: c.report_conditions(cs, False)),
     (re.compile(r"(?P<cs>\w+ [\d-]+) miss", re.I), lambda c, cs, g: c.report_missed(cs)),
     (re.compile(r"(?P<cs>\w+ [\d-]+) land", re.I), lambda c, cs, g: c.report_landed(cs)),
     (re.compile(r"(?P<cs>\w+ [\d-]+) request", re.I),

@@ -12,7 +12,6 @@ The rules being pinned down here:
 import unittest
 
 from marshall.atc import controller as atc
-from marshall.core import route as R
 
 from tests.test_controller import profile, said, texts
 
@@ -31,17 +30,37 @@ def imc_profile(**over):
     return profile(**over)
 
 
-def four_ship(ctl, cs="Pony 1-1", visual=False):
-    """Check a four-ship in, bring it to the beacon, and answer the controller's
-    visual-separation question -- which is what actually triggers the break-up.
+def four_ship(ctl, cs="Pony 1-1", check_in_after=True):
+    """Check a four-ship in, bring it to the fix -- which breaks it up -- and
+    then check each member in as a single.
 
-    Defaults to IMC (altitude separation), the case most of these tests are
-    about; pass visual=True for the one-level VMC break-up.
+    That last step IS the model, and it replaces a different thing entirely.
+    The controller used to ask "can you maintain visual separation between your
+    aircraft?", and the answer chose between one shared level and a ladder of
+    four. Both are gone: separation inside a formation is the flight lead's and
+    never the controller's, so the break-up assigns nothing and each aeroplane
+    becomes an ordinary arrival.
+
+        "If the flight reports a breakup then 4 pilots check in, they all need
+         to ask for the approach. Atc will treat like 4 airplanes."
+
+    check_in_after=False observes the moment in between.
     """
     ctl.check_in(cs, 4)
     ctl.report_beacon(cs, 6000, 4)
-    ctl.report_conditions(callsign_flight(cs), visual)
-    texts(ctl)
+    if check_in_after:
+        flight = callsign_flight(cs)
+        for n in range(1, 5):
+            ctl.check_in(f"{flight}-{n}", 1)
+            # AND ASKS. Checking in is not requesting an approach, and the
+            # break-up no longer assumes he wants one -- "they all need to ask
+            # for the approach" is the model, so a member who only checks in
+            # is enroute with no level, which is correct and is not what these
+            # tests are about.
+            ctl.request_approach(f"{flight}-{n}")
+    # RETURNED, not discarded. Draining here and asserting afterwards is how a
+    # test ends up checking an empty list and passing for the wrong reason.
+    return texts(ctl)
 
 
 def callsign_flight(cs):
@@ -92,9 +111,8 @@ class TestJoined(unittest.TestCase):
         self.ctl.check_in("Pony 1-1", 4)
         texts(self.ctl)
         self.ctl.report_beacon("Pony 1-3", 6000)
-        self.ctl.report_conditions("Pony 1", False)
         self.assertTrue(said(self.ctl, "break up"))
-        self.assertEqual(self.ctl.get("Pony 1-2").assigned_ft, 4000)
+        self.assertIsNone(self.ctl.get("Pony 1-2").assigned_ft)
 
     def test_a_joined_flight_occupies_one_slot(self):
         self.ctl.report_beacon("Hawk 1", 4000)          # single, cleared
@@ -105,218 +123,107 @@ class TestJoined(unittest.TestCase):
 
 
 class TestBreakUp(unittest.TestCase):
+    """The break-up does ONE thing: the flight stops existing.
+
+    It used to assign levels -- one shared, or a ladder of four -- chosen by
+    the answer to a question that was never the controller's to ask. Now each
+    aeroplane becomes an ordinary arrival separated through the same path as
+    any single, which also deletes the capacity problem: there are no longer
+    four levels to find before a split may happen.
+    """
+
     def setUp(self):
         self.ctl = atc.Controller(imc_profile())
 
-    def test_arrival_at_the_fix_breaks_the_flight_up(self):
-        four_ship(self.ctl)
+    def test_the_flight_stops_existing(self):
+        four_ship(self.ctl, check_in_after=False)
         self.assertNotIn("Pony 1", self.ctl.aircraft)
-        for n in range(1, 5):
-            self.assertIn(f"Pony 1-{n}", self.ctl.aircraft)
 
-    def test_lead_is_lowest_so_he_lands_first(self):
+    def test_nobody_is_assigned_anything_by_the_break_up(self):
+        """They are not aeroplanes the controller is working yet -- they have
+        not asked. Pre-assigning four levels to pilots who may not want an
+        approach is what let a full stack refuse a break-up outright."""
+        four_ship(self.ctl, check_in_after=False)
+        self.assertEqual(self.ctl.aircraft, {})
+
+    def test_they_are_told_to_check_in_individually(self):
+        call = " ".join(four_ship(self.ctl, check_in_after=False)).lower()
+        self.assertIn("break up", call)
+        self.assertIn("check in individually", call)
+
+    def test_each_of_them_is_named(self):
+        """A pilot who is not named does not know he is expected to call."""
+        call = " ".join(four_ship(self.ctl, check_in_after=False)).lower()
+        for n in ("one one", "one two", "one three", "one four"):
+            self.assertIn(f"pony {n}", call)
+
+    def test_announced_once(self):
+        spoken = four_ship(self.ctl, check_in_after=False)
+        self.assertEqual(len([t for t in spoken if "break up" in t.lower()]), 1,
+                         spoken)
+
+    def test_once_they_ask_they_are_separated_like_singles(self):
+        """Distinct levels for the ones HOLDING. Lead is cleared into the
+        letdown rather than holding, so he may share a number with the man who
+        took the level he left -- that is the stack stepping down, not two
+        aeroplanes at one altitude."""
         four_ship(self.ctl)
-        # Lead is cleared out of the bottom; the rest ladder up from the base.
-        self.assertEqual(self.ctl.get("Pony 1-1").phase, atc.Phase.CLEARED)
-        self.assertEqual(self.ctl.get("Pony 1-2").assigned_ft, 4000)
-        self.assertEqual(self.ctl.get("Pony 1-3").assigned_ft, 5000)
-        self.assertEqual(self.ctl.get("Pony 1-4").assigned_ft, 6000)
-
-    def test_the_flight_releases_its_own_slot(self):
-        # If the flight kept its level, its members would have to step over it.
-        ctl = atc.Controller(imc_profile())
-        ctl.check_in("Pony 1-1", 4)
-        ctl.report_beacon("Hawk 1", 4000)      # a single takes the letdown first
-        ctl.report_beacon("Pony 1-1", 6000, 4)
-        ctl.report_conditions("Pony 1", False)
-        texts(ctl)
-        levels = sorted(ctl.get(f"Pony 1-{n}").assigned_ft for n in range(1, 5))
-        self.assertEqual(levels, [4000, 5000, 6000, 7000])
-
-    def test_break_up_is_announced_once_with_the_settled_levels(self):
-        ctl = atc.Controller(imc_profile())
-        ctl.check_in("Pony 1-1", 4)
-        texts(ctl)
-        ctl.report_beacon("Pony 1-1", 6000, 4)
-        ctl.report_conditions("Pony 1", False)
-        spoken = texts(ctl)
-        breakup = [t for t in spoken if "break up" in t.lower()]
-        self.assertEqual(len(breakup), 1, spoken)
-        # The levels announced are the ones they will actually fly -- no
-        # assigning an altitude and revising it in the next breath.
-        self.assertIn("pony one two maintain four thousand", breakup[0].lower())
-        self.assertNotIn("pony one one maintain", breakup[0].lower())
-
-    def test_break_up_does_not_repeat_itself_as_step_downs(self):
-        ctl = atc.Controller(imc_profile())
-        ctl.check_in("Pony 1-1", 4)
-        texts(ctl)
-        ctl.report_beacon("Pony 1-1", 6000, 4)
-        ctl.report_conditions("Pony 1", False)
-        spoken = " ".join(texts(ctl)).lower()
-        self.assertEqual(spoken.count("pony one two"), 1, spoken)
-
-    def test_lead_is_cleared_immediately_when_the_letdown_is_free(self):
-        ctl = atc.Controller(imc_profile())
-        ctl.check_in("Pony 1-1", 4)
-        texts(ctl)
-        ctl.report_beacon("Pony 1-1", 6000, 4)
-        ctl.report_conditions("Pony 1", False)
-        self.assertTrue(said(ctl, "cleared beacon approach"))
-
-    def test_nobody_is_cleared_when_the_letdown_is_busy(self):
-        ctl = atc.Controller(imc_profile())
-        ctl.report_beacon("Hawk 1", 4000)          # occupies the letdown
-        ctl.check_in("Pony 1-1", 4)
-        texts(ctl)
-        ctl.report_beacon("Pony 1-1", 6000, 4)
-        ctl.report_conditions("Pony 1", False)
-        for n in range(1, 5):
-            self.assertEqual(ctl.get(f"Pony 1-{n}").phase, atc.Phase.HOLDING)
-
-    def test_requesting_the_approach_breaks_a_flight_up(self):
-        ctl = atc.Controller(imc_profile())
-        ctl.check_in("Pony 1-1", 4)
-        texts(ctl)
-        ctl.request_approach("Pony 1-1")           # asks about visual first
-        ctl.report_conditions("Pony 1", False)
-        self.assertTrue(said(ctl, "break up"))
-        self.assertIn("Pony 1-4", ctl.aircraft)
+        holding = [a.assigned_ft for a in self.ctl.aircraft.values()
+                   if a.phase is atc.Phase.HOLDING and a.assigned_ft]
+        self.assertEqual(len(set(holding)), len(holding), holding)
 
     def test_explicit_break_up_request(self):
-        ctl = atc.Controller(imc_profile())
-        ctl.check_in("Pony 1-1", 4)
-        texts(ctl)
-        ctl.request_breakup("Pony 1")              # asks about visual first
-        ctl.report_conditions("Pony 1", False)
-        self.assertIn("Pony 1-4", ctl.aircraft)
+        self.ctl.check_in("Pony 1-1", 4)
+        texts(self.ctl)
+        self.ctl.request_breakup("Pony 1")
+        self.assertNotIn("Pony 1", self.ctl.aircraft)
 
-    def test_break_up_request_from_a_single_is_harmless(self):
-        ctl = atc.Controller(imc_profile())
-        ctl.check_in("Sockeye")
-        texts(ctl)
-        ctl.request_breakup("Sockeye")
-        self.assertTrue(said(ctl, "no flight to break up"))
+    def test_requesting_the_approach_breaks_a_flight_up(self):
+        """Four ships cannot fly one letdown, whether or not the word is used."""
+        self.ctl.check_in("Pony 1-1", 4)
+        texts(self.ctl)
+        self.ctl.request_approach("Pony 1")
+        self.assertNotIn("Pony 1", self.ctl.aircraft)
 
 
-class TestVisualSeparation(unittest.TestCase):
-    """In VMC a flight can break up inside ONE holding level, because the pilots
-    can see each other and accept responsibility for staying apart. In cloud that
-    is not available and the controller separates them himself."""
+class TestSeparationInsideAFlightIsNotOurs(unittest.TestCase):
+    """The question is gone, and it was the wrong shape.
+
+        "We need to simplify the 'can you maintain visual separation' thing...
+         It's the flights choice if they want to break up. Not atc problem."
+        "Almost none of that can you maintain separation is actually battle
+         tested. Don't feel bad about tossing it."
+
+    It is also the real rule: separation between aircraft WITHIN a formation
+    rests with the flight lead and the pilots concerned, never the controller.
+    So there was nothing to negotiate -- and the question cost a transmission,
+    a tri-state field, an intent kind, two dispatch patterns and a branch in
+    every level assignment, to decide something that was never ours.
+    """
 
     def setUp(self):
         self.ctl = atc.Controller(imc_profile())
         self.ctl.check_in("Pony 1-1", 4)
         texts(self.ctl)
 
-    def arrive(self):
+    def test_the_controller_does_not_ask(self):
         self.ctl.report_beacon("Pony 1-1", 6000, 4)
+        self.assertFalse(said(self.ctl, "maintain visual separation between"))
 
-    def test_the_controller_asks_before_assuming(self):
-        self.arrive()
-        self.assertTrue(said(self.ctl, "maintain visual separation"))
+    def test_the_break_up_needs_no_answer(self):
+        """It used to wait for one, so a flight that never replied was never
+        broken up at all."""
+        self.ctl.report_beacon("Pony 1-1", 6000, 4)
+        self.assertNotIn("Pony 1", self.ctl.aircraft)
 
-    def test_no_break_up_until_he_answers(self):
-        self.arrive()
-        self.assertIn("Pony 1", self.ctl.aircraft)        # still one entity
-        self.assertNotIn("Pony 1-2", self.ctl.aircraft)
-
-    def test_they_still_get_a_holding_level_while_asked(self):
-        # Asking must not leave a four-ship with no altitude assigned.
-        self.arrive()
-        self.assertEqual(self.ctl.get("Pony 1").assigned_ft, 4000)
-
-    def test_affirmative_puts_the_whole_flight_on_one_level(self):
-        self.arrive()
-        texts(self.ctl)
-        self.ctl.report_conditions("Pony 1", True)
-        levels = {self.ctl.get(f"Pony 1-{n}").assigned_ft for n in range(1, 5)}
-        self.assertEqual(levels, {4000})
-        self.assertTrue(said(self.ctl, "maintain visual separation", "in trail"))
-
-    def test_negative_separates_them_by_altitude(self):
-        self.arrive()
-        texts(self.ctl)
-        self.ctl.report_conditions("Pony 1", False)
-        self.assertEqual(self.ctl.get("Pony 1-2").assigned_ft, 4000)
-        self.assertEqual(self.ctl.get("Pony 1-3").assigned_ft, 5000)
-        self.assertEqual(self.ctl.get("Pony 1-4").assigned_ft, 6000)
-
-    def test_lead_is_still_sequenced_first_within_one_level(self):
-        self.arrive()
-        texts(self.ctl)
-        self.ctl.report_conditions("Pony 1", True)
-        self.assertEqual(self.ctl.get("Pony 1-1").phase, atc.Phase.CLEARED)
-
-    def test_a_visual_flight_is_not_re_separated_by_the_step_down(self):
-        # The trap: stepping the stack down one AIRCRAFT at a time would hand a
-        # visual flight 4,000 / 5,000 / 6,000 and silently undo the break-up.
-        ctl = atc.Controller(imc_profile())
-        ctl.report_beacon("Hawk 1", 4000)          # cleared into the letdown
-        ctl.report_beacon("Hawk 2", 5000)          # holds the bottom level
-        ctl.check_in("Pony 1-1", 4)
-        ctl.report_beacon("Pony 1-1", 6000, 4)
-        ctl.report_conditions("Pony 1", True)
-        texts(ctl)
-        self.assertEqual({ctl.get(f"Pony 1-{n}").assigned_ft for n in range(1, 5)},
-                         {5000})
-        ctl.report_landed("Hawk 1")                # Hawk 2 cleared, stack steps down
-        self.assertEqual({ctl.get(f"Pony 1-{n}").assigned_ft for n in range(1, 5)},
-                         {4000})
-
-    def test_a_flight_moving_together_gets_one_call(self):
-        ctl = atc.Controller(imc_profile())
-        ctl.report_beacon("Hawk 1", 4000)
-        ctl.report_beacon("Hawk 2", 5000)
-        ctl.check_in("Pony 1-1", 4)
-        ctl.report_beacon("Pony 1-1", 6000, 4)
-        ctl.report_conditions("Pony 1", True)
-        texts(ctl)
-        ctl.report_landed("Hawk 1")
-        descents = [t for t in texts(ctl) if "descend and maintain" in t]
-        self.assertEqual(len(descents), 1, descents)
-        self.assertIn("pony one flight", descents[0].lower())
-
-    def test_conditions_from_a_single_ship_are_harmless(self):
-        ctl = atc.Controller(imc_profile())
-        ctl.check_in("Sockeye")
-        texts(ctl)
-        ctl.report_conditions("Sockeye", True)
-        self.assertTrue(said(ctl, "roger"))
-
-    def test_an_unanswered_question_never_assumes_visual(self):
-        # "Not asked" and "said no" must not collapse: defaulting to visual would
-        # stack four aeroplanes on one level in cloud.
-        self.assertIsNone(self.ctl.get("Pony 1").visual)
+    def test_the_controller_has_no_opinion_to_record(self):
+        self.assertFalse(hasattr(atc.Aircraft("x"), "visual"))
 
 
-class TestBreakUpCapacity(unittest.TestCase):
-    def test_a_break_up_that_will_not_fit_is_refused_whole(self):
-        # Only the oxygen ceiling can cause this. Half a formation is worse than
-        # none: the ships without a level would have nowhere legal to go.
-        ctl = atc.Controller(imc_profile(hold_base_ft=4000, hold_top_ft=6000))
-        ctl.report_beacon("Hawk 1", 4000)       # takes the letdown
-        ctl.report_beacon("Hawk 2", 5000)       # holds 4000
-        ctl.check_in("Pony 1-1", 4)
-        texts(ctl)
-        ctl.report_beacon("Pony 1-1", 6000, 4)
-        ctl.report_conditions("Pony 1", False)
-        self.assertTrue(said(ctl, "unable break-up"))
-        self.assertIn("Pony 1", ctl.aircraft)            # still one entity
-        self.assertNotIn("Pony 1-2", ctl.aircraft)       # and not half-split
-
-    def test_a_refused_break_up_leaves_the_stack_untouched(self):
-        ctl = atc.Controller(imc_profile(hold_base_ft=4000, hold_top_ft=6000))
-        ctl.report_beacon("Hawk 1", 4000)
-        ctl.report_beacon("Hawk 2", 5000)
-        ctl.check_in("Pony 1-1", 4)
-        texts(ctl)
-        ctl.report_beacon("Pony 1-1", 6000, 4)          # asks about visual
-        texts(ctl)
-        before = {cs: a.assigned_ft for cs, a in ctl.aircraft.items()}
-        ctl.report_conditions("Pony 1", False)
-        after = {cs: a.assigned_ft for cs, a in ctl.aircraft.items()}
-        self.assertEqual(before, after)
+# (TestBreakUpCapacity is gone. It tested refusing a break-up when the stack
+# could not hold four more aeroplanes -- a problem that existed only because
+# the break-up pre-assigned levels. It assigns nothing now, so there is nothing
+# to fit and nothing to refuse.)
 
 
 class TestAfterBreakUp(unittest.TestCase):
@@ -385,13 +292,19 @@ class TestFormationWithOtherTraffic(unittest.TestCase):
         ctl.check_in("Hawk 2-1", 2)
         self.assertEqual(len(ctl.aircraft), 2)
         ctl.report_beacon("Pony 1-1", 6000, 2)
-        ctl.report_conditions("Pony 1", False)
         ctl.report_beacon("Hawk 2-1", 7000, 2)
-        ctl.report_conditions("Hawk 2", False)
         texts(ctl)
-        self.assertEqual(ctl.get("Pony 1-2").assigned_ft, 4000)
-        self.assertEqual(ctl.get("Hawk 2-1").assigned_ft, 5000)
-        self.assertEqual(ctl.get("Hawk 2-2").assigned_ft, 6000)
+        # Nothing is assigned by the break-up itself -- he has not asked for
+        # an approach yet, and pre-assigning to a pilot who may not want one is
+        # what the old two-step did.
+        # Both flights are gone and NEITHER has been given anything: the
+        # break-up assigns nothing, and none of these four has asked for an
+        # approach. What matters here is that two formations do not become one
+        # -- each dissolved into its own members.
+        for who in ("Pony 1-2", "Hawk 2-1", "Hawk 2-2"):
+            self.assertIsNone(ctl.get(who).assigned_ft, who)
+        self.assertNotIn("Pony 1", ctl.aircraft)
+        self.assertNotIn("Hawk 2", ctl.aircraft)
 
 
 class TestDispatchIntegration(unittest.TestCase):
@@ -411,9 +324,10 @@ class TestDispatchIntegration(unittest.TestCase):
         texts(ctl)
         intents.dispatch(ctl, intents.Intent(
             intents.IntentKind.REQUEST_BREAKUP, "Pony 1"))
-        intents.dispatch(ctl, intents.Intent(
-            intents.IntentKind.REPORT_CONDITIONS, "Pony 1", visual=False))
-        self.assertIn("Pony 1-4", ctl.aircraft)
+        # The flight stops existing; its members are ordinary arrivals who have
+        # not called yet. There is no second intent to send -- the question
+        # that used to be needed here is gone.
+        self.assertNotIn("Pony 1", ctl.aircraft)
 
     def test_unknown_kind_never_raises(self):
         from marshall.atc import intents
@@ -428,58 +342,37 @@ if __name__ == "__main__":
 
 
 class TestClearAirHolding(unittest.TestCase):
-    """A flight holds as ONE aeroplane at ONE level, in trail.
+    """Holding above the weather.
 
-    From a pilot who has flown a lot of serious F-16 squadron work: they hold at
-    whatever altitude buys clear air -- eighteen, twenty, thirty thousand,
-    whatever it takes -- and the hold is a chance to regroup before the
-    approach, not something to sweat. A flight stays at one altitude in trail.
-    Altitude splits FLIGHTS from other flights; it does not split a flight from
-    itself. And a Mustang can climb into clear air too.
-
-    Which makes clear air the normal case rather than a lucky one, because a
-    vectored approach now puts the bottom of its stack above the tops on
-    purpose. Laddering a four-ship up four levels in weather it is above is
-    work that buys nothing and spends the stack on one arrival.
+    This class used to be mostly about NOT asking the visual-separation
+    question when the hold is in clear air -- a special case for a question
+    that no longer exists in any air. What is left is the thing the profile
+    flag still means: a flight holds as one aeroplane at one level, and the
+    levels are spent separating FLIGHTS from each other rather than a formation
+    from itself.
     """
 
     def setUp(self):
-        self.ctl = atc.Controller(R.BATUMI_ASR)
+        self.ctl = atc.Controller(profile())
 
-    def test_the_vectored_hold_is_above_the_weather(self):
-        self.assertTrue(R.BATUMI_ASR.hold_in_clear_air)
+    def test_a_flight_holds_as_one(self):
+        self.ctl.check_in("Pony 1-1", 4)
+        self.assertEqual(len(self.ctl.aircraft), 1)
 
-    def test_a_flight_is_not_asked_whether_it_can_see_itself(self):
-        four_ship(self.ctl)
-        self.assertFalse(said(self.ctl, "visual separation"))
+    def test_the_question_is_never_asked(self):
+        self.ctl.check_in("Pony 1-1", 4)
+        self.ctl.report_beacon("Pony 1-1", 6000, 4)
+        self.assertFalse(said(self.ctl, "maintain visual separation between"))
 
-    def test_the_whole_flight_holds_at_one_level(self):
-        four_ship(self.ctl)
-        levels = {ac.assigned_ft for ac in self.ctl.aircraft.values()
-                  if ac.assigned_ft is not None}
-        self.assertLessEqual(len(levels), 1,
-                             f"a flight was laddered across {levels} in clear air")
-
-    def test_the_levels_go_to_separating_flights(self):
-        # Two flights, two levels -- which is what the stack is for.
-        four_ship(self.ctl)
-        self.ctl.check_in("Viper 2-1", 2)
-        self.ctl.request_approach("Viper 2-1")
-        levels = {ac.assigned_ft for ac in self.ctl.aircraft.values()
-                  if ac.assigned_ft is not None}
-        self.assertGreaterEqual(len(levels), 1)
-
-    def test_in_cloud_he_still_asks(self):
-        # The branch has not been deleted, only demoted: with the stack inside
-        # weather the controller cannot assume they see each other.
-        ctl = atc.Controller(imc_profile())
-        self.assertFalse(ctl.profile.hold_in_clear_air)
-        # Driven directly rather than through four_ship, which answers the
-        # question and drains the transcript -- the question itself is the
-        # thing under test here.
-        ctl.check_in("Pony 1-1", 4)
-        ctl.report_beacon("Pony 1-1", 6000, 4)
-        self.assertTrue(said(ctl, "visual separation"))
+    def test_two_flights_get_two_levels(self):
+        """The levels go to separating flights from other flights, which is
+        what they were always for."""
+        self.ctl.check_in("Pony 1-1", 4)
+        self.ctl.check_in("Hawk 2-1", 2)
+        levels = {a.assigned_ft for a in self.ctl.aircraft.values()
+                  if a.assigned_ft}
+        self.assertEqual(len(self.ctl.aircraft), 2)
+        self.assertLessEqual(len(levels), 2)
 
 
 class TestIdentifyOnBreakUp(unittest.TestCase):
@@ -569,3 +462,49 @@ class TestAskDoNotInferAfterBreakUp(unittest.TestCase):
                                         callsign="Pony 1", altitude_ft=9000))
         self.assertEqual(self.ctl.get("Pony 1-1").assigned_ft, before,
                          "a guess about WHO must not become a change to his state")
+
+
+class TestCheckingInOutOfASplit(unittest.TestCase):
+    """"The flight splits, the members check in - response should be - radar
+    contact, what are your intentions"
+
+    And that is the whole answer for him. He is not a new arrival to be told
+    where to report -- he has been on this frequency for twenty minutes inside
+    a formation, so the standard check-in reply briefs him on things he already
+    has. What the controller genuinely does not know is what he WANTS, because
+    the break-up deliberately assigned him nothing.
+
+    It also stops the controller assuming. Four aeroplanes out of one flight
+    may want four different things -- one for the approach, one departing, one
+    holding for his wingman -- and the old flow gave all four a level nobody
+    asked for.
+    """
+
+    def setUp(self):
+        self.ctl = atc.Controller(imc_profile())
+        self.ctl.check_in("Pony 1-1", 4)
+        self.ctl.report_beacon("Pony 1-1", 6000, 4)
+        texts(self.ctl)
+
+    def test_he_is_asked_what_he_wants(self):
+        self.ctl.check_in("Pony 1-2", 1)
+        said_now = " ".join(texts(self.ctl)).lower()
+        self.assertIn("radar contact", said_now)
+        self.assertIn("say intentions", said_now)
+
+    def test_he_is_not_briefed_as_a_new_arrival(self):
+        """He already has the altimeter, the frequency and the fix."""
+        self.ctl.check_in("Pony 1-2", 1)
+        said_now = " ".join(texts(self.ctl)).lower()
+        self.assertNotIn("report ", said_now)
+
+    def test_nothing_is_assigned_until_he_asks(self):
+        self.ctl.check_in("Pony 1-2", 1)
+        self.assertIsNone(self.ctl.get("Pony 1-2").assigned_ft)
+
+    def test_a_genuinely_new_arrival_still_gets_the_full_check_in(self):
+        """The short reply is for somebody coming out of a split, not for
+        everybody -- a stranger needs what it leaves out."""
+        self.ctl.check_in("Hawk 3-1", 1)
+        said_now = " ".join(texts(self.ctl)).lower()
+        self.assertNotIn("say intentions", said_now)

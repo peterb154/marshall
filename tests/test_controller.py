@@ -343,7 +343,6 @@ class TestApproachVocabulary(unittest.TestCase):
         c.say = lambda cs, text: said.append(text)
         c.check_in("Pony 1-1")
         c.request_approach("Pony 1-1")
-        c.report_conditions("Pony 1-1", visual=True)
         # The controller is CALLED "Batumi Approach", so the bare word proves
         # nothing -- what must not appear is the beacon used as a place: a fix
         # to fly to, hold at, or report over. Strip his own name, then look.
