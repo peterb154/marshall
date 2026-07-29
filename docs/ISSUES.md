@@ -862,13 +862,38 @@ opinion, and the note in CLAUDE.md is worth heeding while making it: "the
 taxonomy wording moves the score more than the model does." If Haiku scores
 worse, the first thing to try is the prompt, not a bigger model.
 
-AND IT FIRES TOO OFTEN, which is a separate defect on the same path. Audit
-finding 2.x: `count_contacts` counts every ` | ` segment and every "N ships", so
-`engaged = ... or n_contacts >= 2` goes true with ONE aeroplane airborne beside
-any AI traffic — routing every transmission through `separation_context` and
-therefore through this classifier, and defeating the single-ship short-circuit
-the design note at `agent_atc.py:3192` promises. Fixing the count may matter more
-than changing the model, and it is free.
+AND IT FIRES TOO OFTEN, which is a separate defect on the same path and is NOT
+free to fix. Measured 29 July:
+
+    contacts  engaged  scope
+           1    False  one pilot alone
+           5     True  one pilot + four T-55s parked 70 nm away
+           2     True  one pilot + one AI flight 62 nm away at FL200
+
+`count_contacts` counts every ` | ` segment and every "N ships", so
+`engaged = ... or n_contacts >= 2` goes true for a lone pilot as soon as the
+mission contains armour or distant AI — which every test mission does. That
+skips the canned short-circuit at `agent_atc.py:3208`, routes even a radio check
+through `separation_context` and therefore through this 2.2 s classifier, and
+engages the deterministic engine to sequence one aeroplane against a tank. It
+defeats the design note at `:3192` that promises a single ship stays on the
+cheap path.
+
+THE OBVIOUS FIX IS NOT AVAILABLE. The streamer subscribes per category —
+AIRPLANE, HELICOPTER, GROUND, SHIP (`tracks.py:231-234`) — and then drops it:
+`tracks` has `name, type, coalition, player` and NO category column. So neither
+the picture nor the counter can tell a T-55 from an F-16, and every cheap
+workaround has a counter-case. Counting only MANNED contacts breaks the
+AI-backed rehearsal harness and real AI traffic the controller does work.
+Counting by type needs an allowlist that fails toward switching the engine OFF,
+which is the dangerous direction. A radius filter is a design decision about what
+counts as terminal-area traffic, not a bug fix.
+
+So this wants a `category` column on `tracks`, written where it is already known,
+and then a decision about whether the picture carries it. That is a migration
+plus the radar-picture contract — the artefact with one producer and six
+consumers that has bitten twice this week — and it is not a thing to do quickly
+before a sortie. It is, however, probably worth more than the model swap.
 
 **Acceptance criteria**
 1. `classify_bench.py` is run against Sonnet and Haiku on the same corpus and
