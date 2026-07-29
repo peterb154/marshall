@@ -177,6 +177,22 @@ def atc_endpoint(body: dict) -> dict:
                 "tier": tier}
     try:
         agent = _atc_agents.get(session_id)
+        # THE PLATE CAN CHANGE UNDER A CACHED AGENT. The bridge pushes a fresh
+        # plate to /prompts at startup, built from route.py for the mission it
+        # is about to fly -- but the Agent's system prompt was assembled when it
+        # was constructed, and this cache is keyed on the session, which is the
+        # frequency. So restarting the BRIDGE without restarting the DIRECTOR
+        # left the controller flying the previous mission's plate: right field,
+        # wrong altitudes, and no symptom anywhere except a pilot being given
+        # numbers his chart does not show. Audit finding 6.1, 29 July.
+        #
+        # Comparing the assembled prompt is one Postgres read on a path that
+        # already does several, and it is the only check that cannot be wrong --
+        # a version counter would need every writer to remember to bump it.
+        if agent is not None and agent.system_prompt != _system_prompt_for(session_id):
+            log.info("prompt changed under session %s; rebuilding the agent",
+                     session_id)
+            agent = None
         if agent is None:
             agent = build_agent(session_id)
             # A restart restores the transcript from Postgres exactly as it was

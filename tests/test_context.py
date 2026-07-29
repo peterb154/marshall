@@ -183,3 +183,28 @@ class TestWhatItSaves(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTheFixSurvivesTheLabelBeingStale(unittest.TestCase):
+    """Audit finding 1.3, fixed 30 July. `_fix` was computed track-first and
+    then rebound by callsign, which needs a BRACKETED tag the picture only
+    carries once `identify` has bound him. From check-in until that landed --
+    and again whenever the label went stale -- guidance was None for a pilot
+    radar could see perfectly, so `reconcile` returned with the holding
+    directive AND the talkdown both attached.
+
+    Guarded here rather than in the bridge's own tests because the receive loop
+    has none: this asserts on the SOURCE, which is the only thing that can see
+    a rebind that undoes an earlier assignment.
+    """
+
+    def test_fix_is_not_recomputed_by_callsign_after_being_found_by_track(self):
+        import re
+        src = (Path(__file__).resolve().parent.parent
+               / "src" / "marshall" / "atc" / "agent_atc.py").read_text()
+        assigns = re.findall(r"^        _fix = (.+)$", src, re.M)
+        self.assertEqual(len(assigns), 1,
+                         f"_fix is assigned {len(assigns)} times in the receive "
+                         f"loop; the second one discarded the track-first "
+                         f"answer: {assigns}")
+        self.assertIn("radar_fix_by_track", assigns[0])

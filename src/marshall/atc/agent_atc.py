@@ -3238,7 +3238,23 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # The track name only goes in once radar has actually tied the callsign
         # to a blip -- binding a guess would attach one aeroplane's history to
         # another's, which is worse than being unidentified.
-        _fix = radar_fix(scope, known, profile) if known else None
+        #
+        # AND `_fix` IS NOT RECOMPUTED HERE. It was, by callsign only, throwing
+        # away the track-first value computed above and used for the record.
+        # `radar_fix` needs a BRACKETED tag, which the picture carries only once
+        # the agent has bound the callsign with `identify` -- so from check-in
+        # until that lands, and again any time the label went stale, this was
+        # None for a pilot radar could see perfectly. Everything downstream took
+        # the loss: `asr.guide` got nothing, `reconcile` returned with both the
+        # holding directive AND the talkdown still attached, and the pilot was
+        # told in one transmission that he was on final and to climb and hold --
+        # the exact contradiction reconcile exists to prevent. It also disabled
+        # `hush_a_second_talkdown`, so the metronome called a callsign the agent
+        # was not answering. Audit finding 1.3, 29 July.
+        #
+        # Nothing between here and that assignment touches `scope`, `known` or
+        # `profile`, so reusing it is the same computation with the better
+        # answer kept.
         _flight = flight_bind(
             srs_guid=client.last_sender_guid or None,
             srs_name=srs or None,
