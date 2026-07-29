@@ -1272,6 +1272,18 @@ tree. It wants a clean pass, not the end of a long session.
    approach as a single.
 9. A flight that is no longer in formation on radar is TOLD SO, and the
    controller declines to work it as one aeroplane -- without forcing a split.
+10. ANY MEMBER may adopt somebody into the flight, not only the lead. A rule
+    that depends on one particular aeroplane still being alive is a poor rule
+    in a combat simulator, and the lead sorts out rogue joins in the debrief.
+    Rejoining after a break-out is adoption, not a case of its own.
+11. When the LEAD is lost -- crash, ejection, unit_lost, player_leave_unit --
+    the flight is ASKED who is now, once. Never promoted silently: the lead's
+    track is what the flight's geometry is computed from, so choosing his
+    replacement without being told means vectoring off a position nobody
+    agreed to, and the flight would have no way to know.
+12. A member must be able to break HIMSELF out. A lost wingman who transmits
+    is otherwise answered as the flight, so the controller vectors the lead --
+    the man who needs help gets none and somebody who did not ask gets turned.
 
 Related: [#40] (identity), [#38] (a callsign is a position), [#12] (break-up).
 
