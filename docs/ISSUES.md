@@ -685,6 +685,158 @@ must stay conditional.
 
 ---
 
+## [CTX-1] The controller is handed state; he remembers only the conversation — #43
+labels: feature, needs-flight-test
+
+**Status:** TODO
+
+Measured on two real sessions in `session_messages`: the average user message
+sent to Sonnet is **2,522 characters, of which 74 are the pilot's actual words**.
+The other 2,448 are the injected block — RADAR, TRANSMITTER, STRIP, YOU ARE,
+VISUAL APPROACHES — re-sent on every call and then kept in history afterwards.
+
+Two costs, and the second is worse than the money.
+
+`SlidingWindowConversationManager(window_size=16)` counts MESSAGES, not turns,
+and a call averages 2.56 messages (2 for a plain exchange, 4 with one tool call,
+6 with two). So the window holds **6.3 transmissions** — and fewer exactly when
+the controller is busy, because that is when it reaches for `identify`, `vector`
+and `set_hook`. The memory shortens under load.
+
+And the history carries STALE SITUATION. An evicted-but-not-yet-evicted message
+holds the radar picture as it stood five minutes ago, so the model can see
+`RADAR: no contacts` sitting beside a current scope with four aircraft on it.
+That is not merely wasteful, it is contradictory state in the context, and it is
+being paid for at roughly 10k tokens a call to be there.
+
+**The rule this issue exists to establish:** everything that is STATE is
+injected fresh on every call and never stored; only DIALOGUE is remembered.
+
+    SITUATION      radar, strip, phase, who you are    re-derived, never stored
+    PENDING        the commitments not yet discharged  re-derived, never stored
+    CONVERSATION   the pilot's words and the reply     stored, and only this
+
+The same pattern the bridge already uses for RADAR and CONTROLLER, extended one
+step. Stripping the injected block from history turns 16 messages into about 16
+real exchanges instead of 6.3, at a few percent of the tokens — longer memory,
+cheaper, and no stale picture to reason from.
+
+THE SCENARIO THIS HAS TO PASS, from the pilot who found it:
+
+    "approach, sockeye, i have a question"
+    "sockeye, approach, standby"
+    "andre, approach, turn left 120 descend 2000"
+    "descend 2000 turn 120"                              (andre)
+    "sockeye, approach, go ahead with questions"
+
+Five transmissions, interleaved between two pilots, with a promise made in the
+second that must still be true in the fifth. At today's 2.56 messages per call
+that is ~13 messages, inside 16 — until one of those calls uses a tool, and the
+vectoring call almost certainly does. It is sitting on the edge of failing and
+nothing would report it if it did.
+
+**Acceptance criteria**
+1. A historical turn in the context contains the pilot's words and the
+   controller's reply, and no radar picture. A stale scope cannot appear.
+2. SITUATION and PENDING are assembled fresh per call and are never written to
+   `session_messages`.
+3. Average input tokens per transmission are recorded before and after, in the
+   commit, and go down.
+4. The five-transmission scenario above completes with the promise kept, with a
+   tool call in the middle of it, and is covered by a script rather than a
+   memory of having tried it once.
+5. The window is sized against that scenario deliberately, and the reasoning is
+   written down where the number is set.
+6. Postgres still holds the full transcript. Trimming what is SENT must not
+   trim what is replayable.
+7. `docs/WIRING.md` is updated in the same commit -- the life-of-a-transmission
+   section, the two-brain section and the vocabulary all describe the message
+   that is sent today, and would be wrong the moment this lands. A wiring
+   document that lies is worse than none, because it is trusted.
+
+Related: [#25] (hooks), [HOOK-2] (which fills the PENDING slot), and finding 6.2
+of the 29 July audit, which reached the same boilerplate from the cost side.
+
+---
+
+## [HOOK-2] A hook is a condition, a promise, and a lifetime — #44
+labels: feature
+
+**Status:** TODO
+
+[HOOK-1] shipped the timer and closed. Its second acceptance criterion — "a hook
+whose condition has passed does not fire anyway" — implies the conditional hook
+that was never built. `set_hook(seconds, why)` is all there is, so the agent has
+to guess a NUMBER for something it knows as a CONDITION, and "call him when he
+is established" becomes "call him in ninety seconds and hope".
+
+    "hooks - I think that they should probably be in the database, and a
+     callback manager should poll to see if the hook state is met. the hooks can
+     be time, gis based (he is off track or out of my airspace), or maybe even
+     conversation based (there is a break in the conversation, i can take care
+     of low priority tasks that ive backlogged)"
+
+And the collapse that makes it simple: **a commitment IS a pending hook.** There
+is no separate store of what the controller owes people — the hooks not yet
+discharged are that list, and showing it to him closes a blindness nobody had
+noticed. `set_hook` is fire-and-forget today: the agent cannot see what it has
+already promised, so it cannot avoid promising twice, cannot say it is busy, and
+cannot tell you what it owes. `pending_hooks()` already exists in
+`director/tools/hooks.py` and nothing calls it.
+
+WHERE EACH CONDITION IS EVALUATED IS A SPLIT, and worth deciding rather than
+discovering. Time is either. Geometry belongs to the DIRECTOR, where PostGIS can
+answer "outside this airspace" or "more than 2 nm off course" as a query against
+`tracks` — the condition becomes SQL. A quiet frequency is knowable only by the
+BRIDGE, which owns the radio. Both feed one due-queue and the bridge speaks,
+which is the seam `/hooks/due` already is.
+
+THE INVARIANT IS AT RISK HERE and the rule goes in before the code. A hook may
+cause the controller to SPEAK; it may never cause him to SEQUENCE. "You are
+drifting right of course" and "you are leaving my airspace" are the point.
+Anything that assigns a level, a hold or a place in the queue comes from
+`atc/controller.py` or the two-brain split has been routed around by the back
+door — geometry-triggered callbacks are one short step from an LLM-authored
+separation engine, and nobody would have to decide to build one.
+
+DURABLE HOOKS RESURRECT THE GHOST. A promise in Postgres outlives the pilot: he
+lands, de-slots, the mission reloads, and forty minutes later the controller
+says "Falcon 1-1, calling as requested" to an empty sky. That cannot happen
+today only because `_HOOKS` is a module-level dict that dies with the director.
+Making it durable without binding it to a track reintroduces the exact failure
+class that [ARCH-2] and [ARCH-3] were written for.
+
+**Acceptance criteria**
+1. A hook survives a director restart, and one whose aircraft has gone does not.
+   `player_leave_unit` takes his pending hooks with him.
+2. A hook is bound to a TRACK, not a callsign — the same rule the board learned.
+3. Three kinds of `when` fire correctly: a time, a position condition evaluated
+   in PostGIS, and a quiet frequency.
+4. A position condition fires ONCE per crossing. "He is off course" is true
+   continuously; the rearm rule is chosen deliberately and written down.
+5. Every hook has an expiry, and one whose condition can no longer be met is
+   dropped rather than accumulated — visibly, in the recorder.
+6. NO hook path writes to the holding stack, assigns an altitude, or changes the
+   sequence. Guarded by a test, not by intention.
+7. The quiet condition does not fire while anybody is on final. The
+   deterministic controller already knows who is; it is the gate.
+8. The agent is shown its pending hooks with ids, and can discharge one — a
+   promise settled early in conversation dies rather than firing later and
+   repeating itself.
+9. A promise made on one frequency is still kept on that frequency. This works
+   today (`hook_frequency`) and must not regress.
+10. Backlogged hooks drain in priority order when the frequency goes quiet,
+    which is the controller's deferred-work queue and the reason for the
+    priority field.
+11. `docs/WIRING.md` gains a hooks section and the test card gains its rows, in
+    the commit that builds this rather than afterwards. The label
+    `needs-flight-test` goes on when there is something to fly.
+
+Related: [#25] (the timer this grows from), [CTX-1] (which defines the PENDING
+slot this fills), [ARCH-2] (identity), [ARCH-3] (the events that end a hook).
+
+---
+
 ## [CHART-1] Chart the enroute fixes, not just the letdown — #26
 labels: feature
 

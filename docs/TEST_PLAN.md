@@ -365,6 +365,35 @@ aeroplane's altitude and place in the queue, and nothing reports it.
 
 ---
 
+## K — does he remember the conversation
+
+The controller is handed his situation fresh on every call and remembers only
+what was SAID. Before this, 97% of every remembered turn was a radar picture
+that had since gone stale, and the window held about six transmissions — fewer
+when he was busy, because that is when he uses tools. See [#43].
+
+The point of these rows is a CONVERSATION, not a single exchange. Everything
+else on this card can be flown one call at a time; this cannot.
+
+| ID | Prio | Test | What should happen | Fix under test |
+|----|------|------|--------------------|----------------|
+| K1 | P1 | Say *"approach, <you>, I have a question"*. Let him say standby. Then let **the other pilot** take a vector and read it back. Then wait | He comes back to you unprompted: *"<you>, go ahead with your questions"*. He must not need reminding, and he must not have forgotten what it was about | [#43] the window |
+| K2 | P1 | Same as K1, but make the interleaved call one that needs a tool — a **vector, a clearance or a "call you in five miles"** | Identical result. Tool calls used to cost two messages each and quietly shortened his memory exactly when it was busiest | [#43] |
+| K3 | P2 | Ask him something that refers back four or five calls — *"that heading you gave me earlier, say again"* | He knows. If he asks which heading, the window is still too short and I want the number it was set to | [#43] |
+| K4 | P2 | Somewhere mid-sortie, ask engineering to dump the last message sent to the model | **No radar picture in any remembered turn** — only your words and his replies. A stale scope in there is the bug, whatever else looks fine | [#43] no stale situation |
+| K5 | P3 | Fly a long sortie, then ask engineering for the transcript | Postgres still has **all** of it. Trimming what he is SENT must not trim what can be replayed afterwards | [#43] |
+
+**What it is actually checking**
+
+**K1 and K2 are the same test with and without a tool call**, and that is
+deliberate: the window counts MESSAGES, so a tool call costs the same as a whole
+extra exchange. If K1 passes and K2 fails, the fix sized the window against the
+wrong unit.
+
+**K4** is the one that cannot be judged from the cockpit. Ask for it.
+
+---
+
 ## E — known broken. Do not report these as new
 
 Open bugs with repros. Seeing one means the world is as expected — they are on
