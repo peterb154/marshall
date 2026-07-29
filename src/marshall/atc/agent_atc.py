@@ -3008,6 +3008,13 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         if srs in OUR_STATIONS or client.last_sender_guid == client.guid:
             print(f"  (ignoring {srs} -- that is one of ours, not a pilot)",
                   flush=True)
+            # RECORDED, not merely printed. A dropped transmission is the most
+            # confusing thing there is from the cockpit -- it is indistinguish-
+            # able from a dead radio -- and until the diagnostics page existed
+            # the only account of WHICH gate ate it was a line on somebody's
+            # stdout. See kneeboard/diag.py.
+            record(session_id, kind="dropped", gate="one of ours",
+                   srs_name=srs, text=transcript)
             continue
 
         # WHO IS TALKING, decided by something other than what he said.
@@ -3043,7 +3050,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             print(f"  .. {claim} is intra-flight, not for the controller",
                   flush=True)
             record(session_id, kind="ship-to-ship", callsign=_who,
-                   text=transcript)
+                   gate="intra-flight", text=transcript)
             continue
 
         # WHAT THE CONTROLLER MUST SAY ABOUT THE FLIGHT. The verdicts below
@@ -3409,6 +3416,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             print(f"  (ship-to-ship: {known or srs} calling {_other} — not ours)",
                   flush=True)
             record(session_id, kind="ship-to-ship", callsign=known,
+                   gate=f"addressed to {_other}",
                    text=transcript)
             continue
 

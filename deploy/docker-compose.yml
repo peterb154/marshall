@@ -53,6 +53,10 @@ services:
       - ../src:/app/src:ro
       - ../docs:/app/docs:ro
       - ../build/vendor:/data/vendor:ro
+      # The flight recorder, which /diag reads. The BRIDGE writes it on the
+      # host; this container only ever reads. Without it the diagnostics page
+      # renders empty, which looks exactly like a quiet frequency.
+      - ../build/logs:/data/logs:ro
     # The PLANS page reads the filed flight plans from the director LIVE, and
     # the director is published on the HOST -- inside this container `localhost`
     # is this container. Without the gateway alias the page renders "nobody

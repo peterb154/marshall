@@ -5,6 +5,7 @@ Layout of the site (room to grow):
 
     /               a small home page (placeholder; the flight planner lands here)
     /kneeboard/     the OpenKneeboard multi-page charts (point the Web Dashboard here)
+    /diag           live diagnostics -- what the two brains believe, now
     /docs           WIRING.md and the audit, rendered to read at a desk
     /vendor/        third-party assets, so the LAN needs no internet
     /healthz        liveness
@@ -41,7 +42,8 @@ import threading
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse,
+                               RedirectResponse)
 
 from marshall import config
 
@@ -167,9 +169,10 @@ _HOME = """<!doctype html><meta charset="utf-8"><title>Marshall</title>
   <p>Procedural radio ATC &middot; kneeboard charts</p>
   <a href="/kneeboard/">&rarr; kneeboard charts</a>
   <a href="/flighttest/">&rarr; flight test card</a>
+  <a href="/diag">&rarr; live diagnostics</a>
   <a href="/docs">&rarr; documents</a>
-  <p class="why">the first two are OpenKneeboard Web Dashboard pages &mdash;
-     point a tab at each. The documents are for a desk.</p>
+  <p class="why">charts, card and diagnostics are OpenKneeboard Web Dashboard
+     pages &mdash; point a tab at each. The documents are for a desk.</p>
 </main>
 """
 
@@ -209,6 +212,37 @@ async def flighttest() -> HTMLResponse:
     from marshall.kneeboard import flighttest as ft
     from marshall.kneeboard import site
     return HTMLResponse(site.build(ft.pages()), headers=NO_CACHE)
+
+
+@app.get("/diag", response_class=HTMLResponse)
+async def diag_page() -> HTMLResponse:
+    """Live diagnostics: what the two brains believe, right now.
+
+    A kneeboard page rather than a document -- it is read in the cockpit while
+    the aeroplane is flying, which is the whole point. Static HTML; the state
+    arrives from /diag.json on a two-second poll, so nothing here holds a
+    long-lived connection open (see the keep-alive note at the top of this
+    module).
+    """
+    from marshall.kneeboard import diag
+    return HTMLResponse(diag.page(), headers=NO_CACHE)
+
+
+@app.get("/diag.json")
+async def diag_json(session: str = ""):
+    """The state the page draws. Read-only: the flight recorder and /radar.
+
+    It cannot perturb what it measures -- no bridge call, no controller state
+    touched. A diagnostic that can break a sortie is one nobody dares run
+    during one.
+    """
+    from marshall.kneeboard import diag
+    try:
+        return JSONResponse(diag.state(session), headers=NO_CACHE)
+    except Exception as e:                  # a broken read must not blank the page
+        return JSONResponse({"error": str(e), "radios": [], "board": [],
+                             "scope": [], "ghosts": [], "flights": [],
+                             "last": {}}, headers=NO_CACHE)
 
 
 @app.get("/docs", response_class=HTMLResponse)
