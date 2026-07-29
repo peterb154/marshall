@@ -187,3 +187,58 @@ class TestTheLoopSurvivesTheAwkwardCases(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestComposeMessageDirectly(unittest.TestCase):
+    """The point of the extraction, demonstrated.
+
+    Until 30 July the only way to ask "what does the controller get handed?"
+    was to drive 1,167 lines of receive loop. `compose_message` is now a pure
+    function of twelve arguments, so the question costs a call. These run in
+    microseconds where the loop tests take a third of a second each.
+    """
+
+    def compose(self, **over):
+        from marshall.atc import agent_atc as A
+        from marshall.core import route as R
+        args = dict(scope=SCOPE, known="Pony 1-1", transcript="ten miles",
+                    profile=R.BATUMI_ASR, me=None, fix=None, nxt=None,
+                    directive="", stack="", vectoring="", _flight={},
+                    _flight_say="")
+        args.update(over)
+        return A.compose_message(**args)
+
+    def test_the_pilots_words_are_last(self):
+        """[CTX-1] strips everything BEFORE the PILOT: marker out of the
+        conversation history. If this ordering changes, the context split
+        silently stops working and nothing else would notice."""
+        m = self.compose()
+        self.assertIn("PILOT: ten miles", m)
+        self.assertTrue(m.rstrip().endswith("PILOT: ten miles"))
+
+    def test_the_scope_leads(self):
+        self.assertTrue(self.compose().startswith("RADAR: "))
+
+    def test_no_scope_means_no_radar_line(self):
+        self.assertNotIn("RADAR:", self.compose(scope=""))
+
+    def test_the_engines_directive_is_labelled_as_decided(self):
+        """The two-brain seam. The agent must be told these numbers are not
+        his to invent -- see the CONTROLLER wording."""
+        m = self.compose(directive="descend three thousand")
+        self.assertIn("CONTROLLER", m)
+        self.assertIn("descend three thousand", m)
+
+    def test_the_stack_is_labelled_separately_from_the_directive(self):
+        m = self.compose(stack="Pony 1-1 at five thousand")
+        self.assertIn("SEPARATION", m)
+
+    def test_a_flight_verdict_is_carried_verbatim(self):
+        m = self.compose(_flight_say="Roger Andre, joined to Apex.")
+        self.assertIn("FLIGHT", m)
+        self.assertIn("Roger Andre, joined to Apex.", m)
+
+    def test_it_is_pure(self):
+        """Same arguments, same answer, and nothing observable changed. That is
+        why this block could be moved without a behaviour risk."""
+        self.assertEqual(self.compose(), self.compose())

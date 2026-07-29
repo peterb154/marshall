@@ -2479,6 +2479,200 @@ def push_fixes(base: str, profile) -> int:
     return len(out)
 
 
+def compose_message(scope, known, transcript, profile, me, fix, nxt,
+                    directive, stack, vectoring, _flight, _flight_say):
+    """Everything the controller is handed for one transmission, as one string.
+
+    EXTRACTED VERBATIM from the receive loop, 30 July -- [LAYERS.md] step 1.
+    Not one line of the body changed; it moved. The loop had no home for the
+    turn, so the turn became a file, and this was 164 lines of it sitting in the
+    middle of a `while True`. It is a pure function of its arguments with no
+    side effects, which is why it went first: the extraction is provably
+    behaviour-preserving and `tests/test_loop.py` already asserts on exactly
+    what it returns.
+
+    THE TWELVE PARAMETERS ARE THE FINDING, not an accident of the mechanical
+    move. This block genuinely depends on twelve pieces of loop state, which is
+    what "the assembly is entangled" means when you count it. Several of them
+    are about to become stores rather than locals ([LAYERS.md] step 3), and the
+    signature will shrink on its own when they do. Shrinking it by hand now
+    would be improving rather than moving, and those are not the same commit.
+
+    `parts` order is the prompt's order and it is load-bearing: the situation
+    comes first and `PILOT:` comes last, because `director/tools/context.py`
+    strips everything before that marker out of the conversation history. Move
+    the marker and [CTX-1] silently stops working.
+    """
+    from marshall.atc import controller
+    from marshall.core import route as R
+
+    parts = []
+    if scope:
+        parts.append(f"RADAR: {scope}")
+    parts.append(
+        f"TRANSMITTER: the radio calling itself {known}. Same aircraft as "
+        f"every other call from {known} -- keep them together."
+        if known else
+        "TRANSMITTER: a radio you have not identified yet.")
+    _strip = flight_strip(_flight)
+    if _strip:
+        parts.append(
+            _strip + " This is what is already known about him and it "
+            "carries across a handoff -- do not ask him again for anything "
+            "in it.")
+    if _flight_say:
+        # DECIDED HERE, NOT BY YOU. Who is in which flight is roster state
+        # and radar geometry -- the same class of fact as separation, and
+        # the same reason it is not the model's to invent. The verdict is
+        # already computed; the agent's whole job is to say it.
+        #
+        # It sits ABOVE the approach directive on purpose. A man who has
+        # just been refused a join needs that answer first, and the two are
+        # never in conflict because they are about different things.
+        parts.append(
+            "FLIGHT (already decided from the roster and radar — SAY THIS "
+            "and do not reword the callsigns, the flight name or the "
+            f"distances): {_flight_say}")
+    if directive:
+        parts.append("CONTROLLER (deterministic next step of the approach — "
+                     "voice its altitudes, headings and sequence exactly, add "
+                     f"your radar read, never skip a leg): {directive}")
+    if stack:
+        parts.append(f"SEPARATION (holding stack, one in the letdown): {stack}")
+    if vectoring:
+        parts.append(
+            "ASR (radar guidance, computed from the scope — voice these "
+            "numbers exactly; you are navigating for him and he has no "
+            f"approach aid of his own): {vectoring}")
+    if me and getattr(me, "role", "") in ("approach", "tower"):
+        parts.append(
+            "VISUAL APPROACHES ARE AVAILABLE and are the normal thing to "
+            "fly in decent weather. If he asks for one, give it to him -- "
+            "\"cleared visual approach runway "
+            f"{profile.runway or 'in use'}, report the field in sight\" -- "
+            "and then get off the air: your job shrinks to spacing and he "
+            "flies the approach. Do NOT tell him only the surveillance "
+            "approach is published and make him argue for it. The radar "
+            "approach is the bad-weather procedure, not the only one.")
+    if me:
+        parts.append(
+            f"YOU ARE: {me.name} on {me.freq_mhz:.1f}. Identify as that and "
+            "NOTHING else, even if he calls you by another name. A pilot "
+            "who says \"Batumi Tower\" on Approach's frequency has the "
+            "wrong button pressed, and agreeing with him puts Tower on a "
+            "frequency Tower is not on — he then believes it, and so does "
+            "everyone listening. Correct him in the same breath as the "
+            "answer, and name the frequency he is ON as well as the one he "
+            f"wanted: \"Pony one one, this is {me.name}, "
+            f"{controller.spell_freq(me.freq_mhz)} — Tower is one one "
+            "eight decimal zero\" — then give him what he asked for. Saying only which "
+            "frequency he wanted leaves him still not knowing which button "
+            "he is holding, and a pilot who has lost track of that gets it "
+            "wrong again on the next call. He is flying an aeroplane; do "
+            "not make him ask twice.")
+        also = [r for r in (getattr(me, "also", ()) or ()) if r]
+        if also:
+            # The other hats this man wears, read off the station rather than
+            # remembered. A field this size does not staff a seat per phase
+            # of flight: one man has ground, delivery and tower. Without this
+            # he refuses work that is his and sends the pilot to a frequency
+            # he invented -- a clearance request on Tower was answered with
+            # "you want Ground, try one two one decimal five", which is a
+            # channel with nobody on it.
+            parts.append(
+                f"YOU ALSO WORK: {', '.join(also)} — on this same "
+                f"frequency, because this field does not staff a separate "
+                f"position for them. A pilot who calls you by one of those "
+                f"names has the RIGHT button pressed. Do the work; do not "
+                f"send him to another frequency for it, and never name a "
+                f"frequency that is not on the plate.")
+        # WHOM HE CALLS AFTER HE ROLLS, from the published stations rather
+        # than from the model's memory of what it said a minute ago.
+        #
+        # Hoover was cleared with "departure frequency one two four decimal
+        # zero", read it back, and was then told on the taxi clearance to
+        # contact Georgia Center one three nine when airborne. Two different
+        # answers to "who do I call after takeoff", one minute apart, and the
+        # pilot has no way to tell which one is wrong. The clearance is built
+        # from this same station list, so quoting it here means the two
+        # cannot disagree.
+        if getattr(me, "role", "") in ("tower", "ground", "delivery") or (
+                "delivery" in [r for r in (getattr(me, "also", ()) or ())]):
+            _dep = None
+            for _s in (getattr(profile, "stations", None) or []):
+                _roles = [getattr(_s, "role", ""), *(getattr(_s, "also", ()) or ())]
+                if "departure" in _roles:
+                    _dep = _s
+                    break
+            if _dep is not None:
+                parts.append(
+                    f"DEPARTURE FREQUENCY: {_dep.name} on "
+                    f"{controller.spell_freq(_dep.freq_mhz)}. That is the "
+                    f"frequency in his IFR clearance and it is the ONLY one "
+                    f"to send him to after takeoff. Do not send a departing "
+                    f"aircraft to Center -- Center gets him from Departure, "
+                    f"later, and telling him otherwise contradicts a "
+                    f"clearance he has already read back.")
+        if getattr(me, "role", "") == "overlord":
+            parts.append(OVERLORD_BRIEF)
+    if nxt:
+        parts.append(handoff_phrase(nxt, fix))
+    elif (me and getattr(me, "role", "") == "approach"
+            and getattr(profile, "guidance", "") == "talkdown"
+            and fix is not None and fix.range_nm <= profile.final_intercept_nm):
+        # He is inside the final on a talkdown, so he is NOT going to
+        # Tower -- you are flying him to the missed approach point. Do not
+        # send him to another frequency; the clearance comes to him through
+        # you. Telling him to change radios here is the one thing that
+        # cannot be recovered, because the controller reading his ranges is
+        # the one he just left.
+        parts.append(
+            f"TOWER RELAY: he is inside the final and stays with you to the "
+            f"missed approach point — do NOT hand him to Tower. You have "
+            f"his landing clearance from Tower; pass it on once, in your "
+            f"own transmission, with the wind: \"cleared to land runway "
+            f"{profile.runway}, wind {controller.spell_hdg(int(R.WIND_FROM_DEG))} "
+            f"at {int(R.WIND_MPH)}\". Say it once and go back to the talk-down.")
+    if known:
+        # WHO THIS IS, settled. The model has the radar picture and the
+        # transcript and was inferring the caller from both, which is how a
+        # wingman who said "Pony one two, checking in" was answered as "Pony
+        # one" -- his leader's formation. The radio GUID already knows;
+        # nothing was telling the model.
+        parts.append(
+            f"THIS TRANSMISSION IS FROM {known} — identified by his radio, "
+            f"not by the words. Address him as {known} and nobody else, "
+            f"even if the transcript sounds like another callsign.")
+    # THE READ-BACK IS ANSWERED. Deterministic, like a separation call:
+    # the bridge decides that an answer is owed and the agent supplies the
+    # words. See _awaiting_readback.
+    if known and readback_due(known):
+        _awaiting_readback.pop(known, None)
+        parts.append(
+            "READ-BACK EXPECTED: you have just issued this aircraft an IFR "
+            "clearance and this transmission is his read-back of it. ANSWER "
+            "IT. If every element matches what you gave him -- clearance "
+            "limit, route, altitude, departure frequency, squawk -- say "
+            "\"readback correct\" and nothing more. If any element is wrong, "
+            "say which one, give the correct value, and ask for that element "
+            "again. Silence is not an option here: he is on the ground with "
+            "a pencil and no way to know whether you heard him.")
+    # HIS READ-BACK IS CORRECT unless it disagrees with what he was GIVEN.
+    # The engine recomputes continuously, so by the time a read-back arrives
+    # it often wants a different number -- and the controller, holding the
+    # new one, told a pilot he was wrong about something he got right. See
+    # reads_back_what_we_said.
+    if known and reads_back_what_we_said(known, transcript):
+        parts.append(
+            "READ-BACK CORRECT: those numbers are what you actually gave "
+            "him. Do NOT say negative and do not correct him -- he got it "
+            "right. If you now want something different, that is a NEW "
+            "instruction: say \"amend\" and give it, so he knows it is a "
+            "change and not a mistake he made.")
+    parts.append(f"PILOT: {transcript}")
+    return "\n".join(parts)
+
+
 def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
              session_id: str | None = None, url: str = AGENT_URL) -> None:
     from marshall.atc import asr, controller
@@ -3496,170 +3690,9 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             print(f"  CONTROLLER: {directive}", flush=True)
         if stack:
             print(f"  SEPARATION: {stack}", flush=True)
-        parts = []
-        if scope:
-            parts.append(f"RADAR: {scope}")
-        parts.append(
-            f"TRANSMITTER: the radio calling itself {known}. Same aircraft as "
-            f"every other call from {known} -- keep them together."
-            if known else
-            "TRANSMITTER: a radio you have not identified yet.")
-        _strip = flight_strip(_flight)
-        if _strip:
-            parts.append(
-                _strip + " This is what is already known about him and it "
-                "carries across a handoff -- do not ask him again for anything "
-                "in it.")
-        if _flight_say:
-            # DECIDED HERE, NOT BY YOU. Who is in which flight is roster state
-            # and radar geometry -- the same class of fact as separation, and
-            # the same reason it is not the model's to invent. The verdict is
-            # already computed; the agent's whole job is to say it.
-            #
-            # It sits ABOVE the approach directive on purpose. A man who has
-            # just been refused a join needs that answer first, and the two are
-            # never in conflict because they are about different things.
-            parts.append(
-                "FLIGHT (already decided from the roster and radar — SAY THIS "
-                "and do not reword the callsigns, the flight name or the "
-                f"distances): {_flight_say}")
-        if directive:
-            parts.append("CONTROLLER (deterministic next step of the approach — "
-                         "voice its altitudes, headings and sequence exactly, add "
-                         f"your radar read, never skip a leg): {directive}")
-        if stack:
-            parts.append(f"SEPARATION (holding stack, one in the letdown): {stack}")
-        if vectoring:
-            parts.append(
-                "ASR (radar guidance, computed from the scope — voice these "
-                "numbers exactly; you are navigating for him and he has no "
-                f"approach aid of his own): {vectoring}")
-        if me and getattr(me, "role", "") in ("approach", "tower"):
-            parts.append(
-                "VISUAL APPROACHES ARE AVAILABLE and are the normal thing to "
-                "fly in decent weather. If he asks for one, give it to him -- "
-                "\"cleared visual approach runway "
-                f"{profile.runway or 'in use'}, report the field in sight\" -- "
-                "and then get off the air: your job shrinks to spacing and he "
-                "flies the approach. Do NOT tell him only the surveillance "
-                "approach is published and make him argue for it. The radar "
-                "approach is the bad-weather procedure, not the only one.")
-        if me:
-            parts.append(
-                f"YOU ARE: {me.name} on {me.freq_mhz:.1f}. Identify as that and "
-                "NOTHING else, even if he calls you by another name. A pilot "
-                "who says \"Batumi Tower\" on Approach's frequency has the "
-                "wrong button pressed, and agreeing with him puts Tower on a "
-                "frequency Tower is not on — he then believes it, and so does "
-                "everyone listening. Correct him in the same breath as the "
-                "answer, and name the frequency he is ON as well as the one he "
-                f"wanted: \"Pony one one, this is {me.name}, "
-                f"{controller.spell_freq(me.freq_mhz)} — Tower is one one "
-                "eight decimal zero\" — then give him what he asked for. Saying only which "
-                "frequency he wanted leaves him still not knowing which button "
-                "he is holding, and a pilot who has lost track of that gets it "
-                "wrong again on the next call. He is flying an aeroplane; do "
-                "not make him ask twice.")
-            also = [r for r in (getattr(me, "also", ()) or ()) if r]
-            if also:
-                # The other hats this man wears, read off the station rather than
-                # remembered. A field this size does not staff a seat per phase
-                # of flight: one man has ground, delivery and tower. Without this
-                # he refuses work that is his and sends the pilot to a frequency
-                # he invented -- a clearance request on Tower was answered with
-                # "you want Ground, try one two one decimal five", which is a
-                # channel with nobody on it.
-                parts.append(
-                    f"YOU ALSO WORK: {', '.join(also)} — on this same "
-                    f"frequency, because this field does not staff a separate "
-                    f"position for them. A pilot who calls you by one of those "
-                    f"names has the RIGHT button pressed. Do the work; do not "
-                    f"send him to another frequency for it, and never name a "
-                    f"frequency that is not on the plate.")
-            # WHOM HE CALLS AFTER HE ROLLS, from the published stations rather
-            # than from the model's memory of what it said a minute ago.
-            #
-            # Hoover was cleared with "departure frequency one two four decimal
-            # zero", read it back, and was then told on the taxi clearance to
-            # contact Georgia Center one three nine when airborne. Two different
-            # answers to "who do I call after takeoff", one minute apart, and the
-            # pilot has no way to tell which one is wrong. The clearance is built
-            # from this same station list, so quoting it here means the two
-            # cannot disagree.
-            if getattr(me, "role", "") in ("tower", "ground", "delivery") or (
-                    "delivery" in [r for r in (getattr(me, "also", ()) or ())]):
-                _dep = None
-                for _s in (getattr(profile, "stations", None) or []):
-                    _roles = [getattr(_s, "role", ""), *(getattr(_s, "also", ()) or ())]
-                    if "departure" in _roles:
-                        _dep = _s
-                        break
-                if _dep is not None:
-                    parts.append(
-                        f"DEPARTURE FREQUENCY: {_dep.name} on "
-                        f"{controller.spell_freq(_dep.freq_mhz)}. That is the "
-                        f"frequency in his IFR clearance and it is the ONLY one "
-                        f"to send him to after takeoff. Do not send a departing "
-                        f"aircraft to Center -- Center gets him from Departure, "
-                        f"later, and telling him otherwise contradicts a "
-                        f"clearance he has already read back.")
-            if getattr(me, "role", "") == "overlord":
-                parts.append(OVERLORD_BRIEF)
-        if nxt:
-            parts.append(handoff_phrase(nxt, fix))
-        elif (me and getattr(me, "role", "") == "approach"
-                and getattr(profile, "guidance", "") == "talkdown"
-                and fix is not None and fix.range_nm <= profile.final_intercept_nm):
-            # He is inside the final on a talkdown, so he is NOT going to
-            # Tower -- you are flying him to the missed approach point. Do not
-            # send him to another frequency; the clearance comes to him through
-            # you. Telling him to change radios here is the one thing that
-            # cannot be recovered, because the controller reading his ranges is
-            # the one he just left.
-            parts.append(
-                f"TOWER RELAY: he is inside the final and stays with you to the "
-                f"missed approach point — do NOT hand him to Tower. You have "
-                f"his landing clearance from Tower; pass it on once, in your "
-                f"own transmission, with the wind: \"cleared to land runway "
-                f"{profile.runway}, wind {controller.spell_hdg(int(R.WIND_FROM_DEG))} "
-                f"at {int(R.WIND_MPH)}\". Say it once and go back to the talk-down.")
-        if known:
-            # WHO THIS IS, settled. The model has the radar picture and the
-            # transcript and was inferring the caller from both, which is how a
-            # wingman who said "Pony one two, checking in" was answered as "Pony
-            # one" -- his leader's formation. The radio GUID already knows;
-            # nothing was telling the model.
-            parts.append(
-                f"THIS TRANSMISSION IS FROM {known} — identified by his radio, "
-                f"not by the words. Address him as {known} and nobody else, "
-                f"even if the transcript sounds like another callsign.")
-        # THE READ-BACK IS ANSWERED. Deterministic, like a separation call:
-        # the bridge decides that an answer is owed and the agent supplies the
-        # words. See _awaiting_readback.
-        if known and readback_due(known):
-            _awaiting_readback.pop(known, None)
-            parts.append(
-                "READ-BACK EXPECTED: you have just issued this aircraft an IFR "
-                "clearance and this transmission is his read-back of it. ANSWER "
-                "IT. If every element matches what you gave him -- clearance "
-                "limit, route, altitude, departure frequency, squawk -- say "
-                "\"readback correct\" and nothing more. If any element is wrong, "
-                "say which one, give the correct value, and ask for that element "
-                "again. Silence is not an option here: he is on the ground with "
-                "a pencil and no way to know whether you heard him.")
-        # HIS READ-BACK IS CORRECT unless it disagrees with what he was GIVEN.
-        # The engine recomputes continuously, so by the time a read-back arrives
-        # it often wants a different number -- and the controller, holding the
-        # new one, told a pilot he was wrong about something he got right. See
-        # reads_back_what_we_said.
-        if known and reads_back_what_we_said(known, transcript):
-            parts.append(
-                "READ-BACK CORRECT: those numbers are what you actually gave "
-                "him. Do NOT say negative and do not correct him -- he got it "
-                "right. If you now want something different, that is a NEW "
-                "instruction: say \"amend\" and give it, so he knows it is a "
-                "change and not a mistake he made.")
-        parts.append(f"PILOT: {transcript}")
+        message = compose_message(
+            scope, known, transcript, profile, me, fix, nxt,
+            directive, stack, vectoring, _flight, _flight_say)
         # The current geometry goes with it so the transmit path can tell
         # whether the engine is already flying him down.
         _g = None
@@ -3668,7 +3701,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             _g = _asr2.guide(_fix, profile,
                              on_missed=flying_the_missed(known, _fix, profile, ctl)
                              if known else False)
-        interact("\n".join(parts), "pilot", route_tier(transcript),
+        interact(message, "pilot", route_tier(transcript),
                  on_hz=heard_hz, guide=_g, to_callsign=known or "")
         # If that answer WAS a clearance, his next transmission is the read-back.
         if known and is_a_clearance(_last_said[0]):
