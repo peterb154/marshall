@@ -73,8 +73,9 @@ def line_for(e: dict) -> str | None:
     scope = e.get("scope") or ""
     n = manned_count(scope)
     contacts = "no contacts" if not scope or scope == "no contacts" else f"{n} manned"
+    person = (e.get("who") or "")[:10]
     out = (f"{when}  radio={srs:14} claim={claim:14} -> {who:14} "
-           f"[{auth:6}] {contacts}{flag}")
+           f"[{auth:6}] {person:10} {contacts}{flag}")
     if auth not in ("radar",) and e.get("why"):
         out += f"\n           why: {e['why']}"
     if claim and who and claim != who:
@@ -85,7 +86,7 @@ def line_for(e: dict) -> str | None:
 def follow(path: Path, replay: bool) -> int:
     print(f"watching {path.name}\n")
     print("time      radio          claim          -> resolved       "
-          "authority  scope")
+          "authority  who        scope")
     with open(path, encoding="utf-8", errors="replace") as fh:
         if not replay:
             fh.seek(0, 2)                     # only what happens from now

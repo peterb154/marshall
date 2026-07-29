@@ -521,3 +521,70 @@ class TestAManUnderVectorsIsNotLeaving(unittest.TestCase):
             A.leaving_my_airspace("http://unused", "s", "Falcon 1-1",
                                   self._Me(), None, None,
                                   under_our_vectors=True))
+
+
+class TestTheHandleIsWhoHeAlreadyIs(unittest.TestCase):
+    """The pre-existing identity a formation split falls back to.
+
+        "Let's use the srs/dcs suffix -- the chunk after a space, dash or
+         underscore. Look at shooter, Andre and sockeye. All have unique names
+         already."
+
+    Real formation procedure says each aeroplane reverts to THE CALLSIGN IT
+    ALREADY HAD when the flight breaks up -- the one assigned before the
+    sortie, at the duty desk. We had no such thing, so a split had nothing to
+    fall back to: the lead was refused for want of a radar track, and the
+    wingman's radio took the FLIGHT's name.
+
+    Every pilot already has that identity in his player name. It is unique, it
+    is never spoken, and it survives a slot change, a callsign change and a
+    mis-transcription.
+    """
+
+    REAL = [("362nd_sockeye", "sockeye"), ("362nd Andre", "Andre"),
+            ("362nd Shooter", "Shooter"), ("362nd-Viper", "Viper")]
+
+    def test_the_squadron_tag_comes_off(self):
+        for full, want in self.REAL:
+            with self.subTest(full):
+                self.assertEqual(identity.handle(full), want)
+
+    def test_a_slot_number_comes_off_too(self):
+        """The rule is "drop any chunk with a digit", not "take what follows
+        the first separator" -- which is the only version that survives this
+        one, since the obvious rule turns it into "1-1-1"."""
+        self.assertEqual(identity.handle("Hoover 1-1-1"), "Hoover")
+
+    def test_a_bare_name_is_left_alone(self):
+        self.assertEqual(identity.handle("sockeye"), "sockeye")
+
+    def test_a_name_that_is_all_digits_survives(self):
+        """Stripping everything would leave nobody, and a pilot calling himself
+        Viper2 is still somebody."""
+        self.assertEqual(identity.handle("Viper2"), "Viper2")
+
+    def test_two_humans_are_never_confused(self):
+        us = [identity.Unit(f, manned=True) for f, _ in self.REAL]
+        for full, short in self.REAL:
+            with self.subTest(short):
+                self.assertEqual(identity.unit_for_radio(short, us).name, full)
+                self.assertEqual(identity.unit_for_radio(full, us).name, full)
+
+    def test_similar_handles_stay_distinct(self):
+        """The handle must not undo the exact-match fix: Hoover and Hoover2 are
+        two squadron mates, not one."""
+        us = [identity.Unit("Hoover", manned=True),
+              identity.Unit("Hoover2", manned=True)]
+        self.assertEqual(identity.unit_for_radio("Hoover", us).name, "Hoover")
+        self.assertEqual(identity.unit_for_radio("Hoover2", us).name, "Hoover2")
+
+    def test_it_survives_what_the_radio_calls_him(self):
+        """The whole point: the handle is the same whatever callsign he claims,
+        so a split has something true to fall back to."""
+        scope = ("362nd Andre [Falcon 1] (F-16C_50, manned): 9.0 nm on the 300 "
+                 "radial, 9,000 ft, heading 130, 300 knots")
+        reg = identity.Registry()
+        for claimed in ("Falcon 1", "Falcon 1-2", "Falcon 1-1", ""):
+            with self.subTest(claimed or "(nothing)"):
+                got = reg.resolve("g", "Andre", spoken=claimed, scope=scope)
+                self.assertEqual(identity.handle(got.track), "Andre")

@@ -120,6 +120,37 @@ def units_on(scope: str) -> list[Unit]:
     return out
 
 
+def handle(name: str) -> str:
+    """The human out of a squadron name: "362nd_sockeye" -> "sockeye".
+
+        "Let's use the srs/dcs suffix -- the chunk after a space, dash or
+         underscore. Look at shooter, Andre and sockeye. All have unique names
+         already."
+
+    Right, and it is the missing half of the real-world rule. Formation
+    procedure says each aeroplane reverts to THE CALLSIGN IT ALREADY HAD when
+    the flight splits -- the one assigned at the duty desk, before the sortie.
+    We had no such thing, so a split had nothing to fall back to and the
+    engine let a wingman take the flight's name.
+
+    The handle is that pre-existing identity, and it costs nothing because
+    every pilot already has one. It is unique per person, it is never spoken,
+    and it survives a slot change, a callsign change and a mis-transcription.
+
+    THE RULE IS "DROP ANY CHUNK WITH A DIGIT IN IT", not "take what follows the
+    first separator". Squadron tags and slot numbers both carry digits and the
+    human's name does not, so one test removes both -- and it is the only
+    version that survives "Hoover 1-1-1", which the obvious rule turns into
+    "1-1-1".
+
+    Falls back to the whole string when that would leave nothing, because a
+    pilot calling himself "Viper2" is still somebody.
+    """
+    parts = [p for p in re.split(r"[ _-]+", name or "")
+             if p and not re.search(r"\d", p)]
+    return " ".join(parts) or (name or "")
+
+
 def _key(s: str) -> str:
     """Squash a name to what two systems can agree on.
 
@@ -164,6 +195,18 @@ def unit_for_radio(srs_name: str, units: list[Unit]) -> Unit | None:
         return exact[0]
     if exact:
         return None                   # two units with one name: see units_on
+
+    # THE HANDLE, before falling back to substrings. "Andre" and "362nd Andre"
+    # are the same person and neither contains the other once the squadron tag
+    # is in the way of a plain comparison. Still exact-on-the-handle, so
+    # "Hoover" and "Hoover2" stay two people.
+    h = _key(handle(srs_name))
+    if h:
+        by_handle = [u for u in units if _key(handle(u.name)) == h]
+        if len(by_handle) == 1:
+            return by_handle[0]
+        if by_handle:
+            return None
 
     hits = [u for u in units if k in _key(u.name) or _key(u.name) in k]
     return hits[0] if len(hits) == 1 else None

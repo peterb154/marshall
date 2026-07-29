@@ -2906,6 +2906,10 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             client.last_sender_guid or "", srs, spoken=claim, scope=scope,
             plans=filed_plans(), roster=ctl.identified())
         known = _ident.callsign
+        # The human, out of the squadron name -- unique per person, never
+        # spoken, and the same whatever callsign he is using. It is what a
+        # formation split falls back to; see identity.handle.
+        _who = identity.handle(_ident.track) if _ident.track else ""
         if _ident.authority and _ident.authority != "radar":
             # Worth a line in the log every time it is NOT the physical chain:
             # the day this reads "roster" for a pilot who should be on radar,
@@ -2936,7 +2940,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                # strongest link and was not being preserved, so the replay of
                # every earlier sortie could only measure the weak paths.
                srs_name=srs, claimed=claim, authority=_ident.authority,
-               track=_ident.track, why=_ident.why,
+               track=_ident.track, who=_who, why=_ident.why,
                freq_mhz=(heard_hz or freq_hz) / 1_000_000, transcript=transcript,
                range_nm=_fix.range_nm if _fix else None,
                radial=_fix.radial_deg if _fix else None,
