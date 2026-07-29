@@ -23,3 +23,6 @@ desktop.ini
 # Claude Code local settings (per-machine) and its transient temp files
 .claude/settings.local.json
 .claude/*.tmp*
+
+# coverage output, from tools/check.py and ad-hoc runs
+.coverage
