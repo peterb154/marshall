@@ -89,25 +89,30 @@ _EVENT_RADAR = re.compile(r"\nRADAR:.*?(?=\nMake the radio call now|\Z)", re.S)
 # uses one. So the scenario itself is 12 to 16 messages, which is why a window of
 # 16 sat exactly on the edge of failing it and nothing would have reported it.
 #
-# So the scenario itself is 16 messages at its worst. The promise also has to
-# survive the calls that come AFTER it while the controller works other traffic
-# -- five more transmissions at the measured 2.56 messages each is 13. That is
-# 29, and 32 is the next sensible size.
+# So the scenario itself is 16 messages at its worst -- which is why a window of
+# 16 sat exactly on the edge of failing it, evicting the question at about the
+# moment it fell due, and nothing would have reported that.
 #
-# Measured by replaying a real session at each candidate, counting the JSON
-# actually sent:
+# Measured by replaying a real session at each candidate. The only baseline that
+# means anything is what it cost BEFORE this file existed: 6,613 tokens a call,
+# at a window of 16 with the situation still in every remembered turn.
 #
-#     window   ~tokens   vs today   transmissions held
-#         16     2,501       -62%                  6.2
-#         24     3,470       -48%                  9.4
-#         32     4,565       -31%                 12.5     <- chosen
-#         40     5,858       -11%                 15.6
+#     window   ~tokens   vs that   calls held
+#         16     2,501      -62%          6.2
+#         24     3,470      -48%          9.4     <- chosen
+#         32     4,565      -31%         12.5
+#         40     5,858      -11%         15.6
 #
-# 40 was the first number tried, on no better grounds than it being the strands
-# default; it buys memory nobody asked for at nearly the old price. 32 doubles
-# what the controller can remember and still costs a third less than 16 did
-# unscrubbed, because a scrubbed turn is a fifth the size of an unscrubbed one.
-WINDOW = 32
+# THE WINDOW IS SHARED BY EVERYONE ON THE FREQUENCY -- one session per channel,
+# which is the right model for a controller and the thing that decides this
+# number. "9.4 calls" is nine calls TOTAL, so a two-ship gets about 4.7 each and
+# a four-ship about 2.3. The scenario needs the question to survive three
+# intervening transmissions, so 24 clears it for two pilots with roughly one
+# call to spare, and 16 does not clear it at all.
+#
+# Starting here rather than higher because none of it has been flown. Card row K3
+# is what says whether it is short; raising it is this line.
+WINDOW = 24
 
 
 def strip_situation(text: str) -> str:

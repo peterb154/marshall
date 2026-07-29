@@ -2576,12 +2576,26 @@ preserves tool-use/tool-result pairs and refuses invalid window states; an
 orphaned `toolResult` is a hard API error, which on a radio is silence. Only the
 size changed.
 
-`WINDOW = 32` (`context.py`) is derived rather than picked: the interleaved
-standby conversation this exists for is 16 messages at worst, plus five more
-transmissions of margin at the measured 2.56 each. Replaying a real session, that
-costs about **4,565 tokens a call against the old 6,613 — a third less, for twice
-the memory.** Postgres still holds the whole transcript; only what is *sent* is
-trimmed, so a sortie stays replayable.
+`WINDOW = 24` (`context.py`) is derived rather than picked, and the thing that
+decides it is that **the window is shared by everyone on the frequency** — one
+session per channel, which is the right model for a controller. Replaying a real
+session against the pre-change baseline of 6,613 tokens a call:
+
+| window | tokens/call | vs before | calls held (total) | …per pilot in a two-ship |
+|---|---|---|---|---|
+| 16 | 2,501 | −62% | 6.2 | ~3.1 |
+| **24** | **3,470** | **−48%** | **9.4** | **~4.7** |
+| 32 | 4,565 | −31% | 12.5 | ~6.3 |
+
+The interleaved standby conversation needs a question to survive three
+intervening transmissions. At 24 a two-ship has about 4.7 calls of depth each and
+clears it with roughly one to spare; at 16 it has ~3.1 and the question is
+evicted at about the moment it falls due. Note the last column shrinks with
+traffic — a four-ship gets ~2.3 calls each at this setting, which is a real limit
+rather than a hypothetical.
+
+Postgres still holds the whole transcript; only what is *sent* is trimmed, so a
+sortie stays replayable.
 
 Guarded by `tests/test_context.py`, and by rows **K1–K5** on the test card —
 K1 and K2 are deliberately the same conversation with and without a tool call,
