@@ -157,7 +157,7 @@ _CSS = """
 body{background:var(--paper);color:var(--ink);font-family:var(--serif);
   font-size:17px;line-height:1.68;margin:0;-webkit-font-smoothing:antialiased}
 .wrap{display:grid;grid-template-columns:16rem minmax(0,1fr);gap:3.5rem;
-  max-width:78rem;margin:0 auto;padding:0 2rem}
+  max-width:92rem;margin:0 auto;padding:0 2rem}
 .rail{position:sticky;top:0;align-self:start;max-height:100vh;overflow-y:auto;
   padding:3rem 0;border-right:1px solid var(--rule-soft)}
 .rail .eyebrow{font-family:var(--mono);font-size:.66rem;letter-spacing:.16em;
@@ -170,7 +170,7 @@ body{background:var(--paper);color:var(--ink);font-family:var(--serif);
 .rail .other{margin-top:.5rem;color:var(--accent-ink);font-weight:600}
 .rail hr{border:0;border-top:1px solid var(--rule-soft);margin:1.4rem 0}
 main{padding:3rem 0 6rem;min-width:0}
-main>*{max-width:68ch}
+main>*{max-width:70ch}
 main>.scroll,main>figure,main>pre{max-width:none}
 h1{font-family:var(--sans);font-size:2.5rem;line-height:1.06;font-weight:700;
   letter-spacing:-.025em;text-wrap:balance;margin:0 0 .6rem}
@@ -205,10 +205,27 @@ th{text-align:left;font-family:var(--mono);font-size:.68rem;letter-spacing:.1em;
   border-bottom:1px solid var(--rule);white-space:nowrap;background:var(--surface)}
 td{padding:.7rem .85rem;border-bottom:1px solid var(--rule-soft);vertical-align:top}
 tr:last-child td{border-bottom:0}
-figure.diagram{margin:1.8rem 0;padding:1.3rem 1rem;background:var(--surface);
-  border:1px solid var(--rule-soft);border-radius:3px;overflow-x:auto}
+/* WIDE THINGS GET THE WHOLE COLUMN. The prose measure is for prose. */
+figure.diagram{margin:1.9rem 0;padding:1.3rem 1rem;background:var(--surface);
+  border:1px solid var(--rule-soft);border-radius:3px;width:100%;
+  max-width:none;position:relative;cursor:zoom-in}
 figure.diagram pre.mermaid{background:none;border:0;padding:0;margin:0;
-  display:flex;justify-content:center;min-width:min-content}
+  display:flex;justify-content:center;overflow:visible}
+figure.diagram svg{max-width:100%;height:auto}
+figure.diagram::after{content:"click to enlarge";position:absolute;
+  right:.6rem;bottom:.45rem;font-family:var(--mono);font-size:.62rem;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);
+  opacity:0;transition:opacity .12s}
+figure.diagram:hover::after{opacity:.75}
+/* Full-screen, at natural size, for the ones that are genuinely large --
+   the data model has forty tables and will never fit a column. */
+#zoom{position:fixed;inset:0;background:var(--paper);z-index:50;display:none;
+  overflow:auto;padding:2.5rem;cursor:zoom-out}
+#zoom.on{display:block}
+#zoom svg{max-width:none!important;height:auto}
+#zoomclose{position:fixed;top:.9rem;right:1.1rem;font-family:var(--mono);
+  font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-soft);z-index:51}
 .warn{font-family:var(--mono);font-size:.7rem;color:var(--ink-soft);
   border:1px dashed var(--rule);padding:.5rem .7rem;border-radius:3px}
 .chooser{max-width:40rem;margin:0 auto;padding:6rem 2rem}
@@ -232,6 +249,7 @@ figure.diagram pre.mermaid{background:none;border:0;padding:0;margin:0;
 _PAGE = """<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{title}</title><style>{css}</style></head><body>
+<div id="zoom"><span id="zoomclose">esc / click to close</span><div id="zoombody"></div></div>
 <div class="wrap">
   <nav class="rail" aria-label="Contents">
     <p class="eyebrow">Contents</p>
@@ -259,8 +277,13 @@ _PAGE = """<!doctype html><html><head><meta charset="utf-8">
         startOnLoad: false,
         theme: dark && dark.matches ? 'dark' : 'neutral',
         securityLevel: 'strict',
-        flowchart: {{ useMaxWidth: false }},
-        sequence: {{ useMaxWidth: false }},
+        // TRUE, and it was false. Mermaid then drew every diagram at its
+        // natural size inside a column narrower than the diagram, which is
+        // why they had to be scrolled sideways. Fit the column; the
+        // full-size copy is one click away.
+        flowchart: {{ useMaxWidth: true }},
+        sequence: {{ useMaxWidth: true }},
+        er: {{ useMaxWidth: true }},
       }});
       document.querySelectorAll('pre.mermaid').forEach(function (el) {{
         if (el.dataset.src === undefined) el.dataset.src = el.textContent;
@@ -271,6 +294,33 @@ _PAGE = """<!doctype html><html><head><meta charset="utf-8">
     }}
     draw();
     if (dark && dark.addEventListener) dark.addEventListener('change', draw);
+
+    // CLICK TO ENLARGE. Fitting the column is right for reading; some of these
+    // -- the data model especially -- have more in them than any column can
+    // carry, and squinting at a shrunk SVG is its own kind of useless. The
+    // overlay shows the same SVG at natural size and scrolls in both axes,
+    // which is what horizontal scrolling should have been all along: opt-in,
+    // and only for the diagram you asked about.
+    var zoom = document.getElementById('zoom');
+    var zoomBody = document.getElementById('zoombody');
+    function close() {{ zoom.classList.remove('on'); zoomBody.innerHTML = ''; }}
+    document.addEventListener('click', function (ev) {{
+      var fig = ev.target.closest && ev.target.closest('figure.diagram');
+      if (fig && !zoom.classList.contains('on')) {{
+        var svg = fig.querySelector('svg');
+        if (!svg) return;
+        zoomBody.innerHTML = svg.outerHTML;
+        var big = zoomBody.querySelector('svg');
+        if (big) {{ big.removeAttribute('width'); big.removeAttribute('height');
+                    big.style.width = 'auto'; big.style.maxWidth = 'none'; }}
+        zoom.classList.add('on');
+      }} else if (zoom.classList.contains('on')) {{
+        close();
+      }}
+    }});
+    document.addEventListener('keydown', function (ev) {{
+      if (ev.key === 'Escape') close();
+    }});
   }})();
 </script>
 </body></html>

@@ -100,7 +100,7 @@ def _seed() -> None:
     Importing them here means the first request already has a baseline for
     everything.
     """
-    from marshall.kneeboard import flighttest, site      # noqa: F401
+    from marshall.kneeboard import diag, docs, flighttest, site   # noqa: F401
     refresh()
 
 
@@ -224,6 +224,7 @@ async def diag_page() -> HTMLResponse:
     long-lived connection open (see the keep-alive note at the top of this
     module).
     """
+    refresh()
     from marshall.kneeboard import diag
     return HTMLResponse(diag.page(), headers=NO_CACHE)
 
@@ -236,6 +237,7 @@ async def diag_json(session: str = ""):
     touched. A diagnostic that can break a sortie is one nobody dares run
     during one.
     """
+    refresh()
     from marshall.kneeboard import diag
     try:
         return JSONResponse(diag.state(session), headers=NO_CACHE)
@@ -247,6 +249,7 @@ async def diag_json(session: str = ""):
 
 @app.get("/docs", response_class=HTMLResponse)
 async def docs_index() -> HTMLResponse:
+    refresh()
     from marshall.kneeboard import docs
     return HTMLResponse(docs.index(), headers=NO_CACHE)
 
@@ -260,6 +263,7 @@ async def docs_page(slug: str) -> HTMLResponse:
     `docs/WIRING.md` shows up on the next page turn rather than the next time
     somebody remembers to bounce the server.
     """
+    refresh()
     from marshall.kneeboard import docs
     if slug not in docs.PAGES:
         raise HTTPException(status_code=404, detail=f"no document {slug!r}")
