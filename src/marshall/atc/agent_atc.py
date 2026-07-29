@@ -3025,6 +3025,14 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                    text=transcript)
             continue
 
+        # WHAT THE CONTROLLER MUST SAY ABOUT THE FLIGHT. The verdicts below
+        # are decided here, deterministically, and were recorded and never
+        # VOICED -- so the rehearsal showed a flight created, a wingman
+        # joined and an outsider refused at nine miles, while every pilot
+        # heard "station calling, say your callsign". A decision the pilot
+        # cannot hear has not been made as far as he is concerned.
+        _flight_say = ""
+
         # CREATING A FLIGHT. He says a name; he is its lead and its only member
         # until somebody joins.
         if _who:
@@ -3036,6 +3044,11 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 if _f is not None:
                     record(session_id, kind="flight/created", callsign=_name,
                            who=_who)
+                    _flight_say = (f"{_who}, you are now the lead of {_name} "
+                                   f"flight. Each member of {_name} check in "
+                                   f"to be joined.")
+                else:
+                    _flight_say = f"{_who}, unable -- {_why}."
 
             # JOINING ONE, on his own radio and in the right place. A pilot can
             # only join himself, and only when radar puts him with the flight
@@ -3053,6 +3066,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 record(session_id, kind="flight/joined" if _f else "flight/refused",
                        callsign=_want, who=_who, miles=round(_gap or 0, 1),
                        text="" if _f else _why)
+                _flight_say = (f"Roger {_who}, joined to {_want}."
+                               if _f else f"{_why}.")
             elif _said_name:
                 # HE TRIED TO JOIN SOMETHING THAT IS NOT THERE, and still
                 # deserves an answer -- silence reads as a controller who did
@@ -3061,6 +3076,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 record(session_id, kind="flight/refused", callsign=_said_name,
                        who=_who,
                        text=f"{_who}, unable, {_said_name} flight doesn't exist")
+                _flight_say = (f"{_who}, unable, {_said_name} flight doesn't "
+                               f"exist.")
 
             # BREAKING HIMSELF OUT, without needing the lead. A lost wingman
             # who transmits is otherwise answered as the FLIGHT, so the
@@ -3077,12 +3094,15 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     record(session_id, kind="flight/dissolved", callsign=_gone,
                            who=_who,
                            text=fl.lead_lost_call(_gone, _who, _survivors))
+                    _flight_say = fl.lead_lost_call(_gone, _who, _survivors)
                 else:
                     print(f"  .. {_who} is out of {_out}", flush=True)
                     record(session_id, kind="flight/left", callsign=_out,
                            who=_who,
                            text=f"Roger {_who}, you are no longer in {_out} "
                                 f"flight, what are your intentions?")
+                    _flight_say = (f"Roger {_who}, you are no longer in {_out} "
+                                   f"flight, what are your intentions?")
 
         # THERE IS NO ADOPTION, and there was a block here that called
         # `fl.parse_adopting` for it. The design settled the other way: a pilot
@@ -3432,6 +3452,19 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 _strip + " This is what is already known about him and it "
                 "carries across a handoff -- do not ask him again for anything "
                 "in it.")
+        if _flight_say:
+            # DECIDED HERE, NOT BY YOU. Who is in which flight is roster state
+            # and radar geometry -- the same class of fact as separation, and
+            # the same reason it is not the model's to invent. The verdict is
+            # already computed; the agent's whole job is to say it.
+            #
+            # It sits ABOVE the approach directive on purpose. A man who has
+            # just been refused a join needs that answer first, and the two are
+            # never in conflict because they are about different things.
+            parts.append(
+                "FLIGHT (already decided from the roster and radar — SAY THIS "
+                "and do not reword the callsigns, the flight name or the "
+                f"distances): {_flight_say}")
         if directive:
             parts.append("CONTROLLER (deterministic next step of the approach — "
                          "voice its altitudes, headings and sequence exactly, add "
