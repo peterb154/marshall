@@ -389,7 +389,17 @@ class Registry:
         # the case the guard was really for -- a clipped or wordless call must
         # not blank him.
         if not spoken:
-            return known or u.callsign or u.name
+            # THE HANDLE, NOT THE SIM'S UNIT NAME, when nothing else has named
+            # him. "A person is his handle" -- Sockeye is Sockeye whatever he
+            # is flying, and only a flight has a name of its own. The unit name
+            # is a slot label nobody has ever said out loud, and reaching it
+            # put a squadron tag on the air: the controller called a man
+            # "three six two underscore Andre dash one", which the voice read
+            # as "3-6-2 and DeAndre-1".
+            #
+            # Last resort stays the raw name rather than nothing, because a
+            # clumsy label is still better than an unaddressed transmission.
+            return known or u.callsign or handle(u.name) or u.name
         return spoken
 
     def resolve(self, guid: str, srs_name: str, spoken: str = "",

@@ -1353,6 +1353,33 @@ the director's source and round-trips it through the bridge's parser, because
 the two processes do not import each other and a hand-written fixture would
 only prove the parser can read the test's idea of the line.
 
+**And the crash the repair uncovered.** With formations parsing, the rehearsal
+got as far as `Apex: created, lead Sockeye` — the exact line that was
+impossible before — and the bridge then died on the next transmission:
+
+    AttributeError: module 'marshall.atc.flights' has no attribute
+    'parse_adopting'. Did you mean: 'parse_joining'?
+
+Adoption was designed and then dropped: a pilot joins HIMSELF, on his own
+radio, because that is the transmission radar can corroborate, and rejoining
+after a break-out is joining rather than a case of its own. `parse_adopting`
+went with the simplification and its call site stayed.
+
+It had never fired because it needs `_who`, `_who` needs a resolved TRACK, and
+both routes to one were blocked — a pilot identified from a filed strip has a
+callsign and no track, and every aeroplane in a formation resolved to nothing.
+So it was unreachable in practice and reachable the instant identity worked.
+An AttributeError in the SRS thread is not an ordinary bug: the bridge IS the
+radio, so it takes the frequency down and the only symptom a pilot sees is that
+ATC stopped existing.
+
+Guarded by `tests/test_bridge_calls.py`, which walks the bridge's AST and
+checks every `fl.*` and `identity.*` against what those modules actually
+define. Importing the module proves nothing here and the unit suite never runs
+the SRS loop, so the source is the only place this is visible before a sortie.
+`connected_handles` went too — it existed only to supply the closed set of
+handles that a declaration could name, and nobody names handles any more.
+
 Related: [#40] (identity), [#38] (a callsign is a position), [#12] (break-up).
 
 ---

@@ -588,3 +588,40 @@ class TestTheHandleIsWhoHeAlreadyIs(unittest.TestCase):
             with self.subTest(claimed or "(nothing)"):
                 got = reg.resolve("g", "Andre", spoken=claimed, scope=scope)
                 self.assertEqual(identity.handle(got.track), "Andre")
+
+
+class TestHowAControllerAddressesASingle(unittest.TestCase):
+    """"Sockeye is sockeye as a single. No matter what I'm flying. Always
+    sockeye -- unless I'm flight lead, then the flight has a name."
+
+    A person is his handle, so the last resort when nothing has named him is
+    the handle and not the sim's unit name. Heard in the flight rehearsal: the
+    controller addressed a man as "362nd_Andre-1", which the voice read out as
+    "3-6-2 and DeAndre-1" -- a squadron tag and a slot number on the air, and
+    neither is a thing anybody has ever said on a radio.
+    """
+
+    UNTAGGED = ("362nd_Andre-1 (P-51D-30-NA, manned): 13.6 nm on the 307 "
+                "radial, 5,950 ft, heading 062, 280 knots")
+
+    def test_he_is_called_by_his_handle(self):
+        r = identity.Registry()
+        got = r.resolve("guid-andre", "Andre", spoken="", scope=self.UNTAGGED)
+        self.assertEqual(got.callsign, "Andre")
+        self.assertEqual(got.track, "362nd_Andre-1")
+
+    def test_the_track_is_still_the_sim_unit(self):
+        """The label changed; the thing that gets separated did not."""
+        r = identity.Registry()
+        got = r.resolve("guid-andre", "Andre", spoken="", scope=self.UNTAGGED)
+        self.assertEqual(got.authority, "radar")
+        self.assertNotEqual(got.callsign, got.track)
+
+    def test_a_tagged_contact_keeps_the_callsign_radar_gave_it(self):
+        """The handle is the FALLBACK. Anything that has actually named him
+        outranks it."""
+        scope = ("362nd_sockeye [Pony 1-1] (P-51D-30-NA, manned): 4.1 nm on "
+                 "the 281 radial, 4,659 ft, heading 026")
+        r = identity.Registry()
+        got = r.resolve("guid-s", "sockeye", spoken="", scope=scope)
+        self.assertEqual(got.callsign, "Pony 1-1")

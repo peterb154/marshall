@@ -308,9 +308,6 @@ class TestLosingTheLead(unittest.TestCase):
 # to the debrief, and removes the member list nobody could reliably hear.)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class TestTellingThemTheLeadIsGone(unittest.TestCase):
     """"Apex flight, approach, flight lead sockeye is no longer on radar. Apex
@@ -419,3 +416,91 @@ class TestBreakingYourselfOut(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestOnTheGround(unittest.TestCase):
+    """"Yes, same creation process on ground. On the ground, a flight needs to
+    be formed before clearance is issued. Else the clearance is only for the
+    requestor."
+
+    Which needs NO new mechanism, and that is the finding. The same create and
+    join work on the ramp, and the one-mile rule -- which looked like it would
+    be the awkward part -- passes trivially, because aeroplanes parked at one
+    airfield are within a mile of each other. A rule chosen at the right level
+    does not need a special case for the ground.
+
+    The clearance follows because a member's transmissions already resolve to
+    the FLIGHT before anything downstream sees them. So a flight gets one
+    clearance and one squawk, which is what a formation gets in reality --
+    only the lead transponds.
+    """
+
+    def setUp(self):
+        self.r = F.Roster()
+
+    def test_a_flight_holds_the_clearance(self):
+        self.r.create("Apex", "sockeye", now=1.0)
+        self.r.join("Apex", "Andre", 0.2)          # parked side by side
+        self.assertEqual(self.r.speaking_as("sockeye"), "Apex")
+        self.assertEqual(self.r.speaking_as("Andre"), "Apex")
+
+    def test_with_no_flight_it_is_only_his(self):
+        self.assertEqual(self.r.speaking_as("sockeye"), "sockeye")
+
+    def test_the_ramp_satisfies_the_proximity_rule(self):
+        """Parked aircraft are yards apart, so nothing special is needed to
+        form up before engine start."""
+        self.r.create("Apex", "sockeye", now=1.0)
+        got, why = self.r.join("Apex", "Andre", 0.05)
+        self.assertIsNotNone(got, why)
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+class TestWhisperMishearsTheFlightName(unittest.TestCase):
+    """From the flight rehearsal, where Polly said "Apex" and Whisper wrote
+    "Abex", so a wingman formating two tenths of a mile off his lead was told
+    no such flight existed.
+
+    THE CLOSED SET IS WHAT MAKES THIS SAFE, and it is the argument the whole
+    design rests on: matching a spoken word against unbounded English is a
+    guess, and matching it against the two flights that exist is a lookup. With
+    one flight airborne, "Abex" can only have meant that one.
+
+    Only ever in the GRAMMATICAL SLOT -- the word after "joining" or
+    "separating from" -- never scanned across the transmission. Flight names
+    are short, some of them sit one edit from ordinary English, and a fuzzy
+    match anywhere in a sentence would eventually swallow a real word.
+    """
+
+    def test_one_consonant_out_still_finds_the_flight(self):
+        self.assertEqual(F.parse_joining("Approach, Andre, joining Abex.",
+                                          ["Apex"]), ("Apex", "Apex"))
+
+    def test_a_flight_that_does_not_exist_is_still_refused(self):
+        """The allowance must not dissolve the refusal -- "Bolt" is four edits
+        from "Apex" and means what it says."""
+        known, said = F.parse_joining("Approach, Andre, joining Bolt.", ["Apex"])
+        self.assertEqual(known, "")
+        self.assertEqual(said, "Bolt")
+
+    def test_two_flights_that_close_together_refuse_rather_than_guess(self):
+        """Same rule as identity.unit_for_radio: ambiguity is refused, never
+        tie-broken. Putting a man in the wrong formation is worse than asking
+        him to say it again."""
+        self.assertEqual(F.near_name("Abex", ["Apex", "Abix"]), "")
+
+    def test_breaking_out_gets_the_same_allowance(self):
+        """Needed more here, if anything: the man breaking out is usually the
+        one having a bad day, and refusing him over one consonant leaves the
+        controller working him as part of a formation he has left."""
+        self.assertEqual(
+            F.parse_leaving("Approach, Andre, separating from Abex flight.",
+                             ["Apex"]), "Apex")
+
+    def test_a_word_too_short_to_be_evidence_is_not_matched(self):
+        self.assertEqual(F.near_name("ax", ["Apex"]), "")
+
+    def test_an_exact_name_always_wins(self):
+        self.assertEqual(F.near_name("Apex", ["Apex", "Abex"]), "Apex")

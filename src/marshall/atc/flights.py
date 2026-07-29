@@ -79,6 +79,55 @@ def _same(a: str, b: str) -> bool:
     return (a or "").strip().lower() == (b or "").strip().lower()
 
 
+def _distance(a: str, b: str) -> int:
+    """Single-character edits between two words. Small and dependency-free."""
+    if a == b:
+        return 0
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1,
+                           prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
+def near_name(said: str, flight_names: list[str]) -> str:
+    """Which existing flight did he mean? "" when it cannot be told.
+
+    THE CLOSED SET IS WHAT MAKES THIS SAFE, and it is the same argument the
+    whole design rests on: matching a spoken word against unbounded English is
+    a guess, and matching it against the two flights that exist is a lookup.
+    Whisper turned "Apex" into "Abex" in rehearsal and a member was refused the
+    flight he was formating on -- with exactly one flight airborne, "Abex" can
+    only have meant that one.
+
+    AMBIGUITY IS REFUSED RATHER THAN TIE-BROKEN, the same rule as
+    `identity.unit_for_radio`. Two flights within a hair of what he said means
+    we do not know which he wants, and putting a man in the wrong formation is
+    worse than asking him to say it again.
+
+    Only ever called on the word in the GRAMMATICAL SLOT -- the one after
+    "joining" or "leaving" -- never scanned across the whole transmission. A
+    fuzzy match anywhere in a sentence would eventually catch an ordinary word,
+    and a flight name is short enough that some of them are one edit from real
+    English.
+    """
+    word = (said or "").strip()
+    if len(word) < 3:
+        return ""
+    exact = [n for n in flight_names if _same(word, n)]
+    if exact:
+        return exact[0]
+    # One edit per four characters, so a four-letter name tolerates one slip
+    # and nothing tolerates a wholesale substitution. "Bolt" against "Apex" is
+    # four edits and stays the refusal it is meant to be.
+    near = [n for n in flight_names
+            if _distance(word.lower(), n.lower()) <= max(1, len(n) // 4)]
+    return near[0] if len(near) == 1 else ""
+
+
 def parse_create(said: str) -> str:
     """Read "Approach, request creation of Apex flight". Returns the name.
 
@@ -119,7 +168,15 @@ def parse_joining(said: str, flight_names: list[str]) -> tuple[str, str]:
     # for the refusal and for nothing else.
     m = re.search(r"\bjoin(?:ing|s|ed)?\b\s+(?:up\s+)?(?:with\s+)?"
                   r"([A-Za-z][A-Za-z'-]*)", said or "", re.I)
-    return "", (m.group(1).title() if m else "")
+    if not m:
+        return "", ""
+    spoken = m.group(1)
+    # THE WORD IN THE SLOT, matched against the flights that exist. Whisper
+    # heard "Abex" for "Apex" in rehearsal and a member formating half a mile
+    # off his lead was refused the flight he was already in.
+    if (hit := near_name(spoken, flight_names)):
+        return hit, hit
+    return "", spoken.title()
 
 
 def parse_leaving(said: str, flight_names: list[str]) -> str:
@@ -138,7 +195,14 @@ def parse_leaving(said: str, flight_names: list[str]) -> str:
         for name in flight_names:
             if _same(w, name):
                 return name
-    return ""
+    # The word in the slot, near-matched against the flights that exist -- the
+    # same allowance joining gets, and needed more here: a man breaking out is
+    # usually the one having a bad day, and refusing him over one consonant
+    # leaves the controller working him as part of a formation he has left.
+    m = re.search(r"\b(?:separat\w*|break\w*|detach\w*|leav\w*)\b"
+                  r"(?:\s+(?:out|away|off|from|of|with))*\s+"
+                  r"(?:the\s+)?([A-Za-z][A-Za-z'-]*)", said or "", re.I)
+    return near_name(m.group(1), flight_names) if m else ""
 
 
 def is_intra_flight(said: str, flight_names: list[str]) -> bool:

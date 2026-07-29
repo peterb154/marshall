@@ -602,29 +602,6 @@ def _scope_geometry(scope: str) -> tuple[dict, dict]:
     return pos, offset
 
 
-def connected_handles(scope: str, client=None) -> list[str]:
-    """Everybody who could be named in a declaration.
-
-    THE CLOSED SET. A flight is formed by naming handles out loud, and that is
-    only safe because the names are checked against people who are
-    demonstrably here -- on the scope, or on the radio. Matching a spoken name
-    against an unbounded supply of English words is the mistake this project
-    spent two days undoing; matching it against four people is a lookup.
-    """
-    # EVERY contact, not only the manned ones. A person is what a handle
-    # names, so manned-only looks right -- but an AI-backed synthetic pilot
-    # reports no player name, and that is precisely how this path is tested
-    # without asking two humans to fly it. Narrowing it here would make the
-    # test unable to exercise the thing under test, which is worse than a
-    # slightly wider set: a declaration still has to NAME the handle, and
-    # nobody names an AI.
-    out = {identity.handle(u.name) for u in identity.units_on(scope)}
-    if client is not None:
-        out |= {identity.handle(n) for n in getattr(client, "roster", {}).values()
-                if n and n not in OUR_STATIONS}
-    return sorted(h for h in out if h)
-
-
 def transmitter_callsign(guid: str | None, transcript: str) -> str:
     """Who this radio is, learning from the transcript when it says so.
 
@@ -3107,26 +3084,21 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                            text=f"Roger {_who}, you are no longer in {_out} "
                                 f"flight, what are your intentions?")
 
-        # ADOPTING SOMEBODY, declared the same way a flight is formed. Any
-        # member may do it, not only the lead -- a rule that depends on one
-        # particular aeroplane still being alive is a poor rule in a combat
-        # simulator, and the lead sorts out rogue joins in the debrief. This is
-        # also how a broken-out wingman comes back: rejoining is adoption, not
-        # a case of its own.
-        if _who:
-            _an, _add, _miss = fl.parse_adopting(
-                transcript, connected_handles(scope, client))
-            for _h in _add:
-                _f, _why = _flights.join(_an, _h)
-                if _f is not None:
-                    print(f"  .. {_an} adopted {_h}", flush=True)
-                    record(session_id, kind="flight/adopted", callsign=_an,
-                           who=_h)
-                else:
-                    print(f"  .. cannot adopt {_h}: {_why}", flush=True)
-            if _miss:
-                print(f"  .. {_an}: no such handle as {', '.join(_miss)}",
-                      flush=True)
+        # THERE IS NO ADOPTION, and there was a block here that called
+        # `fl.parse_adopting` for it. The design settled the other way: a pilot
+        # joins HIMSELF, on his own radio, because that is the transmission
+        # radar can corroborate -- and rejoining after a break-out is joining
+        # rather than a case of its own. `parse_adopting` went with the
+        # simplification; this call site did not, and it crashed the bridge with
+        # an AttributeError on the first transmission from anybody the ladder
+        # identified by RADAR.
+        #
+        # It survived because it needs `_who`, `_who` needs a TRACK, and the two
+        # ways a track was reachable were both blocked: a pilot resolved from a
+        # filed strip has a callsign and no track, and formations resolved to
+        # nothing at all until the line above them was fixed. So repairing
+        # identity is what exposed it -- the flight rehearsal created Apex and
+        # the bridge died on the very next call.
 
         # WHAT THE CONTROLLER CALLS HIM: the flight while he is in one, his own
         # handle otherwise, and never a member number.
