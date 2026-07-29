@@ -1168,6 +1168,76 @@ talkdown is "really good", and every complaint left is about how he gets there.
 
 ---
 
+## [ARCH-4] A person is his handle; a flight has a name; members have neither — #42
+
+labels: architecture, needs-design
+
+**Status:** TODO — designed with the pilot 29 July, not yet built.
+
+Every identity failure this week came from one place: deriving a member's radio
+identity from a flight number. "Falcon 1-1" and "Falcon 1-2" share a flight, so
+a lookup on the flight handed two pilots each other's position; a lead refused
+for want of a radar track let his wingman's radio take the FLIGHT's name; and a
+callsign a man had used an hour earlier separated him from himself.
+
+The pilot's model removes the thing that breaks rather than guarding it:
+
+    A PERSON IS HIS HANDLE.        Sockeye is Sockeye as a single, whatever he
+                                   is flying, on every sortie.
+    A FLIGHT HAS ITS OWN NAME.     "Apex", not "Sockeye's flight" and not a
+                                   number derived from anybody.
+    MEMBERS HAVE NO RADIO IDENTITY WHILE THE FLIGHT IS TOGETHER. There is no
+                                   "Apex 1-2" on the ATC frequency. Only the
+                                   flight speaks.
+    ANY MEMBER MAY SPEAK FOR IT.   The flight is not bound to one radio -- if
+                                   lead goes down, another member carries on.
+    A PILOT IS IN ZERO OR ONE.     Membership is exclusive and registered.
+
+    "Maybe apex1-1 is intra flight speak and never lands in atc"
+
+Which turns the hardest case into the easiest. A member callsign is not
+something the controller has to resolve -- it is EVIDENCE THE TRANSMISSION IS
+NOT ADDRESSED TO HIM. We already classify ship-to-ship; a member number becomes
+its strongest indicator. Everything ATC hears is then either a HANDLE or a
+FLIGHT NAME, and both are closed sets.
+
+**HOW MEMBERS ATTACH, which is the question that needed answering.** By
+declaration, naming handles:
+
+    "Georgia Center, Sockeye -- forming Apex flight of three with Shooter and
+     Andre"
+
+That is speech, and it is safe for the same reason the identity ladder is safe:
+the names are matched against a CLOSED, KNOWN SET. We know exactly who is
+connected (the SRS roster) and who is flying (the manned tracks) -- so "Shooter
+and Andre" is two words checked against maybe four people demonstrably online,
+not open-ended parsing. A claim matched against an authority, never believed on
+its own.
+
+Two creation paths, and both already have somewhere to live:
+
+    ON THE GROUND   opening a plan at clearance delivery, where the flight and
+                    its members are typed rather than spoken.
+    IN THE AIR      the declaration above.
+
+**Acceptance criteria**
+1. `handle()` identifies the person; the ATC-facing name is a handle or a
+   flight name, never a member number.
+2. A flight record carries a NAME, a lead and a member list of handles, and a
+   pilot may appear in at most one.
+3. Any member's radio resolves to the flight while the flight exists.
+4. A transmission whose callsign is a member number is treated as intra-flight
+   and does not move ATC state.
+5. Forming a flight in the air matches spoken handles against connected
+   players, and refuses a name it cannot match rather than inventing a member.
+6. On dissolution every member reverts to his handle, and the flight name
+   refers to nobody -- which is what real procedure does and what
+   `Controller.ambiguous_after_breakup` already assumes.
+
+Related: [#40] (identity), [#38] (a callsign is a position), [#12] (break-up).
+
+---
+
 ## [ARCH-3] The sim already tells us; we are inferring it instead — #41
 
 labels: architecture, needs-design
