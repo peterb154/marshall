@@ -32,6 +32,7 @@ import urllib.parse
 import urllib.request
 
 from marshall import config
+from marshall.atc import flights as fl
 from marshall.atc import identity
 
 BASE_URL = "http://localhost:8000"
@@ -500,6 +501,34 @@ _transmitters: dict[str, str] = {}
 # sitting in", which is a question about the sim, and only accepts the vote when
 # a track or a filed strip agrees. See identity.py and [ARCH-2] / #40.
 _identity = identity.Registry()
+
+# WHICH FLIGHTS EXIST AND WHO IS IN THEM. A person is his handle; a flight has
+# a name; members have neither while it is together. See flights.py and
+# [ARCH-4] / #42.
+_flights = fl.Roster()
+
+
+def connected_handles(scope: str, client=None) -> list[str]:
+    """Everybody who could be named in a declaration.
+
+    THE CLOSED SET. A flight is formed by naming handles out loud, and that is
+    only safe because the names are checked against people who are
+    demonstrably here -- on the scope, or on the radio. Matching a spoken name
+    against an unbounded supply of English words is the mistake this project
+    spent two days undoing; matching it against four people is a lookup.
+    """
+    # EVERY contact, not only the manned ones. A person is what a handle
+    # names, so manned-only looks right -- but an AI-backed synthetic pilot
+    # reports no player name, and that is precisely how this path is tested
+    # without asking two humans to fly it. Narrowing it here would make the
+    # test unable to exercise the thing under test, which is worse than a
+    # slightly wider set: a declaration still has to NAME the handle, and
+    # nobody names an AI.
+    out = {identity.handle(u.name) for u in identity.units_on(scope)}
+    if client is not None:
+        out |= {identity.handle(n) for n in getattr(client, "roster", {}).values()
+                if n and n not in OUR_STATIONS}
+    return sorted(h for h in out if h)
 
 
 def transmitter_callsign(guid: str | None, transcript: str) -> str:
@@ -2910,6 +2939,39 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # spoken, and the same whatever callsign he is using. It is what a
         # formation split falls back to; see identity.handle.
         _who = identity.handle(_ident.track) if _ident.track else ""
+
+        # INTRA-FLIGHT TALK IS NOT FOR US. "Apex 1-2" is how a flight speaks to
+        # itself and never lands in ATC, so hearing it is evidence this
+        # transmission is addressed to somebody else. Cheaper and far more
+        # reliable than resolving it: the hardest case to identify becomes one
+        # there is no need to identify. See [ARCH-4] / #42.
+        if claim and fl.is_intra_flight(claim, _flights.names()):
+            print(f"  .. {claim} is intra-flight, not for the controller",
+                  flush=True)
+            record(session_id, kind="ship-to-ship", callsign=_who,
+                   text=transcript)
+            continue
+
+        # FORMING A FLIGHT, declared out loud and matched against the people
+        # who are demonstrably here.
+        if _who:
+            _name, _members, _unknown = fl.parse_forming(
+                transcript, _who, connected_handles(scope, client))
+            if _name:
+                _f, _why = _flights.form(_name, _members)
+                if _f is not None:
+                    print(f"  .. {_name} formed: {', '.join(_f.members)}"
+                          + (f" (not recognised: {', '.join(_unknown)})"
+                             if _unknown else ""), flush=True)
+                    record(session_id, kind="flight/formed", callsign=_name,
+                           members=_f.members, unknown=_unknown)
+                else:
+                    print(f"  .. cannot form {_name}: {_why}", flush=True)
+
+        # WHAT THE CONTROLLER CALLS HIM: the flight while he is in one, his own
+        # handle otherwise, and never a member number.
+        if _who and _flights.of(_who) is not None:
+            known = _flights.speaking_as(_who)
         if _ident.authority and _ident.authority != "radar":
             # Worth a line in the log every time it is NOT the physical chain:
             # the day this reads "roster" for a pilot who should be on radar,
