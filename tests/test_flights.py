@@ -16,51 +16,122 @@ from marshall.atc import flights as F
 HERE = ["sockeye", "Andre", "Shooter", "Viper"]     # who is connected
 
 
-class TestReadingTheDeclaration(unittest.TestCase):
-    """"Georgia Center, Sockeye -- forming Apex flight of three with Shooter
-    and Andre" """
+class TestCreatingAFlight(unittest.TestCase):
+    """    "approach, request creation of Apex flight of 3"
+        "Roger sockeye, you are now the lead of Apex flight of 3. Each member
+         of apex flight check in to be joined"
+        "approach, Andre, joining apex"  ->  "Roger Andre, joined to apex"
 
-    def test_the_flight_and_its_members(self):
-        name, members, unknown = F.parse_forming(
-            "forming Apex flight of three with Shooter and Andre",
-            "sockeye", HERE)
-        self.assertEqual(name, "Apex")
-        self.assertEqual(members, ["sockeye", "Shooter", "Andre"])
-        self.assertEqual(unknown, [])
+    THE LEAD NAMES NOBODY. An earlier version had him list his members --
+    "forming Apex with Shooter and Andre" -- which meant matching several
+    spoken names against a roster, reporting the ones it could not place, and
+    being wrong about the flight's size whenever it mis-heard one.
 
-    def test_the_speaker_is_always_a_member(self):
-        """A flight formed without the man who called it in would be nobody's."""
-        _n, members, _u = F.parse_forming(
-            "forming Apex with Shooter", "sockeye", HERE)
-        self.assertIn("sockeye", members)
+    Here the only thing he says about his members is HOW MANY, and each pilot
+    joins himself. So the only thing that can be mis-heard is a number, and a
+    wrong number is visible at once: the flight never completes.
+    """
 
-    def test_a_name_nobody_here_answers_to_is_reported(self):
-        """Returned rather than dropped: a flight that quietly forms with two
-        of the three asked for is worse than one that fails, because the
-        controller would be separating a group whose size he is wrong about."""
-        name, members, unknown = F.parse_forming(
-            "forming Apex flight of three with Shooter and Bandit",
-            "sockeye", HERE)
-        self.assertEqual(name, "Apex")
-        self.assertEqual(members, ["sockeye", "Shooter"])
-        self.assertEqual(unknown, ["Bandit"])
+    def test_the_name_and_the_count(self):
+        self.assertEqual(
+            F.parse_create("Approach, request creation of Apex flight of 3"),
+            ("Apex", 3))
 
-    def test_a_mangled_handle_matches_nobody(self):
-        """The closed set is the whole safety argument. Whisper turning a name
-        into something that is nobody's handle yields nothing, which is the
-        correct answer -- matching against every word English can produce is
-        the mistake this project spent two days undoing."""
-        _n, members, unknown = F.parse_forming(
-            "forming Apex with Maintained", "sockeye", HERE)
-        self.assertEqual(members, ["sockeye"])
-        self.assertEqual(unknown, ["Maintained"])
+    def test_spoken_numbers_too(self):
+        self.assertEqual(F.parse_create("form Apex flight of two"), ("Apex", 2))
 
-    def test_an_ordinary_transmission_is_not_a_declaration(self):
+    def test_an_ordinary_transmission_is_not_a_request(self):
         for said in ("Batumi Approach, Sockeye, request the radar approach",
-                     "turn left heading one four zero",
-                     "Apex, level five thousand"):
+                     "turn left heading one four zero"):
             with self.subTest(said):
-                self.assertEqual(F.parse_forming(said, "sockeye", HERE)[0], "")
+                self.assertEqual(F.parse_create(said)[0], "")
+
+
+class TestJoiningYourself(unittest.TestCase):
+    """A pilot can only join HIMSELF.
+
+    Which is why there is no adoption, no rogue join for the lead to sort out
+    afterwards, and no member list for anybody to mis-hear. It is also how a
+    broken-out wingman comes back: rejoining is this, not a case of its own.
+    """
+
+    def setUp(self):
+        self.r = F.Roster()
+        self.r.create("Apex", "sockeye", 3, now=1.0)
+
+    def test_he_names_only_the_flight(self):
+        """He does not have to say who he is -- the identity ladder already
+        knows which aeroplane is transmitting. Saying his handle is good radio
+        discipline and a cross-check, not something the system needs."""
+        self.assertEqual(
+            F.parse_joining("Approach, Andre, joining Apex", self.r.names()),
+            "Apex")
+        self.assertEqual(
+            F.parse_joining("approach, joining apex flight", self.r.names()),
+            "Apex")
+
+    def test_a_flight_that_does_not_exist_is_not_joined(self):
+        self.assertEqual(F.parse_joining("joining Bolt", self.r.names()), "")
+
+    def test_joining_is_not_inferred_from_any_mention(self):
+        self.assertEqual(
+            F.parse_joining("Apex, level five thousand", self.r.names()), "")
+
+    def test_he_joins(self):
+        _f, why = self.r.join("Apex", "Andre")
+        self.assertEqual(why, "")
+        self.assertTrue(self.r.of("Andre"))
+
+    def test_a_member_of_another_flight_is_refused(self):
+        self.r.create("Bolt", "Shooter", 2, now=2.0)
+        f, why = self.r.join("Apex", "Shooter")
+        self.assertIsNone(f)
+        self.assertIn("Bolt", why)
+
+    def test_a_full_flight_is_refused(self):
+        """He said three. A fourth is either a mis-hearing or somebody else's
+        aeroplane, and quietly growing the flight makes the controller wrong
+        about how many he is separating."""
+        self.r.join("Apex", "Andre")
+        self.r.join("Apex", "Shooter")
+        f, why = self.r.join("Apex", "Viper")
+        self.assertIsNone(f)
+        self.assertIn("flight of 3", why)
+
+    def test_joining_twice_is_not_an_error(self):
+        self.r.join("Apex", "Andre")
+        _f, why = self.r.join("Apex", "Andre")
+        self.assertEqual(why, "")
+
+
+class TestAFlightIsNotOneUntilItIsComplete(unittest.TestCase):
+    """Between "flight of three" and the third man joining, the ones who HAVE
+    joined are still individuals to the controller.
+
+    A flight that ATC treats as one aeroplane while a member has never been
+    heard is exactly what this design removes -- it would be separating three
+    aeroplanes on the word of one man, one of whom might not be on frequency,
+    or might not exist because a name came out of Whisper wrong.
+    """
+
+    def setUp(self):
+        self.r = F.Roster()
+        self.r.create("Apex", "sockeye", 3, now=1.0)
+
+    def test_the_lead_alone_is_still_a_single(self):
+        self.assertFalse(self.r.of("sockeye").complete)
+        self.assertEqual(self.r.speaking_as("sockeye"), "sockeye")
+
+    def test_part_way_is_still_singles(self):
+        self.r.join("Apex", "Andre")
+        self.assertEqual(self.r.speaking_as("Andre"), "Andre")
+
+    def test_the_last_man_makes_it_a_flight(self):
+        self.r.join("Apex", "Andre")
+        self.r.join("Apex", "Shooter")
+        self.assertTrue(self.r.of("sockeye").complete)
+        for who in ("sockeye", "Andre", "Shooter"):
+            self.assertEqual(self.r.speaking_as(who), "Apex")
 
 
 class TestAMemberNumberNeverReachesTheController(unittest.TestCase):
@@ -90,8 +161,9 @@ class TestAPilotIsInZeroOrOneFlight(unittest.TestCase):
     def setUp(self):
         self.r = F.Roster()
 
-    def test_forming(self):
-        f, why = self.r.form("Apex", ["sockeye", "Andre"], now=1.0)
+    def test_creating(self):
+        f, why = self.r.create("Apex", "sockeye", 2, now=1.0)
+        self.r.join("Apex", "Andre")
         self.assertIsNotNone(f)
         self.assertEqual(why, "")
         self.assertEqual(f.lead, "sockeye")
@@ -99,15 +171,16 @@ class TestAPilotIsInZeroOrOneFlight(unittest.TestCase):
     def test_a_second_flight_may_not_claim_him(self):
         """Refused rather than resolved: a man in two flights is separated
         twice, and the second answer is always wrong."""
-        self.r.form("Apex", ["sockeye", "Andre"], now=1.0)
-        f, why = self.r.form("Bolt", ["Andre", "Shooter"], now=2.0)
+        self.r.create("Apex", "sockeye", 2, now=1.0)
+        self.r.join("Apex", "Andre")
+        f, why = self.r.create("Bolt", "Andre", 2, now=2.0)
         self.assertIsNone(f)
         self.assertIn("Andre", why)
         self.assertIn("Apex", why)
 
     def test_two_flights_with_one_name_is_refused(self):
-        self.r.form("Apex", ["sockeye"], now=1.0)
-        self.assertIsNone(self.r.form("Apex", ["Shooter"], now=2.0)[0])
+        self.r.create("Apex", "sockeye", 1, now=1.0)
+        self.assertIsNone(self.r.create("Apex", "Shooter", 1, now=2.0)[0])
 
 
 class TestWhatTheControllerCallsHim(unittest.TestCase):
@@ -119,25 +192,29 @@ class TestWhatTheControllerCallsHim(unittest.TestCase):
 
     def test_a_member_is_the_flight(self):
         """While the flight is together the members have no radio identity."""
-        self.r.form("Apex", ["sockeye", "Andre"], now=1.0)
+        self.r.create("Apex", "sockeye", 2, now=1.0)
+        self.r.join("Apex", "Andre")
         self.assertEqual(self.r.speaking_as("sockeye"), "Apex")
         self.assertEqual(self.r.speaking_as("Andre"), "Apex")
 
     def test_any_member_may_speak_for_it(self):
         """The flight is not bound to one radio -- if lead goes down another
         member carries on, and the controller hears the same flight."""
-        self.r.form("Apex", ["sockeye", "Andre"], now=1.0)
+        self.r.create("Apex", "sockeye", 2, now=1.0)
+        self.r.join("Apex", "Andre")
         self.assertEqual(self.r.speaking_as("Andre"),
                          self.r.speaking_as("sockeye"))
 
     def test_after_the_split_everyone_is_himself_again(self):
-        self.r.form("Apex", ["sockeye", "Andre"], now=1.0)
+        self.r.create("Apex", "sockeye", 2, now=1.0)
+        self.r.join("Apex", "Andre")
         self.r.dissolve("Apex")
         self.assertEqual(self.r.speaking_as("sockeye"), "sockeye")
         self.assertEqual(self.r.speaking_as("Andre"), "Andre")
 
     def test_the_flight_name_then_belongs_to_nobody(self):
-        self.r.form("Apex", ["sockeye", "Andre"], now=1.0)
+        self.r.create("Apex", "sockeye", 2, now=1.0)
+        self.r.join("Apex", "Andre")
         self.r.dissolve("Apex")
         self.assertEqual(self.r.names(), [])
 
@@ -145,24 +222,19 @@ class TestWhatTheControllerCallsHim(unittest.TestCase):
 class TestLosingAMember(unittest.TestCase):
     def setUp(self):
         self.r = F.Roster()
-        self.r.form("Apex", ["sockeye", "Andre", "Shooter"], now=1.0)
+        self.r.create("Apex", "sockeye", 3, now=1.0)
+        self.r.join("Apex", "Andre")
+        self.r.join("Apex", "Shooter")
 
     def test_one_man_landing_does_not_end_the_flight(self):
         self.r.leaves("Shooter")
         self.assertEqual(self.r.speaking_as("sockeye"), "Apex")
         self.assertEqual(self.r.speaking_as("Shooter"), "Shooter")
 
-    def test_losing_the_lead_does_not_end_it_either(self):
-        """Any member may speak for the flight, so it does not end because one
-        aeroplane went home -- which is the case the pilot raised.
-
-        It used to promote the next man silently. It does not: the lead's track
-        is what the flight's geometry is computed from, so ATC asks instead.
-        See TestLosingTheLead.
-        """
+    def test_losing_the_lead_ends_it(self):
+        """The one loss a flight does not survive -- see TestLosingTheLead."""
         self.r.leaves("sockeye")
-        self.assertEqual(self.r.speaking_as("Andre"), "Apex")
-        self.assertTrue(self.r.of("Andre").needs_lead)
+        self.assertEqual(self.r.speaking_as("Andre"), "Andre")
 
     def test_it_ends_when_nobody_is_left(self):
         for who in ("sockeye", "Andre", "Shooter"):
@@ -170,109 +242,114 @@ class TestLosingAMember(unittest.TestCase):
         self.assertEqual(self.r.names(), [])
 
 
+
+# (TestAdoptingSomebody is gone. Nobody adopts anybody now: a pilot can only
+# join himself, which removes the rogue-join problem rather than deferring it
+# to the debrief, and removes the member list nobody could reliably hear.)
+
+
+class TestLosingTheLead(unittest.TestCase):
+    """    "And maybe if lead dies, the flight is dissolved? And the remaining
+         members need to create (or recreate) a new one. Simple simple"
+
+    Simpler than asking who is now, and more honest: the flight's geometry IS
+    the lead's track, so when he is gone the flight has no position at all.
+    Dissolving says that; promoting somebody pretends otherwise and starts
+    vectoring off an aeroplane nobody chose.
+
+    It is also the conservative failure. The survivors revert to individuals,
+    so the controller starts separating them -- which is exactly what two men
+    whose lead has just gone down need -- and they re-form through the ONE path
+    there is for forming.
+    """
+
+    def setUp(self):
+        self.r = F.Roster()
+        self.r.create("Apex", "sockeye", 3, now=1.0)
+        self.r.join("Apex", "Andre")
+        self.r.join("Apex", "Shooter")
+
+    def test_the_flight_goes_with_him(self):
+        self.assertEqual(self.r.leaves("sockeye"), "Apex")
+        self.assertEqual(self.r.names(), [])
+
+    def test_the_survivors_are_individuals_again(self):
+        self.r.leaves("sockeye")
+        self.assertEqual(self.r.speaking_as("Andre"), "Andre")
+        self.assertEqual(self.r.speaking_as("Shooter"), "Shooter")
+
+    def test_they_can_re_form_the_same_way_anybody_does(self):
+        """No promotion rule, no special case -- the one path there is."""
+        self.r.leaves("sockeye")
+        _f, why = self.r.create("Apex", "Andre", 2, now=2.0)
+        self.assertEqual(why, "")
+        self.r.join("Apex", "Shooter")
+        self.assertEqual(self.r.speaking_as("Shooter"), "Apex")
+
+    def test_losing_a_wingman_does_not(self):
+        """Nothing about the flight's geometry changed, so nothing changes."""
+        self.r.leaves("Shooter")
+        self.assertEqual(self.r.speaking_as("sockeye"), "Apex")
+        self.assertEqual(self.r.speaking_as("Shooter"), "Shooter")
+
+
 if __name__ == "__main__":
     unittest.main()
 
 
-class TestAdoptingSomebody(unittest.TestCase):
-    """"Approach, Apex flight adopting Shooter"
+# (TestAdoptingSomebody is gone. Nobody adopts anybody now: a pilot can only
+# join himself, which removes the rogue-join problem rather than deferring it
+# to the debrief, and removes the member list nobody could reliably hear.)
 
-    ANY MEMBER MAY DO IT, not only the lead:
 
-        "I think that's harder than any member can adopt and it's fragile if
-         lead dies (combat sim after all). So I think any member can do it.
-         Lead will deal with rouge joins in debrief."
+if __name__ == "__main__":
+    unittest.main()
 
-    Which is the right call: an ATC that enforces a flight's internal
-    discipline is solving a problem that is not its own, and a rule depending
-    on one particular aeroplane still being alive is a poor rule in a combat
-    simulator.
+
+class TestTellingThemTheLeadIsGone(unittest.TestCase):
+    """"Apex flight, approach, flight lead sockeye is no longer on radar. Apex
+    flight is now dissolved. Andre, what are your intentions?"
+
+    The fact, then the consequence, then the question -- and the order is the
+    point. "No longer on radar" is what the controller actually observed;
+    "dissolved" is what follows from it; and intentions is the only thing left,
+    because the survivors are individuals now and he has no idea what any of
+    them wants.
+
+    It also tells them something they may not know. A wingman whose lead has
+    just gone down is busy, and being told by name is how he finds out that ATC
+    is separating him again.
     """
 
-    def setUp(self):
-        self.r = F.Roster()
-        self.r.form("Apex", ["sockeye", "Andre"], now=1.0)
+    def call(self, survivors=("Andre", "Shooter")):
+        return F.lead_lost_call("Apex", "sockeye", list(survivors))
 
-    def test_the_declaration_reads(self):
-        name, who, unknown = F.parse_adopting(
-            "Approach, Apex flight adopting Shooter", HERE)
-        self.assertEqual((name, who, unknown), ("Apex", ["Shooter"], []))
+    def test_it_says_what_was_observed(self):
+        self.assertIn("no longer on radar", self.call())
 
-    def test_several_at_once(self):
-        _n, who, _u = F.parse_adopting("Apex adopts Shooter and Viper", HERE)
-        self.assertEqual(who, ["Shooter", "Viper"])
+    def test_it_names_the_lead_who_is_gone(self):
+        self.assertIn("sockeye", self.call())
 
-    def test_a_name_nobody_answers_to_is_reported(self):
-        """A flight that quietly grows by one fewer than was asked for leaves
-        the controller wrong about its size."""
-        _n, who, unknown = F.parse_adopting("Apex adopting Bandit", HERE)
-        self.assertEqual((who, unknown), ([], ["Bandit"]))
+    def test_it_states_the_consequence(self):
+        self.assertIn("dissolved", self.call())
 
-    def test_he_joins(self):
-        _f, why = self.r.join("Apex", "Shooter")
-        self.assertEqual(why, "")
-        self.assertEqual(self.r.speaking_as("Shooter"), "Apex")
+    def test_it_asks_each_survivor(self):
+        said = self.call()
+        self.assertIn("Andre", said)
+        self.assertIn("Shooter", said)
+        self.assertIn("intentions", said)
 
-    def test_a_member_of_another_flight_is_refused(self):
-        self.r.form("Bolt", ["Shooter"], now=2.0)
-        f, why = self.r.join("Apex", "Shooter")
-        self.assertIsNone(f)
-        self.assertIn("Bolt", why)
+    def test_the_fact_comes_before_the_consequence(self):
+        said = self.call()
+        self.assertLess(said.index("no longer on radar"), said.index("dissolved"))
 
-    def test_adopting_somebody_already_aboard_is_not_an_error(self):
-        f, why = self.r.join("Apex", "Andre")
-        self.assertIsNotNone(f)
-        self.assertEqual(why, "")
+    def test_a_lone_survivor_is_still_asked(self):
+        self.assertIn("intentions", self.call(["Andre"]))
 
-    def test_rejoining_after_a_break_out_is_just_adoption(self):
-        """The lost wingman case, and it needs no machinery of its own: he
-        broke himself out to get vectors, and comes back the same way anybody
-        joins."""
-        self.r.leaves("Andre")
-        self.assertEqual(self.r.speaking_as("Andre"), "Andre")
-        self.r.join("Apex", "Andre")
-        self.assertEqual(self.r.speaking_as("Andre"), "Apex")
+    def test_nobody_left_asks_nothing(self):
+        """A two-ship whose lead goes down leaves one man; a single whose lead
+        is himself leaves none, and there is nobody to ask."""
+        self.assertNotIn("intentions", self.call([]))
 
-
-class TestLosingTheLead(unittest.TestCase):
-    """"lead crashes or de slots. Atc needs to see that even and ask apex
-    flight who is the new lead."
-
-    Not promoted silently. The lead's track is what the flight's geometry is
-    computed from, so choosing his replacement without being told means
-    vectoring off a position nobody agreed to -- and the flight would have no
-    way to know it had happened.
-    """
-
-    def setUp(self):
-        self.r = F.Roster()
-        self.r.form("Apex", ["sockeye", "Andre", "Shooter"], now=1.0)
-
-    def test_the_flight_survives_him(self):
-        self.r.leaves("sockeye")
-        self.assertEqual(self.r.speaking_as("Andre"), "Apex")
-
-    def test_but_it_knows_it_has_no_lead(self):
-        self.r.leaves("sockeye")
-        self.assertTrue(self.r.of("Andre").needs_lead)
-
-    def test_nobody_is_promoted_behind_their_backs(self):
-        self.r.leaves("sockeye")
-        self.assertEqual(self.r.of("Andre").lead, "sockeye")
-
-    def test_the_answer_settles_it(self):
-        self.r.leaves("sockeye")
-        f, why = self.r.set_lead("Apex", "Shooter")
-        self.assertEqual(why, "")
-        self.assertEqual(f.lead, "Shooter")
-        self.assertFalse(f.needs_lead)
-
-    def test_somebody_outside_the_flight_cannot_be_made_lead(self):
-        self.r.leaves("sockeye")
-        f, why = self.r.set_lead("Apex", "Viper")
-        self.assertIsNone(f)
-        self.assertIn("not in", why)
-
-    def test_losing_a_wingman_asks_nothing(self):
-        self.r.leaves("Shooter")
-        self.assertFalse(self.r.of("sockeye").needs_lead)
+if __name__ == "__main__":
+    unittest.main()

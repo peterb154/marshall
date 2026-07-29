@@ -1272,15 +1272,16 @@ tree. It wants a clean pass, not the end of a long session.
    approach as a single.
 9. A flight that is no longer in formation on radar is TOLD SO, and the
    controller declines to work it as one aeroplane -- without forcing a split.
-10. ANY MEMBER may adopt somebody into the flight, not only the lead. A rule
-    that depends on one particular aeroplane still being alive is a poor rule
-    in a combat simulator, and the lead sorts out rogue joins in the debrief.
-    Rejoining after a break-out is adoption, not a case of its own.
-11. When the LEAD is lost -- crash, ejection, unit_lost, player_leave_unit --
-    the flight is ASKED who is now, once. Never promoted silently: the lead's
-    track is what the flight's geometry is computed from, so choosing his
-    replacement without being told means vectoring off a position nobody
-    agreed to, and the flight would have no way to know.
+10. A PILOT CAN ONLY JOIN HIMSELF. The lead declares a name and a COUNT and
+    names nobody; each member joins on his own radio. That removes the member
+    list nobody could reliably hear, removes adoption, and removes the rogue
+    join -- which is not deferred to the debrief, it is impossible.
+11. When the LEAD is lost, THE FLIGHT DISSOLVES and the survivors revert to
+    individuals. Simpler than promoting somebody and more honest: the flight's
+    geometry IS the lead's track, so once he is gone the flight has no
+    position. It is also the conservative failure -- the controller starts
+    separating the survivors, which is what two men whose lead just went down
+    need -- and they re-form through the one path there is.
 12. A member must be able to break HIMSELF out. A lost wingman who transmits
     is otherwise answered as the flight, so the controller vectors the lead --
     the man who needs help gets none and somebody who did not ask gets turned.

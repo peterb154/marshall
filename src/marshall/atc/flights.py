@@ -39,27 +39,29 @@ import re
 import time
 from dataclasses import dataclass, field
 
-# "forming apex flight of three with shooter and andre"
-# "forming apex with shooter and andre"
-# "apex flight of two, sockeye and andre"
-# "apex flight adopting shooter", "apex adopts shooter and viper",
-# "apex taking andre back". Same shape as forming on purpose: a declaration
-# naming handles, matched against the closed set, because rejoining after a
-# break-out is adoption again rather than a case of its own.
-_ADOPTING = re.compile(
-    r"\b([A-Za-z][A-Za-z'-]*)(?:\s+flight)?\s+"
-    r"(?:adopt(?:ing|s|ed)?|taking(?:\s+back)?|absorb(?:ing|s)?|"
-    r"pick(?:ing|s)?\s+up)\s+(.+)$", re.I)
+# "request creation of Apex flight of 3", "form Apex flight of two".
+# The lead says a NAME and a SIZE. He does not name anybody, which is the whole
+# reason this is simple: there is no member list to mis-hear.
+_CREATE = re.compile(
+    r"\b(?:creat\w*|form\w*|establish\w*)\s+(?:of\s+|a\s+)?"
+    r"([A-Za-z][A-Za-z'-]*)(?:\s+flight)?"
+    r"(?:\s+of\s+(\w+))?", re.I)
 
-_FORMING = re.compile(
-    r"\bform(?:ing|s|ed)?\s+(?:up\s+)?(?:as\s+)?([A-Za-z][A-Za-z'-]*)"
-    r"(?:\s+flight)?(?:\s+of\s+\w+)?(?:\s+with\s+(.+))?$", re.I)
-
-# The tail of a declaration: "shooter and andre", "shooter, andre and viper".
-_SPLIT_NAMES = re.compile(r"\s*(?:,|\band\b|\bplus\b|&)\s*", re.I)
+# "Andre, joining Apex", "join Apex flight", "Apex, joining".
+_JOINING = re.compile(r"\bjoin(?:ing|s|ed)?\b", re.I)
 
 # "Apex 1-2", "Apex two" -- how a flight talks to itself.
 _MEMBER = re.compile(r"^\s*([A-Za-z][A-Za-z'-]*)\s*\d+\s*-\s*\d+\s*$")
+
+_WORD_NUM = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+             "seven": 7, "eight": 8, "nine": 9, "a": 1, "an": 1}
+
+
+def _count(word: str) -> int:
+    w = (word or "").strip().lower()
+    if w.isdigit():
+        return int(w)
+    return _WORD_NUM.get(w, 0)
 
 
 @dataclass
@@ -69,97 +71,78 @@ class Flight:
     lead: str                                   # a handle
     members: list[str] = field(default_factory=list)   # handles, lead included
     formed_at: float = 0.0
-    # THE LEAD IS GONE AND NOBODY HAS SAID WHO IS NOW. Not promoted silently,
-    # because the lead's track is what the flight's geometry is computed from
-    # -- promote the wrong aeroplane and the controller starts vectoring off a
-    # position nobody chose, with nothing to say it happened.
-    needs_lead: bool = False
+    # HOW MANY HE SAID, which is the only thing the lead declares about his
+    # members. Until that many have joined, the flight is not yet a flight and
+    # ATC still works everybody as individuals -- so a size that came out of
+    # Whisper wrong is visible at once rather than leaving the controller
+    # believing he is separating three aeroplanes when he is separating two.
+    size: int = 0
+    # ...and once that many have joined, IT STAYS A FLIGHT. Latched rather than
+    # recomputed, because a formation does not stop being one when a member
+    # lands or is shot down -- recomputing from the declared size would drop
+    # the survivors back to individuals at the worst possible moment, which is
+    # the moment they most need to be worked as one.
+    formed: bool = False
 
     def has(self, who: str) -> bool:
         return _same(who, self.lead) or any(_same(who, m) for m in self.members)
+
+    @property
+    def complete(self) -> bool:
+        """Everybody the lead declared has joined, on his own radio.
+
+        Reads the latch rather than recomputing. Set in `join`, at the moment
+        the last man arrives -- computing it here would mean the answer changed
+        depending on WHEN somebody happened to ask, and a flight that had lost
+        a member would quietly report itself unformed.
+        """
+        return self.formed
 
 
 def _same(a: str, b: str) -> bool:
     return (a or "").strip().lower() == (b or "").strip().lower()
 
 
-def _match_handle(said: str, known: list[str]) -> str:
-    """One spoken word against the people who are actually here.
+def parse_create(said: str) -> tuple[str, int]:
+    """Read "Approach, request creation of Apex flight of three".
 
-    THE CLOSED SET IS THE WHOLE SAFETY ARGUMENT. Matching "shooter" against
-    every word English can produce is the mistake this project spent two days
-    undoing; matching it against the four people demonstrably connected is a
-    lookup. Whisper mangling a name into something that is nobody's handle
-    yields nothing, which is the correct answer.
+    A NAME AND A COUNT, and deliberately nothing else. An earlier version had
+    the lead name his members -- "forming Apex with Shooter and Andre" -- which
+    meant matching two or three spoken names against a roster, reporting the
+    ones it could not place, and being wrong about the flight's size whenever
+    it mis-heard one.
+
+    Each pilot joins himself instead, so the only thing that can be mis-heard
+    here is a number, and a number that comes out wrong is visible immediately:
+    the flight never completes.
     """
-    want = re.sub(r"[^a-z0-9]", "", (said or "").lower())
-    if not want:
+    m = _CREATE.search((said or "").strip().rstrip("."))
+    if not m:
+        return "", 0
+    return m.group(1).strip().title(), _count(m.group(2) or "")
+
+
+def parse_joining(said: str, flight_names: list[str]) -> str:
+    """Read "Approach, Andre, joining Apex". Returns the flight, or "".
+
+    HE DOES NOT NEED TO SAY WHO HE IS. The identity ladder already knows which
+    aeroplane is transmitting, so the only thing this has to find is which
+    flight he means -- one word, matched against the flights that actually
+    exist. Saying his own handle is good radio discipline and a useful
+    cross-check; it is not something the system depends on.
+
+    Which is why nobody adopts anybody any more. A man can only join himself,
+    so a rogue join is not possible rather than being a thing the lead sorts
+    out afterwards.
+    """
+    if not _JOINING.search(said or ""):
         return ""
-    exact = [k for k in known if re.sub(r"[^a-z0-9]", "", k.lower()) == want]
-    if len(exact) == 1:
-        return exact[0]
-    if exact:
-        return ""                               # two people, no answer
-    near = [k for k in known
-            if want in re.sub(r"[^a-z0-9]", "", k.lower())
-            or re.sub(r"[^a-z0-9]", "", k.lower()) in want]
-    return near[0] if len(near) == 1 else ""
-
-
-def parse_forming(said: str, speaker: str, known: list[str]) -> tuple[str, list[str], list[str]]:
-    """Read a declaration. Returns (flight name, members, names not recognised).
-
-        "Georgia Center, Sockeye -- forming Apex flight of three with Shooter
-         and Andre"
-
-    The speaker is always a member: he is the one declaring it, and a flight
-    formed without the man who called it in would be nobody's.
-
-    Unrecognised names are RETURNED RATHER THAN DROPPED, because a flight that
-    quietly forms with two of the three people asked for is worse than one that
-    fails -- the controller would be separating a group whose size he is wrong
-    about. The caller asks about the missing man instead.
-    """
-    m = _FORMING.search((said or "").strip().rstrip("."))
-    if not m:
-        return "", [], []
-    name = m.group(1).strip().title()
-    members, unknown = ([speaker] if speaker else []), []
-    for word in _SPLIT_NAMES.split(m.group(2) or ""):
-        word = word.strip().strip(".,")
-        if not word:
-            continue
-        got = _match_handle(word, known)
-        if got and not any(_same(got, x) for x in members):
-            members.append(got)
-        elif not got:
-            unknown.append(word)
-    return name, members, unknown
-
-
-def parse_adopting(said: str, known: list[str]) -> tuple[str, list[str], list[str]]:
-    """Read "Apex flight adopting Shooter". Returns (flight, handles, unknown).
-
-    Deliberately the same shape as `parse_forming`, including reporting names
-    it could not match rather than dropping them: a flight that quietly grows
-    by one fewer than was asked for leaves the controller wrong about its size,
-    which is worse than a refusal he can hear.
-    """
-    m = _ADOPTING.search((said or "").strip().rstrip("."))
-    if not m:
-        return "", [], []
-    name = m.group(1).strip().title()
-    got, unknown = [], []
-    for word in _SPLIT_NAMES.split(m.group(2) or ""):
-        word = word.strip().strip(".,")
-        if not word:
-            continue
-        who = _match_handle(word, known)
-        if who:
-            got.append(who)
-        else:
-            unknown.append(word)
-    return name, got, unknown
+    words = re.findall(r"[A-Za-z][A-Za-z'-]*", said or "")
+    for w in words:
+        for name in flight_names:
+            if _same(w, name):
+                return name
+    return ""
 
 
 def is_intra_flight(said: str, flight_names: list[str]) -> bool:
@@ -189,25 +172,29 @@ class Roster:
                 return f
         return None
 
-    def form(self, name: str, members: list[str],
-             now: float | None = None) -> tuple[Flight | None, str]:
-        """Create a flight. Returns (flight, why not).
+    def create(self, name: str, lead: str, size: int,
+               now: float | None = None) -> tuple[Flight | None, str]:
+        """Open a flight. The lead is in it; nobody else is, yet.
 
-        A PILOT IS IN ZERO OR ONE FLIGHT, and it is refused rather than
-        resolved: a man in two flights is separated twice, and the second
-        answer is always wrong.
+            "approach, request creation of Apex flight of 3"
+            "Roger sockeye, you are now the lead of Apex flight of 3. Each
+             member of apex flight check in to be joined"
+
+        A PILOT IS IN ZERO OR ONE FLIGHT, refused rather than resolved: a man
+        in two flights is separated twice and the second answer is always
+        wrong.
         """
-        members = [m for m in members if m]
-        if not name or not members:
-            return None, "a flight needs a name and at least one member"
-        if name.lower() in {n.lower() for n in self.flights}:
+        if not name or not lead:
+            return None, "a flight needs a name and a lead"
+        if size < 1:
+            return None, "say how many are in the flight"
+        if any(_same(name, n) for n in self.flights):
             return None, f"{name} already exists"
-        for m in members:
-            other = self.of(m)
-            if other is not None:
-                return None, f"{m} is already in {other.name}"
-        f = Flight(name, members[0], list(members),
-                   time.time() if now is None else now)
+        other = self.of(lead)
+        if other is not None:
+            return None, f"{lead} is already in {other.name}"
+        f = Flight(name, lead, [lead], time.time() if now is None else now,
+                   size=size, formed=(size == 1))
         self.flights[name] = f
         return f, ""
 
@@ -221,50 +208,29 @@ class Roster:
         return []
 
     def join(self, name: str, handle: str) -> tuple[Flight | None, str]:
-        """Adopt somebody into an existing flight.
+        """A pilot joining a flight, on his own radio.
 
-            "Approach, Apex flight adopting Shooter"
+            "approach, Andre, joining apex"  ->  "Roger Andre, joined to apex"
 
-        ANY MEMBER MAY DO IT, not only the lead:
-
-            "I think that's harder than any member can adopt and it's fragile
-             if lead dies (combat sim after all). So I think any member can do
-             it. Lead will deal with rouge joins in debrief."
-
-        Which is the right call. An ATC that enforces a flight's internal
-        discipline is solving a problem that is not its own, and a rule that
-        depends on one particular aeroplane still being alive is a poor rule in
-        a combat simulator.
-
-        This is also how a broken-out wingman comes back: rejoining is not a
-        special case, it is adoption again. The same exclusivity applies, so a
-        man cannot be adopted out of somebody else's flight by accident.
+        HE CAN ONLY JOIN HIMSELF. There is no way to add somebody else, which
+        is why there is no adoption, no rogue join to sort out in the debrief,
+        and no member list for anybody to mis-hear. It is also how a broken-out
+        wingman comes back -- rejoining is this, not a case of its own.
         """
-        f = None
-        for key, cand in self.flights.items():
-            if _same(key, name):
-                f = cand
-                break
+        f = next((c for k, c in self.flights.items() if _same(k, name)), None)
         if f is None:
             return None, f"no flight called {name}"
         if f.has(handle):
-            return f, ""                       # already his; not an error
+            return f, ""                        # already aboard; not an error
         other = self.of(handle)
         if other is not None:
             return None, f"{handle} is already in {other.name}"
+        if f.size and len(f.members) >= f.size:
+            return None, f"{name} is already a flight of {f.size}"
         f.members.append(handle)
+        if f.size and len(f.members) >= f.size:
+            f.formed = True
         return f, ""
-
-    def set_lead(self, name: str, handle: str) -> tuple[Flight | None, str]:
-        """Answer to "who is your new lead?"."""
-        for key, f in self.flights.items():
-            if not _same(key, name):
-                continue
-            if not f.has(handle):
-                return None, f"{handle} is not in {name}"
-            f.lead, f.needs_lead = handle, False
-            return f, ""
-        return None, f"no flight called {name}"
 
     def leaves(self, handle: str) -> str:
         """One man drops out -- he landed, ejected, or left the slot.
@@ -276,23 +242,30 @@ class Roster:
         f = self.of(handle)
         if f is None:
             return ""
-        was_lead = _same(f.lead, handle)
+        # THE LEAD DIES AND THE FLIGHT DIES WITH HIM.
+        #
+        #     "And maybe if lead dies, the flight is dissolved? And the
+        #      remaining members need to create (or recreate) a new one. Simple
+        #      simple"
+        #
+        # Simpler than asking who is now, and more honest: the flight's
+        # geometry IS the lead's track, so when he is gone the flight has no
+        # position at all. Dissolving says that; promoting somebody pretends
+        # otherwise and starts vectoring off an aeroplane nobody chose.
+        #
+        # It is also the conservative failure. The survivors revert to
+        # individuals, which means the controller starts separating them --
+        # exactly what you want for two men whose lead has just gone down --
+        # and they re-form through the ONE path there is for forming, rather
+        # than through a promotion rule that exists nowhere else.
+        if _same(f.lead, handle):
+            self.dissolve(f.name)
+            return f.name
+
         f.members = [m for m in f.members if not _same(m, handle)]
         if not f.members:
             self.dissolve(f.name)
             return f.name
-        if was_lead:
-            # ASK, DO NOT PROMOTE.
-            #
-            #     "lead crashes or de slots. Atc needs to see that even and ask
-            #      apex flight who is the new lead."
-            #
-            # The lead's track is what the flight's geometry is computed from,
-            # so choosing his replacement silently means vectoring off a
-            # position nobody agreed to -- and the flight would have no way to
-            # know it had happened. The events that say so (crash, ejection,
-            # unit_lost, player_leave_unit) are already on the stream; see #41.
-            f.needs_lead = True
         return ""
 
     def speaking_as(self, handle: str) -> str:
@@ -302,7 +275,36 @@ class Roster:
         number: that is intra-flight and does not reach here.
         """
         f = self.of(handle)
-        return f.name if f is not None else (handle or "")
+        # ONLY WHEN IT IS COMPLETE. Between "creation of Apex flight of three"
+        # and the third man joining, the ones who have joined are still
+        # individuals to the controller -- because a flight that ATC treats as
+        # one aeroplane while a member has never been heard is exactly the
+        # thing this design removes.
+        if f is not None and f.complete:
+            return f.name
+        return handle or ""
 
     def names(self) -> list[str]:
         return sorted(self.flights)
+
+
+def lead_lost_call(flight: str, lead: str, survivors: list[str]) -> str:
+    """What the controller says when a flight loses its lead.
+
+        "Apex flight, approach, flight lead sockeye is no longer on radar.
+         Apex flight is now dissolved. Andre, what are your intentions?"
+
+    THE FACT, THEN THE CONSEQUENCE, THEN THE QUESTION -- in that order, and the
+    order is the point. "No longer on radar" is what the controller actually
+    observed; "dissolved" is what follows from it; and asking intentions is the
+    only thing left to establish, because the survivors are individuals now and
+    he has no idea what any of them wants.
+
+    It also tells them something they may not know. A wingman whose lead has
+    just gone down is busy, and may not have registered that he is on his own
+    -- being told, by name, is how he finds out that ATC is now separating him.
+    """
+    who = ", ".join(survivors)
+    tail = f" {who}, what are your intentions?" if survivors else ""
+    return (f"{flight} flight, flight lead {lead} is no longer on radar. "
+            f"{flight} flight is now dissolved.{tail}")

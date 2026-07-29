@@ -506,9 +506,6 @@ _identity = identity.Registry()
 # a name; members have neither while it is together. See flights.py and
 # [ARCH-4] / #42.
 _flights = fl.Roster()
-# Flights we have already asked "who is your new lead?", so a man who has just
-# lost his is not asked again on every transmission while he is dealing with it.
-_asked_lead: dict = {}
 
 
 def connected_handles(scope: str, client=None) -> list[str]:
@@ -2991,15 +2988,6 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             if _miss:
                 print(f"  .. {_an}: no such handle as {', '.join(_miss)}",
                       flush=True)
-
-        # A FLIGHT THAT HAS LOST ITS LEAD IS ASKED WHO IS NOW, once. It is not
-        # promoted silently: the lead's track is what the flight's geometry is
-        # computed from, so choosing his replacement without being told means
-        # vectoring off a position nobody agreed to.
-        _mine = _flights.of(_who) if _who else None
-        if _mine is not None and _mine.needs_lead and not _asked_lead.get(_mine.name):
-            _asked_lead[_mine.name] = True
-            print(f"  .. {_mine.name} has lost its lead — asking", flush=True)
 
         # WHAT THE CONTROLLER CALLS HIM: the flight while he is in one, his own
         # handle otherwise, and never a member number.
