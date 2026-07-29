@@ -241,6 +241,23 @@ def due_handoff(mission: str = "default") -> list[dict]:
         return [_row(r, cols) for r in cur.fetchall()]
 
 
+def callsigns(mission: str = "default") -> list[str]:
+    """Every callsign this mission has actually bound, in the order seen.
+
+    THE CLOSED SET, and it exists to be said out loud. A callsign is somebody's
+    own name on the radio or a flight that was created; it is never a word a
+    pilot picked in the air. So when a lookup misses, the useful answer is not
+    "no" but "no, and here is everything that IS" -- which turns a two-minute
+    hunt for a missing flight plan into one transmission.
+    """
+    with get_pool().connection() as c:
+        rows = c.execute(
+            "SELECT DISTINCT ON (callsign) callsign FROM flight_state "
+            "WHERE mission = %s AND callsign IS NOT NULL AND callsign <> '' "
+            "ORDER BY callsign", (mission,)).fetchall()
+    return [r[0] for r in rows]
+
+
 def clear_mission(mission: str = "default") -> int:
     """Forget everything. Called when a mission loads, because stale aircraft
     from the last sortie are worse than none -- they are a controller confidently

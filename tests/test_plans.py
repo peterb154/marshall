@@ -239,3 +239,100 @@ class TestTheWordsOfTheQuestion(unittest.TestCase):
         yesterday, so the task comes first in each option."""
         said = P.ask_which(FILED[:1])
         self.assertLess(said.index("CAS over Tsutsnvati"), said.index("filed as"))
+
+
+class TestOpeningAPlanIsNotNamingOne(unittest.TestCase):
+    """From the sortie of 28 July, where a pilot asked the ordinary question and
+    was told nothing on file matched.
+
+        21:28:48  "we'd like to open the flight plan for Pony Flight"
+                  -> "Nothing is on file that matches."
+
+    `open` was not in the noise list, so one surviving word made the request
+    read as NAMING somewhere nobody had filed for -- which is the branch that
+    exists to stop "request clearance to Vaziani" being answered with a menu.
+    The no-name branch, which offers him what is on file, never ran.
+
+    What he wants DONE with a plan is never WHICH plan.
+    """
+
+    def test_open_the_flight_plan_offers_what_is_on_file(self):
+        got = P.pick("Pony one one, we'd like to open the flight plan",
+                     FILED, callsign="Pony 1-1")
+        self.assertFalse(got.get("none"),
+                         "asking to open a plan is not asking for a plan "
+                         "nobody filed")
+        self.assertTrue(got.get("plan") or got.get("ambiguous"))
+
+    def test_the_phrasings_that_all_mean_the_same_thing(self):
+        for said in ("request clearance, ready to copy",
+                     "we'd like to open our flight plan",
+                     "like to pick up our IFR flight plan",
+                     "requesting to activate the flight plan"):
+            with self.subTest(said=said):
+                got = P.pick(said, FILED, callsign="Pony 1-1")
+                self.assertFalse(got.get("none"), said)
+
+    def test_naming_a_plan_still_wins_over_the_verb(self):
+        """Made noise-deaf, not deaf. "Pick up Samovar Three" still names one."""
+        got = P.pick("like to pick up our IFR flight plan Samovar Three",
+                     FILED, callsign="Falcon 1-1")
+        self.assertEqual((got.get("plan") or {}).get("label"), "Samovar Three")
+
+    def test_a_place_nobody_filed_for_is_still_refused(self):
+        """The guard the noise list must not dissolve."""
+        got = P.pick("we'd like to open the flight plan to Vaziani",
+                     FILED, callsign="Pony 1-1")
+        self.assertTrue(got.get("none"))
+
+
+class TestAPlanOnFileBelongsToNobody(unittest.TestCase):
+    """A plan becomes a pilot's at the moment a clearance is issued -- copied
+    into `assigned_plans` against his flight_id -- and not one instant earlier.
+
+    Two of the six templates on the live box carry a callsign, seeded back when
+    a plan was written beside the aeroplane meant to fly it. `pick` acted on it:
+    one plan bearing his callsign was handed over as "the one on file for you".
+
+    That is a THIRD source of names, beside a pilot's own handle and a flight
+    somebody created, and it is the same kind as the "Falcon" that cost a
+    sortie: a word that exists because a builder typed it, attached to no person
+    and no flight. It matches a live pilot by coincidence.
+    """
+
+    ONE_EACH = [
+        {"name": "asr", "label": "Samovar", "destination": "Batumi",
+         "callsign": "Pony 1-1", "task": "CAS over Tsutsnvati", "route": ""},
+        {"name": "ndb", "label": "Kettle", "destination": "Batumi",
+         "callsign": None, "task": "Night patrol, coast", "route": ""},
+    ]
+
+    def test_a_template_callsign_does_not_choose_for_him(self):
+        """He named nothing, and exactly one plan carries his callsign. The old
+        branch handed it over; the answer is the list."""
+        got = P.pick("Pony one one, request clearance, ready to copy",
+                     self.ONE_EACH, callsign="Pony 1-1")
+        self.assertIsNone(got.get("plan"),
+                          "a plan nobody was cleared for was assigned on the "
+                          "strength of a name typed in the mission editor")
+        self.assertEqual(len(got.get("ambiguous") or []), 2)
+
+    def test_the_column_is_not_even_read(self):
+        """Filtered at the query, so it cannot come back by accident."""
+        from tools.clearance import _TEMPLATE_COLS
+        self.assertNotIn("callsign", _TEMPLATE_COLS)
+
+    def test_one_plan_on_file_is_still_the_only_one_on_file(self):
+        """Dropping the pre-assignment must not cost the case that is genuinely
+        unambiguous -- one plan, nothing to choose between."""
+        got = P.pick("request clearance, ready to copy",
+                     self.ONE_EACH[:1], callsign="Pony 1-1")
+        self.assertEqual((got.get("plan") or {}).get("label"), "Samovar")
+        self.assertEqual(got.get("why"), ["the only one on file"])
+
+    def test_he_can_still_have_it_by_asking_for_it(self):
+        """Anonymous, not unreachable. Naming the task or the label works as it
+        always did -- what is gone is getting it without asking."""
+        got = P.pick("request clearance for the CAS over Tsutsnvati",
+                     self.ONE_EACH, callsign="Hoover 1-1")
+        self.assertEqual((got.get("plan") or {}).get("label"), "Samovar")

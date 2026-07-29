@@ -42,16 +42,28 @@ def _pool():
 
 # --- what is on file --------------------------------------------------------
 
-_TEMPLATE_COLS = ("name", "label", "callsign", "origin", "destination",
+# NO CALLSIGN. The column still exists on `flight_plans` -- two of the six rows
+# carry one, left over from when a plan was seeded beside the aeroplane meant to
+# fly it -- but a plan on file belongs to NOBODY until a clearance is issued, and
+# that is the moment it is copied into `assigned_plans` against a flight_id.
+#
+# It is read out here rather than filtered later so it cannot come back by
+# accident: a template callsign is a THIRD source of names, beside a pilot's own
+# handle and a flight somebody created, and it is the same kind as the "Falcon"
+# that cost a sortie -- a word that exists because a builder typed it, attached
+# to no person and no flight. `Pony 1-1` on a template is a mission-editor unit
+# name, and matching a live pilot to it hands him a plan he never asked for on
+# the strength of a coincidence.
+_TEMPLATE_COLS = ("name", "label", "origin", "destination",
                   "route", "cruise_ft", "task", "approach")
 
 
 def filed() -> list[dict]:
-    """Every plan on file, callsign or no callsign.
+    """Every plan on file. They belong to nobody until one is issued.
 
-    Deliberately unfiltered. Any pilot may request any plan -- taking somebody
-    else's is a normal thing here and an impossible one in the civil world, so
-    the callsign on a template is a hint for offering it, never a lock.
+    Deliberately unfiltered and deliberately anonymous. Any pilot may request
+    any plan -- taking somebody else's is a normal thing here and an impossible
+    one in the civil world.
     """
     with _pool().connection() as c:
         rows = c.execute(
@@ -209,6 +221,41 @@ def canonical_callsign(said: str) -> str:
     return f"{name} {digits[0]}-{digits[-1]}"
 
 
+def not_on_the_board(callsign: str, board: list[str]) -> str:
+    """The miss, said so it cannot be paraphrased into the wrong thing.
+
+    THIS IS ABOUT HIM, NOT ABOUT HIS FLIGHT PLAN, and getting that across is the
+    entire job of this string. It used to read "No flight on the board for
+    Falcon 1-1. Get his callsign and check him in first" -- a true statement
+    about the PILOT, which the controller relayed as "no flight plan on file for
+    that callsign", a false statement about the FILE. The pilot then spent two
+    minutes re-reading his callsign and hunting a plan that was on file the
+    whole time, and never got his clearance at all.
+
+    The cause underneath it is worth naming, because it is not a fault: he had
+    called himself Falcon, and nothing called Falcon existed. A callsign is
+    somebody's own name on the radio or a flight that was created, and the
+    identity ladder is meant to refuse a word invented in the air. It did.
+    Only the explanation was wrong.
+
+    So the answer names the CLOSED SET, which is the thing the ladder gives us
+    for free and nobody was spending. A controller who can say "I have Pony 1-1
+    and Pony 1-2" has told him what to do next in one breath, and no controller
+    who has that list in front of him reaches for the flight plan as the excuse.
+    """
+    board_text = ", ".join(board) if board else "nobody -- the board is empty"
+    return (f"{callsign} IS NOT ON THE BOARD. This is about WHO HE IS, not "
+            f"about his flight plan -- do NOT tell him a plan is missing, "
+            f"unavailable or not on file, because that is a different thing "
+            f"and it sends him hunting in the wrong place.\n"
+            f"On the board: {board_text}.\n"
+            f"A callsign here is either a pilot's own name on the radio or a "
+            f"flight somebody created; it is never a name chosen in the air. "
+            f"So a callsign nobody recognises means he has not checked in under "
+            f"a name that exists. Tell him you have no {callsign}, say who you "
+            f"do have, and ask him to say his callsign again.")
+
+
 def clearance_tools(mission: str = "default") -> list:
     """The clearance-delivery tools, bound to a mission."""
 
@@ -219,6 +266,15 @@ def clearance_tools(mission: str = "default") -> list:
             if got:
                 return got
         return None
+
+    def _not_on_the_board(callsign: str) -> str:
+        from tools import flights as F
+        try:
+            have = F.callsigns(mission)
+        except Exception as e:                  # never lose the refusal to a query
+            log.warning("could not list the board: %s", e)
+            have = []
+        return not_on_the_board(callsign, have)
 
     @tool
     def request_clearance(callsign: str, said: str = "") -> str:
@@ -238,8 +294,7 @@ def clearance_tools(mission: str = "default") -> list:
         """
         f = _flight(callsign)
         if not f:
-            return (f"No flight on the board for {callsign}. Get his callsign "
-                    f"and check him in first, then ask again.")
+            return _not_on_the_board(callsign)
 
         hit = resolve(said, callsign)
         if hit.get("none"):
@@ -281,7 +336,7 @@ def clearance_tools(mission: str = "default") -> list:
         anybody afterwards see that he was cleared but never agreed."""
         f = _flight(callsign)
         if not f:
-            return f"No flight on the board for {callsign}."
+            return _not_on_the_board(callsign)
         if not assigned(f["id"]):
             return f"{callsign} has not been given a clearance to read back."
         if not correct:
@@ -299,7 +354,7 @@ def clearance_tools(mission: str = "default") -> list:
         position reports and vectors."""
         f = _flight(callsign)
         if not f:
-            return f"No flight on the board for {callsign}."
+            return _not_on_the_board(callsign)
         plan = assigned(f["id"])
         if not plan:
             return f"{callsign} has no assigned flight plan."

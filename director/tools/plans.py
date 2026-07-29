@@ -55,6 +55,13 @@ _NOISE = {
     "get", "got", "give", "say", "how", "what", "which", "where", "when",
     "re", "ve", "ll", "sir", "good", "day", "morning", "afternoon", "evening",
     "thanks", "thank", "affirm", "roger", "wilco", "standby", "stand", "again",
+    # WHAT HE WANTS DONE WITH A PLAN, which is never WHICH plan. "We'd like to
+    # open the flight plan" is the standard way of asking for the one on file,
+    # and `open` not being here made it read as naming something -- so the
+    # no-name branch that offers what is filed never ran, and a pilot asking
+    # the ordinary question was told nothing on file matched.
+    "open", "opening", "activate", "activating", "pick", "pickup", "up",
+    "close", "amend", "start",
     # spoken digits. A plan is never identified by a number, and these arrive
     # inside every callsign, altitude and frequency he says.
     "zero", "one", "two", "three", "four", "five", "six", "seven", "eight",
@@ -129,13 +136,24 @@ def pick(said: str, plans: list[dict], callsign: str | None = None) -> dict:
         if callsign and _words(said, drop=_words(callsign)):
             return {"none": True}
 
-        # Nothing in what he said points at a plan. If exactly one is filed
-        # against his callsign that is the civil case -- "as filed" -- and it is
-        # not a guess: it is the only thing on file for him.
-        his = [p for p in plans
-               if callsign and (p.get("callsign") or "").lower() == callsign.lower()]
-        if len(his) == 1:
-            return {"plan": his[0], "why": ["the one on file for you"]}
+        # Nothing in what he said points at a plan.
+        #
+        # THERE IS NO "THE ONE ON FILE FOR YOU" HERE, and there used to be: if
+        # exactly one plan carried his callsign it was handed to him as the
+        # civil "as filed" case. That read as the safest branch in the file and
+        # was the least safe, because it made a plan belong to a pilot before
+        # anybody was cleared for anything.
+        #
+        # A plan on file belongs to NOBODY. It becomes his at the moment a
+        # clearance is issued, by being copied into `assigned_plans` against his
+        # flight_id, and not one instant earlier. The callsign a template
+        # carried was typed by whoever built the mission and matches a live
+        # pilot only by coincidence -- the same coincidence that would have
+        # given the man who asked to "open the flight plan" a sortie he had
+        # never heard of, and told him it was on file for him.
+        #
+        # So when he has named nothing, the answer is the whole list. Asking is
+        # the safe way to be wrong.
         if len(plans) == 1:
             return {"plan": plans[0], "why": ["the only one on file"]}
         return {"ambiguous": plans}

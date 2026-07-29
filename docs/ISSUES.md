@@ -94,6 +94,33 @@ flight plan — see [#13]; and "clearance for the CAS" produced an aeroplane
 called Clearance 4, since "for" is a homophone of "four", in the one exchange
 where every pilot says those exact words.
 
+**28 July: a clearance that never happened**, three faults in one exchange and
+the plan lookup innocent of all of them. The pilot called himself Falcon 1-1;
+nothing called Falcon existed, and the identity ladder refused it — correctly,
+because a callsign is a pilot's own handle or a flight somebody created and
+never a name chosen in the air ([#42]). Then:
+
+  * `request_clearance` missed on the board and said "No flight on the board
+    for Falcon 1-1", a true statement about the PILOT, which the controller
+    relayed as "no flight plan on file for that callsign" — false, and about
+    the FILE. He spent two minutes hunting a plan that was on file the whole
+    time. The miss now names the closed set (`clearance.not_on_the_board`), so
+    a controller who cannot find him can say who he *does* have.
+  * "we'd like to open the flight plan" resolved to nothing, because `open` was
+    not in `_NOISE` and one surviving word made the request read as *naming*
+    somewhere nobody had filed for. What he wants DONE with a plan is never
+    WHICH plan.
+  * and the third was ours from the start: two of the six templates carried a
+    callsign, and `pick` handed a plan over as "the one on file for you" when
+    it matched. That is the pre-assignment this issue says must not exist. The
+    column is now dropped at the query (`_TEMPLATE_COLS`) and the branch is
+    gone — a plan on file belongs to nobody until a clearance copies it into
+    `assigned_plans` against a flight_id.
+
+Guarded by `tests/test_board_miss.py` and two new classes in
+`tests/test_plans.py`. Note the first fault was a wrong EXPLANATION of correct
+behaviour, which is the kind that costs a sortie and leaves no red test.
+
 Today there is exactly one flight plan and it is mission-wide — `flight_plans`
 carries `active`, and every insert does `UPDATE flight_plans SET active=false`
 first. The bridge loads that one plan at startup to build the plate. Two flights
