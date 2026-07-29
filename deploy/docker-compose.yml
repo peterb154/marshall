@@ -42,9 +42,17 @@ services:
     # built from TEST_PLAN.md and ISSUES.md. Without it that page renders empty
     # -- and an empty test card reads as "nothing to test" rather than as a
     # missing mount.
+    #
+    # build/vendor holds mermaid, which the /docs pages need to draw their
+    # diagrams. MARSHALL_BUILD is /data in here, so that is where the server
+    # looks. Without the mount the pages fall back to the CDN and say so in the
+    # corner -- which works from a desk and does not work inside
+    # OpenKneeboard's Chromium, and a diagram that silently fails to draw looks
+    # exactly like a diagram nobody wrote. Populate it with tools/vendor.sh.
     volumes:
       - ../src:/app/src:ro
       - ../docs:/app/docs:ro
+      - ../build/vendor:/data/vendor:ro
     # The PLANS page reads the filed flight plans from the director LIVE, and
     # the director is published on the HOST -- inside this container `localhost`
     # is this container. Without the gateway alias the page renders "nobody
