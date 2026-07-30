@@ -212,9 +212,23 @@ def atc_endpoint(body: dict) -> dict:
 # The voice bridge reads this before every /chat and prepends it, so the
 # controller always has a fresh scope with no tool round-trip in the hot path.
 @app.get("/radar")
-def radar_endpoint(session_id: str = "") -> dict[str, str]:
-    # Annotate tracks with this session's radar-identified callsigns.
-    return {"picture": radar_picture(bindings_for(session_id) if session_id else None)}
+def radar_endpoint(session_id: str = "") -> dict:
+    """The picture, and the facts it was drawn from.
+
+    ADDITIVE ON PURPOSE ([#47]). `picture` is byte-identical prose and stays the
+    agent's input; `contacts` is the same tracks as data, with ABSOLUTE
+    positions and no opinion about who is asking. Consumers migrate one at a
+    time, and the geometry stops being a parser.
+
+    `bullseye` travels with it because a shared reference is useless if each
+    consumer has to go and find it separately -- that is how Batumi's ARP ended
+    up as a module constant in the first place.
+    """
+    from tools.tracks import bullseyes, contacts
+    binds = bindings_for(session_id) if session_id else None
+    return {"picture": radar_picture(binds),
+            "contacts": contacts() or [],
+            "bullseye": bullseyes()}
 
 
 # The bridge scheduler polls this; each returned hook is due and has been

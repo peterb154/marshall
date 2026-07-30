@@ -316,7 +316,9 @@ def radar_cached(bindings: dict | None = None) -> list[str] | None:
                        ST_Distance(t.geog, bcn.g) / 1852.0 AS nm,
                        degrees(ST_Azimuth(bcn.g, t.geog)) AS radial,
                        COALESCE(t.player, '') AS player,
-                       COALESCE(t.category, '') AS category
+                       COALESCE(t.category, '') AS category,
+                       ST_Y(t.geog::geometry) AS lat,
+                       ST_X(t.geog::geometry) AS lon
                 FROM tracks t, bcn
                 WHERE t.last_seen > now() - make_interval(secs => %s)
                 ORDER BY nm
@@ -326,6 +328,114 @@ def radar_cached(bindings: dict | None = None) -> list[str] | None:
         log.warning("radar_cached failed: %s", e)
         return None
     return _render(rows, bindings)
+
+
+# WHERE EVERYTHING ACTUALLY IS, with no opinion about who is asking.
+#
+#     "you have range 0.4nm.. from what? I assume Batumi. But why? When we have
+#      50 controllers on the system - Batumi is just one fix"
+#
+# Right. `nm` and `radial` above are measured from a MODULE CONSTANT -- Batumi's
+# ARP -- so every consumer on the map reads ranges from one aerodrome, and the
+# rows even come back sorted by distance from it. A controller at Kobuleti would
+# get his traffic in somebody else's order before he read a line.
+#
+# Range-from-a-field is a RENDERING, and there are at least three of them: from
+# the controller's own field for a talkdown, from BULLSEYE for anything shared
+# between controllers, and BRAA between two aircraft. All three fall out of an
+# absolute position; bake any one of them in and the other two need a parser and
+# a fudge. So this returns latitude and longitude and lets the consumer decide.
+#
+# The formation grouping stays, because it is a fact about the world (are these
+# aeroplanes flying together?) rather than a presentation of it -- but it is
+# expressed as a FIELD naming the lead, not by deleting the wingmen. Every
+# aircraft keeps its own position, which is [#47] acceptance 3.
+def contacts() -> list[dict] | None:
+    """Every fresh track, as data. None if the cache cannot be read."""
+    try:
+        _ensure_table()
+        with get_pool().connection() as conn:
+            rows = conn.execute(
+                """
+                WITH bcn AS (
+                    SELECT ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography AS g)
+                SELECT t.label, t.name, t.type, t.alt_ft, t.heading, t.speed_kt,
+                       ST_Distance(t.geog, bcn.g) / 1852.0 AS nm,
+                       degrees(ST_Azimuth(bcn.g, t.geog)) AS radial,
+                       COALESCE(t.player, '') AS player,
+                       COALESCE(t.category, '') AS category,
+                       ST_Y(t.geog::geometry) AS lat,
+                       ST_X(t.geog::geometry) AS lon,
+                       t.coalition
+                FROM tracks t, bcn
+                WHERE t.last_seen > now() - make_interval(secs => %s)
+                ORDER BY nm
+                """, (BATUMI_LON, BATUMI_LAT, FRESH_SEC)).fetchall()
+    except Exception as e:
+        log.warning("contacts failed: %s", e)
+        return None
+    try:
+        from tools.events import on_the_ground
+        down = on_the_ground()
+    except Exception:
+        down = set()
+    naming = _unique_labels(rows)
+    out = []
+    for group in _clusters(rows):
+        lead = group[0][1]
+        for r in group:
+            label, name, typ, alt_ft, heading, speed_kt = r[0], r[1], r[2], r[3], r[4], r[5]
+            out.append({
+                "name": name,
+                "label": naming.get(name, label),
+                "type": typ or "",
+                "category": (r[9] or ""),
+                "manned": bool(r[8]),
+                "player": r[8] or "",
+                "on_ground": name in down,
+                "lat": r[10], "lon": r[11],
+                "alt_ft": alt_ft, "heading": heading, "speed_kt": speed_kt,
+                "coalition": r[12],
+                # The lead's unit name, on every member INCLUDING the lead, so
+                # "is this a formation" is one comparison and "who is it led by"
+                # needs no second pass. "" would have meant two questions.
+                "formation": lead if len(group) > 1 else "",
+            })
+    return out
+
+
+_BULLSEYE: dict = {}
+
+
+def bullseyes() -> dict:
+    """The sim's own bullseye per coalition, cached for the process.
+
+        "maybe we should define a bullseye... that is a universal point that
+         everyone on the map can/should share for reference"
+
+    ASKED, NOT DEFINED. DCS already has one per coalition and every pilot's
+    HSI is referenced to it, so inventing our own would give the controller a
+    reference nobody in a cockpit can see. Same rule as the coordinate
+    projection: the sim is the authority on its own map.
+
+    Cached because it does not move within a mission, and a mission change
+    restarts this process.
+    """
+    if _BULLSEYE:
+        return _BULLSEYE
+    try:
+        from dcs.coalition.v0 import coalition_pb2, coalition_pb2_grpc
+        from dcs.common.v0 import common_pb2
+        ch = grpc.insecure_channel(DCS_GRPC_ADDR)
+        stub = coalition_pb2_grpc.CoalitionServiceStub(ch)
+        for name, val in (("red", common_pb2.COALITION_RED),
+                          ("blue", common_pb2.COALITION_BLUE)):
+            r = stub.GetBullseye(coalition_pb2.GetBullseyeRequest(coalition=val),
+                                 timeout=10)
+            _BULLSEYE[name] = {"lat": r.position.lat, "lon": r.position.lon}
+    except Exception as e:
+        log.warning("bullseye unavailable: %s", str(e)[:80])
+    return _BULLSEYE
 
 
 # A formation is tight: line abreast or trail, inside a couple of miles and a

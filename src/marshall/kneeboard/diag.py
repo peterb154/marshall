@@ -180,6 +180,10 @@ def state(session: str = "", scope: str | None = None) -> dict:
         "unconfirmed": [r["callsign"] for r in board
                         if r.get("confirmed") == "claimed"],
         "flights": live.get("flights", []),
+        # EVERY STRIP ON FILE, AND WHO IS FLYING IT. Published since 30 July and
+        # dropped here, which is the shape of most of this file's history: the
+        # bridge decided something and the page did not carry it.
+        "plans": live.get("plans", []),
         # What the controller was handed, block by block. Behaviour
         # follows from this and nothing else.
         "handed": live.get("handed", []),
@@ -321,6 +325,9 @@ _PAGE = """<!doctype html><html><head><meta charset="utf-8">
     <div id="untracked"></div></section>
   <section><h2>The last turn, stage by stage</h2><div id="last"></div></section>
   <section><h2>Flights</h2><div id="flights"></div></section>
+  <section class="wide"><h2>Flight plans
+    <span class="sub">every strip on file, and who ATC can attach it to</span></h2>
+    <div id="plans"></div></section>
 </div>
 <section class="wide"><h2>What the controller was handed
   <span class="hint">&mdash; behaviour follows from this and nothing else</span></h2>
@@ -458,6 +465,34 @@ function handed(blocks) {
   }).join('') + '</div>';
 }
 
+// Every strip the director holds, and whether anything is flying under it.
+// The page decides nothing here: `flying`, `is_flight` and `on_ground` are all
+// joined upstream, because working out that a plan filed as "Pony 1-1" belongs
+// to the man the board calls "sockeye" needs the identity registry, and a web
+// page has no business holding one.
+function plans(d) {
+  const p = d.plans || [];
+  if (!p.length) return '<p class="empty">no flight plans on file</p>';
+  return '<table><tr><th>plan</th><th>filed as</th><th>approach</th>'
+    + '<th>active</th><th>flying it</th><th>where</th></tr>'
+    + p.map(x => {
+      const who = x.attributed_to
+        ? `<span class="acc">${esc(x.attributed_to)}</span>`
+          + (x.is_flight ? ' <span class="dim">(flight)</span>' : '')
+        : '<span class="dim">nobody</span>';
+      // Three states, not two: airborne, on the ground, or radar cannot see him
+      // at all -- and "we do not know" must not render as "parked".
+      const where = x.on_ground === null || x.on_ground === undefined
+        ? '<span class="dim">&mdash;</span>'
+        : (x.on_ground ? 'on the ground' : 'airborne');
+      return `<tr><td>${esc(x.name || '')}</td>`
+        + `<td class="dim">${esc(x.callsign || '&mdash;')}</td>`
+        + `<td class="dim">${esc(x.approach || '&mdash;')}</td>`
+        + `<td>${x.active ? '<span class="ok">active</span>' : '<span class="dim">no</span>'}</td>`
+        + `<td>${who}</td><td class="dim">${where}</td></tr>`;
+    }).join('') + '</table>';
+}
+
 function flights(d) {
   const f = d.flights || [];
   return f.length
@@ -502,6 +537,7 @@ async function tick() {
     $('board').innerHTML = board(d);
     $('last').innerHTML = last(d.last);
     $('flights').innerHTML = flights(d);
+    $('plans').innerHTML = plans(d);
     $('handed').innerHTML = handed(d.handed);
   } catch (e) {
     $('verdict').innerHTML = '<span class="bad">diag unreachable</span>';

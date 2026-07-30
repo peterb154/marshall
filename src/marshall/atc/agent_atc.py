@@ -3575,6 +3575,12 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             # This tick is the right home for it: it already has the radar
             # picture for `release_stale`, so the board refreshes at the poll
             # rate for no extra request and no extra latency on the voice path.
+            # `filed_plans` is what REFRESHES the strip cache; `filed_plan_rows`
+            # only reads it. On this tick nothing else called it, so the plans
+            # panel stayed empty for the whole sortie -- the cache was never
+            # filled and the reader dutifully returned nothing. It is TTL'd at
+            # 45 s, so calling it here costs one request a minute.
+            filed_plans()
             publish_state(bridge, ctl, _scope, session_id,
                           plans=filed_plan_rows(),
                           names=getattr(client, "roster", None))
