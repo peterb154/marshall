@@ -350,8 +350,9 @@ def radar_cached(bindings: dict | None = None) -> list[str] | None:
 # aeroplanes flying together?) rather than a presentation of it -- but it is
 # expressed as a FIELD naming the lead, not by deleting the wingmen. Every
 # aircraft keeps its own position, which is [#47] acceptance 3.
-def contacts() -> list[dict] | None:
+def contacts(bindings: dict | None = None) -> list[dict] | None:
     """Every fresh track, as data. None if the cache cannot be read."""
+    bindings = bindings or {}
     try:
         _ensure_table()
         with get_pool().connection() as conn:
@@ -396,6 +397,11 @@ def contacts() -> list[dict] | None:
                 "lat": r[10], "lon": r[11],
                 "alt_ft": alt_ft, "heading": heading, "speed_kt": speed_kt,
                 "coalition": r[12],
+                # The callsign something has already correlated to this track,
+                # which is what the prose prints in [brackets]. Corroboration,
+                # never the primary key -- see atc/identity.py -- but identity
+                # needs it and it must not be recovered by re-reading the prose.
+                "callsign": bindings.get(naming.get(name, label), ""),
                 # The lead's unit name, on every member INCLUDING the lead, so
                 # "is this a formation" is one comparison and "who is it led by"
                 # needs no second pass. "" would have meant two questions.

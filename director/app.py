@@ -227,7 +227,7 @@ def radar_endpoint(session_id: str = "") -> dict:
     from tools.tracks import bullseyes, contacts
     binds = bindings_for(session_id) if session_id else None
     return {"picture": radar_picture(binds),
-            "contacts": contacts() or [],
+            "contacts": contacts(binds) or [],
             "bullseye": bullseyes()}
 
 

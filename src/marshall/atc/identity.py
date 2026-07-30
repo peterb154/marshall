@@ -184,6 +184,30 @@ def units_on(scope: str) -> list[Unit]:
     parser that throws on an unexpected line would take the identity of every
     aeroplane down with it.
     """
+    # STRUCTURE WHEN IT IS THERE ([#47]). A `Scope` carries the contacts the
+    # prose was drawn from, and reading them removes the whole class of bug this
+    # parser has produced: a formation line defeated EVERY regex at once, so both
+    # aeroplanes in a formation vanished from the identity ladder -- which is
+    # exactly the moment before a pilot asks to join a flight.
+    #
+    # `flatten_formation` was added to fix that and introduced the next one: it
+    # deletes the wingmen before the position regexes see them, so no aircraft
+    # but a lead has a position. Neither is needed here. Every ship in a
+    # formation is its own contact, carrying its own type, manned flag, category
+    # and position, because the collapse is a PRESENTATION and the data was
+    # never collapsed.
+    #
+    # Duck-typed rather than imported: this module is below `agent_atc` in the
+    # layering and must not reach up to it for a type.
+    got = getattr(scope, "contacts", None)
+    if got:
+        return [Unit(c.get("name", ""), c.get("callsign", "") or "",
+                     c.get("type", "") or "", bool(c.get("manned")),
+                     bool(c.get("on_ground")),
+                     "" if c.get("category") in ("airplane", "helicopter")
+                     else (c.get("category") or ""))
+                for c in got if c.get("name")]
+
     out: list[Unit] = []
     for chunk in (scope or "").split("|"):
         m = _SCOPE_LINE.search(chunk)

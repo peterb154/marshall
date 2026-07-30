@@ -575,7 +575,11 @@ class Bridge:
 
 
 def _track_of(scope: str, handle: str) -> str:
-    """The scope label whose handle is this person."""
+    """The scope label whose handle is this person.
+
+    Reads `units_on`, which reads structure when the Scope has it -- so this
+    finds a wingman now, where the prose collapsed him into his lead.
+    """
     for u in identity.units_on(scope):
         if identity.handle(u.name).lower() == (handle or "").lower():
             return u.name
@@ -593,8 +597,11 @@ def _track_tagged(scope: str, spoken: str) -> str:
     if not spoken or not scope:
         return ""
     me = C.parse(spoken)
-    tagged = [u for u in identity.units_on(identity.flatten_formation(scope))
-              if u.callsign]
+    # NO FLATTENING when the Scope carries structure: nothing was collapsed, so
+    # there is nothing to undo. `flatten_formation` exists only to paper over
+    # the lossy string and goes when the last prose reader does.
+    src = scope if getattr(scope, "contacts", None) else identity.flatten_formation(scope)
+    tagged = [u for u in identity.units_on(src) if u.callsign]
     # THE SAME TWO PASSES AS `radar_fix`, and deliberately so -- if this
     # disagreed with it about which aeroplane a callsign means, the engine
     # would be keyed on one contact and guided from another. Exact first;
@@ -608,18 +615,54 @@ def _track_tagged(scope: str, spoken: str) -> str:
         c = C.parse(u.callsign)
         if c.is_flight and c.flight.lower() == me.flight.lower():
             return u.name
+    # A FLIGHT-MATE'S TAG, but only when radar says they are actually FLYING as
+    # a formation -- which is a fact we hold now and could only guess at from
+    # prose. The old rule had to refuse this outright, and the comment on
+    # `radar_fix` says why: "two pilots who merely share a flight NUMBER are a
+    # different case entirely, and the scope says which is which". It does, in a
+    # field. So Pony 1-3 finds the section he is welded to, and Falcon 1-1 still
+    # never gets Falcon 1-2's track, because two singles are in no formation.
+    by_name = {_key_name(c.get("name", "")): c
+               for c in (getattr(scope, "contacts", None) or [])}
+    for u in tagged:
+        c = C.parse(u.callsign)
+        got = by_name.get(_key_name(u.name)) or {}
+        if got.get("formation") and c.flight.lower() == me.flight.lower():
+            return u.name
     return ""
+
+
+def _between(scope, a_track: str, b_track: str):
+    """Separation of two tracks from their own coordinates.
+
+    NEEDS NO ORIGIN, which is the tell that the old version should never have
+    been doing polar-to-cartesian on ranges from somebody else's beacon: the
+    gap between two aeroplanes is a fact about the two of them. It also works
+    for a wingman, who under the prose had no position at all.
+    """
+    a = scope.of(a_track) if hasattr(scope, "of") else None
+    b = scope.of(b_track) if hasattr(scope, "of") else None
+    if not a or not b or a.get("lat") is None or b.get("lat") is None:
+        return None
+    return _range_radial((a["lat"], a["lon"]), b["lat"], b["lon"])[0]
 
 
 def miles_between(scope: str, a_track: str, b_track: str) -> float | None:
     """How far apart two contacts are, from the radar picture alone.
 
-    Both positions are a range and a radial from the field, so this is two
-    polar-to-cartesian conversions and a hypotenuse. Returns None when either
+    Structure first ([#47]) -- see `_between`, which needs no origin. The prose
+    path below is the fallback: both positions are a range and a radial from the
+    field, so it is two polar-to-cartesian conversions and a hypotenuse, and it
+    silently returns None for any wingman. Returns None when either
     aeroplane is not on the scope -- which the caller must not read as zero:
     "I cannot see you both" and "you are together" are opposite answers.
     """
     import math
+    # STRUCTURE FIRST. Exact for any pair, wingmen included, and computed from
+    # the two aeroplanes rather than from their ranges off a third point.
+    exact = _between(scope, a_track, b_track)
+    if exact is not None:
+        return exact
     pos, offset = _scope_geometry(scope)
     a, b = _key_name(a_track), _key_name(b_track)
     p, q = pos.get(a), pos.get(b)
@@ -783,7 +826,7 @@ def count_contacts(scope: str) -> int:
     contacts, so counting lines makes a four-ship look like a single ship and
     switches the engine OFF for the one arrival that most needs sequencing.
     """
-    if not scope or scope == "no contacts":
+    if not getattr(scope, "contacts", None) and (not scope or scope == "no contacts"):
         return 0
     # AIRCRAFT ONLY, since 30 July. This counted every line, so four T-55s
     # parked seventy miles away made `engaged` true for a lone pilot -- which
@@ -834,6 +877,12 @@ _FIX = re.compile(
 # in brackets after the callsign. It is the equipment suffix an IFR flight plan
 # would carry, except that the sim states it and no pilot can get it wrong.
 _TYPE = re.compile(r"\[([^\]]+)\]\s*\(([^)]+)\)")
+
+
+def _type_of(scope, track: str) -> str:
+    """Airframe from the contact, not from a regex over the parenthetical."""
+    c = scope.of(track) if hasattr(scope, "of") else None
+    return (c or {}).get("type", "")
 
 
 def aircraft_type_on_scope(scope: str, cs: str) -> str:
@@ -999,6 +1048,29 @@ def radar_fix(scope: str, cs: str, profile=None) -> object | None:
         return None
     from marshall.atc import asr, callsign as C
     me = C.parse(cs)
+    # STRUCTURE FIRST ([#47]), with the same two passes the prose path uses
+    # below: his own tagged contact, then the FLIGHT tag, never another
+    # member's. Reading the contacts also fixes finding 1.3 for wingmen -- the
+    # regex needs a bracketed tag on a LINE, and a formation prints one line,
+    # so only a lead could ever be found.
+    got = getattr(scope, "contacts", None)
+    if got:
+        tagged = [c for c in got if c.get("callsign")]
+        hit = next((c for c in tagged
+                    if C.parse(c["callsign"]).canonical.lower()
+                    == me.canonical.lower()), None)
+        if hit is None:
+            hit = next((c for c in tagged
+                        if C.parse(c["callsign"]).is_flight
+                        and C.parse(c["callsign"]).flight.lower()
+                        == me.flight.lower()), None)
+        if hit is not None and hit.get("lat") is not None and getattr(
+                scope, "origin", None):
+            nm, radial = _range_radial(scope.origin, hit["lat"], hit["lon"])
+            h = hit.get("heading") or 0.0
+            return asr.Position(nm, radial, int(hit.get("alt_ft") or 0),
+                                true_heading(h, profile) if profile else h,
+                                hit.get("speed_kt") or 0.0)
     # THE AEROPLANE, NOT THE FLIGHT. This matched on `.flight`, and Falcon 1-1
     # and Falcon 1-2 ARE THE SAME FLIGHT -- so with two pilots up, each one's
     # lookup returned whichever of them appeared first in the picture. Every
@@ -1517,6 +1589,12 @@ def radar_range_for(scope: str, cs: str) -> float | None:
     if not scope or not cs:
         return None
     from marshall.atc import callsign as C
+    # Structure first, and it agrees with `radar_fix` by construction because it
+    # asks the same function. Two readers of one picture that could disagree is
+    # how a controller ends up quoting two different ranges for one aeroplane.
+    if getattr(scope, "contacts", None):
+        fix = radar_fix(scope, cs)
+        return fix.range_nm if fix is not None else None
     want = C.parse(cs).flight.lower()
     for tag, nm in _RANGE.findall(scope):
         if C.parse(tag).flight.lower() == want:
@@ -2947,6 +3025,9 @@ def _contact(u, scope: str, board_tracks: set) -> dict:
     right answer is that none of this is prose, and until then there is exactly
     one parser.
     """
+    # By TRACK, which now reads the structured contact -- so a wingman gets a
+    # position on the board like anybody else. This used to be the third
+    # independent parse of the same prose in one process.
     fix = radar_fix_by_track(scope, u.name)
     controlled = _key_name(u.name) in board_tracks
     return {
