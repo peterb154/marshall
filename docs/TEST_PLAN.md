@@ -13,16 +13,19 @@ the sections are reordered.
 
 | | section | issue | needs | why it is on the card |
 |---|---|---|---|---|
-| 1 | **J — who he thinks you are** | [#40] | solo | the change that re-keyed the whole board off a spoken callsign onto evidence nobody speaks. Fly it first if time is short |
-| 2 | **G — clearance at the ramp** | [#1] | solo | the awkward half: a wrong read-back, a deliberate ambiguity, an amendment |
-| 3 | **D — flights** | [#42] | **two aircraft** | built 29 July, never flown by a human. Skip it solo |
-| 4 | **H — the approach** | [#19] [#37] [#39] | solo | the main event, and where the open bugs live |
-| 5 | **F — landing and the handoff** | [#41] | solo | the sim's own events now drive Tower. Never flown |
-| 7 | **N — what he calls you** | [#48] | solo, better with two | the label no longer comes off the radio, and a formation is only split by its own lead. Built 30 July |
-| 6 | **K — does he remember** | [#43] | solo, better with two | shipped 30 July, never flown |
+| 1 | **N — what he calls you** | [#48] | solo | **fly this first.** Everything about identity changed on 30 July and none of it has been heard. It is also the quickest to falsify: three transmissions on the ramp |
+| 2 | **M — how fast he answers alone** | [#45] | solo | one radio check. Ground units stopped counting as traffic, so the classifier is off the path — you are judging a pause, and you can only judge it while you still remember the old one |
+| 3 | **J — who he thinks you are** | [#40] | solo | identity under stress: garble it, omit it, lose radar. N says he gets it right; J says he keeps it when things go wrong |
+| 4 | **G — clearance at the ramp** | [#1] | solo | the awkward half: a wrong read-back, a deliberate ambiguity, an amendment |
+| 5 | **H — the approach** | [#19] [#37] [#39] | solo | the main event, and where the open bugs live |
+| 6 | **F — landing and the handoff** | [#41] | solo | the sim's own events now drive Tower. Never flown |
+| 7 | **K — does he remember** | [#43] | solo, better with two | shipped 30 July, never flown |
+| — | **D — flights** | [#42] | **two aircraft** | skip it solo. A formation cannot be flown by one aeroplane, and the break-up rules changed on 30 July |
 | — | **E — known broken** | | | read it, so you do not re-find something already understood |
 
-**Solo today?** J, G, H, F, K, N. Section D needs a second aeroplane, and N is much better with one — leave them if you are alone. Section D needs a second aeroplane; leave it.
+**Solo today?** N, M, J, G, H, F, K — in that order. Only D needs a second
+aeroplane. Note that N3, N5 and N6 inside section N are formation rows and want
+one too; the rest of N is flyable alone and is the part that changed most.
 
 ## How to report
 
