@@ -470,8 +470,8 @@ like a callsign.
 
 | ID | Prio | Test | What should happen | Fix under test |
 |----|------|------|--------------------|----------------|
-| N1 | P1 | Check in as **any callsign you like** — "Batumi, Pony one one, checking in" | He works you. He does **not** ask you to say your callsign again, does not say he has no flight plan under that name, and does not argue. Report what he CALLS you — your handle, or the callsign you gave | [#48] |
-| N2 | P1 | Then change it mid-sortie — start calling yourself something else entirely | Nothing happens. No re-identification, no lost clearance, no "not radar identified". This is the 28 July outage, and it should now be a non-event | [#48] |
+| N1 | P1 | Check in as **any callsign you like** — "Batumi, Pony one one, checking in" | **He calls you Sockeye.** Not "Pony one one". You are your handle; what you said is a claim, and it never names you. He must also not challenge you, ask you to say it again, or tell you he has no flight plan under it | [#48] |
+| N2 | P1 | Say a **different** callsign on your next call, and a third one after that | **Nothing happens at all.** Not "handled gracefully" — there is nothing to handle. You cannot rename yourself, because your name was never made of what you say. Still Sockeye, same track, no re-identification, no lost clearance | [#48] |
 | N3 | P1 | Form a flight, then have a **wingman** transmit | He is answered as the FLIGHT. Never "Apex one two" — a member number is not a name anybody is addressed by | [#48] |
 | N4 | P1 | As a flight, fly the **whole approach in formation** — check in, hold, letdown, land, never asking to split | He works you as ONE aeroplane the whole way. He must **never** break you up, never offer to, never say he is unable to work a formation, and never ask whether you can maintain visual separation between your own aircraft | [#48] |
 | N5 | P1 | While the flight is together, have a **wingman** ask for a range | The range describes **lead's** aeroplane, not the wingman's. Check it against lead's DME/position — if the number moves depending on who asks, the geometry is following the wrong ship | [#48] |
@@ -485,9 +485,22 @@ formation is yours, and the only thing that splits it is you saying so. Any
 transmission where he initiates it — however reasonable his reason sounds — is
 the bug.
 
-**What is expected to be imperfect.** N1's second half. The agent is told to
-address you by your handle and it still often echoes the callsign you spoke.
-The identity underneath is right either way; say which you would rather hear.
+**N1 is expected to FAIL, and it is written as a failure on purpose.** The
+agent is told to address you by your handle and, in the dry runs, still mostly
+echoes the callsign you spoke. That is a defect against [#48], not a preference
+to be surveyed — an earlier draft of this row offered "your handle, or the
+callsign you gave" as two acceptable answers, which is a criterion bent to fit
+behaviour that was already known to be wrong. There is one right answer. Report
+what you actually hear.
+
+**What N1 and N2 are really checking** is that a callsign is a POSITION and not
+a person. A man flies several in a night; the aeroplane he is sitting in and the
+radio he keyed do not change with them. Everything the controller does with you
+— the board key, the holding stack, the strip he matches — hangs off the second
+pair, and none of it should so much as twitch when the first one changes.
+
+**Neither row can be flown by a second aircraft standing in for you.** They are
+about one man's identity surviving his own words.
 
 ---
 
