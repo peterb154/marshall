@@ -472,6 +472,9 @@ like a callsign.
 |----|------|------|--------------------|----------------|
 | N1 | P1 | Check in as **any callsign you like** — "Batumi, Pony one one, checking in" | **He calls you Sockeye.** Not "Pony one one". You are your handle; what you said is a claim, and it never names you. He must also not challenge you, ask you to say it again, or tell you he has no flight plan under it | [#48] |
 | N2 | P1 | Say a **different** callsign on your next call, and a third one after that | **Nothing happens at all.** Not "handled gracefully" — there is nothing to handle. You cannot rename yourself, because your name was never made of what you say. Still Sockeye, same track, no re-identification, no lost clearance | [#48] |
+| N2a | P1 | Check in as **"Falcon one one"** — a name belonging to nobody | *"Falcon one one, I do not have you on the board. You are Sockeye — use that callsign."* Said **first**, then he answers your call normally. You are corrected, not refused | [#48] |
+| N2b | P1 | Say it **again** on your next two calls | He corrects you **once**. Repeating it every transmission would fill the frequency with the correction instead of the approach | [#48] |
+| N2c | P2 | Now use **"Sockeye"** | Silence on the subject. Nothing to correct | [#48] |
 | N3 | P1 | Form a flight, then have a **wingman** transmit | He is answered as the FLIGHT. Never "Apex one two" — a member number is not a name anybody is addressed by | [#48] |
 | N4 | P1 | As a flight, fly the **whole approach in formation** — check in, hold, letdown, land, never asking to split | He works you as ONE aeroplane the whole way. He must **never** break you up, never offer to, never say he is unable to work a formation, and never ask whether you can maintain visual separation between your own aircraft | [#48] |
 | N5 | P1 | While the flight is together, have a **wingman** ask for a range | The range describes **lead's** aeroplane, not the wingman's. Check it against lead's DME/position — if the number moves depending on who asks, the geometry is following the wrong ship | [#48] |
@@ -501,6 +504,20 @@ pair, and none of it should so much as twitch when the first one changes.
 
 **Neither row can be flown by a second aircraft standing in for you.** They are
 about one man's identity surviving his own words.
+
+**N2a is the one to think about while you fly it.** The controller knows exactly
+who you are — the radio told him before you spoke — and corrects you anyway,
+because a callsign nobody answers to is how a clearance gets read back by the
+wrong man once four aeroplanes are listening. Judge whether the correction
+sounds like a controller doing his job or like a machine being pedantic, and
+whether hearing it once is enough.
+
+**A knock-on you may notice at a NO-RADAR field.** A filed plan's callsign no
+longer admits anybody — it was typed when the mission was built and matches a
+live pilot only by coincidence. So with radar off you are *audible and not on
+the board* until a clearance assigns you a plan, and N2a is what you will hear.
+With radar up you are admitted the moment you are painted and none of this
+applies.
 
 ---
 

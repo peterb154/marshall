@@ -565,6 +565,11 @@ class Bridge:
         self.last_heard: dict[str, float] = {}     # per RADIO, not per callsign
         self.heard_on: dict[str, float] = {}       # which channel he was on
         self.awaiting_readback: dict[str, float] = {}
+        # (GUID, wrong name) already corrected. A callsign nobody answers to is
+        # worth telling him about ONCE; saying it again on every transmission
+        # would fill the frequency with the correction instead of the approach,
+        # and he has already heard it. See `misnamed`.
+        self.corrected: set = set()
         self.last_said: list[str] = [""]
         self.last_active_hz: list[float | None] = [None]
         # PER AIRCRAFT, AND THIS IS NOT THEIR RIGHT HOME. What we last told each
@@ -2412,6 +2417,66 @@ def addressed_to_another_aircraft(transcript: str, speaker: str,
 _heard_names: dict[str, int] = {}
 
 
+def misnamed(bridge, ctl, claim: str, known: str, who: str) -> str:
+    """What the controller says when a pilot uses a callsign nobody answers to.
+
+        "if a pilot says 'falcon 1-1, approach' and there is no falcon 1-1 (a
+         dcs/srs matching pilot ON the board) atc should say - falcon 1-1 I dont
+         have you on the board or similar - even if he KNOWS it's sockeye.
+         Sockeye screwed up by using Falcon1-1 on the radio and needs to be
+         corrected."
+
+    EVEN THOUGH WE KNOW, and that is the whole point. The radio tells us this is
+    Sockeye and nothing about that is in doubt; what is wrong is the name he put
+    on the air, and silently absorbing it teaches him it works. With one pilot
+    up that is untidy. With four it is how a clearance ends up read back by the
+    wrong man, because everybody on the frequency heard a callsign that belongs
+    to nobody and each of them had to guess who it meant.
+
+    DETERMINISTIC, and handed to the agent as words to voice rather than left to
+    its judgement. Whether a name is on the board is a fact about the board --
+    the same class as separation -- and an LLM asked "do you know a Falcon 1-1?"
+    will find a way to be helpful about it.
+
+    NAMES THAT ARE FINE: his own handle, the flight he is in, and anybody else
+    actually on the frequency -- calling another pilot by name is ordinary radio
+    and not his callsign. Everything else is a correction.
+
+    Returns "" when there is nothing to correct, which is the normal case.
+    """
+    from marshall.atc import callsign as C
+    if not claim:
+        return ""
+    ok = {n.lower() for n in bridge.flights.names()}
+    ok |= {n.lower() for n in known_flight_names()}
+    for n in (known, who):
+        if n:
+            ok.add(n.lower())
+    # Everybody the engine is actually working, so addressing a wingman by name
+    # is not a correction.
+    ok |= {r.get("callsign", "").lower() for r in ctl.board()}
+    ok.discard("")
+    c = C.parse(claim)
+    if any(_matches_name(claim, n) or _matches_name(c.flight, n) for n in ok):
+        return ""
+    # SAID BACK TO HIM THE WAY HE SAID IT, so he can hear which words were the
+    # problem. Then the name that will work, when we have one for him.
+    said = c.spoken or claim
+    if known:
+        return (f"{said}, I do not have you on the board. "
+                f"You are {C.parse(known).spoken} — use that callsign.")
+    return f"{said}, I do not have you on the board. Say your callsign."
+
+
+def _matches_name(a: str, b: str) -> bool:
+    """Two names for one entity, allowing for how Whisper punctuates."""
+    from marshall.atc import callsign as C
+    a, b = (a or "").strip().lower(), (b or "").strip().lower()
+    if not a or not b:
+        return False
+    return a == b or C.parse(a).canonical.lower() == C.parse(b).canonical.lower()
+
+
 def known_flight_names() -> set[str]:
     from marshall.core import route as R
     out = {n.lower() for n in getattr(R, "SQUADRON_CALLSIGNS", ())}
@@ -3436,7 +3501,7 @@ def attribute(bridge, client, transcript, srs, session_id, radar_on, ctl):
 
 def compose_message(bridge, scope, known, transcript, profile, me, fix, nxt,
                     directive, stack, vectoring, _flight, _flight_say,
-                    claim=""):
+                    claim="", name_say=""):
     """Everything the controller is handed for one transmission, as one string.
 
     EXTRACTED VERBATIM from the receive loop, 30 July -- [LAYERS.md] step 1.
@@ -3496,6 +3561,13 @@ def compose_message(bridge, scope, known, transcript, profile, me, fix, nxt,
             _strip + " This is what is already known about him and it "
             "carries across a handoff -- do not ask him again for anything "
             "in it.")
+    if name_say:
+        # ABOVE EVERYTHING ELSE, because it is about who he is and the rest of
+        # the transmission is addressed to whoever that turns out to be. It does
+        # not replace the answer -- he still gets worked -- it precedes it.
+        parts.append(
+            "CALLSIGN CORRECTION (already decided — SAY THIS FIRST, in these "
+            f"words, then answer his call normally): {name_say}")
     if _flight_say:
         # DECIDED HERE, NOT BY YOU. Who is in which flight is roster state
         # and radar geometry -- the same class of fact as separation, and
@@ -4222,6 +4294,21 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         _flight_say = membership(bridge, _who, transcript, scope, _ident,
                                  session_id)
 
+        # A CALLSIGN NOBODY ANSWERS TO gets corrected, even when we know exactly
+        # who is talking. Deterministic -- whether a name is on the board is a
+        # fact about the board -- so the agent is handed the words rather than
+        # the question. Once per radio per wrong name; see `Bridge.corrected`.
+        _name_say = ""
+        _key = (client.last_sender_guid or "", (claim or "").lower())
+        if claim and _key not in bridge.corrected:
+            _name_say = misnamed(bridge, ctl, claim, known, _who)
+            if _name_say:
+                bridge.corrected.add(_key)
+                print(f"  .. correcting {claim!r} — nobody answers to it",
+                      flush=True)
+                record(session_id, kind="atc/misnamed", callsign=known or srs,
+                       claimed=claim, text=_name_say)
+
         # THERE IS NO ADOPTION, and there was a block here that called
         # `fl.parse_adopting` for it. The design settled the other way: a pilot
         # joins HIMSELF, on his own radio, because that is the transmission
@@ -4558,7 +4645,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             print(f"  SEPARATION: {stack}", flush=True)
         message, message_parts = compose_message(
             bridge, scope, known, transcript, profile, me, fix, nxt,
-            directive, stack, vectoring, _flight, _flight_say, claim)
+            directive, stack, vectoring, _flight, _flight_say, claim,
+            _name_say)
         # Republish with what he was handed, now that it exists. The board is
         # the same; the input is the part worth having.
         publish_state(bridge, ctl, scope, session_id, handed=message_parts,

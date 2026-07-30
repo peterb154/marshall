@@ -172,8 +172,27 @@ class Identity:
     # has to be joinable to him, or the board and the flight-plan table can no
     # longer be shown side by side.
     plan: str = ""
+    # WHO KEYED THE MIC, which is NOT the same question as whether he is on the
+    # board -- and conflating them is what made this module refuse to name a man
+    # it could name perfectly well.
+    #
+    #     "if a pilot says 'falcon 1-1, approach' and there is no falcon 1-1 ...
+    #      atc should say - falcon 1-1 I dont have you on the board - even if he
+    #      KNOWS it's sockeye"
+    #
+    # Two states in one sentence. `who` is filled whenever the transport names
+    # the radio, because an SRS client name arrives with the packet and is not a
+    # voice. It NEVER admits an aeroplane: a man with a radio may be in a
+    # spectator slot, in the tower, or at the menu, and "anyone with a radio is
+    # an aeroplane" is the ghost problem in a new coat.
+    #
+    # `callsign` still means ADMITTED -- something that is not a voice says this
+    # aeroplane exists -- and `__bool__` still asks that, so every refusal in
+    # this module means what it always meant.
+    who: str = ""
 
     def __bool__(self) -> bool:
+        """Admitted, not merely audible. See `who`."""
         return bool(self.callsign)
 
 
@@ -498,28 +517,42 @@ class Registry:
             label = self._handle_for(u, srs_name, prior)
             ident = Identity(label, u.name, "radar", why.format(repr(u.name)),
                              plan=next((n for n in plans or []
-                                        if spoken and _matches(spoken, n)), ""))
+                                        if spoken and _matches(spoken, n)), ""),
+                             who=label)
             self.by_guid[guid] = ident
             return ident
 
-        # 2. A claim against a filed plan. The STRIP is what he matched; it is
-        #    not what he is called. A man whose radio the transport names
-        #    "Sockeye" is Sockeye whether his strip says Pony 1-1 or Falcon 1-1,
-        #    and the strip travels alongside so the two can still be joined.
         who = self._handle_for(None, srs_name, prior)
-        for name in plans or []:
-            if spoken and _matches(spoken, name):
-                ident = Identity(who or name, "", "plan",
-                                 f"claimed {spoken!r}, and {name!r} is filed",
-                                 plan=name)
-                self.by_guid[guid] = ident
-                return ident
 
-        # 3. A claim against somebody already admitted.
+        # 2. GONE, 30 July: a claim matched against a FILED PLAN'S CALLSIGN.
+        #
+        #        "Flight Plans have position names like Pony 1-1, which
+        #         represent a position in a flight. Its just eye candy for pilot
+        #         to pilot discusson. ATC shouldnt ever care about that"
+        #
+        #    It produced an ordering that was exactly backwards. With no radar,
+        #    saying "Pony 1-1" -- a position typed into a template when the
+        #    mission was BUILT -- admitted him, while saying "Sockeye", which is
+        #    who he is and the name SRS handed us before he opened his mouth,
+        #    was refused. `director/tools/plans.py` reached the same conclusion
+        #    about clearance delivery weeks ago and says it plainly: a
+        #    template's callsign "matches a live pilot only by coincidence".
+        #    Coincidence is not an authority.
+        #
+        #    A STRIP STILL IS one -- a procedural controller works strips -- but
+        #    it has to be tied to him by ASSIGNMENT, at clearance delivery,
+        #    rather than by a name he happened to say. Until that link exists he
+        #    is audible and not admitted, which is a real state and is exactly
+        #    what the controller is now made to say out loud.
         for name in roster or []:
             if spoken and _matches(spoken, name):
+                # 3. A claim against somebody ALREADY ADMITTED. Still legitimate,
+                #    and no longer a position name: the roster holds handles and
+                #    flight names, so this matches "Sockeye" or "Apex" against
+                #    aeroplanes something else already vouched for.
                 ident = Identity(who or name, "", "roster",
-                                 f"claimed {spoken!r}, already on the board")
+                                 f"claimed {spoken!r}, already on the board",
+                                 who=who)
                 self.by_guid[guid] = ident
                 return ident
 
@@ -529,6 +562,10 @@ class Registry:
         if prior is not None and prior.authority in ("radar", "plan"):
             return prior
 
+        # NOT ADMITTED -- and we may still know exactly who it is. That is the
+        # state the controller has to be able to voice: "Falcon one one, I do not
+        # have you on the board", said to a man the radio identifies as Sockeye.
         return Identity("", "", "",
-                        f"{spoken!r} matches no track and no filed plan"
-                        if spoken else "nobody named, and the radio is unknown")
+                        f"{spoken!r} matches no track and nobody on the board"
+                        if spoken else "nobody named, and the radio is unknown",
+                        who=who)

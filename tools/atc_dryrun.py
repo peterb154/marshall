@@ -21,7 +21,8 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from marshall.atc import agent_atc, controller as atc
+from marshall.atc import agent_atc
+from marshall.atc import identity, controller as atc
 from marshall.core import route as R
 
 # One store for this module -- see agent_atc.Bridge.
@@ -156,6 +157,21 @@ def run(script, session_id: str, sep_always: bool = True,
         if ident.authority != "radar":
             print(f"  IDENTITY: {ident.why}", flush=True)
 
+        # A CALLSIGN NOBODY ANSWERS TO. Same call the live loop makes, and it
+        # belongs here for the reason this tool exists: the correction is
+        # decided deterministically and VOICED by the agent, which is precisely
+        # the two-brain seam a dry run is for. It was wired into `_run_srs` and
+        # not into this loop, so the first dry run after building it showed
+        # nothing at all and looked like the feature had failed.
+        _key = (f"guid-{srs}", (claim or "").lower())
+        name_say = ""
+        if claim and _key not in bridge.corrected:
+            name_say = agent_atc.misnamed(bridge, ctl, claim, known,
+                                          identity.handle(ident.track or srs))
+            if name_say:
+                bridge.corrected.add(_key)
+                print(f"  CORRECTION: {name_say}", flush=True)
+
         engaged = sep_always or len(ctl.aircraft) >= 2
         directive, stack = (agent_atc.separation_context(_BRIDGE, ctl, text, scope, known)
                             if engaged else ("", ""))
@@ -173,10 +189,28 @@ def run(script, session_id: str, sep_always: bool = True,
         if known:
             agent_atc.flight_bind(callsign=known, srs_name=srs,
                                   srs_guid=f"guid-{srs}")
-        parts = [f"TRANSMITTER: the radio calling itself {known}. Same aircraft "
-                 f"as every other call from {known} -- keep them together."
-                 if known else
-                 "TRANSMITTER: a radio you have not identified yet."]
+        # THE SAME BLOCKS THE LIVE LOOP BUILDS, and this is a standing hazard
+        # in this file: it assembles its own copy, so every change to
+        # `compose_message` has to be made twice or the mirror quietly drifts.
+        # It had -- "the radio calling itself {known}" is the line that was
+        # replaced when the label stopped coming off the radio, and reading it
+        # here would tell you the opposite of what the bridge now says.
+        parts = []
+        if known:
+            _also = (f" He called himself {claim} on this transmission; that is "
+                     f"the same man and it is not a discrepancy to raise with "
+                     f"him." if claim and claim.lower() != known.lower() else "")
+            parts.append(
+                f"TRANSMITTER: {known}, identified from his aircraft rather "
+                f"than from anything he said, so this is certain. Address him "
+                f"as {known}.{_also} Same aircraft as every other call from "
+                f"{known} -- keep them together.")
+        else:
+            parts.append("TRANSMITTER: a radio you have not identified yet.")
+        if name_say:
+            parts.append(
+                "CALLSIGN CORRECTION (already decided — SAY THIS FIRST, in "
+                f"these words, then answer his call normally): {name_say}")
         if directive:
             parts.append("CONTROLLER (deterministic next step of the approach — "
                          "voice its altitudes, headings and sequence exactly, add "

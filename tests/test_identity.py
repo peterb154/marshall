@@ -108,18 +108,27 @@ class TestTheLadder(unittest.TestCase):
         self.assertEqual(i.authority, "")
         self.assertIn("no track", i.why)
 
-    def test_a_filed_plan_is_an_authority(self):
-        """A procedural controller has no radar and is still not working
-        voices -- he is working strips, typed before the sortie."""
+    def test_a_filed_plans_CALLSIGN_is_not_an_authority(self):
+        """INVERTED 30 July, and the old direction rested on a coincidence.
+
+            "Flight Plans have position names like Pony 1-1, which represent a
+             position in a flight. Its just eye candy for pilot to pilot
+             discusson. ATC shouldnt ever care about that"
+
+        A template's callsign is typed when the mission is BUILT and matches a
+        live pilot only by chance -- `director/tools/plans.py` reached the same
+        conclusion about clearance delivery weeks ago. Saying it aloud used to
+        put a man on the board.
+
+        A strip is still an authority; it just has to be tied to him by
+        ASSIGNMENT at clearance delivery rather than by a name he happened to
+        say. Until then he is AUDIBLE and NOT ADMITTED, which is a real state
+        and the one the controller now says out loud.
+        """
         i = self.reg.resolve("guid-b", "Bandit", spoken="Colt 2-1",
                              scope=SCOPE, plans=["Colt 2-1", "Uzi 1-1"])
-        self.assertEqual(i.authority, "plan")
-        # THE STRIP HE MATCHED, which is what the rung is for -- and it is not
-        # his name. He is Bandit because that is the radio the transport handed
-        # us; "Colt 2-1" is the flight plan he is flying under, and the two are
-        # kept apart so the board and the plans table can still be joined.
-        self.assertEqual(i.plan, "Colt 2-1")
-        self.assertEqual(i.callsign, "bandit")
+        self.assertFalse(i, "a position name admitted an aeroplane")
+        self.assertEqual(i.who, "bandit", "but we know exactly who it is")
 
     def test_a_plan_is_matched_not_believed(self):
         i = self.reg.resolve("guid-b", "Bandit", spoken="Maintained 2",
@@ -133,10 +142,15 @@ class TestTheLadder(unittest.TestCase):
 
     def test_spelling_of_a_claim_does_not_have_to_match_exactly(self):
         """"Pony 11" and "Pony 1-1" are the same aeroplane; a hyphen is a
-        convention of ours, not something a pilot pronounces."""
+        convention of ours, not something a pilot pronounces.
+
+        Asked of the ROSTER now that a plan's callsign admits nobody -- the
+        tolerance still matters, because the roster is matched against what he
+        says and Whisper does not punctuate.
+        """
         i = self.reg.resolve("guid-b", "Bandit", spoken="Pony 11",
-                             scope=SCOPE, plans=["Pony 1-1"])
-        self.assertEqual(i.plan, "Pony 1-1")
+                             scope=SCOPE, roster=["Pony 1-1"])
+        self.assertEqual(i.authority, "roster")
 
 
 class TestIdentityPersists(unittest.TestCase):
@@ -332,12 +346,19 @@ class TestTheStripIsTheOnlyPreSortieEvidence(unittest.TestCase):
         i = reg.resolve("guid-visitor", "a-name-we-do-not-know",
                         spoken="Pony 1-2", scope="no contacts",
                         plans=["Pony 1-1", "Pony 1-2"])
-        self.assertEqual(i.plan, "Pony 1-2")
-        self.assertEqual(i.authority, "plan")
-        # And he is called by his radio, not by his strip. A guest's SRS name is
-        # often the only human-readable thing about him, and it is still not
-        # something he can garble.
-        self.assertEqual(i.callsign, "a name we do not know")
+        # NOT ANY MORE, and this is the cost of the change rather than a
+        # detail of it. A guest at a NO-RADAR field, with a strip on file and
+        # nothing else, used to be admitted on his first call by saying the
+        # position name printed on that strip. He is not, because that name
+        # matched him only by coincidence.
+        #
+        # What he gets instead is honest: the controller knows who is talking
+        # -- the transport named the radio -- and tells him he is not on the
+        # board, which is true and is a thing he can act on. With radar he is
+        # admitted the moment he is painted, and a strip becomes his the moment
+        # a clearance is issued.
+        self.assertFalse(i)
+        self.assertEqual(i.who, "a name we do not know")
 
     def test_with_no_strip_on_file_he_is_refused(self):
         """Stated so the mitigation is obvious rather than folklore: if a
@@ -741,16 +762,25 @@ class TestNoOneMayNameHimself(unittest.TestCase):
                 reg = identity.Registry()
                 got = reg.resolve("g", "Sockeye", spoken="Apex 1-2",
                                   scope="no contacts", **kw)
-                self.assertEqual(got.callsign, "sockeye")
+                # Whether or not the rung admits him, the name he is KNOWN by is
+                # never the member designation he said.
+                self.assertEqual(got.who or got.callsign, "sockeye")
+                self.assertNotIn("1-2", got.callsign)
 
     def test_the_strip_survives_so_the_two_tables_can_still_be_joined(self):
         """Ripping the label out must not rip out the LINK -- the flight-plan
         table is keyed on the filed callsign and the board is not, so something
-        has to hold both ends."""
+        has to hold both ends.
+
+        On the RADAR rung, where he is genuinely admitted. The strip no longer
+        admits anybody by itself, but when something else has vouched for the
+        aeroplane the strip he claimed is still worth recording.
+        """
         reg = identity.Registry()
-        got = reg.resolve("g", "Sockeye", spoken="Apex 1-2",
-                          scope="no contacts", plans=["Apex 1-2"])
-        self.assertEqual(got.plan, "Apex 1-2")
+        got = reg.resolve("g", "Sockeye", spoken="Pony 1-1", scope=SCOPE,
+                          plans=["Pony 1-1"])
+        self.assertEqual(got.authority, "radar")
+        self.assertEqual(got.plan, "Pony 1-1")
         self.assertEqual(got.callsign, "sockeye")
 
     def test_one_case_whichever_rung_answered(self):
@@ -762,12 +792,12 @@ class TestNoOneMayNameHimself(unittest.TestCase):
         would miss from then on, and he would be told to check in on a channel
         he was already talking on."""
         reg = identity.Registry()
-        by_strip = reg.resolve("g", "Sockeye", spoken="Pony 1-1",
-                               scope="no contacts", plans=["Pony 1-1"])
+        by_radio = reg.resolve("g", "Sockeye", spoken="Pony 1-1",
+                               scope="no contacts")
         reg.forget("g")
         by_radar = reg.resolve("g", "Sockeye", spoken="Pony 1-1",
                                scope=self.SCOPE)
-        self.assertEqual(by_strip.callsign, by_radar.callsign)
+        self.assertEqual(by_radio.who, by_radar.callsign)
 
     def test_a_flight_name_is_the_one_thing_that_replaces_a_handle(self):
         """And it is not decided here. `identity` has no idea who is in a

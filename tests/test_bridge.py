@@ -127,6 +127,73 @@ class TestGroundUnitsAreNotTraffic(unittest.TestCase):
             "8,000 ft, heading 270, 300 knots"), 2)
 
 
+class TestACallsignNobodyAnswersTo(unittest.TestCase):
+    """He is corrected, and it is not conditional on our ignorance.
+
+        "if a pilot says 'falcon 1-1, approach' and there is no falcon 1-1 ...
+         atc should say - falcon 1-1 I dont have you on the board or similar --
+         even if he KNOWS it's sockeye. Sockeye screwed up by using Falcon1-1 on
+         the radio and needs to be corrected."
+
+    Two states that used to be one. The radio says this is Sockeye and nothing
+    about that is in doubt; what is wrong is the name he put on the air.
+    Absorbing it silently teaches him it works -- untidy with one pilot up, and
+    with four it is how a clearance gets read back by the wrong man, because
+    everybody on the frequency heard a callsign belonging to nobody and each of
+    them had to guess who it meant.
+    """
+
+    def setUp(self):
+        from marshall.atc import controller as atc
+        from marshall.core import route as R
+        self.b = agent_atc.Bridge()
+        self.ctl = atc.Controller(R.BATUMI_ASR)
+
+    def said(self, claim, known="sockeye", who="sockeye"):
+        return agent_atc.misnamed(self.b, self.ctl, claim, known, who)
+
+    def test_a_name_nobody_answers_to_is_corrected(self):
+        got = self.said("Falcon 1-1")
+        self.assertIn("Falcon one one", got)
+        self.assertIn("do not have you on the board", got)
+
+    def test_it_tells_him_what_to_use_instead(self):
+        """A correction he cannot act on is just a complaint."""
+        self.assertIn("Sockeye", self.said("Falcon 1-1"))
+
+    def test_his_own_handle_is_not_corrected(self):
+        self.assertEqual(self.said("Sockeye"), "")
+
+    def test_a_position_name_is_corrected_like_any_other_invention(self):
+        """"Pony 1-1" is a slot in a formation and eye candy for pilot-to-pilot
+        chat. It names nobody the controller is working."""
+        self.assertIn("do not have you", self.said("Pony 1-1"))
+
+    def test_a_flight_name_is_fine_ONCE_THE_FLIGHT_EXISTS(self):
+        self.assertIn("do not have you", self.said("Apex", known="sockeye"))
+        self.b.flights.create("Apex", "sockeye")
+        self.assertEqual(self.said("Apex", known="Apex"), "")
+
+    def test_a_member_designation_is_still_corrected(self):
+        self.b.flights.create("Apex", "sockeye")
+        self.assertIn("Apex one two", self.said("Apex 1-2", known="Apex"))
+
+    def test_addressing_somebody_actually_on_the_board_is_not_a_correction(self):
+        """Calling another pilot by name is ordinary radio, not a claim about
+        who you are."""
+        self.ctl.check_in("Andre", 1)
+        self.assertEqual(self.said("Andre"), "")
+
+    def test_saying_nothing_is_not_a_correction(self):
+        self.assertEqual(self.said(""), "")
+
+    def test_with_no_name_for_him_it_only_asks(self):
+        """Nothing to offer him, so it does not invent one."""
+        got = self.said("Falcon 1-1", known="", who="")
+        self.assertIn("Say your callsign", got)
+        self.assertNotIn("use that callsign", got)
+
+
 class TestRoster(unittest.TestCase):
     """The SRS name lookup, which is the free identity anchor on every packet."""
 
