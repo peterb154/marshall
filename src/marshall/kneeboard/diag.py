@@ -382,6 +382,17 @@ function board(d) {
     }).join('') + '</table></div>';
 }
 
+// "bullseye 185 for 35 (blue)" -- said the way it is said on the radio, bearing
+// first. An em dash when the sim has given us no bullseye or the contact has no
+// position: absent, never a plausible wrong number.
+function bulls(u) {
+  const b = u.bulls || {};
+  if (b.range_nm === undefined || b.range_nm === null) return '&mdash;';
+  const pad = String(Math.round(b.radial)).padStart(3, '0');
+  return `${pad}&deg; / ${b.range_nm.toFixed(1)} nm`
+    + (b.ref ? ` <span class="dim">${esc(b.ref)}</span>` : '');
+}
+
 function untracked(d) {
   // Radar sees it, nobody is working it. Together with the board this is a
   // complete account of what is on the scope -- every contact is in exactly
@@ -394,15 +405,21 @@ function untracked(d) {
     return '<p class="empty">every contact is on the board</p>';
   let out = '';
   if (loose.length) {
+    // FROM BULLSEYE, not from this controller's threshold. Nobody on this board
+    // is working these aircraft, so a range off one field's beacon says nothing
+    // -- and bullseye is the point everyone on the map shares, which is what the
+    // pilot's own HSI is referenced to. The bridge computes it against the
+    // contact's OWN coalition and names which one in `bulls.ref`; this prints
+    // what it was handed and knows nothing about coalitions or great circles.
     out += '<div class="scroll"><table>'
       + '<tr><th>contact</th><th>type</th><th>hdg</th><th>alt</th><th>gs</th>'
-      + '<th>range</th><th></th></tr>'
+      + '<th>from bullseye</th><th></th></tr>'
       + loose.map(u => `<tr><td class="${u.level || ''}">${esc(u.callsign || u.name)}</td>`
         + `<td class="dim">${esc(u.type || '')}</td>`
         + `<td class="dim">${num(u.heading, 0, '&deg;')}</td>`
         + `<td class="dim">${num(u.alt_ft, 0, ' ft')}</td>`
         + `<td class="dim">${num(u.speed_kt, 0, ' kt')}</td>`
-        + `<td class="dim">${num(u.range_nm, 1, ' nm')}</td>`
+        + `<td class="dim">${bulls(u)}</td>`
         + `<td>${(u.tags || []).map(t => '<span class="pill">' + esc(t)
              + '</span>').join(' ')}</td></tr>`).join('') + '</table></div>';
   }

@@ -196,5 +196,66 @@ class TestTheProseStillWorks(unittest.TestCase):
         self.assertAlmostEqual(fix.range_nm, 8.0, places=1)
 
 
+class TestBullseyeIsForTheUnworkedContacts(unittest.TestCase):
+    """"update the UNTRACKED page to show aircraft relative to bulls"
+
+    And it is the right reference for that table specifically. An untracked
+    contact is one NOBODY on the board is working, so quoting him off one
+    controller's threshold says nothing useful -- while the bullseye is the point
+    everyone on the map shares, and is what his own HSI is referenced to.
+
+    Computed in the bridge. The page is not allowed to know what a bullseye is,
+    which coalition owns which one, or how to walk a great circle.
+    """
+
+    BULLS = {"blue": {"lat": 42.186548, "lon": 41.678934},
+             "red": {"lat": 45.083307, "lon": 38.987465}}
+
+    def scope(self, *cs):
+        return A.Scope("", contacts=list(cs), origin=BATUMI, bullseye=self.BULLS)
+
+    def test_a_blue_contact_is_referenced_to_the_blue_bullseye(self):
+        blue = dict(contact("Viper", 41.60, 41.60), coalition=3)
+        got = A._from_bullseye(self.scope(blue), "Viper")
+        self.assertEqual(got["ref"], "blue")
+        # ~35 nm roughly south of it.
+        self.assertAlmostEqual(got["range_nm"], 35.2, delta=1.0)
+        self.assertAlmostEqual(got["radial"], 185, delta=5)
+
+    def test_a_red_contact_gets_the_RED_bullseye(self):
+        """His own, not ours. A red contact referenced to the blue bullseye is a
+        number nobody in that aeroplane could confirm, and an unlabelled mixture
+        of two origins in one table is the confusion this was all about."""
+        red = dict(contact("Armour", 41.60, 41.60), coalition=2)
+        got = A._from_bullseye(self.scope(red), "Armour")
+        self.assertEqual(got["ref"], "red")
+        blue = A._from_bullseye(
+            self.scope(dict(contact("V", 41.60, 41.60), coalition=3)), "V")
+        self.assertNotAlmostEqual(got["range_nm"], blue["range_nm"], places=0)
+
+    def test_the_reference_is_named_so_the_page_can_print_it(self):
+        blue = dict(contact("Viper", 41.60, 41.60), coalition=3)
+        self.assertIn("ref", A._from_bullseye(self.scope(blue), "Viper"))
+
+    def test_no_bullseye_means_no_number_rather_than_a_wrong_one(self):
+        c = dict(contact("Viper", 41.60, 41.60), coalition=3)
+        s = A.Scope("", contacts=[c], origin=BATUMI, bullseye={})
+        self.assertEqual(A._from_bullseye(s, "Viper"), {})
+
+    def test_a_neutral_contact_has_no_bullseye_of_its_own(self):
+        c = dict(contact("Airliner", 41.60, 41.60), coalition=1)
+        self.assertEqual(A._from_bullseye(self.scope(c), "Airliner"), {})
+
+    def test_it_is_independent_of_which_field_is_working(self):
+        """The whole point of a shared reference: Batumi and Senaki quote the
+        same contact identically, which they cannot do off their own beacons."""
+        c = dict(contact("Viper", 41.60, 41.60), coalition=3)
+        here = A.Scope("", contacts=[c], origin=BATUMI, bullseye=self.BULLS)
+        there = A.Scope("", contacts=[c], origin=(42.05, 42.05),
+                        bullseye=self.BULLS)
+        self.assertEqual(A._from_bullseye(here, "Viper"),
+                         A._from_bullseye(there, "Viper"))
+
+
 if __name__ == "__main__":
     unittest.main()

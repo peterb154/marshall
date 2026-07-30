@@ -3068,7 +3068,47 @@ def _contact(u, scope: str, board_tracks: set) -> dict:
         "alt_ft": getattr(fix, "alt_ft", None),
         "heading": getattr(fix, "heading_deg", None),
         "speed_kt": getattr(fix, "speed_kt", None),
+        # AND FROM BULLSEYE.
+        #
+        #     "update the UNTRACKED page to show aircraft relative to bulls"
+        #
+        # Right, and it is the correct reference for exactly this table: an
+        # untracked contact is one NOBODY on this board is working, so quoting
+        # him relative to one controller's threshold says nothing useful. The
+        # bullseye is the point everyone on the map shares -- it is what the
+        # pilot's own HSI is referenced to, so it is also what he would say if
+        # you asked him where he was.
+        #
+        # Computed here, never in the page. The page is not allowed to know
+        # what a bullseye is, which coalition owns which one, or how to walk a
+        # great circle. Same rule that took the ghost check out of it.
+        "bulls": _from_bullseye(scope, u.name),
     }
+
+
+def _from_bullseye(scope, track: str) -> dict:
+    """Range and bearing from the bullseye the CONTACT'S OWN coalition uses.
+
+    His own, not ours, and the reference is named in the result so the page can
+    print it. Referencing a red contact to the blue bullseye would produce a
+    number no pilot in it could confirm, and an unlabelled mixture of two
+    origins in one table is precisely the confusion this whole day was spent
+    removing.
+
+    Empty when the sim has not given us a bullseye or the contact has no
+    position -- absent, rather than a plausible wrong number.
+    """
+    c = scope.of(track) if hasattr(scope, "of") else None
+    if not c or c.get("lat") is None:
+        return {}
+    # DCS: 2 is red, 3 is blue (`common_pb2.COALITION_*`). Neutral and "all"
+    # have no bullseye of their own.
+    ref = {2: "red", 3: "blue"}.get(c.get("coalition"))
+    b = (getattr(scope, "bullseye", None) or {}).get(ref or "")
+    if not b:
+        return {}
+    nm, radial = _range_radial((b["lat"], b["lon"]), c["lat"], c["lon"])
+    return {"ref": ref, "range_nm": round(nm, 1), "radial": round(radial)}
 
 
 def _plan_row(plan: dict, flying_it: str, on_board: dict, track_of: dict,
