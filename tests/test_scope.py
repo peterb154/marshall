@@ -257,5 +257,73 @@ class TestBullseyeIsForTheUnworkedContacts(unittest.TestCase):
                          A._from_bullseye(there, "Viper"))
 
 
+class TestTheLabelIsNotTheUnitName(unittest.TestCase):
+    """A REGRESSION, caught in the cockpit on 30 July and not by this file.
+
+        "on the UNTRACKED board it's showing me as CONTACT Viper 1-4, not
+         362nd Sockeye"
+
+    The sim calls his slot "Viper 1-4"; the picture calls him "362nd_sockeye".
+    Two strings for one aeroplane, and `Unit.name` has always meant the SECOND
+    one, because the prose printed the label and every parser read it back.
+    Feeding the structured migration `contacts[].name` instead looked like a
+    cosmetic slip on a diagnostics table and was not:
+
+        unit_for_radio("Sockeye") -> None
+
+    -- the physical chain, which is the strongest evidence in the system and the
+    one thing a garbled callsign cannot touch, simply stopped matching. The pilot
+    was still identified, by ELIMINATION, which works when exactly one man is
+    flying and fails the moment a second joins. He was being called "viper".
+
+    THE TESTS DID NOT CATCH IT because every fixture in this file was written
+    with `label` equal to `name`, so the two could not be told apart. That is
+    the actual defect in the suite, and these use the real pair.
+    """
+
+    REAL = {"name": "Viper 1-4", "label": "362nd_sockeye", "callsign": "",
+            "type": "F-16C_50", "category": "airplane", "manned": True,
+            "player": "362nd_sockeye", "on_ground": False,
+            "lat": 41.60646, "lon": 41.60827, "alt_ft": 39.0,
+            "heading": 215.3, "speed_kt": 0.0, "coalition": 3,
+            "formation": ""}
+
+    def setUp(self):
+        self.scope = A.Scope("", contacts=[self.REAL], origin=BATUMI,
+                             bullseye={"blue": {"lat": 42.186548,
+                                                "lon": 41.678934}})
+
+    def test_the_unit_is_named_the_way_the_picture_names_him(self):
+        u = identity.units_on(self.scope)[0]
+        self.assertEqual(u.name, "362nd_sockeye")
+        self.assertNotEqual(u.name, "Viper 1-4")
+
+    def test_the_radio_still_finds_its_aeroplane(self):
+        """The one that mattered. SRS names a client after the human, DCS names
+        the unit after the slot he took, and one contains the other -- but only
+        if you compare against the right one."""
+        got = identity.unit_for_radio("Sockeye", identity.units_on(self.scope))
+        self.assertIsNotNone(got, "the physical chain is severed")
+        self.assertEqual(got.name, "362nd_sockeye")
+
+    def test_he_is_called_by_his_handle_and_not_by_his_airframe(self):
+        reg = identity.Registry()
+        got = reg.resolve("g", "362nd_sockeye", spoken="Pony 1-1",
+                          scope=self.scope)
+        self.assertEqual(got.callsign, "sockeye")
+        self.assertNotEqual(got.callsign, "viper")
+
+    def test_geometry_answers_to_either_string(self):
+        """Callers hold one or the other depending on how far up they sit, and
+        neither should have to know which."""
+        for key in ("362nd_sockeye", "Viper 1-4"):
+            with self.subTest(key=key):
+                self.assertIsNotNone(A.radar_fix_by_track(self.scope, key))
+                self.assertIsNotNone(self.scope.of(key))
+
+    def test_the_bullseye_line_answers_to_the_label(self):
+        self.assertIn("ref", A._from_bullseye(self.scope, "362nd_sockeye"))
+
+
 if __name__ == "__main__":
     unittest.main()

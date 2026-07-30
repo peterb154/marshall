@@ -201,7 +201,20 @@ def units_on(scope: str) -> list[Unit]:
     # layering and must not reach up to it for a type.
     got = getattr(scope, "contacts", None)
     if got:
-        return [Unit(c.get("name", ""), c.get("callsign", "") or "",
+        # THE LABEL, NOT THE SIM'S UNIT NAME, and the distinction is the whole
+        # identity chain. The prose printed the LABEL -- "362nd_sockeye" -- so
+        # `Unit.name` has always meant the scope label, and everything built on
+        # it means that too: `unit_for_radio` matches an SRS client name against
+        # it, `handle` takes the human out of it, `_track_of` compares handles.
+        #
+        # Reading `name` instead fed it "Viper 1-4", the sim's slot name. The
+        # symptom was cosmetic -- the board said CONTACT Viper 1-4 -- and the
+        # damage was not: `unit_for_radio("Sockeye")` returned None, so the
+        # strongest link in the system was severed and the pilot was identified
+        # only by ELIMINATION, which works with one man up and fails with two.
+        # He was being called "viper".
+        return [Unit(c.get("label") or c.get("name", ""),
+                     c.get("callsign", "") or "",
                      c.get("type", "") or "", bool(c.get("manned")),
                      bool(c.get("on_ground")),
                      "" if c.get("category") in ("airplane", "helicopter")

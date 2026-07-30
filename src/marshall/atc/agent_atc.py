@@ -2707,10 +2707,20 @@ class Scope(str):
         return self
 
     def of(self, track: str):
-        """The contact for a sim unit name, or None. The join everything wants."""
+        """The contact for a track, or None. The join everything wants.
+
+        BY LABEL FIRST, because "track" in this process means the SCOPE LABEL --
+        what the picture prints and what identity resolves a radio to. The sim's
+        own unit name is checked second so a caller holding either one finds
+        him; they are usually different strings ("362nd_sockeye" against
+        "Viper 1-4") and confusing them severs the identity chain.
+        """
         want = _key_name(track or "")
         if not want:
             return None
+        for c in self.contacts:
+            if _key_name(c.get("label", "")) == want:
+                return c
         for c in self.contacts:
             if _key_name(c.get("name", "")) == want:
                 return c
