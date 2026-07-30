@@ -224,10 +224,21 @@ def radar_endpoint(session_id: str = "") -> dict:
     consumer has to go and find it separately -- that is how Batumi's ARP ended
     up as a module constant in the first place.
     """
+    from tools.dcs import contacts_live
     from tools.tracks import bullseyes, contacts
     binds = bindings_for(session_id) if session_id else None
+    # THE CACHE FIRST, THE LIVE SCAN BEHIND IT -- the same order `radar_picture`
+    # uses, so the prose and the data can never come from different sources and
+    # disagree. `contacts` returns None (not []) when the cache cannot be read,
+    # which is what distinguishes "cold cache" from "empty sky".
+    got = contacts(binds)
+    if got is None:
+        try:
+            got = contacts_live(binds)
+        except Exception:
+            got = []
     return {"picture": radar_picture(binds),
-            "contacts": contacts(binds) or [],
+            "contacts": got,
             "bullseye": bullseyes()}
 
 

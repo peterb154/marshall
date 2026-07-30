@@ -161,6 +161,40 @@ def radar_live(bindings: dict | None = None) -> list[str]:
     return lines
 
 
+def contacts_live(bindings: dict | None = None) -> list[dict]:
+    """The same scan as `radar_live`, as data.
+
+    THE LAST PLACE PROSE WAS THE ONLY SOURCE. `contacts()` reads the PostGIS
+    cache; when that cache is cold `radar_picture` falls back to this gRPC scan
+    and used to return a STRING and nothing else -- so the one moment the
+    consumers were forced back onto their regexes was a moment they were also
+    getting a degraded picture. Now the fallback degrades in the data too, which
+    is honest and parseable.
+
+    DEGRADED, and the caller can see how: a live scan knows position, type and
+    player, and does NOT know the sim's ground/landed events, group category, or
+    who is flying formation on whom. Those come out empty rather than guessed --
+    an aeroplane wrongly marked as not-in-formation is a controller told four
+    contacts exist where there is one.
+    """
+    bindings = bindings or {}
+    out: list[dict] = []
+    with _channel() as ch:
+        for u in _scan_air(ch).values():
+            who = u.player_name or u.callsign or u.name
+            out.append({
+                "name": u.name, "label": who,
+                "callsign": bindings.get(who, ""),
+                "type": u.type, "category": "", "manned": bool(u.player_name),
+                "player": u.player_name or "", "on_ground": False,
+                "lat": u.position.lat, "lon": u.position.lon,
+                "alt_ft": u.position.alt * _M_TO_FT,
+                "heading": u.orientation.heading, "speed_kt": 0.0,
+                "coalition": getattr(u, "coalition", 0), "formation": "",
+            })
+    return out
+
+
 def radar_picture(bindings: dict | None = None) -> str:
     """The scope, one line per contact: range and radial off Batumi, altitude, and
     heading, tagged with any radar-identified callsign. Reads the warm PostGIS
