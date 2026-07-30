@@ -231,7 +231,7 @@ class TestComposeMessageDirectly(unittest.TestCase):
                     directive="", stack="", vectoring="", _flight={},
                     _flight_say="")
         args.update(over)
-        return A.compose_message(A.Bridge(), **args)
+        return A.compose_message(A.Bridge(), **args)[0]
 
     def test_the_pilots_words_are_last(self):
         """[CTX-1] strips everything BEFORE the PILOT: marker out of the

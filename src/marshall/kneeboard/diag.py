@@ -98,53 +98,31 @@ def _key(s: str) -> str:
     return "".join(c for c in (s or "").lower() if c.isalnum())
 
 
-def _on_scope(callsign: str, units, labels: set[str]) -> bool:
-    """Is this BOARD entry something radar can actually see?
+PUBLISHED = config.BUILD_DIR / "control" / "state.json"
 
-    THE CONVERSION IS THE WHOLE FUNCTION. A board key is a spoken callsign, a
-    handle or a flight name; a scope line prints a unit name and, once something
-    has correlated it, a bracketed label. `release_stale` compared the two
-    directly and the test could never match -- so the entry it existed to remove
-    was immortal, which is finding 1.1 of the 29 July audit.
+# How stale the bridge's snapshot may be before the page stops believing it.
+# It publishes on every transmission, so on a quiet frequency this will be
+# minutes old and that is not an error -- it is reported, not hidden.
+def published(max_age: float = 3600.0) -> dict:
+    """What the BRIDGE says it believes. The page renders this; it derives
+    nothing from it.
 
-    Four ways an entry is accounted for, any one of which is enough: the label
-    radar is printing, the unit name, the HANDLE of the unit name (`362nd_sockeye`
-    is `sockeye`), or the callsign already bound to the line.
+    THE DASHBOARD USED TO WORK ALL THIS OUT ITSELF -- replaying the roster from
+    recorder events, deciding ghost status by matching a spoken label against a
+    printed radar name, and re-parsing the scope prose a third time. All three
+    were a surface acting as an authority it is not, and the ghost check was
+    wrong in precisely the way audit finding 1.1 was wrong.
+
+    The bridge knows, because it is the thing that decided. See
+    `agent_atc.publish_state`.
     """
-    from marshall.atc import identity
-    k = _key(callsign)
-    if not k:
-        return False
-    if k in labels:
-        return True
-    for u in units:
-        if k in (_key(u.name), _key(identity.handle(u.name)), _key(u.callsign)):
-            return True
-    return False
-
-
-def _flights_from(events: list[dict]) -> list[dict]:
-    """Replay the roster verdicts into the roster they describe."""
-    flights: dict[str, dict] = {}
-    for e in events:
-        kind, name, who = e.get("kind", ""), e.get("callsign", ""), e.get("who", "")
-        if kind == "flight/created":
-            flights[name] = {"name": name, "lead": who, "members": [],
-                             "since": e.get("t", 0)}
-        elif kind == "flight/joined" and name in flights:
-            m = flights[name]["members"]
-            if who and who not in m and who != flights[name]["lead"]:
-                m.append(who)
-            flights[name]["miles"] = e.get("miles")
-        elif kind in ("flight/left", "flight/dissolved"):
-            f = flights.get(name)
-            if not f:
-                continue
-            if kind == "flight/dissolved" or f["lead"] == who:
-                flights.pop(name, None)
-            elif who in f["members"]:
-                f["members"].remove(who)
-    return sorted(flights.values(), key=lambda f: f["name"])
+    try:
+        raw = json.loads(PUBLISHED.read_text())
+    except (OSError, ValueError):
+        return {}
+    age = time.time() - float(raw.get("at") or 0)
+    raw["age"] = round(age, 1)
+    return raw
 
 
 # The transmission-level events that belong to the call before them, in the
@@ -156,81 +134,82 @@ _TRAIL = ("dropped", "ship-to-ship", "atc/challenge", "flight/created",
 
 
 def state(session: str = "", scope: str | None = None) -> dict:
-    """Everything the page draws, as one JSON-able dict."""
-    from marshall.atc import identity
+    """Everything the page draws. Read, not derived.
 
+    The recorder still supplies the CONVERSATION -- what was heard and what was
+    said, which is a history and belongs in a log. Everything about what the
+    system currently BELIEVES comes from the bridge's own snapshot.
+    """
     session = session or newest_session()
     events = _events(session) if session else []
-    scope = radar() if scope is None else scope
-    units = identity.units_on(scope)
-    labels = {_key(u.callsign) for u in units if u.callsign}
     now = time.time()
+    live = published()
 
-    # WHO -- the latest resolution per radio, newest first.
-    radios: dict[str, dict] = {}
+    # WHO IS TALKING, from the registry that resolved them -- not from the
+    # recorder, and not by matching names here.
+    radios = []
+    for r in live.get("radios", []):
+        radios.append({"radio": r.get("guid", ""), "is": r.get("callsign", ""),
+                       "authority": r.get("authority", ""),
+                       "track": r.get("track", ""), "why": r.get("why", ""),
+                       "heard": "", "ago": live.get("age")})
+    # The words each radio last used, which only the recorder has.
     for e in events:
         if e.get("kind") != "pilot":
             continue
-        radios[e.get("srs_name") or "?"] = {
-            "radio": e.get("srs_name") or "?",
-            "heard": e.get("claimed") or "",
-            "is": e.get("callsign") or "",
-            "authority": e.get("authority") or "",
-            "track": e.get("track") or "",
-            "why": e.get("why") or "",
-            "ago": round(now - e.get("t", now), 1),
-        }
+        for r in radios:
+            if r["is"] and r["is"] == e.get("callsign"):
+                r["heard"] = e.get("claimed") or ""
+                r["ago"] = round(now - e.get("t", now), 1)
 
-    # BOARD -- the engine's own account, already structured. Newest wins.
-    board = []
-    for e in events:
-        if e.get("kind") == "board" and isinstance(e.get("board"), list):
-            board = e["board"]
-    for row in board:
-        row["on_scope"] = _on_scope(row.get("callsign", ""), units, labels)
-
-    # LAST -- one transmission, from the words to what was said.
-    last: dict = {}
-    idx = max((i for i, e in enumerate(events) if e.get("kind") == "pilot"),
-              default=-1)
-    if idx >= 0:
-        p = events[idx]
-        last = {
-            "heard": p.get("transcript") or "",
-            "who": p.get("callsign") or "",
-            "authority": p.get("authority") or "",
-            "track": p.get("track") or "",
-            "why": p.get("why") or "",
-            "freq": p.get("freq_mhz"),
-            "ago": round(now - p.get("t", now), 1),
-            "trail": [],
-        }
-        for e in events[idx + 1:]:
-            if e.get("kind") == "pilot":
-                break
-            if e.get("kind") in _TRAIL and e.get("kind") != "board":
-                last["trail"].append({
-                    "kind": e.get("kind"),
-                    "text": (e.get("text") or "")[:400],
-                    "seconds": e.get("seconds"),
-                    "tier": e.get("tier"),
-                    "gate": e.get("gate"),
-                })
-
+    last = _last_turn(events, now)
+    board = live.get("board", [])
     return {
         "session": session,
         "at": now,
         "recorder_age": round(now - max((e.get("t", 0) for e in events),
                                         default=now), 1) if events else None,
-        "radar_ok": bool(scope),
-        "radios": sorted(radios.values(), key=lambda r: r["ago"]),
+        "bridge_age": live.get("age"),
+        "radar_ok": bool(live.get("scope")),
+        "radios": radios,
         "board": board,
-        "scope": [{"name": u.name, "callsign": u.callsign, "type": u.type,
-                   "manned": u.manned, "on_ground": u.on_ground} for u in units],
-        "ghosts": [r["callsign"] for r in board if not r["on_scope"]],
-        "flights": _flights_from(events),
+        "scope": live.get("scope", []),
+        # Three answers, and the bridge decided all three. UNSEEN is the only
+        # one that means what "ghost" used to.
+        "ghosts": [r["callsign"] for r in board if r.get("confirmed") == "unseen"],
+        "unconfirmed": [r["callsign"] for r in board
+                        if r.get("confirmed") == "claimed"],
+        "flights": live.get("flights", []),
+        # What the controller was handed, block by block. Behaviour
+        # follows from this and nothing else.
+        "handed": live.get("handed", []),
+        # The MEANING of the values, from the thing that defines them.
+        "legend": live.get("legend", {}),
         "last": last,
     }
+
+
+def _last_turn(events: list, now: float) -> dict:
+    """One transmission, from the words to what was said. The recorder owns
+    this -- it is a history, not a belief."""
+    idx = max((i for i, e in enumerate(events) if e.get("kind") == "pilot"),
+              default=-1)
+    if idx < 0:
+        return {}
+    p = events[idx]
+    last = {"heard": p.get("transcript") or "", "who": p.get("callsign") or "",
+            "authority": p.get("authority") or "", "track": p.get("track") or "",
+            "why": p.get("why") or "", "freq": p.get("freq_mhz"),
+            "ago": round(now - p.get("t", now), 1), "trail": []}
+    for e in events[idx + 1:]:
+        if e.get("kind") == "pilot":
+            break
+        if e.get("kind") in _TRAIL and e.get("kind") != "board":
+            last["trail"].append({"kind": e.get("kind"),
+                                  "text": (e.get("text") or "")[:400],
+                                  "seconds": e.get("seconds"),
+                                  "tier": e.get("tier"), "gate": e.get("gate")})
+    return last
 
 
 def page() -> str:
@@ -285,6 +264,15 @@ _PAGE = """<!doctype html><html><head><meta charset="utf-8">
   .trail .k{color:var(--dim);font-size:.7rem;letter-spacing:.09em;
     text-transform:uppercase;padding-top:.15rem}
   .heard{color:var(--accent)}
+  section.wide{border-top:1px solid var(--rule)}
+  h2 .hint{text-transform:none;letter-spacing:0;font-weight:400;color:var(--dim)}
+  .blocks{display:grid;gap:1px;background:var(--rule);font-size:.8rem}
+  .blk{background:var(--bg);padding:.4rem .6rem;display:grid;
+    grid-template-columns:7.5rem 1fr;gap:.7rem}
+  .blk .n{color:var(--dim);font-size:.68rem;letter-spacing:.1em;
+    text-transform:uppercase;padding-top:.15rem}
+  .blk .v{white-space:pre-wrap;word-break:break-word}
+  .blk .v.long{max-height:7rem;overflow:auto}
   #stale{background:var(--warn);color:#0A0C0E;padding:.45rem 1rem;
     font-size:.8rem;letter-spacing:.04em}
   #control{display:flex;align-items:center;gap:.55rem;flex-wrap:wrap;
@@ -306,7 +294,7 @@ _PAGE = """<!doctype html><html><head><meta charset="utf-8">
   <b>MARSHALL DIAG</b>
   <span class="stat">session <i id="sess">-</i></span>
   <span class="stat">recorder <i id="age">-</i></span>
-  <span class="stat">radar <i id="radar">-</i></span>
+  <span class="stat">contacts <i id="contacts">-</i></span>
   <span class="stat" id="verdict"></span>
 </header>
 <div id="control">
@@ -326,24 +314,32 @@ _PAGE = """<!doctype html><html><head><meta charset="utf-8">
   <section><h2>On the frequency</h2><div id="who"></div></section>
   <section><h2>Phase</h2><div id="flights"></div></section>
 </div>
+<section class="wide"><h2>What the controller was handed
+  <span class="hint">&mdash; behaviour follows from this and nothing else</span></h2>
+  <div id="handed"></div></section>
 <script>
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>]/g,
   c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
-const AUTH = { radar: 'ok', plan: 'warn', roster: 'warn', '': 'bad' };
+// THE PAGE KNOWS NOTHING. No player names, no phases, no frequencies, no
+// notion that `radar` outranks `plan`. Every meaning arrives in `legend`,
+// published by the thing that defines the words. All this file knows is how to
+// colour ok / warn / bad and how to lay out a table.
+let LEGEND = {};
+const lvl = (group, key) => (LEGEND[group] || {})[key] || '';
 
 function who(rs) {
   if (!rs.length) return '<p class="empty">no transmissions recorded yet</p>';
   return '<table><tr><th>radio</th><th>heard</th><th>is</th><th>auth</th>'
     + '<th>track</th><th>ago</th></tr>' + rs.map(r => {
-      const cls = AUTH[r.authority] !== undefined ? AUTH[r.authority] : 'warn';
+      const cls = lvl('authority', r.authority);
       return `<tr><td>${esc(r.radio)}</td>`
         + `<td class="dim">${esc(r.heard) || '&mdash;'}</td>`
         + `<td class="acc">${esc(r.is) || '&mdash;'}</td>`
         + `<td class="${cls}"><span class="pill">${esc(r.authority) || 'none'}</span></td>`
         + `<td class="dim">${esc(r.track) || '&mdash;'}</td>`
         + `<td class="dim">${r.ago}s</td></tr>`
-        + (r.authority !== 'radar' && r.why
+        + (cls !== 'ok' && r.why
             ? `<tr><td></td><td colspan="5" class="dim">${esc(r.why)}</td></tr>` : '');
     }).join('') + '</table>';
 }
@@ -355,56 +351,50 @@ function board(d) {
   let out = '<table><tr><th>engine believes</th><th>phase</th><th>radar shows</th></tr>';
   for (let i = 0; i < rows; i++) {
     const e = b[i], u = s[i];
-    const ghost = e && !e.on_scope;
+    const cls = e ? lvl('confirmed', e.confirmed) : '';
+    const ghost = cls === 'bad';
     out += `<tr class="${ghost ? 'ghost' : ''}">`
-      + `<td class="${ghost ? 'bad' : ''}">${e ? esc(e.callsign) : ''}`
-      + `${ghost ? ' <span class="pill">not on radar</span>' : ''}</td>`
+      + `<td class="${cls}">${e ? esc(e.callsign) : ''}`
+      + `${e && cls !== 'ok' ? ' <span class="pill">' + esc(e.confirmed) + '</span>' : ''}</td>`
       + `<td class="dim">${e ? esc(e.phase) + (e.assigned_ft ? ' ' + e.assigned_ft + 'ft' : '')
           + (e.in_letdown ? ' <span class="pill warn">letdown</span>' : '') : ''}</td>`
       + `<td class="dim">${u ? esc(u.callsign || u.name)
-          + (u.manned ? ' <span class="pill ok">manned</span>' : '')
-          + (u.on_ground ? ' <span class="pill">ground</span>' : '') : ''}</td></tr>`;
+          + (u.tags || []).map(t => ' <span class="pill">' + esc(t) + '</span>').join('')
+          : ''}</td></tr>`;
   }
   return out + '</table>';
 }
 
 function last(l) {
   if (!l || !l.heard) return '<p class="empty">nothing heard yet</p>';
-  const auth = AUTH[l.authority] !== undefined ? AUTH[l.authority] : 'warn';
+  const auth = lvl('authority', l.authority);
   let out = '<ul class="trail">'
     + `<li><span class="k">heard</span><span class="heard">${esc(l.heard)}</span></li>`
     + `<li><span class="k">who</span><span>${esc(l.who) || '<i class="dim">unidentified</i>'}`
     + ` <span class="pill ${auth}">${esc(l.authority) || 'none'}</span>`
     + `<span class="dim"> ${esc(l.track)}</span></span></li>`;
-  // THE PIPELINE, not the gates. Four of the five gates were deleted on 30
-  // July -- ATC answers everything now -- so "which gate ate it" is no longer
-  // the question. The question is which STAGE last touched the turn:
-  // hear, attribute, membership, decide, settle, compose, speak.
-  const STAGE = {
-    'dropped':        ['admit',    'bad'],
-    'ship-to-ship':   ['admit',    'bad'],
-    'atc/challenge':  ['admit',    'warn'],
-    'flight/created': ['membership','ok'],
-    'flight/joined':  ['membership','ok'],
-    'flight/refused': ['membership','warn'],
-    'flight/left':    ['membership','ok'],
-    'flight/dissolved':['membership','warn'],
-    'controller':     ['decide',   'ok'],
-    'asr':            ['decide',   'ok'],
-    'atc/pilot':      ['speak',    ''],
-    'atc/simple':     ['speak',    ''],
-    'atc/vector':     ['speak',    ''],
-    'atc/range':      ['speak',    ''],
-    'atc/landed':     ['speak',    ''],
-  };
   (l.trail || []).forEach(t => {
-    const [stage, cls] = STAGE[t.kind] || [t.kind.replace('atc/', ''), ''];
-    out += `<li><span class="k">${esc(stage)}</span>`
-      + `<span class="${cls}">${esc(t.gate || t.text)}`
+    const meta = (LEGEND.kind || {})[t.kind] || {};
+    out += `<li><span class="k">${esc(meta.stage || t.kind)}</span>`
+      + `<span class="${meta.level || ''}">${esc(t.gate || t.text)}`
       + (t.seconds ? `<span class="dim"> ${t.seconds}s ${esc(t.tier || '')}</span>` : '')
       + '</span></li>';
   });
   return out + `</ul><p class="empty">${l.ago}s ago on ${l.freq || '?'}</p>`;
+}
+
+function handed(blocks) {
+  if (!blocks || !blocks.length)
+    return '<p class="empty">nothing sent yet this session</p>';
+  // The block's own first word is its name -- the bridge wrote it, the page
+  // does not know what the names mean or which ones matter.
+  return '<div class="blocks">' + blocks.map(b => {
+    const cut = b.indexOf(':');
+    const name = cut > 0 && cut < 40 ? b.slice(0, cut) : '';
+    const body = cut > 0 && cut < 40 ? b.slice(cut + 1).trim() : b;
+    return `<div class="blk"><span class="n">${esc(name.split('(')[0].trim())}</span>`
+      + `<span class="v${body.length > 400 ? ' long' : ''}">${esc(body)}</span></div>`;
+  }).join('') + '</div>';
 }
 
 function flights(d) {
@@ -422,7 +412,7 @@ function flights(d) {
     ? '<table><tr><th>callsign</th><th>phase</th><th>assigned</th><th>id</th></tr>'
       + b.map(r => `<tr><td>${esc(r.callsign)}</td><td class="dim">${esc(r.phase)}</td>`
         + `<td class="dim">${r.assigned_ft ? r.assigned_ft + ' ft' : '&mdash;'}</td>`
-        + `<td class="${r.identified ? 'ok' : 'dim'}">${r.identified ? 'radar' : '&mdash;'}</td></tr>`
+        + `<td class="${lvl('confirmed', r.confirmed)}">${esc(r.confirmed || '')}</td></tr>`
         ).join('') + '</table>'
     : '<p class="empty">nobody on the board</p>';
   return out;
@@ -431,11 +421,12 @@ function flights(d) {
 async function tick() {
   try {
     const d = await (await fetch('/diag.json', {cache: 'no-store'})).json();
+    LEGEND = d.legend || {};
     $('sess').textContent = d.session || 'none';
     $('age').textContent = d.recorder_age == null ? 'no file' : d.recorder_age + 's';
     $('age').className = (d.recorder_age != null && d.recorder_age > 120) ? 'warn' : '';
-    $('radar').textContent = d.radar_ok ? 'up' : 'no contacts';
-    $('radar').className = d.radar_ok ? 'ok' : 'warn';
+    $('contacts').textContent = (d.scope || []).length;
+    $('contacts').className = (d.scope || []).length ? 'ok' : 'warn';
     // HISTORY MUST NOT READ AS STATE. With the bridge stopped the recorder
     // stops moving and the last board sits there looking live -- which would
     // have the page confidently reporting ghosts from a sortie that ended
@@ -461,6 +452,7 @@ async function tick() {
     $('board').innerHTML = board(d);
     $('last').innerHTML = last(d.last);
     $('flights').innerHTML = flights(d);
+    $('handed').innerHTML = handed(d.handed);
   } catch (e) {
     $('verdict').innerHTML = '<span class="bad">diag unreachable</span>';
   }

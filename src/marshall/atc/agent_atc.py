@@ -2749,6 +2749,112 @@ def settle(bridge, directive, stack, vectoring, fix, profile, known, ctl):
     return directive, stack, vectoring, guide, dropped
 
 
+def publish_state(bridge, ctl, scope: str, session_id: str,
+                  units=None, handed=None) -> None:
+    """Write down what THIS BRIDGE believes, for anything that wants to show it.
+
+    THE DASHBOARD WAS INVENTING THIS. `/diag` reconstructed the flight roster by
+    replaying recorder events, decided for itself whether a board entry was a
+    ghost by matching names, and re-parsed the radar prose a third time. Every
+    one of those is a surface acting as an authority it is not -- and the ghost
+    check got it wrong in exactly the way audit finding 1.1 got it wrong,
+    comparing a spoken label against a printed radar name.
+
+    The bridge already knows all of it, correctly, because it is the thing that
+    decided it. So it publishes and the page renders. A file rather than an
+    endpoint for the same reason the control spool is a file: the bridge is a
+    host process, the kneeboard is a container, and a shared mount needs no
+    open port.
+
+    THE BOARD CARRIES ITS TRACK HERE, which is the part that makes the ghost
+    question answerable at all. `controller.board()` cannot supply it -- the
+    engine is blind and has never heard of a track -- so it is joined on at the
+    one place that knows both, which is here.
+    """
+    from marshall.atc import identity as _id
+
+    # callsign -> the track it was resolved to, from the registry that resolved
+    # it. This is the join the dashboard could not make and should not have
+    # been guessing at.
+    track_of = {i.callsign: i.track
+                for i in bridge.identity.by_guid.values() if i.callsign}
+    units = units if units is not None else _id.units_on(scope)
+    on_scope = {_key_name(u.name) for u in units}
+
+    board = []
+    for row in ctl.board():
+        cs = row.get("callsign", "")
+        track = track_of.get(cs, "")
+        board.append({**row, "track": track,
+                      # Three answers, not two. RADAR means his track is on the
+                      # scope now. CLAIMED means the ladder resolved him from a
+                      # filed strip or the roster and there is no track to
+                      # check -- he is real but unconfirmed, which is not the
+                      # same as a ghost. UNSEEN means nothing accounts for him.
+                      "confirmed": ("radar" if track and _key_name(track) in on_scope
+                                    else "claimed" if not track
+                                    else "unseen")})
+
+    state = {
+        "at": time.time(),
+        "session": session_id,
+        "board": board,
+        "flights": [{"name": f.name, "lead": f.lead, "members": list(f.members)}
+                    for f in bridge.flights.flights.values()],
+        "radios": [{"guid": g[:8], "callsign": i.callsign, "track": i.track,
+                    "authority": i.authority, "why": i.why}
+                   for g, i in bridge.identity.by_guid.items()],
+        # WHAT THE CONTROLLER WAS ACTUALLY HANDED, block by block. Behaviour
+        # follows from this and from nothing else -- if he did something
+        # inexplicable, the explanation is in here or it is in the model. Every
+        # other panel on that page is a derived view of state; this is the
+        # input itself, which is why it is worth the 2.5 kB.
+        #
+        # The blocks arrive already separated because `compose_message` built
+        # them as a list. Splitting the joined string back up would be the page
+        # inventing structure again, one layer down.
+        "handed": list(handed or []),
+        "scope": [{"name": u.name, "callsign": u.callsign, "type": u.type,
+                   "tags": [t for t, on in (("manned", u.manned),
+                                            ("on the ground", u.on_ground)) if on]}
+                  for u in units],
+        # THE MEANING OF THE VALUES, published with them. A page that knows
+        # `radar` is better than `plan`, or which recorder kinds belong to which
+        # stage, is a page holding domain knowledge -- and it will be wrong the
+        # first time either changes without anybody thinking to look in the
+        # JavaScript. So the levels come from here, where the words are defined,
+        # and the page only knows how to colour ok / warn / bad.
+        "legend": {
+            "authority": {"radar": "ok", "plan": "warn", "roster": "warn",
+                          "": "bad"},
+            "confirmed": {"radar": "ok", "claimed": "warn", "unseen": "bad"},
+            "kind": {k: {"stage": st, "level": lv} for k, st, lv in (
+                ("dropped", "admit", "bad"),
+                ("ship-to-ship", "admit", "bad"),
+                ("atc/challenge", "admit", "warn"),
+                ("flight/created", "membership", "ok"),
+                ("flight/joined", "membership", "ok"),
+                ("flight/refused", "membership", "warn"),
+                ("flight/left", "membership", "ok"),
+                ("flight/dissolved", "membership", "warn"),
+                ("controller", "decide", "ok"),
+                ("asr", "decide", "ok"),
+                ("atc/pilot", "speak", ""),
+                ("atc/simple", "speak", ""),
+                ("atc/vector", "speak", ""),
+                ("atc/range", "speak", ""),
+                ("atc/landed", "speak", ""),
+            )},
+        },
+    }
+    try:
+        out = config.BUILD_DIR / "control"
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "state.json").write_text(json.dumps(state))
+    except (OSError, TypeError, ValueError) as e:
+        print(f"  !! could not publish state: {e}", flush=True)
+
+
 def hear(bridge, client, model, profile):
     """One transmission off the radio, as words. [LAYERS.md] L0 -> the turn.
 
@@ -3009,7 +3115,11 @@ def compose_message(bridge, scope, known, transcript, profile, me, fix, nxt,
             "instruction: say \"amend\" and give it, so he knows it is a "
             "change and not a mistake he made.")
     parts.append(f"PILOT: {transcript}")
-    return "\n".join(parts)
+    # The joined message AND the blocks it was built from. The blocks go
+    # to /diag so a pilot can see what the controller was handed; splitting
+    # the joined string back up there would be the page inventing structure
+    # that existed here all along.
+    return "\n".join(parts), parts
 
 
 def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
@@ -3070,6 +3180,12 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                        eam_password=config.SRS_EAM_PASSWORD).connect(
                            [radio(mhz * 1_000_000, AM) for mhz in channels])
     ctl = controller.Controller(profile)  # deterministic separation, seeded from the approach
+    # PUBLISH BEFORE THE FIRST TRANSMISSION. Otherwise a restarted bridge shows
+    # the PREVIOUS one's beliefs until somebody keys a mic -- a board with
+    # aircraft on it, from an engine that has just been emptied. The age field
+    # gives it away, but a page that has to be read twice to be believed is not
+    # doing its job.
+    publish_state(bridge, ctl, "", session_id)
     print(f"agent ATC live as {profile.controller} (voice {voice_id}, "
           f"session {session_id})", flush=True)
     print("  monitoring " + ", ".join(f"{c:.3f}" for c in channels), flush=True)
@@ -3611,6 +3727,9 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # the record or the pairing is guesswork after the fact.
         record(session_id, kind="board", callsign=known or srs,
                board=ctl.board())
+        # ...and publish it, so the dashboard renders what this bridge believes
+        # instead of reconstructing it from the log. See publish_state.
+        publish_state(bridge, ctl, scope, session_id)   # state, before the turn
         note_alive(bridge, known)          # he just spoke; that is evidence he exists
 
         # Engage the deterministic engine only with real traffic (or forced on for
@@ -3861,9 +3980,12 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             print(f"  CONTROLLER: {directive}", flush=True)
         if stack:
             print(f"  SEPARATION: {stack}", flush=True)
-        message = compose_message(
+        message, message_parts = compose_message(
             bridge, scope, known, transcript, profile, me, fix, nxt,
             directive, stack, vectoring, _flight, _flight_say)
+        # Republish with what he was handed, now that it exists. The board is
+        # the same; the input is the part worth having.
+        publish_state(bridge, ctl, scope, session_id, handed=message_parts)
         speak(bridge, interact, message, transcript, known, heard_hz, _fix, profile, ctl)
 
 

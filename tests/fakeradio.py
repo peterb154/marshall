@@ -43,6 +43,7 @@ the run. That is deliberate on both sides: if somebody later wraps the body in
 
 from __future__ import annotations
 
+import pathlib
 import threading
 
 
@@ -190,7 +191,10 @@ class Sortie:
 
     # --- the run -------------------------------------------------------------
     def fly(self, timeout=20.0):
+        import tempfile
+
         import marshall.atc.agent_atc as A
+        from marshall import config
         from marshall.srs import client as srs_client
         from marshall.srs import stt, tts
 
@@ -246,9 +250,21 @@ class Sortie:
             except BaseException as e:          # report it, never hang the suite
                 self.error = e
 
+        # A SORTIE MUST NOT WRITE WHERE THE REAL ONE DOES. The loop records to
+        # build/logs and publishes to build/control, and both are read by the
+        # live dashboard -- so running the unit suite used to overwrite the
+        # bridge's published state and leave a `flight-test.jsonl` that /diag
+        # then picked as the newest session. A pilot debugging a sortie was
+        # shown output from `tools/check.py`.
+        real_build = config.BUILD_DIR
+        tmp = tempfile.TemporaryDirectory()
+        config.BUILD_DIR = pathlib.Path(tmp.name)
+
         t = threading.Thread(target=run, daemon=True)
         t.start()
         t.join(timeout)
+        config.BUILD_DIR = real_build
+        tmp.cleanup()
         for (mod, name), old in saved.items():
             setattr(mod, name, old)
         if t.is_alive():
