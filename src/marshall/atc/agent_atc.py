@@ -748,11 +748,20 @@ def count_contacts(scope: str) -> int:
     """
     if not scope or scope == "no contacts":
         return 0
-    total = 0
-    for line in scope.split(" | "):
-        m = _SHIPS.search(line)
-        total += int(m.group(1)) if m else 1
-    return total
+    # AIRCRAFT ONLY, since 30 July. This counted every line, so four T-55s
+    # parked seventy miles away made `engaged` true for a lone pilot -- which
+    # switched the separation engine on to sequence him against armour, and
+    # routed every transmission including a radio check through the 2.2-second
+    # intent classifier. Measured: one pilot alone counted 1; the same pilot
+    # with that armour counted 5. Audit #45.
+    #
+    # The category comes from the streamer, which has always known it and used
+    # to discard it before the picture was rendered.
+    # NO SHIP-COUNT ARITHMETIC ANY MORE. `units_on` returns every aeroplane in
+    # a formation as its own unit -- it has since the formation parser was
+    # fixed on 29 July -- so counting the "N ships" text as well counted each
+    # formation twice over. Count the units.
+    return sum(1 for u in identity.units_on(scope) if not u.category)
 
 
 def _stack_summary(ctl) -> str:
@@ -2749,8 +2758,43 @@ def settle(bridge, directive, stack, vectoring, fix, profile, known, ctl):
     return directive, stack, vectoring, guide, dropped
 
 
+def _contact(u, scope: str, board_tracks: set) -> dict:
+    """One radar contact, with where it is and whether anybody is working it.
+
+    The POSITION comes from the same parser the guidance uses, so the page and
+    the controller cannot disagree about where an aeroplane is -- which they
+    would the moment a second reader of that prose existed. See [#47]; the
+    right answer is that none of this is prose, and until then there is exactly
+    one parser.
+    """
+    fix = radar_fix_by_track(scope, u.name)
+    controlled = _key_name(u.name) in board_tracks
+    return {
+        "name": u.name, "callsign": u.callsign, "type": u.type,
+        "tags": [t for t, on in (("manned", u.manned),
+                                 ("on the ground", u.on_ground)) if on]
+                + ([u.category] if u.category else []),
+        "category": u.category,
+        # AIRCRAFT ONLY for "nobody is working this". A tank is not traffic and
+        # never will be; listing armour as uncontrolled would bury the one
+        # entry that matters -- a manned aeroplane nobody has on the board.
+        "is_aircraft": not u.category,
+        "controlled": controlled,
+        # A MANNED contact nobody is working is the one worth a second look:
+        # either he has not checked in, or -- worse, and invisible until now --
+        # he is talking and his identity never closed, so every call is
+        # answered and nothing is ever sequenced.
+        "level": "warn" if u.manned and not controlled and not u.category else "",
+        "range_nm": getattr(fix, "range_nm", None),
+        "radial": getattr(fix, "radial_deg", None),
+        "alt_ft": getattr(fix, "alt_ft", None),
+        "heading": getattr(fix, "heading_deg", None),
+        "speed_kt": getattr(fix, "speed_kt", None),
+    }
+
+
 def publish_state(bridge, ctl, scope: str, session_id: str,
-                  units=None, handed=None) -> None:
+                  units=None, handed=None, names=None) -> None:
     """Write down what THIS BRIDGE believes, for anything that wants to show it.
 
     THE DASHBOARD WAS INVENTING THIS. `/diag` reconstructed the flight roster by
@@ -2778,14 +2822,26 @@ def publish_state(bridge, ctl, scope: str, session_id: str,
     # been guessing at.
     track_of = {i.callsign: i.track
                 for i in bridge.identity.by_guid.values() if i.callsign}
+    # HOW he came to be that callsign, carried onto the board row. It used to
+    # be a panel of its own; it belongs beside him, because "who does ATC think
+    # this is" and "on what evidence" are one question.
+    auth_of = {i.callsign: i.authority
+               for i in bridge.identity.by_guid.values() if i.callsign}
     units = units if units is not None else _id.units_on(scope)
     on_scope = {_key_name(u.name) for u in units}
 
     board = []
+    board_tracks = {_key_name(t) for t in track_of.values() if t}
+    # What frequency the bridge last heard each one on. `may_be_vectored` uses
+    # this to decide he has actually checked in here, so it is the same fact
+    # that governs whether he gets worked -- worth showing beside what he is
+    # doing rather than leaving as an invisible precondition.
     for row in ctl.board():
         cs = row.get("callsign", "")
         track = track_of.get(cs, "")
         board.append({**row, "track": track,
+                      "freq_mhz": bridge.heard_on.get(cs, 0) / 1e6 or None,
+                      "authority": auth_of.get(cs, ""),
                       # Three answers, not two. RADAR means his track is on the
                       # scope now. CLAIMED means the ladder resolved him from a
                       # filed strip or the roster and there is no track to
@@ -2801,9 +2857,16 @@ def publish_state(bridge, ctl, scope: str, session_id: str,
         "board": board,
         "flights": [{"name": f.name, "lead": f.lead, "members": list(f.members)}
                     for f in bridge.flights.flights.values()],
-        "radios": [{"guid": g[:8], "callsign": i.callsign, "track": i.track,
-                    "authority": i.authority, "why": i.why}
-                   for g, i in bridge.identity.by_guid.items()],
+        # RADIOS THAT TRANSMITTED AND NEVER BECAME AN AEROPLANE. Empty when
+        # things are working, which is the point: a man talking on the
+        # frequency who is on no board and tied to no track is answered
+        # conversationally while nothing is ever sequenced, and until now that
+        # showed up nowhere at all.
+        "unidentified": [{"radio": names.get(g, g[:8]) if names else g[:8],
+                          "callsign": i.callsign, "authority": i.authority,
+                          "why": i.why, "heard": bridge.transmitters.get(g, "")}
+                         for g, i in bridge.identity.by_guid.items()
+                         if not i.track],
         # WHAT THE CONTROLLER WAS ACTUALLY HANDED, block by block. Behaviour
         # follows from this and from nothing else -- if he did something
         # inexplicable, the explanation is in here or it is in the model. Every
@@ -2814,10 +2877,16 @@ def publish_state(bridge, ctl, scope: str, session_id: str,
         # them as a list. Splitting the joined string back up would be the page
         # inventing structure again, one layer down.
         "handed": list(handed or []),
-        "scope": [{"name": u.name, "callsign": u.callsign, "type": u.type,
-                   "tags": [t for t, on in (("manned", u.manned),
-                                            ("on the ground", u.on_ground)) if on]}
-                  for u in units],
+        # EACH CONTACT, AND WHETHER ANYBODY IS CONTROLLING IT. The judgement is
+        # made here rather than in the page for the usual reason: deciding that
+        # a MANNED contact with no board entry is worth a second look means
+        # knowing what manned means, and the page is not allowed to.
+        #
+        # A manned aeroplane radar can see and the engine has never heard of is
+        # either somebody who has not checked in, or -- worse and invisible
+        # until now -- somebody who IS talking whose identity never closed, so
+        # every call he makes is answered and nothing is ever sequenced.
+        "scope": [_contact(u, scope, board_tracks) for u in units],
         # THE MEANING OF THE VALUES, published with them. A page that knows
         # `radar` is better than `plan`, or which recorder kinds belong to which
         # stage, is a page holding domain knowledge -- and it will be wrong the
@@ -3729,7 +3798,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                board=ctl.board())
         # ...and publish it, so the dashboard renders what this bridge believes
         # instead of reconstructing it from the log. See publish_state.
-        publish_state(bridge, ctl, scope, session_id)   # state, before the turn
+        publish_state(bridge, ctl, scope, session_id,
+                      names=getattr(client, 'roster', None))   # before the turn
         note_alive(bridge, known)          # he just spoke; that is evidence he exists
 
         # Engage the deterministic engine only with real traffic (or forced on for
@@ -3985,7 +4055,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             directive, stack, vectoring, _flight, _flight_say)
         # Republish with what he was handed, now that it exists. The board is
         # the same; the input is the part worth having.
-        publish_state(bridge, ctl, scope, session_id, handed=message_parts)
+        publish_state(bridge, ctl, scope, session_id, handed=message_parts,
+                      names=getattr(client, 'roster', None))
         speak(bridge, interact, message, transcript, known, heard_hz, _fix, profile, ctl)
 
 

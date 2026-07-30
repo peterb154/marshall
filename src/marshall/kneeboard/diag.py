@@ -183,6 +183,7 @@ def state(session: str = "", scope: str | None = None) -> dict:
         # What the controller was handed, block by block. Behaviour
         # follows from this and nothing else.
         "handed": live.get("handed", []),
+        "unidentified": live.get("unidentified", []),
         # The MEANING of the values, from the thing that defines them.
         "legend": live.get("legend", {}),
         "last": last,
@@ -266,6 +267,9 @@ _PAGE = """<!doctype html><html><head><meta charset="utf-8">
   .heard{color:var(--accent)}
   section.wide{border-top:1px solid var(--rule)}
   h2 .hint{text-transform:none;letter-spacing:0;font-weight:400;color:var(--dim)}
+  h4{font-size:.66rem;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--dim);margin:.9rem 0 .3rem;font-weight:600}
+  h4:first-child{margin-top:0}
   .blocks{display:grid;gap:1px;background:var(--rule);font-size:.8rem}
   .blk{background:var(--bg);padding:.4rem .6rem;display:grid;
     grid-template-columns:7.5rem 1fr;gap:.7rem}
@@ -309,10 +313,14 @@ _PAGE = """<!doctype html><html><head><meta charset="utf-8">
   <span id="cmsg"></span>
 </div>
 <div class="grid">
-  <section><h2>Board vs scope &mdash; ghosts</h2><div id="board"></div></section>
+  <section class="wide"><h2>The board
+    <span class="hint">&mdash; every contact ATC is tracking</span></h2>
+    <div id="board"></div></section>
+  <section class="wide"><h2>Untracked
+    <span class="hint">&mdash; radar sees it, nobody is working it</span></h2>
+    <div id="untracked"></div></section>
   <section><h2>The last turn, stage by stage</h2><div id="last"></div></section>
-  <section><h2>On the frequency</h2><div id="who"></div></section>
-  <section><h2>Phase</h2><div id="flights"></div></section>
+  <section><h2>Flights</h2><div id="flights"></div></section>
 </div>
 <section class="wide"><h2>What the controller was handed
   <span class="hint">&mdash; behaviour follows from this and nothing else</span></h2>
@@ -345,24 +353,77 @@ function who(rs) {
 }
 
 function board(d) {
-  const b = d.board || [], s = d.scope || [];
-  if (!b.length && !s.length) return '<p class="empty">board empty, radar shows nothing</p>';
-  const rows = Math.max(b.length, s.length);
-  let out = '<table><tr><th>engine believes</th><th>phase</th><th>radar shows</th></tr>';
-  for (let i = 0; i < rows; i++) {
-    const e = b[i], u = s[i];
-    const cls = e ? lvl('confirmed', e.confirmed) : '';
-    const ghost = cls === 'bad';
-    out += `<tr class="${ghost ? 'ghost' : ''}">`
-      + `<td class="${cls}">${e ? esc(e.callsign) : ''}`
-      + `${e && cls !== 'ok' ? ' <span class="pill">' + esc(e.confirmed) + '</span>' : ''}</td>`
-      + `<td class="dim">${e ? esc(e.phase) + (e.assigned_ft ? ' ' + e.assigned_ft + 'ft' : '')
-          + (e.in_letdown ? ' <span class="pill warn">letdown</span>' : '') : ''}</td>`
-      + `<td class="dim">${u ? esc(u.callsign || u.name)
-          + (u.tags || []).map(t => ' <span class="pill">' + esc(t) + '</span>').join('')
-          : ''}</td></tr>`;
+  const b = d.board || [];
+  if (!b.length) return '<p class="empty">nobody on the board</p>';
+  return '<div class="scroll"><table>'
+    + '<tr><th>who</th><th>freq</th><th>doing</th><th>hdg</th><th>alt</th>'
+    + '<th>gs</th><th>range</th><th>known by</th></tr>'
+    + b.map(r => {
+      const u = (d.scope || []).find(x => key(x.name) === key(r.track)) || {};
+      const cls = lvl('confirmed', r.confirmed);
+      return `<tr class="${cls === 'bad' ? 'ghost' : ''}">`
+        + `<td class="${cls}">${esc(r.callsign)}${members(r)}`
+        + `${cls !== 'ok' ? ' <span class="pill">' + esc(r.confirmed) + '</span>' : ''}</td>`
+        + `<td class="dim">${r.freq_mhz ? r.freq_mhz.toFixed(3) : '&mdash;'}</td>`
+        + `<td>${phase(r)}</td>`
+        + `<td class="dim">${num(u.heading, 0, '&deg;')}</td>`
+        + `<td class="dim">${num(u.alt_ft, 0, ' ft')}</td>`
+        + `<td class="dim">${num(u.speed_kt, 0, ' kt')}</td>`
+        + `<td class="dim">${num(u.range_nm, 1, ' nm')}</td>`
+        + `<td class="${lvl('authority', r.authority)}">${esc(r.authority || 'none')}</td>`
+        + '</tr>';
+    }).join('') + '</table></div>';
+}
+
+function untracked(d) {
+  // Radar sees it, nobody is working it. Together with the board this is a
+  // complete account of what is on the scope -- every contact is in exactly
+  // one of the two.
+  // Aircraft only. Whether a thing is traffic is the bridge's judgement,
+  // published as `is_aircraft` -- the page does not know what a T-55 is.
+  const loose = (d.scope || []).filter(u => !u.controlled && u.is_aircraft);
+  const lost = d.unidentified || [];
+  if (!loose.length && !lost.length)
+    return '<p class="empty">every contact is on the board</p>';
+  let out = '';
+  if (loose.length) {
+    out += '<div class="scroll"><table>'
+      + '<tr><th>contact</th><th>type</th><th>hdg</th><th>alt</th><th>gs</th>'
+      + '<th>range</th><th></th></tr>'
+      + loose.map(u => `<tr><td class="${u.level || ''}">${esc(u.callsign || u.name)}</td>`
+        + `<td class="dim">${esc(u.type || '')}</td>`
+        + `<td class="dim">${num(u.heading, 0, '&deg;')}</td>`
+        + `<td class="dim">${num(u.alt_ft, 0, ' ft')}</td>`
+        + `<td class="dim">${num(u.speed_kt, 0, ' kt')}</td>`
+        + `<td class="dim">${num(u.range_nm, 1, ' nm')}</td>`
+        + `<td>${(u.tags || []).map(t => '<span class="pill">' + esc(t)
+             + '</span>').join(' ')}</td></tr>`).join('') + '</table></div>';
   }
-  return out + '</table>';
+  if (lost.length) {
+    out += '<h4>heard on the radio, tied to no aeroplane</h4><table>'
+      + lost.map(r => `<tr><td class="bad">${esc(r.radio)}</td>`
+        + `<td class="dim">said &ldquo;${esc(r.heard) || '?'}&rdquo;</td>`
+        + `<td class="dim">${esc(r.why)}</td></tr>`).join('') + '</table>';
+  }
+  return out;
+}
+
+function num(v, dp, suffix) {
+  return (v === null || v === undefined) ? '&mdash;'
+    : Number(v).toFixed(dp) + suffix;
+}
+
+function key(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+
+function members(r) {
+  return (r.members && r.members.length)
+    ? ' <span class="dim">+' + r.members.map(esc).join(', +') + '</span>' : '';
+}
+
+function phase(r) {
+  return esc(r.phase || '')
+    + (r.assigned_ft ? ' <span class="dim">' + r.assigned_ft + ' ft</span>' : '')
+    + (r.in_letdown ? ' <span class="pill warn">letdown</span>' : '');
 }
 
 function last(l) {
@@ -398,24 +459,13 @@ function handed(blocks) {
 }
 
 function flights(d) {
-  const f = d.flights || [], b = d.board || [];
-  let out = '';
-  out += f.length
+  const f = d.flights || [];
+  return f.length
     ? '<table><tr><th>flight</th><th>lead</th><th>members</th></tr>'
       + f.map(x => `<tr><td class="acc">${esc(x.name)}</td><td>${esc(x.lead)}</td>`
         + `<td class="dim">${x.members.length ? esc(x.members.join(', ')) : '&mdash;'}`
-        + `${x.miles != null ? ' <span class="dim">' + x.miles + 'nm</span>' : ''}</td></tr>`
-        ).join('') + '</table>'
+        + `</td></tr>`).join('') + '</table>'
     : '<p class="empty">no flights formed</p>';
-  out += '<h2 style="margin-top:1rem">Phase</h2>';
-  out += b.length
-    ? '<table><tr><th>callsign</th><th>phase</th><th>assigned</th><th>id</th></tr>'
-      + b.map(r => `<tr><td>${esc(r.callsign)}</td><td class="dim">${esc(r.phase)}</td>`
-        + `<td class="dim">${r.assigned_ft ? r.assigned_ft + ' ft' : '&mdash;'}</td>`
-        + `<td class="${lvl('confirmed', r.confirmed)}">${esc(r.confirmed || '')}</td></tr>`
-        ).join('') + '</table>'
-    : '<p class="empty">nobody on the board</p>';
-  return out;
 }
 
 async function tick() {
@@ -448,7 +498,7 @@ async function tick() {
     $('verdict').innerHTML = g
       ? `<span class="bad">${g} on the board that radar cannot see</span>`
       : '<span class="ok">board and radar agree</span>';
-    $('who').innerHTML = who(d.radios || []);
+    $('untracked').innerHTML = untracked(d);
     $('board').innerHTML = board(d);
     $('last').innerHTML = last(d.last);
     $('flights').innerHTML = flights(d);

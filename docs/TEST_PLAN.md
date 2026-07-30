@@ -427,6 +427,32 @@ transmitting on every one. L4 is a deliberate silence; L1 was an accidental one.
 
 ---
 
+## M — how fast he comes back when you are alone
+
+Changed 30 July, and it is a **latency** card — the only instrument is your own
+sense of the pause between releasing the button and hearing him start.
+
+Radar knows a T-55 from a Mustang now; it always did, and threw it away before
+the picture was drawn. The counter that decides whether the deterministic
+separation engine engages was counting the tanks. So on any mission with armour
+in it — which is all of them — a pilot alone in the sky was being sequenced
+against ground units, and every transmission he made, radio checks included,
+was routed through the intent classifier at 2.2 seconds a call.
+
+| ID | Prio | Test | What should happen | Fix under test |
+|----|------|------|--------------------|----------------|
+| M1 | P1 | **Alone in the mission**, on a map with armour and ships in it, say *"Batumi, Hoover, radio check"* | He comes back **noticeably faster than you remember** — the classifier is off the path. Report the feel: "same", "quicker", "much quicker" | [#45] |
+| M2 | P1 | Still alone, fly a full approach — check-in, descent, the letdown | Everything he says is **unchanged**. This card is about the pause, not the words. Any difference in phraseology or sequencing is a regression, not a pass | [#45] |
+| M3 | P1 | Get a **second** aeroplane airborne (AI counts), then transmit | The engine is **back on** — you are sequenced, told to hold if the letdown is occupied. Alone-is-cheap must not mean two-is-cheap | [#45] |
+| M4 | P2 | Alone again, but this time with an **AI flight parked on the ramp** at your field | Judgement call, and the reason this is P2: he is an aeroplane, so he counts, so you get the engine. Report whether that felt right or silly | [#45] |
+
+**What would falsify it.** M3 is the one that matters. The direction of failure
+here is dangerous — a counter that reads too low switches separation OFF, and
+nobody hears a missing hold instruction until two aeroplanes are in the same
+letdown. If M3 gives you the cheap path, stop and say so.
+
+---
+
 ## E — known broken. Do not report these as new
 
 Open bugs with repros. Seeing one means the world is as expected — they are on

@@ -844,7 +844,27 @@ slot this fills), [ARCH-2] (identity), [ARCH-3] (the events that end a hook).
 ## [INT-1] The intent classifier is on Sonnet, and it is in the way — #45
 labels: feature
 
-**Status:** TODO
+**Status:** TODO — the counting half is FIXED (30 July); the model swap is not.
+
+**FIXED 30 July: the counter.** `tracks` has a `category` column now, written by
+the streamer that always knew it, carried into the scope prose on the lead AND
+its wingmen, and `count_contacts` skips anything that is not an aeroplane. It is
+also no longer doing "N ships" arithmetic — `units_on` returns every ship in a
+formation as its own unit, so counting the text as well double-counted every
+formation. Measured after, against the table below:
+
+    contacts  engaged  scope
+           1    False  one pilot alone
+           1    False  one pilot + three T-55s parked 70 nm away
+           2     True  one pilot + one AI flight
+           2     True  a two-ship formation, alone
+
+So a lone pilot in a mission full of armour is back on the cheap path, which
+also removes the classifier from his radio checks. Guards:
+`tests/test_bridge.py:TestGroundUnitsAreNotTraffic`. Still wants a flight test —
+the 2.2 s that disappears is only visible on the radio.
+
+**STILL TODO: the model.** Everything below the table stands.
 
 `bedrock_intent.classify` calls **Sonnet** (`bedrock_intent.py:28`, default
 `us.anthropic.claude-sonnet-4-5`) to put a transcript into a fixed taxonomy with
@@ -883,7 +903,10 @@ engages the deterministic engine to sequence one aeroplane against a tank. It
 defeats the design note at `:3192` that promises a single ship stays on the
 cheap path.
 
-THE OBVIOUS FIX IS NOT AVAILABLE. The streamer subscribes per category —
+THE OBVIOUS FIX WAS NOT AVAILABLE — it is now, and it is what was done. Kept as
+written because the reasoning is what made the migration worth doing rather than
+reaching for one of the cheap workarounds it rules out. The streamer subscribes
+per category —
 AIRPLANE, HELICOPTER, GROUND, SHIP (`tracks.py:231-234`) — and then drops it:
 `tracks` has `name, type, coalition, player` and NO category column. So neither
 the picture nor the counter can tell a T-55 from an F-16, and every cheap

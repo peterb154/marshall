@@ -144,6 +144,14 @@ def _ensure_table() -> None:
                 last_seen  TIMESTAMPTZ NOT NULL DEFAULT now()
             )
             """)
+        # THE CATEGORY THE STREAMER ALREADY KNOWS. It subscribes per category --
+        # AIRPLANE, HELICOPTER, GROUND, SHIP -- and then threw it away, so
+        # nothing downstream could tell a T-55 from an F-16. That is audit
+        # finding #45: `count_contacts` counts tanks as traffic, so a lone
+        # pilot engages the separation engine and pays 2.2 s of Sonnet on every
+        # transmission. It is also why the diagnostics page could not leave
+        # armour out of "nobody is working this".
+        conn.execute("ALTER TABLE tracks ADD COLUMN IF NOT EXISTS category TEXT")
         conn.execute("CREATE INDEX IF NOT EXISTS tracks_geog ON tracks USING GIST (geog)")
         # IS THERE A HUMAN IN IT? Added separately because the table predates
         # the question, and CREATE TABLE IF NOT EXISTS will not widen a table
@@ -159,18 +167,19 @@ def _ensure_table() -> None:
     _ready = True
 
 
-def _upsert(u) -> None:
+def _upsert(u, category: str = "") -> None:
     label = u.player_name or u.callsign or u.name
     with get_pool().connection() as conn:
         conn.execute(
             """
-            INSERT INTO tracks (name, label, type, coalition, geog, alt_ft, heading, speed_kt, player, last_seen)
+            INSERT INTO tracks (name, label, type, coalition, geog, alt_ft, heading, speed_kt, player, category, last_seen)
             VALUES (%s, %s, %s, %s, ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography,
-                    %s, %s, %s, %s, now())
+                    %s, %s, %s, %s, %s, now())
             ON CONFLICT (name) DO UPDATE SET
                 label=EXCLUDED.label, type=EXCLUDED.type, coalition=EXCLUDED.coalition,
                 geog=EXCLUDED.geog, alt_ft=EXCLUDED.alt_ft, heading=EXCLUDED.heading,
                 speed_kt=EXCLUDED.speed_kt, player=EXCLUDED.player,
+                category=EXCLUDED.category,
                 last_seen=now()
             """,
             (u.name, label, u.type, u.coalition, u.position.lon, u.position.lat,
@@ -182,12 +191,21 @@ def _upsert(u) -> None:
              u.velocity.speed * _MS_TO_KT,
              # Empty for AI. That emptiness is the whole human/AI
              # distinction, and it costs nothing to carry.
-             u.player_name or ""))
+             u.player_name or "", category))
 
 
 def _delete(name: str) -> None:
     with get_pool().connection() as conn:
         conn.execute("DELETE FROM tracks WHERE name=%s", (name,))
+
+
+# The sim's category numbers, as the words everything downstream uses.
+_CATEGORY = {
+    common_pb2.GROUP_CATEGORY_AIRPLANE: "airplane",
+    common_pb2.GROUP_CATEGORY_HELICOPTER: "helicopter",
+    common_pb2.GROUP_CATEGORY_GROUND: "ground",
+    common_pb2.GROUP_CATEGORY_SHIP: "ship",
+}
 
 
 def _stream_category(category: int, stop: threading.Event) -> None:
@@ -204,7 +222,7 @@ def _stream_category(category: int, stop: threading.Event) -> None:
                     break
                 backoff = 1.0
                 if resp.HasField("unit"):
-                    _upsert(resp.unit)
+                    _upsert(resp.unit, _CATEGORY.get(category, ""))
                 elif resp.HasField("gone"):
                     _delete(resp.gone.name)
         except grpc.RpcError as e:
@@ -297,7 +315,8 @@ def radar_cached(bindings: dict | None = None) -> list[str] | None:
                 SELECT t.label, t.name, t.type, t.alt_ft, t.heading, t.speed_kt,
                        ST_Distance(t.geog, bcn.g) / 1852.0 AS nm,
                        degrees(ST_Azimuth(bcn.g, t.geog)) AS radial,
-                       COALESCE(t.player, '') AS player
+                       COALESCE(t.player, '') AS player,
+                       COALESCE(t.category, '') AS category
                 FROM tracks t, bcn
                 WHERE t.last_seen > now() - make_interval(secs => %s)
                 ORDER BY nm
@@ -454,6 +473,11 @@ def _other_ship(row: list, lead: list, naming: dict, down: set) -> str:
     bits = [row[2] or ""]
     if len(row) > 8 and row[8]:
         bits.append("manned")
+    # The category, on the wingmen too. Only the lead carried it, so four tanks
+    # in one group rendered as one ground unit and three aircraft -- and
+    # `count_contacts` duly engaged the separation engine for a lone pilot.
+    if len(row) > 9 and row[9] not in ("airplane", "helicopter", ""):
+        bits.append(row[9])
     if row[1] in down:
         bits.append("on the ground")
     ax, ay = xy(lead[6], lead[7])
@@ -483,6 +507,12 @@ def _render(rows: list, bindings: dict) -> list[str]:
         # against it -- see atc/identity.py. A controller wants it anyway: he
         # works participating aircraft, not every return on the scope.
         manned = ", manned" if (len(group[0]) > 8 and group[0][8]) else ""
+        # ANYTHING THAT IS NOT AN AEROPLANE SAYS SO. Additive, in the same
+        # parenthetical the manned marker uses, so every existing parser
+        # tolerates it -- `units_on` splits on the comma and takes the type.
+        # Without it nothing downstream can tell a tank from a fighter.
+        if len(group[0]) > 9 and group[0][9] not in ("airplane", "helicopter", ""):
+            manned += f", {group[0][9]}"
         # "on the ground" comes from the sim's land/takeoff events, not from a
         # guess at altitude and speed.
         if name in down:

@@ -141,6 +141,12 @@ class Unit:
     # us", and the caller keeps its own fallback for the second; see
     # director/tools/events.py and [ARCH-3] / #41.
     on_ground: bool = False
+    # "ground" or "ship" when the sim says so, empty for aircraft. The streamer
+    # has always known it and used to throw it away; without it nothing
+    # downstream could tell a T-55 from an F-16 -- see audit #45, where a lone
+    # pilot engaged the separation engine because four parked tanks counted as
+    # traffic.
+    category: str = ""
 
 
 @dataclass(frozen=True)
@@ -183,8 +189,10 @@ def units_on(scope: str) -> list[Unit]:
         low = kind.lower()
         manned = "manned" in low
         grounded = "on the ground" in low
+        category = next((c for c in ("ground", "ship") if f", {c}" in low), "")
         kind = kind.split(",")[0].strip()
-        out.append(Unit(name, (m.group(2) or "").strip(), kind, manned, grounded))
+        out.append(Unit(name, (m.group(2) or "").strip(), kind, manned, grounded,
+                        category))
 
         # THE REST OF THE FORMATION. They are real aeroplanes with real radios
         # and each one is somebody -- the lead's line is simply where the
@@ -203,7 +211,9 @@ def units_on(scope: str) -> list[Unit]:
             spec = (om.group(2) or "")
             olow = spec.lower()
             out.append(Unit(oname, "", spec.split(",")[0].strip(),
-                            "manned" in olow, "on the ground" in olow))
+                            "manned" in olow, "on the ground" in olow,
+                            next((c for c in ("ground", "ship")
+                                  if f", {c}" in olow), "")))
     return out
 
 

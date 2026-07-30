@@ -90,6 +90,43 @@ class TestCountContacts(unittest.TestCase):
             "Hawk (P-51D): 8.0 nm on the 300 radial, 5,000 ft, heading 120"), 3)
 
 
+class TestGroundUnitsAreNotTraffic(unittest.TestCase):
+    """Audit #45. Every mission has armour and ships in it, and they were
+    counted, so `engaged` was true for a pilot alone in the sky -- which put the
+    separation engine to work sequencing him against a tank and sent every
+    transmission, radio checks included, through the intent classifier at 2.2
+    seconds a turn.
+
+    The category was never a mystery: the streamer subscribes per category and
+    then discarded it. It is a column now, and it reaches the scope prose.
+    """
+
+    PILOT = ("362nd_sockeye (P-51D-30-NA, manned): 8.0 nm on the 281 radial, "
+             "4,000 ft, heading 100, 180 knots")
+    ARMOUR = (" | Samovar-1 (T-55, ground) IN FORMATION with "
+              "Samovar-2 (T-55, ground, 0.0 nm), Samovar-3 (T-55, ground, 0.1 nm)"
+              " — 3 ships, lead 70.1 nm on the 048 radial, 2,054 ft, heading 000")
+
+    def test_a_lone_pilot_with_armour_on_the_map_is_still_alone(self):
+        self.assertEqual(agent_atc.count_contacts(self.PILOT + self.ARMOUR), 1)
+
+    def test_the_wingmen_of_a_ground_formation_are_ground_too(self):
+        """The bug within the bug: only the LEAD carried the marker, so three
+        tanks read as one ground unit and two aeroplanes."""
+        self.assertEqual(agent_atc.count_contacts(self.ARMOUR[3:]), 0)
+
+    def test_ships_are_not_traffic_either(self):
+        self.assertEqual(agent_atc.count_contacts(
+            self.PILOT + " | CVN-74 (Stennis, ship): 40.0 nm on the 270 radial, "
+            "0 ft, heading 090, 20 knots"), 1)
+
+    def test_aircraft_are_still_counted_alongside_them(self):
+        self.assertEqual(agent_atc.count_contacts(
+            self.PILOT + self.ARMOUR +
+            " | 362nd_andre (F-16C_50, manned): 20.0 nm on the 090 radial, "
+            "8,000 ft, heading 270, 300 knots"), 2)
+
+
 class TestRoster(unittest.TestCase):
     """The SRS name lookup, which is the free identity anchor on every packet."""
 
