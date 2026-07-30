@@ -1007,7 +1007,51 @@ belongs), and the 28 July finding recorded under FP-1.
 ## [RAD-5] The geometry reads structure, not prose — #47
 labels: architecture
 
-**Status:** TODO
+**Status:** BUILT 30 July, unflown. Five of six acceptance criteria met; the
+sixth (deleting `flatten_formation` and the regexes) is gated on migrating the
+test fixtures, not on the code.
+
+**What landed.** `/radar` serves `{picture, contacts, bullseye}`. Positions are
+ABSOLUTE — the old `nm`/`radial` were measured from a module constant, so every
+consumer on the map read ranges from Batumi and got its traffic sorted by
+distance from it. The bridge draws its own picture (`atc/picture.py`) from its
+own origin, projected through the sim by `push_fixes` and kept in `PROJECTED`.
+Byte-identical for a shared origin, proved against prose captured from the
+running director (`tests/test_picture.py`), and the golden earned its keep at
+once: a parked aeroplane reports 3.66e-06 knots, which is truthy, so a `> 0`
+test would have silently dropped the field.
+
+**Bullseye is asked for, not defined** — DCS has one per coalition and every
+pilot's HSI is referenced to it. It is a RENDERING, like field-relative and
+BRAA; storing it would repeat this bug with a better-chosen point, and would
+make a talkdown worse.
+
+**Two things the prose could not express, now tested.** A wingman has a
+position, so `miles_between` is exact for the case the join rule actually runs
+in instead of returning an upper bound. And formation membership is a FACT, so
+`_track_tagged` can let Pony 1-3 borrow the section's tag while Falcon 1-1 still
+never gets Falcon 1-2's track.
+
+**The cold-cache path was the last thing forcing prose**: `radar_live` returned
+a string and nothing else, so the one moment consumers fell back to regexes was
+also the moment the picture was degraded. `contacts_live` degrades in the data
+too, with the unknowable fields empty rather than guessed.
+
+**Still open:** ~six test files describe scopes as English strings, because that
+is what the system consumed when they were written. Migrating those fixtures to
+contacts is what lets `flatten_formation` and the six regexes be deleted.
+
+**And it reframed [#2].** ARCH-1 is not "add another airfield" — it is **split
+the world from the controller**. The director is currently both: a track cache
+(one sim, one world, correctly shared) fused to one controller's brain (the
+plate, the prompts, the approach, and until today the origin), and
+`_system_prompt_for(session_id)` builds the same Batumi plate for every session.
+A bridge is a RADIO HOST, not a controller — it already answers as four of them
+by frequency via `profile.station_on` — so N controllers means N profiles,
+origins and separation engines hosted in however many processes are convenient,
+not N bridges.
+
+**Was:** TODO
 
     "we've spent DAYS chasing ghosts (literally)"
 

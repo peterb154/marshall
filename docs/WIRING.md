@@ -1736,6 +1736,47 @@ flowchart LR
 
 One prose string is the whole radar contract: `director/tools/tracks.py` builds it (`radar_cached` runs the PostGIS query, then `_render` calls `_clusters`, `_unique_labels` and `_other_ship`), `director/tools/dcs.py::radar_picture` joins the lines with ` | ` and `director/app.py::radar_endpoint` serves it after fetching this session's tags from `director/tools/identify.py::bindings_for`. `src/marshall/atc/agent_atc.py::fetch_radar` is the bridge's reader; the agent also calls the picture itself through the `dcs.radar` tool with no bindings, and `tools/whos_who.py` reads the same endpoint. A lone contact is literally `362nd_sockeye [Pony 1-1] (P-51D-30-NA, manned): 8.0 nm on the 273 radial, 4,000 ft, heading 090, 210 knots` — note the colon; a formation collapses to one line with **no colon at all**: `Pony11 [Pony 1 flight] (P-51D-30-NA, manned) IN FORMATION with Andre (P-51D-30-NA, manned, 0.3 nm) — 2 ships, lead 13.5 nm on the 095 radial, 6,000 ft, heading 270, 180 knots`. Two edges that bite: `flatten_formation` rewrites that span to `: ` before `_FIX`/`_FIX_BY_TRACK`/`_TYPE` run, because otherwise the first `nm` they see is a wingman's 0.3 nm offset and the flight lands three hundred yards off the runway; and `_FIX` matches only the bracketed `[tag]`, so an untagged blip is invisible to the vectoring path while `units_on` and `radar_fix_by_track` still see it. `_scope_geometry` re-uses `identity._FORMATION` and `identity._OTHER_SHIP` to recover a wingman as lead-plus-offset, which is why `miles_between` can answer for an aircraft with no line of its own. When the PostGIS cache is cold `radar_picture` falls back to `dcs.radar_live`, which emits the same grammar minus groundspeed, the manned flag, the on-the-ground flag and formations — every consumer field is therefore optional by construction.
 
+> **CHANGED 30 JULY — read this before the rest of the section.** Everything
+> below described the contract as *one prose string*, and that is no longer what
+> it is. `GET /radar` now serves **data plus a rendering of it**:
+>
+> ```
+> {"picture":  "...prose, for the agent's prompt only...",
+>  "contacts": [{name, label, callsign, type, category, manned, player,
+>                on_ground, lat, lon, alt_ft, heading, speed_kt,
+>                coalition, formation}],
+>  "bullseye": {"blue": {lat, lon}, "red": {lat, lon}}}
+> ```
+>
+> **Positions are ABSOLUTE.** They used to be a range and radial from
+> `tools/dcs.py:BATUMI_LAT, BATUMI_LON` — a module constant — so every consumer
+> on the map read ranges from one aerodrome and the rows arrived sorted by
+> distance from it. Range-from-a-field is a *rendering*, and there are three:
+> the controller's own field for a talkdown, **bullseye** for anything shared
+> between controllers, BRAA between two aircraft. All three fall out of a
+> position; bake one in and the other two need a parser and a fudge.
+>
+> **The bridge draws its own picture** (`atc/picture.py`) from its own origin,
+> which `push_fixes` projects through the sim's own converter and keeps in
+> `PROJECTED`. Senaki is the same function with a different origin over the same
+> contacts — not a second world. The director's `picture` remains as the
+> fallback for a cold cache or a controller with no projected field.
+>
+> **The geometry no longer parses prose.** `units_on`, `radar_fix`,
+> `radar_fix_by_track`, `radar_range_for`, `miles_between`, `_track_of`,
+> `_track_tagged`, `count_contacts` and the diag contact all read `contacts`
+> and fall back to their regex only when it is absent. A wingman therefore has
+> a position, and the gap inside a formation is exact rather than an upper
+> bound. `flatten_formation` and the six regexes still exist because roughly six
+> test files still describe scopes as English strings; that fixture migration is
+> what gates deleting them.
+>
+> **The format did not change.** `tests/test_picture.py` renders a response
+> captured from the running director and requires it byte for byte.
+>
+> The rest of this section is the machinery as it was, and is still accurate
+> about how the *prose* is built and parsed.
+
 Everything the two brains know about where aeroplanes are travels as **one prose string**. It is written in the director (`director/tools/tracks.py:_render`, line 465), served over HTTP at `GET /radar` (`director/app.py:189`), fetched by the bridge (`fetch_radar`, `src/marshall/atc/agent_atc.py:197`), pasted verbatim into the agent's prompt as `RADAR: ...` (`agent_atc.py:3477`, `agent_atc.py:2692`), **and** re-parsed by six different regexes in the bridge to drive identity, geometry, separation and handoff. It is the contract between two deployables that do not import each other, and it is a string. Treat it as an interface, because it is one.
 
 ### Where it comes from
