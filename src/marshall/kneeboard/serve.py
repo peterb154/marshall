@@ -6,6 +6,7 @@ Layout of the site (room to grow):
     /               a small home page (placeholder; the flight planner lands here)
     /kneeboard/     the OpenKneeboard multi-page charts (point the Web Dashboard here)
     /diag           live diagnostics -- what the two brains believe, now
+    /control/       start, stop and restart the bridge; reload the mission
     /docs           WIRING.md and the audit, rendered to read at a desk
     /vendor/        third-party assets, so the LAN needs no internet
     /healthz        liveness
@@ -37,6 +38,7 @@ external Nginx Proxy Manager that fronts this host. See deploy/docker-compose.ym
 """
 
 import importlib
+import os
 import sys
 import threading
 from pathlib import Path
@@ -212,6 +214,64 @@ async def flighttest() -> HTMLResponse:
     from marshall.kneeboard import flighttest as ft
     from marshall.kneeboard import site
     return HTMLResponse(site.build(ft.pages()), headers=NO_CACHE)
+
+
+# --- control -----------------------------------------------------------------
+#
+# MUTATING ROUTES, and the repo already has a rule about them: "the static
+# charts under /kneeboard/ are safe to serve openly... an open mutating
+# endpoint is remote code execution. Its write routes MUST be behind auth
+# before marshall.epetersons.com is reachable from the internet"
+# (deploy/docker-compose.yml). This is that.
+#
+# MARSHALL_CONTROL_TOKEN in .env. Unset means the routes REFUSE rather than run
+# open -- a control surface that silently defaults to unguarded is how the rule
+# gets forgotten. The token is checked on the mutating routes only; reading the
+# bridge's state is as harmless as /diag.
+CONTROL_TOKEN = os.environ.get("MARSHALL_CONTROL_TOKEN", "")
+
+
+def _may_control(token: str) -> None:
+    if not CONTROL_TOKEN:
+        raise HTTPException(
+            status_code=503,
+            detail="control is disabled: set MARSHALL_CONTROL_TOKEN in .env "
+                   "and restart the kneeboard")
+    if token != CONTROL_TOKEN:
+        raise HTTPException(status_code=403, detail="bad control token")
+
+
+@app.get("/control/bridge")
+async def bridge_state():
+    """What the supervisor last reported. Read-only, no token."""
+    from marshall.kneeboard import control
+    return JSONResponse(control.bridge_state(), headers=NO_CACHE)
+
+
+@app.post("/control/bridge/{action}")
+async def bridge_control(action: str, token: str = ""):
+    """start / stop / restart the SRS bridge.
+
+    Writes a word to a spool the host-side supervisor reads -- see
+    `tools/bridge.py watch`. This process is in a CONTAINER and the bridge runs
+    on the HOST, so it cannot start it however the button is wired; a container
+    has no way into its host's namespace and handing it one (the docker socket)
+    would give a web page root on that box.
+    """
+    _may_control(token)
+    from marshall.kneeboard import control
+    if action not in ("start", "stop", "restart"):
+        raise HTTPException(status_code=400, detail=f"no such action {action!r}")
+    return JSONResponse(control.ask_bridge(action), headers=NO_CACHE)
+
+
+@app.post("/control/mission/restart")
+async def mission_control(token: str = ""):
+    """Reload the mission already loaded. It cannot load a different one --
+    see the director endpoint for why that would strand connected clients."""
+    _may_control(token)
+    from marshall.kneeboard import control
+    return JSONResponse(control.restart_mission(), headers=NO_CACHE)
 
 
 @app.get("/diag", response_class=HTMLResponse)

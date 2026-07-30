@@ -287,6 +287,17 @@ _PAGE = """<!doctype html><html><head><meta charset="utf-8">
   .heard{color:var(--accent)}
   #stale{background:var(--warn);color:#0A0C0E;padding:.45rem 1rem;
     font-size:.8rem;letter-spacing:.04em}
+  #control{display:flex;align-items:center;gap:.55rem;flex-wrap:wrap;
+    padding:.5rem 1rem;border-bottom:1px solid var(--rule);background:var(--panel)}
+  #control .lbl{font-size:.66rem;letter-spacing:.16em;color:var(--dim)}
+  #control .sep{width:1px;height:1.1rem;background:var(--rule);margin:0 .35rem}
+  #control button{font-family:var(--mono);font-size:.72rem;letter-spacing:.06em;
+    background:transparent;color:var(--ink);border:1px solid var(--rule);
+    border-radius:2px;padding:.2rem .6rem;cursor:pointer}
+  #control button:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+  #control button:disabled{opacity:.35;cursor:not-allowed}
+  #control button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  #cmsg{font-size:.72rem;color:var(--dim)}
   .empty{color:var(--dim);font-size:.8rem;padding:.4rem 0}
   @media (max-width:900px){.grid{grid-template-columns:1fr}}
 </style></head><body>
@@ -298,11 +309,22 @@ _PAGE = """<!doctype html><html><head><meta charset="utf-8">
   <span class="stat">radar <i id="radar">-</i></span>
   <span class="stat" id="verdict"></span>
 </header>
+<div id="control">
+  <span class="lbl">BRIDGE</span>
+  <span id="bstate" class="pill">-</span>
+  <button data-do="start">start</button>
+  <button data-do="restart">restart</button>
+  <button data-do="stop">stop</button>
+  <span class="sep"></span>
+  <span class="lbl">MISSION</span>
+  <button data-do="mission">reload current</button>
+  <span id="cmsg"></span>
+</div>
 <div class="grid">
-  <section><h2>Who ATC thinks you are</h2><div id="who"></div></section>
-  <section><h2>Board vs scope</h2><div id="board"></div></section>
-  <section><h2>Last decision trail</h2><div id="last"></div></section>
-  <section><h2>Flights and phase</h2><div id="flights"></div></section>
+  <section><h2>Board vs scope &mdash; ghosts</h2><div id="board"></div></section>
+  <section><h2>The last turn, stage by stage</h2><div id="last"></div></section>
+  <section><h2>On the frequency</h2><div id="who"></div></section>
+  <section><h2>Phase</h2><div id="flights"></div></section>
 </div>
 <script>
 const $ = id => document.getElementById(id);
@@ -354,11 +376,30 @@ function last(l) {
     + `<li><span class="k">who</span><span>${esc(l.who) || '<i class="dim">unidentified</i>'}`
     + ` <span class="pill ${auth}">${esc(l.authority) || 'none'}</span>`
     + `<span class="dim"> ${esc(l.track)}</span></span></li>`;
+  // THE PIPELINE, not the gates. Four of the five gates were deleted on 30
+  // July -- ATC answers everything now -- so "which gate ate it" is no longer
+  // the question. The question is which STAGE last touched the turn:
+  // hear, attribute, membership, decide, settle, compose, speak.
+  const STAGE = {
+    'dropped':        ['admit',    'bad'],
+    'ship-to-ship':   ['admit',    'bad'],
+    'atc/challenge':  ['admit',    'warn'],
+    'flight/created': ['membership','ok'],
+    'flight/joined':  ['membership','ok'],
+    'flight/refused': ['membership','warn'],
+    'flight/left':    ['membership','ok'],
+    'flight/dissolved':['membership','warn'],
+    'controller':     ['decide',   'ok'],
+    'asr':            ['decide',   'ok'],
+    'atc/pilot':      ['speak',    ''],
+    'atc/simple':     ['speak',    ''],
+    'atc/vector':     ['speak',    ''],
+    'atc/range':      ['speak',    ''],
+    'atc/landed':     ['speak',    ''],
+  };
   (l.trail || []).forEach(t => {
-    const label = t.kind.replace('atc/', '').replace('flight/', '');
-    const cls = t.kind === 'controller' ? 'ok'
-      : (t.kind === 'dropped' || t.kind === 'atc/challenge') ? 'bad' : '';
-    out += `<li><span class="k">${esc(label)}</span>`
+    const [stage, cls] = STAGE[t.kind] || [t.kind.replace('atc/', ''), ''];
+    out += `<li><span class="k">${esc(stage)}</span>`
       + `<span class="${cls}">${esc(t.gate || t.text)}`
       + (t.seconds ? `<span class="dim"> ${t.seconds}s ${esc(t.tier || '')}</span>` : '')
       + '</span></li>';
@@ -424,7 +465,60 @@ async function tick() {
     $('verdict').innerHTML = '<span class="bad">diag unreachable</span>';
   }
 }
+// --- control ---------------------------------------------------------------
+// The token is not in the page. It is asked for once and kept in this tab, so
+// the page can be left open on a kneeboard without carrying the ability to
+// stop the bridge into a screenshot.
+let TOKEN = sessionStorage.getItem('marshall-token') || '';
+
+async function control(what) {
+  if (!TOKEN) {
+    TOKEN = prompt('Control token (MARSHALL_CONTROL_TOKEN in .env):') || '';
+    if (!TOKEN) return;
+    sessionStorage.setItem('marshall-token', TOKEN);
+  }
+  const url = what === 'mission'
+    ? '/control/mission/restart?token=' + encodeURIComponent(TOKEN)
+    : '/control/bridge/' + what + '?token=' + encodeURIComponent(TOKEN);
+  $('cmsg').textContent = what + '...';
+  $('cmsg').className = '';
+  try {
+    const r = await fetch(url, {method: 'POST', cache: 'no-store'});
+    const d = await r.json();
+    if (r.status === 403) { sessionStorage.removeItem('marshall-token'); TOKEN = ''; }
+    $('cmsg').textContent = d.ok
+      ? (d.mission ? 'reloading ' + d.mission : (d.note || 'asked'))
+      : (d.error || d.detail || 'refused');
+    $('cmsg').className = d.ok ? 'ok' : 'bad';
+  } catch (e) {
+    $('cmsg').textContent = 'no answer from the server';
+    $('cmsg').className = 'bad';
+  }
+}
+
+document.querySelectorAll('#control button').forEach(b =>
+  b.addEventListener('click', () => control(b.dataset.do)));
+
+async function bridgeTick() {
+  try {
+    const d = await (await fetch('/control/bridge', {cache: 'no-store'})).json();
+    const el = $('bstate');
+    el.textContent = d.supervisor === 'up' ? d.bridge : ('supervisor ' + d.supervisor);
+    el.className = 'pill ' + (d.supervisor !== 'up' ? 'bad'
+      : d.bridge === 'running' ? 'ok' : 'warn');
+    // A button that cannot possibly work should not look like one: with no
+    // supervisor the command is written to a spool nobody reads.
+    const dead = d.supervisor !== 'up';
+    document.querySelectorAll('#control button').forEach(b => {
+      b.disabled = dead && b.dataset.do !== 'mission';
+    });
+    if (dead && d.why) { $('cmsg').textContent = d.why; $('cmsg').className = 'dim'; }
+  } catch (e) { /* the page is still useful without it */ }
+}
+
 tick();
+bridgeTick();
 setInterval(tick, 2000);
+setInterval(bridgeTick, 2000);
 </script></body></html>
 """

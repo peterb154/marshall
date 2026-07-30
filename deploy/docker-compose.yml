@@ -57,6 +57,11 @@ services:
       # host; this container only ever reads. Without it the diagnostics page
       # renders empty, which looks exactly like a quiet frequency.
       - ../build/logs:/data/logs:ro
+      # The control spool. READ-WRITE, and the only writable mount here: the
+      # page drops a word in it and `tools/bridge.py watch` on the HOST reads
+      # it. A container cannot start a host process, and giving it the docker
+      # socket to try would hand a web page root on this box.
+      - ../build/control:/data/control
     # The PLANS page reads the filed flight plans from the director LIVE, and
     # the director is published on the HOST -- inside this container `localhost`
     # is this container. Without the gateway alias the page renders "nobody
@@ -68,3 +73,5 @@ services:
       # site-packages, or the mount is decorative.
       PYTHONPATH: /app/src
       MARSHALL_DIRECTOR_URL: http://host.docker.internal:8000
+      # Unset means the control routes REFUSE rather than run open.
+      MARSHALL_CONTROL_TOKEN: ${MARSHALL_CONTROL_TOKEN:-}

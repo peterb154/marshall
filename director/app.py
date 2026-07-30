@@ -219,6 +219,45 @@ def radar_endpoint(session_id: str = "") -> dict[str, str]:
 
 # The bridge scheduler polls this; each returned hook is due and has been
 # removed (one-shot). The bridge then re-invokes the agent with the hook's `why`.
+@app.post("/mission/restart")
+def mission_restart() -> dict:
+    """Reload the mission that is ALREADY loaded. Nothing else.
+
+    Deliberately cannot load a different one. `LoadMission` swaps the sim and
+    leaves ASYNCNET -- the multiplayer layer -- serving whatever the server
+    booted with, so a client who connects afterwards is offered a mission that
+    is not running and hangs on the loading screen with no error anywhere. That
+    cost two sorties; see docs/GOTCHAS.md. Reloading the SAME file is safe
+    precisely because the file on offer does not change.
+
+    To change the mission for a human, write it into serverSettings.lua's
+    missionList and restart the server -- `tools/deploy_mission.sh`.
+    """
+    # THE PATH, NOT THE PROSE. `get_current_mission` returns a sentence for a
+    # human -- "Current mission: X  (file: Y.miz)" -- and `load_mission` wants
+    # the full server-side path. Passing the sentence returns success and
+    # reloads nothing, which is the worst possible outcome for a button whose
+    # entire job is to have visibly done something.
+    from tools.dcs import _channel, load_mission
+
+    from dcs.hook.v0 import hook_pb2, hook_pb2_grpc
+    try:
+        with _channel() as ch:
+            hook = hook_pb2_grpc.HookServiceStub(ch)
+            path = hook.GetMissionFilename(
+                hook_pb2.GetMissionFilenameRequest(), timeout=10).name
+    except Exception as e:
+        return {"ok": False, "error": f"cannot ask the sim what is loaded: {e}"}
+    if not path:
+        return {"ok": False, "error": "the sim reports no mission loaded"}
+    try:
+        load_mission(path)
+    except Exception as e:
+        return {"ok": False, "error": str(e), "mission": path}
+    return {"ok": True, "mission": path.replace(chr(92), "/").split("/")[-1],
+            "path": path}
+
+
 @app.get("/events/departed")
 def events_departed(since_sec: float = 900.0) -> dict:
     """Units a player has left recently.

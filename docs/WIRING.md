@@ -2603,6 +2603,45 @@ because that is the difference a message-counted window is blind to.
 
 ---
 
+## Controlling it from the cockpit
+
+`/diag` can start, stop and restart the bridge, and reload the mission. Two
+different mechanisms, because of where each thing runs.
+
+**The bridge is a host process and the kneeboard is a container.** No wiring
+lets a container spawn a process in its host's namespace, and the usual
+workaround — mounting the docker socket — hands a web page root on the box. So
+the page writes one word to `build/control/bridge.cmd` and a supervisor on the
+host reads it:
+
+```
+uv run python tools/bridge.py watch      # runs the bridge AND obeys the page
+```
+
+That is now how the bridge is run. The same shape as the engineering spool: no
+network surface, and the security boundary is a read-write mount. `tools/bridge.py
+start|stop|restart|status` still work by hand and reach the same code.
+
+**If the supervisor is not running the buttons are disabled**, and the page says
+so — a command written to a spool nobody reads is worse than a missing button,
+because it looks like it worked.
+
+**The mission reload is the director's**, since it already holds the DCS-gRPC
+connection. It can only reload the mission ALREADY loaded. `LoadMission` swaps
+the sim and leaves ASYNCNET serving whatever the server booted with, so loading
+a *different* mission offers connecting clients something that is not running
+and hangs them on the load screen with no error anywhere — see `GOTCHAS.md`.
+Reloading the same file is safe precisely because the file on offer does not
+change. To change mission for a human, use `tools/deploy_mission.sh`.
+
+**The mutating routes need a token.** `MARSHALL_CONTROL_TOKEN` in `.env`; unset
+means they refuse rather than run open, because a control surface that defaults
+to unguarded is how the rule in `deploy/docker-compose.yml` gets forgotten. The
+page asks once and keeps it in `sessionStorage`, so a kneeboard left open does
+not carry the ability to stop the bridge into a screenshot.
+
+---
+
 ## The data model
 
 ### Data

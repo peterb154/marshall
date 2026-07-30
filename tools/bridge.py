@@ -10,6 +10,7 @@ for a controller that nobody had started. He noticed before I did, both times.
     uv run python tools/bridge.py restart
     uv run python tools/bridge.py stop
     uv run python tools/bridge.py start
+    uv run python tools/bridge.py watch     # run it, and obey the dashboard
 
 So: match on the PROCESS, not on a string that includes ourselves, and never
 signal our own process group. It also carries the environment the bridge
@@ -33,6 +34,11 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def config_build() -> Path:
+    """build/, the same directory config.BUILD_DIR resolves to."""
+    return Path(os.environ.get("MARSHALL_BUILD", str(ROOT / "build")))
 LOG = os.environ.get("MARSHALL_BRIDGE_LOG", "/tmp/marshall-bridge-live.log")
 MODULE = "marshall.atc.agent_atc"
 
@@ -140,6 +146,73 @@ def status() -> int:
     return 0 if pids else 1
 
 
+
+# --- the supervisor -------------------------------------------------------
+#
+# A COMMAND SPOOL, not an HTTP endpoint, and the reason is the deployment. The
+# kneeboard runs in a CONTAINER and the bridge runs on the HOST, so the page
+# cannot start a process however the button is wired -- a container has no way
+# to spawn something in its host's namespace, and giving it one (the docker
+# socket) would hand a web page root on this box.
+#
+# So the page writes a word to a file and this loop, which is on the host,
+# reads it. The same shape as the engineering spool: reachable from anywhere in
+# one line, no network surface at all, and the security boundary is a
+# read-write mount rather than an open port.
+#
+#     uv run python tools/bridge.py watch
+#
+# That becomes how the bridge is run. It starts one and then stays up to accept
+# start / stop / restart, so the dashboard button and the command line reach
+# exactly the same code.
+CONTROL = config_build() / "control"
+CMD = CONTROL / "bridge.cmd"
+STATE = CONTROL / "bridge.state"
+
+
+def _write_state(text: str) -> None:
+    try:
+        CONTROL.mkdir(parents=True, exist_ok=True)
+        STATE.write_text(f"{int(time.time())} {text}\n")
+    except OSError:
+        pass
+
+
+def watch() -> int:
+    """Run the bridge, and obey start/stop/restart written to the spool."""
+    CONTROL.mkdir(parents=True, exist_ok=True)
+    CMD.write_text("")                    # never act on a command left over
+    print(f"supervisor up; commands from {CMD}")
+    if not running():
+        start()
+    _write_state("running" if running() else "stopped")
+    while True:
+        time.sleep(1.0)
+        try:
+            want = CMD.read_text().strip().lower()
+        except OSError:
+            continue
+        if not want:
+            _write_state("running" if running() else "stopped")
+            continue
+        try:
+            CMD.write_text("")            # consume before acting, never repeat
+        except OSError:
+            pass
+        print(f"  supervisor: {want}", flush=True)
+        _write_state(f"{want}ing")
+        if want == "stop":
+            stop()
+        elif want == "start":
+            start()
+        elif want == "restart":
+            stop()
+            start()
+        else:
+            print(f"  !! unknown command {want!r}", flush=True)
+        _write_state("running" if running() else "stopped")
+
+
 def main() -> int:
     what = (sys.argv[1] if len(sys.argv) > 1 else "status").lower()
     if what == "status":
@@ -152,6 +225,8 @@ def main() -> int:
     if what == "restart":
         stop()
         return start()
+    if what == "watch":
+        return watch()
     print(__doc__)
     return 2
 
