@@ -195,16 +195,24 @@ def record(session_id: str, **fields) -> None:
 
 
 def fetch_radar(session_id: str = "", url: str = RADAR_URL,
-                timeout: float = 5.0) -> str:
+                timeout: float = 5.0, profile=None) -> Scope:
     """Grab the current scope (tagged with this session's radar-identified
     callsigns) to hand the controller with the pilot's call. Best-effort -- a
     radar hiccup must not eat the transmission."""
     q = f"{url}?{urllib.parse.urlencode({'session_id': session_id})}" if session_id else url
     try:
         with urllib.request.urlopen(q, timeout=timeout) as resp:
-            return json.load(resp).get("picture", "").strip()
+            got = json.load(resp)
     except (urllib.error.URLError, TimeoutError, OSError, ValueError):
-        return ""
+        return Scope("")
+    # A Scope IS the prose -- every existing caller keeps working -- and it
+    # carries the facts the prose was drawn from, so the geometry can stop
+    # parsing it. See the class. `origin` is OURS: where this controller
+    # measures from, not the constant the director rendered against.
+    return Scope(got.get("picture", "").strip(),
+                 contacts=got.get("contacts"),
+                 origin=field_origin(profile) if profile is not None else None,
+                 bullseye=got.get("bullseye"))
 
 
 def ask_agent(session_id: str, message: str, tier: str = "sonnet",
@@ -884,6 +892,29 @@ _FIX_BY_TRACK = re.compile(
     r"(?:[^|]*?(\d+)\s*knots)?", re.I)
 
 
+def _range_radial(origin: tuple, lat: float, lon: float) -> tuple:
+    """Great-circle range in nautical miles and true bearing FROM an origin.
+
+    Geodesic, not a flat-earth offset. Caucasus is a transverse Mercator and the
+    flat version was measured 1.2 nm out at the coast and 7.6 nm out at the
+    target area -- see `push_fixes`. The same error is still open on the paper
+    nav log ([#2] and the 29 July audit), and this is the shape of the fix.
+    """
+    import math
+    la1, lo1 = math.radians(origin[0]), math.radians(origin[1])
+    la2, lo2 = math.radians(lat), math.radians(lon)
+    dlo = lo2 - lo1
+    nm = (math.acos(min(1.0, max(-1.0,
+          math.sin(la1) * math.sin(la2)
+          + math.cos(la1) * math.cos(la2) * math.cos(dlo))))
+          * 6371008.8 / 1852.0)
+    brg = math.degrees(math.atan2(
+        math.sin(dlo) * math.cos(la2),
+        math.cos(la1) * math.sin(la2)
+        - math.sin(la1) * math.cos(la2) * math.cos(dlo))) % 360.0
+    return nm, brg
+
+
 def radar_fix_by_track(scope: str, track: str, profile=None) -> object | None:
     """Where he is, found by the TRACK the identity ladder resolved.
 
@@ -907,6 +938,18 @@ def radar_fix_by_track(scope: str, track: str, profile=None) -> object | None:
     if not track:
         return None
     from marshall.atc import asr
+    # STRUCTURE FIRST ([#47]). The contact carries an absolute position and the
+    # Scope carries this controller's own origin, so the range is computed here
+    # rather than read out of prose that measured it from another process's
+    # module constant. Falls through to the regex when either is missing -- an
+    # older director, or a radar hiccup -- until the parsers are deleted.
+    c = scope.of(track) if isinstance(scope, Scope) and scope.origin else None
+    if c is not None and c.get("lat") is not None:
+        nm, radial = _range_radial(scope.origin, c["lat"], c["lon"])
+        h = c.get("heading") or 0.0
+        return asr.Position(nm, radial, int(c.get("alt_ft") or 0),
+                            true_heading(h, profile) if profile else h,
+                            c.get("speed_kt") or 0.0)
     want = _key_name(track)
     for name, nm, radial, alt, hdg, kt in _FIX_BY_TRACK.findall(
             identity.flatten_formation(scope or "")):
@@ -2513,6 +2556,72 @@ def whisper_vocabulary(bridge, profile) -> str:
     return stt.domain_prompt(stations, fixes, spoken, field, plan_labels())
 
 
+# name -> (lat, lon), from the sim's own projection of route.py's fixes.
+# Filled by `push_fixes` on startup; empty until then, and empty is handled --
+# a Scope with no origin renders no ranges rather than wrong ones.
+PROJECTED: dict[str, tuple] = {}
+
+
+def field_origin(profile) -> tuple | None:
+    """Where THIS controller measures from.
+
+    The beacon when the field has one, because that is the published reference
+    every range on the plate is quoted against; the arrival fix otherwise. Not a
+    module constant, and not the director's -- see `Scope`.
+    """
+    for attr in ("beacon", "arrival_fix", "outer_hold"):
+        f = getattr(profile, attr, None)
+        name = getattr(f, "name", "") if f is not None else ""
+        if name and name.upper() in PROJECTED:
+            return PROJECTED[name.upper()]
+    return None
+
+
+class Scope(str):
+    """The radar picture, and the facts it was drawn from.
+
+    A STRING SUBCLASS, deliberately, and it is worth saying why rather than
+    leaving somebody to find it. The prose IS the agent's input -- it goes
+    straight into the prompt -- and it is threaded through about forty call
+    sites as a plain `scope: str`. Making it a str keeps every one of those
+    working untouched while the geometry migrates off the regexes one function
+    at a time ([#47]). The alternative was a second parameter through all forty,
+    which would have had to land in one commit.
+
+    `contacts` is the same tracks as data, with ABSOLUTE positions. `origin` is
+    where THIS controller measures from, which the director has no opinion
+    about. Anything asking "how far is he" computes it here, from those two,
+    instead of parsing a number out of the prose that was measured from a
+    constant in another process.
+
+    Both may be empty -- an older director, or a radar hiccup -- and callers
+    fall back to the parsers until those are gone.
+    """
+
+    # Annotated only; every instance sets them in __new__. A str subclass has
+    # no __init__ to put them in, and a bare default here would be shared.
+    contacts: list
+    origin: tuple | None
+    bullseye: dict
+
+    def __new__(cls, picture: str = "", contacts=None, origin=None, bullseye=None):
+        self = super().__new__(cls, picture or "")
+        self.contacts = list(contacts or [])
+        self.origin = origin
+        self.bullseye = dict(bullseye or {})
+        return self
+
+    def of(self, track: str):
+        """The contact for a sim unit name, or None. The join everything wants."""
+        want = _key_name(track or "")
+        if not want:
+            return None
+        for c in self.contacts:
+            if _key_name(c.get("name", "")) == want:
+                return c
+        return None
+
+
 def push_fixes(base: str, profile) -> int:
     """Project route.py's fixes with the SIM's own converter and push them.
 
@@ -2587,6 +2696,13 @@ def push_fixes(base: str, profile) -> int:
             out[f"waypoint {n}"] = out[f.name]
             out[f"steerpoint {n}"] = out[f.name]
     _put_json(f"{base}/fixes", {"fixes": out})
+    # KEPT, not just pushed. The bridge projected these through the sim's own
+    # converter and then discarded them, so the one process that knows where its
+    # own field is had to ask the director for ranges measured from somebody
+    # else's. See `Scope`: rendering a picture for a controller needs an origin,
+    # and this is where it comes from.
+    PROJECTED.clear()
+    PROJECTED.update({k.upper(): tuple(v) for k, v in out.items()})
     return len(out)
 
 
@@ -3108,7 +3224,8 @@ def attribute(bridge, client, transcript, srs, session_id, radar_on, ctl):
     alone would bind a radio to 37 distinct names, of which ten were
     aeroplanes.
     """
-    scope = fetch_radar(session_id) if radar_on else ""
+    scope = (fetch_radar(session_id, profile=getattr(ctl, "profile", None))
+             if radar_on else Scope(""))
 
     # What the WORDS claim, still by vote across the sortie: real callsigns
     # repeat and noise does not. Demoted from the answer to a claim, which
@@ -3555,7 +3672,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             # a stale callsign cannot make the separation engine engage against
             # a pilot who is alone. Rides this tick because it is already here;
             # it costs one request and usually returns nothing.
-            _scope = fetch_radar(session_id) if radar_on else ""
+            _scope = (fetch_radar(session_id, profile=profile)
+                      if radar_on else Scope(""))
             for gone in release_stale(bridge, ctl, _scope):
                 print(f"  .. {gone} — nothing has accounted for him in "
                       f"{STALE_BOARD_SEC // 60} minutes, off the board", flush=True)
@@ -3585,7 +3703,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                           plans=filed_plan_rows(),
                           names=getattr(client, "roster", None))
             for hook in fetch_due(session_id):
-                scope = fetch_radar(session_id) if radar_on else ""
+                scope = (fetch_radar(session_id, profile=profile)
+                         if radar_on else Scope(""))
                 why = hook.get("why") or ""
                 # WHICH CHANNEL THE PROMISE WAS MADE ON.
                 #
@@ -3666,7 +3785,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             if not (radar_on and getattr(profile, "vectored", False)):
                 continue
             try:
-                scope = fetch_radar(session_id)
+                scope = fetch_radar(session_id, profile=profile)
                 # Sequencing: with a queue, only the aircraft that owns the
                 # approach is vectored. Everyone else is holding, and a vector
                 # is an invitation to start -- issue two and two aeroplanes fly
