@@ -3555,11 +3555,29 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             # a stale callsign cannot make the separation engine engage against
             # a pilot who is alone. Rides this tick because it is already here;
             # it costs one request and usually returns nothing.
-            for gone in release_stale(
-                    bridge, ctl, fetch_radar(session_id) if radar_on else ""):
+            _scope = fetch_radar(session_id) if radar_on else ""
+            for gone in release_stale(bridge, ctl, _scope):
                 print(f"  .. {gone} — nothing has accounted for him in "
                       f"{STALE_BOARD_SEC // 60} minutes, off the board", flush=True)
                 record(session_id, kind="released", callsign=gone)
+            # AND PUBLISH, ON THE PICTURE THIS TICK ALREADY FETCHED.
+            #
+            #     "F16 on the ground at Batumi. Looking at diag. I would expect
+            #      myself to be in the untracked column since I have not checked
+            #      in. Nothing here"
+            #
+            # Right, and the snapshot was written on TRANSMISSIONS only, plus
+            # once at startup with an empty scope. So a diagnostic board showed
+            # nothing at all until somebody keyed a microphone -- and the whole
+            # point of the untracked column is the aeroplanes that have NOT
+            # spoken. It could not have worked.
+            #
+            # This tick is the right home for it: it already has the radar
+            # picture for `release_stale`, so the board refreshes at the poll
+            # rate for no extra request and no extra latency on the voice path.
+            publish_state(bridge, ctl, _scope, session_id,
+                          plans=filed_plan_rows(),
+                          names=getattr(client, "roster", None))
             for hook in fetch_due(session_id):
                 scope = fetch_radar(session_id) if radar_on else ""
                 why = hook.get("why") or ""
