@@ -325,5 +325,47 @@ class TestTheLabelIsNotTheUnitName(unittest.TestCase):
         self.assertIn("ref", A._from_bullseye(self.scope, "362nd_sockeye"))
 
 
+class TestAnEmptyPictureIsNotAnEmptyScope(unittest.TestCase):
+    """`Scope` is a str subclass, so `not scope` asks about the PICTURE.
+
+    A picture can be empty while the facts behind it are not: a controller with
+    no projected field of his own draws nothing, the cold-cache path can serve
+    contacts with no prose, and every scope in this file is built from contacts
+    alone. Three guards read the string, so the structured path was unreachable
+    in exactly those cases -- silently, and returning "no radar" rather than an
+    error.
+
+    Found by tracing a spoken callsign end to end rather than by any test here,
+    which is the second time today the fixtures could not see a thing the real
+    path did. It is also the same shape as the bug it replaced: asking prose a
+    question the data can answer.
+    """
+
+    C = {"name": "Viper 1-4", "label": "362nd_sockeye", "callsign": "Pony 1-1",
+         "type": "F-16C_50", "category": "airplane", "manned": True,
+         "on_ground": False, "lat": 41.62, "lon": 41.61, "alt_ft": 4000,
+         "heading": 90, "speed_kt": 250, "coalition": 3, "formation": ""}
+
+    def setUp(self):
+        self.scope = A.Scope("", contacts=[self.C], origin=BATUMI)
+
+    def test_the_tag_still_finds_its_track(self):
+        self.assertEqual(A._track_tagged(self.scope, "Pony 1-1"),
+                         "362nd_sockeye")
+
+    def test_the_geometry_still_answers(self):
+        self.assertIsNotNone(A.radar_fix(self.scope, "Pony 1-1"))
+        self.assertIsNotNone(A.radar_range_for(self.scope, "Pony 1-1"))
+
+    def test_a_genuinely_empty_scope_still_answers_nothing(self):
+        """The guard must still refuse when there is really nothing -- an empty
+        picture AND no contacts is a radar outage, and inventing a position for
+        one is worse than admitting it."""
+        empty = A.Scope("")
+        self.assertEqual(A._track_tagged(empty, "Pony 1-1"), "")
+        self.assertIsNone(A.radar_fix(empty, "Pony 1-1"))
+        self.assertIsNone(A.radar_range_for(empty, "Pony 1-1"))
+
+
 if __name__ == "__main__":
     unittest.main()

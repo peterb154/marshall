@@ -611,7 +611,15 @@ def _track_tagged(scope: str, spoken: str) -> str:
     earlier correlation hung that name on, so it can be worked under its handle.
     """
     from marshall.atc import callsign as C
-    if not spoken or not scope:
+    # A SCOPE WITH CONTACTS IS NOT AN EMPTY SCOPE, however the prose reads.
+    # `Scope` is a str subclass, so `not scope` asks about the PICTURE -- and a
+    # picture can be empty while the facts behind it are not (a controller with
+    # no projected field of his own draws nothing, and the tests build scopes
+    # from contacts alone). Reading the string here made the structured path
+    # unreachable in exactly those cases, silently, and it is the same shape as
+    # the bug it replaced: asking prose a question the data can answer.
+    if not (scope or getattr(scope, "contacts", None)) or not spoken:
+        return ""
         return ""
     me = C.parse(spoken)
     # NO FLATTENING when the Scope carries structure: nothing was collapsed, so
@@ -1061,7 +1069,15 @@ def radar_fix(scope: str, cs: str, profile=None) -> object | None:
     a blip that might not be him is worse than no guidance, because it sounds
     exactly as confident.
     """
-    if not scope or not cs:
+    # A SCOPE WITH CONTACTS IS NOT AN EMPTY SCOPE, however the prose reads.
+    # `Scope` is a str subclass, so `not scope` asks about the PICTURE -- and a
+    # picture can be empty while the facts behind it are not (a controller with
+    # no projected field of his own draws nothing, and the tests build scopes
+    # from contacts alone). Reading the string here made the structured path
+    # unreachable in exactly those cases, silently, and it is the same shape as
+    # the bug it replaced: asking prose a question the data can answer.
+    if not (scope or getattr(scope, "contacts", None)) or not cs:
+        return None
         return None
     from marshall.atc import asr, callsign as C
     me = C.parse(cs)
@@ -1603,7 +1619,15 @@ def radar_range_for(scope: str, cs: str) -> float | None:
     ones). An unidentified blip near the beacon proves nothing about who is
     talking, and guessing is how you end up rejecting a truthful report.
     """
-    if not scope or not cs:
+    # A SCOPE WITH CONTACTS IS NOT AN EMPTY SCOPE, however the prose reads.
+    # `Scope` is a str subclass, so `not scope` asks about the PICTURE -- and a
+    # picture can be empty while the facts behind it are not (a controller with
+    # no projected field of his own draws nothing, and the tests build scopes
+    # from contacts alone). Reading the string here made the structured path
+    # unreachable in exactly those cases, silently, and it is the same shape as
+    # the bug it replaced: asking prose a question the data can answer.
+    if not (scope or getattr(scope, "contacts", None)) or not cs:
+        return None
         return None
     from marshall.atc import callsign as C
     # Structure first, and it agrees with `radar_fix` by construction because it
