@@ -34,6 +34,7 @@ import urllib.request
 from marshall import config
 from marshall.atc import flights as fl
 from marshall.atc import identity
+from marshall.atc import picture as _picture
 
 BASE_URL = "http://localhost:8000"
 AGENT_URL = f"{BASE_URL}/atc"          # two-tier routed turn (tier picks the model)
@@ -207,11 +208,27 @@ def fetch_radar(session_id: str = "", url: str = RADAR_URL,
         return Scope("")
     # A Scope IS the prose -- every existing caller keeps working -- and it
     # carries the facts the prose was drawn from, so the geometry can stop
-    # parsing it. See the class. `origin` is OURS: where this controller
-    # measures from, not the constant the director rendered against.
-    return Scope(got.get("picture", "").strip(),
-                 contacts=got.get("contacts"),
-                 origin=field_origin(profile) if profile is not None else None,
+    # parsing it. See the class.
+    contacts = got.get("contacts") or []
+    origin = field_origin(profile) if profile is not None else None
+    # AND WE DRAW IT OURSELVES, from our own field.
+    #
+    #     "why is that using batumi and not bull?"
+    #
+    # Because the director was drawing it, and drawing needs an origin it has no
+    # business owning. Every range in that prose was measured from a module
+    # constant -- Batumi's aerodrome reference -- and the lines came sorted by
+    # distance from it, so a controller anywhere else read somebody else's
+    # ranges in somebody else's order.
+    #
+    # The director's `picture` is kept as the fallback for exactly the case that
+    # justifies one: no contacts, or no projected field of our own, where
+    # drawing from a stale constant beats drawing nothing. Byte-identical for a
+    # shared origin -- `tests/test_picture.py` proves it against prose captured
+    # from the running director.
+    drawn = _picture.picture(contacts, origin) if (contacts and origin) else ""
+    return Scope(drawn or got.get("picture", "").strip(),
+                 contacts=contacts, origin=origin,
                  bullseye=got.get("bullseye"))
 
 
