@@ -74,7 +74,6 @@ class Aircraft:
     last_report_t: float = 0.0
     approaches: int = 0
     map_t: float | None = None       # computed station-passage (missed approach point) time
-    members: list[str] = field(default_factory=list)   # non-empty => a joined flight
     # Cleared for a VISUAL approach: he is flying it himself from here. The
     # controller's job shrinks to spacing, and the talk-down must stop -- reading
     # ranges to a man looking at the runway is chatter over somebody busy.
@@ -110,13 +109,27 @@ class Aircraft:
     # on radar cannot leave it.
     radar_identified: bool = False
 
+    # HOW MANY, which is all a flight report tells you. "Flight of four" is a
+    # number; it is not four names, and the engine used to turn it into four by
+    # minting "Pony 1-1" through "Pony 1-4" off the flight key. That worked
+    # only while the key happened to look like a callsign -- and it stopped the
+    # day identity started keying on handles, when the same code began putting
+    # "Sockeye one" through "Sockeye four" on the air: four aeroplanes nobody
+    # has and no pilot will answer to.
+    ships: int = 1
+    # WHO, and only ever from something that knows: a member is a person who
+    # keyed his own microphone and was bound to his own handle. Empty is the
+    # honest answer until then, and an honest empty is what stops the
+    # controller reading out names he invented.
+    members: list[str] = field(default_factory=list)
+
     @property
     def is_flight(self) -> bool:
-        return len(self.members) > 1
+        return self.ships > 1 or len(self.members) > 1
 
     @property
     def size(self) -> int:
-        return max(1, len(self.members))
+        return max(self.ships, len(self.members), 1)
 
 
 @dataclass
@@ -374,6 +387,13 @@ class Controller:
         return [{"callsign": cs, "phase": ac.phase.name,
                  "assigned_ft": ac.assigned_ft, "identified": ac.radar_identified,
                  "members": list(ac.members), "approaches": ac.approaches,
+                 # WHICH PROCEDURE, not just which phase. CLEARED means he is in
+                 # the letdown; it does not say whether he is flying the
+                 # surveillance approach or looking out of the window, and those
+                 # are different jobs for the controller. The engine has always
+                 # known -- it is what stops it reading him vectors he does not
+                 # want -- and it was the one thing about him nothing could ask.
+                 "on_visual": ac.on_visual,
                  "in_letdown": cs == self._letdown}
                 for cs, ac in sorted(self.aircraft.items())]
 
@@ -542,6 +562,15 @@ class Controller:
                 if callsign.parse(_n).flight == c.flight:
                     members = sorted(_m)
                     break
+        if not members:
+            # NOBODY HAS CHECKED IN YET, and there are no names to offer --
+            # which used to be impossible, because the engine minted four the
+            # moment a flight reported its size. It said "I have ." with an
+            # empty list on the day that stopped. Ask the question without the
+            # list: he knows his own callsign, and we do not.
+            self.say(cs, f"{c.spoken_flight} is broken up for individual "
+                         f"approaches — say your callsign and your intentions.")
+            return
         names = ", ".join(callsign.parse(m).spoken for m in members)
         self.say(cs, f"{c.spoken_flight}, you are broken up for individual "
                      f"approaches — say your callsign. I have {names}.")
@@ -579,13 +608,16 @@ class Controller:
         """
         c = callsign.parse(cs)
         if size > 1:
-            if any(m in self.aircraft for m in c.members(size)):
-                return self.get(cs)           # already split; leave them alone
+            # ALREADY SPLIT, asked of the record rather than of a set of names
+            # this function used to invent. `_broken_up` is the fact -- it is
+            # written the moment a flight stops existing -- and consulting it
+            # works whatever the members turned out to be called.
+            if any(callsign.parse(n).flight == c.flight for n in self._broken_up):
+                return self.get(cs)           # leave them alone
             ac = self.aircraft.get(c.flight)
             if ac is None:
                 ac = self.aircraft[c.flight] = Aircraft(c.flight)
-            if not ac.members:
-                ac.members = c.members(size)
+            ac.ships = max(ac.ships, size)
             return ac
         return self.get(cs)
 
@@ -628,7 +660,18 @@ class Controller:
         Returns True if it did anything, so the caller can tell a seeding from
         an ordinary call.
         """
-        ac = self.get(cs)
+        # LOOK, DO NOT CREATE. `get` inserts, so asking it whether he is
+        # already on the approach MADE an aeroplane called "Pony 1-1" before
+        # `_enter` had a chance to make the FLIGHT -- and then the flight and
+        # the stray both existed, with radar's clearance landing on the flight
+        # and every later call resolving to the stray.
+        #
+        # It went unnoticed because `_enter` used to check "have any of this
+        # flight's members already been entered?" against names it had itself
+        # minted, so it found the stray, concluded the formation was already
+        # split, and worked the stray instead. Two wrongs that happened to
+        # cancel; removing the minting left only the first one.
+        ac = self.aircraft.get(self._resolve(cs))
         if ac is not None and ac.phase in (Phase.CLEARED, Phase.LANDED):
             return False                       # already known to be on it
         ac = self._enter(cs, size)
@@ -707,6 +750,13 @@ class Controller:
         cleared aeroplane is exactly the one whose identity matters most -- he
         is the one about to be talked down.
         """
+        if not members:
+            # NOTHING TO NAME, and that is the normal case now. A flight report
+            # is a number; the only thing that produces a name is a pilot
+            # keying his own microphone. So ask for exactly that instead of
+            # reading out a list the engine made up.
+            return (" Each of you check in individually with your own callsign "
+                    "so I can identify you.")
         if len(members) < 2:
             return " Report established."
         if already_named:
@@ -752,6 +802,18 @@ class Controller:
         # there are no longer four levels to find before the split may happen.
         members = list(ac.members)
         self.aircraft.pop(ac.callsign, None)
+        # AND IT GIVES UP THE LETDOWN. A flight that no longer exists cannot be
+        # the one being talked down, and this was unreachable until 30 July --
+        # the engine always split a formation on ARRIVAL at the fix, so it was
+        # never cleared as a flight and never held the letdown when it split.
+        # Now that a flight may fly the approach as a flight, lead can perfectly
+        # well decide to break up half way down it, and `_letdown` was left
+        # pointing at the dissolved entity: `_try_clear` found the slot taken by
+        # a name no longer on the board, so all four members sat holding and
+        # nobody was ever cleared. Silent, and it would have read as the
+        # controller simply forgetting about them.
+        if self._letdown == ac.callsign:
+            self._letdown = None
         self._broken_up[ac.callsign] = members
         self.say(ac.callsign, ref=ac, text=
                  f"{self._addr(ac)}, break up for individual approaches."
@@ -775,14 +837,21 @@ class Controller:
         ac.last_report_t = self.t
 
         if ac.phase in (Phase.UNKNOWN, Phase.ENROUTE):
-            # A formation arriving at the fix is the moment it stops being one
-            # aeroplane. You do NOT hold four ships in formation through a
-            # letdown -- a holding pattern is minutes of turning in cloud with
-            # three wingmen welded to lead exactly when lead's attention is on
-            # the plate and the clock. Break them up on arrival, every time.
-            if ac.is_flight:
-                self._break_up(ac)
-                return
+            # A FORMATION HOLDS AS ONE, and this used to break it up on
+            # arrival, every time.
+            #
+            #     "if a flight wants to fly an approach in formation - they
+            #      can. That's up to the flight lead."
+            #
+            # Which is the rule, and it was already the shape of everything
+            # here: a joined flight IS one entity to this engine -- one level,
+            # one clearance, one place in the letdown -- so there was never
+            # anything to do differently. The break-up was the controller
+            # reaching into a formation and dissolving it because he had
+            # decided four ships could not fly one approach. That is the
+            # lead's decision and nobody else's, and if he wants to bring four
+            # aeroplanes down as one, that is a formation approach and it is
+            # perfectly ordinary.
             slot = self._free_slot()
             if slot is None:
                 self.say(ac.callsign,
@@ -917,10 +986,9 @@ class Controller:
         controller's spacing -- which is exactly what route.py's `guidance`
         comment has said all along.
         """
+        # A flight may fly a visual as a flight -- see `report_beacon`. It is
+        # one entity, it gets one clearance, and the lead flies it.
         ac = self.get(cs)
-        if ac.is_flight:
-            self._break_up(ac)          # four ships cannot fly one approach
-            return
         runway = self.profile.runway or "in use"
         if not self._letdown or self._letdown == ac.callsign:
             self._letdown = ac.callsign
@@ -958,11 +1026,6 @@ class Controller:
         # or beacon report) should still be worked, not ignored. Enter a new
         # arrival into the stack bottom-up, then let the sequencer clear them.
         ac = self.get(cs)
-        if ac.is_flight:
-            # A formation asking for the approach is asking to be broken up,
-            # whether or not it uses the word: four ships cannot fly one letdown.
-            self._break_up(ac)
-            return
         if ac.phase == Phase.CLEARED:
             # Already cleared (e.g. the aircraft ahead just landed and freed the
             # letdown for him) -- re-affirm, don't send him back to the hold.

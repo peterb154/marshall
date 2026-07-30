@@ -148,7 +148,7 @@ def run(script, session_id: str, sep_always: bool = True,
         # The words are a CLAIM; the ladder decides whether to believe it,
         # preferring the radio-to-track chain that has no microphone in it.
         # See identity.py and [ARCH-2] / #40.
-        claim = agent_atc.transmitter_callsign(f"guid-{srs}", text)
+        claim = agent_atc.transmitter_callsign(bridge, f"guid-{srs}", text)
         ident = bridge.identity.resolve(
             f"guid-{srs}", srs, spoken=claim, scope=scope,
             plans=agent_atc.filed_plans(), roster=ctl.identified())

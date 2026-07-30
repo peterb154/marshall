@@ -158,10 +158,20 @@ class Identity:
     reads "radio" for a pilot who should have been on radar is the day something
     upstream broke.
     """
-    callsign: str = ""         # the label to address him by; "" means unknown
+    # WHAT TO CALL HIM, and since 30 July it is never a word off the radio:
+    # his HANDLE, out of the name the transport gives his radio or the sim
+    # gives his aeroplane. A flight name replaces it upstream, in
+    # `flights.speaking_as`, because being in a flight is a fact this module
+    # has no view of.
+    callsign: str = ""
     track: str = ""            # the sim unit, when the chain reached one
     authority: str = ""        # radar | plan | roster | ""
     why: str = ""              # one line, for the log and for a human
+    # THE STRIP HE MATCHED, kept separately now that it is no longer his label.
+    # A plan is filed under a callsign -- "Pony 1-1" -- and that string still
+    # has to be joinable to him, or the board and the flight-plan table can no
+    # longer be shown side by side.
+    plan: str = ""
 
     def __bool__(self) -> bool:
         return bool(self.callsign)
@@ -365,52 +375,49 @@ class Registry:
         return free[0] if len(free) == 1 else None
 
     @staticmethod
-    def _label(spoken: str, prior: Identity | None, u: Unit,
-               plans: list[str] | None) -> str:
-        """What to CALL him, once we already know which aeroplane he is.
+    def _handle_for(u, srs_name: str, prior) -> str:
+        """What to CALL him -- and nothing he says can move it.
 
-        Separate from identity on purpose, and the asymmetry is the point: the
-        track is what gets separated, the label is only ever used to address
-        him. So a wrong label is rude and a wrong track is dangerous, and they
-        deserve different rules.
+            "that self-designated callsign crap was the cause of a lot of
+             problems. And we should just rip it out now"
 
-        WHAT HE CALLS HIMSELF WINS. `spoken` is not one transmission's guess --
-        it arrives already voted across the whole sortie by
-        `transmitter_callsign`, which weighs how often a radio has used a name
-        against how recently. Real callsigns repeat and noise does not, and
-        that vote is where the protection belongs.
+        THIS USED TO RETURN WHAT HE SAID. A spoken callsign, voted across the
+        sortie, became his label and therefore the key the separation engine
+        held him under. It cost, in order: ghost aeroplanes minted out of
+        read-back fragments; a board keyed on strings Whisper guessed at; a
+        pilot stuck as "Pony 1-1" for a whole approach after he started flying
+        as Falcon 1-1, with radar tracking one aeroplane and the engine
+        sequencing another; and a member designation -- "Apex 1-2" -- becoming
+        a name the controller addressed a man by, which nobody does on the air.
 
-        A SECOND LAYER OF PROTECTION HERE WAS A REAL OUTAGE. It refused any
-        rename that no filed strip agreed with -- so a pilot who checked in as
-        Pony 1-1, then flew as Falcon 1-1 and said so a dozen times, stayed
-        Pony 1-1 forever. Radar had tagged his track "Falcon one one", the
-        engine went looking for "Pony 1-1", found nobody, and told him he was
-        not radar identified for the whole approach while the agent cheerfully
-        vectored Falcon 1-1. Two brains working two different aeroplanes, which
-        is the exact failure this module exists to prevent.
+        Every one of those is the same root: a LABEL derived from audio, in a
+        system whose entire premise is that identity is not. The label is now
+        derived from the same chain the identity is:
 
-        The evidence for that guard came from replaying the RAW extractor, one
-        transmission at a time, with no vote in front of it. The live path has
-        never worked that way. It was a fix for a problem this code did not
-        have, and it cost an approach.
+            GUID -> SRS client name -> sim unit -> track
+
+        and `handle` takes the human out of either end of it. So a person is
+        his handle, a flight has a name, and a member number is neither.
+
+        WHAT HE SAYS IS STILL USED, and this is the distinction worth keeping
+        straight: it is a CLAIM, matched against a filed strip or an aeroplane
+        already admitted, and it decides WHICH identity he is -- see `resolve`.
+        It just never decides what that identity is CALLED.
+
+        THE PRIOR IS THE LAST RESORT, not a rung. It matters for a guest whose
+        radio the transport named badly and whom radar has not painted: keeping
+        yesterday's answer beats blanking a man mid-approach.
         """
-        known = (prior.callsign if prior else "") or u.callsign
-        # Nothing said this time: keep the name he has been going by. This is
-        # the case the guard was really for -- a clipped or wordless call must
-        # not blank him.
-        if not spoken:
-            # THE HANDLE, NOT THE SIM'S UNIT NAME, when nothing else has named
-            # him. "A person is his handle" -- Sockeye is Sockeye whatever he
-            # is flying, and only a flight has a name of its own. The unit name
-            # is a slot label nobody has ever said out loud, and reaching it
-            # put a squadron tag on the air: the controller called a man
-            # "three six two underscore Andre dash one", which the voice read
-            # as "3-6-2 and DeAndre-1".
-            #
-            # Last resort stays the raw name rather than nothing, because a
-            # clumsy label is still better than an unaddressed transmission.
-            return known or u.callsign or handle(u.name) or u.name
-        return spoken
+        # ONE CASE, because there are two sources and they disagree by nature:
+        # the sim calls him "362nd_sockeye" and SRS calls him "Sockeye". Left
+        # alone, a pilot who checks in on a strip and is acquired by radar two
+        # minutes later silently changes from "Sockeye" to "sockeye" -- and
+        # every dict the bridge keys on that label (what frequency he was heard
+        # on, which strip he matched, what the engine holds him under) misses
+        # from then on. He would be told to check in on a channel he was
+        # already talking on.
+        got = handle(u.name) if u is not None else handle(srs_name)
+        return (got or (prior.callsign if prior else "")).lower()
 
     def resolve(self, guid: str, srs_name: str, spoken: str = "",
                 scope: str = "", plans: list[str] | None = None,
@@ -448,27 +455,33 @@ class Registry:
                 why = ("the only person flying who is not already accounted "
                        "for is in {}")
         if u is not None:
-            # His callsign is what he SAYS he is, once we know which aeroplane
-            # is talking. That is safe in a way the reverse never was: the
-            # label can be wrong without the identity being wrong, and a label
-            # is only ever used to address him.
-            label = self._label(spoken, prior, u, plans)
-            ident = Identity(label, u.name, "radar", why.format(repr(u.name)))
+            # The human in the aeroplane, not the name he gave himself. Still
+            # matched against a filed strip below, so the board can be joined
+            # to the flight-plan table even though they are keyed differently.
+            label = self._handle_for(u, srs_name, prior)
+            ident = Identity(label, u.name, "radar", why.format(repr(u.name)),
+                             plan=next((n for n in plans or []
+                                        if spoken and _matches(spoken, n)), ""))
             self.by_guid[guid] = ident
             return ident
 
-        # 2. A claim against a filed plan.
-        for label in plans or []:
-            if spoken and _matches(spoken, label):
-                ident = Identity(label, "", "plan",
-                                 f"claimed {spoken!r}, and {label!r} is filed")
+        # 2. A claim against a filed plan. The STRIP is what he matched; it is
+        #    not what he is called. A man whose radio the transport names
+        #    "Sockeye" is Sockeye whether his strip says Pony 1-1 or Falcon 1-1,
+        #    and the strip travels alongside so the two can still be joined.
+        who = self._handle_for(None, srs_name, prior)
+        for name in plans or []:
+            if spoken and _matches(spoken, name):
+                ident = Identity(who or name, "", "plan",
+                                 f"claimed {spoken!r}, and {name!r} is filed",
+                                 plan=name)
                 self.by_guid[guid] = ident
                 return ident
 
         # 3. A claim against somebody already admitted.
-        for label in roster or []:
-            if spoken and _matches(spoken, label):
-                ident = Identity(label, "", "roster",
+        for name in roster or []:
+            if spoken and _matches(spoken, name):
+                ident = Identity(who or name, "", "roster",
                                  f"claimed {spoken!r}, already on the board")
                 self.by_guid[guid] = ident
                 return ident

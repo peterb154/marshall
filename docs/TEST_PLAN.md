@@ -18,10 +18,11 @@ the sections are reordered.
 | 3 | **D — flights** | [#42] | **two aircraft** | built 29 July, never flown by a human. Skip it solo |
 | 4 | **H — the approach** | [#19] [#37] [#39] | solo | the main event, and where the open bugs live |
 | 5 | **F — landing and the handoff** | [#41] | solo | the sim's own events now drive Tower. Never flown |
+| 7 | **N — what he calls you** | [#48] | solo, better with two | the label no longer comes off the radio, and a formation is only split by its own lead. Built 30 July |
 | 6 | **K — does he remember** | [#43] | solo, better with two | shipped 30 July, never flown |
 | — | **E — known broken** | | | read it, so you do not re-find something already understood |
 
-**Solo today?** J, G, H, F, K. Section D needs a second aeroplane; leave it.
+**Solo today?** J, G, H, F, K, N. Section D needs a second aeroplane, and N is much better with one — leave them if you are alone. Section D needs a second aeroplane; leave it.
 
 ## How to report
 
@@ -450,6 +451,43 @@ was routed through the intent classifier at 2.2 seconds a call.
 here is dangerous — a counter that reads too low switches separation OFF, and
 nobody hears a missing hold instruction until two aeroplanes are in the same
 letdown. If M3 gives you the cheap path, stop and say so.
+
+---
+
+---
+
+## N — what he calls you, and who breaks up a formation
+
+Changed 30 July, and it is the biggest behaviour change on this card. **Nothing
+you say decides what you are called any more.** Your identity is your handle —
+taken from your aeroplane and your radio, neither of which can be mis-heard —
+and a flight name replaces it while you are in one. A member number is neither
+and can no longer exist.
+
+The formation rules moved with it, because the engine used to invent member
+callsigns off the flight name and that only worked while the flight name looked
+like a callsign.
+
+| ID | Prio | Test | What should happen | Fix under test |
+|----|------|------|--------------------|----------------|
+| N1 | P1 | Check in as **any callsign you like** — "Batumi, Pony one one, checking in" | He works you. He does **not** ask you to say your callsign again, does not say he has no flight plan under that name, and does not argue. Report what he CALLS you — your handle, or the callsign you gave | [#48] |
+| N2 | P1 | Then change it mid-sortie — start calling yourself something else entirely | Nothing happens. No re-identification, no lost clearance, no "not radar identified". This is the 28 July outage, and it should now be a non-event | [#48] |
+| N3 | P1 | Form a flight, then have a **wingman** transmit | He is answered as the FLIGHT. Never "Apex one two" — a member number is not a name anybody is addressed by | [#48] |
+| N4 | P1 | As a flight, fly the **whole approach in formation** — check in, hold, letdown, land, never asking to split | He works you as ONE aeroplane the whole way. He must **never** break you up, never offer to, never say he is unable to work a formation, and never ask whether you can maintain visual separation between your own aircraft | [#48] |
+| N5 | P1 | While the flight is together, have a **wingman** ask for a range | The range describes **lead's** aeroplane, not the wingman's. Check it against lead's DME/position — if the number moves depending on who asks, the geometry is following the wrong ship | [#48] |
+| N6 | P1 | Now **ask to break up** | He breaks you up, and names **nobody**. He should ask each of you to check in with your own callsign. If you hear him read out a list — "one one, one two, one three, one four" — those are invented and it is a regression | [#48] |
+| N7 | P1 | Each of you then checks in individually | *"radar contact, say intentions"* — and nothing is assigned until you ask for something. Then normal sequencing, one in the letdown | [#48] |
+| N8 | P2 | Break up **half way down the approach**, with lead already cleared | Somebody gets cleared. The bug here was silent: the dissolved flight kept the letdown, so all four sat holding and the controller appeared to forget about you | [#48] |
+| N9 | P2 | Fly with **armour and ships on the map**, alone | Covered by M1, and it belongs here too: a tank is not traffic and must not put you in a sequence | [#45] |
+
+**The one to watch.** N4 and N6 are the same rule from opposite sides: the
+formation is yours, and the only thing that splits it is you saying so. Any
+transmission where he initiates it — however reasonable his reason sounds — is
+the bug.
+
+**What is expected to be imperfect.** N1's second half. The agent is told to
+address you by your handle and it still often echoes the callsign you spoke.
+The identity underneath is right either way; say which you would rather hear.
 
 ---
 

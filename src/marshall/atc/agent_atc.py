@@ -574,6 +574,35 @@ def _track_of(scope: str, handle: str) -> str:
     return ""
 
 
+def _track_tagged(scope: str, spoken: str) -> str:
+    """The unit radar has tagged with this callsign, if any.
+
+    The inverse of `_track_of`, and the only legitimate use left for a spoken
+    callsign at this layer: not to NAME anybody, but to find the aeroplane an
+    earlier correlation hung that name on, so it can be worked under its handle.
+    """
+    from marshall.atc import callsign as C
+    if not spoken or not scope:
+        return ""
+    me = C.parse(spoken)
+    tagged = [u for u in identity.units_on(identity.flatten_formation(scope))
+              if u.callsign]
+    # THE SAME TWO PASSES AS `radar_fix`, and deliberately so -- if this
+    # disagreed with it about which aeroplane a callsign means, the engine
+    # would be keyed on one contact and guided from another. Exact first;
+    # a FLIGHT tag only as a fallback, because a formation is tagged once and
+    # its members have no track of their own, so "Pony 1-3" legitimately finds
+    # "Pony one flight" while it must never find Pony 1-2's own track.
+    for u in tagged:
+        if C.parse(u.callsign).canonical.lower() == me.canonical.lower():
+            return u.name
+    for u in tagged:
+        c = C.parse(u.callsign)
+        if c.is_flight and c.flight.lower() == me.flight.lower():
+            return u.name
+    return ""
+
+
 def miles_between(scope: str, a_track: str, b_track: str) -> float | None:
     """How far apart two contacts are, from the radar picture alone.
 
@@ -1678,7 +1707,6 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
     (a question, a request) -- there the agent reasons freely (and the router will
     have sent that to the smart tier). The STACK is shown only with real traffic."""
     from marshall.atc import bedrock_intent, intents
-    from marshall.atc import callsign as C_
     directive = ""
     try:
         intent = bedrock_intent.classify(transcript)
@@ -1713,16 +1741,15 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
                   flush=True)
             intent = dataclasses.replace(intent, callsign=known or "")
 
-        # The same precision rule as the radio binding: if this radio answers to
-        # the FLIGHT and the classifier heard a MEMBER of it, the member is more
-        # specific and wins. Otherwise a lead who checked in for the formation
-        # keeps its name after it has stopped existing, and his own callsign is
-        # rejected as a mishearing every time he says it.
-        if (known and intent.callsign
-                and C_.parse(known).is_flight
-                and not C_.parse(intent.callsign).is_flight
-                and C_.parse(known).flight == C_.parse(intent.callsign).flight):
-            known = intent.callsign
+        # GONE, 30 July: a block here let the classifier's MEMBER callsign
+        # overwrite `known`, on the reasoning that "Apex 1-2" is more specific
+        # than "Apex" and a lead should not keep the flight's name after the
+        # flight has stopped existing. Both halves are somebody else's job now.
+        # A member designation is not a name anybody is addressed by, and what
+        # to call a man is decided by `flights.speaking_as` -- the flight while
+        # he is in one, his own handle the moment he is not. So the second half
+        # is handled at the source, and the first was the self-designated
+        # callsign wearing a hat.
 
         # ONLY A RADIO MAY BE AN AEROPLANE.
         #
@@ -1761,12 +1788,27 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
             # Radar is how an aeroplane that has not spoken yet -- or whose
             # first call was garbled -- still gets separated, and dropping that
             # would have been a worse bug than the one being fixed.
-            tagged = radar_fix(scope, intent.callsign, ctl.profile) is not None
+            tagged = _track_tagged(scope, intent.callsign)
             if not tagged:
                 print(f"  .. '{intent.callsign}' is neither a radio we have "
                       f"identified nor a track on the scope; the engine will "
                       f"not be told about it", flush=True)
                 intent = dataclasses.replace(intent, callsign="")
+            else:
+                # AND IT GOES IN UNDER THE HANDLE, not under the tag. This was
+                # the last door a spoken callsign could still walk through into
+                # the engine: the bracketed name on a scope line is only there
+                # because something correlated him FROM SPEECH earlier, so
+                # keying him by it puts "Pony 1-1" on the board by a longer
+                # route. One key everywhere -- the human, out of the sim's own
+                # name for the aeroplane -- or the two brains are back to
+                # holding two different aeroplanes under two different names.
+                intent = dataclasses.replace(intent,
+                                             callsign=identity.handle(tagged))
+                # And the geometry follows him. Everything below that asks
+                # where he is must ask by TRACK from here on -- the engine no
+                # longer holds him under a name the scope has printed anywhere.
+                track = track or tagged
 
         # The engine is blind: it believes position reports, and it has no way
         # to notice a wrong one. Seen live -- a flight called "over the beacon"
@@ -1783,7 +1825,17 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
         # including "on final, runway one three" at two miles. He said the
         # controller seemed confused about where he was. It was contradicting
         # him about a fix that does not exist.
-        nm = radar_range_for(scope, intent.callsign)
+        # BY TRACK. This read `radar_range_for(scope, intent.callsign)`, which
+        # searched the picture for a bracketed tag -- and the engine's callsign
+        # is a HANDLE now, which the scope never prints in brackets. So the
+        # lookup quietly returned None for everybody, and a check that returns
+        # None declines to reject: the blind engine went back to believing a
+        # beacon report from eight miles out, which is the exact failure this
+        # guard was added for. Found by the guard's own test, which is the
+        # argument for having written it.
+        _at = radar_fix_by_track(scope, track) if track else None
+        nm = _at.range_nm if _at is not None else radar_range_for(
+            scope, intent.callsign)
         beacon_flown = not getattr(ctl.profile, "vectored", False)
         if (beacon_flown and intent.kind is intents.IntentKind.REPORT_BEACON
                 and nm is not None and nm > OVERHEAD_NM):
@@ -2382,7 +2434,7 @@ def plan_labels(url: str = f"{BASE_URL}/plans") -> list[str]:
 # Three") and the same function goes on to register them as explicitly NOT
 # aircraft. What is wanted here is the callsigns of flights on the board, which
 # were typed before the sortie and so cannot be mis-heard.
-_filed: dict[str, object] = {"at": 0.0, "names": []}
+_filed: dict[str, object] = {"at": 0.0, "names": [], "rows": []}
 FILED_TTL_SEC = 45.0            # a plan can be filed mid-session
 
 
@@ -2410,12 +2462,24 @@ def filed_plans(url: str = f"{BASE_URL}/flightplans",
         return list(_filed["names"])          # type: ignore[arg-type]
     _filed["at"] = t
     try:
-        got = [p.get("callsign")
-               for p in _get_json(url, timeout=2.5).get("flight_plans") or []]
-        _filed["names"] = sorted({c for c in got if c})
+        rows = _get_json(url, timeout=2.5).get("flight_plans") or []
+        _filed["rows"] = rows
+        _filed["names"] = sorted({p.get("callsign") for p in rows
+                                  if p.get("callsign")})
     except (urllib.error.URLError, TimeoutError, OSError, ValueError):
         pass                                   # keep the last good list
     return list(_filed["names"])               # type: ignore[arg-type]
+
+
+def filed_plan_rows() -> list[dict]:
+    """The same strips, whole, for anything that wants more than the name.
+
+    Deliberately a reader of the cache `filed_plans` fills rather than a second
+    fetch: two callers polling the same endpoint on two timers is how a board
+    and a controller come to disagree about whether a plan is active. Whoever
+    calls `filed_plans` refreshes this; nobody refreshes it alone.
+    """
+    return list(_filed["rows"])                # type: ignore[arg-type]
 
 
 def whisper_vocabulary(bridge, profile) -> str:
@@ -2793,8 +2857,40 @@ def _contact(u, scope: str, board_tracks: set) -> dict:
     }
 
 
+def _plan_row(plan: dict, flying_it: str, on_board: dict, track_of: dict,
+              unit_of: dict) -> dict:
+    """One filed strip, and what -- if anything -- is flying under it.
+
+    Everything here is a join of facts somebody upstream already stated: the
+    strip came from the director's `flight_plans` table, the board row from the
+    separation engine, the track from the identity registry and the parked flag
+    from the scope. Nothing is inferred, which is why the page can be told to
+    print it and nothing else.
+    """
+    # The strip's own callsign is the key it was FILED under; `flying_it` is
+    # whoever the registry matched to it, which is the name the board uses.
+    cs = flying_it or ""
+    row = on_board.get(cs)
+    track = track_of.get(cs, "")
+    unit = unit_of.get(_key_name(track)) if track else None
+    return {
+        **plan,
+        "attributed_to": cs if row is not None else "",
+        "track": track,
+        # A FLIGHT OR A SINGLE, from the engine's own `members` -- which is the
+        # authority, because a joined formation IS one entity to it and that is
+        # the whole reason the field exists.
+        "is_flight": bool(row and row.get("members")),
+        "members": list(row.get("members") or []) if row else [],
+        "phase": row.get("phase") if row else "",
+        # None, not False, when radar cannot see him: "parked" and "we do not
+        # know" are different answers and only one of them is about the ground.
+        "on_ground": unit.on_ground if unit is not None else None,
+    }
+
+
 def publish_state(bridge, ctl, scope: str, session_id: str,
-                  units=None, handed=None, names=None) -> None:
+                  units=None, handed=None, names=None, plans=None) -> None:
     """Write down what THIS BRIDGE believes, for anything that wants to show it.
 
     THE DASHBOARD WAS INVENTING THIS. `/diag` reconstructed the flight roster by
@@ -2829,9 +2925,22 @@ def publish_state(bridge, ctl, scope: str, session_id: str,
                for i in bridge.identity.by_guid.values() if i.callsign}
     units = units if units is not None else _id.units_on(scope)
     on_scope = {_key_name(u.name) for u in units}
+    unit_of = {_key_name(u.name): u for u in units}
+    # THE STRIP, BY WHOEVER IS FLYING IT. Not by the callsign it was filed
+    # under -- that stopped being anybody's name when the self-designated
+    # callsign came out, so joining the two tables on it would now match
+    # nothing. The registry holds the link, because matching the claim against
+    # the strip is what it did to resolve him in the first place.
+    by_plan = {i.plan: i.callsign
+               for i in bridge.identity.by_guid.values() if i.plan and i.callsign}
+    plan_of = {by_plan[p["callsign"]]: p for p in (plans or [])
+               if p.get("callsign") in by_plan}
 
     board = []
     board_tracks = {_key_name(t) for t in track_of.values() if t}
+    # The engine's own rows, by callsign, so a strip can be asked whether
+    # anything is flying under it.
+    on_board = {r.get("callsign", ""): r for r in ctl.board()}
     # What frequency the bridge last heard each one on. `may_be_vectored` uses
     # this to decide he has actually checked in here, so it is the same fact
     # that governs whether he gets worked -- worth showing beside what he is
@@ -2839,9 +2948,24 @@ def publish_state(bridge, ctl, scope: str, session_id: str,
     for row in ctl.board():
         cs = row.get("callsign", "")
         track = track_of.get(cs, "")
+        # WHAT HE IS FLYING AND WHERE, joined on the TRACK rather than the name.
+        # The engine is blind -- it has never seen a radar picture and holds no
+        # type, heading or altitude -- so every one of these comes off the scope
+        # and none of it is the page's to work out. The join is by track for the
+        # same reason the ghost check is: a spoken label and a printed radar
+        # name are different strings for the same aeroplane.
+        u = unit_of.get(_key_name(track)) if track else None
+        fix = radar_fix_by_track(scope, track) if track else None
         board.append({**row, "track": track,
                       "freq_mhz": bridge.heard_on.get(cs, 0) / 1e6 or None,
                       "authority": auth_of.get(cs, ""),
+                      "type": getattr(u, "type", ""),
+                      "range_nm": getattr(fix, "range_nm", None),
+                      "radial": getattr(fix, "radial_deg", None),
+                      "alt_ft": getattr(fix, "alt_ft", None),
+                      "heading": getattr(fix, "heading_deg", None),
+                      "speed_kt": getattr(fix, "speed_kt", None),
+                      "plan": plan_of.get(cs),
                       # Three answers, not two. RADAR means his track is on the
                       # scope now. CLAIMED means the ladder resolved him from a
                       # filed strip or the roster and there is no track to
@@ -2857,6 +2981,26 @@ def publish_state(bridge, ctl, scope: str, session_id: str,
         "board": board,
         "flights": [{"name": f.name, "lead": f.lead, "members": list(f.members)}
                     for f in bridge.flights.flights.values()],
+        # EVERY STRIP ON FILE, AND WHO IT LANDED ON.
+        #
+        #     "so that I can see what atc knows about available flight plans and
+        #      if it can attribute those plans to a single or flight - both on
+        #      the ground and in the air"
+        #
+        # Attribution is the question, and it is not the same as "is there a
+        # plan". A plan filed under a callsign nobody is using is inert; a plan
+        # whose callsign is on the board is doing work -- it is the rung of the
+        # identity ladder that resolved him. Which of those it is has been
+        # decidable only by reading two panels and joining them by eye.
+        #
+        # ON THE GROUND vs IN THE AIR comes from the scope, because it changes
+        # what the plan means: a strip attached to an aeroplane still parked is
+        # a clearance waiting to be delivered, and the same strip attached to
+        # something airborne is a controller's record of what he is working.
+        # Unattributed says neither, and shows nothing rather than guessing.
+        "plans": [_plan_row(p, by_plan.get(p.get("callsign"), ""),
+                            on_board, track_of, unit_of)
+                  for p in (plans or [])],
         # RADIOS THAT TRANSMITTED AND NEVER BECAME AN AEROPLANE. Empty when
         # things are working, which is the point: a man talking on the
         # frequency who is on no board and tied to no track is answered
@@ -2989,12 +3133,21 @@ def attribute(bridge, client, transcript, srs, session_id, radar_on, ctl):
     # The human, out of the squadron name -- unique per person, never
     # spoken, and the same whatever callsign he is using. It is what a
     # formation split falls back to; see identity.handle.
-    _who = identity.handle(_ident.track) if _ident.track else ""
+    #
+    # THE IDENTITY'S OWN LABEL WHEN THERE IS NO TRACK, which is not a second
+    # source of truth: since the self-designated callsign came out, that label
+    # IS the handle -- taken from the radio's name when the chain stopped short
+    # of an aeroplane. Deriving it only from the track meant `_who` was empty
+    # for every pilot a NO-RADAR field identified from a strip, so `flights.of`
+    # was never consulted and a wingman went on being addressed by a member
+    # number. Precisely the capability this system is meant to support well.
+    _who = identity.handle(_ident.track) if _ident.track else _ident.callsign
     return scope, claim, _ident, known, _who
 
 
 def compose_message(bridge, scope, known, transcript, profile, me, fix, nxt,
-                    directive, stack, vectoring, _flight, _flight_say):
+                    directive, stack, vectoring, _flight, _flight_say,
+                    claim=""):
     """Everything the controller is handed for one transmission, as one string.
 
     EXTRACTED VERBATIM from the receive loop, 30 July -- [LAYERS.md] step 1.
@@ -3023,11 +3176,31 @@ def compose_message(bridge, scope, known, transcript, profile, me, fix, nxt,
     parts = []
     if scope:
         parts.append(f"RADAR: {scope}")
-    parts.append(
-        f"TRANSMITTER: the radio calling itself {known}. Same aircraft as "
-        f"every other call from {known} -- keep them together."
-        if known else
-        "TRANSMITTER: a radio you have not identified yet.")
+    if not known:
+        parts.append("TRANSMITTER: a radio you have not identified yet.")
+    else:
+        # WHO HE IS, ON EVIDENCE THAT IS NOT HIS VOICE. This said "the radio
+        # calling itself {known}" -- which stopped being true the day the label
+        # stopped coming off the radio. `known` is now his HANDLE, taken from
+        # the sim's name for his aeroplane or from the name his radio arrived
+        # with, and a pilot may perfectly well say something else.
+        #
+        # WITHOUT THE SECOND SENTENCE THE AGENT ARGUES WITH HIM, and it is not
+        # a small failure. Seen in the dry run the hour this changed: a man
+        # checked in as "Pony one one", the controller directive named "Sockeye
+        # flight", and the agent -- handed two names and no statement that they
+        # were one man -- answered "I show no flight plan under that callsign,
+        # say your callsign again", then "station calling, I have you as
+        # Sockeye flight, say again to confirm". Three transmissions of a
+        # controller challenging a pilot who had done nothing wrong.
+        _also = (f" He called himself {claim} on this transmission; that is the "
+                 f"same man and it is not a discrepancy to raise with him."
+                 if claim and claim.lower() != known.lower() else "")
+        parts.append(
+            f"TRANSMITTER: {known}, identified from his aircraft rather than "
+            f"from anything he said, so this is certain. Address him as "
+            f"{known}.{_also} Same aircraft as every other call from {known} "
+            f"-- keep them together.")
     _strip = flight_strip(_flight)
     if _strip:
         parts.append(
@@ -3254,7 +3427,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
     # aircraft on it, from an engine that has just been emptied. The age field
     # gives it away, but a page that has to be read twice to be believed is not
     # doing its job.
-    publish_state(bridge, ctl, "", session_id)
+    publish_state(bridge, ctl, "", session_id, plans=filed_plan_rows())
     print(f"agent ATC live as {profile.controller} (voice {voice_id}, "
           f"session {session_id})", flush=True)
     print("  monitoring " + ", ".join(f"{c:.3f}" for c in channels), flush=True)
@@ -3773,7 +3946,25 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         print(f"PILOT [{known or srs}]: {transcript}{tag}", flush=True)
         # BY TRACK FIRST. The callsign is a label and can be stale; the track
         # is the sim's own name for the aeroplane this radio is sitting in.
-        _fix = (radar_fix_by_track(scope, _ident.track, profile)
+        #
+        # THE LEAD'S AEROPLANE WHEN HE IS IN A FLIGHT, whoever keyed the mic.
+        #
+        #     "if a flight wants to fly an approach in formation - they can.
+        #      That's up to the flight lead. But only the lead's a/c is used
+        #      for vectors."
+        #
+        # Which is also the only answer that is safe. A formation is ONE entity
+        # to the engine -- one level, one clearance, one place in the letdown --
+        # so every number the controller reads out has to describe the same
+        # aeroplane every time. Taking the transmitter's own track meant a
+        # wingman asking a question got the whole flight vectored off HIS
+        # position, three hundred feet and a few seconds displaced from the man
+        # actually flying the approach, and the next call moved it back. The
+        # geometry would wander with whoever spoke last.
+        _lead_track = ""
+        if (_mine := bridge.flights.of(_who)) is not None and _mine.lead:
+            _lead_track = _track_of(scope, _mine.lead)
+        _fix = (radar_fix_by_track(scope, _lead_track or _ident.track, profile)
                 or radar_fix(scope, known, profile))
         record(session_id, kind="pilot", callsign=known or srs,
                # The provenance of the identity, not just the answer. Without
@@ -3798,7 +3989,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                board=ctl.board())
         # ...and publish it, so the dashboard renders what this bridge believes
         # instead of reconstructing it from the log. See publish_state.
-        publish_state(bridge, ctl, scope, session_id,
+        publish_state(bridge, ctl, scope, session_id, plans=filed_plan_rows(),
                       names=getattr(client, 'roster', None))   # before the turn
         note_alive(bridge, known)          # he just spoke; that is evidence he exists
 
@@ -4052,10 +4243,11 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             print(f"  SEPARATION: {stack}", flush=True)
         message, message_parts = compose_message(
             bridge, scope, known, transcript, profile, me, fix, nxt,
-            directive, stack, vectoring, _flight, _flight_say)
+            directive, stack, vectoring, _flight, _flight_say, claim)
         # Republish with what he was handed, now that it exists. The board is
         # the same; the input is the part worth having.
         publish_state(bridge, ctl, scope, session_id, handed=message_parts,
+                      plans=filed_plan_rows(),
                       names=getattr(client, 'roster', None))
         speak(bridge, interact, message, transcript, known, heard_hz, _fix, profile, ctl)
 

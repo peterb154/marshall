@@ -290,7 +290,14 @@ class TestPositionRejection(unittest.TestCase):
         directive, _ = agent_atc.separation_context(_BRIDGE,
             self.ctl, "over the beacon", self.scope(1.2))
         self.assertNotIn("POSITION REJECTED", directive)
-        self.assertIn("Pony 1-1", self.ctl.aircraft)
+        # UNDER THE AEROPLANE RADAR SEES, not under the name the classifier
+        # heard. The scope line is unit "E11" wearing the tag "Pony one
+        # flight"; the engine holds "E 1-1", which is that unit's own name.
+        # Since 30 July nothing a microphone produced may key the engine, and
+        # the bracketed tag counts as microphone output -- it is only there
+        # because an earlier call was correlated into it.
+        self.assertIn("E 1-1", self.ctl.aircraft)
+        self.assertNotIn("Pony 1-1", self.ctl.aircraft)
 
     def test_without_radar_the_report_is_believed(self):
         # No scope, or an unidentified aircraft: the blind procedure is all we

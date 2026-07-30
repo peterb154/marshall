@@ -154,13 +154,27 @@ class TestNothingBecomesAnAeroplaneOnItsOwn(unittest.TestCase):
               "Hammer 1-2", "Hoover 1-1", "Falcon 1", "Falcon 1-1", "Shooter 1-1"]
 
     def test_no_third_name_is_ever_invented(self):
+        """ON THE STRIP, NOT ON THE LABEL, since 30 July.
+
+        This used to read `got.callsign`, and that stopped being the right
+        question when the label stopped coming off the radio: a resolved pilot
+        is now called by his HANDLE, so comparing it against the aeroplane the
+        corpus says he was would fail on every correct answer.
+
+        The claim itself is untouched and is the one that mattered -- a
+        mis-heard callsign still has only two possible outcomes, the right
+        aeroplane or nobody, and it is `plan` that says which. That is also the
+        stronger place for it to be checked: the label is now unfalsifiable by
+        construction, and the strip is where a wrong match would still do
+        damage, because a strip is what a controller works.
+        """
         invented = []
         for transcript, who in CORPUS:
             reg = identity.Registry()
             got = reg.resolve("guid", "unknown-radio", spoken=bind(transcript),
                               plans=self.FLYING)
-            if got.callsign and got.callsign != who:
-                invented.append((who or "<nobody>", got.callsign, transcript))
+            if got.plan and got.plan != who:
+                invented.append((who or "<nobody>", got.plan, transcript))
         if invented:
             lines = "\n".join(f"    really {w:12} became {g:12}  {t[:60]}"
                               for w, g, t in invented)

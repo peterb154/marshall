@@ -2175,6 +2175,97 @@ silently knowing.
 
 ---
 
+## [ID-3] Nobody may name himself — the label comes off the aeroplane, not the radio — #48
+
+labels: architecture, needs-flight-test
+
+**Status:** BUILT 30 July, unflown. Guards: `tests/test_identity.py`
+(`TestNoOneMayNameHimself`), `tests/test_formations.py` rewritten whole.
+**Tests:** card section N. **Code:** `atc/identity.py`, `atc/agent_atc.py`,
+`atc/controller.py`, `director/prompts/rules.md`.
+
+    "that self-designated callsign crap was the cause of a lot of problems.
+     And we should just rip it out now"
+
+WHAT A CALLSIGN WAS. The label a pilot spoke became the key the separation
+engine held him under, which is the single root the last month of identity bugs
+grew out of: ghost aeroplanes minted from read-back fragments; a board keyed on
+strings Whisper guessed at; a pilot stuck as "Pony 1-1" for a whole approach
+after he started flying as Falcon 1-1, radar tracking one aeroplane while the
+engine sequenced another; and "Apex 1-2" — a member designation — becoming a
+name the controller addressed a man by, which nobody does on the air.
+
+WHAT IT IS NOW. A person is his HANDLE, out of the same chain the identity is:
+
+    SRS GUID -> SRS client name -> sim unit -> track
+
+A flight has a name. A member number is neither, and cannot become either. What
+he SAYS is still used — matched against a filed strip or a track, to decide
+WHICH identity he is — it just never decides what that identity is CALLED.
+`Identity.plan` carries the strip he matched so the board and the flight-plans
+table can still be joined.
+
+FOUR DOORS WERE SHUT, and the last two were only visible once the first two
+were:
+  1. `_label` returned the spoken callsign. Now `_handle_for`.
+  2. Rungs 2 and 3 matched a strip and then USED ITS NAME.
+  3. The intent classifier's MEMBER callsign could overwrite the label.
+  4. A radar BRACKET could key the engine. The bracket is only there because
+     something correlated it from speech earlier, so that put "Pony 1-1" on the
+     board by a longer route.
+
+The handle is case-folded, because the sim says "362nd_sockeye" and SRS says
+"Sockeye": without it a pilot acquired by radar after checking in on a strip
+silently changed key, and everything stored against the old one was lost.
+
+FORMATIONS CHANGED WITH IT, because the engine minted member names off the
+flight key and that only ever worked while the key looked like a callsign:
+
+    "if a flight wants to fly an approach in formation - they can. That's up to
+     the flight lead. But only the lead's a/c is used for vectors."
+    "if they want to fly individual approaches, they request/announce breakup -
+     then each check in with an intention."
+    "ATC should NEVER initiate a breakup."
+
+So: a flight flies the approach as a flight if lead wants to; the three places
+that broke one up unasked are gone; the break-up names nobody and asks each of
+them to check in as himself; and vectors come off the lead's track whoever keys
+the mic.
+
+FOUR BUGS FOUND WHILE DOING IT, each invisible before:
+  * a dissolved flight kept the LETDOWN, so all four members held and nobody was
+    ever cleared — unreachable until a flight could be cleared before splitting
+  * `seen_on_final` called `get()`, which CREATES, merely to read a phase; the
+    stray single it left was then mistaken by `_enter` for an already-split
+    flight. Two wrongs that cancelled until the minting went
+  * `say_again_who` read out "I have ." with an empty list
+  * the position-rejection check looked up range by a callsign the scope no
+    longer prints, so it silently stopped rejecting anything
+
+THE DIRECTOR'S PROMPTS WERE THE OTHER HALF and were contradicting the bridge.
+`rules.md` said **"Callsigns are as spoken. Use whatever callsign the pilot
+gives, exactly"**, and its formation section still described ATC-initiated
+break-ups, the deleted visual-separation question, and assigning a ladder of
+levels. The agent was doing all three from the prompt alone — the dry run caught
+it inventing four altitudes for four aeroplanes, which is the invariant.
+
+**Acceptance**
+  * no board key, no recorder row and no transmission contains a member
+    designation for a man who is not in a flight
+  * a pilot who checks in as one callsign and flies as another is never
+    challenged about it and never changes key
+  * a formation is only ever broken up after the flight asks
+  * with a flight together, every range and heading describes the LEAD
+  * the agent never assigns altitudes inside a formation
+
+**Open, and it is the reason this needs flying.** The agent still mostly
+addresses him by the callsign he spoke rather than by the handle it was handed.
+That is prompt adherence rather than architecture — the identity underneath is
+correct either way — but it is the difference between "Sockeye, radar contact"
+and "Pony one one, radar contact" on the air, and only a pilot can say whether
+being called by his handle is right.
+
+
 ## [OPS-2] Backlog and issues stay in step — #27
 labels: chore
 

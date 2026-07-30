@@ -602,11 +602,21 @@ class TestVisualApproach(unittest.TestCase):
         self.ctl.request_visual("Pony 1-1")
         self.assertFalse(may_be_vectored(self.ctl, "Pony 1-1"))
 
-    def test_a_formation_is_broken_up_first(self):
+    def test_a_formation_flies_the_visual_as_a_formation(self):
+        """INVERTED 30 July. This asserted that asking for a visual broke the
+        flight up first -- the controller deciding a two-ship could not fly one
+        visual approach. It can, and a section joining up for the overhead is
+        about the most ordinary thing two aeroplanes do.
+
+            "if a flight wants to fly an approach in formation - they can.
+             That's up to the flight lead."
+        """
         self.ctl.check_in("Pony 1-1", 2)
         self.ctl.out.clear()
         self.ctl.request_visual("Pony 1-1")
-        self.assertTrue(any("break up" in tx.text.lower() for tx in self.ctl.out))
+        self.assertFalse(any("break up" in tx.text.lower() for tx in self.ctl.out))
+        self.assertIn("Pony 1", self.ctl.aircraft)
+        self.assertTrue(self.ctl.get("Pony 1").on_visual)
 
 
 class TestWaitForTheCheckIn(unittest.TestCase):

@@ -1,12 +1,40 @@
-"""Formations: one entity until the fix, then individually sequenced.
+"""Formations: one entity, for as long as the flight lead wants to be one.
 
-The rules being pinned down here:
+REWRITTEN 30 July, and the rule that moved is whose decision it is:
 
-  * a joined flight is ONE aircraft to the stack -- one slot, one clearance
+    "if a flight wants to fly an approach in formation - they can. That's up to
+     the flight lead. But only the lead's a/c is used for vectors."
+    "if they want to fly individual approaches, they request/announce breakup -
+     then each check in with an intention."
+    "ATC should NEVER initiate a breakup."
+
+The engine used to break a formation up by itself in three places -- on arrival
+at the fix, on a request for the approach, and on a request for a visual -- each
+with the same reasoning in the comment: four ships cannot fly one letdown,
+therefore split them. The premise is a controller's opinion about somebody
+else's formation, and acting on it dissolved four aeroplanes on the board while
+four pilots were still flying in them.
+
+It also forced a second wrong thing. Having created N aircraft, the engine had
+to name them, and all it had was the flight key -- so it minted "Pony 1-1"
+through "Pony 1-4" and read them out. That worked only while the key happened to
+look like a callsign; the day identity started keying on handles it began
+announcing "Sockeye one" through "Sockeye four", four aeroplanes nobody has.
+
+So the rules now:
+
+  * a joined flight is ONE aircraft to the stack -- one slot, one clearance --
+    and it stays one through the hold and the letdown if that is what lead wants
   * any member who transmits while joined is the flight talking
-  * arriving at the holding fix breaks them up, lead lowest so he lands first
-  * after break-up they are ordinary singles and nothing else changes
-  * a break-up that will not fit under the ceiling is refused, not half-done
+  * only the LEAD's aeroplane is used for vectors, whoever keyed the mic
+  * a break-up happens when the flight says so, and never otherwise
+  * the break-up names nobody: it asks each of them to check in as himself
+  * out of the split they are ordinary singles, and nothing else changes
+
+The one exception, and it is not really a break-up: if the lead DIES or leaves
+the sim, the flight has stopped existing and the controller says so. That is an
+observation reported to the survivors, not a manoeuvre asked of them, and it
+lives in `flights.Roster` rather than here.
 """
 
 import unittest
@@ -31,15 +59,14 @@ def imc_profile(**over):
 
 
 def four_ship(ctl, cs="Pony 1-1", check_in_after=True):
-    """Check a four-ship in, bring it to the fix -- which breaks it up -- and
-    then check each member in as a single.
+    """Check a four-ship in, bring it to the fix, and have LEAD ask to split.
 
-    That last step IS the model, and it replaces a different thing entirely.
-    The controller used to ask "can you maintain visual separation between your
-    aircraft?", and the answer chose between one shared level and a ladder of
-    four. Both are gone: separation inside a formation is the flight lead's and
-    never the controller's, so the break-up assigns nothing and each aeroplane
-    becomes an ordinary arrival.
+    THAT MIDDLE STEP IS THE CHANGE. It used to be enough to reach the fix --
+    `report_beacon` broke the flight up on arrival, every time -- so every test
+    below inherited an ATC-initiated split without asking for one. The flight
+    now holds as a flight until its lead says otherwise, so the request is
+    explicit here, which is also a fair picture of the sortie: four ships in
+    cloud, lead decides he would rather have four separate approaches, says so.
 
         "If the flight reports a breakup then 4 pilots check in, they all need
          to ask for the approach. Atc will treat like 4 airplanes."
@@ -48,6 +75,7 @@ def four_ship(ctl, cs="Pony 1-1", check_in_after=True):
     """
     ctl.check_in(cs, 4)
     ctl.report_beacon(cs, 6000, 4)
+    ctl.request_breakup(callsign_flight(cs))
     if check_in_after:
         flight = callsign_flight(cs)
         for n in range(1, 5):
@@ -106,20 +134,76 @@ class TestJoined(unittest.TestCase):
             self.ctl.check_in(garbled)
         self.assertEqual(set(self.ctl.aircraft), before)
 
-    def test_any_member_reaching_the_fix_breaks_the_flight_up(self):
-        # It is the FORMATION that has arrived, whoever happens to say so.
+    def test_reaching_the_fix_does_not_break_the_flight_up(self):
+        """INVERTED 30 July. This asserted that any member reaching the fix
+        split the formation, whoever said so -- and that was the controller
+        deciding a four-ship could not hold as one. It can, and holding as one
+        is the easy case for everybody: one level, one clearance, one aeroplane
+        to sequence."""
         self.ctl.check_in("Pony 1-1", 4)
         texts(self.ctl)
         self.ctl.report_beacon("Pony 1-3", 6000)
-        self.assertTrue(said(self.ctl, "break up"))
-        self.assertIsNone(self.ctl.get("Pony 1-2").assigned_ft)
+        self.assertFalse(said(self.ctl, "break up"))
+        self.assertIn("Pony 1", self.ctl.aircraft)
+
+    def test_a_flight_may_fly_the_whole_approach_as_a_flight(self):
+        """The case that used to be unreachable: nobody asks to split, so
+        nobody splits, and the formation is worked to the runway as one."""
+        self.ctl.check_in("Pony 1-1", 4)
+        self.ctl.report_beacon("Pony 1-1", 6000, 4)
+        self.ctl.request_approach("Pony 1")
+        ac = self.ctl.get("Pony 1")
+        self.assertTrue(ac.is_flight)
+        self.assertEqual(ac.phase, atc.Phase.CLEARED)
+        self.assertEqual(len(self.ctl.aircraft), 1)
 
     def test_a_joined_flight_occupies_one_slot(self):
         self.ctl.report_beacon("Hawk 1", 4000)          # single, cleared
         self.ctl.check_in("Pony 1-1", 4)
         self.ctl.report_beacon("Other 1", 5000)         # another single
-        # The four-ship has not been broken up yet, so it is holding one level.
+        # The four-ship has not been broken up, so it is holding one level.
         self.assertEqual(len(self.ctl.aircraft), 3)
+
+
+class TestOnlyTheFlightMaySplitItself(unittest.TestCase):
+    """The three doors that used to do it for them, each now shut.
+
+        "ATC should NEVER initiate a breakup."
+
+    Separation WITHIN a formation rests with the flight lead and the pilots
+    concerned (FAA JO 7110.65), and so does the decision to stop being one --
+    it is a manoeuvre, flown in cloud, by people whose spacing is their own
+    business. A controller may say what he can and cannot do for them. He does
+    not reach in and dissolve them.
+    """
+
+    def setUp(self):
+        self.ctl = atc.Controller(imc_profile())
+        self.ctl.check_in("Pony 1-1", 4)
+        texts(self.ctl)
+
+    def test_arriving_at_the_fix_does_not(self):
+        self.ctl.report_beacon("Pony 1-1", 6000, 4)
+        self.assertIn("Pony 1", self.ctl.aircraft)
+
+    def test_asking_for_the_approach_does_not(self):
+        self.ctl.request_approach("Pony 1")
+        self.assertIn("Pony 1", self.ctl.aircraft)
+
+    def test_asking_for_a_visual_does_not(self):
+        self.ctl.request_visual("Pony 1", field_in_sight=True)
+        self.assertIn("Pony 1", self.ctl.aircraft)
+
+    def test_the_word_break_up_is_never_spoken_unprompted(self):
+        """A pilot who hears it and did not ask for it has been told his
+        formation no longer exists by somebody who is not in it."""
+        self.ctl.report_beacon("Pony 1-1", 6000, 4)
+        self.ctl.request_approach("Pony 1")
+        self.assertFalse(said(self.ctl, "break up"))
+
+    def test_asking_does(self):
+        self.ctl.request_breakup("Pony 1")
+        self.assertNotIn("Pony 1", self.ctl.aircraft)
 
 
 class TestBreakUp(unittest.TestCase):
@@ -151,11 +235,21 @@ class TestBreakUp(unittest.TestCase):
         self.assertIn("break up", call)
         self.assertIn("check in individually", call)
 
-    def test_each_of_them_is_named(self):
-        """A pilot who is not named does not know he is expected to call."""
+    def test_nobody_is_named_because_nobody_is_known(self):
+        """REPLACES `test_each_of_them_is_named`, which is the test that made
+        the minting necessary. A flight report is a NUMBER -- "flight of four"
+        -- and the engine turned it into four names off the flight key so it
+        would have something to read out. Those names were never agreed with
+        anybody; the day the key became a handle they became "Sockeye one"
+        through "Sockeye four", which no pilot would answer to.
+
+        The only thing that produces a name is a man keying his own microphone,
+        so the call asks for exactly that.
+        """
         call = " ".join(four_ship(self.ctl, check_in_after=False)).lower()
-        for n in ("one one", "one two", "one three", "one four"):
-            self.assertIn(f"pony {n}", call)
+        self.assertIn("your own callsign", call)
+        for invented in ("pony one two", "pony one three", "pony one four"):
+            self.assertNotIn(invented, call)
 
     def test_announced_once(self):
         spoken = four_ship(self.ctl, check_in_after=False)
@@ -178,11 +272,12 @@ class TestBreakUp(unittest.TestCase):
         self.ctl.request_breakup("Pony 1")
         self.assertNotIn("Pony 1", self.ctl.aircraft)
 
-    def test_requesting_the_approach_breaks_a_flight_up(self):
-        """Four ships cannot fly one letdown, whether or not the word is used."""
+    def test_a_wingman_may_ask_and_it_is_the_flight_asking(self):
+        """He is inside the formation, so it is the flight that has spoken --
+        the same rule as every other transmission while they are joined."""
         self.ctl.check_in("Pony 1-1", 4)
         texts(self.ctl)
-        self.ctl.request_approach("Pony 1")
+        self.ctl.request_breakup("Pony 1-3")
         self.assertNotIn("Pony 1", self.ctl.aircraft)
 
 
@@ -213,7 +308,7 @@ class TestSeparationInsideAFlightIsNotOurs(unittest.TestCase):
     def test_the_break_up_needs_no_answer(self):
         """It used to wait for one, so a flight that never replied was never
         broken up at all."""
-        self.ctl.report_beacon("Pony 1-1", 6000, 4)
+        self.ctl.request_breakup("Pony 1")
         self.assertNotIn("Pony 1", self.ctl.aircraft)
 
     def test_the_controller_has_no_opinion_to_record(self):
@@ -259,15 +354,20 @@ class TestAfterBreakUp(unittest.TestCase):
         self.assertEqual(self.ctl.get("Pony 1-1").phase, atc.Phase.BANISHED)
         self.assertEqual(self.ctl.get("Pony 1-2").phase, atc.Phase.CLEARED)
 
-    def test_the_flight_name_now_means_lead(self):
-        # After break-up "Pony one flight" is informally lead, who still answers
-        # for the formation's name.
-        self.assertEqual(self.ctl._resolve("Pony 1"), "Pony 1-1")
+    def test_the_flight_name_belongs_to_nobody_now(self):
+        """REPLACES `test_the_flight_name_now_means_lead`, which resolved
+        "Pony 1" to "Pony 1-1" -- and could only do so because the engine had
+        minted that name at the split. It knows the flight is broken up; it
+        does not know who lead turned out to be, and guessing is the failure
+        `ambiguous_after_breakup` exists to prevent."""
+        self.assertTrue(self.ctl.ambiguous_after_breakup("Pony 1"))
 
     def test_a_late_size_report_does_not_re_merge_them(self):
+        """A stale "flight of four" arriving after the split must not put four
+        individually-sequenced aeroplanes back into one entity."""
         self.ctl.check_in("Pony 1-1", 4)
-        self.assertIn("Pony 1-4", self.ctl.aircraft)
         self.assertNotIn("Pony 1", self.ctl.aircraft)
+        self.assertFalse(self.ctl.get("Pony 1-1").is_flight)
 
 
 class TestFormationWithOtherTraffic(unittest.TestCase):
@@ -286,6 +386,16 @@ class TestFormationWithOtherTraffic(unittest.TestCase):
         # Everyone steps down, including the unrelated single.
         self.assertEqual(ctl.get("Hawk 1").assigned_ft, 6000)
 
+    def test_a_formation_and_a_single_share_the_stack(self):
+        """A four-ship that stays together is ONE aeroplane to the stack, so a
+        single arriving behind it takes the next level rather than the fifth."""
+        ctl = atc.Controller(imc_profile())
+        ctl.check_in("Pony 1-1", 4)
+        ctl.report_beacon("Pony 1-1", 6000, 4)
+        ctl.report_beacon("Hawk 1", 9000)
+        self.assertEqual(len(ctl.aircraft), 2)
+        self.assertEqual(ctl.get("Hawk 1").assigned_ft, 4000)
+
     def test_two_formations(self):
         ctl = atc.Controller(imc_profile())
         ctl.check_in("Pony 1-1", 2)
@@ -293,14 +403,13 @@ class TestFormationWithOtherTraffic(unittest.TestCase):
         self.assertEqual(len(ctl.aircraft), 2)
         ctl.report_beacon("Pony 1-1", 6000, 2)
         ctl.report_beacon("Hawk 2-1", 7000, 2)
+        ctl.request_breakup("Pony 1")
+        ctl.request_breakup("Hawk 2")
         texts(ctl)
-        # Nothing is assigned by the break-up itself -- he has not asked for
-        # an approach yet, and pre-assigning to a pilot who may not want one is
-        # what the old two-step did.
-        # Both flights are gone and NEITHER has been given anything: the
-        # break-up assigns nothing, and none of these four has asked for an
-        # approach. What matters here is that two formations do not become one
-        # -- each dissolved into its own members.
+        # Nothing is assigned by the break-up itself -- none of these four has
+        # asked for an approach, and pre-assigning to a pilot who may not want
+        # one is what the old two-step did. What matters here is that two
+        # formations do not become one: each dissolved into its own members.
         for who in ("Pony 1-2", "Hawk 2-1", "Hawk 2-2"):
             self.assertIsNone(ctl.get(who).assigned_ft, who)
         self.assertNotIn("Pony 1", ctl.aircraft)
@@ -335,10 +444,6 @@ class TestDispatchIntegration(unittest.TestCase):
                       intents.IntentKind.UNKNOWN)
         self.assertIs(intents.IntentKind.coerce(""),
                       intents.IntentKind.UNKNOWN)
-
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 class TestClearAirHolding(unittest.TestCase):
@@ -380,10 +485,14 @@ class TestIdentifyOnBreakUp(unittest.TestCase):
 
     Until the break-up the flight is one entity and one voice speaks for it,
     which is right. The instant they are separated they are N aircraft the
-    controller has to tell apart -- and the only names he has came off the
-    radar, which labels tracks by whatever the sim called the units. Live that
-    produced two Mustangs addressed as "Pony one" and "Pony one one":
-    adjacent, confusable, and never agreed with anybody.
+    controller has to tell apart -- and he has no names for them at all. He
+    never did: the ones he used to read out were minted from the flight key,
+    agreed with nobody, and live that produced two Mustangs addressed as "Pony
+    one" and "Pony one one" -- adjacent and confusable.
+
+    So the identification is a QUESTION now rather than a roll-call, which is
+    both honest and what actually binds a voice to a track: the man says his
+    own callsign on his own radio, and that is a fact rather than a guess.
     """
 
     def ctl(self, size):
@@ -395,26 +504,25 @@ class TestIdentifyOnBreakUp(unittest.TestCase):
     def breakup_call(self, c):
         return next(tx.text for tx in c.out if "break up" in tx.text)
 
-    def test_every_aircraft_is_named_in_order(self):
+    def test_each_of_them_is_asked_for_his_own_callsign(self):
         call = self.breakup_call(self.ctl(4))
-        for name in ("Pony one one", "Pony one two", "Pony one three",
-                     "Pony one four"):
-            self.assertIn(name, call)
-        self.assertLess(call.index("Pony one one"), call.index("Pony one four"),
-                        "the ORDER is what binds each voice to each track")
+        self.assertIn("check in individually", call.lower())
+        self.assertIn("your own callsign", call.lower())
 
-    def test_the_cleared_aircraft_is_named_too(self):
-        """The sequencer usually clears lead in the same breath, and lead is
-        the one whose identity matters most -- he is about to be talked down."""
-        c = self.ctl(2)
-        self.assertIn("Pony one one", self.breakup_call(c))
+    def test_no_callsign_is_invented(self):
+        """The regression that matters. Any member designation in this call is
+        a name the engine made up -- there is nothing else it could be, since
+        nobody has spoken as an individual yet."""
+        call = self.breakup_call(self.ctl(4)).lower()
+        for invented in ("pony one two", "pony one three", "pony one four"):
+            self.assertNotIn(invented, call)
 
     def test_a_single_ship_is_not_asked_to_identify_itself(self):
         c = atc.Controller(profile())
         c.check_in("Pony 1-1", 1)
         c.request_breakup("Pony 1-1")
         for tx in c.out:
-            self.assertNotIn("identify each of you", tx.text)
+            self.assertNotIn("identify", tx.text)
 
 
 class TestAskDoNotInferAfterBreakUp(unittest.TestCase):
@@ -443,16 +551,31 @@ class TestAskDoNotInferAfterBreakUp(unittest.TestCase):
         self.ctl.check_in("Hammer 1-1", 2)
         self.assertFalse(self.ctl.ambiguous_after_breakup("Hammer 1"))
 
-    def test_he_is_asked_who_he_is_and_offered_the_options(self):
+    def test_he_is_asked_who_he_is(self):
+        """The OPTIONS half of this test is gone with the minting. It used to
+        assert that both member callsigns were offered back to him -- names the
+        engine had invented, so offering them was inviting a pilot to adopt one.
+        The question stands on its own: say your callsign."""
         from marshall.atc import intents
         handled = intents.dispatch(
             self.ctl, intents.Intent(kind=intents.IntentKind.REPORT_BEACON,
                                      callsign="Pony 1", altitude_ft=5000))
         self.assertTrue(handled, "silence would be worse than a guess")
-        said = " ".join(t.text for t in self.ctl.out).lower()
-        self.assertIn("say your callsign", said)
-        self.assertIn("pony one one", said)
-        self.assertIn("pony one two", said)
+        said_now = " ".join(t.text for t in self.ctl.out).lower()
+        self.assertIn("say your callsign", said_now)
+        self.assertIn("intentions", said_now)
+
+    def test_no_empty_list_is_read_out(self):
+        """It said "I have ." -- with nothing after the "have" -- the moment
+        the engine stopped minting members and this phrase went on formatting
+        the list anyway."""
+        from marshall.atc import intents
+        intents.dispatch(
+            self.ctl, intents.Intent(kind=intents.IntentKind.REPORT_BEACON,
+                                     callsign="Pony 1", altitude_ft=5000))
+        said_now = " ".join(t.text for t in self.ctl.out).lower()
+        self.assertNotIn("i have .", said_now)
+        self.assertNotIn("i have ,", said_now)
 
     def test_the_ambiguous_call_is_not_acted_on(self):
         from marshall.atc import intents
@@ -484,6 +607,7 @@ class TestCheckingInOutOfASplit(unittest.TestCase):
         self.ctl = atc.Controller(imc_profile())
         self.ctl.check_in("Pony 1-1", 4)
         self.ctl.report_beacon("Pony 1-1", 6000, 4)
+        self.ctl.request_breakup("Pony 1")
         texts(self.ctl)
 
     def test_he_is_asked_what_he_wants(self):
@@ -508,3 +632,7 @@ class TestCheckingInOutOfASplit(unittest.TestCase):
         self.ctl.check_in("Hawk 3-1", 1)
         said_now = " ".join(texts(self.ctl)).lower()
         self.assertNotIn("say intentions", said_now)
+
+
+if __name__ == "__main__":
+    unittest.main()
