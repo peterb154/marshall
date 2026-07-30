@@ -130,6 +130,53 @@ def _digit_words(digits: str) -> str:
     return " ".join(words[int(d)] for d in digits)
 
 
+_SENDS_HIM_AWAY = re.compile(
+    r"[^.!?]*\b(?:contact|switch to|go to|monitor)\b[^.!?]*"
+    r"\b(?:approach|tower|center|centre|departure|ground|sentry)\b[^.!?]*[.!?]?",
+    re.I)
+
+
+def strip_unauthorised_handoff(text: str, authorised, keep_him: str = "") -> tuple[str, str]:
+    """Remove a frequency change nobody authorised. Returns (text, what went).
+
+    A HANDOFF IS A CONTROL ACTION, NOT LANGUAGE, and it is the same rule that
+    keeps an LLM out of separation: whether this pilot should be worked by
+    somebody else depends on where he is, whose airspace that is, and who is
+    free to take him -- none of which the model can see. When a handoff is due
+    the bridge hands it over as a `HANDOFF:` line. No line, no handoff.
+
+    THE RULES ALREADY SAY SO and it was not enough. Told plainly not to invent
+    one, the model obeyed on a dry run and did it anyway on the radio the same
+    evening -- to a pilot parked on the ramp, who was sent from Tower to
+    Approach, back to Tower, and round again with nowhere to go. A prompt is
+    guidance; this is a guarantee, and the difference matters for the same
+    reason it matters in the separation engine.
+
+    Deliberately narrow. It removes a SENTENCE that tells him to contact
+    somebody, and leaves everything else -- including "this is Batumi Tower, one
+    one eight decimal zero", which names the frequency he is ON and is a
+    correction rather than a handoff.
+    """
+    if authorised is not None or not text:
+        return text, ""
+    gone = []
+
+    def drop(m):
+        gone.append(m.group(0).strip())
+        return " "
+    out = _SENDS_HIM_AWAY.sub(drop, text)
+    if not gone:
+        return text, ""
+    out = re.sub(r"\s{2,}", " ", out).strip()
+    # NEVER HAND BACK NOTHING, and never hand back the thing we just refused.
+    # When the whole reply was the handoff -- which is the commonest shape, "X,
+    # contact Y, good day" -- stripping leaves an empty string, and returning
+    # the original would make the guard a no-op in exactly the case it exists
+    # for. So the fallback keeps him on this frequency in the plainest words a
+    # controller has.
+    return (out or keep_him or text), " | ".join(gone)
+
+
 def for_voice(text: str, agent: bool = False) -> str:
     """Reduce the agent's reply to the words that actually go over the air.
 
@@ -570,6 +617,11 @@ class Bridge:
         # would fill the frequency with the correction instead of the approach,
         # and he has already heard it. See `misnamed`.
         self.corrected: set = set()
+        # The handoff the BRIDGE authorised for this turn, or None. Read by the
+        # transmit path, which refuses to let the agent invent one -- see
+        # `strip_unauthorised_handoff`. A one-element list for the same reason
+        # `last_said` is: written on the pilot thread, read on the scheduler's.
+        self.handoff_due: list = [None]
         self.last_said: list[str] = [""]
         self.last_active_hz: list[float | None] = [None]
         # PER AIRCRAFT, AND THIS IS NOT THEIR RIGHT HOME. What we last told each
@@ -2132,7 +2184,29 @@ OUR_STATIONS = frozenset({SRS_NAME, "Engineering", "Eartest"})
 # purpose -- being wrong costs one transmission in the log and "back to
 # approach" undoes it.
 _ENG_CALL = re.compile(
-    r"\bengineering\b[\s,]*[?!]"                            # "Engineering?" -- a query
+    # ADDRESSED TO HIM, which is the whole rule and was the one form missing.
+    #
+    #     "Engineering, Sakai."   -> nothing. Twice.
+    #
+    # Every branch below wants a PHRASE -- "come up", "are you there", "radio
+    # check" -- so saying his name and then your own, which is what the design
+    # tells a pilot to do and what anybody does on a shared frequency, summoned
+    # nobody. It is the same shape as the callsign bug: a list of the ways
+    # somebody might say a thing, instead of the rule that they said it.
+    #
+    # First word of the transmission AND punctuated as an address -- the comma
+    # is what separates "Engineering, Sockeye" from "engineering said the
+    # vectors are fixed", which is a pilot telling ATC something about him and
+    # must not drag him onto the call. Bare "engineering" on its own is not
+    # enough either; it is what Whisper leaves behind when it eats the rest of a
+    # sentence. Allows the ums a real pilot makes.
+    r"^[\s,]*(?:uh|er|um)?[\s,]*engineering\s*,"
+    # "SOCKEYE TO ENGINEERING", which is how half the world addresses anybody on
+    # a radio and was the second form to be missed in one evening. The pattern
+    # here has been a list of the ways somebody might summon him rather than the
+    # rule that they did, and each miss reads to the pilot as a dead channel.
+    r"|\bto engineering\b"
+    r"|\bengineering\b[\s,]*[?!]"                            # "Engineering?" -- a query
     r"|\bengineering\b.{0,28}?\b(?:on the line|come up|are you|you there|"
     r"you up|you on|you got|check in|checking in|read me|copy|how do you|"
     r"standing by|got a (?:sec|minute|moment)|there\b|available|this is)"
@@ -2709,7 +2783,7 @@ def filed_plan_rows() -> list[dict]:
     return list(_filed["rows"])                # type: ignore[arg-type]
 
 
-def whisper_vocabulary(bridge, profile) -> str:
+def whisper_vocabulary(bridge, profile, roster=None) -> str:
     """The priming text for the transcriber, from what is actually on the air.
 
     Rebuilt as radios identify themselves, because the callsigns are the half
@@ -2728,6 +2802,29 @@ def whisper_vocabulary(bridge, profile) -> str:
     spoken = list(getattr(R, "SQUADRON_CALLSIGNS", ()))
     spoken += [c for c in os.environ.get("MARSHALL_CALLSIGNS", "").split(",")
                if c.strip()]
+    # THE HANDLES, which are the names actually said on this frequency now.
+    #
+    #     "I can also see we're going to need a pronunciation engine... certain
+    #      words like sockeye"
+    #
+    # Whisper wrote "Sakai" for Sockeye, and that is not a pronunciation problem
+    # so much as a vocabulary one: it is a word the model has no reason to
+    # expect and every reason to hear as a commoner name. Priming is the lever
+    # -- it already carries squadron callsigns and fixes -- and the handles were
+    # the one category missing, which was survivable while a callsign named him
+    # and is not now that his handle IS his name.
+    #
+    # Known BEFORE he speaks, which is the valuable part: the SRS roster gives
+    # every connected client's name, so the very first transmission -- the one
+    # that used to be the only one with no priming behind it -- is covered.
+    for who in (roster or {}).values():
+        h = identity.handle(who or "")
+        if h:
+            spoken.append(h)
+    for i in bridge.identity.by_guid.values():
+        for n in (i.callsign, getattr(i, "who", ""), identity.handle(i.track)):
+            if n:
+                spoken.append(n)
     for seen in bridge.transmitters.values():
         for cs in seen:
             try:
@@ -3439,8 +3536,10 @@ def hear(bridge, client, model, profile):
     pcm, heard_hz = client.recv_utterance(max_wait=3600)
     if pcm is None or not pcm.size:
         return None
-    transcript = stt.transcribe(model, pcm,
-                                prompt=whisper_vocabulary(bridge, profile))
+    transcript = stt.transcribe(
+        model, pcm,
+        prompt=whisper_vocabulary(bridge, profile,
+                                  roster=getattr(client, "roster", None)))
     if not transcript:
         return None
     return transcript, client.name_for(client.last_sender_guid), heard_hz
@@ -3888,6 +3987,18 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             reply, hushed = hush_a_second_talkdown(reply, guide)
             if hushed:
                 print(f"  .. hushed the agent on final: {hushed}", flush=True)
+            # NOBODY IS SENT AWAY WITHOUT THE BRIDGE SAYING SO. The rules ask
+            # the model not to invent a handoff and it did anyway, live, to a
+            # pilot parked on the ramp. Guidance where a guarantee was needed.
+            _me_here = (profile.station_on((on_hz or freq_hz) / 1_000_000)
+                        if hasattr(profile, "station_on") else None)
+            reply, sent = strip_unauthorised_handoff(
+                reply, bridge.handoff_due[0],
+                keep_him=(f"{to_callsign}, {_me_here.name}, go ahead."
+                          if to_callsign and _me_here else ""))
+            if sent:
+                print(f"  .. refused an unauthorised handoff: {sent}",
+                      flush=True)
             if not reply or reply.lower() in NO_CALL:
                 print(f"  ATC[{kind}/{tier}] ({dt:.1f}s): (no call)", flush=True)
                 return
@@ -4343,6 +4454,13 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             # spoken where somebody is listening.
             bridge.last_active_hz[0] = heard_hz or freq_hz
 
+        # WHO THE ENGINE IS BEING, from the frequency this call arrived on. The
+        # engine is blind by design, and this is the one fact it cannot do
+        # without: only Tower may clear a landing.
+        _me_now = (profile.station_on((heard_hz or freq_hz) / 1_000_000)
+                   if hasattr(profile, "station_on") else None)
+        ctl.working = getattr(_me_now, "role", None)
+
         n_contacts = count_contacts(scope)
         tag = f" [RADAR: {scope}]" if scope else ""
         print(f"PILOT [{known or srs}]: {transcript}{tag}", flush=True)
@@ -4610,9 +4728,37 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # guard below as well.
         fix = (radar_fix_by_track(scope, _ident.track, profile)
                or radar_fix(scope, known, profile))
+        # NOBODY IS HANDED OFF FROM THE RAMP.
+        #
+        #     "Tower handed me to approach, approach handed me to tower"
+        #
+        # A handoff keys on RANGE, and to a rule that only knows the range an
+        # aeroplane parked 0.4 nm from the field is indistinguishable from one
+        # on short final -- so Approach dutifully gave a stationary jet to
+        # Tower, and Tower's own answer sent him back. A pilot on the ramp
+        # bounced between two frequencies with nowhere to go.
+        #
+        # The sim says who is down, it has said so all along (`on_ground`, from
+        # the land/takeoff events rather than from a guess at altitude), and it
+        # now reaches the bridge as a field on the contact. A man on the ground
+        # is Tower's, and he is not going anywhere until he moves.
+        # THROUGH `is_on_the_ground`, not off the raw field, and the difference
+        # cost three attempts at this bug. `on_ground` comes from the sim's
+        # land/takeoff EVENTS, so it is false for an aeroplane that SPAWNED on
+        # the ramp -- it never landed, so nothing ever fired. A pilot cold-start
+        # at Batumi read `on_ground=False` at 39 feet and zero knots, the ramp
+        # guard never engaged, and Tower went on handing him to Approach.
+        #
+        # That function is the one place the two facts are combined -- the
+        # event if there is one, the radar geometry if not -- and it exists
+        # precisely so its callers cannot drift. Reading the field directly is
+        # how a fourth caller drifts.
+        _down = is_on_the_ground(scope, _ident.track, fix)
         # THE EVENT OUTRANKS THE RANGE. See handoff_on_the_event.
         nxt = handoff_on_the_event(scope, _ident.track, me, profile)
-        if nxt is None:
+        if _down:
+            nxt = None
+        elif nxt is None:
             nxt = (profile.handoff_from(on_mhz, fix.range_nm)
                    if me and fix is not None else None)
             # ...but NOT to Tower on a talkdown, where landing is the trigger
@@ -4632,13 +4778,28 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     and getattr(profile, "guidance", "") == "talkdown"
                     and not is_on_the_ground(scope, _ident.track, fix)):
                 nxt = None
-        if nxt is None and me is not None and known:
+        if nxt is None and not _down and me is not None and known:
             # He may be on his way OUT rather than in -- the case range cannot
             # answer. Costs one lookup and only ever fires when the approach
             # rules had nothing to say.
+            #
+            # NOT WHILE HE IS ON THE RAMP, and leaving that out undid the guard
+            # above three lines after setting it. A jet parked at Batumi asked
+            # Tower for a departure; the ramp check correctly cleared the
+            # handoff, and this branch -- which only asks "is he leaving my
+            # airspace", to which a departure request is obviously yes --
+            # immediately put it back. So Tower went on sending a stationary
+            # aeroplane to Approach, and the transmit guard let it through
+            # because by then the handoff really had been authorised.
+            #
+            # A man who has not moved is not leaving anything. He wants a
+            # departure clearance, and that is Tower's to give.
             nxt = leaving_my_airspace(BASE_URL, session_id, known, me,
                                       profile, fix,
                                       under_our_vectors=bool(vectoring))
+        # SETTLED. This is the handoff the bridge authorises for this turn, and
+        # the transmit path refuses any other -- see `strip_unauthorised_handoff`.
+        bridge.handoff_due[0] = nxt
         if directive:
             print(f"  CONTROLLER: {directive}", flush=True)
         if stack:

@@ -279,6 +279,19 @@ class Controller:
     # break-up stopped putting members on the board, the only evidence a flight
     # ever existed left with it.
     _broken_up: dict = field(default_factory=dict)   # flight name -> members
+    # WHICH STATION IS SPEAKING, set by the bridge from the frequency the
+    # transmission arrived on. None means "not told", and everything behaves as
+    # it always did -- the engine is blind by design and this is the one fact it
+    # cannot do its job without:
+    #
+    #     "tower controls the runway and is the only one that can give takeoff
+    #      and landing clearance"
+    #
+    # Which is standard everywhere, and was being broken on every sortie: the
+    # engine reads a landing clearance out of `report_landed` regardless of who
+    # is on the microphone, so Approach was clearing aircraft to land on a
+    # runway that is not its to give.
+    working: str | None = None
 
     # -- plumbing ----------------------------------------------------------
     # -- phraseology that follows the approach type ------------------------
@@ -937,6 +950,18 @@ class Controller:
         ac.map_t = None
         if self._letdown == ac.callsign:
             self._letdown = None
+        # THE RUNWAY IS TOWER'S. Anybody else who has the field in sight gets
+        # sent to the man who can actually give him the runway, rather than a
+        # clearance the speaker had no authority to issue. A pilot cannot tell
+        # the difference on the radio, which is exactly why it matters: he lands
+        # believing he was cleared, and Tower never knew he was there.
+        twr = self.profile.station_for("tower")
+        if self.working and twr is not None and self.working != "tower":
+            self.say(ac.callsign,
+                     f"{self._addr(ac)}, roger, field in sight, contact "
+                     f"{twr.name} {spell_freq(twr.freq_mhz)} for landing.")
+            self._try_clear()
+            return
         # He has the field. What a controller owes him now is the CLEARANCE and
         # the wind -- not a verdict on whether the landing is assured, which is
         # the pilot's call and not a phrase a real controller uses.

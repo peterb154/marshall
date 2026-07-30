@@ -607,6 +607,22 @@ class ApproachProfile:
     final_intercept_nm: float = 11.0     # the IF -- established by here
     fap_nm: float = 6.0                  # descent begins
     map_nm: float = 0.6             # missed approach point, range from the TOUCHDOWN point
+    # WHERE TOWER TAKES HIM, on any approach.
+    #
+    #     "Tower should handle inside a xx 2?? mile radius.. even on ASR
+    #      approach."
+    #
+    # A number rather than a rule derived from the procedure, because it is a
+    # fact about the FIELD -- whose airspace the last two miles are -- and not
+    # about which aid the pilot is flying. See `hands_to_tower_nm`.
+    # FIVE, not two. Two put the boundary inside the talkdown -- the controller
+    # is still reading ranges every mile at two miles, so the pilot changes
+    # frequency in the middle of the procedure flying his approach. Five is
+    # about where real practice puts it (the final approach fix), and it leaves
+    # the ASR question open rather than answering it badly:
+    #
+    #     "Let's do 5 nm then. We'll fix ASR approach later"
+    tower_takes_nm: float = 5.0
     # How far the TOUCHDOWN POINT is from the reference the radar measures
     # against, along the approach course. Positive means the aircraft reaches
     # the touchdown point FIRST.
@@ -1027,10 +1043,27 @@ class ApproachProfile:
 
         Real practice keeps him: the final controller obtains the landing
         clearance from Tower and relays it, and the pilot never changes
-        frequency inside the final. So a talkdown holds him to the missed
-        approach point, where the procedure ends one way or the other.
+        frequency inside the final. So a talkdown holds him well down the
+        approach rather than releasing him at the intercept.
+
+        AND IT IS ONE NUMBER NOW, on every approach:
+
+            "Don't treat the ASR different for handoffs at this time. Just make
+             2 mile radius the tower airspace"
+
+        Which removes the branch rather than adding to it. This property used to
+        return the missed approach point on a talkdown and the intercept
+        otherwise -- two very different distances (0.6 nm and 11 nm) derived
+        from which AID the pilot happened to be flying. Both were wrong in
+        opposite directions: at 11 nm he was told to leave the frequency that
+        was talking him down, and at 0.6 nm Tower was landing an aeroplane it
+        had never spoken to.
+
+        Whose airspace the last two miles are is a fact about the FIELD. It does
+        not change because the pilot has an ILS, or because the controller is
+        reading him ranges. So: a radius, and everything inside it is Tower's.
         """
-        return self.map_nm if self.guidance == "talkdown" else self.final_intercept_nm
+        return self.tower_takes_nm
 
     @property
     def tops_ft(self) -> int:

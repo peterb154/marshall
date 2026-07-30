@@ -459,29 +459,48 @@ class TestStations(unittest.TestCase):
         self.assertEqual(nxt.role, "approach")
 
     def test_approach_keeps_him_through_the_talkdown(self):
-        """On a talkdown the controller IS the approach aid, so he does not
-        get handed away at the intercept.
+        """He is not handed away in the middle of the procedure.
 
         This went the other way live, in cloud: "contact Batumi Tower now" at
         ten miles, from the same controller that was reading his range every
         mile. The pilot was told to leave the frequency flying his approach.
+
+        The boundary is FIVE miles now rather than the missed approach point, so
+        the last leg belongs to Tower -- but the intercept and the run in to it
+        are still Approach's, which is what this row was protecting. Five is
+        roughly the final approach fix and is where real practice puts it; two
+        was inside the talkdown, which meant changing frequency in the middle of
+        the procedure being flown.
         """
         self.assertEqual(self.p.guidance, "talkdown")
-        for rng in (self.p.final_intercept_nm - 2, 8, 4, 1):
+        for rng in (self.p.final_intercept_nm - 2, 8, 6):
             self.assertIsNone(self.p.handoff_from(self.freq("approach"), rng),
                               f"handed off at {rng} nm, mid-talkdown")
 
-    def test_approach_gives_him_to_tower_at_the_missed_approach_point(self):
+    def test_tower_takes_the_last_five_miles(self):
+        nxt = self.p.handoff_from(self.freq("approach"), 4.0)
+        self.assertIsNotNone(nxt)
+        self.assertEqual(nxt.role, "tower")
+
+    def test_approach_gives_him_to_tower_inside_the_boundary(self):
         nxt = self.p.handoff_from(self.freq("approach"), self.p.map_nm / 2)
         self.assertEqual(nxt.role, "tower")
 
-    def test_a_precision_approach_hands_off_at_the_intercept(self):
-        """The old rule, kept for the case it was actually written for: with an
-        aid of his own he is established and Tower takes him."""
+    def test_the_boundary_is_the_same_on_every_approach(self):
+        """REPLACES a test that asserted an ILS hands off at the intercept and a
+        talkdown at the missed approach point -- 11 nm against 0.6 nm, derived
+        from which AID the pilot happened to be flying.
+
+            "Don't treat the ASR different for handoffs at this time. Just make
+             2 mile radius the tower airspace"
+
+        Whose airspace the last two miles are is a fact about the FIELD. It does
+        not change because the pilot has an ILS, or because the controller is
+        reading him ranges every mile.
+        """
         ils = dataclasses.replace(self.p, guidance="intercept")
-        self.assertEqual(ils.hands_to_tower_nm, ils.final_intercept_nm)
-        nxt = ils.handoff_from(self.freq("approach"), ils.final_intercept_nm - 2)
-        self.assertEqual(nxt.role, "tower")
+        self.assertEqual(ils.hands_to_tower_nm, self.p.hands_to_tower_nm)
+        self.assertEqual(self.p.hands_to_tower_nm, self.p.tower_takes_nm)
 
     def test_approach_keeps_him_before_final(self):
         self.assertIsNone(self.p.handoff_from(self.freq("approach"), 25))

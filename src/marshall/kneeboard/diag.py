@@ -116,8 +116,15 @@ def published(max_age: float = 3600.0) -> dict:
     The bridge knows, because it is the thing that decided. See
     `agent_atc.publish_state`.
     """
+    # THE PATH IS RESOLVED PER CALL, not at import. `PUBLISHED` is a module
+    # constant computed from `config.BUILD_DIR`, so a test that redirects the
+    # build dir to a tempdir was still reading the LIVE snapshot -- and passed
+    # only for as long as nothing happened to be on the real board. It started
+    # failing the moment a pilot checked in, which is a test that was never
+    # testing what it said.
+    path = config.BUILD_DIR / "control" / "state.json"
     try:
-        raw = json.loads(PUBLISHED.read_text())
+        raw = json.loads(path.read_text())
     except (OSError, ValueError):
         return {}
     age = time.time() - float(raw.get("at") or 0)

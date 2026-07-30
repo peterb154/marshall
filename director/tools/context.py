@@ -53,6 +53,7 @@ it only becomes eligible once the next transmission arrives.
 
 from __future__ import annotations
 
+import logging
 import re
 
 try:
@@ -64,6 +65,17 @@ except ImportError:                     # importable without strands (tests),
 
         def apply_management(self, agent, **kwargs) -> None:
             pass
+
+        def restore_from_session(self, state):
+            # The real class has one and validates the persisted class name
+            # against its own. The shim has nothing to validate, so it accepts
+            # whatever it is given -- and having the METHOD at all is the point:
+            # without it the subclass's `super()` call raises AttributeError,
+            # which is a different failure from the one it is there to absorb.
+            self.removed_message_count = (
+                (state or {}).get("removed_message_count", 0)
+                if isinstance(state, dict) else 0)
+            return None
 
 # Where the pilot's words start in an assembled bridge message. Everything
 # before it is situation, re-derived on the next call and worthless afterwards.
@@ -112,6 +124,8 @@ _EVENT_RADAR = re.compile(r"\nRADAR:.*?(?=\nMake the radio call now|\Z)", re.S)
 #
 # Starting here rather than higher because none of it has been flown. Card row K3
 # is what says whether it is short; raising it is this line.
+log = logging.getLogger(__name__)
+
 WINDOW = 24
 
 
@@ -185,3 +199,41 @@ class RadioContext(SlidingWindowConversationManager):
         # rather than to messages that are about to shrink.
         scrub(agent.messages)
         super().apply_management(agent, **kwargs)
+
+    def restore_from_session(self, state):
+        """A session written by a DIFFERENT manager must not take ATC off air.
+
+        The base class raises `ValueError("Invalid conversation manager state.")`
+        when the persisted `__name__` is not this class's -- a perfectly sound
+        check, and a fatal one here. Introducing this subclass renamed the
+        manager, so every session that existed beforehand became unrestorable,
+        `/atc` answered 500 to every transmission, and the controller went
+        silent on the radio. Measured live, 30 July: one reply on check-in and
+        nothing after it, on a frequency with a pilot on it who could only
+        conclude the whole system was dead.
+
+        What the state carries is `removed_message_count` -- bookkeeping for how
+        much history has already been trimmed. Losing it re-trims a few
+        messages. That is the entire cost, and it is nothing set against a
+        controller who does not answer.
+
+        So: take the count when it is there, ignore the rest, and say so in the
+        log rather than silently. The first turn afterwards persists our own
+        state and the mismatch never recurs.
+        """
+        try:
+            return super().restore_from_session(state)
+        # AttributeError included: on a machine without strands the base is a
+        # shim, and a fallback that itself throws is not a fallback. Found by
+        # the regression test for this very function, which is the argument for
+        # having written one.
+        except (ValueError, KeyError, TypeError, AttributeError) as e:
+            got = (state or {}).get("__name__") if isinstance(state, dict) else None
+            log.warning(
+                "conversation state from %r cannot be restored into %s (%s); "
+                "starting this session's window fresh rather than failing the "
+                "turn", got, self.__class__.__name__, e)
+            self.removed_message_count = (
+                (state or {}).get("removed_message_count", 0)
+                if isinstance(state, dict) else 0)
+            return None
