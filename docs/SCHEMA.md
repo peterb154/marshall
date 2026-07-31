@@ -315,3 +315,34 @@ one -- it answers confidently.
 Where a read per call is genuinely too expensive, the cache carries an explicit
 TTL and says so, the way `_filed` does at 45 seconds. What is not acceptable is
 a cache with no expiry pretending to be a lookup.
+
+### Measured, so nobody has to argue about it again
+
+300 iterations of each real query, pooled connection, this hardware:
+
+    config lookup (the thing _FIXES caches)        0.071 ms   p95 0.107
+    the board (what the bridge reads per turn)     0.086 ms   p95 0.146
+    every fix on the map (a whole config table)    0.080 ms   p95 0.123
+    the radar picture (PostGIS, heaviest we run)   0.079 ms   p95 0.131
+
+    HTTP hop, bridge -> director -> db             1.389 ms   p95 2.426
+    one Bedrock reply, observed the same night     6300    ms
+
+**Seventy-three thousand board reads fit inside one sentence the controller
+says.** Even the HTTP path -- sixteen times slower than talking to Postgres
+directly -- is four thousand times faster than the model call it sits beside.
+
+Put the other way round: saving one second of latency would take about 11,600
+cached reads, and a whole sortie does a few hundred. `_FIXES` saves something
+like THIRTY MILLISECONDS across an entire sortie. It cost a night of debugging
+and a live outage where the controller quoted a fix it had been told about and
+never reloaded.
+
+There are two hard things in computer science, and this project spent a week
+proving it can do both at once: cache invalidation -- `_FIXES`, `_on_ground`,
+the board dict, `_atc_agents`, and a fifteen-second timeout standing in for a
+mission reset -- and naming things, which is one aeroplane with four names and
+three functions for squashing them that disagree.
+
+So the rule is not "prefer the database". It is: **a cache must justify itself
+with a measurement, and none of ours can.**
