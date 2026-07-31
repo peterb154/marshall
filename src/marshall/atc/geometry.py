@@ -111,12 +111,15 @@ def _en(nm: float, bearing_deg: float) -> tuple[float, float]:
     return nm * math.sin(r), nm * math.cos(r)
 
 
-def bearing_between(from_nm: float, from_radial: float,
-                    to_nm: float, to_radial: float) -> float:
-    """Bearing to fly from one point to another, both given off the field."""
-    fe, fn = _en(from_nm, from_radial)
-    te, tn = _en(to_nm, to_radial)
-    return math.degrees(math.atan2(te - fe, tn - fn)) % 360
+# `bearing_between` LIVED HERE and is gone. It was a flat east/north
+# approximation of "bearing from one point to another" -- the sixth
+# implementation of that idea in this codebase -- and it was IMPORTED BY
+# asr.py AND NEVER CALLED. Dead for long enough that nobody noticed it was
+# also the one that would have been wrong: it works off ranges and radials
+# from the field, so it is only correct near the field and only in one frame.
+#
+# `core.geo.range_bearing_true` is the live answer, with the frame in its name.
+# See docs/SCHEMA.md on one home per rule.
 
 
 def turn_direction(from_heading: float, to_heading: float) -> str:

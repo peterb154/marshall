@@ -3,19 +3,34 @@
     "GIS vector functions -- those need to be shared. There is no reason an ASR
      approach module is doing any of that math."
 
-WHY THIS FILE EXISTS. "Bearing between two points" was implemented SIX times:
+WHY THIS FILE EXISTS. "Bearing between two points" had FIVE implementations,
+four of them live and one of them wrong:
 
-    picture.range_radial        geodesic -- correct
-    agent_atc._range_radial     geodesic -- byte-for-byte the same function
-    route.bearing_distance      flat metres off the sim grid, labelled TRUE
-    geometry.bearing_between    flat east/north approximation
-    asr.py:426, :449            more flat atan2, inside the approach logic
-    PostGIS ST_Azimuth          in the feed
+    picture.range_radial        geodesic -- correct          FOLDED
+    agent_atc._range_radial     byte-for-byte the same        FOLDED
+    route.bearing_distance      flat grid metres, called TRUE  FIXED (audit #1)
+    dcs._bearing_range          haversine, own earth radius   FOLDED
+    geometry.bearing_between    flat, and never called at all DELETED
 
-Two of those were the same code in two modules, and the copy in `agent_atc`
-said in its own docstring that a THIRD one was wrong. Somebody found the
-correct implementation, knew another copy was broken, and made a second copy
-instead of one home.
+AND TWO THAT ARE NOT DUPLICATES, counted as such in an earlier draft of this
+docstring and wrong to have been:
+
+    asr.py atan2        planar trigonometry in a LOCAL east/north frame that
+                        `geometry._en` builds off the field. Line 378 is an
+                        intercept ANGLE -- atan2(offset, distance) -- which is
+                        not a bearing at all. Correct where it is, and folding
+                        it into a geodesic would be a mistake dressed as tidying.
+    PostGIS ST_Azimuth  the database computing it over indexed geography, for
+                        queries that must not drag rows into Python to sort them.
+
+The rule is one home per RULE, not one function per formula. Two operations
+that share a trig call are still two operations, and collapsing them because
+they both say `atan2` would be a mistake dressed as tidying.
+
+Two of the five were the same code in two modules, and the copy in `agent_atc`
+said in its own docstring that a THIRD one was wrong. Somebody found the correct
+implementation, knew another copy was broken, and made a second copy instead of
+one home.
 
 THE FRAMES ARE THE WHOLE PROBLEM, and they are why this is worth a module
 rather than a utility function. There are two right answers to "which way does

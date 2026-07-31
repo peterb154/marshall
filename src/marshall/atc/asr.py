@@ -36,7 +36,7 @@ import math
 from marshall.atc.geometry import (            # noqa: F401
     DEG_PER_NM, Guidance, INTERCEPT_ANGLE, LOOKAHEAD_MIN_NM, LOOKAHEAD_NM,
     MAX_INTERCEPT, ON_COURSE_DEG, ON_COURSE_FLOOR_NM, Position, TURN_IN_NM,
-    along_track, angle_diff, bearing_between, cross_track, intercept_heading,
+    along_track, angle_diff, cross_track, intercept_heading,
     lookahead_nm, on_course_tolerance, turn_direction, _en,
 )
 
