@@ -1059,3 +1059,85 @@ class TestAHoldNobodyWillFly(unittest.TestCase):
         self._admit("Pony 1-1")
         self.ctl.request_approach("Pony 1-1")
         self.assertIs(self.ctl.aircraft["Pony 1-1"].phase, atc.Phase.CLEARED)
+
+
+class TestNobodyIsNumberTwoBehindHimself(unittest.TestCase):
+    """The deadlock that ended a live sortie in a Mayday, 31 July.
+
+    Sockeye was cleared for the approach, which put him in the letdown. He was
+    then returned to HOLDING while he still held the slot -- so he was at once
+    the aircraft ON the approach and an aircraft waiting for it.
+
+    Every request after that reached the "letdown is occupied" branch, found it
+    occupied, and told him he was number two behind the only other aeroplane in
+    the sky, which was him. `_next_up` would have returned him immediately; on
+    that branch it is never asked. Four transmissions of it, forty-four miles
+    out, and then he declared an emergency to get out of the hold. From the
+    cockpit it is indistinguishable from having been forgotten.
+
+    The bug is one aircraft in two places at once, and the check is cheap:
+    the man in the letdown is not queued behind the letdown.
+    """
+
+    def setUp(self):
+        self.ctl = atc.Controller(R.BATUMI_ASR)
+        self.ctl.t = 0.0
+
+    def _stuck(self, cs="Sockeye"):
+        """Him, in the letdown and in the stack simultaneously."""
+        self.ctl.get(cs)
+        self.ctl.note_radar_contact(cs)
+        ac = self.ctl.aircraft[self.ctl._resolve(cs)]
+        ac.phase, ac.assigned_ft = atc.Phase.HOLDING, 5000
+        self.ctl._letdown = cs
+        self.ctl.out.clear()
+        return ac
+
+    def test_he_is_told_he_is_cleared_rather_than_held(self):
+        ac = self._stuck()
+        self.ctl._try_clear(requested_by="Sockeye")
+        said = " | ".join(t.text for t in self.ctl.out).lower()
+        self.assertIn("cleared", said)
+        self.assertNotIn("number two", said)
+        self.assertNotIn("continue holding", said)
+        self.assertIsNot(ac.phase, atc.Phase.HOLDING)
+
+    def test_the_board_is_put_back_in_step_with_his_clearance(self):
+        """Not just the words. Leaving him HOLDING while he holds the letdown
+        is the state that produced the loop, so the phase has to move too or
+        the next request deadlocks again."""
+        ac = self._stuck()
+        self.ctl._try_clear(requested_by="Sockeye")
+        self.assertIs(ac.phase, atc.Phase.CLEARED)
+
+    def test_asking_repeatedly_never_deadlocks(self):
+        """He asked four times. Every one has to come back cleared."""
+        self._stuck()
+        for attempt in range(4):
+            self.ctl.out.clear()
+            self.ctl._try_clear(requested_by="Sockeye")
+            with self.subTest(attempt=attempt + 1):
+                said = " | ".join(t.text for t in self.ctl.out).lower()
+                self.assertNotIn("number two", said)
+
+    def test_A_REAL_SECOND_AIRCRAFT_IS_STILL_NUMBER_TWO(self):
+        """The half that must not regress. This is separation: somebody else in
+        the letdown means you wait, and the fix must not have bought the
+        deadlock off by letting everyone through."""
+        self.ctl.get("Sockeye")
+        self.ctl.note_radar_contact("Sockeye")
+        self.ctl.get("Hoover")
+        self.ctl.note_radar_contact("Hoover")
+        self.ctl._letdown = "Sockeye"
+        self.ctl.out.clear()
+        self.ctl._try_clear(requested_by="Hoover")
+        said = " | ".join(t.text for t in self.ctl.out).lower()
+        self.assertIn("number two", said)
+
+    def test_the_letdown_is_not_handed_to_somebody_else(self):
+        """Re-affirming his clearance must not release the slot -- that would
+        let a second aircraft into the letdown behind him, which is the exact
+        thing the block exists to prevent."""
+        self._stuck()
+        self.ctl._try_clear(requested_by="Sockeye")
+        self.assertEqual(self.ctl._letdown, "Sockeye")

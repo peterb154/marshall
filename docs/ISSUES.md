@@ -2439,3 +2439,87 @@ labels: chore
    unit test.
 3. `docs/BACKLOG.md` keeps the debriefs and the reasoning; this file keeps the
    work.
+
+---
+
+## [SEQ-1] Nobody is number two behind himself — #50
+labels: needs-flight-test
+
+**Status:** FIXED — commit pending. Found live, 31 July, on Fred's first sortie.
+
+Sockeye was cleared for the approach, which put him in the letdown. Something
+then returned him to `HOLDING` while he still held the slot, so he was at once
+the aircraft **on** the approach and an aircraft **waiting** for it.
+
+Every request after that reached the "letdown occupied" branch in `_try_clear`,
+found it occupied, and told him he was number two behind the only other
+aeroplane in the sky — which was him. `_next_up()` would have returned him
+immediately; on that branch it is never asked.
+
+He held for four transmissions at 44 nm and then declared an emergency to get
+out of it. From the cockpit it is indistinguishable from having been forgotten.
+
+**Fixed by** not queueing the man in the letdown behind the letdown: if the
+requester *is* the occupant he is told he is cleared, and his phase is put back
+in step with the clearance he already holds. The slot is not released — that
+would let a second aircraft in behind him.
+
+**Acceptance criteria**
+1. An aircraft that holds the letdown and asks again is told he is cleared,
+   never "number two". Guarded by `TestNobodyIsNumberTwoBehindHimself`.
+2. A genuine second aircraft is still told "number two". Same class.
+3. The letdown is not released by the re-affirmation.
+4. **Still open:** what returned him to `HOLDING` while cleared. The deadlock is
+   gone, but the state transition that caused it has not been found, and until
+   it is this is a guard rather than a cure.
+
+---
+
+## [HO-2] Georgia Center has no proactive handoff at all — #51
+labels: bug
+
+**Status:** OPEN. Found live, 31 July.
+
+`handoff.RULES` contains no rule whose `frm` is `center`. The proactive monitor
+therefore can never hand anybody off Center — only the receive path can, via
+`profile.handoff_from`, and only when the pilot transmits inside
+`approach_hands_over_nm` (25 nm).
+
+On the sortie this compounded [SEQ-1]: he was held by Center at 44 nm, nineteen
+miles outside the airspace Approach would have taken him in, with no mechanism
+that could ever have moved him on.
+
+**Acceptance criteria**
+1. A rule exists for `center -> approach`, conditioned on inbound range, so the
+   handoff fires unprompted like every other rung of the ladder.
+2. The receive loop and the monitor read the **same** rule table. Two mechanisms
+   that disagree is how this stayed invisible.
+3. Flying inbound without transmitting still gets you handed to Approach.
+
+---
+
+## [ID-6] Frequency read-backs are parsed as callsigns — #52
+labels: bug
+
+**Status:** OPEN. Found live, 31 July.
+
+Reading a frequency back produced callsign corrections addressed to fragments of
+the number:
+
+    PILOT: "124, decimal four. Batumi Approach, sockeye, over."
+    ATC:   "Decimal four, I do not have you on the board. You are Sockeye..."
+    ATC:   "Batumi four, I do not have you on the board..."
+
+The identity was correct throughout — he was never mis-bound, and the correction
+names the right callsign. The fault is that a number spoken in a read-back is
+treated as a claimed callsign at all, so the controller opens every reply by
+correcting a name nobody used.
+
+Cosmetic in effect, but it is on **every** frequency change, which is once per
+rung of a seven-rung ladder.
+
+**Acceptance criteria**
+1. A read-back containing a frequency produces no callsign correction.
+2. A genuinely wrong callsign is still corrected — this must not be bought by
+   disabling the guard, which is [ID-3]/#48's whole point.
+3. Guarded by a unit test over the recorded transmissions, not by ear.

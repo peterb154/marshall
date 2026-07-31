@@ -1235,6 +1235,34 @@ class Controller:
     def _try_clear(self, requested_by: str | None = None) -> None:
         """Clear the next aircraft for approach, if the letdown block is free."""
         if self._letdown is not None:
+            # NOBODY IS NUMBER TWO BEHIND HIMSELF, and this deadlocked a live
+            # sortie until the pilot declared an emergency to get out of it.
+            #
+            # Sockeye was cleared for the approach, which put him in the
+            # letdown. Something then returned him to HOLDING while he still
+            # held the slot -- so he was simultaneously the aircraft on the
+            # approach and an aircraft waiting for it. Every request after that
+            # reached this branch, found the letdown occupied, and told him he
+            # was number two behind the only other aeroplane in the sky, which
+            # was him. `_next_up` would have returned him; it is never asked.
+            #
+            # He held for four transmissions, 44 miles out, nineteen miles
+            # outside the airspace Approach would even have taken him in, and
+            # then declared a Mayday. From the cockpit it is indistinguishable
+            # from being forgotten.
+            #
+            # So: the man in the letdown is not held behind it. He is told to
+            # continue, which is the truth -- he is already cleared -- and the
+            # stack is left exactly as it is for everybody else.
+            if requested_by and requested_by == self._letdown:
+                ac = self.aircraft.get(self._resolve(requested_by))
+                if ac is not None and ac.phase == Phase.HOLDING:
+                    # Put the board back in step with the clearance he has.
+                    ac.phase, ac.last_report_t = Phase.CLEARED, self.t
+                self.say(requested_by,
+                         f"{requested_by}, you are cleared for the approach, "
+                         f"continue.")
+                return
             if requested_by:
                 self.say(requested_by, f"{requested_by}, continue holding, "
                                        f"number two, expect approach shortly.")
