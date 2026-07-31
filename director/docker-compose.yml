@@ -79,7 +79,6 @@ services:
       # duplicating was the only thing available. See docs/STRUCTURE.md.
       - ../src/marshall:/app/marshall
       - ./tools:/app/tools
-      - ./prompts:/app/prompts
       - ./app.py:/app/app.py
       - ./migrations:/app/migrations
     ports:

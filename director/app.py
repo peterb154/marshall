@@ -35,6 +35,7 @@ from strands_pg import (
 )
 
 # The sim feed (marshall.feed) and the agent's own tools (director/tools).
+import marshall.atc.agent as marshall_atc_agent
 from marshall.feed.dcs import (
     spawn_ground,
     radar_picture,
@@ -57,7 +58,12 @@ from marshall.feed.tracks import start_streamer, vector
 # TODO (identity): uncomment when you have per-user profile docs.
 # from strands_pg import PgIdentity
 
-PROMPT_DIR = Path(__file__).parent / "prompts"
+# THE PROMPTS BELONG TO THE DOMAIN, not to the deployable that serves them.
+# How a controller SAYS an ILS clearance is part of knowing what an ILS is, so
+# the words live beside the logic in `marshall.atc.agent` -- see
+# docs/STRUCTURE.md. This file keeps the HTTP door and the session locking,
+# which is a deployable's job and nobody else's.
+PROMPT_DIR = Path(marshall_atc_agent.__file__).parent / "prompts"
 # soul (persona) -> plate (this mission's facts, generated from route.py and
 # pushed live by the SRS bridge) -> rules (field-agnostic behaviour).
 SYSTEM_PROMPT_PARTS = ["soul", "plate", "rules"]

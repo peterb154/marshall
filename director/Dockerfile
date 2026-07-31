@@ -29,8 +29,9 @@ COPY director/tools/     /app/tools/
 # The shared package: core (names, geo, db, schema, scope) and feed (the sim
 # mirrored into Postgres). Both deployables import these, which is the whole
 # point -- see docs/STRUCTURE.md. Compose mounts them over the top for editing.
+# The shared package, and ATC's prompts travel inside it -- the words
+# belong to the domain, not to this deployable. See marshall/atc/agent.
 COPY src/marshall/       /app/marshall/
-COPY director/prompts/   /app/prompts/
 COPY director/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
