@@ -357,6 +357,12 @@ _PAGE = """<!doctype html><html><head><meta charset="utf-8">
   header .stat{font-size:.78rem;color:var(--dim)}
   header .stat i{font-style:normal;color:var(--ink)}
   .grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--rule)}
+  /* SINGLE COLUMN on the kneeboard. A grid assumes a monitor; this is read in
+     the air. Wide enough to keep the board's twelve columns legible without
+     the page itself scrolling sideways -- the tables scroll, the page does
+     not. */
+  .stack{display:flex;flex-direction:column;gap:1px;background:var(--rule)}
+  .stack > section{width:100%}
   section{background:var(--bg);padding:.75rem 1rem 1rem;min-width:0}
   h2{font-size:.7rem;letter-spacing:.16em;text-transform:uppercase;color:var(--dim);
     margin:0 0 .6rem;font-weight:600}
@@ -438,22 +444,36 @@ _PAGE = """<!doctype html><html><head><meta charset="utf-8">
   <button data-do="mission">reload current</button>
   <span id="cmsg"></span>
 </div>
-<div class="grid">
-  <section class="wide"><h2>Tracked
+<!-- ONE COLUMN, ORDERED BY WHAT A PILOT NEEDS IN THE AIR.
+
+       "The diag page is pretty crowded on the kneeboard. We should probably
+        just move to 1 column with the most important info on top - that is the
+        board and the ATC attribution. The untracked and flight plans are things
+        I can scroll down to see on the ground easily. The board and attribution
+        is my primary diag instrument now."
+
+     A two-column grid assumes a monitor. This is read on a kneeboard, in the
+     air, at a glance -- so the two panels that answer "what does he think is
+     happening, and which brain decided it" come first and everything else is a
+     scroll away. Nothing is removed; the order is the feature. -->
+<div class="stack">
+  <section><h2>Tracked
     <span class="hint">&mdash; on the board, and exactly one controller owns each</span></h2>
     <div id="board"></div></section>
-  <section class="wide"><h2>Untracked
+  <section><h2>The last turn, stage by stage
+    <span class="hint">&mdash; who decided it: engine, agent or guard</span></h2>
+    <div id="last"></div></section>
+  <section><h2>Untracked
     <span class="hint">&mdash; the sim knows who and where; nobody is working him</span></h2>
     <div id="untracked"></div></section>
-  <section><h2>The last turn, stage by stage</h2><div id="last"></div></section>
   <section><h2>Flights</h2><div id="flights"></div></section>
-  <section class="wide"><h2>Flight plans
+  <section><h2>Flight plans
     <span class="sub">every strip on file, and who ATC can attach it to</span></h2>
     <div id="plans"></div></section>
+  <section><h2>What the controller was handed
+    <span class="hint">&mdash; behaviour follows from this and nothing else</span></h2>
+    <div id="handed"></div></section>
 </div>
-<section class="wide"><h2>What the controller was handed
-  <span class="hint">&mdash; behaviour follows from this and nothing else</span></h2>
-  <div id="handed"></div></section>
 <script>
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>]/g,
