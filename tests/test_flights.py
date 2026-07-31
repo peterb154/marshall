@@ -47,6 +47,40 @@ class TestCreatingAFlight(unittest.TestCase):
             with self.subTest(said):
                 self.assertEqual(F.parse_create(said), "")
 
+    def test_established_is_an_approach_word_not_a_formation_one(self):
+        """FROM A LIVE SORTIE, 31 July. `establish\\w*` was a creation verb, so
+        the word after "established" became a flight name:
+
+            "established ON the final approach course"  -> flight "On"
+            "established INBOUND on the beam"           -> flight "Inbound"
+
+        The second is a stock letdown call -- it is in this project's own
+        default pilot script -- so every NDB approach created a flight. The name
+        then became the pilot's callsign through `speaking_as`, the board
+        carried two entries for one Mustang, and the separation engine began
+        sequencing him against himself:
+
+            SEPARATION: Andre unknown -; On cleared 5000 ft
+        """
+        for said in ("Pony one one, established on the final approach course.",
+                     "Pony one one, established inbound on the beam",
+                     "Batumi Approach, Pony one one, established inbound, "
+                     "starting my clock.",
+                     "established on the localizer",
+                     "Sockeye is established procedure turn inbound"):
+            with self.subTest(said):
+                self.assertEqual(F.parse_create(said), "")
+
+    def test_creating_one_takes_the_verb_AND_the_noun(self):
+        """A tighter grammatical slot, not a list of banned words. [#40]
+        measured that road to its end: ordinary English "cannot be blacklisted,
+        the supply of English content words is unbounded". So a flight is being
+        created only when he says so twice."""
+        self.assertEqual(F.parse_create("request creation of Apex flight of four"),
+                         "Apex")
+        self.assertEqual(F.parse_create("creating Apex"), "",
+                         "a creation verb alone is not enough")
+
 
 class TestJoiningYourself(unittest.TestCase):
     """A pilot can only join HIMSELF.

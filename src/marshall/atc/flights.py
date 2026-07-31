@@ -42,9 +42,30 @@ from dataclasses import dataclass, field
 # "request creation of Apex flight". The lead says a NAME and nothing else --
 # no members, no count -- which is the whole reason this is simple: there is
 # nothing in it for Whisper to get wrong.
+# "request creation of Apex flight", "form Apex flight of two".
+#
+# THE WORD "FLIGHT" IS REQUIRED, and `establish` is not a creation verb.
+# Both of those cost a live sortie on 31 July:
+#
+#     "Pony one one, established ON the final approach course"   -> flight "On"
+#     "Pony one one, established INBOUND on the beam"            -> flight "Inbound"
+#
+# The second is a stock letdown call -- it is in this project's own default
+# pilot script -- so every NDB approach was creating a flight named after
+# whatever word followed "established". The flight then became the pilot's
+# callsign via `speaking_as`, and the board carried TWO entries for one
+# Mustang, which is what makes the separation engine engage: it started
+# sequencing Andre against himself.
+#
+# "Establish" belongs to approaches, not formations; no pilot forms a flight
+# with it. And the fix is a tighter GRAMMATICAL SLOT rather than a list of
+# words to refuse, because [#40] measured that road to its end -- ordinary
+# English "REPLACED the first class and cannot be blacklisted: the supply of
+# English content words is unbounded". A flight is being created only when the
+# man says so twice: a creation verb AND the noun.
 _CREATE = re.compile(
-    r"\b(?:creat\w*|form\w*|establish\w*)\s+(?:of\s+|a\s+)?"
-    r"([A-Za-z][A-Za-z'-]*)(?:\s+flight)?", re.I)
+    r"\b(?:creat\w*|form\w*)\s+(?:of\s+|a\s+)?"
+    r"([A-Za-z][A-Za-z'-]*)\s+flight", re.I)
 
 # "Andre, joining Apex", "join Apex flight", "Apex, joining".
 _JOINING = re.compile(r"\bjoin(?:ing|s|ed)?\b", re.I)
