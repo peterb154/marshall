@@ -113,6 +113,10 @@ def known_fixes() -> dict:
     _load_fixes()
     return {k: list(v) for k, v in sorted(_FIXES.items())}
 
+from marshall.feed.stubs import bind as _bind_dcs_stubs
+
+_bind_dcs_stubs()
+
 from dcs.common.v0 import common_pb2
 from dcs.mission.v0 import mission_pb2, mission_pb2_grpc
 

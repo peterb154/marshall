@@ -23,6 +23,10 @@ except ImportError:                     # allow import on a host without strands
     def tool(fn):
         return fn
 
+from marshall.feed.stubs import bind as _bind_dcs_stubs
+
+_bind_dcs_stubs()
+
 from dcs.coalition.v0 import coalition_pb2, coalition_pb2_grpc
 from dcs.common.v0 import common_pb2
 from dcs.group.v0 import group_pb2, group_pb2_grpc

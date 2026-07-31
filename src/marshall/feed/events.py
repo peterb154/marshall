@@ -56,6 +56,10 @@ except ImportError:
 from marshall.core.db import pool as get_pool
 from marshall.feed.dcs import DCS_GRPC_ADDR
 
+from marshall.feed.stubs import bind as _bind_dcs_stubs
+
+_bind_dcs_stubs()
+
 from dcs.mission.v0 import mission_pb2, mission_pb2_grpc
 
 log = logging.getLogger(__name__)

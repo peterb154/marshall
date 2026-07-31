@@ -95,8 +95,27 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-# The tools bind the `dcs` namespace before importing anything from it, so the
-# imports genuinely cannot come first. The reason is commented in each.
+# `dcs` IS AN AMBIGUOUS TOP-LEVEL NAME, and that -- not import ordering -- is
+# the real reason these files defer their imports.
+#
+# `pydcs`, the mission builder, installs itself as `dcs`. The vendored DCS-gRPC
+# stubs also live under `dcs/`. Which one an `import dcs.common.v0` finds
+# depends on sys.path order and on what happens to be installed: inside the
+# director container pydcs is absent so it resolves to the stubs, and on the
+# host it is present so the same line raises `No module named 'dcs.common'`
+# after printing "Couldn't detect any installed DCS World version" a hundred
+# times.
+#
+# The comment that used to be here said the modules "bind the `dcs` namespace
+# before importing anything from it". That is true of `tools/spawn.py`, which
+# really does install a ModuleType first -- and false of `feed/tracks.py`, where
+# the imports simply sit mid-file with nothing before them. The justification
+# was borrowed from a file where it applied to one where it did not, and it
+# survived because E402 stopped anybody looking.
+#
+# THE REAL FIX is that the stubs should not squat on `dcs` -- they want a root
+# of their own -- and it is not done yet. Until then these ignores are load
+# bearing, and this note is the honest version of why.
 "tools/*.py" = ["E402", "E702"]
 "src/marshall/kneeboard/*.py" = ["E402", "E702"]
 "src/marshall/radio/*.py" = ["E402", "E702"]

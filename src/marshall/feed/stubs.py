@@ -1,0 +1,73 @@
+"""Reach the DCS-gRPC stubs without losing a fight to `pydcs` over the name.
+
+`dcs` IS AN AMBIGUOUS TOP-LEVEL PACKAGE and this module exists because of it.
+
+  * `pydcs` -- the mission builder, a real dependency of `marshall.mission` --
+    installs itself as `dcs`.
+  * the vendored DCS-gRPC stubs are generated with absolute imports and also
+    live under `dcs/`.
+
+Which one `import dcs.common.v0` finds depends on `sys.path` order and on what
+happens to be installed. Inside the director container pydcs is absent, so it
+resolves to the stubs and everything works. On the host pydcs is present, so
+the same line prints "Couldn't detect any installed DCS World version" a
+hundred times and then raises `ModuleNotFoundError: No module named
+'dcs.common'`.
+
+That did not matter while this code lived in `director/` and nothing on the host
+imported it. It matters now: `feed` is in the shared package, and a module that
+cannot be imported outside one container is not shared.
+
+THE COMMENT THAT USED TO EXPLAIN THIS WAS WRONG, which is worth recording. It
+said these modules "bind the `dcs` namespace before importing anything from it,
+so the imports genuinely cannot come first" -- true of `tools/spawn.py`, which
+really does install a `ModuleType` first, and false of `feed/tracks.py`, where
+the imports simply sat mid-file with nothing before them. A justification was
+borrowed from a file where it applied to one where it did not, and an E402
+ignore kept anybody from looking for eight months.
+
+WHAT THIS DOES. Binds the vendored stub directory as `dcs` before importing
+from it -- the thing the old comment claimed was already happening -- and does
+it in ONE place instead of once per file, so `import marshall.feed.tracks` is
+safe anywhere. Importing this shadows `pydcs` for the rest of the process, which
+is correct for a process that talks to the sim over gRPC and wrong for one
+building a `.miz`; those are different programs and neither needs both.
+
+THE REAL FIX is to regenerate the stubs under a root of their own, so nothing
+has to shadow anything. That is a protoc change and a vendoring change, and it
+is not done. This is the honest interim: one place, explained, rather than a
+lint suppression and a false comment.
+"""
+
+from __future__ import annotations
+
+import sys
+import types
+from pathlib import Path
+
+# Where the generated stubs are vendored. Inside the container the Dockerfile
+# also puts this on PYTHONPATH; on the host nothing does, and pydcs would win
+# anyway, so the path is resolved here rather than assumed.
+_ROOT = Path(__file__).resolve().parents[3] / "director" / "_grpc"
+
+
+def bind() -> None:
+    """Make `dcs.*` mean the gRPC stubs for the rest of this process.
+
+    Idempotent, and a no-op when `dcs` already points at the stubs -- which is
+    the container's case, where PYTHONPATH got there first.
+    """
+    got = sys.modules.get("dcs")
+    if got is not None and getattr(got, "__path__", None) \
+            and str(_ROOT) in str(next(iter(got.__path__), "")):
+        return
+    if not (_ROOT / "dcs").is_dir():
+        # Nothing vendored: leave whatever `dcs` means alone and let the caller
+        # fail on its own import, with its own error, rather than inventing a
+        # package that is not there.
+        return
+    pkg = types.ModuleType("dcs")
+    pkg.__path__ = [str(_ROOT / "dcs")]
+    sys.modules["dcs"] = pkg
+    if str(_ROOT) not in sys.path:
+        sys.path.insert(0, str(_ROOT))
