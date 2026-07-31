@@ -13,17 +13,18 @@ the sections are reordered.
 
 | | section | issue | needs | why it is on the card |
 |---|---|---|---|---|
-| 1 | **N — what he calls you** | [#48] | solo | **fly this first.** Everything about identity changed on 30 July and none of it has been heard. It is also the quickest to falsify: three transmissions on the ramp |
-| 2 | **M — how fast he answers alone** | [#45] | solo | one radio check. Ground units stopped counting as traffic, so the classifier is off the path — you are judging a pause, and you can only judge it while you still remember the old one |
-| 3 | **J — who he thinks you are** | [#40] | solo | identity under stress: garble it, omit it, lose radar. N says he gets it right; J says he keeps it when things go wrong |
-| 4 | **G — clearance at the ramp** | [#1] | solo | the awkward half: a wrong read-back, a deliberate ambiguity, an amendment |
-| 5 | **H — the approach** | [#19] [#37] [#39] | solo | the main event, and where the open bugs live |
-| 6 | **F — landing and the handoff** | [#41] | solo | the sim's own events now drive Tower. Never flown |
-| 7 | **K — does he remember** | [#43] | solo, better with two | shipped 30 July, never flown |
+| 1 | **Q — the ladder, Kobuleti to Batumi** | [#1] [#16] | solo | **fly this first.** The theatre has two aerodromes as of 31 July and none of it has been heard. It is also where you are sitting: the sortie now starts at Kobuleti, so section Q is simply the first ten minutes of the flight |
+| 2 | **N — what he calls you** | [#48] | solo | everything about identity changed on 30 July and none of it has been heard. The quickest to falsify: three transmissions on the ramp |
+| 3 | **M — how fast he answers alone** | [#45] | solo | one radio check. Ground units stopped counting as traffic, so the classifier is off the path — you are judging a pause, and you can only judge it while you still remember the old one |
+| 4 | **J — who he thinks you are** | [#40] | solo | identity under stress: garble it, omit it, lose radar. N says he gets it right; J says he keeps it when things go wrong |
+| 5 | **G — clearance at the ramp** | [#1] | solo | the awkward half: a wrong read-back, a deliberate ambiguity, an amendment |
+| 6 | **H — the approach** | [#19] [#37] [#39] | solo | the main event, and where the open bugs live |
+| 7 | **F — landing and the handoff** | [#41] | solo | the sim's own events now drive Tower. Never flown |
+| 8 | **K — does he remember** | [#43] | solo, better with two | shipped 30 July, never flown |
 | — | **D — flights** | [#42] | **two aircraft** | skip it solo. A formation cannot be flown by one aeroplane, and the break-up rules changed on 30 July |
 | — | **E — known broken** | | | read it, so you do not re-find something already understood |
 
-**Solo today?** N, M, J, G, H, F, K — in that order. Only D needs a second
+**Solo today?** Q, N, M, J, G, H, F, K — in that order. Only D needs a second
 aeroplane. Note that N3, N5 and N6 inside section N are formation rows and want
 one too; the rest of N is flyable alone and is the part that changed most.
 
@@ -33,22 +34,51 @@ Say `engineering, come up`, then `test H4 failed, he vectored me at four miles`.
 The ID is the whole point; detail is optional. Engineering answers on whatever
 channel you called from and logs to `build/debug-notes.md`.
 
-**Comms:** A 139 Center · B 124 Approach · C 118 Tower · D 131 Sentry.
-Everything on the approach is on **124**. You should not be sent to Tower until
-you are over the runway.
+**Comms — the ladder, in the order you press it.** The sortie now departs
+**Kobuleti** and recovers into **Batumi**, so the card is seven rungs and two
+aerodromes rather than four buttons at one:
+
+| ch | freq | station | when |
+|---|---|---|---|
+| 1 | 125.100 | Kobuleti Clearance | start-up, IFR clearance |
+| 2 | 133.000 (also 122.100) | Kobuleti Ground | taxi — **and take-off**, he wears the tower hat |
+| 3 | 123.300 | Kobuleti Departure | after take-off, to about 5 nm |
+| 4 | 139.000 | Georgia Center | en route |
+| 5 | 124.425 (also 124.000) | Batumi Approach | recovery and the whole ASR |
+| 6 | 118.600 (also 118.000) | Batumi Tower | inside 5 nm, landing |
+| 7 | 121.900 | Batumi Ground | taxi in |
+| 8 | 131.000 | Sentry | mission commander, not a rung |
+
+Two frequencies on one row is **one controller on both** — a warbird that cannot
+dial fractions reaches the same man on the round number. Say either.
+
+The approach is still all on **124**; you should not be sent to Tower until
+about five miles.
+
+**Preset 7 is not reachable by a handoff.** Nothing hands you to Batumi Ground —
+`phases` gives "landed" to Tower — so after landing you have to ask. That is
+known and on the card as F5, not a surprise to report.
 
 **Priority:** **P1** never flown, this sortie is the first real test ·
 **P2** seen working once, confirming it stuck · **P3** nice to have.
 
-## Three things that are not bugs
+## Things that are not bugs
 
 - **~2.2 s of extra delay on every transmission**, including a radio check, when
   the mission holds armour or distant AI. `count_contacts` cannot tell a T-55
   from a Viper. [#45]
 - **The board engages while you are alone**, same cause. `/diag` will show it.
-- **The paper nav log is 5.74° out on every leg** — grid convergence is applied
-  on the radar side and not in `bearing_distance`. 2.39 nm of cross-track on
-  KOBULETI→INITIAL.
+- **Kobuleti Ground answers a request to take off.** He is Ground and Tower on
+  one seat, which is how a field that size runs. Not a mis-routed call.
+- **The nav log heading changed by ~2°** from the last card. The wind is 090/5
+  now rather than 180/5 — picked so runway 13 at Batumi and 07 at Kobuleti are
+  both into it. Courses did not move; the drift correction did.
+
+*(The paper nav log being 5.74° out on every leg was the first finding of the
+29 July audit and is **fixed** — `core/geo.py` names the frame in every function
+and the convergence is measured per field, +5.85 at Batumi and +5.91 at
+Kobuleti. It is off this list because it is closed, not because it stopped
+mattering.)*
 
 **New instrument:** `http://<host>/diag` — who he thinks you are, the board
 against radar with ghosts flagged, the last decision trail, and the flight
@@ -369,6 +399,7 @@ told to climb to three thousand. **Never flown.** See [#41].
 | F2 | P1 | Go around from short final | **No handoff to Tower**, and no reversal back towards the field while you are climbing out. A go-around at half a mile is closer than a landing at one | [#41], [#19] |
 | F3 | P2 | Touch and go | You are **not** handed to Tower for the few seconds you are on the runway — `runway_touch` is deliberately not acted on | [#41] `DOWN` |
 | F4 | P2 | Land, stop, leave the slot, take a new aeroplane and check in | The old callsign is **gone from the board**. Watch `/diag` — a leftover here is the ghost that held a real pilot in the stack for a whole approach | [#41] `player_leave_unit` |
+| F5 | P2 | After landing and clearing the runway, wait. Say nothing | **Nothing hands you to Batumi Ground.** This is the known gap: `phases` gives "landed" to Tower, so preset 7 has a real controller on it that no rule ever sends you to. Then ask for taxi on 121.900 and confirm he answers as **Batumi Ground** — the seat works, only the handoff to it is missing | [#41], [#16] |
 
 ---
 
@@ -555,6 +586,52 @@ does not then lose you. Everything else is detail around those two.
 changed to stop falling back to a plausible-looking value when it cannot find
 the real one — so an empty `callsign`, `owner` or `state` means the bridge does
 not have it, and that is worth reporting rather than squinting past.
+
+---
+
+## Q — the ladder, Kobuleti to Batumi
+
+**Never flown. This is the new test bed and the reason the card changed.**
+
+Until today the theatre had one aerodrome, so a "handoff" only ever moved you
+between two seats at Batumi and half the ladder did not exist. The sortie now
+starts at **Kobuleti**, and the whole point of section Q is that a role belongs
+to a *field*: there are two Towers and two Departures on the map now, and asking
+for the wrong one sends you to a controller forty miles away who will answer
+perfectly and give you the wrong numbers.
+
+You are parked at Kobuleti with the radio already on **preset 1**.
+
+| id | do this | expected | issue | pri |
+|---|---|---|---|---|
+| **Q1** | Preset 1. *"Kobuleti Clearance, Viper one one, request IFR clearance to Batumi."* | He answers as **Kobuleti Clearance** — not Batumi anything. Clearance to Batumi, an altitude, and a departure frequency of **123.300** | [#1] | **P1** |
+| **Q2** | Read the clearance back, deliberately getting the departure frequency wrong — say *"departure one two four decimal four two five"* | He corrects it. 124.425 is Batumi Approach: a real controller, wrong field. This is the exact failure the field-scoping was built to prevent | [#1] | **P1** |
+| **Q3** | Preset 2. *"Kobuleti Ground, ready to taxi."* | Taxi instruction. He is Ground **and** Tower on one seat, so stay with him for take-off | [#1] | **P1** |
+| **Q4** | Still on preset 2, ask for take-off | Cleared. **Runway 07** — the wind is 090/5 and 07 is into it. If he offers 25, the runway is not being computed from the weather | [#41] | **P1** |
+| **Q5** | Airborne. Say nothing and climb straight ahead | At about **5 nm** he hands you to **Kobuleti Departure, 123.300**, unprompted. Not Batumi. Not on request | [#16] | **P1** |
+| **Q6** | Preset 3, check in with Departure | He answers as **Kobuleti Departure**. Ask him your range from the field: it must be *your* field. On the ramp this read 23 miles because everything was measured from Batumi | [#16] | **P1** |
+| **Q7** | Proceed to INITIAL at 5,000 | Handoff to **Georgia Center** on 139.000 for the en-route leg | [#16] | P2 |
+| **Q8** | Inbound, expect the ASR | Handoff to **Batumi Approach, 124.425**. From here it is section H unchanged | [#19] | P2 |
+| **Q9** | At any point, ask a Kobuleti controller for something only Batumi can give — *"request the ASR"* on preset 2 | He should send you to the right man rather than inventing an answer. A controller who works one field must not clear you into another's approach | [#21] | P3 |
+
+**What it is actually checking**
+
+**Q1, Q2 and Q6 are the section.** Q1 and Q2 say the controller knows which
+*airport* he works; Q6 says his geometry is measured from where he is standing.
+Those three are the whole two-field change and everything else is the ladder
+walking normally.
+
+**The steerpoints are in the jet.** The flight plan is written into the mission
+as waypoints, so the DTC should come up with INITIAL and BATUMI already loaded —
+you should not have to hand-enter them. If they are missing, that is a real
+finding and it is worth more than any row here.
+
+**What a wrong answer looks like.** Every failure in this section is a
+*plausible* one. A controller who answers as Batumi Approach on Kobuleti's
+frequency, a departure frequency of 124.425, a range of 23 miles while you are
+parked — each is a real controller, a real frequency, a real distance. None of
+them will sound wrong on the radio. Read the numbers against this card rather
+than against whether the reply sounded competent.
 
 ---
 
