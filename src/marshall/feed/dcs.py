@@ -207,7 +207,7 @@ def radar_picture(bindings: dict | None = None) -> str:
     track cache (tools.tracks) first and falls back to a live gRPC scan when the
     cache is cold. 'no contacts' when the sky is empty."""
     try:
-        from tools.tracks import radar_cached
+        from marshall.feed.tracks import radar_cached
         lines = radar_cached(bindings)
     except Exception:
         lines = None

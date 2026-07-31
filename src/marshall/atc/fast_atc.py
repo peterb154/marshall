@@ -46,8 +46,8 @@ def _demo() -> None:
 
 
 def _run_srs(host: str, freq_mhz: float, voice_id: str = "Joanna") -> None:
-    from marshall.srs import stt, tts
-    from marshall.srs.client import AM, SRSClient, radio
+    from marshall.radio import stt, tts
+    from marshall.radio.client import AM, SRSClient, radio
 
     freq_hz = freq_mhz * 1_000_000
     ctl = atc.Controller(R.BATUMI_APPROACH)

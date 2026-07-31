@@ -29,8 +29,8 @@ except ImportError:
     def tool(fn):
         return fn
 
-from strands_pg._pool import get_pool
-from tools.dcs import BATUMI_LAT, BATUMI_LON, DCS_GRPC_ADDR, _M_TO_FT
+from marshall.core.db import pool as get_pool
+from marshall.feed.dcs import BATUMI_LAT, BATUMI_LON, DCS_GRPC_ADDR, _M_TO_FT
 
 _MS_TO_KT = 1.94384
 _MAGVAR = 6.0   # Caucasus magnetic variation (E); pilots fly magnetic headings

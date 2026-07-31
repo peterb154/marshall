@@ -28,7 +28,7 @@ import re
 import unittest
 from pathlib import Path
 
-SRC = Path(__file__).resolve().parents[1] / "director" / "tools" / "tracks.py"
+SRC = Path(__file__).resolve().parents[1] / "src" / "marshall" / "feed" / "tracks.py"
 
 
 class TestTheInsertMatchesItsParameters(unittest.TestCase):

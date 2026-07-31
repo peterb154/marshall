@@ -106,3 +106,30 @@ def session():
         raise
     finally:
         s.close()
+
+
+@lru_cache(maxsize=1)
+def pool(_dsn: str | None = None):
+    """A raw psycopg connection pool, for code that speaks SQL directly.
+
+    `feed` writes the track table from a gRPC stream several times a second and
+    its statements are hand-written PostGIS -- an upsert with `ST_MakePoint`, a
+    distance-ordered read. Those are clearer as SQL than as ORM, and converting
+    them is a separate decision from moving the module.
+
+    NOT `strands_pg._pool`, which is what `feed` used before it moved down here.
+    That pool registers pgvector's type adapter on every connection because the
+    agent stores embeddings -- a cost and a dependency the sim mirror has no use
+    for, and an upstream framework's object that only exists inside one
+    container. This is the same database by the same DSN; it simply belongs to
+    everybody.
+    """
+    # TAKES AN OPTIONAL DSN it ignores, so it is a drop-in for the pool the
+    # director's own tools were calling. They pass one; the answer is the same
+    # database either way, and a signature mismatch here fails at import with a
+    # TypeError about positional arguments -- which is what a blanket rename
+    # earned on the first attempt.
+    from psycopg_pool import ConnectionPool
+    return ConnectionPool(conninfo=dsn().replace("postgresql+psycopg://",
+                                                 "postgresql://"),
+                          min_size=1, max_size=8, open=True)

@@ -45,8 +45,8 @@ HZ = float(os.environ.get("MARSHALL_FREQ", "124.0")) * 1e6
 
 def main() -> int:
     from marshall import config
-    from marshall.srs import stt, tts
-    from marshall.srs.client import AM, SRSClient, radio
+    from marshall.radio import stt, tts
+    from marshall.radio.client import AM, SRSClient, radio
     from marshall.core import route as R
 
     p = R.BATUMI_ASR

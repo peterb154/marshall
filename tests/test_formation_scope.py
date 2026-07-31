@@ -154,7 +154,7 @@ class TestTheRendererAndTheParserAgree(unittest.TestCase):
     """
 
     def _other_ship(self):
-        src = (ROOT / "director" / "tools" / "tracks.py").read_text()
+        src = (ROOT / "src" / "marshall" / "feed" / "tracks.py").read_text()
         tree = ast.parse(src)
         fn = next(n for n in tree.body
                   if isinstance(n, ast.FunctionDef) and n.name == "_other_ship")

@@ -29,10 +29,10 @@ Two modes, because the second question can be asked of a sortie that has
 already been flown:
 
     # synthetic: N radios, deliberately confusable callsigns, full accounting
-    uv run --extra voice python -m marshall.srs.crowd --srs <host> 132.0 --ships 4
+    uv run --extra voice python -m marshall.radio.crowd --srs <host> 132.0 --ships 4
 
     # any recording, including a live one with real pilots in it
-    uv run python -m marshall.srs.crowd --analyse <session-id>
+    uv run python -m marshall.radio.crowd --analyse <session-id>
 
 The synthetic mode is the only one that can score ATTRIBUTION, because scoring
 it needs ground truth -- who actually keyed the mic -- and only a synthetic
@@ -339,8 +339,8 @@ def report(entries: list[dict], truth: list[dict] | None = None,
 def run(host: str, freq_mhz: float, ships: int = 4, session_id: str = "",
         reply_wait: float = 30.0, rounds: int = 0) -> list[dict]:
     """N radios take turns on one frequency. Returns ground truth."""
-    from marshall.srs import stt, tts
-    from marshall.srs.client import AM, SRSClient, radio
+    from marshall.radio import stt, tts
+    from marshall.radio.client import AM, SRSClient, radio
 
     fleet = ROSTER[:max(2, min(ships, len(ROSTER)))]
     freq_hz = freq_mhz * 1_000_000

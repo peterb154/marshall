@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import logging
 
-from strands_pg._pool import get_pool
+from marshall.core.db import pool as get_pool
 
 log = logging.getLogger(__name__)
 

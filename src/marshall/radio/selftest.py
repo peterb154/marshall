@@ -4,7 +4,7 @@ Connects two clients to the SRS server on the same frequency -- one transmits a
 short utterance, the other listens -- and reports whether the server relayed the
 voice. This isolates "does our client work" from "was someone tuned in".
 
-    uv run --extra voice python -m marshall.srs.selftest [host] [freq_mhz]
+    uv run --extra voice python -m marshall.radio.selftest [host] [freq_mhz]
 """
 
 from __future__ import annotations
@@ -13,8 +13,8 @@ import sys
 import threading
 import time
 
-from marshall.srs import tts
-from marshall.srs.client import AM, SRSClient, radio
+from marshall.radio import tts
+from marshall.radio.client import AM, SRSClient, radio
 from marshall import config
 
 

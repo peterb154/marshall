@@ -93,8 +93,8 @@ def main() -> int:
         print(scope(args.group))
         return 0
 
-    from marshall.srs import stt, tts
-    from marshall.srs.client import AM, SRSClient, radio
+    from marshall.radio import stt, tts
+    from marshall.radio.client import AM, SRSClient, radio
 
     line = " ".join(args.text)
     hz = args.freq * 1_000_000

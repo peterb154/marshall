@@ -198,7 +198,7 @@ class TestRoster(unittest.TestCase):
     """The SRS name lookup, which is the free identity anchor on every packet."""
 
     def roster_of(self, *lines):
-        from marshall.srs.client import SRSClient
+        from marshall.radio.client import SRSClient
         c = SRSClient.__new__(SRSClient)
         c.roster = {}
         for line in lines:
@@ -588,7 +588,7 @@ class TestPronunciation(unittest.TestCase):
     the commoner English word. A controller says REED-back."""
 
     def setUp(self):
-        from marshall.srs import tts
+        from marshall.radio import tts
         self.say = tts.pronounce
 
     def test_readback(self):
@@ -909,7 +909,7 @@ class TestChannelCourtesy(unittest.TestCase):
     """
 
     def setUp(self):
-        from marshall.srs.client import SRSClient
+        from marshall.radio.client import SRSClient
         self.c = SRSClient.__new__(SRSClient)     # no socket, no server
         self.c.last_rx = 0.0
 

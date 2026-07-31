@@ -13,7 +13,7 @@ from SkyEye's Go `simpleradio` client:
 External AWACS Mode (MsgType 7) auth is sent only if an EAM password is given;
 with the server's security features off it is not needed to be relayed.
 
-    uv run --extra voice python -m marshall.srs.client $SRS_HOST 124.0 \
+    uv run --extra voice python -m marshall.radio.client $SRS_HOST 124.0 \
         "Kobuleti Departure, radio check, how do you read?"
 """
 
@@ -26,7 +26,7 @@ import struct
 import threading
 import time
 
-from marshall.srs import tts
+from marshall.radio import tts
 from marshall import config
 
 SRS_VERSION = "2.1.0.2"

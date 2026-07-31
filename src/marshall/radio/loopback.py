@@ -4,7 +4,7 @@ One Marshall client speaks (Polly TTS), another listens and transcribes
 (Whisper) -- exercising TTS -> SRS transmit -> server relay -> SRS receive ->
 STT all the way round, and checking the words survive the trip.
 
-    uv run --extra voice --with faster-whisper python -m marshall.srs.loopback [host] [freq_mhz]
+    uv run --extra voice --with faster-whisper python -m marshall.radio.loopback [host] [freq_mhz]
 """
 
 from __future__ import annotations
@@ -15,8 +15,8 @@ import time
 
 import numpy as np
 
-from marshall.srs import tts
-from marshall.srs.client import AM, SRSClient, radio
+from marshall.radio import tts
+from marshall.radio.client import AM, SRSClient, radio
 from marshall import config
 
 PHRASES = [

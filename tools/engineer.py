@@ -56,8 +56,8 @@ def main() -> int:
     ap.add_argument("--spool", default=str(SPOOL))
     args = ap.parse_args()
 
-    from marshall.srs import tts
-    from marshall.srs.client import AM, SRSClient, radio
+    from marshall.radio import tts
+    from marshall.radio.client import AM, SRSClient, radio
 
     spool = Path(args.spool)
     spool.touch(exist_ok=True)

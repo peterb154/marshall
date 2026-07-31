@@ -34,8 +34,8 @@ from strands_pg import (
     memory_tools,
 )
 
-# DCS-gRPC live-world tools (stubs vendored under _grpc, on PYTHONPATH).
-from tools.dcs import (
+# The sim feed (marshall.feed) and the agent's own tools (director/tools).
+from marshall.feed.dcs import (
     spawn_ground,
     radar_picture,
 )
@@ -51,8 +51,8 @@ from tools.clearance import clearance_tools
 from tools.context import RadioContext, scrub
 from tools.hooks import due_hooks, hook_tools
 from tools.identify import bindings_for, identify_tools
-from tools.events import start_events
-from tools.tracks import start_streamer, vector
+from marshall.feed.events import start_events
+from marshall.feed.tracks import start_streamer, vector
 
 # TODO (identity): uncomment when you have per-user profile docs.
 # from strands_pg import PgIdentity
@@ -250,8 +250,8 @@ def radar_endpoint(session_id: str = "") -> dict:
     consumer has to go and find it separately -- that is how Batumi's ARP ended
     up as a module constant in the first place.
     """
-    from tools.dcs import contacts_live
-    from tools.tracks import bullseyes, contacts
+    from marshall.feed.dcs import contacts_live
+    from marshall.feed.tracks import bullseyes, contacts
     binds = bindings_for(session_id) if session_id else None
     # THE CACHE FIRST, THE LIVE SCAN BEHIND IT -- the same order `radar_picture`
     # uses, so the prose and the data can never come from different sources and
@@ -289,7 +289,7 @@ def mission_restart() -> dict:
     # the full server-side path. Passing the sentence returns success and
     # reloads nothing, which is the worst possible outcome for a button whose
     # entire job is to have visibly done something.
-    from tools.dcs import _channel, load_mission
+    from marshall.feed.dcs import _channel, load_mission
 
     from dcs.hook.v0 import hook_pb2, hook_pb2_grpc
     try:
@@ -317,7 +317,7 @@ def events_departed(since_sec: float = 900.0) -> dict:
     `player_leave_unit` cannot reach it without being asked for. It already
     polls /hooks/due every couple of seconds; this rides the same tick.
     """
-    from tools.events import departed_since
+    from marshall.feed.events import departed_since
     return {"departed": departed_since(since_sec)}
 
 
@@ -457,13 +457,13 @@ def clearance_ack_endpoint(flight_id: int) -> dict:
 # controller estimating one out loud.
 @app.put("/fixes")
 def set_fixes_endpoint(body: dict) -> dict:
-    from tools.tracks import set_fixes
+    from marshall.feed.tracks import set_fixes
     return {"fixes": set_fixes(body.get("fixes") or {})}
 
 
 @app.get("/fixes")
 def get_fixes_endpoint() -> dict:
-    from tools.tracks import known_fixes
+    from marshall.feed.tracks import known_fixes
     return {"fixes": known_fixes()}
 
 
@@ -473,7 +473,7 @@ def get_fixes_endpoint() -> dict:
 # not decide.
 @app.get("/flights/airspace")
 def flight_airspace_endpoint(callsign: str, mission: str = "default") -> dict:
-    from strands_pg._pool import get_pool
+    from marshall.core.db import pool as get_pool
     with get_pool().connection() as c:
         r = c.execute(
             "SELECT working_with, should_be_with, alt_ft FROM flight_airspace "

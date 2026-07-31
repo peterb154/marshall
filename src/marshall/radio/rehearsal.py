@@ -6,7 +6,7 @@ controller's reply. This exercises the two-brain separation end to end — the
 deterministic engine sequences the holding stack, the agent voices it — the way a
 real two-ship arrival would.
 
-    uv run --extra voice python -m marshall.srs.rehearsal --srs $SRS_HOST 132.0
+    uv run --extra voice python -m marshall.radio.rehearsal --srs $SRS_HOST 132.0
 """
 
 from __future__ import annotations
@@ -93,8 +93,8 @@ SCRIPTS = {"pair": SCRIPT, "formation": FORMATION, "breakup": BREAKUP_ID,
 
 
 def run(host: str, freq_mhz: float, script=None, reply_wait: float = 30.0) -> None:
-    from marshall.srs import stt, tts
-    from marshall.srs.client import AM, SRSClient, radio
+    from marshall.radio import stt, tts
+    from marshall.radio.client import AM, SRSClient, radio
 
     script = script or SCRIPT
     freq_hz = freq_mhz * 1_000_000

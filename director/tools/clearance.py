@@ -36,7 +36,7 @@ except ImportError:                     # importable without strands (tests)
 
 
 def _pool():
-    from strands_pg._pool import get_pool
+    from marshall.core.db import pool as get_pool
     return get_pool()
 
 
@@ -377,7 +377,7 @@ def _known_fixes() -> dict:
     """Where the points are. Not stored on the plan -- one source of truth for a
     position, so a plan and a chart cannot disagree about INGRESS."""
     try:
-        from tools.tracks import known_fixes
+        from marshall.feed.tracks import known_fixes
         return {k.lower(): v for k, v in (known_fixes() or {}).items()}
     except Exception:                   # nothing pushed yet; a plan is still readable
         log.warning("no fixes pushed; route resolution will report everything missing")

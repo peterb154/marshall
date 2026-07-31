@@ -140,8 +140,8 @@ def verdicts(session: str, since: float) -> list[dict]:
 
 
 def run(host: str, freq_mhz: float, session: str, keep: bool = False) -> int:
-    from marshall.srs import stt, tts
-    from marshall.srs.client import AM, SRSClient, radio
+    from marshall.radio import stt, tts
+    from marshall.radio.client import AM, SRSClient, radio
 
     print("spawning the fleet -- each unit named so its handle matches a radio")
     made = 0

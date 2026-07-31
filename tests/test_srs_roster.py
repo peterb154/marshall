@@ -20,7 +20,7 @@ records "Hoover" where it used to record "395CQc".
 import threading
 import unittest
 
-from marshall.srs.client import SRSClient
+from marshall.radio.client import SRSClient
 
 
 class FakeSocket:

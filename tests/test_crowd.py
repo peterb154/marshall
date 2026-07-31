@@ -9,7 +9,7 @@ because a wrong number is believed.
 
 import unittest
 
-from marshall.srs import crowd
+from marshall.radio import crowd
 
 ROSTER = {"Pony 1-1", "Pony 1-2", "Hoover 1-1"}
 RADIOS = {"Sockeye", "Bandit", "Ranger"}

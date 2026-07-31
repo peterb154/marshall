@@ -24,9 +24,9 @@ about to happen.
 
 WHAT IS FAKED, and all of it is IO:
 
-    marshall.srs.client.SRSClient   the radio -- scripted in, captured out
-    marshall.srs.stt                Whisper. The script IS the transcript
-    marshall.srs.tts.Voice          Polly. `frames(text)` returns the text, so
+    marshall.radio.client.SRSClient   the radio -- scripted in, captured out
+    marshall.radio.stt                Whisper. The script IS the transcript
+    marshall.radio.tts.Voice          Polly. `frames(text)` returns the text, so
                                     an assertion can read what was said
     agent_atc.fetch_radar           the scope, per turn, from the script
     agent_atc.ask_agent             the director. The script says what it replies
@@ -195,8 +195,8 @@ class Sortie:
 
         import marshall.atc.agent_atc as A
         from marshall import config
-        from marshall.srs import client as srs_client
-        from marshall.srs import stt, tts
+        from marshall.radio import client as srs_client
+        from marshall.radio import stt, tts
 
         radio = FakeRadio(self.script)
         self.radio = radio

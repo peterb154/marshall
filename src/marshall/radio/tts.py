@@ -8,7 +8,7 @@ Polly runs on the LXC (verified working) -- NOT on the DCS box via DCS-gRPC.
 The provider is swappable: a Piper backend (offline) drops in behind the same
 `Voice.frames()` seam without the SRS client caring.
 
-    uv run --extra voice python -m marshall.srs.tts "Batumi Approach, radio check"
+    uv run --extra voice python -m marshall.radio.tts "Batumi Approach, radio check"
 """
 
 from __future__ import annotations

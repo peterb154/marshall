@@ -48,8 +48,8 @@ WAIT = int(os.environ.get("HOOK_WAIT", "150"))
 
 def main() -> int:
     from marshall import config
-    from marshall.srs import stt, tts
-    from marshall.srs.client import AM, SRSClient, radio
+    from marshall.radio import stt, tts
+    from marshall.radio.client import AM, SRSClient, radio
 
     model = stt.load_model()
     voice = tts.Voice(voice_id="Joey")

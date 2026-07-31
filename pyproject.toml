@@ -99,12 +99,15 @@ ignore = [
 # imports genuinely cannot come first. The reason is commented in each.
 "tools/*.py" = ["E402", "E702"]
 "src/marshall/kneeboard/*.py" = ["E402", "E702"]
-"src/marshall/srs/*.py" = ["E402", "E702"]
+"src/marshall/radio/*.py" = ["E402", "E702"]
+# `feed` binds the `dcs` stub namespace before importing from it, exactly as
+# the director's tools did -- the module moved, the reason did not.
+"src/marshall/feed/*.py" = ["E402", "E702"]
 "src/marshall/mission/*.py" = ["E402", "E702"]
 "director/*.py" = ["E402"]
 # A one-line stamp helper beside its only use; a def would be further
 # from the loop that reads it.
-"src/marshall/srs/atc_session.py" = ["E731"]
+"src/marshall/radio/atc_session.py" = ["E731"]
 # Test fixtures declare mutable class attributes on purpose.
 "tests/*.py" = ["RUF012"]
 "director/tools/*.py" = ["E402"]

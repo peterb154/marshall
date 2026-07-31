@@ -85,7 +85,7 @@ def lead_of(ch, group_name: str):
 
 def position_of(unit, profile) -> asr.Position:
     """A gRPC unit -> the radar picture the engine works from."""
-    from tools.dcs import _bearing_range          # the bridge's own conversion
+    from marshall.feed.dcs import _bearing_range          # the bridge's own conversion
     brg, rng = _bearing_range(unit.position.lat, unit.position.lon)
     return asr.Position(rng, brg,
                         int(unit.position.alt * 3.28084),
@@ -147,8 +147,8 @@ def main() -> int:
         from marshall.atc import agent_atc
         # This run's own state -- see agent_atc.Bridge.
         _BRIDGE = agent_atc.Bridge()
-        from marshall.srs import tts
-        from marshall.srs.client import AM, SRSClient, radio
+        from marshall.radio import tts
+        from marshall.radio.client import AM, SRSClient, radio
 
         station = profile.station_for("approach") or profile.stations[0]
         hz = station.freq_mhz * 1_000_000

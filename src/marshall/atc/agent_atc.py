@@ -3018,7 +3018,7 @@ def whisper_vocabulary(bridge, profile, roster=None) -> str:
     """
     from marshall.atc import callsign as C
     from marshall.core import route as R
-    from marshall.srs import stt
+    from marshall.radio import stt
 
     # Seed with who COULD be flying before anyone has spoken, plus anybody
     # named on the command line -- a visiting pilot or a test callsign. Without
@@ -4067,7 +4067,7 @@ def hear(bridge, client, model, profile):
     radio that keyed the mic out. It is the lowest stage and should stay the
     most boring one.
     """
-    from marshall.srs import stt
+    from marshall.radio import stt
 
     pcm, heard_hz = client.recv_utterance(max_wait=3600)
     if pcm is None or not pcm.size:
@@ -4364,8 +4364,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
              session_id: str | None = None, url: str = AGENT_URL) -> None:
     from marshall.atc import asr, controller
     from marshall.core import route as R
-    from marshall.srs import stt, tts
-    from marshall.srs.client import AM, SRSClient, radio
+    from marshall.radio import stt, tts
+    from marshall.radio.client import AM, SRSClient, radio
 
     freq_hz = freq_mhz * 1_000_000
     session_id = session_id or f"batumi-approach:{freq_mhz:.3f}"

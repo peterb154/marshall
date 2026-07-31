@@ -76,8 +76,8 @@ def size(path: str) -> int:
 
 def main() -> int:
     from marshall import config
-    from marshall.srs import tts
-    from marshall.srs.client import AM, SRSClient, radio
+    from marshall.radio import tts
+    from marshall.radio.client import AM, SRSClient, radio
     from marshall.core import route as R
 
     p = R.BATUMI_ASR

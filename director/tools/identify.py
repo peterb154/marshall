@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 import re
 
-from strands_pg._pool import get_pool
+from marshall.core.db import pool as get_pool
 
 try:
     from strands import tool
@@ -164,7 +164,7 @@ def identify_tools(session_id: str) -> list:
         # Refusing outright was tried first and is worse -- it would leave a
         # single ship called "Hoover 1" permanently unidentifiable, and an
         # unidentified aircraft never gets talked down.
-        from tools.tracks import in_formation
+        from marshall.feed.tracks import in_formation
         if not is_one_aeroplane(callsign) and in_formation(contact):
             return (f"'{callsign}' is a flight and '{contact}' is flying in "
                     f"formation, so that name covers more than one track. "

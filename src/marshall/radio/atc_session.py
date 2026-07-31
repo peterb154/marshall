@@ -6,7 +6,7 @@ file. The agent (Claude) reads the transcript, decides, and writes 'freq|text'
 commands -- a human-in-the-loop controller where the "human" is the model. Break
 the 4th wall freely; it's a learning session, not a scripted state machine.
 
-    uv run --extra voice python -m marshall.srs.atc_session <run_dir> [host] [minutes]
+    uv run --extra voice python -m marshall.radio.atc_session <run_dir> [host] [minutes]
 
 In <run_dir>:
     transcript.log   append-only: "MM:SS  chB 128.000 Batumi Approach | <text>"
@@ -24,8 +24,8 @@ import time
 
 from marshall import config
 from marshall.core import route as R
-from marshall.srs import tts
-from marshall.srs.client import AM, SRSClient, radio
+from marshall.radio import tts
+from marshall.radio.client import AM, SRSClient, radio
 
 # Flight-plan channels A/B/C, straight from the single source of truth.
 CHANNELS = [(f.freq_mhz, chr(ord("A") + i), f.sector or f.name)
@@ -62,7 +62,7 @@ def main() -> int:
     c = SRSClient(host, name="Marshall", eam_password=config.SRS_EAM_PASSWORD).connect(radios)
     print("Marshall up on " + ", ".join(f"{l} {m:.3f}" for m, l, _ in CHANNELS), flush=True)
 
-    from marshall.srs import stt
+    from marshall.radio import stt
     model = stt.load_model()
     print("whisper ready; listening", flush=True)
 

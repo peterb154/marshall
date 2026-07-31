@@ -5,7 +5,7 @@ transcribe with Whisper, and read the words back via Polly. The deterministic
 ATC brain (atc/controller.py + the intent seam) wires in where the readback is;
 for now Marshall just proves it hears you and can answer on the same radio.
 
-    uv run --extra voice python -m marshall.srs.converse [host] [freq_mhz] [exchanges]
+    uv run --extra voice python -m marshall.radio.converse [host] [freq_mhz] [exchanges]
 """
 
 from __future__ import annotations
@@ -16,8 +16,8 @@ import time
 import numpy as np
 
 from marshall import config
-from marshall.srs import tts
-from marshall.srs.client import AM, SRSClient, radio
+from marshall.radio import tts
+from marshall.radio.client import AM, SRSClient, radio
 
 
 def main() -> int:

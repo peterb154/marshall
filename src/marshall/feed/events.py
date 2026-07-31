@@ -53,8 +53,8 @@ except ImportError:
     def tool(fn):
         return fn
 
-from strands_pg._pool import get_pool
-from tools.dcs import DCS_GRPC_ADDR
+from marshall.core.db import pool as get_pool
+from marshall.feed.dcs import DCS_GRPC_ADDR
 
 from dcs.mission.v0 import mission_pb2, mission_pb2_grpc
 
@@ -178,7 +178,7 @@ def note(kind: str, unit_name: str, player: str = "", place: str = "") -> None:
     """
     if kind in DOWN or kind in UP:
         try:
-            from tools.tracks import set_in_air
+            from marshall.feed.tracks import set_in_air
             set_in_air(unit_name, kind in UP)
         except Exception as e:
             log.warning("could not set ground state from %s for %s: %s",
@@ -242,7 +242,7 @@ def _stream(stop: threading.Event) -> None:
                 if kind in ("mission_start", "mission_end"):
                     log.info("event %s: the world reset, clearing tracks", kind)
                     try:
-                        from tools.tracks import clear_all
+                        from marshall.feed.tracks import clear_all
                         clear_all(kind)
                     except Exception as e:
                         log.warning("could not clear tracks on %s: %s", kind, e)

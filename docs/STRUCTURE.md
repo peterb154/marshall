@@ -53,7 +53,7 @@ identity resolution, ASR guidance. The part that must never be an LLM's guess.
 **`radio`** -- the voice. SRS transport, STT, TTS, the receive loop, the
 synthetic pilots. `srs` is a vendor's name for a transport, not a description of
 what this does.
-*(today: `src/marshall/srs/` plus `_run_srs` out of `agent_atc.py`)*
+*(today: `src/marshall/radio/` plus `_run_srs` out of `agent_atc.py`)*
 
 **`agent` IS NOT A PART.** An earlier draft had it as one, and that was the
 `director` mistake at a higher altitude: "the thing that calls Bedrock" is a

@@ -288,7 +288,7 @@ class TestHearDirectly(unittest.TestCase):
         """Whisper returning nothing is the same answer as no audio: both used
         to `continue`, so both return None."""
         import marshall.atc.agent_atc as A
-        from marshall.srs import stt
+        from marshall.radio import stt
         r = self.radio([("g", "sockeye", "")])
         old = stt.transcribe
         stt.transcribe = lambda *a, **k: r.consume()
@@ -299,7 +299,7 @@ class TestHearDirectly(unittest.TestCase):
 
     def test_it_returns_the_words_and_the_radio_that_said_them(self):
         import marshall.atc.agent_atc as A
-        from marshall.srs import stt
+        from marshall.radio import stt
         r = self.radio([("g", "362nd_sockeye", "Batumi Approach, Pony one one")])
         old = stt.transcribe
         stt.transcribe = lambda *a, **k: r.consume()

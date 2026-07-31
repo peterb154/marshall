@@ -156,7 +156,7 @@ class TestATouchAndGoIsNotALanding(unittest.TestCase):
     def test_only_land_means_he_is_staying(self):
         import pathlib
         src = (pathlib.Path(__file__).resolve().parents[1]
-               / "director" / "tools" / "events.py").read_text(encoding="utf-8")
+               / "src" / "marshall" / "feed" / "events.py").read_text(encoding="utf-8")
         ns: dict = {}
         for line in src.splitlines():
             if line.startswith(("DOWN =", "UP =")):

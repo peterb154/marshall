@@ -6,7 +6,7 @@ frequency, and Whisper TRANSCRIBES whatever the controller says back. Point it a
 the same SRS server + frequency the agent bridge is listening on and it will hold
 a conversation with the controller by itself.
 
-    uv run --extra voice python -m marshall.srs.pilot --srs $SRS_HOST 132.0
+    uv run --extra voice python -m marshall.radio.pilot --srs $SRS_HOST 132.0
 
 The default script flies the Batumi letdown; pass your own lines to probe an edge.
 """
@@ -125,8 +125,8 @@ def _spoken_alt(ft: int) -> str:
 def run(host: str, freq_mhz: float, voice_id: str = "Joey",
         srs_name: str = "Sockeye", script: list[str] | None = None,
         reply_wait: float = 25.0) -> None:
-    from marshall.srs import stt, tts
-    from marshall.srs.client import AM, SRSClient, radio
+    from marshall.radio import stt, tts
+    from marshall.radio.client import AM, SRSClient, radio
 
     # srs_name is the SRS client identity ("Sockeye"); the *voice* still calls
     # itself whatever the script says ("Pony 1-1"). Deliberately different, to

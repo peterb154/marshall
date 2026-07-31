@@ -68,11 +68,11 @@ CHECKS = [
     ("visual approaches", [PY, "tools/visual_check.py"],
      "#10 C1/C2/C3 — granted without argument, mile calls stop, and 'field in "
      "sight' is a report", True),
-    ("break-up identity", [PY, "-m", "marshall.srs.rehearsal", "--srs",
+    ("break-up identity", [PY, "-m", "marshall.radio.rehearsal", "--srs",
                            os.environ.get("SRS_HOST", "192.168.0.35"), "124.0",
                            "breakup"],
      "#12 — two radios through a formation split", True),
-    ("go-around", [PY, "-m", "marshall.srs.rehearsal", "--srs",
+    ("go-around", [PY, "-m", "marshall.radio.rehearsal", "--srs",
                    os.environ.get("SRS_HOST", "192.168.0.35"), "124.0",
                    "goaround"],
      "#11 B8 — no vector back towards the field while climbing out", True),

@@ -4,7 +4,7 @@ Connects, tunes to a frequency, and for a window decodes every relayed voice
 packet to PCM, saving a WAV and reporting energy so we can confirm we actually
 heard a human. Whisper STT plugs in where this saves the WAV.
 
-    uv run --extra voice python -m marshall.srs.receive [host] [freq_mhz] [seconds]
+    uv run --extra voice python -m marshall.radio.receive [host] [freq_mhz] [seconds]
 """
 
 from __future__ import annotations
@@ -14,8 +14,8 @@ import wave
 
 import numpy as np
 
-from marshall.srs import tts
-from marshall.srs.client import AM, SRSClient, radio
+from marshall.radio import tts
+from marshall.radio.client import AM, SRSClient, radio
 from marshall import config
 
 OUT_WAV = "/tmp/claude-0/-opt-marshall/6446bc5e-63c5-45fd-86a2-b0ca1aae2bb0/scratchpad/heard.wav"

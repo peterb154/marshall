@@ -34,7 +34,10 @@ services:
 
   agent:
     build:
-      context: .
+      # The repo root, so the image can carry `src/marshall`. Paths inside the
+      # Dockerfile are therefore repo-relative.
+      context: ..
+      dockerfile: director/Dockerfile
     depends_on:
       db:
         condition: service_healthy
