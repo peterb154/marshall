@@ -346,3 +346,46 @@ three functions for squashing them that disagree.
 
 So the rule is not "prefer the database". It is: **a cache must justify itself
 with a measurement, and none of ours can.**
+
+### And the director should not be an API in front of its own database
+
+    "I don't think the director should be providing an experience API layer for
+     data that could be accessed using a shared schema and direct queries to the
+     source."
+
+PostgREST, measured against the same rows on the same box:
+
+    direct psycopg, pooled, in process     0.086 ms
+    PostgREST over HTTP                    0.85  ms
+    our own FastAPI /flights endpoint      1.34  ms
+
+The hand-written endpoint is the SLOWEST of the three. PostgREST is compiled,
+keeps its own pool and marshals nothing through Python, so it beats the code we
+maintain -- at the data it serves, a REST layer is not a tax paid for
+convenience, it is cheaper than the thing it replaces.
+
+Of the director's 24 endpoints, about twelve are pure data access
+(`/approaches`, `/flightplans`, `/flights`, `/fixes`, `/plans`,
+`/events/departed`) and about eight are data with a little logic that wants to
+be a VIEW or a shared function rather than a handler -- `/flights/due-handoff`
+is a join, `/flights/airspace` is geometry, `/plans/resolve` is a naming rule.
+
+Three are genuine capability, and they are the ones only the director can do:
+**`/atc`** (the agent, its prompts and its conversation), **`/hooks/due`**
+(timers), **`/mission/restart`**. Everything else is the director standing
+between two things that could talk directly, and every one of those handlers is
+a second place for a rule to live -- which is cause 3 again, wearing a REST
+interface.
+
+**THE PROSE SCOPE IS THE WORST CASE OF THIS.** `/radar` renders tracks into
+English for the model, and the bridge then PARSES THAT ENGLISH BACK into structs
+-- `units_on`, `_SCOPE_LINE`, `_FORMATION`, `flatten_formation`. A
+serialise-and-reparse round trip of data that was structured when it left the
+database and is structured again when it arrives. Every formation bug this
+project has had lived in that parser, including the one that deleted wingmen so
+that no member of a formation had a radar position at all.
+
+That parser is not something to fix. If the bridge reads `tracks`, it is
+something to DELETE, and [#47] closes with it. The prose stays -- the model
+still needs a picture in words -- but it becomes a rendering of the rows, at the
+edge, and never an interchange format between our own components.
