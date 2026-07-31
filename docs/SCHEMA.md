@@ -79,6 +79,63 @@ than reimplemented.
 
 A schema gives one home to each FACT. This gives one home to each RULE.
 
+### Push it as low as it goes
+
+    "We need to keep things as low as possible. For example, GIS vector
+     functions -- those need to be shared. There is no reason an ASR approach
+     module is doing any of that math."
+
+The name squasher is the small version. The geometry is the expensive one.
+"Bearing and distance between two points" is implemented SIX times:
+
+    picture.range_radial        geodesic -- correct
+    agent_atc._range_radial     geodesic -- byte-for-byte the same function
+    route.bearing_distance      flat-earth off the sim grid: 5.74 deg out, OPEN
+    geometry.bearing_between    flat-earth east/north approximation
+    asr.py:426, :449            more flat-earth atan2, inside the approach logic
+    PostGIS ST_Azimuth          in the director
+
+Two of those are the same code in two modules, and the copy in `agent_atc` says
+in its own docstring that a THIRD one is wrong:
+
+    "The same error is still open on the paper nav log ([#2] and the 29 July
+     audit), and this is the shape of the fix."
+
+Somebody found the correct implementation, knew another copy was broken, and
+made a second copy instead of one home. That is the whole disease in one
+comment. The audit's opening finding -- "the paper nav log is 5.74 degrees out
+on every leg, TODAY" -- is the bill for it: 2.39 nm of cross-track error over a
+23.9 nm leg, on the chart a pilot flies.
+
+And `atc/geometry.py` already exists. It is the right home and it is bypassed,
+which says the problem is not a missing module but a missing RULE about what may
+live where.
+
+**The rule.** A module may only implement what is specific to its own subject.
+An approach module knows about platforms, minima and intercept angles; it must
+not know how to turn two latitudes into a bearing. If it does the math itself,
+the math will be a different math.
+
+Concretely, three layers under everything:
+
+  * **geo** -- great-circle range and bearing, projection, grid convergence,
+    crosstrack. One implementation, used by the chart, the radar picture, the
+    ASR guidance and the nav log alike. Where a frame is involved it is NAMED
+    in the signature, because the six degrees between grid and true is what
+    cost a sortie.
+  * **names** -- squash, handle, canonical callsign, label-to-board-key. The
+    fourth copy of `_key` cannot exist if there is one to import.
+  * **models** -- the tables above.
+
+All three are BELOW both deployables and imported by both. Today the bridge and
+the director cannot import each other at all, which is the structural reason
+these copies keep appearing: duplicating was the only thing available.
+
+**The first proof is free.** Delete `agent_atc._range_radial`, point
+`route.bearing_distance` at the shared one, and audit finding 1 closes -- the
+nav log stops being 5.74 degrees out because there is no longer a second answer
+to be out BY.
+
 ## What is MEASURED and what is AUTHORED
 
 This is the part that decides whether the second airfield is cheap, and it is
