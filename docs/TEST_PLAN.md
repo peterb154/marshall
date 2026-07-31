@@ -524,6 +524,40 @@ applies.
 
 ---
 
+## P — tracked, untracked, and who owns you
+
+Three minutes, on the ramp, before you start anything. **Open `/diag` on a
+second screen** — this whole section is read off it, and the point of the
+section is that the page now shows you what the system believes rather than a
+tidied-up version of it.
+
+The claim being tested is that the sim already knows everything about you the
+moment you take a slot: your name, your aeroplane, where you are, and what you
+will be called. None of it needs a radio. See [#49].
+
+| ID | Prio | Test | What should happen | Fix under test |
+|----|------|------|--------------------|----------------|
+| P1 | P1 | **Slot into a cold jet and say nothing.** Look at the Untracked table | You are there, with **both names**: `362nd_Sockeye` on the left, `Sockeye` on the right. Not "Viper 1-4", not blank. If the right cell is empty the derivation is broken and that is exactly what the column is for | [#49] `_derived_callsign` |
+| P2 | P1 | Still silent — read the `state` for yourself | **parked**. Not "airborne", not blank. The flag the sim sends says airborne for a jet that spawned on the ramp, so this is the one that catches a lazy read | [#49] `sim_state` |
+| P3 | P1 | Check in with Approach. Watch yourself move between the two tables | You leave Untracked and appear on **Tracked**, with `owner` = the controller you called. You may not be in both, and you may not be in neither | [#49] |
+| P4 | P1 | On Tracked, read your row **before** he asks your intentions | `intent` reads *not established*. Once you tell him what you want, it fills in. A blank here means nobody has asked — which is a controller not doing his first job | [#49] |
+| P5 | P1 | **Fly a full approach and keep half an eye on Tracked.** Do not let this one pass unnoticed | Your row **never disappears**. It came off nine times in one sortie on 30 July, at 0.4 nm, with you on the scope. If a "came off the board" panel ever appears under Tracked, stop and tell engineering what it says | [#49] `release_stale` |
+| P6 | P1 | Get handed to Tower | `owner` changes to `tower` **and nothing else about your row does** — same level, same place in the letdown. You must not blink through Untracked on the way | [#49] `Controller.bind` |
+| P7 | P2 | Taxi out, then take off, watching `state` | **parked → taxiing → rolling → airborne**. Rough transitions are fine; the ones that matter are that parked is not "airborne" and that airborne eventually arrives | [#49] `sim_state` |
+| P8 | P2 | Anywhere in the sortie, check the banner at the top | It says *board and radar agree* only when they do. It read that unconditionally before, because the page asked for a field nothing published | [#49] ghosts |
+
+**What it is actually checking**
+
+**P1 and P5 are the section.** P1 says the system knows you for free; P5 says it
+does not then lose you. Everything else is detail around those two.
+
+**A blank cell is information here, not a rendering fault.** The page was
+changed to stop falling back to a plausible-looking value when it cannot find
+the real one — so an empty `callsign`, `owner` or `state` means the bridge does
+not have it, and that is worth reporting rather than squinting past.
+
+---
+
 ## E — known broken. Do not report these as new
 
 Open bugs with repros. Seeing one means the world is as expected — they are on

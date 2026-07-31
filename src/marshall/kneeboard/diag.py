@@ -324,11 +324,11 @@ _PAGE = """<!doctype html><html><head><meta charset="utf-8">
   <span id="cmsg"></span>
 </div>
 <div class="grid">
-  <section class="wide"><h2>The board
-    <span class="hint">&mdash; every contact ATC is tracking</span></h2>
+  <section class="wide"><h2>Tracked
+    <span class="hint">&mdash; on the board, and exactly one controller owns each</span></h2>
     <div id="board"></div></section>
   <section class="wide"><h2>Untracked
-    <span class="hint">&mdash; radar sees it, nobody is working it</span></h2>
+    <span class="hint">&mdash; the sim knows who and where; nobody is working him</span></h2>
     <div id="untracked"></div></section>
   <section><h2>The last turn, stage by stage</h2><div id="last"></div></section>
   <section><h2>Flights</h2><div id="flights"></div></section>
@@ -369,24 +369,79 @@ function who(rs) {
 function board(d) {
   const b = d.board || [];
   if (!b.length) return '<p class="empty">nobody on the board</p>';
+  // THE ROW, AS PUBLISHED. Nothing here is looked up, matched or worked out.
+  //
+  // This table used to open by searching the scope list for the first contact
+  // whose squashed name equalled the squashed track, falling back to an empty
+  // object -- the page doing the board join itself, with its OWN copy of the name
+  // squasher, against a track it had to match by string. That is a fourth
+  // implementation of the join that `HANDOFF-board.md` is about, in JavaScript,
+  // in the surface whose whole contract is that it decides nothing. When it
+  // missed, `|| {}` turned the miss into four blank columns and the page looked
+  // like a working page reporting an aeroplane with no position.
+  //
+  // The bridge already sends heading, altitude, speed and range on the row. It
+  // always did. The page was re-deriving what it had been handed.
+  //
+  // THREE COLUMNS, THREE AUTHORITIES, kept apart on purpose: `state` is what the
+  // sim observes, `intent` is what the pilot said, `doing` is where the
+  // separation engine has got to. Collapsing them into one word is how an
+  // observation comes to overwrite something a man actually told a controller.
   return '<div class="scroll"><table>'
-    + '<tr><th>who</th><th>freq</th><th>doing</th><th>hdg</th><th>alt</th>'
-    + '<th>gs</th><th>range</th><th>known by</th></tr>'
+    + '<tr><th>who</th><th>type</th><th>freq</th><th>owner</th><th>state</th>'
+    + '<th>intent</th><th>doing</th><th>hdg</th><th>alt</th><th>gs</th>'
+    + '<th>range</th><th>known by</th></tr>'
     + b.map(r => {
-      const u = (d.scope || []).find(x => key(x.name) === key(r.track)) || {};
       const cls = lvl('confirmed', r.confirmed);
       return `<tr class="${cls === 'bad' ? 'ghost' : ''}">`
         + `<td class="${cls}">${esc(r.callsign)}${members(r)}`
         + `${cls !== 'ok' ? ' <span class="pill">' + esc(r.confirmed) + '</span>' : ''}</td>`
+        // WHAT HE IS FLYING. The bridge has always sent this on the row and
+        // the table simply had no column for it, so the board named a man and
+        // never said what he was in -- while the untracked table two panels
+        // down showed the type for every contact.
+        //
+        // Printed exactly as the sim states it. Shortening "P-51D-30-NA" to
+        // something friendlier would be the page deciding what an airframe is
+        // called, and the type is what the engine reads to decide whether he
+        // can be sent to a beacon or needs a racetrack -- so what is displayed
+        // must be what was used.
+        + `<td class="dim">${esc(r.type)}</td>`
         + `<td class="dim">${r.freq_mhz ? r.freq_mhz.toFixed(3) : '&mdash;'}</td>`
+        + `<td class="${lvl('owner', r.owner)}">${esc(r.owner) || '&mdash;'}</td>`
+        + `<td class="${lvl('state', r.state)}">${esc(r.state) || '&mdash;'}</td>`
+        + `<td class="${lvl('intent', r.intent)}">${esc(r.intent)
+             || '<i class="dim">not established</i>'}</td>`
         + `<td>${phase(r)}</td>`
-        + `<td class="dim">${num(u.heading, 0, '&deg;')}</td>`
-        + `<td class="dim">${num(u.alt_ft, 0, ' ft')}</td>`
-        + `<td class="dim">${num(u.speed_kt, 0, ' kt')}</td>`
-        + `<td class="dim">${num(u.range_nm, 1, ' nm')}</td>`
+        + `<td class="dim">${num(r.heading, 0, '&deg;')}</td>`
+        + `<td class="dim">${num(r.alt_ft, 0, ' ft')}</td>`
+        + `<td class="dim">${num(r.speed_kt, 0, ' kt')}</td>`
+        + `<td class="dim">${num(r.range_nm, 1, ' nm')}</td>`
         + `<td class="${lvl('authority', r.authority)}">${esc(r.authority || 'none')}</td>`
         + '</tr>';
     }).join('') + '</table></div>';
+}
+
+// WHO CAME OFF THE BOARD, AND WHAT THE SCOPE HELD AT THE TIME.
+//
+// The one panel here that exists to make a bug visible rather than to show
+// state working. A release destroys its own evidence -- the row is gone, so
+// nothing afterwards can be asked why -- and nine wrong ones went unnoticed for
+// a whole sortie because the only record was a print statement.
+//
+// The page applies NO judgement about whether a release was wrong. It cannot:
+// deciding that would mean matching the released callsign against those scope
+// labels, which is the very operation under suspicion. It prints both and a
+// human sees "released Sockeye; the scope held 362nd_Sockeye" instantly.
+function releases(d) {
+  const rs = d.releases || [];
+  if (!rs.length) return '';
+  return '<h4>came off the board</h4><table>'
+    + '<tr><th>who</th><th>track</th><th>on the scope at the time</th></tr>'
+    + rs.map(r => `<tr><td class="warn">${esc(r.callsign)}</td>`
+      + `<td class="dim">${esc(r.track) || '&mdash;'}</td>`
+      + `<td class="dim">${(r.scope || []).map(esc).join(', ') || 'nothing'}</td>`
+      + '</tr>').join('') + '</table>';
 }
 
 // "bullseye 185 for 35 (blue)" -- said the way it is said on the radio, bearing
@@ -418,11 +473,29 @@ function untracked(d) {
     // pilot's own HSI is referenced to. The bridge computes it against the
     // contact's OWN coalition and names which one in `bulls.ref`; this prints
     // what it was handed and knows nothing about coalitions or great circles.
+    // BOTH NAMES, SIDE BY SIDE.
+    //
+    //     "I want untracked to show the dcs callsign and the derived callsign -
+    //      so that I can see the translation."
+    //
+    // The left cell is the string the sim published; the right is the board key
+    // it derives to. They are one fact and its derivation, and printing only the
+    // answer is how a bad translation stays invisible until a controller uses
+    // the wrong name on the radio. The page does no deriving of its own -- the
+    // bridge sends `derived`, for the same reason it sends `bulls`.
+    //
+    // NEITHER CELL FALLS BACK TO THE OTHER. The first version of this printed
+    // `u.derived || u.callsign || '-'`, which is the page picking which of three
+    // values to believe -- and it would have shown a plausible name in the
+    // column whose entire purpose is to reveal that the derivation is broken.
+    // An empty cell is the honest answer and the one worth seeing.
     out += '<div class="scroll"><table>'
-      + '<tr><th>contact</th><th>type</th><th>hdg</th><th>alt</th><th>gs</th>'
-      + '<th>from bullseye</th><th></th></tr>'
-      + loose.map(u => `<tr><td class="${u.level || ''}">${esc(u.callsign || u.name)}</td>`
+      + '<tr><th>dcs name</th><th>callsign</th><th>type</th><th>state</th>'
+      + '<th>hdg</th><th>alt</th><th>gs</th><th>from bullseye</th><th></th></tr>'
+      + loose.map(u => `<tr><td class="dim">${esc(u.name)}</td>`
+        + `<td class="${u.level || ''}">${esc(u.derived)}</td>`
         + `<td class="dim">${esc(u.type || '')}</td>`
+        + `<td class="${lvl('state', u.state)}">${esc(u.state)}</td>`
         + `<td class="dim">${num(u.heading, 0, '&deg;')}</td>`
         + `<td class="dim">${num(u.alt_ft, 0, ' ft')}</td>`
         + `<td class="dim">${num(u.speed_kt, 0, ' kt')}</td>`
@@ -444,7 +517,12 @@ function num(v, dp, suffix) {
     : Number(v).toFixed(dp) + suffix;
 }
 
-function key(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+// `key()` LIVED HERE. It squashed a name to letters and digits so the page could
+// match a board row's track against a scope contact -- the fourth implementation
+// of that squash in this codebase (`identity._key`, `agent_atc._key_name`,
+// `diag._key` are the others) and the only one in a language nobody was testing.
+// It went with the join it existed for. If a lookup ever seems to be needed here
+// again, the field is missing from the snapshot and that is the bug.
 
 function members(r) {
   return (r.members && r.members.length)
@@ -558,7 +636,7 @@ async function tick() {
       ? `<span class="bad">${g} on the board that radar cannot see</span>`
       : '<span class="ok">board and radar agree</span>';
     $('untracked').innerHTML = untracked(d);
-    $('board').innerHTML = board(d);
+    $('board').innerHTML = board(d) + releases(d);
     $('last').innerHTML = last(d.last);
     $('flights').innerHTML = flights(d);
     $('plans').innerHTML = plans(d);

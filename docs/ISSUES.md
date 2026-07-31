@@ -2219,6 +2219,124 @@ silently knowing.
 
 ---
 
+## [ID-5] Tracked and untracked, and who owns him — #49
+
+labels: architecture, needs-flight-test
+
+**Status:** BUILT 31 July, unflown. Guards: `tests/test_untracked.py`,
+`TestThePageDoesNotJoin` and `TestAnIndicatorThatCannotGoRed` in
+`tests/test_diag.py`. **Code:** `atc/controller.py`, `atc/agent_atc.py`,
+`kneeboard/diag.py`.
+
+    "I sign into the sim, get in a jet, I am UNTRACKED. The sim knows that I am
+     362nd_Sockeye, knows what im in, where im at and what my as/gs/alt is. The
+     sim even knows what my callsign will be 'Sockeye' - because the process of
+     stripping a squad off a name should be deterministic and instant."
+
+It is deterministic and instant, and it always was. `identity.handle` is a pure
+function over a string the sim publishes on every radar poll. It was reachable
+only through `Registry.resolve`, which is the TRANSMISSION path — so a name
+available for free was not derived until a pilot keyed a microphone, and the
+untracked table printed the raw label.
+
+### The model
+
+**UNTRACKED** — the sim sees him. Named, positioned, owned by nobody. This is
+where every aircraft starts and it requires no radio.
+
+**TRACKED** — on the board, and exactly one controller owns him. Enterable
+**only** from untracked, which is what makes the ghost class structurally
+impossible: a tracked aircraft must have had a sim contact behind it, so no
+transcript can mint one. [#40] says *"corroboration is the only filter that can
+work, and the obvious version is circular"* — the circularity was corroborating
+against a scope tagged by the binding under test. This is not circular, because
+untracked is populated before anyone speaks.
+
+**Entering:** contact a controller. Airborne that means radar identification —
+"radar contact" is a specific thing a controller says. On the ground it does
+not: nobody radar-identifies a man parked on the ramp, and the check-in is
+enough.
+
+**Two exits, and only one of them is a release.** A handoff changes the OWNER
+and nothing else; he is never unowned in between. Dropping him to untracked
+mid-approach loses his level, his place in the letdown and his approach count at
+the exact moment two controllers are relying on them — which is materially what
+`release_stale` was doing nine times in one sortie.
+
+### Three columns, three authorities
+
+`doing` conflated facts with different sources, which is the shape of every bug
+in `tests/test_tonight.py` — a guard reading the wrong input.
+
+| | source | when known |
+|---|---|---|
+| **state** — parked, taxiing, rolling, airborne | the sim | always, free |
+| **intent** — ASR approach, en route, departure | the pilot, when asked | after the controller asks |
+| **doing** — HOLDING, CLEARED, MISSED | the separation engine | from its own state machine |
+
+Blank intent is the useful part: it means nobody has established intentions,
+which is the first thing a controller is supposed to do.
+
+`sim_state` reads `is_on_the_ground`, never the raw `on_ground` flag — that flag
+comes from land/takeoff EVENTS, so an aeroplane that spawned parked never
+generated one and it reads False at thirty-nine feet and zero knots. Reading it
+directly is the fourth-caller mistake `test_tonight.py` exists to prevent.
+
+### What this fixed on the way
+
+Both faults in `HANDOFF-board.md`, structurally rather than by repair. A board
+row now carries its own track, bound by `Controller.bind` at the one place that
+holds both names, so `publish_state` looks nothing up. `release_stale` compares
+the board's key against what each scope label DERIVES to, using the same
+function the untracked table uses.
+
+The prescribed fix — "extract one join, make it case-insensitive" — would have
+left every formation blank while looking correct for a single ship: in a flight
+the board key is the FLIGHT's name and no folding relates "Apex" to "sockeye".
+
+**A guard that could not fire.** The first version refused to release an entry
+whose track was on the scope. It was dead code: the refresh loop already asks
+`accounted_for`, so anything radar can account for has had its clock reset and
+never reaches the check. And the failure it was meant to catch is the one it
+cannot see — the entries dropped wrongly are exactly those our own matcher
+failed to relate, and asking the same matcher twice fails identically. There is
+no automatic version. So the release is published WITH the scope contents and a
+human is the detector: *"released Sockeye; the scope held 362nd_Sockeye"*.
+
+**An indicator that could not go red.** The verdict banner read `d.ghosts`.
+Nothing ever published it, so `(d.ghosts || []).length` was 0 on every render the
+field ever had and the page reported "board and radar agree" for its whole life,
+including while displaying a ghost row underneath.
+
+### The page represents state; it does not enrich
+
+    "Please make sure the diag tool represents state and doesn't enrich
+     information. I'm using it to understand how the system works or doesn't"
+
+`board()` opened by looking its own row up in the scope list, with the page's own
+fourth copy of the name squasher, falling back to `{}` — so a failed join
+rendered as four empty columns, which reads as "the sim did not say" rather than
+"this page cannot find him". The bridge had always sent those fields. Removed,
+along with `key()`, and guarded by a test that greps the page.
+
+### Acceptance criteria
+
+1. Sitting in a cold jet, before any transmission, the untracked table names him
+   and shows the translation `362nd_Sockeye → Sockeye`.  DONE
+2. A board entry is never dropped while radar paints the aircraft.  DONE
+3. Every release is published with the scope as it stood.  DONE
+4. A handoff changes the owner and preserves level, letdown place and track.  DONE
+5. `state`, `intent` and `doing` are separately sourced and separately shown.  DONE
+6. The page performs no lookup between panels.  DONE
+7. **A pilot flies it** — slots in cold, watches himself appear untracked and
+   named, checks in, and confirms he moves to tracked with the right owner and
+   is never silently dropped. NOT DONE — needs a sortie.
+
+Related: [#40] (the board's key), [#48] (nobody may name himself), [#42] (a
+person is his handle), [#41] (the sim already tells us).
+
+---
+
 ## [ID-3] Nobody may name himself — the label comes off the aeroplane, not the radio — #48
 
 labels: architecture, needs-flight-test

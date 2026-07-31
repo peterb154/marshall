@@ -127,6 +127,78 @@ class TestThePageHoldsNoDomainVocabulary(unittest.TestCase):
                 self.assertNotIn(word, page)
 
 
+class TestThePageDoesNotJoin(unittest.TestCase):
+    """It renders rows. It does not relate one panel to another.
+
+    `board()` opened by looking its own row up in the scope list --
+
+        const u = d.scope.find(x => key(x.name) === key(r.track)) || {};
+
+    -- which is the join from `HANDOFF-board.md`, in JavaScript, done with the
+    page's own fourth copy of the name squasher. When it missed, `|| {}` turned
+    a broken lookup into four empty columns, and an empty column on a
+    diagnostics page reads as "the sim did not say", not as "this page cannot
+    find him".
+
+    A surface that joins is a surface that can disagree with the thing it is
+    displaying, which defeats the entire purpose of having one.
+    """
+
+    def test_the_page_cannot_squash_a_name(self):
+        """The specific tool of the specific crime. There are three copies of
+        this in Python and there is no longer one in the browser."""
+        self.assertNotIn("replace(/[^a-z0-9]/g", diag.page())
+
+    def test_the_page_does_not_look_a_row_up_in_another_panel(self):
+        page = diag.page()
+        for probe in ("d.scope.find", "(d.scope || []).find", "scope.find("):
+            with self.subTest(probe=probe):
+                self.assertNotIn(probe, page)
+
+    def test_the_board_row_arrives_with_its_own_position(self):
+        """Which is what makes the join unnecessary rather than merely banned.
+        The bridge always sent these; the page re-derived them anyway."""
+        row = publish("Pony 1-1", "362nd_sockeye")["board"][0]
+        for field in ("heading", "alt_ft", "speed_kt", "range_nm"):
+            with self.subTest(field=field):
+                self.assertIsNotNone(row[field])
+
+    def test_the_board_says_what_he_is_flying(self):
+        """It carried the type all along and the table had no column for it, so
+        the board named a man and never said what he was in -- while the
+        untracked panel showed the type for every contact on the scope."""
+        row = publish("Pony 1-1", "362nd_sockeye")["board"][0]
+        self.assertEqual(row["type"], "P-51D-30-NA")
+        self.assertIn("<th>type</th>", diag.page())
+
+    def test_and_its_own_owner_state_and_intent(self):
+        """Three facts from three authorities, published separately so the page
+        never has to decide which one 'doing' means."""
+        row = publish("Pony 1-1", "362nd_sockeye")["board"][0]
+        for field in ("owner", "state", "intent"):
+            with self.subTest(field=field):
+                self.assertIn(field, row)
+
+
+class TestAnIndicatorThatCannotGoRed(unittest.TestCase):
+    """The verdict banner asked for `d.ghosts`. Nothing ever published it.
+
+    So `(d.ghosts || []).length` was 0 on every render the field ever had, and
+    the page said "board and radar agree" for its whole life -- while capable of
+    displaying a ghost row immediately underneath. This is the shape `check.py`
+    is built around: a check that is always green reads exactly like one that
+    passed.
+    """
+
+    def test_a_ghost_is_published_and_counted(self):
+        got = publish("Pony 1-1", "not-on-this-scope")
+        self.assertEqual(got["board"][0]["confirmed"], "unseen")
+        self.assertEqual(got["ghosts"], ["Pony 1-1"])
+
+    def test_and_a_healthy_board_reports_none(self):
+        self.assertEqual(publish("Pony 1-1", "362nd_sockeye")["ghosts"], [])
+
+
 class TestItSurvivesAnEmptySystem(unittest.TestCase):
     def test_no_snapshot_and_no_recorder_is_not_an_error(self):
         """A page that 500s when nothing is flying is a page nobody trusts when

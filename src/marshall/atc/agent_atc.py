@@ -501,6 +501,41 @@ def note_alive(bridge, callsign: str, now: float | None = None) -> None:
         bridge.seen_at[callsign] = time.time() if now is None else now
 
 
+# Enough releases to cover a sortie's worth of them without the snapshot
+# growing without bound. Nine in one evening is the number this is sized against.
+RELEASES_KEPT = 20
+
+
+def accounted_for(ac, cs: str, here: set, called: set) -> bool:
+    """Is there ANY evidence this board entry is a real aeroplane right now?
+
+    EVERY ROUTE, not the best one. This function replaced a single string
+    comparison that was right about one case and silently wrong about the rest,
+    and the temptation on finding the better route (the bound track) was to swap
+    one for the other. That would have been the same mistake again: dropping an
+    entry radar can see is a separation event, so evidence is only ever ADDED
+    here. Four ways, any one of which is enough:
+
+      1. Radar identified him. The engine's own flag, set when a controller
+         said "radar contact", and nothing on a scope can contradict it.
+      2. His bound track is on the picture. The strongest, because both sides
+         are the sim's own string and no derivation happens at all -- but it
+         needs `Controller.bind` to have run, so it is not always available.
+      3. A label on the picture DERIVES to his key. "362nd_Sockeye" -> "Sockeye",
+         which is what the board is keyed on. This is the one that was missing:
+         it is how a man on the scope at 0.4 nm was dropped nine times in one
+         sortie while the comparison asked whether "sockeye" equalled
+         "362ndsockeye".
+      4. His key is a label outright. Only true when the sim's name for an
+         aeroplane happens to be its callsign -- an AI flight, and every fixture
+         written before the distinction was understood.
+    """
+    return bool(ac.radar_identified
+                or (getattr(ac, "track", "") and _key_name(ac.track) in here)
+                or _key_name(cs) in called
+                or _key_name(cs) in here)
+
+
 def release_stale(bridge, ctl, scope: str = "", now: float | None = None) -> list[str]:
     """Drop board entries nothing can account for any more.
 
@@ -528,18 +563,58 @@ def release_stale(bridge, ctl, scope: str = "", now: float | None = None) -> lis
     the event once the identifiers are reconciled.
     """
     t = time.time() if now is None else now
-    here = {_key_name(u.name) for u in identity.units_on(scope)}
+    # THE BOARD'S OWN TRACKS AGAINST THE SCOPE'S OWN NAMES. Both sides are the
+    # sim's string for the aeroplane, so this is an identity comparison and not
+    # a join.
+    #
+    # It used to ask `_key_name(cs) in here` -- the board KEY against the scope
+    # LABEL, "sockeye" against "362ndsockeye", which can never be equal. So
+    # nothing ever accounted for a man radar could see and he aged off the board
+    # nine times in one sortie, at 0.4 nm, with the aeroplane on the scope. A
+    # board entry vanishing under a live approach is a separation fact.
+    on_scope = identity.units_on(scope)
+    here = {_key_name(u.name) for u in on_scope}
+    # AND WHAT EACH OF THOSE LABELS IS CALLED. "362nd_Sockeye" derives to
+    # "Sockeye", which IS the board's key -- so this is the join done once, by
+    # the same function the untracked table uses, rather than a comparison
+    # between two names that were never going to be equal.
+    called = {_key_name(_derived_callsign(u.name))
+              for u in on_scope if not u.category}
     for cs, ac in list(ctl.aircraft.items()):
         # Start the clock the first time we ever see an entry, so one that
         # arrives with no evidence at all still ages out. Without this the
         # default "assume seen now" made every unaccounted entry immortal --
         # which is precisely the leftover this exists to remove.
         bridge.seen_at.setdefault(cs, t)
-        if ac.radar_identified or _key_name(cs) in here:
+        if accounted_for(ac, cs, here, called):
             bridge.seen_at[cs] = t
     freed = []
     for cs in list(ctl.aircraft):
-        if t - bridge.seen_at.get(cs, t) > STALE_BOARD_SEC and ctl.release(cs):
+        if t - bridge.seen_at.get(cs, t) <= STALE_BOARD_SEC:
+            continue
+        # WHAT WAS ON THE SCOPE WHEN HE CAME OFF IT, kept with the release.
+        #
+        # A GUARD HERE WOULD BE DEAD CODE, and writing one first is how I found
+        # that out. "Refuse to release while radar paints him" reads like the
+        # obvious safety net, but the refresh loop above asks `accounted_for`
+        # already -- so anything radar can account for has had its clock reset
+        # and cannot reach this line. The net could never catch anything.
+        #
+        # And the failure it was meant to catch is exactly the one it cannot
+        # see: the entries that get dropped wrongly are the ones our own
+        # matching failed to relate to a contact, and a second call to the same
+        # matcher fails the same way. There is no automatic version of this.
+        #
+        # So publish the evidence instead and let a human be the guard. A row
+        # saying "released Sockeye; the scope held 362nd_Sockeye" is the whole
+        # bug, legible at a glance, on the page somebody is already reading.
+        ac = ctl.aircraft.get(cs)
+        if ctl.release(cs):
+            bridge.releases.append(
+                {"callsign": cs, "track": getattr(ac, "track", ""),
+                 "at": t, "scope": sorted(u.name for u in on_scope
+                                          if not u.category)})
+            del bridge.releases[:-RELEASES_KEPT]
             bridge.seen_at.pop(cs, None)
             freed.append(cs)
     return freed
@@ -603,6 +678,19 @@ class Bridge:
         self.flights = fl.Roster()
         # When each board entry was last accounted for. See release_stale.
         self.seen_at: dict[str, float] = {}
+        # WHO CAME OFF THE BOARD, AND WHAT WAS ON THE SCOPE WHEN HE DID.
+        #
+        # A release is the one board event with no trace of itself: the entry is
+        # gone, so afterwards nothing can be asked why. `HANDOFF-board.md`
+        # documents nine wrong ones in a single sortie, found by grepping a log
+        # nobody reads, and the reason they were invisible is that the evidence
+        # died with the row.
+        #
+        # Kept WITH the scope contents, because that is what makes a wrong
+        # release self-evident: "released Sockeye; the scope held 362nd_Sockeye"
+        # is the entire bug on one line. No judgement is applied here -- the
+        # matcher that would judge it is the thing under suspicion.
+        self.releases: list[dict] = []
         # WHAT THIS RADIO HAS BEEN DOING. All per-frequency, all previously
         # module globals -- which meant two bridges in one process would have
         # shared one pilot's conversation window, one readback queue and one
@@ -1915,7 +2003,7 @@ def may_be_vectored(bridge, ctl, cs: str, traffic: bool = False,
 
 
 def separation_context(bridge, ctl, transcript: str, scope: str = "",
-                       known: str = "", track: str = "") -> tuple[str, str]:
+                       known: str = "", track: str = "", intent=None) -> tuple[str, str]:
     """The two-brain seam. Advance the deterministic Controller from the call and
     return its authoritative (next-step directive, holding stack).
 
@@ -1928,7 +2016,12 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
     from marshall.atc import bedrock_intent, intents
     directive = ""
     try:
-        intent = bedrock_intent.classify(transcript)
+        # ALREADY CLASSIFIED, USUALLY. `decide` runs the classifier once per
+        # transmission now, because what a pilot WANTS has to be recorded
+        # whether or not there is anybody to separate him from -- and this
+        # function is skipped entirely for a single ship. Kept optional so the
+        # tests and tools that call this directly still work unchanged.
+        intent = intent if intent is not None else bedrock_intent.classify(transcript)
 
         # ONE RADIO IS ONE AEROPLANE. Whose call this is comes from the GUID
         # that keyed the mic, never from what Whisper made of the words.
@@ -2320,6 +2413,53 @@ def is_on_the_ground(scope: str, track: str, pos=None) -> bool:
     return bool(pos is not None
                 and pos.alt_ft < GROUND_ALT_FT
                 and pos.speed_kt < GROUND_SPEED_KT)
+
+
+# The takeoff/landing roll begins somewhere above a taxi and below flying. Only
+# used to tell three GROUND states apart, so nothing separation-related turns on
+# it -- an aeroplane at 39 kt on a taxiway called "taxiing" and one at 41 kt
+# called "rolling" are the same fact to every other consumer.
+TAXI_SPEED_KT = 40
+
+
+def sim_state(scope: str, track: str, pos=None) -> str:
+    """What the aeroplane is DOING, as the sim reports it. Never as anyone says.
+
+        "It could be parked, taxing, taking off, asr approach, en route."
+
+    The first three are here. The others are INTENTIONS, they come from the
+    pilot's mouth, and mixing the two into one word is how an observation ends up
+    overwriting something a man actually said -- see `Aircraft.intent`.
+
+    ON `is_on_the_ground` RATHER THAN THE RAW FLAG, and this is the whole reason
+    the function exists. `on_ground` comes from the sim's land/takeoff EVENTS, so
+    an aeroplane that spawned on the ramp never generated one and the flag reads
+    False while it sits at thirty-nine feet and zero knots. Reading it directly
+    is the fourth-caller mistake `tests/test_tonight.py` was written about.
+    """
+    if not track:
+        return ""
+    # NOT ON THE SCOPE AT ALL IS NOT "AIRBORNE". The obvious reading of
+    # `is_on_the_ground` -- false means flying -- is wrong for the one case that
+    # matters most: an aeroplane radar has stopped seeing. It finds no unit, the
+    # position is None, so the geometry fallback is false too, and a board entry
+    # for an aircraft that has left the world reads as cruising along.
+    #
+    # Absence of evidence, read as evidence. Empty is the honest answer and the
+    # board already has a column that says he cannot be seen -- `confirmed`.
+    if not any(_key_name(u.name) == _key_name(track)
+               for u in identity.units_on(scope)):
+        return ""
+    if not is_on_the_ground(scope, track, pos):
+        return "airborne"
+    kt = getattr(pos, "speed_kt", None)
+    if kt is None:
+        # DOWN, AND THAT IS ALL WE KNOW. No position means no speed, and
+        # guessing "parked" would be inventing the commonest case as a fact.
+        return "on the ground"
+    if kt < 1:
+        return "parked"
+    return "taxiing" if kt < TAXI_SPEED_KT else "rolling"
 
 
 def handoff_on_the_event(scope: str, track: str, me, profile) -> object | None:
@@ -3177,6 +3317,110 @@ def membership(bridge, _who, transcript, scope, _ident, session_id):
     return _flight_say
 
 
+# WHAT EACH INTENT MEANS AS A STANDING INTENTION, in the words a controller
+# would use on a strip. Only the kinds that say something about what he is
+# TRYING TO DO -- a position report and a check-in are things he is doing right
+# now, not what he wants, and overwriting "asr approach" with "check in" the
+# moment he reads a heading back would lose the very fact the column is for.
+_INTENT_SAID = {
+    "request_approach": "asr approach",
+    "request_visual": "visual approach",
+    "request_breakup": "break up the flight",
+    "report_missed": "going around",
+    "report_landed": "landing",
+}
+
+
+def intent_said(intent) -> str:
+    """The standing intention this transmission establishes, if any.
+
+    Empty for everything else, and `note_intent` ignores an empty -- so a
+    request survives the twenty read-backs that follow it. That is what makes
+    the column mean "what he is here for" rather than "the last thing he said".
+    """
+    return _INTENT_SAID.get(getattr(getattr(intent, "kind", None), "value", ""), "")
+
+
+def classify_intent(transcript: str):
+    """Ask the classifier what this was, and never let it break the call.
+
+    Its own function because it now has two consumers -- the separation engine
+    and the intent column -- and because a classifier failure must cost a label,
+    never a transmission. The bridge has fallen silent on a raised exception
+    here before; an empty directive reads to a pilot as a controller who has
+    stopped listening.
+    """
+    from marshall.atc import bedrock_intent
+    try:
+        return bedrock_intent.classify(transcript)
+    except Exception as e:                        # must not break the call
+        print(f"  !! intent classify failed: {e}", flush=True)
+        return None
+
+
+def become_tracked(ctl, known: str, track: str) -> bool:
+    """He has contacted a controller and the sim can see him. He is now tracked.
+
+    THE BOARD HAD NO DOOR. Entries appeared as SIDE EFFECTS of whichever code
+    path happened to call `Controller.get` first, and for a single ship that was
+    a block near the end of the turn whose actual job is writing down what was
+    agreed -- gated, incidentally, on his having a filed flight plan. The
+    separation engine never admitted him at all, because `engaged` is False with
+    one aeroplane up and `intents.dispatch` is inside the branch that is skipped.
+
+    So a lone pilot's presence on the board was a coincidence of two unrelated
+    features, and everything hung on it: his owner, his track, whether the
+    staleness clock could account for him. "Tracked" is the central noun in this
+    system and nothing was responsible for it.
+
+    ONLY FROM UNTRACKED, which is what the track argument enforces. A track
+    means the physical chain closed -- this radio is sitting in that aeroplane,
+    per the sim -- so an aircraft can only become tracked if it was a real
+    contact first. No transcript can produce one: Whisper turned this pilot's
+    name into "362 and D. Underscore Sockeye" on the very call that identified
+    him correctly, because the words are not what identifies anybody.
+
+    That is the non-circular corroboration [#40] went looking for. The untracked
+    list is populated from the sim before anyone speaks, so checking against it
+    is not checking a binding against itself.
+    """
+    if not (known and track):
+        return False
+    # ONE AEROPLANE, ONE ROW. A track already on the board under another name
+    # must not open a second entry, and this is not a tidiness rule -- TWO
+    # ENTRIES ARE WHAT MAKES THE SEPARATION ENGINE ENGAGE, so a duplicate turns
+    # a single ship into a sequencing problem between a pilot and himself.
+    #
+    # IT HAPPENED WHILE THIS WAS BEING BUILT. The pilot said "established ON the
+    # final approach course"; the flight parser took "on" for a name and created
+    # a flight; `speaking_as` duly reported he was called "On"; and this
+    # function, seeing a perfectly real track, admitted him. The board then read
+    #
+    #     SEPARATION: Andre unknown -; On cleared 5000 ft
+    #
+    # -- one Mustang, two rows, being separated from itself.
+    #
+    # The name was wrong and the TRACK was right, which is the whole reason the
+    # check belongs here rather than in the parser that misheard him. Parsers
+    # will keep mishearing: the supply of English words is unbounded and [#40]
+    # measured 37 of them binding as names in 846 real transmissions. What
+    # cannot be allowed is for a misheard name to become a second aeroplane,
+    # and the track is the identifier no transcript can reach.
+    key, want = ctl._resolve(known), _key_name(track)
+    for cs, ac in ctl.aircraft.items():
+        if cs != key and _key_name(getattr(ac, "track", "")) == want:
+            print(f"  !! {known} would be a second entry for {track}, which is "
+                  f"already {cs} -- refused", flush=True)
+            return False
+    # OWNED BY A STATION, NOT A ROLE. "Batumi Approach", never "approach" --
+    # see where `ctl.station` is set. Falls back to the role for a controller
+    # built without stations (the tests, and the dry-run tools), because an
+    # owner of the wrong shape is still better than no owner at all.
+    ctl.bind(known, track=track,
+             owner=(getattr(ctl, "station", "") or getattr(ctl, "working", "") or ""))
+    return True
+
+
 def decide(bridge, ctl, transcript, scope, known, track, engaged, profile):
     """What the DETERMINISTIC side says about this transmission.
 
@@ -3193,8 +3437,32 @@ def decide(bridge, ctl, transcript, scope, known, track, engaged, profile):
     This is the half of the two-brain seam that must never be a model's guess.
     Whatever comes out of here is phrased by the agent and not invented by it.
     """
+    # HE IS TRACKED BEFORE ANYTHING IS DECIDED ABOUT HIM, because everything
+    # below reads the board and an entry that appears afterwards is an entry
+    # this turn cannot see.
+    become_tracked(ctl, known, track)
+    # WHAT HE WANTS, ONCE PER TRANSMISSION, and outside the `engaged` branch.
+    #
+    #     "The first thing a controller should do is figure out what my
+    #      intentions are"
+    #
+    # True whether or not anybody else is flying -- and the classifier used to
+    # live entirely inside `separation_context`, which is skipped for a single
+    # ship because there is nothing to separate one aeroplane from. So the one
+    # question a controller asks first could only be answered when the airspace
+    # was busy. Classified here and handed down, so it is one model call serving
+    # both rather than two.
+    # ONLY FOR SOMEBODY ON THE BOARD. No row, no intention to record -- and
+    # `note_intent` refuses to create one, so classifying first would be paying
+    # a model call for an answer with nowhere to go. It also keeps the offline
+    # test suite offline: everything below this line is network.
+    intent = None
+    if known and ctl._resolve(known) in ctl.aircraft:
+        intent = classify_intent(transcript)
+        if intent is not None:
+            ctl.note_intent(known, intent_said(intent))
     directive, stack = (separation_context(bridge, ctl, transcript, scope, known,
-                                          track) if engaged
+                                          track, intent) if engaged
                         else ("", ""))
     # Radar guidance for a vectored approach. Costs no model call, so it
     # runs for a single ship too -- which is the case that was flying with
@@ -3229,6 +3497,22 @@ def settle(bridge, directive, stack, vectoring, fix, profile, known, ctl):
     return directive, stack, vectoring, guide, dropped
 
 
+def _derived_callsign(label: str) -> str:
+    """The board key this contact would take, from the sim's label alone.
+
+    "362nd_Sockeye" -> handle "Sockeye" -> canonical "Sockeye". No radio, no
+    GUID, no transcript and no clock: every input is on the radar contact the
+    moment a pilot takes the slot.
+
+    THE POINT IS THAT THERE IS ONE OF THESE. The four names for one aeroplane --
+    slot name, scope label, handle, board key -- are not four facts, they are
+    one fact and three derivations, and every join bug in this system has been
+    two of those derivations run by different code and compared as strings.
+    """
+    from marshall.atc import callsign as C
+    return C.parse(identity.handle(label or "")).canonical
+
+
 def _contact(u, scope: str, board_tracks: set) -> dict:
     """One radar contact, with where it is and whether anybody is working it.
 
@@ -3245,6 +3529,38 @@ def _contact(u, scope: str, board_tracks: set) -> dict:
     controlled = _key_name(u.name) in board_tracks
     return {
         "name": u.name, "callsign": u.callsign, "type": u.type,
+        # WHAT HE WILL BE CALLED, worked out here rather than when he speaks.
+        #
+        #     "The sim even knows what my callsign will be 'Sockeye' - because
+        #      the process of stripping a squad off a name should be
+        #      deterministic and instant."
+        #
+        # It is both, and it always was: `handle` is a pure function over a
+        # string the sim publishes on every poll. It was simply unreachable
+        # except through `Registry.resolve`, which is the TRANSMISSION path --
+        # so a name available for free sat underived until somebody keyed a
+        # microphone, and this table printed the raw label.
+        #
+        # CANONICAL, because that is the board's own primary key. Deriving it
+        # here is what stops the name-join existing at all: `track_of` and
+        # `release_stale` have both been matching a handle against a canonical
+        # against a scope label, three routes to one aeroplane's name. One
+        # derivation, from the sim, and there is nothing left to match.
+        #
+        # AIRCRAFT ONLY. A tank has a label and the rule would happily turn it
+        # into "Ural", which is a callsign-shaped string for a thing that will
+        # never have one -- and a callsign-shaped string is precisely what gets
+        # picked up later by something that should have known better.
+        "derived": _derived_callsign(u.name) if not u.category else "",
+        # WHAT HE IS DOING, from the same function the board uses, so the two
+        # tables cannot disagree about a man who is about to move between them.
+        #
+        # `tags` is NOT this. It carries the raw `on_ground` EVENT flag, which
+        # is false for an aeroplane that spawned parked and false again after a
+        # director restart loses the in-memory event history -- both of which
+        # were true of the aircraft on the scope while this was written. The
+        # tag is what the sim announced; `state` is what is actually so.
+        "state": sim_state(scope, u.name, fix) if not u.category else "",
         "tags": [t for t, on in (("manned", u.manned),
                                  ("on the ground", u.on_ground)) if on]
                 + ([u.category] if u.category else []),
@@ -3368,11 +3684,33 @@ def publish_state(bridge, ctl, scope: str, session_id: str,
     # been guessing at.
     track_of = {i.callsign: i.track
                 for i in bridge.identity.by_guid.values() if i.callsign}
+    # THE SAME MAP, SQUASHED, so a board key can find a handle that differs only
+    # by case or decoration. This is the join `HANDOFF-board.md` asks for -- and
+    # it is deliberately the LAST resort, below the track the row carries,
+    # because a join that has to be got right in more than one place is the
+    # thing that was wrong in the first place.
+    _by_handle = {_key_name(k): v for k, v in track_of.items() if v}
+    # AND BY FLIGHT: the board key for a formation is the FLIGHT's name, which
+    # is nobody's handle. One entity, one clearance, one place in the letdown --
+    # so the track that represents it is the LEAD's, which is also the only
+    # answer that is safe, since every number read out has to describe the same
+    # aeroplane every time.
+    for _f in bridge.flights.flights.values():
+        _lead = track_of.get(_f.lead) or _by_handle.get(_key_name(_f.lead), "")
+        if _f.name and _lead:
+            _by_handle.setdefault(_key_name(_f.name), _lead)
     # HOW he came to be that callsign, carried onto the board row. It used to
     # be a panel of its own; it belongs beside him, because "who does ATC think
     # this is" and "on what evidence" are one question.
     auth_of = {i.callsign: i.authority
                for i in bridge.identity.by_guid.values() if i.callsign}
+    # SQUASHED, FOR THE SAME REASON `track_of` IS, and this one was missed on
+    # the first pass -- which is the audit's central finding happening in real
+    # time: a fix applied where the bug was found and not at the sibling call
+    # site. The board is keyed "Sockeye", the registry "sockeye", so the live
+    # board read `authority: ''` -- no provenance at all -- for a pilot whose
+    # identity had in fact closed on radar. Found by flying it, not by the suite.
+    _auth_by_handle = {_key_name(k): v for k, v in auth_of.items() if v}
     units = units if units is not None else _id.units_on(scope)
     on_scope = {_key_name(u.name) for u in units}
     unit_of = {_key_name(u.name): u for u in units}
@@ -3387,7 +3725,19 @@ def publish_state(bridge, ctl, scope: str, session_id: str,
                if p.get("callsign") in by_plan}
 
     board = []
-    board_tracks = {_key_name(t) for t in track_of.values() if t}
+    # FILLED FROM THE FINISHED BOARD, BELOW, not from the identity registry.
+    #
+    # It used to read `track_of` -- the registry -- and the registry only knows
+    # a track for somebody whose RADIO has been resolved. An entry bound by
+    # `Controller.bind` (or admitted any other way) had a perfectly good track on
+    # its own row and was still absent here, so it counted as uncontrolled and
+    # the man appeared on the board AND in the untracked table at the same time.
+    #
+    # Which breaks the one invariant that makes those two tables readable
+    # together: every contact is in exactly one of them. Tracked and untracked
+    # are complements, so the set has to come from the thing that defines
+    # tracked -- the board.
+    board_tracks: set = set()
     # The engine's own rows, by callsign, so a strip can be asked whether
     # anything is flying under it.
     on_board = {r.get("callsign", ""): r for r in ctl.board()}
@@ -3397,7 +3747,17 @@ def publish_state(bridge, ctl, scope: str, session_id: str,
     # doing rather than leaving as an invisible precondition.
     for row in ctl.board():
         cs = row.get("callsign", "")
-        track = track_of.get(cs, "")
+        # THE ROW'S OWN TRACK, bound at the door by the caller that held both
+        # names. The registry is the fallback for an entry admitted before this
+        # existed, and it is a fallback rather than the answer because it was
+        # the WRONG answer: `{i.callsign: i.track}` is keyed on a lowercase
+        # handle and the board is keyed on a canonical, so `get("Sockeye")`
+        # missed `"sockeye"` and emptied every derived column in this row --
+        # type, position, plan, and `confirmed` degraded to `claimed`. Case is
+        # not the whole of it either: in a flight the board key is the FLIGHT
+        # name and no folding relates "Apex" to "sockeye".
+        track = row.get("track") or track_of.get(cs, "") or _by_handle.get(
+            _key_name(cs), "")
         # WHAT HE IS FLYING AND WHERE, joined on the TRACK rather than the name.
         # The engine is blind -- it has never seen a radar picture and holds no
         # type, heading or altitude -- so every one of these comes off the scope
@@ -3406,9 +3766,22 @@ def publish_state(bridge, ctl, scope: str, session_id: str,
         # name are different strings for the same aeroplane.
         u = unit_of.get(_key_name(track)) if track else None
         fix = radar_fix_by_track(scope, track) if track else None
+        if track:
+            board_tracks.add(_key_name(track))
         board.append({**row, "track": track,
                       "freq_mhz": bridge.heard_on.get(cs, 0) / 1e6 or None,
-                      "authority": auth_of.get(cs, ""),
+                      "authority": (auth_of.get(cs)
+                                    or _auth_by_handle.get(_key_name(cs), "")),
+                      # WHAT THE SIM SAYS HE IS DOING -- parked, taxiing,
+                      # rolling, airborne. Beside `intent` (what he asked for)
+                      # and `phase` (what the engine has decided), because the
+                      # three answer different questions from different
+                      # authorities and only one of them can be wrong quietly.
+                      "state": sim_state(scope, track, fix) if track else "",
+                      # WHO IS WORKING HIM, and what he said he wants. Both from
+                      # the engine, which is where they are now recorded.
+                      "owner": row.get("owner", ""),
+                      "intent": row.get("intent", ""),
                       "type": getattr(u, "type", ""),
                       "range_nm": getattr(fix, "range_nm", None),
                       "radial": getattr(fix, "radial_deg", None),
@@ -3471,6 +3844,22 @@ def publish_state(bridge, ctl, scope: str, session_id: str,
         # them as a list. Splitting the joined string back up would be the page
         # inventing structure again, one layer down.
         "handed": list(handed or []),
+        # THE ONES RADAR CANNOT ACCOUNT FOR. Something admitted them and nothing
+        # confirms them now, which is the only one of the three `confirmed`
+        # answers that is a fault rather than a stage.
+        #
+        # PUBLISHED BECAUSE THE PAGE WAS READING IT AND IT WAS NEVER SENT. The
+        # verdict banner asked for `ghosts`, no such key was ever written, so
+        # `(d.ghosts || []).length` was 0 on every render and the page reported
+        # "board and radar agree" for the whole life of the field -- including
+        # while it was displaying a ghost row underneath. An indicator that
+        # cannot go red reads exactly like one that is green.
+        "ghosts": [r["callsign"] for r in board if r["confirmed"] == "unseen"],
+        # BOARD ENTRIES THAT CAME OFF, with the scope as it stood at the time.
+        # Empty when things are working. See `Bridge.releases`: a release is the
+        # only board event that destroys its own evidence, and nine wrong ones
+        # went unnoticed for a sortie because the only record was a print.
+        "releases": list(bridge.releases),
         # EACH CONTACT, AND WHETHER ANYBODY IS CONTROLLING IT. The judgement is
         # made here rather than in the page for the usual reason: deciding that
         # a MANNED contact with no board entry is worth a second look means
@@ -3491,6 +3880,21 @@ def publish_state(bridge, ctl, scope: str, session_id: str,
             "authority": {"radar": "ok", "plan": "warn", "roster": "warn",
                           "": "bad"},
             "confirmed": {"radar": "ok", "claimed": "warn", "unseen": "bad"},
+            # WHAT THE SIM SAYS HE IS DOING. No level on any of them: parked is
+            # not worse than airborne, it is somewhere else in the sortie. The
+            # empty string is the exception and it IS worth a colour -- it means
+            # we have no track for a board entry, so nothing can be said about
+            # where he is at all.
+            "state": {"parked": "", "taxiing": "", "rolling": "",
+                      "airborne": "", "on the ground": "", "": "warn"},
+            # WHETHER ANYBODY HAS ASKED HIM WHAT HE WANTS. Blank is a warning
+            # and not an error: a controller who has not established intentions
+            # has not finished his first job, which is exactly the thing worth
+            # seeing on a page and never worth guessing at.
+            "intent": {"": "warn"},
+            # WHO OWNS HIM. Unowned while on the board is the contradiction --
+            # he is being separated by nobody in particular.
+            "owner": {"": "bad"},
             "kind": {k: {"stage": st, "level": lv} for k, st, lv in (
                 ("dropped", "admit", "bad"),
                 ("ship-to-ship", "admit", "bad"),
@@ -4448,7 +4852,17 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         if known:
             # He has checked in HERE. Until he does, no controller on this
             # channel may start working him -- see may_be_vectored.
+            # UNDER THE KEY THE BOARD USES, normalised at the WRITE. `known` is
+            # a handle ("sockeye") or a flight name; the board is keyed on the
+            # canonical ("Sockeye"), so writing it raw left three readers each
+            # to fold it back and each to get it wrong differently -- the diag
+            # frequency column was blank all sortie, and `may_be_vectored` asks
+            # this same map whether he has checked in HERE.
+            #
+            # Both keys, because a reader holding the spoken form is still
+            # right and this map is a cache, not an authority.
             bridge.heard_on[known] = heard_hz or freq_hz
+            bridge.heard_on[ctl._resolve(known)] = heard_hz or freq_hz
             # And the channel the conversation is on, for anything owed to a
             # pilot later -- a hook whose reason names nobody still has to be
             # spoken where somebody is listening.
@@ -4460,6 +4874,20 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         _me_now = (profile.station_on((heard_hz or freq_hz) / 1_000_000)
                    if hasattr(profile, "station_on") else None)
         ctl.working = getattr(_me_now, "role", None)
+        # AND WHICH ONE OF HIM, WHICH IS NOT THE SAME QUESTION.
+        #
+        # `working` is a ROLE and is right to be: it answers "what may this
+        # controller do", and only Tower may clear a landing whichever field he
+        # is at. OWNERSHIP is an identity -- "who has this aeroplane" -- and a
+        # role cannot express it the moment there are two aerodromes, because
+        # Batumi Approach and Kobuleti Approach are both `role="approach"`.
+        #
+        # A board reading `owner: approach` with two fields up does not say who
+        # has him, and a handoff between the two would look like no change at
+        # all. `Station` has carried the name the whole time; the bridge was
+        # dropping it on the floor.
+        ctl.station = getattr(_me_now, "name", "") or ""
+
 
         n_contacts = count_contacts(scope)
         tag = f" [RADAR: {scope}]" if scope else ""

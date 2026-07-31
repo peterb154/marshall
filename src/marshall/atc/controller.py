@@ -122,6 +122,38 @@ class Aircraft:
     # honest answer until then, and an honest empty is what stops the
     # controller reading out names he invented.
     members: list[str] = field(default_factory=list)
+    # THE SIM'S OWN NAME FOR THE AEROPLANE, carried so nothing downstream has to
+    # work it out again.
+    #
+    # This is not the engine being allowed to see. A track is an opaque PRIMARY
+    # KEY -- no position, no heading, nothing separation could be computed from,
+    # and this class cannot ask the scope anything about it. What it removes is
+    # the join: `publish_state` and `release_stale` have both been matching a
+    # handle against a canonical against a scope label, three derivations of one
+    # aeroplane's name compared as strings, and every board bug of the last
+    # month lived in that gap. Bound once, at the door, by the one caller that
+    # holds both names.
+    track: str = ""
+    # WHO IS WORKING HIM. Exactly one controller at a time.
+    #
+    #     "that controller OWNS me unless i am released to go back to untracked"
+    #
+    # Set when he is taken on, changed by a handoff, cleared only by release.
+    # A handoff is NOT a release: ownership moves directly from one controller
+    # to the next and he is never unowned in between -- dropping him to
+    # untracked mid-approach is precisely what `release_stale` was doing.
+    owner: str = ""
+    # WHAT HE SAYS HE WANTS, which nothing else here knows.
+    #
+    #     "The first thing a controller should do is figure out what my
+    #      intentions are"
+    #
+    # Blank until he says, and the blank is the useful part: it means nobody has
+    # asked. Distinct from `phase`, which is where the separation machine has
+    # got to, and from the STATE the sim reports -- what he is doing, what he
+    # intends, and what the engine has decided about him are three facts with
+    # three different authorities and they must not be collapsed into one word.
+    intent: str = ""
 
     @property
     def is_flight(self) -> bool:
@@ -407,8 +439,63 @@ class Controller:
                  # known -- it is what stops it reading him vectors he does not
                  # want -- and it was the one thing about him nothing could ask.
                  "on_visual": ac.on_visual,
+                 # THE TRACK, FROM THE BOARD ITSELF. It used to be joined on
+                 # afterwards by matching names, which is the bug in
+                 # `HANDOFF-board.md`: one failed lookup emptied a whole row and
+                 # a live aeroplane aged off the board nine times in one sortie.
+                 # A row now carries its own key and there is nothing to match.
+                 "track": ac.track,
+                 "owner": ac.owner,
+                 "intent": ac.intent,
                  "in_letdown": cs == self._letdown}
                 for cs, ac in sorted(self.aircraft.items())]
+
+    def bind(self, cs: str, track: str = "", owner: str = "") -> Aircraft:
+        """Record the two opaque facts about an entry: his track, and who owns him.
+
+        WHY THIS IS NOT THE ENGINE GOING SIGHTED. Neither value is telemetry.
+        `track` is a name the sim gave an aeroplane and `owner` is a role read
+        off the frequency the call arrived on; nothing here reads a position, and
+        no separation decision anywhere in this class consults either. They are
+        stored because THIS is the one place both are known at once, and every
+        attempt to recover them later has been a string match that got it wrong.
+
+        A HANDOFF IS AN OWNER CHANGE, NOT A RELEASE. Passing a new `owner` moves
+        him directly; he is never unowned in between. That is the whole
+        distinction the board was missing -- the only way off it is `release`.
+
+        Neither value is ever cleared by a later call that does not know it. A
+        transmission relayed without a radar picture must not erase the track a
+        previous one established, so an empty argument means "no news", not
+        "forget".
+        """
+        ac = self.get(cs)
+        if track:
+            ac.track = track
+        if owner:
+            ac.owner = owner
+        return ac
+
+    def note_intent(self, cs: str, intent: str) -> None:
+        """What he told the controller he wants.
+
+        Recorded rather than inferred: this is the one fact on the board that
+        can only come from the pilot saying so, and a guess at it is a guess at
+        the whole reason he is on the frequency.
+
+        NEVER CREATES AN ENTRY, and the first version did. `get` is a
+        `setdefault`, so writing an intention through it would let a SENTENCE
+        put an aeroplane on the board -- the exact ghost door this project spent
+        a month closing, reopened by a display feature. `note_radar_contact` has
+        the same shape for the same reason.
+
+        An empty intent is ignored so a request survives the read-backs that
+        follow it: he asks for the approach once and then says "heading one six
+        nine" twenty times, and none of those should erase what he is here for.
+        """
+        ac = self.aircraft.get(self._resolve(cs))
+        if ac is not None and intent:
+            ac.intent = intent
 
     def note_equipment(self, callsign: str, kit) -> None:
         """Record what he can receive, from the airframe on radar.

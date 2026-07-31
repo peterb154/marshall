@@ -233,6 +233,18 @@ class Sortie:
         patch(A, "load_and_push_plate", lambda *a, **k: self.profile)
         patch(A, "flight_bind", lambda *a, **k: {})
         patch(A, "filed_plans", lambda *a, **k: [])
+        # THE INTENT CLASSIFIER IS BEDROCK, and it is now reached for anybody on
+        # the board rather than only when separation is engaged -- so an
+        # unstubbed sortie makes a real network call per transmission. It took
+        # this suite from 5.7 seconds to 41 before anyone noticed, which is
+        # exactly how a fast suite stops being one: not by breaking, by getting
+        # slower than the patience of the person running it.
+        #
+        # None is what a classifier failure already returns, and the loop is
+        # required to survive that, so stubbing it costs no coverage of anything
+        # except the classification itself -- which `classify_bench.py` scores
+        # properly and a unit test never could.
+        patch(A, "classify_intent", lambda *a, **k: None)
         # Fresh per sortie, or one test's board leaks into the next. The
         # identity registry, the flight roster and the board clock now live on
         # a Bridge that `_run_srs` makes for itself, so they need no patching
