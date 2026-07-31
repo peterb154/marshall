@@ -34,6 +34,7 @@ import urllib.request
 from marshall import config
 from marshall.core import names as _names
 from marshall.core import geo as _geo
+from marshall.atc import handoff as _handoff
 from marshall.atc import flights as fl
 from marshall.atc import identity
 from marshall.atc import picture as _picture
@@ -2564,6 +2565,27 @@ def sim_state(scope: str, track: str, pos=None) -> str:
     return "taxiing" if kt < TAXI_SPEED_KT else "rolling"
 
 
+def _handoff_state(scope, track: str, pos) -> object:
+    """The three facts a handoff rule is allowed to look at.
+
+    INBOUND IS A TREND, not a position, and it is the whole reason this is not
+    a bare distance test: five miles outbound climbing and five miles inbound
+    descending are the same range and opposite events. He is inbound when his
+    heading points back towards the field -- within a quadrant of the reciprocal
+    of the radial he is sitting on.
+    """
+    from marshall.atc import handoff as _h
+    ground = is_on_the_ground(scope, track, pos)
+    nm = getattr(pos, "range_nm", None)
+    hdg = getattr(pos, "heading_deg", None)
+    radial = getattr(pos, "radial_deg", None)
+    inbound = False
+    if hdg is not None and radial is not None:
+        from marshall.atc import asr as _asr
+        inbound = abs(_asr.angle_diff((radial + 180) % 360, hdg)) < 90
+    return _h.State(on_ground=ground, range_nm=nm, inbound=inbound)
+
+
 def handoff_on_the_event(scope: str, track: str, me, profile) -> object | None:
     """Touching down ends the approach. Getting airborne ends Tower's business.
 
@@ -4854,7 +4876,14 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     _hz = bridge.heard_on.get(ctl._resolve(cs)) or final_hz
                     _me = (profile.station_on(_hz / 1_000_000)
                            if hasattr(profile, "station_on") else None)
-                    _nxt = handoff_on_the_event(scope, _tk, _me, profile)
+                    _v = _handoff.due(profile, _me, _handoff_state(
+                        scope, _tk, pos))
+                    # SAME MAN, DIFFERENT NAME. Approach and Departure are one
+                    # controller on one frequency, so there is nobody to contact
+                    # -- he simply answers as Departure while you are going out.
+                    # Telling a pilot to call the person he is already talking
+                    # to is nonsense on the radio.
+                    _nxt = None if (_v is None or _v.same_station) else _v.station
                     if _nxt is not None and cs not in handed_off:
                         free, why = channel_is_free()
                         if free:
