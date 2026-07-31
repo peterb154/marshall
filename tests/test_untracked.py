@@ -613,3 +613,65 @@ class TestOwnershipMovesWithoutPassingThroughUntracked(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestAGhostDoesNotOutliveTheSim(unittest.TestCase):
+    """`radar_identified` is HISTORY, not observation.
+
+    It means "a controller once said radar contact", which was true an hour ago
+    and says nothing about now. `accounted_for` treated it as present-tense
+    evidence, so every aircraft that had ever been identified became immortal --
+    two landed pilots sat on a live board as `unseen` ghosts with nothing in the
+    sim behind them, found by a pilot reading the diagnostics page:
+
+        "there are 2 unseen 'ghosts' that are on the board. They should probably
+         be falling off - they are no longer in the sim"
+
+    The broadening that caused it was mine, and the justification was "evidence
+    is only ever ADDED here" -- which is right about evidence and wrong about
+    what that flag is.
+    """
+
+    def board(self):
+        from marshall.atc.controller import Controller
+        from marshall.core import route as R
+        ctl = Controller(R.BATUMI_ASR)
+        for cs, tr in (("Check", "362nd_Check-1"), ("Sockeye", "362nd_sockeye")):
+            ctl.get(cs)
+            ctl.bind(cs, track=tr)
+            ctl.note_radar_contact(cs, True)
+        return ctl
+
+    def busy_scope(self):
+        """Radar is plainly working: it is drawing somebody else."""
+        return A.Scope("", contacts=[airborne(name="362nd_Other",
+                                              label="362nd_Other")],
+                       origin=BATUMI, bullseye=BULLSEYE)
+
+    def test_they_come_off(self):
+        ctl, b = self.board(), A.Bridge()
+        A.release_stale(b, ctl, self.busy_scope(), now=0.0)
+        gone = A.release_stale(b, ctl, self.busy_scope(),
+                               now=A.STALE_BOARD_SEC + 1)
+        self.assertEqual(sorted(gone), ["Check", "Sockeye"])
+        self.assertEqual(list(ctl.aircraft), [])
+
+    def test_but_an_empty_picture_still_protects_them(self):
+        """An absent answer is not a negative answer. Radar hiccups, the
+        director restarts, the sim pauses when empty -- and dropping a live
+        aeroplane on one blank poll is the failure this function exists to
+        prevent. With nothing on the picture we know nothing."""
+        ctl, b = self.board(), A.Bridge()
+        blank = A.Scope("", contacts=[], origin=BATUMI, bullseye=BULLSEYE)
+        A.release_stale(b, ctl, blank, now=0.0)
+        self.assertEqual(A.release_stale(b, ctl, blank,
+                                         now=A.STALE_BOARD_SEC + 1), [])
+
+    def test_and_somebody_radar_can_see_is_untouched(self):
+        ctl, b = self.board(), A.Bridge()
+        ctl.get("Andre")
+        ctl.bind("Andre", track="362nd_Sockeye")
+        sc = A.Scope("", contacts=[airborne()], origin=BATUMI, bullseye=BULLSEYE)
+        A.release_stale(b, ctl, sc, now=0.0)
+        gone = A.release_stale(b, ctl, sc, now=A.STALE_BOARD_SEC + 1)
+        self.assertNotIn("Andre", gone)

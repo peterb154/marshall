@@ -284,13 +284,44 @@ class TestABoardEntryNeedsEvidence(unittest.TestCase):
         self.assertEqual(gone, ["Falcon 1-1"])
         self.assertIn("Pony 1-1", c.aircraft)
 
-    def test_nobody_goes_while_radar_still_sees_him(self):
+    def test_the_one_radar_can_see_stays_and_the_other_goes(self):
+        """CHANGED ON PURPOSE, 31 July, and the diff is the record of it.
+
+        This used to assert that NOBODY was released, because `radar_identified`
+        counted as evidence of existing. It is not: the flag means "a controller
+        once said radar contact", which was true an hour ago and says nothing
+        about now. Treating history as observation made every aircraft that had
+        ever been identified immortal -- two landed pilots sat on a live board as
+        `unseen` ghosts with nothing in the sim behind them, found by a pilot
+        reading the diagnostics page.
+
+        The setup has Falcon on the scope and Pony identified but absent. Radar
+        is plainly working -- it is drawing Falcon -- so Pony's absence is real
+        and he comes off. Falcon stays because he is genuinely there.
+        """
         c = self._ctl()
         b = A.Bridge()
         scope = ("Falcon 1-1 (P-51D-30-NA, manned): 4.0 nm on the 300 radial, "
                  "3,000 ft, heading 130, 200 knots")
         A.release_stale(b, c, scope, now=0.0)
-        self.assertEqual(A.release_stale(b, c, scope, now=A.STALE_BOARD_SEC + 1), [])
+        gone = A.release_stale(b, c, scope, now=A.STALE_BOARD_SEC + 1)
+        self.assertEqual(gone, ["Pony 1-1"])
+        self.assertIn("Falcon 1-1", c.aircraft)
+
+    def test_an_empty_picture_releases_nobody(self):
+        """The other half, and the reason the flag is not simply ignored.
+
+        An absent answer is not a negative answer. Radar hiccups, the director
+        restarts, the sim pauses when empty -- and dropping a live aeroplane
+        because one poll came back blank is the failure `release_stale` exists
+        to prevent. With NOTHING on the picture we know nothing, so an
+        identified aircraft keeps the benefit of the doubt.
+        """
+        c = self._ctl()
+        b = A.Bridge()
+        A.release_stale(b, c, "", now=0.0)
+        gone = A.release_stale(b, c, "", now=A.STALE_BOARD_SEC + 1)
+        self.assertNotIn("Pony 1-1", gone)
 
     def test_a_recent_transmission_keeps_him(self):
         c = self._ctl()

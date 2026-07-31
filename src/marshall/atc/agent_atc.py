@@ -561,7 +561,8 @@ def note_alive(bridge, callsign: str, now: float | None = None) -> None:
 RELEASES_KEPT = 20
 
 
-def accounted_for(ac, cs: str, here: set, called: set) -> bool:
+def accounted_for(ac, cs: str, here: set, called: set,
+                  scope_working: bool = True) -> bool:
     """Is there ANY evidence this board entry is a real aeroplane right now?
 
     EVERY ROUTE, not the best one. This function replaced a single string
@@ -585,10 +586,26 @@ def accounted_for(ac, cs: str, here: set, called: set) -> bool:
          aeroplane happens to be its callsign -- an AI flight, and every fixture
          written before the distinction was understood.
     """
-    return bool(ac.radar_identified
-                or (getattr(ac, "track", "") and _key_name(ac.track) in here)
-                or _key_name(cs) in called
-                or _key_name(cs) in here)
+    if getattr(ac, "track", "") and _key_name(ac.track) in here:
+        return True
+    if _key_name(cs) in called or _key_name(cs) in here:
+        return True
+    # `radar_identified` IS HISTORY, NOT OBSERVATION -- it means "a controller
+    # said radar contact", which was true once and says nothing about now.
+    # Treating it as present-tense evidence made every aircraft that had ever
+    # been identified IMMORTAL: two landed pilots sat on the board as `unseen`
+    # ghosts with nothing in the sim, and `release_stale` refused to touch them
+    # because the flag was still set from an hour earlier.
+    #
+    # It is still worth something, but only when the scope is EMPTY. An absent
+    # answer is not a negative answer: radar hiccups, the director restarts, the
+    # sim pauses -- and dropping a live aeroplane because one poll came back
+    # blank is the failure this whole function was written to prevent.
+    #
+    # So: if the picture has ANY aircraft on it, radar is working and his
+    # absence from it is real. If the picture is empty we know nothing, and the
+    # flag buys him the benefit of the doubt.
+    return bool(ac.radar_identified and not scope_working)
 
 
 def release_stale(bridge, ctl, scope: str = "", now: float | None = None) -> list[str]:
@@ -641,7 +658,7 @@ def release_stale(bridge, ctl, scope: str = "", now: float | None = None) -> lis
         # default "assume seen now" made every unaccounted entry immortal --
         # which is precisely the leftover this exists to remove.
         bridge.seen_at.setdefault(cs, t)
-        if accounted_for(ac, cs, here, called):
+        if accounted_for(ac, cs, here, called, bool(here)):
             bridge.seen_at[cs] = t
     freed = []
     for cs in list(ctl.aircraft):
@@ -4662,6 +4679,9 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # unusable, and it costs one poll of latency on a genuine reversal.
         pending: dict[str, int] = {}
         grounded: set[str] = set()   # already noticed on the runway
+        # Handed over already, so the offer is made ONCE. Cleared when the
+        # handoff stops being due -- he changed frequency, or turned back.
+        handed_off: set[str] = set()
         while True:
             time.sleep(ASR_POLL_SEC)
             if not (radar_on and getattr(profile, "vectored", False)):
@@ -4723,7 +4743,25 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     # The geometry stays as the fallback for a session where no
                     # event has been seen; it must not be the answer when the
                     # sim has one.
-                    if is_on_the_ground(scope, cs, pos):
+                    # HIS TRACK, NOT HIS CALLSIGN. `is_on_the_ground` matches
+                    # the name the PICTURE prints -- "362nd_sockeye" -- and was
+                    # being handed the board key, "Sockeye". Those never match,
+                    # so the sim's own `on_ground` was skipped entirely and this
+                    # fell through to the geometry fallback: below 100 ft AND
+                    # under the speed gate. Rolling out at ninety-odd knots a
+                    # pilot is plainly down and this said no, which is exactly
+                    # what was reported --
+                    #
+                    #     "on touchdown, my status didn't change to on ground on
+                    #      the board - I had to tell approach I was on the
+                    #      ground"
+                    #
+                    # The board knows the track. The four names of one aeroplane
+                    # again, in the one thread that decides when an approach is
+                    # over.
+                    _ac = ctl.aircraft.get(ctl._resolve(cs))
+                    _track = getattr(_ac, "track", "") or cs
+                    if is_on_the_ground(scope, _track, pos):
                         if cs in grounded:
                             continue
                         # Only somebody we were actually working. `report_landed`
@@ -4765,6 +4803,46 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                                                 final_hz, AM)
                         continue
                     grounded.discard(cs)        # airborne again: a new sortie
+
+                    # A HANDOFF NOBODY HAD TO ASK FOR.
+                    #
+                    #     "After departure, I had to initiate contact with tower
+                    #      to get him to switch me to approach."
+                    #
+                    # `handoff_on_the_event` was already written and already
+                    # correct -- on the ground under approach means Tower, and
+                    # airborne under Tower means Approach. It just lived only
+                    # inside the receive loop, so it fired when the PILOT SPOKE
+                    # and never on its own. A controller who waits to be asked
+                    # before handing you over is not watching, he is answering.
+                    #
+                    # This thread already has the picture and already knows who
+                    # he is talking to, so the same call belongs here too. The
+                    # loop keeps its copy: a handoff that becomes due mid-
+                    # transmission should not wait for the next poll.
+                    _who = ctl.aircraft.get(ctl._resolve(cs))
+                    _tk = getattr(_who, "track", "") or cs
+                    _me = (profile.station_on(final_hz / 1_000_000)
+                           if hasattr(profile, "station_on") else None)
+                    _nxt = handoff_on_the_event(scope, _tk, _me, profile)
+                    if _nxt is not None and cs not in handed_off:
+                        free, why = channel_is_free()
+                        if free:
+                            handed_off.add(cs)
+                            _say = for_voice(
+                                f"{cs}, contact {_nxt.name} "
+                                f"{controller.spell_freq(_nxt.freq_mhz)}.")
+                            note_issued(bridge, cs, _say)
+                            with radio_lock:
+                                print(f"  ATC[handoff] {_say}", flush=True)
+                                record(session_id, kind="atc/handoff",
+                                       callsign=cs, text=_say,
+                                       to=_nxt.role)
+                                client.transmit(
+                                    voice_for(final_hz).frames(_say),
+                                    final_hz, AM)
+                    elif _nxt is None:
+                        handed_off.discard(cs)
 
                     if not may_be_vectored(bridge, ctl, cs, traffic=traffic,
                                            freq_hz=final_hz):
