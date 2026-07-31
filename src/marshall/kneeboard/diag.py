@@ -48,6 +48,7 @@ import urllib.error
 import urllib.request
 
 from marshall import config
+from marshall.core import names as _names
 
 LOGS = config.BUILD_DIR / "logs"
 # Same variable the PLANS page already reads, for the same reason: inside the
@@ -94,8 +95,9 @@ def radar(url: str = RADAR_URL, timeout: float = 2.5) -> str:
         return ""
 
 
-def _key(s: str) -> str:
-    return "".join(c for c in (s or "").lower() if c.isalnum())
+# The third copy. Unicode-aware where the other two were not, which is how the
+# disagreement was found. See `core.names`.
+_key = _names.squash
 
 
 PUBLISHED = config.BUILD_DIR / "control" / "state.json"

@@ -32,6 +32,7 @@ import urllib.parse
 import urllib.request
 
 from marshall import config
+from marshall.core import names as _names
 from marshall.atc import flights as fl
 from marshall.atc import identity
 from marshall.atc import picture as _picture
@@ -1203,8 +1204,9 @@ def said_who(transcript: str, names: list[str]) -> bool:
                for n in names if n)
 
 
-def _key_name(s: str) -> str:
-    return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+# The same squash the rest of the system uses. See `core.names`: this was the
+# second of three copies, and they disagreed on every non-ASCII name.
+_key_name = _names.squash
 
 
 def radar_fix(scope: str, cs: str, profile=None) -> object | None:

@@ -50,6 +50,7 @@ identity is the thing being fixed.
 from __future__ import annotations
 
 import re
+from marshall.core import names as _names
 from dataclasses import dataclass, field
 
 # One line of the radar picture:  362nd_sockeye [Pony 1-1] (P-47D-30): 4.1 nm ...
@@ -283,45 +284,20 @@ def units_on(scope: str) -> list[Unit]:
     return out
 
 
-def handle(name: str) -> str:
-    """The human out of a squadron name: "362nd_sockeye" -> "sockeye".
-
-        "Let's use the srs/dcs suffix -- the chunk after a space, dash or
-         underscore. Look at shooter, Andre and sockeye. All have unique names
-         already."
-
-    Right, and it is the missing half of the real-world rule. Formation
-    procedure says each aeroplane reverts to THE CALLSIGN IT ALREADY HAD when
-    the flight splits -- the one assigned at the duty desk, before the sortie.
-    We had no such thing, so a split had nothing to fall back to and the
-    engine let a wingman take the flight's name.
-
-    The handle is that pre-existing identity, and it costs nothing because
-    every pilot already has one. It is unique per person, it is never spoken,
-    and it survives a slot change, a callsign change and a mis-transcription.
-
-    THE RULE IS "DROP ANY CHUNK WITH A DIGIT IN IT", not "take what follows the
-    first separator". Squadron tags and slot numbers both carry digits and the
-    human's name does not, so one test removes both -- and it is the only
-    version that survives "Hoover 1-1-1", which the obvious rule turns into
-    "1-1-1".
-
-    Falls back to the whole string when that would leave nothing, because a
-    pilot calling himself "Viper2" is still somebody.
-    """
-    parts = [p for p in re.split(r"[ _-]+", name or "")
-             if p and not re.search(r"\d", p)]
-    return " ".join(parts) or (name or "")
+# ONE IMPLEMENTATION, IN `core.names`. The docstring and the reasoning moved
+# with it -- the rule ("drop any chunk with a digit in it") is not specific to
+# identity resolution, and the chart, the board and the diagnostics page all
+# need the same answer.
+handle = _names.handle
 
 
-def _key(s: str) -> str:
-    """Squash a name to what two systems can agree on.
-
-    "362nd_sockeye" and "Sockeye" are the same human; "362nd Shooter" and
-    "Shooter" likewise. Case, spaces, underscores and squadron numbers are
-    decoration that DCS and SRS decorate differently.
-    """
-    return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+# ONE IMPLEMENTATION, IN `core.names`. This was written three times -- here,
+# in `agent_atc`, and in `kneeboard.diag` -- plus a fourth in the diagnostics
+# page's JavaScript, and two of the three were not the same function. The
+# ASCII-only version here reduced "Соколов" to the empty string, which is below
+# `unit_for_radio`'s evidence floor, so a Cyrillic-named pilot was disqualified
+# from the physical chain and identified by elimination instead.
+_key = _names.squash
 
 
 def unit_for_radio(srs_name: str, units: list[Unit]) -> Unit | None:
