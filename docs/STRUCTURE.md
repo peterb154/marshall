@@ -38,7 +38,8 @@ have read directly.
 **`core`** -- below everything, imports nothing of ours.
 `names` (one aeroplane's four names), `geo` (range, bearing, projection, grid
 convergence, crosstrack -- with the FRAME in the signature), `schema` (the
-SQLAlchemy models), `procedures` (approaches and fixes, read from the tables).
+SQLAlchemy models), `field` (airfields, runways, fixes, frequencies -- the
+MEASURED world; see below for why the procedure is not here).
 
 **`feed`** -- the sim mirrored into Postgres. The unit stream, `gone`, the
 reconciling sweep, `inAir`, land/takeoff, the mission-clock world reset. It
@@ -58,10 +59,56 @@ what this does.
 endpoints only it can serve (`/atc`, `/hooks/due`, `/mission/restart`).
 *(today: `director/app.py`, `director/prompts/`)*
 
-**`chart`** -- the plate, the kneeboard pages, the diagnostics page.
-*(today: `src/marshall/kneeboard/`)*
+**`chart`** -- IN-WORLD. The approach plate, the route map, the E6B, the
+kneeboard server. Things a pilot flies with.
+*(today: `src/marshall/kneeboard/` minus `diag.py`)*
+
+**`diag`** -- OUT-OF-WORLD. The state page: the board, identity and its
+authority, releases with the scope at the time, the ghost banner. An engineer's
+instrument, not a pilot's.
+*(today: `src/marshall/kneeboard/diag.py`)*
 
 **`mission`** -- the `.miz` builder and the AI control Lua. Unchanged.
+
+### Why `procedure` is ATC and not core
+
+`route.py` feels like core because it is currently TWO things.
+
+**Facts about the world** -- field elevation, runway threshold, grid
+convergence, beacon position, station frequencies. Measured, not decided, and
+read by `atc`, `chart` and `mission` alike. That half is core, and under
+`SCHEMA.md` most of it stops being Python at all and becomes measured rows.
+
+**Procedure design** -- hold base, platform, minima, the missed approach,
+guidance style, the capability handicaps. Nobody measures those; somebody
+decides them. They are doctrine: how a controller works this approach.
+
+The consumer test settles it. Procedure is read by exactly two parts, `atc` and
+`chart`, and `chart` already sits above `atc`, so `chart -> atc.procedure` is a
+downward dependency and legal. `mission` wants the geography, not the doctrine.
+`feed` wants neither once fixes are rows. `agent` is handed a rendered plate,
+never the profile.
+
+So: **`core.field`** (airfield, runway, fix, frequency) and
+**`atc.procedure`** (how it is flown).
+
+### Why `diag` is not part of `chart`
+
+They have different audiences, and this project already draws that line on
+purpose: *"engineering is out-of-world, the controller is in-world"* ([#28]).
+A plate is a thing a pilot flies with. The diagnostics page is a thing an
+engineer watches on a second screen while he does -- it shows identity
+authority, released board entries and the scope that contradicted them, none of
+which belongs in a cockpit.
+
+Keeping them in one part would be the `director` mistake again: a name covering
+two responsibilities that change for different reasons. It also matters for what
+each is ALLOWED to know -- `diag` may show that the controller believes
+something wrong, which is exactly what a pilot's chart must never do.
+
+"Kneeboard" was never the right name for either. It is the delivery mechanism --
+an OpenKneeboard tab -- not the content, the same category of error as naming
+the voice layer after the transport it happens to use.
 
 ## Deployables are entrypoints, not directories
 
@@ -93,10 +140,14 @@ a naming one.
 
 ## Open
 
-1. **`feed` or `sim`?** "Feed" says what it does; "sim" says where it comes
-   from. I lean `feed`, because `sim` invites anything DCS-shaped to land in it.
-2. **Does `atc` keep that name?** It is accurate and it is what the docs already
+SETTLED: `feed`, `radio`, `mission`, `agent`, `core`. `procedure` belongs to
+`atc`; `diag` splits out of `chart`.
+
+1. **Does `atc` keep that name?** It is accurate and it is what the docs already
    call it, but it is also the name of the whole product.
-3. **One container or four?** Four is cleaner to reason about and four times the
-   compose. Two -- `radio+atc` on the voice path, `agent+feed+chart` behind it --
-   may be the honest middle.
+2. **One container or how many?** Deployment, not layout, now that entrypoints
+   rather than directories define the boundary. `radio+atc` on the voice path
+   and `agent+feed+chart+diag` behind it may be the honest middle.
+3. **Does `agent` become plural?** Multiple controllers, or multiple fields,
+   each with their own conversation -- the part name stays singular either way,
+   the same as `radio` covering many frequencies.
