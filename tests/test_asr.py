@@ -12,6 +12,7 @@ import unittest
 
 from marshall.atc import asr
 from marshall.atc import geometry as G
+from marshall.atc import handoff as H
 from marshall.core import route as R
 
 
@@ -450,13 +451,31 @@ class TestStations(unittest.TestCase):
         for s in self.p.stations:
             self.assertIn(s.freq_mhz, presets, f"{s.name} has no radio button")
 
+    # MIGRATED OFF `handoff_from`, which is deleted -- see route.py. These
+    # asked a second set of handoff rules that only applied when the pilot
+    # transmitted; `atc/handoff.py` is the one table now. The tests are the
+    # same questions with the facts the old call could not express: whether he
+    # is INBOUND, and whether he is DOWN. Both were being assumed. [#51]
+
+    def _due(self, role, nm, inbound=True, on_ground=False, field="Batumi"):
+        me = self.p.station_for(role, field=field) if role else None
+        v = H.due(self.p, me, H.State(on_ground=on_ground, range_nm=nm,
+                                      inbound=inbound))
+        return None if (v is None or v.same_station) else v.station
+
     def test_center_keeps_him_while_he_is_far_out(self):
-        self.assertIsNone(self.p.handoff_from(self.freq("center"), 40))
+        self.assertIsNone(self._due("center", 40))
 
     def test_center_gives_him_to_approach_inside_the_boundary(self):
-        nxt = self.p.handoff_from(self.freq("center"),
-                                  self.p.approach_hands_over_nm - 2)
+        """The row that did not exist in the OTHER table, which is why nothing
+        could move a live sortie off Center at 44 nm. [#51]"""
+        nxt = self._due("center", H.CENTER_NM - 2)
+        self.assertIsNotNone(nxt, "Center still cannot hand anybody over")
         self.assertEqual(nxt.role, "approach")
+
+    def test_center_does_not_hand_over_somebody_going_the_other_way(self):
+        """The fact the old call could not see. Same range, opposite event."""
+        self.assertIsNone(self._due("center", H.CENTER_NM - 2, inbound=False))
 
     def test_approach_keeps_him_through_the_talkdown(self):
         """He is not handed away in the middle of the procedure.
@@ -465,26 +484,48 @@ class TestStations(unittest.TestCase):
         ten miles, from the same controller that was reading his range every
         mile. The pilot was told to leave the frequency flying his approach.
 
-        The boundary is FIVE miles now rather than the missed approach point, so
-        the last leg belongs to Tower -- but the intercept and the run in to it
-        are still Approach's, which is what this row was protecting. Five is
-        roughly the final approach fix and is where real practice puts it; two
-        was inside the talkdown, which meant changing frequency in the middle of
-        the procedure being flown.
+        ALL THE WAY DOWN NOW, not just to five miles. On a talkdown the
+        controller IS the approach aid, so landing is the trigger rather than a
+        distance -- see `_inbound_within`. The rule used to live as an `if` in
+        the bridge, so only the half of the system that answers transmissions
+        obeyed it.
         """
         self.assertEqual(self.p.guidance, "talkdown")
-        for rng in (self.p.final_intercept_nm - 2, 8, 6):
-            self.assertIsNone(self.p.handoff_from(self.freq("approach"), rng),
-                              f"handed off at {rng} nm, mid-talkdown")
+        for rng in (self.p.final_intercept_nm - 2, 8, 6, 4, 1):
+            with self.subTest(nm=rng):
+                self.assertIsNone(self._due("approach", rng),
+                                  f"handed off at {rng} nm, mid-talkdown")
 
-    def test_tower_takes_the_last_five_miles(self):
-        nxt = self.p.handoff_from(self.freq("approach"), 4.0)
+    def test_landing_is_what_gives_him_to_tower(self):
+        """And it still happens -- suppressing the distance would be a bug if
+        nothing else fired.
+
+            "on touchdown ... approach didnt hand me off to tower"
+        """
+        nxt = self._due("approach", 0.3, inbound=False, on_ground=True)
         self.assertIsNotNone(nxt)
         self.assertEqual(nxt.role, "tower")
 
-    def test_approach_gives_him_to_tower_inside_the_boundary(self):
-        nxt = self.p.handoff_from(self.freq("approach"), self.p.map_nm / 2)
-        self.assertEqual(nxt.role, "tower")
+    def test_where_the_pilot_flies_his_own_approach_the_distance_applies(self):
+        """An ILS is not a talkdown: once established there is nothing left for
+        Approach to do. The row that must not break when Kobuleti's ILS lands.
+        """
+        ils = dataclasses.replace(self.p, guidance="intercept")
+        me = ils.station_for("approach", field="Batumi")
+        v = H.due(ils, me, H.State(False, 4.0, True))
+        self.assertIsNotNone(v)
+        self.assertEqual(v.station.role, "tower")
+
+    def test_approach_keeps_him_before_final(self):
+        self.assertIsNone(self._due("approach", 25))
+
+    def test_tower_hands_off_to_nobody_inbound(self):
+        """Tower's only rule is OUTBOUND -- an arrival is the end of the line.
+        """
+        self.assertIsNone(self._due("tower", 3, inbound=True))
+
+    def test_an_unmanned_frequency_hands_off_to_nobody(self):
+        self.assertIsNone(self._due(None, 10))
 
     def test_the_boundary_is_the_same_on_every_approach(self):
         """REPLACES a test that asserted an ILS hands off at the intercept and a
@@ -501,15 +542,6 @@ class TestStations(unittest.TestCase):
         ils = dataclasses.replace(self.p, guidance="intercept")
         self.assertEqual(ils.hands_to_tower_nm, self.p.hands_to_tower_nm)
         self.assertEqual(self.p.hands_to_tower_nm, self.p.tower_takes_nm)
-
-    def test_approach_keeps_him_before_final(self):
-        self.assertIsNone(self.p.handoff_from(self.freq("approach"), 25))
-
-    def test_tower_hands_off_to_nobody(self):
-        self.assertIsNone(self.p.handoff_from(self.freq("tower"), 3))
-
-    def test_an_unmanned_frequency_hands_off_to_nobody(self):
-        self.assertIsNone(self.p.handoff_from(118.25, 10))
 
 class TestTerrain(unittest.TestCase):
     """Vectoring on geometry alone will fly an aircraft into a mountain.

@@ -22,8 +22,28 @@ RANGE ALONE IS AMBIGUOUS, and this is why the conditions are named for the
 event rather than the distance. Five miles outbound climbing and five miles
 inbound descending are the same range and opposite situations; a bare
 `at_5nm` rule would hand a departing aircraft straight back to Tower. So
-`airborne_beyond` and `inbound_within` are separate conditions, and each reads
+`outbound_beyond` and `inbound_within` are separate conditions, and each reads
 the trend as well as the distance.
+
+The module said that from the beginning and one of its own conditions did not
+obey it: `airborne_beyond` checked the range and not the trend, and got away
+with it because the only rule using it was tower -> departure, where an arrival
+is rarely still on Tower's frequency. It is `outbound_beyond` now. A principle
+stated in a docstring is not enforced by the docstring.
+
+THERE IS ONE TABLE, and there used to be two. `route.handoff_from` answered
+this same question for the receive path while these rules answered it for the
+proactive monitor, and they were not duplicates -- they were complementary
+halves, each missing what the other had. Which rules applied therefore depended
+on whether the pilot happened to key the mic. A live sortie was held by Center
+at 44 nm with nothing able to move him on, because the only rule that could was
+in the half the monitor does not read; he declared an emergency to get out of
+it. `handoff_from` is deleted. [#51]
+
+A CONDITION MAY CONSULT THE PROCEDURE, not just the geometry -- it is handed
+the profile and its own rule. That is what lets "a talkdown makes landing the
+trigger rather than a distance" live here rather than as an `if` at one call
+site, which is how the split started.
 
 A STATION IS WHO HAS HIM; A ROLE IS WHAT HE IS CALLED.
 
@@ -51,6 +71,13 @@ from dataclasses import dataclass
 # column and this comment becomes wrong, which is the point of writing it here.
 DEPARTURE_NM = 5.0
 ARRIVAL_NM = 5.0
+# Where Center gives him to Approach. Bigger than the others by an order of
+# magnitude because it is a different kind of boundary: the others are circuit
+# distances and this is the edge of the terminal area.
+#
+# It lived on the profile as `approach_hands_over_nm` and was read by a SECOND
+# handoff mechanism -- see the module docstring on why there is only one now.
+CENTER_NM = 25.0
 
 
 @dataclass(frozen=True)
@@ -71,7 +98,24 @@ class Rule:
 # other.
 RULES: tuple[Rule, ...] = (
     # Outbound. Tower keeps him until he is clear of the circuit.
-    Rule("tower", "departure", "airborne_beyond", DEPARTURE_NM),
+    Rule("tower", "departure", "outbound_beyond", DEPARTURE_NM),
+    # ENROUTE TO TERMINAL. Center gives him up at the edge of the area.
+    #
+    # THIS ROW IS THE BUG. It existed only in `route.handoff_from`, which is
+    # consulted when the pilot TRANSMITS -- so the proactive monitor, which is
+    # what hands everybody else over unprompted, could never move anyone off
+    # Center at all. A live sortie sat at 44 nm being told to continue holding,
+    # nineteen miles outside the airspace Approach would have taken him in,
+    # with no mechanism in the system that could have helped him. He declared
+    # an emergency. [#51]
+    Rule("center", "approach", "inbound_within", CENTER_NM),
+    # AND THE MIRROR OF IT, which only became visible once the ladder could be
+    # read end to end in one place. Nothing handed a DEPARTURE to Center, so a
+    # jet leaving Kobuleti stayed with Kobuleti Departure to the far side of
+    # the map while the comms card told him preset 4 was for the enroute leg.
+    # The same fault as the missing Center row and in the same table -- found
+    # by printing the ladder rather than by anybody flying it.
+    Rule("departure", "center", "outbound_beyond", CENTER_NM),
     # Inbound. Approach hands him over when the runway is his problem.
     Rule("approach", "tower", "inbound_within", ARRIVAL_NM),
     # On the ground under a radar controller at all is a mistake to correct --
@@ -88,27 +132,68 @@ RULES: tuple[Rule, ...] = (
 )
 
 
-def _airborne_beyond(st, nm: float | None) -> bool:
-    return bool(not st.on_ground and st.range_nm is not None
+def _outbound_beyond(st, nm: float | None, profile=None, rule=None) -> bool:
+    """Far out AND going further. The trend, for the same reason as arrivals.
+
+    THIS USED TO BE `airborne_beyond` AND IGNORED THE DIRECTION, which broke
+    the rule this module's own docstring opens with: five miles outbound
+    climbing and five miles inbound descending are the same range and opposite
+    situations.
+
+    It survived because the only rule using it was tower -> departure, and an
+    arrival is rarely still on Tower's frequency at six miles. Adding
+    departure -> center made it reachable immediately: an aeroplane twenty-five
+    miles out INBOUND, being worked by Approach -- who also wears the departure
+    hat -- matched "airborne beyond twenty-five" and was handed to Center, away
+    from the field he was arriving at.
+
+    Caught by a test that had been passing for weeks, on a rule I had just
+    added. The condition was wrong the whole time; nothing had asked it the
+    question from the other side.
+    """
+    return bool(not st.on_ground and not st.inbound and st.range_nm is not None
                 and nm is not None and st.range_nm >= nm)
 
 
-def _inbound_within(st, nm: float | None) -> bool:
+def _inbound_within(st, nm: float | None, profile=None, rule=None) -> bool:
     """Close AND getting closer. The trend is what makes it an arrival.
 
     Without it this fires on a departure at the same range, and a climbing
     aeroplane gets handed to Tower on his way out.
+
+    A TALKDOWN KEEPS HIM TO THE GROUND, and that rule used to live as an `if`
+    in the bridge's receive path, which meant only half the system obeyed it:
+
+        "Real practice keeps him: the final controller obtains the landing
+         clearance from Tower and relays it, and the pilot never changes
+         frequency inside the final."
+
+    On a surveillance approach the controller IS the approach aid -- he reads
+    the range every mile and corrects the heading -- so handing him to Tower at
+    five miles abandons the pilot at the moment the procedure starts. It did,
+    live, at ten miles in cloud.
+
+    The guard was written in the bridge because `handoff_from` had no idea
+    whether the aeroplane was inbound, on the ground, or going around, and
+    blocking the whole transition was the only tool available. Here there is
+    `on_ground` -- so the talkdown does not suppress the handoff, it just makes
+    LANDING the trigger instead of a distance, which is what it always was.
     """
+    if (profile is not None
+            and getattr(rule, "to", "") == "tower"
+            and getattr(profile, "guidance", "") == "talkdown"
+            and not st.on_ground):
+        return False
     return bool(not st.on_ground and st.range_nm is not None
                 and nm is not None and st.range_nm <= nm and st.inbound)
 
 
-def _on_ground(st, nm: float | None) -> bool:
+def _on_ground(st, nm: float | None, profile=None, rule=None) -> bool:
     return bool(st.on_ground)
 
 
 CONDITIONS = {
-    "airborne_beyond": _airborne_beyond,
+    "outbound_beyond": _outbound_beyond,
     "inbound_within": _inbound_within,
     "on_ground": _on_ground,
 }
@@ -158,7 +243,12 @@ def due(profile, me, st: State) -> Verdict | None:
         if rule.frm != role and rule.frm not in getattr(me, "also", ()):
             continue
         cond = CONDITIONS.get(rule.when)
-        if cond is None or not cond(st, rule.nm):
+        # The profile and the rule are passed so a condition can consult the
+        # PROCEDURE as well as the geometry -- a talkdown makes landing the
+        # trigger rather than a distance. Without them that rule has to live as
+        # an `if` at one call site, which is how this ended up with two handoff
+        # mechanisms that disagreed.
+        if cond is None or not cond(st, rule.nm, profile, rule):
             continue
         # HIS FIELD, or the handoff crosses the theatre. A role is unique within
         # an aerodrome and not across one -- with Kobuleti and Batumi both on

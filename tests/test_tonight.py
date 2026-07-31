@@ -28,6 +28,7 @@ what it does.
 import unittest
 
 from marshall.atc import agent_atc as A
+from marshall.atc import handoff as H
 from marshall.core import route as R
 
 BATUMI = (41.609594, 41.600234)
@@ -73,10 +74,33 @@ class TestNobodyIsHandedOffFromTheRamp(unittest.TestCase):
 
     def test_the_range_rule_alone_would_hand_him_over(self):
         """CAUSE 1. Nothing wrong with the rule -- at 0.4 nm an arrival IS
-        Tower's. It simply cannot tell an arrival from a parked jet."""
-        nxt = self.p.handoff_from(self.freq("approach"), self.fix.range_nm)
-        self.assertIsNotNone(nxt)
-        self.assertEqual(nxt.role, "tower")
+        Tower's. It simply cannot tell an arrival from a parked jet.
+
+        SHOWN AGAINST THE RULE ITSELF now that `handoff_from` is gone [#51].
+        The point survives the move and is worth keeping: fed only a distance,
+        the table hands a parked aeroplane to Tower. What saves it is
+        `on_ground`, which is why the ramp guard is a FACT the rules are given
+        rather than an `if` somewhere upstream.
+        """
+        import dataclasses
+        me = self.p.station_for("approach", field="Batumi")
+        # A distance and a direction, with the ground fact withheld.
+        ils = dataclasses.replace(self.p, guidance="intercept")
+        v = H.due(ils, me, H.State(on_ground=False,
+                                   range_nm=self.fix.range_nm, inbound=True))
+        self.assertIsNotNone(v, "the distance alone really would hand him over")
+        self.assertEqual(v.station.role, "tower")
+
+    def test_and_the_ground_fact_is_what_stops_it(self):
+        """The same aeroplane, with the truth included."""
+        me = self.p.station_for("approach", field="Batumi")
+        st = A._handoff_state(self.scope, "362nd_sockeye", self.fix)
+        self.assertTrue(st.on_ground, "the ramp fact never reached the rules")
+        v = H.due(self.p, me, st)
+        # On the ground under a radar controller is corrected TO Tower -- he has
+        # landed or never left. What must not happen is a departure being sent
+        # away from the man who gives him his clearance.
+        self.assertTrue(v is None or v.station.role == "tower")
 
     def freq(self, role):
         return self.p.station_for(role).freq_mhz
@@ -90,8 +114,11 @@ class TestNobodyIsHandedOffFromTheRamp(unittest.TestCase):
         self.assertTrue(A.is_on_the_ground(self.scope, "362nd_sockeye", self.fix))
 
     def test_tower_hands_off_to_nobody_anyway(self):
-        """The half that was always right: Tower is the end of the line."""
-        self.assertIsNone(self.p.handoff_from(self.freq("tower"), 0.4))
+        """The half that was always right: an arrival at Tower is the end of
+        the line. His only rule is outbound, and a parked jet is not that."""
+        me = self.p.station_for("tower", field="Batumi")
+        st = A._handoff_state(self.scope, "362nd_sockeye", self.fix)
+        self.assertIsNone(H.due(self.p, me, st))
 
 
 class TestTheAgentMayNotInventAHandoff(unittest.TestCase):

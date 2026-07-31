@@ -2567,6 +2567,57 @@ def sim_state(scope: str, track: str, pos=None) -> str:
     return "taxiing" if kt < TAXI_SPEED_KT else "rolling"
 
 
+def next_controller(scope, track: str, me, profile, fix, *, known: str = "",
+                    session_id: str = "", vectoring=None, mission: str = ""):
+    """WHO HAS HIM NEXT. The one answer, and there used to be three.
+
+    A handoff is decided by three different kinds of evidence, and each is
+    right about something the others cannot see:
+
+        1. THE SIM'S EVENTS       he touched down; he got airborne. A fact,
+                                  and it outranks any geometry.
+        2. THE RULE TABLE         the ladder -- who hands to whom, at what
+                                  range, in which direction. `atc/handoff.py`.
+        3. THE AIRSPACE VOLUMES   he has flown out of my block altogether, so
+                                  whoever owns where he is now should have him.
+                                  The case a ladder rule cannot express.
+
+    They are a CASCADE and not alternatives: the event wins, then the ladder,
+    then the volume, and each only runs when the one above it had nothing to
+    say. That order is the design -- a landing is not a matter of opinion, and
+    "he left my airspace" must not override "he is on the runway".
+
+    WHY THIS IS A FUNCTION. The cascade lived inline in the receive loop, so
+    nothing else could ask the question the same way. The proactive monitor
+    asked only step 2; `tools/handoff_check.py` asked only step 3 and reported
+    "all cases behaved" while step 2 could not hand anybody off Center at all.
+    A pilot found that one at 44 nm, holding, and declared an emergency. [#51]
+
+    One caller asking one question is the whole point; a check that exercises
+    a different path from the bridge is not a check, it is a second opinion.
+    """
+    down = is_on_the_ground(scope, track, fix)
+    nxt = handoff_on_the_event(scope, track, me, profile)
+    if down:
+        # A man on the runway is Tower's and is going nowhere. The event
+        # branch may have said otherwise; being down outranks it.
+        nxt = None
+    elif nxt is None:
+        v = (_handoff.due(profile, me, _handoff_state(scope, track, fix))
+             if me is not None and fix is not None else None)
+        # Same man, different name -- Approach answering as Departure is not a
+        # handoff and must never be spoken.
+        nxt = None if (v is None or v.same_station) else v.station
+    if nxt is None and not down and me is not None and known:
+        # NOT WHILE HE IS ON THE RAMP, and leaving that out undid the guard
+        # above three lines after setting it: a parked jet asking Tower for a
+        # departure is "obviously leaving", so the handoff came straight back.
+        nxt = leaving_my_airspace(BASE_URL, session_id, known, me, profile,
+                                  fix, under_our_vectors=bool(vectoring),
+                                  **({"mission": mission} if mission else {}))
+    return nxt
+
+
 def _handoff_state(scope, track: str, pos) -> object:
     """The three facts a handoff rule is allowed to look at.
 
@@ -5521,50 +5572,18 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # event if there is one, the radar geometry if not -- and it exists
         # precisely so its callers cannot drift. Reading the field directly is
         # how a fourth caller drifts.
+        # ONE FUNCTION, THREE KINDS OF EVIDENCE. See `next_controller`: the
+        # sim's events, then the ladder, then the airspace volumes, each only
+        # asked when the one above had nothing to say.
+        #
+        # This was fifty lines inline, which is why nothing else could ask the
+        # question the same way -- the monitor asked only the ladder and the
+        # live check only the volumes, and between them they reported healthy
+        # while Center could not hand anybody over at all. [#51]
         _down = is_on_the_ground(scope, _ident.track, fix)
-        # THE EVENT OUTRANKS THE RANGE. See handoff_on_the_event.
-        nxt = handoff_on_the_event(scope, _ident.track, me, profile)
-        if _down:
-            nxt = None
-        elif nxt is None:
-            nxt = (profile.handoff_from(on_mhz, fix.range_nm)
-                   if me and fix is not None else None)
-            # ...but NOT to Tower on a talkdown, where landing is the trigger
-            # and a range is only a proxy for it. Two nits, one cause:
-            #
-            #   "approach called me down BEFORE the landing trigger"
-            #   "on the missed, approach switched me to tower"
-            #
-            # He was inside the handoff range at the missed approach point,
-            # which is true of a landing and a go-around alike -- so he was
-            # given to Tower at half a mile whether he landed or not, and on
-            # the go-around Tower promptly sent him back. The range cannot tell
-            # those apart; being on the ground can.
-            if (nxt is not None
-                    and getattr(nxt, "role", "") == "tower"
-                    and getattr(me, "role", "") == "approach"
-                    and getattr(profile, "guidance", "") == "talkdown"
-                    and not is_on_the_ground(scope, _ident.track, fix)):
-                nxt = None
-        if nxt is None and not _down and me is not None and known:
-            # He may be on his way OUT rather than in -- the case range cannot
-            # answer. Costs one lookup and only ever fires when the approach
-            # rules had nothing to say.
-            #
-            # NOT WHILE HE IS ON THE RAMP, and leaving that out undid the guard
-            # above three lines after setting it. A jet parked at Batumi asked
-            # Tower for a departure; the ramp check correctly cleared the
-            # handoff, and this branch -- which only asks "is he leaving my
-            # airspace", to which a departure request is obviously yes --
-            # immediately put it back. So Tower went on sending a stationary
-            # aeroplane to Approach, and the transmit guard let it through
-            # because by then the handoff really had been authorised.
-            #
-            # A man who has not moved is not leaving anything. He wants a
-            # departure clearance, and that is Tower's to give.
-            nxt = leaving_my_airspace(BASE_URL, session_id, known, me,
-                                      profile, fix,
-                                      under_our_vectors=bool(vectoring))
+        nxt = next_controller(scope, _ident.track, me, profile, fix,
+                              known=known, session_id=session_id,
+                              vectoring=vectoring)
         # SETTLED. This is the handoff the bridge authorises for this turn, and
         # the transmit path refuses any other -- see `strip_unauthorised_handoff`.
         bridge.handoff_due[0] = nxt

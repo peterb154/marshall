@@ -2478,7 +2478,7 @@ would let a second aircraft in behind him.
 ## [HO-2] Georgia Center has no proactive handoff at all — #51
 labels: bug
 
-**Status:** OPEN. Found live, 31 July.
+**Status:** FIXED — one cascade, `agent_atc.next_controller`. Found live, 31 July.
 
 `handoff.RULES` contains no rule whose `frm` is `center`. The proactive monitor
 therefore can never hand anybody off Center — only the receive path can, via
@@ -2489,12 +2489,38 @@ On the sortie this compounded [SEQ-1]: he was held by Center at 44 nm, nineteen
 miles outside the airspace Approach would have taken him in, with no mechanism
 that could ever have moved him on.
 
+**There were THREE mechanisms, not two.** The receive path ran a cascade
+inline — the sim's events, then a rule table, then the airspace volumes — and
+nothing else could ask the question the same way. The monitor asked only the
+rules; `tools/handoff_check.py` asked only the volumes and reported "all cases
+behaved" while Center could not hand anybody over at all.
+
 **Acceptance criteria**
-1. A rule exists for `center -> approach`, conditioned on inbound range, so the
-   handoff fires unprompted like every other rung of the ladder.
-2. The receive loop and the monitor read the **same** rule table. Two mechanisms
-   that disagree is how this stayed invisible.
-3. Flying inbound without transmitting still gets you handed to Approach.
+1. ✅ `center -> approach` exists, conditioned on inbound range, and fires
+   unprompted.
+2. ✅ One function answers "who has him next" — `next_controller` — and the
+   bridge, the monitor and the live check all call it.
+3. ✅ `route.handoff_from` is deleted. It also belonged in `atc/` on the
+   layering: a handoff is procedure and `core` may not depend on `atc`.
+4. ✅ A live case guards the fix. There was none: every existing case passed
+   with a Center that never lets go.
+
+**Found while fixing it**, both by printing the ladder rather than by flying it:
+- Nothing handed a *departure* to Center either, so preset 4 was unreachable
+  outbound. Mirror of the same gap.
+- `airborne_beyond` ignored the direction, breaking the rule the module's own
+  docstring opens with. It survived because its only rule was
+  `tower -> departure`, where an arrival is rarely still on Tower at six miles;
+  adding `departure -> center` made it reachable at once, and an aircraft 25 nm
+  out **inbound** was handed away from the field it was arriving at. It is
+  `outbound_beyond` now, and a structural test asserts every distance rule reads
+  the trend.
+
+**Still dead ends** (a preset nothing can hand you off, which in the air is
+indistinguishable from being forgotten):
+- `Kobuleti Clearance` — deliberate; "he has his clearance and is ready to push"
+  is not a fact the sim reports.
+- `Batumi Ground` — not deliberate; see F5 on the card.
 
 ---
 

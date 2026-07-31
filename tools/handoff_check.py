@@ -79,10 +79,11 @@ def _track(group: str) -> str:
 
 
 def case(name: str, track: str, callsign: str, working_with: str,
-         me_role: str, fix, expect: str | None) -> bool:
+         me_role: str, fix, expect: str | None, scope=None) -> bool:
     """One question, asked of the real code with a real track behind it."""
     profile = R.BATUMI_ASR
-    me = profile.station_for(me_role)
+    me = profile.station_for(me_role, field=R.ARRIVAL_FIELD)
+    scope = A.fetch_radar("handoff-check", profile=profile) if scope is None else scope
     _post("/flights/bind", {"mission": MISSION, "callsign": callsign,
                             "track_name": _track(track)})
     rows = _get(f"/flights?mission={MISSION}")["flights"]
@@ -90,8 +91,17 @@ def case(name: str, track: str, callsign: str, working_with: str,
     if fid is not None:
         _post(f"/flights/{fid}/agree", {"controller": working_with})
 
-    got = A.leaving_my_airspace(BASE, "handoff-check", callsign, me, profile,
-                                fix, mission=MISSION)
+    # THE SAME CASCADE THE BRIDGE RUNS, not one step of it.
+    #
+    # This used to call `leaving_my_airspace` directly -- the third and last
+    # step -- so every case here exercised the airspace volumes and none of
+    # them the ladder. It reported "all cases behaved" while the rule table
+    # could not hand anybody off Center at all, and a pilot found that at 44 nm
+    # by declaring an emergency. A check that asks a different question from
+    # the bridge is not a check, it is a second opinion. [#51]
+    got = A.next_controller(scope, _track(track), me, profile, fix,
+                            known=callsign, session_id="handoff-check",
+                            mission=MISSION)
     got_name = got.name if got else None
     ok = (got_name == expect)
     print(f"  {'PASS' if ok else 'FAIL'}  {name}")
@@ -109,6 +119,9 @@ def main() -> int:
     _spawn("HC-out", 330, 18, 8000, 330)      # departing, still close in
     _spawn("HC-in", inbound, 30, 9000, int(p.final_crs))   # arriving, far out
     _spawn("HC-gone", 300, 45, 11000, 300)    # well outside anybody's terminal
+    # INSIDE the terminal boundary and still arriving -- the case that had no
+    # live guard at all until #51 was found by a pilot in the air.
+    _spawn("HC-cin", inbound, 20, 7000, int(p.final_crs))
     time.sleep(14)
 
     def at(nm, radial, alt, hdg):
@@ -124,9 +137,18 @@ def main() -> int:
         case("outbound and still inside: Center keeps him", "HC-out",
              "Pony 2-1", "georgia-center", "center",
              at(18, 330, 8000, 330), None),
-        case("arriving: route.py's own rules still own it", "HC-in",
+        case("arriving but still outside: Center keeps him", "HC-in",
              "Pony 3-1", "georgia-center", "center",
              at(30, inbound, 9000, p.final_crs), None),
+        # THE #51 CASE, and there was no live guard on it. Center could not hand
+        # anybody over at all -- the rule lived only in `route.handoff_from`,
+        # which the proactive monitor never reads -- so a pilot sat at 44 nm
+        # being told to continue holding and declared an emergency to get out of
+        # it. Every case above passes with a Center that never lets go; this is
+        # the one that does not.
+        case("arriving inside the boundary: Center gives him to Approach",
+             "HC-cin", "Pony 5-1", "georgia-center", "center",
+             at(20, inbound, 7000, p.final_crs), "Batumi Approach"),
         # THE POSITIVE CASE. Without one, a function that always answered "no
         # handoff" would pass every test above -- which is most of what a
         # handoff check is for.

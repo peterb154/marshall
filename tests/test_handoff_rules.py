@@ -43,8 +43,48 @@ class TestOutbound(unittest.TestCase):
 class TestInbound(unittest.TestCase):
     """Approach gives him back when the runway becomes the problem."""
 
-    def test_within_five_miles_inbound_he_goes_to_tower(self):
-        v = H.due(P, APPROACH, flying(4.0, inbound=True))
+    def test_on_a_TALKDOWN_the_trigger_is_landing_and_not_a_distance(self):
+        """He is NOT handed over at five miles here, and that is the procedure.
+
+            "Real practice keeps him: the final controller obtains the landing
+             clearance from Tower and relays it, and the pilot never changes
+             frequency inside the final."
+
+        On a surveillance approach the controller IS the approach aid -- he
+        reads the range every mile and corrects the heading. Handing him to
+        Tower at five miles abandons the pilot at the moment the procedure
+        starts, and it did, live, at ten miles in cloud.
+
+        This expectation MOVED when the rule came out of the bridge and into
+        the table. It used to pass because the table did not know what an ASR
+        was; the bridge's receive path knew, and suppressed the handoff with an
+        `if` that the proactive monitor never saw. So the answer depended on
+        whether the pilot happened to key the mic. [#51]
+        """
+        self.assertEqual(P.guidance, "talkdown")
+        self.assertIsNone(H.due(P, APPROACH, flying(4.0, inbound=True)))
+
+    def test_and_landing_hands_him_over_immediately(self):
+        """The other half, and the reason suppressing the distance is safe: the
+        `on_ground` rule still fires, so Tower gets him the moment he is down
+        rather than never.
+
+            "on touchdown, my status didnt change to on ground on the board --
+             approach didnt hand me off to tower"
+        """
+        v = H.due(P, APPROACH, H.State(True, 0.3, False))
+        self.assertIsNotNone(v)
+        self.assertEqual(v.station.name, "Batumi Tower")
+
+    def test_where_the_pilot_has_his_own_aid_five_miles_still_works(self):
+        """An ILS or a visual is not a talkdown: the aeroplane is flying the
+        approach, so once it is established there is nothing left for Approach
+        to do and the distance rule is right. Constructed, because Batumi's ASR
+        is the only approach in the tree today -- this is the row that must not
+        break when Kobuleti's ILS lands."""
+        import dataclasses
+        ils = dataclasses.replace(P, guidance="intercept")
+        v = H.due(ils, APPROACH, flying(4.0, inbound=True))
         self.assertIsNotNone(v)
         self.assertEqual(v.station.name, "Batumi Tower")
 
@@ -176,3 +216,119 @@ class TestTheTableIsTheInterface(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTheLadderRunsEndToEnd(unittest.TestCase):
+    """One table, and every rung reachable from the one before it.
+
+    Both gaps found here were the same shape and neither was found by flying:
+    a role that nothing could ever hand to. Center could not be left (#51), and
+    then -- once the ladder could be READ in one place -- it turned out nothing
+    reached Center either.
+    """
+
+    def me(self, name):
+        return next(s for s in P.stations if s.name == name)
+
+    def nxt(self, name, st):
+        v = H.due(P, self.me(name), st)
+        return None if (v is None or v.same_station) else v.station.name
+
+    def test_a_departure_walks_the_whole_way_out(self):
+        self.assertEqual(self.nxt("Kobuleti Ground", H.State(False, 6.0, False)),
+                         "Kobuleti Departure")
+        self.assertEqual(self.nxt("Kobuleti Departure", H.State(False, 30.0, False)),
+                         "Georgia Center")
+
+    def test_an_arrival_walks_the_whole_way_in(self):
+        self.assertEqual(self.nxt("Georgia Center", H.State(False, 23.0, True)),
+                         "Batumi Approach")
+        # ...held through the talkdown, then given up on landing.
+        self.assertIsNone(self.nxt("Batumi Approach", H.State(False, 4.0, True)))
+        self.assertEqual(self.nxt("Batumi Approach", H.State(True, 0.3, False)),
+                         "Batumi Tower")
+
+    def test_center_is_reachable_and_leaveable(self):
+        """#51 was half of this. A rung you cannot leave strands a pilot; a
+        rung nothing reaches is a preset that is never used."""
+        reaches = [r for r in H.RULES if r.to == "center"]
+        leaves = [r for r in H.RULES if r.frm == "center"]
+        self.assertTrue(reaches, "nothing ever hands anybody TO Center")
+        self.assertTrue(leaves, "nothing ever hands anybody OFF Center")
+
+    def test_every_rung_of_the_preset_ladder_can_be_left(self):
+        """Except the last one on each leg, which is where you stop.
+
+        TWO RUNGS ARE DEAD ENDS TODAY and the pilot has to switch himself.
+        Named here rather than silently tolerated, because a preset nothing can
+        hand you off is indistinguishable in the air from a controller who has
+        forgotten you -- which is exactly what #51 felt like from the cockpit.
+
+        `Kobuleti Clearance`  the absence is deliberate and documented in
+                              RULES: "he has his clearance and is ready to
+                              push" is not a fact the sim reports, and a
+                              condition invented before anything can satisfy it
+                              is a rule that can only ever be wrong.
+
+        `Batumi Ground`       not deliberate. `phases` gives "landed" to Tower,
+                              which was right while Tower wore the ground hat
+                              too; splitting Ground off left a real controller
+                              on a real preset that no rule reaches. [F5]
+
+        This list shrinking is the measure of the ladder being finished.
+        """
+        expected_dead_ends = {"Kobuleti Clearance", "Batumi Ground"}
+        for s in R.PRESET_LADDER:
+            covers = {s.role, *getattr(s, "also", ())}
+            leaves = [r for r in H.RULES if r.frm in covers]
+            with self.subTest(station=s.name):
+                if s.name in expected_dead_ends:
+                    self.assertFalse(leaves, f"{s.name} is no longer a dead end "
+                                             f"-- update the exception list")
+                else:
+                    self.assertTrue(leaves, f"nothing can hand anybody off "
+                                            f"{s.name}")
+
+
+class TestRangeWithoutDirectionIsAmbiguous(unittest.TestCase):
+    """The module says so at the top, and one of its conditions did not obey it.
+
+    `airborne_beyond` tested the range and ignored the trend. It survived
+    because its only rule was tower -> departure, where an arrival is rarely
+    still on Tower at six miles. Adding departure -> center made it reachable
+    at once: an aeroplane 25 nm out INBOUND, worked by Approach -- who also
+    wears the departure hat -- matched "airborne beyond 25" and was sent to
+    Center, away from the field he was arriving at.
+    """
+
+    def test_an_inbound_aircraft_is_never_sent_out_to_center(self):
+        approach = P.station_for("approach", field="Batumi")
+        self.assertIsNone(H.due(P, approach, H.State(False, 25.0, True)),
+                          "an arrival was handed away from his own field")
+
+    def test_but_an_outbound_one_is(self):
+        approach = P.station_for("approach", field="Batumi")
+        v = H.due(P, approach, H.State(False, 30.0, False))
+        self.assertIsNotNone(v)
+        self.assertEqual(v.station.name, "Georgia Center")
+
+    def test_an_inbound_aircraft_on_tower_is_not_sent_to_departure(self):
+        """The case that had been wrong all along and never asked."""
+        self.assertIsNone(H.due(P, TOWER, flying(6.0, inbound=True)))
+
+    def test_every_distance_rule_reads_the_trend(self):
+        """Structural, so a new rule cannot reintroduce this. A condition that
+        takes a distance must consult `inbound` -- otherwise it answers the
+        same for an arrival and a departure."""
+        blind = []
+        # Each probed INSIDE its own band, or the distance test decides the
+        # answer and the direction is never reached -- which is how the first
+        # version of this test passed a condition that ignores the trend.
+        for name, nm in (("outbound_beyond", 10.0), ("inbound_within", 3.0)):
+            cond = H.CONDITIONS[name]
+            near = H.State(on_ground=False, range_nm=nm, inbound=True)
+            away = H.State(on_ground=False, range_nm=nm, inbound=False)
+            if cond(near, 5.0, P, None) == cond(away, 5.0, P, None):
+                blind.append(name)
+        self.assertEqual(blind, [], f"{blind} cannot tell an arrival from a "
+                                    f"departure at the same range")

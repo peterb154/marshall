@@ -1461,22 +1461,28 @@ class ApproachProfile:
                 return s
         return None
 
-    def handoff_from(self, freq_mhz: float, range_nm: float) -> Station | None:
-        """The next controller, when this one is done with him.
-
-        Range-based because that is what a radar handoff actually keys on: a
-        Center works the enroute leg and gives him to Approach when he is close
-        enough to be worked into the pattern; Approach turns him over to Tower
-        once he is on final and the landing is the only thing left.
-        """
-        here = self.station_on(freq_mhz)
-        if here is None:
-            return None
-        if here.role == "center" and range_nm <= self.approach_hands_over_nm:
-            return self.station_for("approach")
-        if here.role == "approach" and range_nm <= self.hands_to_tower_nm:
-            return self.station_for("tower")
-        return None
+    # `handoff_from` WAS HERE AND IS DELETED. See `atc/handoff.py`, which is
+    # now the only place that answers "who has him next".
+    #
+    # It was a second set of handoff rules, consulted when the pilot
+    # TRANSMITTED, while a rule table in `atc/handoff.py` answered the same
+    # question for the proactive monitor. They were not duplicates -- they were
+    # complementary halves of one table, each missing what the other had:
+    #
+    #     handoff_from    knew center -> approach, not tower -> departure
+    #     handoff.RULES   knew tower -> departure, not center -> approach
+    #
+    # So which rules applied depended on whether the pilot happened to key the
+    # mic. A live sortie was held by Center at 44 nm with nothing in the system
+    # able to move him on, because the only rule that could was in the half the
+    # monitor does not read. He declared an emergency. [#51]
+    #
+    # IT ALSO BELONGS IN `atc/` ON THE LAYERING. A handoff is procedure, and
+    # `core` may not depend on `atc` -- so the rule table cannot live here even
+    # if we wanted two. The direction of the dependency picked the winner.
+    #
+    # `approach_hands_over_nm` and `tower_takes_nm` survive as the FIELD's
+    # numbers, which is what they always were; the rules that read them moved.
 
     @property
     def hands_to_tower_nm(self) -> float:
