@@ -33,6 +33,7 @@ import urllib.request
 
 from marshall import config
 from marshall.core import names as _names
+from marshall.core import geo as _geo
 from marshall.atc import flights as fl
 from marshall.atc import identity
 from marshall.atc import picture as _picture
@@ -1112,27 +1113,11 @@ _FIX_BY_TRACK = re.compile(
     r"(?:[^|]*?(\d+)\s*knots)?", re.I)
 
 
-def _range_radial(origin: tuple, lat: float, lon: float) -> tuple:
-    """Great-circle range in nautical miles and true bearing FROM an origin.
-
-    Geodesic, not a flat-earth offset. Caucasus is a transverse Mercator and the
-    flat version was measured 1.2 nm out at the coast and 7.6 nm out at the
-    target area -- see `push_fixes`. The same error is still open on the paper
-    nav log ([#2] and the 29 July audit), and this is the shape of the fix.
-    """
-    import math
-    la1, lo1 = math.radians(origin[0]), math.radians(origin[1])
-    la2, lo2 = math.radians(lat), math.radians(lon)
-    dlo = lo2 - lo1
-    nm = (math.acos(min(1.0, max(-1.0,
-          math.sin(la1) * math.sin(la2)
-          + math.cos(la1) * math.cos(la2) * math.cos(dlo))))
-          * 6371008.8 / 1852.0)
-    brg = math.degrees(math.atan2(
-        math.sin(dlo) * math.cos(la2),
-        math.cos(la1) * math.sin(la2)
-        - math.sin(la1) * math.cos(la2) * math.cos(dlo))) % 360.0
-    return nm, brg
+# The second copy, gone. Its own docstring said a THIRD one was wrong -- "the
+# same error is still open on the paper nav log" -- so somebody found the
+# correct implementation, knew another was broken, and made a copy rather than
+# one home. See `core.geo`.
+_range_radial = _geo.range_bearing_true
 
 
 def radar_fix_by_track(scope: str, track: str, profile=None) -> object | None:

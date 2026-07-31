@@ -10,6 +10,8 @@ east. Speeds are MPH because the P-51's airspeed indicator is.
 """
 
 import math
+
+from marshall.core import geo as _geo
 from dataclasses import asdict, dataclass, field, fields
 
 NM = 1852.0
@@ -1265,11 +1267,35 @@ BATUMI_ASR = ApproachProfile(
 
 # --- geometry ---------------------------------------------------------------
 
-def bearing_distance(a: Fix | Field_, b: Fix | Field_) -> tuple[float, float]:
-    """True course in degrees and distance in nautical miles, a to b."""
-    dx, dz = b.x - a.x, b.z - a.z
-    course = math.degrees(math.atan2(dz, dx)) % 360
-    return course, math.hypot(dx, dz) / NM
+# The angle between DCS grid north and true north at this field. Batumi's, and
+# it is not a constant of the map -- it varies with longitude across a
+# transverse Mercator, so it belongs to the FIELD (see SCHEMA.md: measured, as
+# the difference between a runway's grid course and the geodesic bearing
+# between its thresholds). Here as a default until the airfield table exists.
+GRID_CONVERGENCE_DEG = 5.74
+
+
+def bearing_distance(a: Fix | Field_, b: Fix | Field_,
+                     convergence_deg: float = GRID_CONVERGENCE_DEG,
+                     ) -> tuple[float, float]:
+    """TRUE course in degrees and distance in nautical miles, a to b.
+
+    IT WAS RETURNING A GRID COURSE AND CALLING IT TRUE, which is the opening
+    finding of the 29 July audit and has been open since: the paper nav log was
+    5.74 degrees out on EVERY leg, 2.39 nm of cross-track over a 23.9 nm leg, on
+    a chart a pilot flies.
+
+    `Fix.x/z` are the sim's grid metres, and DCS's grid north is not true north.
+    So `atan2(dz, dx)` is a GRID bearing -- correct in the frame the F10 ruler
+    and the aircraft compass use, and six degrees wrong in the frame the radar
+    side computes in, because our radials come from lat/lon via `ST_Azimuth`.
+
+    Both halves now come from `core.geo`, where the frame is in the name and a
+    conversion has to be asked for explicitly. There is no longer a second
+    answer for this to be out BY.
+    """
+    nm, grid = _geo.range_bearing_grid(a.x, a.z, b.x, b.z)
+    return _geo.grid_to_true(grid, convergence_deg), nm
 
 
 def wind_triangle(course_true: float, tas: float = CRUISE_TAS_MPH,
@@ -1292,7 +1318,8 @@ def wind_triangle(course_true: float, tas: float = CRUISE_TAS_MPH,
 
 
 def magnetic(true_deg: float) -> float:
-    return (true_deg - MAGVAR) % 360
+    """Pilots fly magnetic. One implementation, in `core.geo`."""
+    return _geo.magnetic(true_deg, MAGVAR)
 
 
 # --- serialization: an ApproachProfile <-> a plain dict (for the DB) ----------

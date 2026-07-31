@@ -29,7 +29,8 @@ different ranges, which is the entire point.
 
 from __future__ import annotations
 
-import math
+
+from marshall.core import geo as _geo
 
 # A formation is tight: line abreast or trail, inside a couple of miles and a
 # few hundred feet, all pointing the same way. These live here as well as in the
@@ -95,25 +96,11 @@ def _other_ship(c: dict, lead: dict) -> str:
     return f"{name} ({', '.join(b for b in bits if b)})"
 
 
-def range_radial(origin, lat: float, lon: float) -> tuple[float, float]:
-    """Great-circle range in nautical miles and true bearing FROM an origin.
-
-    Geodesic, not a flat-earth offset. Caucasus is a transverse Mercator and the
-    flat version measured 1.2 nm out at the coast and 7.6 nm out at the target
-    area.
-    """
-    la1, lo1 = math.radians(origin[0]), math.radians(origin[1])
-    la2, lo2 = math.radians(lat), math.radians(lon)
-    dlo = lo2 - lo1
-    nm = (math.acos(min(1.0, max(-1.0,
-          math.sin(la1) * math.sin(la2)
-          + math.cos(la1) * math.cos(la2) * math.cos(dlo))))
-          * 6371008.8 / 1852.0)
-    brg = math.degrees(math.atan2(
-        math.sin(dlo) * math.cos(la2),
-        math.cos(la1) * math.sin(la2)
-        - math.sin(la1) * math.cos(la2) * math.cos(dlo))) % 360.0
-    return nm, brg
+# ONE IMPLEMENTATION, IN `core.geo`. This was byte-for-byte identical to
+# `agent_atc._range_radial`, and a third version in `route.bearing_distance`
+# returned a GRID bearing while promising true -- which is why the frame is now
+# in the name of everything that produces one.
+range_radial = _geo.range_bearing_true
 
 
 def nm_between(a: dict, b: dict) -> float:
