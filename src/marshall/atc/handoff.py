@@ -160,7 +160,14 @@ def due(profile, me, st: State) -> Verdict | None:
         cond = CONDITIONS.get(rule.when)
         if cond is None or not cond(st, rule.nm):
             continue
-        nxt = profile.station_for(rule.to)
+        # HIS FIELD, or the handoff crosses the theatre. A role is unique within
+        # an aerodrome and not across one -- with Kobuleti and Batumi both on
+        # the route there are two Towers and two Departures, and an unqualified
+        # lookup returns whichever is listed first. That put a Kobuleti
+        # departure on Batumi Departure's frequency, forty miles from the man
+        # who actually had him, and nothing raised: both answers are a real
+        # Station. See `station_for`, which is why it takes a field at all.
+        nxt = profile.station_for(rule.to, field=getattr(me, "field", ""))
         if nxt is None:
             continue
         same = (getattr(nxt, "name", None) == getattr(me, "name", None))

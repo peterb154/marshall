@@ -745,10 +745,29 @@ def channels_for(profile=None) -> list[tuple[int, float]]:
     about what is on button two -- a mismatch there is a pilot transmitting to
     nobody, and it has happened. Derived from the profile's own station list,
     so a different field simply produces a different card.
+
+    FOUR WAS AN AIRFRAME LIMIT WEARING A CARD'S CLOTHES. This used to take
+    `stations[:4]` and pad to four, because every aeroplane that had ever been
+    given a card was a warbird with a four-crystal SCR-522. The moment the
+    route grew a second aerodrome the card silently dropped Batumi Approach,
+    Tower and Ground -- the whole arrival half of the sortie -- and the pilot
+    would have found out about it airborne, on a frequency nobody was on.
+
+    So the CARD is as long as the ladder, and the truncating belongs to the
+    radio being written (see `set_channels`), where the number of buttons is
+    actually known. A P-51 still gets four; an F-16 gets all seven.
     """
     profile = profile or R.BATUMI_ASR
     stations = list(getattr(profile, "stations", None) or R.STATIONS)
-    freqs = [s.freq_mhz for s in stations[:4]]
+    # THE LADDER FIRST AND IN ITS OWN ORDER, because which button a controller
+    # is on is a fact about the sortie that `route.PRESET_LADDER` owns. Anyone
+    # the profile carries who is not a rung -- Sentry, who is a commander rather
+    # than a step in the ladder -- keeps a button after it rather than losing
+    # one, so "every controller is reachable" stays true without disturbing the
+    # seven the pilot was promised.
+    ladder = [s for s in R.PRESET_LADDER if s in stations]
+    rest = [s for s in stations if s not in ladder]
+    freqs = [s.freq_mhz for s in ladder + rest]
     while len(freqs) < 4:                       # pad the unused buttons
         freqs.append(freqs[-1] if freqs else 124.0)
     return list(enumerate(freqs, start=1))

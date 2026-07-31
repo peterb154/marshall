@@ -475,6 +475,22 @@ class Station:
     # with every role in `also`, and a modern one declares several. That is a
     # data decision per mission, which is what it should be.
     channels: tuple[float, ...] = ()
+    # WHICH AERODROME HE WORKS, and it is the thing that makes two fields
+    # possible at all.
+    #
+    # A role was globally unique while there was one airport: `station_for
+    # ("tower")` walked the list and returned the only Tower there was. Add
+    # Kobuleti and that same call returns whichever Tower is listed first, so a
+    # departure from Kobuleti gets handed to Batumi Tower forty miles away --
+    # silently, because both answers are a valid Station and nothing can tell
+    # them apart.
+    #
+    # So a role is unique WITHIN A FIELD, not across the theatre, and this is
+    # what scopes it. Empty means the station is not a field's at all, which is
+    # the honest answer for Center and for Sentry: they own a region, and asking
+    # which aerodrome they belong to is a category error rather than a missing
+    # value.
+    field: str = ""
 
     @property
     def freqs(self) -> tuple[float, ...]:
@@ -517,9 +533,69 @@ CENTER = Station("Georgia Center", 139.000, "center", voice="Brian")
 # hears it once; see `Station.channels` and `radio/client.transmit`.
 APPROACH = Station("Batumi Approach", 124.425, "approach",
                    channels=(124.000,),
-                   also=("departure",), voice="Matthew")
+                   also=("departure",), voice="Matthew", field="Batumi")
+# GROUND IS ITS OWN SEAT NOW, and it used to be part of Tower's `also`.
+#
+# That was right while Batumi was the only aerodrome and a warbird had four
+# presets to spend: one man took tower, ground and delivery because there was no
+# channel left to reach a second. A modern field with a seven-preset ladder can
+# afford the real arrangement, and the split matters -- Ground owns the taxiways
+# and Tower owns the runway, and the handoff between them is a procedure we want
+# to be able to get wrong and then fix.
+#
+# The 1944 arrangement is not deleted, it moved to `WW2_STATIONS` below.
 TOWER = Station("Batumi Tower", 118.600, "tower", channels=(118.000,),
-                also=("ground", "delivery"), voice="Joey")
+                voice="Joey", field="Batumi")
+# 121.900 IS ASSIGNED BY US, not published. The AIP extract we hold for UGSB
+# gives APP and TWR and nothing else, so rather than invent a number with no
+# shape, this takes the frequency that ground control sits on at most of the
+# world's aerodromes. It is a plausible number honestly labelled, which is the
+# most we can claim for it.
+GROUND = Station("Batumi Ground", 121.900, "ground",
+                 also=("delivery", "clearance"), voice="Stephen",
+                 field="Batumi")
+
+# ---------------------------------------------------------------------------
+# KOBULETI (UG5X) -- the departure field.
+#
+# MEASURED AND PUBLISHED, not guessed. The aerodrome chart gives elevation 59 ft
+# (the sim agrees to the foot), runway 07/25 at 2400 x 60 m, variation 6 E, and
+# a VHF set of three frequencies. The sim gave the position and the runway
+# geometry, and the convergence below was measured from its own thresholds.
+#
+# AND THE CHART REPEATS THE BUG `geo.py` WAS WRITTEN ABOUT. It prints runway 25
+# as "250 T". The geodesic bearing between the two published thresholds is
+# 255.94; 250.03 is the DCS GRID heading. The chart has labelled a grid course
+# as true, which is exactly the error that put the old nav log 5.74 degrees out
+# on every leg. We take the number and correct the frame rather than inheriting
+# the mistake because it came off a plate.
+# ---------------------------------------------------------------------------
+
+# 125.100 is ASSIGNED. The chart publishes no clearance delivery -- a Soviet-era
+# military field would not have had one -- so this is ours, and marked.
+KOB_CLEARANCE = Station("Kobuleti Clearance", 125.100, "clearance",
+                        also=("delivery",), voice="Gregory", field="Kobuleti")
+# 133.000 AND 122.100 ARE BOTH PUBLISHED, and both are the Tower. The chart
+# lists 133.000 as TWR and 122.100 under "Additional Combined Frequencies" as
+# Tower again -- a real facility reachable on two VHF channels, which is what
+# `channels` has always meant. This is the first use of it for a genuine
+# published alternate rather than a warbird accommodation.
+#
+# IT ANSWERS AS GROUND AND AS TOWER, which is the one judgement call in this
+# ladder. The seven presets asked for have a Kobuleti Clearance, Ground and
+# Departure but no Tower, and somebody has to clear an aeroplane to take off.
+# Combining ground and tower into one seat is how a field this size actually
+# runs, so the missing preset costs nothing real. If a separate Tower is wanted
+# it is one more row and one more preset.
+KOB_GROUND = Station("Kobuleti Ground", 133.000, "ground",
+                     channels=(122.100,), also=("tower",),
+                     voice="Justin", field="Kobuleti")
+# 123.300 IS PUBLISHED, as "GCA" -- ground controlled approach, the radar
+# controller. Kobuleti is a PAR/SRA field, so the man on this frequency is the
+# same kind of controller Batumi Approach is, and giving him departures as well
+# as arrivals is what the chart already implies.
+KOB_DEPARTURE = Station("Kobuleti Departure", 123.300, "departure",
+                        also=("approach",), voice="Kevin", field="Kobuleti")
 
 # The mission commander. Not a new kind of machine -- a controller with a wider
 # scope, which is why it is a Station like the others: it has a frequency, a
@@ -532,7 +608,51 @@ TOWER = Station("Batumi Tower", 118.600, "tower", channels=(118.000,),
 # real WW2 cockpit and is a reasonable constraint to design inside.
 OVERLORD = Station("Sentry", 131.000, "overlord", voice="Kimberly")
 
-STATIONS = [CENTER, APPROACH, TOWER, OVERLORD]
+STATIONS = [KOB_CLEARANCE, KOB_GROUND, KOB_DEPARTURE, CENTER,
+            APPROACH, TOWER, GROUND, OVERLORD]
+
+# THE ORDER A PILOT DIALS THEM, which is a fact about the SORTIE and not about
+# the airport. It is written down once, here, because three things have to agree
+# about it or the ladder is a lie: the radio presets burned into the aeroplane,
+# the comms card on the kneeboard, and what a controller says out loud when he
+# hands you on ("contact departure, preset three").
+#
+#     "Let's set the radio presets in order of what's required -- k clearance 1,
+#      k ground 2, k departure 3, center 4, b approach 5, b tower 6, b ground 7."
+#
+# Sentry is deliberately NOT on it. He is the mission commander, not a step in
+# the ladder, and a pilot flying Kobuleti to Batumi never needs him -- so he
+# keeps a preset above the ladder rather than a rung inside it.
+PRESET_LADDER = [KOB_CLEARANCE, KOB_GROUND, KOB_DEPARTURE, CENTER,
+                 APPROACH, TOWER, GROUND]
+
+
+def preset_of(station) -> int | None:
+    """Which button he is on, or None if he is not on the ladder.
+
+    So a controller can say "contact Batumi Approach, preset five" and be right
+    about the number, rather than the pilot hunting for a frequency he was told
+    in megahertz while flying an instrument approach.
+    """
+    for i, s in enumerate(PRESET_LADDER, start=1):
+        if s.name == getattr(station, "name", station):
+            return i
+    return None
+
+
+# THE 1944 ARRANGEMENT IS NOT HERE, and deliberately not written as a second
+# list sitting unused beside this one.
+#
+#     "The Batumi Clearance controller would just sit idle in a ww2 mission. And
+#      the ww2 controller would sit idle during a modern mission."
+#
+# That is the right model -- two sets, one live per mission, no interoperation
+# needed. But the beacon letdown does not read a station list at all today: it
+# derives its controllers from the beacons, because on an ARA-8 the man you talk
+# to IS the frequency you home (see `stations` on ApproachProfile). So declaring
+# a WW2 list now would be a name nothing reads, which is the exact fault
+# `AtcCapability.era` has -- declared, never consulted, and wrong without
+# anything noticing. It gets written when the profile that selects it does.
 
 
 @dataclass
@@ -560,6 +680,26 @@ BATUMI_FIELD = Field_(
     msa_sectors=list(MSA_SECTORS),
     mva_cells=list(MVA_CELLS),
     note="Highest terrain 10,623 ft at 23 nm SE. Missed approach turns LEFT.")
+
+# KOBULETI (UG5X). The departure field, and the second aerodrome this system has
+# ever had -- which is what turned `station_for` from a list walk into something
+# that has to know which airport you mean.
+#
+# Position and elevation are the sim's own (ARP x/z, 59 ft, agreeing with the
+# published chart to the foot). Runway 07 is the into-wind end with the easterly
+# we fly, and 064 is its MAGNETIC heading off the chart, which is the frame
+# `Field_.runway` is in -- see `BATUMI_FIELD` at 124 for the same thing at the
+# other end of the route.
+#
+# NO MSA OR MVA SECTORS, and that is a real gap rather than an oversight. Those
+# are surveyed products and we have not surveyed Kobuleti; the empty lists fall
+# back to the module defaults. It costs nothing today because nobody flies an
+# approach here -- we depart from it -- and the day somebody does, this comment
+# is the thing that should stop them trusting a vectoring altitude.
+KOBULETI_FIELD = Field_(
+    "Kobuleti", -317605, 636704, 59, 64,
+    note="Field elevation 59 ft. Runway 07/25, 2400 m. TACAN 67X KBL, "
+         "ILS 111.50 on 07. GCA field: PAR and SRA published.")
 
 
 @dataclass
@@ -1048,20 +1188,47 @@ class ApproachProfile:
         return (fix.sector or self.controller,
                 fix.freq_mhz if fix.freq_mhz else 0.0)
 
-    def station_for(self, role: str) -> Station | None:
-        """Who works this phase of flight.
+    def station_for(self, role: str, field: str = "") -> Station | None:
+        """Who works this phase of flight, AT A GIVEN AERODROME.
 
         Primary role first, then anyone who also covers it -- so asking for
         "departure" finds Approach at a field where the two share a seat, and
         would find a dedicated Departure controller at one where they do not,
         without either caller knowing which kind of field it is.
+
+        `field` IS NOT OPTIONAL IN SPIRIT. It defaults to empty so the hundreds
+        of single-field call sites still read cleanly, but the moment a route
+        has two aerodromes on it, omitting it is a bug that cannot announce
+        itself: every role resolves to whichever field happens to be listed
+        first, and a Kobuleti departure is handed to Batumi Tower forty miles
+        away. Both answers are a real Station, so nothing raises and nothing
+        looks wrong -- the aeroplane simply talks to the wrong airport.
+
+        A station with no field of its own -- Center, Sentry -- is reachable
+        from anywhere, because that is what owning a region rather than an
+        aerodrome means. So the search is: this field first, then the
+        fieldless, and NEVER another aerodrome's controller.
         """
-        for s in self.stations:
-            if s.role == role:
-                return s
-        for s in self.stations:
-            if role in getattr(s, "also", ()):
-                return s
+        def hit(s, want_primary):
+            if want_primary and s.role != role:
+                return False
+            if not want_primary and role not in getattr(s, "also", ()):
+                return False
+            if not field:
+                return True
+            # His, or nobody's. Another field's Tower is not an answer.
+            return getattr(s, "field", "") in (field, "")
+
+        for want_primary in (True, False):
+            # Two passes so a station whose PRIMARY role this is beats one who
+            # merely also covers it -- at the same field, before falling out to
+            # the region controllers.
+            for prefer_field in ((True, False) if field else (False,)):
+                for s in self.stations:
+                    if prefer_field and getattr(s, "field", "") != field:
+                        continue
+                    if hit(s, want_primary):
+                        return s
         return None
 
     def station_on(self, freq_mhz: float) -> Station | None:

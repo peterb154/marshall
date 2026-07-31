@@ -81,9 +81,42 @@ class TestApproachAndDepartureAreOneMan(unittest.TestCase):
     """
 
     def test_departure_resolves_to_the_approach_station(self):
-        self.assertEqual(P.station_for("departure").name, "Batumi Approach")
-        self.assertEqual(P.station_for("departure").freq_mhz,
-                         P.station_for("approach").freq_mhz)
+        """AT BATUMI. The field is not decoration on this call any more.
+
+        This test used to read `station_for("departure")` with no field, and it
+        passed for as long as Batumi was the only aerodrome in the world. Adding
+        Kobuleti made the same call return KOBULETI Departure -- first in the
+        list, a perfectly real Station, forty miles from the aircraft. Nothing
+        raised. The expectation is qualified now because the question was always
+        ambiguous and only ever had one possible answer by accident.
+        """
+        self.assertEqual(P.station_for("departure", field="Batumi").name,
+                         "Batumi Approach")
+        self.assertEqual(P.station_for("departure", field="Batumi").freq_mhz,
+                         P.station_for("approach", field="Batumi").freq_mhz)
+
+    def test_the_same_role_at_the_other_field_is_a_different_man(self):
+        """The bug this whole change exists to make impossible."""
+        self.assertEqual(P.station_for("departure", field="Kobuleti").name,
+                         "Kobuleti Departure")
+        self.assertNotEqual(
+            P.station_for("departure", field="Kobuleti").freq_mhz,
+            P.station_for("departure", field="Batumi").freq_mhz)
+
+    def test_a_field_never_borrows_another_fields_controller(self):
+        """Kobuleti staffs no dedicated Tower -- Ground wears that hat. Asking
+        for one must find HIS ground/tower seat, never Batumi Tower."""
+        self.assertEqual(P.station_for("tower", field="Kobuleti").name,
+                         "Kobuleti Ground")
+
+    def test_a_region_controller_is_reachable_from_any_field(self):
+        """Center owns airspace rather than an aerodrome, so he is fieldless and
+        answers from either end of the route. That is the reason `station_for`
+        falls out to the fieldless rather than restricting hard."""
+        for fld in ("Batumi", "Kobuleti"):
+            with self.subTest(field=fld):
+                self.assertEqual(P.station_for("center", field=fld).name,
+                                 "Georgia Center")
 
     def test_a_rule_reaching_his_own_station_is_flagged_not_spoken(self):
         """Constructed rather than waited for: no rule produces this today,
@@ -113,12 +146,32 @@ class TestTheTableIsTheInterface(unittest.TestCase):
                                      f"no station covers {r.to!r}")
 
     def test_a_role_nobody_staffs_is_silently_skipped(self):
-        """Clearance delivery does not exist at Batumi yet. A rule pointing at
-        an unstaffed role must produce no handoff rather than an exception --
-        otherwise adding a rule breaks every field that has not staffed it."""
-        self.assertIsNone(P.station_for("clearance"))
+        """A rule pointing at an unstaffed role must produce no handoff rather
+        than an exception -- otherwise adding a rule breaks every field that has
+        not staffed it.
+
+        CLEARANCE USED TO BE THE EXAMPLE HERE and no longer is: both fields
+        staff it now, Kobuleti with its own seat and Batumi folded onto Ground.
+        So the test needs a role that genuinely nobody works, and "center" at a
+        field is the honest one -- Georgia Center is fieldless on purpose, and
+        no aerodrome employs him.
+        """
+        self.assertIsNone(P.station_for("approach", field="Nowhere"))
         v = H.due(P, TOWER, flying(6.0))
         self.assertIsNotNone(v, "the staffed rules still work alongside it")
+
+    def test_both_fields_staff_every_rung_of_the_ladder(self):
+        """Seven presets, and a real controller behind each one.
+
+        A rung whose role resolves to nobody is a button the pilot presses in
+        the air to reach silence, and he finds out at the worst moment. This is
+        the check that the card and the staffing agree.
+        """
+        for i, s in enumerate(R.PRESET_LADDER, start=1):
+            with self.subTest(preset=i, station=s.name):
+                self.assertTrue(s.role, f"preset {i} has no role")
+                self.assertIs(P.station_for(s.role, field=s.field), s)
+                self.assertEqual(R.preset_of(s), i)
 
 
 if __name__ == "__main__":
