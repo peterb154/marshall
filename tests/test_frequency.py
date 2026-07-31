@@ -45,7 +45,7 @@ class TestAFrequencyAlwaysCarriesItsDecimal(unittest.TestCase):
         import pathlib
 
         rules = (pathlib.Path(__file__).resolve().parents[1]
-                 / "director" / "prompts" / "rules.md").read_text(encoding="utf-8")
+                 / "src" / "marshall" / "atc" / "agent" / "prompts" / "rules.md").read_text(encoding="utf-8")
         self.assertIn("decimal", rules)
         self.assertRegex(rules, r"(?i)frequenc\w*\s+carries\s+its\s+decimal")
 
