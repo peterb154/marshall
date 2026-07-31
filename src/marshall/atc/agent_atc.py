@@ -249,32 +249,42 @@ def fetch_radar(session_id: str = "", url: str = RADAR_URL,
     """Grab the current scope (tagged with this session's radar-identified
     callsigns) to hand the controller with the pilot's call. Best-effort -- a
     radar hiccup must not eat the transmission."""
-    # NOT YET READING THE TABLE, AND THE REASON IS THE BULLSEYE.
+    # THE TABLE, AND THE ENDPOINT ONLY WHEN IT CANNOT BE REACHED.
     #
-    # `core.scope.contacts()` reads the same rows this endpoint serves, is
-    # tested, and is what finally kills the prose parser -- see its docstring.
-    # Wiring it here was tried and backed out on 31 July because this payload
-    # carries one thing the `tracks` table does not: the BULLSEYE, which comes
-    # from the sim rather than the track stream. Losing it blanks the "from
-    # bullseye" column on the untracked table, which is the reference every
-    # pilot's HSI is set to and the only one that means anything for a contact
-    # nobody is working.
+    # `tracks` and `bullseye` are what the endpoint serves from anyway, so
+    # asking over HTTP was a round trip to read our own database -- and it kept
+    # the prose parser alive, because the payload's `picture` was the only
+    # reason anybody ever needed to read English back into structs.
     #
-    # So the bullseye becomes a row first -- it is world configuration, it
-    # changes when the mission does, and it belongs beside the airfield. Then
-    # this reads the table and the endpoint goes.
-    q = (f"{url}?{urllib.parse.urlencode({'session_id': session_id})}"
-         if session_id else url)
+    # The bullseye was the last thing holding this back: it comes from the sim
+    # rather than the track stream, so the table did not have it and switching
+    # would have blanked the "from bullseye" column -- the reference a pilot's
+    # HSI is set to, and the only one that means anything for a contact nobody
+    # is working. `feed` stores it now (migration 016).
+    #
+    # The fallback stays for a bridge with no DSN -- a laptop, the dry-run
+    # tools -- and for a database that is unreachable while the director is not.
+    # It is a second SOURCE, not a second copy: the same rows either way.
+    origin = field_origin(profile) if profile is not None else None
+    got = None
     try:
-        with urllib.request.urlopen(q, timeout=timeout) as resp:
-            got = json.load(resp)
-    except (urllib.error.URLError, TimeoutError, OSError, ValueError):
-        return Scope("")
+        from marshall.core import scope as _scope
+        cs = _scope.contacts(origin=origin)
+        got = {"contacts": cs, "bullseye": _scope.bullseyes(), "picture": ""}
+    except Exception:
+        got = None
+    if got is None:
+        q = (f"{url}?{urllib.parse.urlencode({'session_id': session_id})}"
+             if session_id else url)
+        try:
+            with urllib.request.urlopen(q, timeout=timeout) as resp:
+                got = json.load(resp)
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+            return Scope("")
     # A Scope IS the prose -- every existing caller keeps working -- and it
     # carries the facts the prose was drawn from, so the geometry can stop
     # parsing it. See the class.
     contacts = got.get("contacts") or []
-    origin = field_origin(profile) if profile is not None else None
     # AND WE DRAW IT OURSELVES, from our own field.
     #
     #     "why is that using batumi and not bull?"

@@ -247,7 +247,7 @@ def _delete(name: str) -> None:
 # it would mean no debrief and no comparison between sorties. It is also what
 # proved `runway_touch` has never once fired on this server. A log accumulates;
 # a world resets.
-_WIPE_ON_RESET = ("tracks", "flights", "contacts",
+_WIPE_ON_RESET = ("tracks", "flights", "contacts", "bullseye",
                   "session_messages", "session_agents", "memories")
 
 
@@ -697,38 +697,83 @@ def contacts(bindings: dict | None = None) -> list[dict] | None:
     return out
 
 
-_BULLSEYE: dict = {}
+# `_BULLSEYE` LIVED HERE, a module dict cached for the life of the process. It
+# is a table now -- see `bullseyes` and migration 016. The reasoning that
+# justified the cache ("a mission change restarts this process") stopped being
+# true the day the mission reset learned to wipe without a restart.
 
 
 def bullseyes() -> dict:
-    """The sim's own bullseye per coalition, cached for the process.
+    """The sim's own bullseye per coalition, PERSISTED rather than cached here.
 
         "maybe we should define a bullseye... that is a universal point that
          everyone on the map can/should share for reference"
 
-    ASKED, NOT DEFINED. DCS already has one per coalition and every pilot's
-    HSI is referenced to it, so inventing our own would give the controller a
+    ASKED, NOT DEFINED. DCS already has one per coalition and every pilot's HSI
+    is referenced to it, so inventing our own would give the controller a
     reference nobody in a cockpit can see. Same rule as the coordinate
     projection: the sim is the authority on its own map.
 
-    Cached because it does not move within a mission, and a mission change
-    restarts this process.
+    IT USED TO BE A MODULE DICT, and the justification was:
+
+        "Cached because it does not move within a mission, and a mission change
+         restarts this process."
+
+    True when it was written, false since the mission reset started detecting a
+    world change from the clock and wiping WITHOUT restarting anything. The
+    cache would have outlived the mission it described and served the previous
+    map's bullseye, confidently, with nothing to say why. A cache whose
+    invalidation story is "the process dies" is a bug waiting for the day the
+    process stops dying.
+
+    Now it is a table: read it, and ask the sim only when it is empty. That also
+    unblocks the bridge reading the scope from `tracks` -- the /radar payload
+    carried this and the table did not.
     """
-    if _BULLSEYE:
-        return _BULLSEYE
+    got = _bullseye_rows()
+    if got:
+        return got
     try:
         from dcs.coalition.v0 import coalition_pb2, coalition_pb2_grpc
         from dcs.common.v0 import common_pb2
         ch = grpc.insecure_channel(DCS_GRPC_ADDR)
         stub = coalition_pb2_grpc.CoalitionServiceStub(ch)
+        rows = {}
         for name, val in (("red", common_pb2.COALITION_RED),
                           ("blue", common_pb2.COALITION_BLUE)):
             r = stub.GetBullseye(coalition_pb2.GetBullseyeRequest(coalition=val),
                                  timeout=10)
-            _BULLSEYE[name] = {"lat": r.position.lat, "lon": r.position.lon}
+            rows[name] = {"lat": r.position.lat, "lon": r.position.lon}
+        _store_bullseyes(rows)
+        return rows
     except Exception as e:
         log.warning("bullseye unavailable: %s", str(e)[:80])
-    return _BULLSEYE
+        return {}
+
+
+def _bullseye_rows() -> dict:
+    try:
+        with get_pool().connection() as conn:
+            return {c: {"lat": la, "lon": lo} for c, la, lo in conn.execute(
+                "SELECT coalition, lat, lon FROM bullseye").fetchall()}
+    except Exception as e:
+        log.warning("could not read the bullseye table: %s", str(e)[:80])
+        return {}
+
+
+def _store_bullseyes(rows: dict) -> None:
+    """Write what the sim said. Idempotent; a re-ask overwrites."""
+    try:
+        with get_pool().connection() as conn:
+            for name, ll in rows.items():
+                conn.execute(
+                    "INSERT INTO bullseye (coalition, lat, lon) "
+                    "VALUES (%s, %s, %s) ON CONFLICT (coalition) DO UPDATE SET "
+                    "lat = EXCLUDED.lat, lon = EXCLUDED.lon, updated_at = now()",
+                    (name, ll["lat"], ll["lon"]))
+        log.info("bullseye stored for %s", ", ".join(sorted(rows)))
+    except Exception as e:
+        log.warning("could not store the bullseye: %s", str(e)[:80])
 
 
 # A formation is tight: line abreast or trail, inside a couple of miles and a

@@ -84,6 +84,27 @@ class Track(Base):
 
 
 
+class Bullseye(Base):
+    """The sim's own bullseye, per coalition. Written by `feed`.
+
+    Every pilot's HSI is referenced to it, which is why it is asked for rather
+    than invented -- a reference nobody in a cockpit can see is no reference.
+
+    IT WAS A MODULE DICT, cached "because a mission change restarts this
+    process". True when written; false since the mission reset stopped needing a
+    restart, at which point the cache would have served the previous map's
+    bullseye with no way to tell. Per mission, and wiped with everything flown.
+    """
+
+    __tablename__ = "bullseye"
+
+    coalition: Mapped[str] = mapped_column(Text, primary_key=True)   # red | blue
+    lat: Mapped[float] = mapped_column(Float, nullable=False)
+    lon: Mapped[float] = mapped_column(Float, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
 # WHAT `atc` ADDS is in `atc/models.py`: flight, flight_member, clearance,
 # identity. Shared tables live here, domain tables live with their domain --
 # and the association between a track and a flight belongs to ATC, because ATC

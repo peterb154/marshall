@@ -133,3 +133,20 @@ def contacts(origin: tuple[float, float] | None = None,
     if origin is not None:
         _cluster(out, origin)
     return out
+
+
+def bullseyes() -> dict:
+    """The bullseye per coalition, from the table `feed` writes.
+
+    Empty when the feed has not managed to ask the sim yet -- which is a real
+    answer and not zero: a contact quoted against a bullseye at 0,0 would be
+    confidently, uselessly wrong, and the drawing code already prints an em dash
+    when this is absent.
+    """
+    from sqlalchemy import select
+
+    from marshall.core import db
+    from marshall.core.schema import Bullseye
+    with db.session() as s:
+        return {b.coalition: {"lat": b.lat, "lon": b.lon}
+                for b in s.execute(select(Bullseye)).scalars()}
