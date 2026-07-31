@@ -25,9 +25,59 @@ everything. This is the half where "cheap to add an airport" lives.
 completely when the mission restarts, because it describes a universe that no
 longer exists.
 
-Every data bug of the last week was these two being confused: a fifteen-second
-timeout applied to a fact that should have been permanent, and eleven-hour-old
-tanks kept alive by the same rule that deleted a parked pilot.
+## Three causes, not one
+
+An earlier draft of this document said every data bug of the last week was those
+two halves being confused. That is not true, and the correction matters, because
+these have three different remedies and a schema only fixes one of them.
+
+**1. CONFIGURED AND FLOWN IN ONE PILE.** A fifteen-second timeout applied to a
+fact that should have been permanent, keeping eleven-hour-old tanks alive by the
+same rule that deleted a parked pilot. *Fixed by the split above.*
+
+**2. IN-MEMORY COPIES MISALIGNED WITH THE AUTHORITY.** `_on_ground` rebuilt from
+events instead of asking the sim. The board in a dict while the table that
+should hold it took writes nobody ever read. `_atc_agents` holding a
+conversation whose rows had been deleted. *Fixed by there being one home for
+each fact, which is what moving to the database is for.*
+
+**3. THE SAME LOGIC WRITTEN SEVERAL TIMES, DIFFERENTLY.** *Fixed by neither.*
+No schema prevents the fourth copy of a function.
+
+This one is the most dangerous because each copy looks correct in isolation.
+The name squasher exists THREE times right now -- `identity._key`,
+`agent_atc._key_name`, `kneeboard.diag._key` -- and a fourth lived in the page's
+JavaScript until tonight. Two of the three are not the same function:
+
+    identity._key   re.sub(r"[^a-z0-9]", "", s.lower())
+    diag._key       "".join(c for c in s.lower() if c.isalnum())
+
+`isalnum()` is Unicode-aware and the regex is not, so they agree on ASCII and
+disagree on everything else:
+
+    Jörg      -> "jrg"  vs "jörg"
+    Соколов   -> ""     vs "соколов"
+
+An empty key is below `unit_for_radio`'s three-character floor, so a
+Cyrillic-named pilot is never identified by the physical chain -- the strongest
+evidence in the system -- and falls through to elimination, which works with one
+aeroplane up and fails with two. Nobody wrote that bug. It grew in the gap
+between two copies of one idea.
+
+The same shape produced the rest of the week: the board join done three ways,
+`track_of` fixed while its sibling `auth_of` was missed an hour later, and the
+29 July audit's own central finding -- *"a fix gets applied where the bug was
+found and not at the sibling call sites, and nothing catches the misses."*
+
+**The remedy is a shared module, and the obstacle is structural.** The bridge
+and the director are two deployables that cannot import each other today, which
+is exactly why `_key` exists three times in Python and once in JavaScript. So
+the shared `models.py` this document proposes should not stop at table
+definitions: the derivations that both sides need -- squash a name, take a
+handle, turn a label into a board key -- belong beside them, imported rather
+than reimplemented.
+
+A schema gives one home to each FACT. This gives one home to each RULE.
 
 ## What is MEASURED and what is AUTHORED
 
