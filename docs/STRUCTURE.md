@@ -59,14 +59,10 @@ what this does.
 endpoints only it can serve (`/atc`, `/hooks/due`, `/mission/restart`).
 *(today: `director/app.py`, `director/prompts/`)*
 
-**`chart`** -- IN-WORLD. The approach plate, the route map, the E6B, the
-kneeboard server. Things a pilot flies with.
-*(today: `src/marshall/kneeboard/` minus `diag.py`)*
-
-**`diag`** -- OUT-OF-WORLD. The state page: the board, identity and its
-authority, releases with the scope at the time, the ghost banner. An engineer's
-instrument, not a pilot's.
-*(today: `src/marshall/kneeboard/diag.py`)*
+**`kneeboard`** -- the web server. It renders pages from the database and holds
+no state of its own. The plate, the route map, the E6B, the plans page, the test
+card and the diagnostics page are all PAGES on it, not separate parts.
+*(today: `src/marshall/kneeboard/`)*
 
 **`mission`** -- the `.miz` builder and the AI control Lua. Unchanged.
 
@@ -145,23 +141,35 @@ The wind one is worth stopping on. `WIND_FROM_DEG = 180.0` is a hardcoded
 constant that the sim will now tell us, and the runway in use is computed from
 it. A declared wind is a stored answer to a question with a live input.
 
-### Why `diag` is not part of `chart`
+### The kneeboard is one module, and diag is a page on it
 
-They have different audiences, and this project already draws that line on
-purpose: *"engineering is out-of-world, the controller is in-world"* ([#28]).
-A plate is a thing a pilot flies with. The diagnostics page is a thing an
-engineer watches on a second screen while he does -- it shows identity
-authority, released board entries and the scope that contradicted them, none of
-which belongs in a cockpit.
+An earlier draft split `chart` from `diag` by AUDIENCE -- in-world versus
+out-of-world. That was over-splitting. They share a delivery mechanism: both are
+web pages, both render from the database, both arrive through the same server.
 
-Keeping them in one part would be the `director` mistake again: a name covering
-two responsibilities that change for different reasons. It also matters for what
-each is ALLOWED to know -- `diag` may show that the controller believes
-something wrong, which is exactly what a pilot's chart must never do.
+    "The kneeboard is its own module. It's a web server that pulls data from the
+     database mostly. And diag, this is a page on the kneeboard (could also be
+     on a computer screen). We are using a hack that OpenKneeboard allows me to
+     publish a web page to my kneeboard so I can diagnose issues."
 
-"Kneeboard" was never the right name for either. It is the delivery mechanism --
-an OpenKneeboard tab -- not the content, the same category of error as naming
-the voice layer after the transport it happens to use.
+So `kneeboard` is the part, and the pages are pages. That OpenKneeboard will
+display an arbitrary web page is a delivery trick, not an architecture: the same
+page opens on a monitor, and neither is a different module.
+
+THE AUDIENCE RULE SURVIVES, as a rule about PAGE CONTENT rather than about
+module boundaries. A plate is what a pilot flies with and must never show what
+the controller believes -- an aeroplane drawn on it that the engine has wrong
+would be worse than no aeroplane at all. The diagnostics page exists precisely
+to show that: identity and its authority, released board entries with the scope
+that contradicted them, the ghost banner. Same server, opposite obligations.
+
+AND THE PLATE IS TWO THINGS, which is worth separating while we are here. There
+is the PICTURE the pilot sees -- drawn, and belonging to the kneeboard. And
+there is the PROCEDURE that picture depicts -- the fixes, altitudes, courses and
+minima ATC needs in order to direct him -- which is static data in the database,
+read by `atc.procedure` to fly the approach and by the kneeboard to draw it.
+Today one Python object is both, so the drawing and the directing cannot
+disagree only because they happen to share a variable.
 
 ## Deployables are entrypoints, not directories
 
@@ -170,7 +178,7 @@ This is the whole fix. One installable package, several ways to start it:
     marshall-radio     the bridge: voice in, voice out
     marshall-agent     the Bedrock controller behind an HTTP door
     marshall-feed      the sim mirror
-    marshall-chart     the kneeboard server
+    marshall-kneeboard the page server
 
 Whether those are three containers or one is a deployment choice, made in
 compose, changed without moving a file. What matters is that all four import the
@@ -200,7 +208,7 @@ SETTLED: `feed`, `radio`, `mission`, `agent`, `core`. `procedure` belongs to
    call it, but it is also the name of the whole product.
 2. **One container or how many?** Deployment, not layout, now that entrypoints
    rather than directories define the boundary. `radio+atc` on the voice path
-   and `agent+feed+chart+diag` behind it may be the honest middle.
+   and `agent+feed+kneeboard` behind it may be the honest middle.
 3. **Does `agent` become plural?** Multiple controllers, or multiple fields,
    each with their own conversation -- the part name stays singular either way,
    the same as `radio` covering many frequencies.
