@@ -92,6 +92,59 @@ never the profile.
 So: **`core.field`** (airfield, runway, fix, frequency) and
 **`atc.procedure`** (how it is flown).
 
+### And `procedure` is three things, not one
+
+    "There is 'how does an ILS work' that should be shared in Nevada and in
+     Caucasus. ILS is ILS -- this is constant, and it's probably a combination
+     of deterministic code and prompt, especially for ILS approach phraseology.
+     Then there are the specific parameters for a given ILS approach -- this is
+     database. And there are a hundred other things we'll need to program --
+     progressive taxi, forward air controller."
+
+**THE KIND is code, and it carries its own words.** How an ILS works does not
+vary by continent: intercept the localizer, capture the glideslope, decision
+height, missed approach. Written once, deterministic where it must be. And the
+PHRASEOLOGY belongs with it -- how you say an ILS clearance is part of knowing
+what an ILS is, so a procedure module ships its own prompt fragment rather than
+having one grown in a shared system prompt where nothing owns it. That is the
+brief mechanism [LAYERS.md] already describes, made per-procedure.
+
+**THE INSTANCE is data.** "Batumi ILS 13": localizer course, glideslope angle,
+decision height, the missed approach point, the hold. A row naming its kind.
+
+**THE CATALOGUE is the reason this shape matters.** Progressive taxi, forward
+air control, GCA, the overhead break, formation join, clearance delivery. Each
+is a new KIND -- a module behind one interface -- and not a new branch inside
+the existing one. Adding Kobuleti ILS is a row. Adding progressive taxi is a
+module, and nothing already written has to change to accommodate it.
+
+    atc/procedure/__init__.py     the interface every kind implements
+    atc/procedure/ils.py          + its phraseology
+    atc/procedure/asr.py          the talkdown we fly today
+    atc/procedure/ndb.py          the 1944 beacon letdown
+    atc/procedure/visual.py
+    atc/procedure/taxi.py         not written yet
+    atc/procedure/fac.py          not written yet
+
+This is also the answer to "what happens to `route.py`". It is EIGHT things --
+unit constants, mission settings, a gazetteer, one sortie's flight plan,
+airspace design, stations, arithmetic, and a capability model -- which is why
+its name never fit. It does not get renamed. It gets taken apart:
+
+    NM, MPH_PER_KT, INHG_PER_FT       core.units    (constants, like gravity)
+    qfe_inhg, ias_mph, msa_for        core.geo      (arithmetic)
+    KOBULETI, BATUMI, INGRESS, ...    fix rows      (a gazetteer, measured)
+    MSA_SECTORS, MVA_CELLS            airspace rows (per field)
+    CENTER/APPROACH/TOWER/OVERLORD    station rows
+    SORTIE, SORTIE_LEGS, SORTIE_ALT   flight_plan rows (ONE mission's route)
+    CRUISE_TAS, WIND_*, QNH_*         mission settings -- and the wind is now
+                                      MEASURED, not declared
+    AtcCapability                     atc.procedure (doctrine)
+
+The wind one is worth stopping on. `WIND_FROM_DEG = 180.0` is a hardcoded
+constant that the sim will now tell us, and the runway in use is computed from
+it. A declared wind is a stored answer to a question with a live input.
+
 ### Why `diag` is not part of `chart`
 
 They have different audiences, and this project already draws that line on
