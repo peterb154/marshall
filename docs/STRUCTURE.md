@@ -55,8 +55,25 @@ synthetic pilots. `srs` is a vendor's name for a transport, not a description of
 what this does.
 *(today: `src/marshall/srs/` plus `_run_srs` out of `agent_atc.py`)*
 
-**`agent`** -- the Bedrock controller: prompts, conversation, tools, the three
-endpoints only it can serve (`/atc`, `/hooks/due`, `/mission/restart`).
+**`agent` IS NOT A PART.** An earlier draft had it as one, and that was the
+`director` mistake at a higher altitude: "the thing that calls Bedrock" is a
+MECHANISM, not a responsibility. The moment a second domain has a brain, that
+drawer holds an air traffic controller and an enemy commander, which have
+nothing in common but an SDK.
+
+So `core.llm` is a capability -- tiers, structured output, retries, token
+accounting -- alongside `core.geo`. And what you ASK a model belongs to the
+domain asking: `atc.agent` has the controller's prompts, conversation and
+phraseology, exactly as `atc.procedure.ils` carries its own words.
+
+Whether a domain uses an agent at all is ITS business:
+
+    "If we have a 'traffic' module, it might, or might not use a Strands agent.
+     That's an implementation detail for traffic to figure out."
+
+Which is the test of a good boundary -- the part list does not change when a
+domain changes its mind about implementation.
+
 *(today: `director/app.py`, `director/prompts/`)*
 
 **`kneeboard`** -- the web server. It renders pages from the database and holds
@@ -176,7 +193,7 @@ disagree only because they happen to share a variable.
 This is the whole fix. One installable package, several ways to start it:
 
     marshall-radio     the bridge: voice in, voice out
-    marshall-agent     the Bedrock controller behind an HTTP door
+    marshall-atc       the controller -- deterministic half and agent half
     marshall-feed      the sim mirror
     marshall-kneeboard the page server
 
@@ -212,3 +229,43 @@ SETTLED: `feed`, `radio`, `mission`, `agent`, `core`. `procedure` belongs to
 3. **Does `agent` become plural?** Multiple controllers, or multiple fields,
    each with their own conversation -- the part name stays singular either way,
    the same as `radio` covering many frequencies.
+
+
+## Horizontal parts, vertical domains
+
+The list above mixes two kinds of thing, and the distinction is what keeps it
+honest as the product grows past ATC.
+
+**HORIZONTAL -- shared by everyone, owned by nobody.**
+
+    core       names, geo, units, field, schema, llm
+    feed       the sim mirrored into Postgres; every domain needs tracks
+    radio      transport, STT, TTS, "somebody transmitted on 124.0"
+    kneeboard  the page server
+
+**VERTICAL -- a domain, owning its full stack: deterministic logic, its own
+procedures, its own prompts, and an agent if it wants one.**
+
+    atc        control, identity, guidance, procedure/{ils,asr,ndb,taxi,fac}
+    traffic    (later) what exists, what is materialised, and when
+    planner    (later) mission generation, the dynamic war
+    opfor      (later) the adversary that deploys against you
+
+THE TEST FOR WHICH: would a second domain need this? Yes, horizontal. No, it
+belongs to the domain that has it.
+
+**DOMAINS DO NOT IMPORT EACH OTHER.** `traffic` spawns units, `feed` mirrors
+them, `atc` sees contacts -- and neither module knows the other exists. That is
+not an accident of the current design, it is the property being bought: the
+coupling that would rot this is `traffic` reaching for `atc` to ask "is it safe
+to spawn here", which is the same shape as every bug of the last week, a module
+reaching sideways for a fact it should read from shared state.
+
+`control` + `agent` is turning out to be the SHAPE OF A DOMAIN rather than a
+peculiarity of ATC -- traffic wants exactly the same split, with a spatial query
+deciding relevance and judgement reserved for what should be there. Worth naming
+rather than rediscovering.
+
+And Marshall is not an ATC. It is an ATC, a kneeboard, a mission planner, and
+one day a war fought against something that deploys against you. `atc` is
+literally the air traffic control part of that, which is why it keeps its name.
