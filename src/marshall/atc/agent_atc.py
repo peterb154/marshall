@@ -2014,8 +2014,14 @@ def may_be_vectored(bridge, ctl, cs: str, traffic: bool = False,
     return ctl._resolve(cs) == turn
 
 
+# "Nobody asked the classifier", which is not the same as "the classifier
+# does not know". See separation_context.
+_UNASKED = object()
+
+
 def separation_context(bridge, ctl, transcript: str, scope: str = "",
-                       known: str = "", track: str = "", intent=None) -> tuple[str, str]:
+                       known: str = "", track: str = "",
+                       intent=_UNASKED) -> tuple[str, str]:
     """The two-brain seam. Advance the deterministic Controller from the call and
     return its authoritative (next-step directive, holding stack).
 
@@ -2033,7 +2039,16 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
         # whether or not there is anybody to separate him from -- and this
         # function is skipped entirely for a single ship. Kept optional so the
         # tests and tools that call this directly still work unchanged.
-        intent = intent if intent is not None else bedrock_intent.classify(transcript)
+        # A SENTINEL, NOT None. `decide` classifies once per transmission and
+        # passes the result down -- and a classifier that FAILED returns None,
+        # which is a real answer meaning "we do not know". Treating None as
+        # "not provided" made this classify a second time, which put a live
+        # Bedrock call into the offline test suite and took it from six seconds
+        # to fifty-four.
+        if intent is _UNASKED:
+            intent = bedrock_intent.classify(transcript)
+        if intent is None:
+            return "", ""
 
         # ONE RADIO IS ONE AEROPLANE. Whose call this is comes from the GUID
         # that keyed the mic, never from what Whisper made of the words.
@@ -3473,9 +3488,31 @@ def decide(bridge, ctl, transcript, scope, known, track, engaged, profile):
         intent = classify_intent(transcript)
         if intent is not None:
             ctl.note_intent(known, intent_said(intent))
-    directive, stack = (separation_context(bridge, ctl, transcript, scope, known,
-                                          track, intent) if engaged
-                        else ("", ""))
+    # THE ENGINE ALWAYS RUNS. `engaged` used to gate this, and with ONE
+    # aeroplane it was False -- so `intents.dispatch` never ran, no controller
+    # method was ever called, and `phase` stayed UNKNOWN from wheels-up to
+    # touchdown. The deterministic half of a two-brain system was asleep for
+    # every single-ship sortie, which is the case this project actually flies.
+    #
+    # A pilot found it on the radio: "the DOING while tracked remained UNKNOWN
+    # the whole time". The board proved the gate was the cause rather than any
+    # missing vocabulary -- `intent` filled in and `phase` did not, on the same
+    # transmission, purely because one was hoisted outside this branch tonight
+    # and the other was not.
+    #
+    # THE FLAG ANSWERED TWO QUESTIONS. "Is there traffic to sequence?" and
+    # "should I remember what I agreed with him?" are different, and the engine
+    # holds far more than separation: phase, assigned altitude, approaches
+    # flown, radar-identified, on-visual, missed count. That is the controller's
+    # MEMORY, and it matters with one aeroplane exactly as much as with four.
+    #
+    # Sequencing still needs traffic and still gets it: `_stack_summary` is
+    # already gated on `len(ctl.aircraft) >= 2` inside, so the queue, the
+    # letdown and the holding stack are unchanged. And the cost argument for
+    # the gate went when the classifier moved up here -- it runs for anybody on
+    # the board now whether or not this branch is taken.
+    directive, stack = separation_context(bridge, ctl, transcript, scope, known,
+                                          track, intent)
     # Radar guidance for a vectored approach. Costs no model call, so it
     # runs for a single ship too -- which is the case that was flying with
     # no deterministic picture at all.

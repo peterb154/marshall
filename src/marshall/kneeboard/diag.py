@@ -390,9 +390,19 @@ function board(d) {
   // separation engine has got to. Collapsing them into one word is how an
   // observation comes to overwrite something a man actually told a controller.
   return '<div class="scroll"><table>'
-    + '<tr><th>who</th><th>type</th><th>freq</th><th>owner</th><th>state</th>'
-    + '<th>intent</th><th>doing</th><th>hdg</th><th>alt</th><th>gs</th>'
-    + '<th>range</th><th>known by</th></tr>'
+    // WHAT IS HAPPENING, FIRST. The three state columns sit immediately after
+    // the callsign because they are the question the page is open to answer,
+    // and this table is twelve columns wide inside a horizontal scroller -- on
+    // a kneeboard-width display `intent` was in the middle and scrolled out of
+    // sight, which reads exactly like a column that was never added.
+    //
+    // Three authorities, still kept apart: `state` is what the sim observes,
+    // `intent` is what the pilot asked for, `doing` is where the separation
+    // engine has got to. Position follows, because it is context rather than
+    // the answer.
+    + '<tr><th>who</th><th>state</th><th>intent</th><th>doing</th>'
+    + '<th>owner</th><th>type</th><th>freq</th><th>hdg</th><th>alt</th>'
+    + '<th>gs</th><th>range</th><th>known by</th></tr>'
     + b.map(r => {
       const cls = lvl('confirmed', r.confirmed);
       return `<tr class="${cls === 'bad' ? 'ghost' : ''}">`
@@ -408,13 +418,13 @@ function board(d) {
         // called, and the type is what the engine reads to decide whether he
         // can be sent to a beacon or needs a racetrack -- so what is displayed
         // must be what was used.
-        + `<td class="dim">${esc(r.type)}</td>`
-        + `<td class="dim">${r.freq_mhz ? r.freq_mhz.toFixed(3) : '&mdash;'}</td>`
-        + `<td class="${lvl('owner', r.owner)}">${esc(r.owner) || '&mdash;'}</td>`
         + `<td class="${lvl('state', r.state)}">${esc(r.state) || '&mdash;'}</td>`
         + `<td class="${lvl('intent', r.intent)}">${esc(r.intent)
              || '<i class="dim">not established</i>'}</td>`
         + `<td>${phase(r)}</td>`
+        + `<td class="${lvl('owner', r.owner)}">${esc(r.owner) || '&mdash;'}</td>`
+        + `<td class="dim">${esc(r.type)}</td>`
+        + `<td class="dim">${r.freq_mhz ? r.freq_mhz.toFixed(3) : '&mdash;'}</td>`
         + `<td class="dim">${num(r.heading, 0, '&deg;')}</td>`
         + `<td class="dim">${num(r.alt_ft, 0, ' ft')}</td>`
         + `<td class="dim">${num(r.speed_kt, 0, ' kt')}</td>`
