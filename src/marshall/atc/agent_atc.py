@@ -4679,6 +4679,20 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # unusable, and it costs one poll of latency on a genuine reversal.
         pending: dict[str, int] = {}
         grounded: set[str] = set()   # already noticed on the runway
+        # SEEN AIRBORNE AT LEAST ONCE. Without it, "he is on the ground and on
+        # the board" reads as "he has just landed" -- and a pilot taxiing OUT
+        # got the arrival farewell before he had flown anywhere:
+        #
+        #     PILOT: Batumi Tower, Depart, holding short runway one three,
+        #            ready for departure.
+        #     ATC:   Depart, Batumi Tower, welcome. Exit the runway when able,
+        #            taxi to parking. Good day.
+        #
+        # Landing is a TRANSITION, not a state: air, then ground. The state
+        # alone cannot tell an arrival from somebody who has not left yet, and
+        # the same confusion is why `test_tonight.py` exists -- a jet that
+        # spawned on the ramp looks exactly like one that just rolled out.
+        flown: set[str] = set()
         # Handed over already, so the offer is made ONCE. Cleared when the
         # handoff stops being due -- he changed frequency, or turned back.
         handed_off: set[str] = set()
@@ -4764,6 +4778,10 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     if is_on_the_ground(scope, _track, pos):
                         if cs in grounded:
                             continue
+                        if cs not in flown:
+                            # On the ground and never seen flying: he is
+                            # departing, not arriving. Say nothing and wait.
+                            continue
                         # Only somebody we were actually working. `report_landed`
                         # creates an aircraft it has never heard of, so without
                         # this every parked machine on the ramp gets a farewell.
@@ -4803,6 +4821,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                                                 final_hz, AM)
                         continue
                     grounded.discard(cs)        # airborne again: a new sortie
+                    flown.add(cs)               # and now a landing is possible
 
                     # A HANDOFF NOBODY HAD TO ASK FOR.
                     #
@@ -4822,7 +4841,18 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     # transmission should not wait for the next poll.
                     _who = ctl.aircraft.get(ctl._resolve(cs))
                     _tk = getattr(_who, "track", "") or cs
-                    _me = (profile.station_on(final_hz / 1_000_000)
+                    # WHICH CONTROLLER HE IS TALKING TO, not which frequency
+                    # this thread transmits on. `final_hz` is the monitor's own
+                    # channel -- Approach -- so asking it who "I" am made the
+                    # answer Approach for everybody, and the rule that hands an
+                    # airborne aircraft from TOWER to Approach could never fire.
+                    # Measured: a departure sat at six thousand feet under Tower
+                    # and was never offered anything.
+                    #
+                    # `heard_on` is where he actually checked in, which is the
+                    # only thing that says whose aeroplane he is.
+                    _hz = bridge.heard_on.get(ctl._resolve(cs)) or final_hz
+                    _me = (profile.station_on(_hz / 1_000_000)
                            if hasattr(profile, "station_on") else None)
                     _nxt = handoff_on_the_event(scope, _tk, _me, profile)
                     if _nxt is not None and cs not in handed_off:
@@ -4836,11 +4866,12 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                             with radio_lock:
                                 print(f"  ATC[handoff] {_say}", flush=True)
                                 record(session_id, kind="atc/handoff",
-                                       callsign=cs, text=_say,
-                                       to=_nxt.role)
+                                       callsign=cs, text=_say, to=_nxt.role)
+                                # ON HIS CHANNEL. Telling a man on Tower to
+                                # contact Approach, over Approach, is a message
+                                # to everyone except him.
                                 client.transmit(
-                                    voice_for(final_hz).frames(_say),
-                                    final_hz, AM)
+                                    voice_for(_hz).frames(_say), _hz, AM)
                     elif _nxt is None:
                         handed_off.discard(cs)
 
