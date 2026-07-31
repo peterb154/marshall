@@ -15,6 +15,16 @@ services:
       POSTGRES_DB: strands
     volumes:
       - pgdata:/var/lib/postgresql/data
+    ports:
+      # PUBLISHED SO THE BRIDGE CAN REACH IT. The bridge is a host process, not
+      # a container, so without this it could not query Postgres at all -- every
+      # board read had to be an HTTP call to a hand-written handler, and twelve
+      # CRUD endpoints grew in front of a database everybody could have read.
+      #
+      # Bound to the LAN, unauthenticated beyond the password, exactly the
+      # posture DCS-gRPC on 50051 already has. Do not expose this beyond the
+      # LAN: it is the whole world model.
+      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U strands -d strands"]
       interval: 3s

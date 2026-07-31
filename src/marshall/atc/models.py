@@ -1,43 +1,30 @@
-"""The world, as rows. One file you can read to know what this system stores.
+"""The tables ATC owns. A flight is an ATC concept; nobody else needs it.
 
-    "I'm not writing this code, you are. But it would make it easier for me to
-     comprehend and catch bugs in the IDE"
+`feed` knows tracks. `traffic` thinks in sim groups -- if ATC controls an AI
+four-ship, ATC forms a flight over it and traffic never needs the notion. The
+kneeboard renders rows without knowing when a flight forms. Only ATC decides
+what a flight IS, so these live here and `core.schema` holds what everyone
+shares.
 
-Which is the whole reason this file exists, and it is a better reason than
-performance. Raw SQL in Python is opaque to an editor: no autocomplete, no
-navigation, no type checking, and a mistyped column name is a runtime error
-discovered in a sortie rather than a red squiggle discovered while reading. A
-declarative model is a thing a person can open and understand in one sitting.
-
-WHAT IT IS NOT. These models do not own the schema -- the numbered files in
-`migrations/` still do, because they carry the reasoning for every column and
-they are how a running database is changed safely. This file MIRRORS them, and
-`tests/test_models.py` fails if the two ever drift. A model that quietly
-disagrees with the database is worse than no model, because it looks
-authoritative in the IDE while being wrong at runtime.
-
-THE CONSTRAINTS ARE THE POINT, not decoration. `flights_track` -- one row per
-aeroplane per mission -- is a rule this project hand-wrote in Python on 31 July
-after a misheard word put one Mustang on the board twice and the separation
-engine began sequencing him against himself. The index had been there since
-migration 012, enforcing it correctly, and was never consulted because the
-board lived in a dict. Written down here so the next person sees the rule
-before writing the bug.
+THE ASSOCIATION BELONGS TO WHOEVER ASSERTS IT. `flight_member` is here rather
+than as a `flight_id` column on `core.schema.Track`, which was the first draft
+and was elegant -- `IS NULL` would have meant "untracked". It inverts the
+layering: `track` is core, `flight` is atc, and the key must sit on `track`
+because that is the many side, so it cannot simply be turned round. Untracked
+becomes a LEFT JOIN instead, which is the price of the arrow pointing the right
+way -- and it is still a fact the schema holds rather than one `publish_state`
+derives, which was the point. That derivation put one aeroplane on the board AND
+in the untracked list on 31 July.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
 
-from geoalchemy2 import Geography
-from sqlalchemy import (BigInteger, Boolean, DateTime, Float, Index, Integer,
-                        Text, func)
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, Integer, Text, func
+from sqlalchemy.orm import Mapped, mapped_column
 
-
-class Base(DeclarativeBase):
-    pass
-
+from marshall.core.schema import Base
 
 class Flight(Base):
     """One entity a controller is working. THE BOARD.
@@ -145,48 +132,29 @@ class Flight(Base):
     )
 
 
-class Track(Base):
-    """One unit the sim currently has, wherever it is. THE SCOPE.
 
-    Written by the position stream and reaped by `gone`, a mission reset, or the
-    reconciliation sweep. NOT by a clock: a row used to expire fifteen seconds
-    after it was last written, which meant a parked aeroplane -- one that never
-    moves and therefore never updates -- vanished off the scope while a pilot
-    sat in it. See `tools/tracks.py` for the whole argument.
+class FlightMember(Base):
+    """Which tracks make up a flight.
+
+    A formation is ONE entity to the separation engine -- one level, one
+    clearance, one place in the letdown -- and this is the list of aeroplanes
+    behind it. It replaces the `lead_of` text column, which named a flight in a
+    string and could not be joined on.
     """
 
-    __tablename__ = "tracks"
+    __tablename__ = "flight_member"
 
-    # THE SIM'S UNIT NAME. Primary key because it is the sim's own identifier
-    # and the only name in this system nobody has to say out loud.
-    name: Mapped[str] = mapped_column(Text, primary_key=True)
-    # WHAT THE PICTURE PRINTS -- the player's name for a manned unit. Different
-    # from `name`, and conflating the two severed the identity chain once
-    # already: `unit_for_radio("Sockeye")` matched nothing when it was fed the
-    # slot name "Viper 1-4".
-    label: Mapped[str | None] = mapped_column(Text)
-    type: Mapped[str | None] = mapped_column(Text)
-    coalition: Mapped[int | None] = mapped_column(Integer)
-    geog: Mapped[object | None] = mapped_column(
-        Geography(geometry_type="POINT", srid=4326))
-    alt_ft: Mapped[float | None] = mapped_column(Float)
-    heading: Mapped[float | None] = mapped_column(Float)
-    speed_kt: Mapped[float | None] = mapped_column(Float)
-    player: Mapped[str | None] = mapped_column(Text)
-    category: Mapped[str | None] = mapped_column(Text)
-    # IS IT FLYING? The sim's own answer, from `Unit.inAir()` on the sweep and
-    # from land/takeoff events the moment they happen. NULL means nobody has
-    # asked yet, which is a third answer and not a synonym for airborne.
-    #
-    # It replaced a dict in another module built from land/takeoff events alone
-    # -- blank for anything that spawned parked, because no `land` had ever
-    # fired for it, and lost outright on every restart.
-    in_air: Mapped[bool | None] = mapped_column(Boolean)
-    # WHEN THE POSITION WAS LAST CONFIRMED. A freshness stamp for the POSITION,
-    # never a test of whether the unit exists -- that distinction is the bug
-    # this column used to cause.
-    last_seen: Mapped[datetime] = mapped_column(
+    flight_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("flights.id", ondelete="CASCADE"),
+        primary_key=True)
+    # NOT a foreign key to `tracks`, deliberately: a member can be named before
+    # radar has the contact, and a flight losing its track must not lose its
+    # member. The join is by name and may legitimately find nothing.
+    track_name: Mapped[str] = mapped_column(Text, primary_key=True)
+    joined_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (Index("flight_member_track", "track_name"),)
 
 
 class Contact(Base):
@@ -209,13 +177,3 @@ class Contact(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
-# EVERYTHING THAT IS WIPED WHEN THE WORLD RESTARTS.
-#
-#     "If the mission restarts the board should be wiped. Everything --
-#      everything starts over."
-#
-# Named here rather than spelled out at the call site so that adding a table
-# and forgetting to clear it is a visible omission in one place, instead of a
-# row that survives a mission and is discovered days later still holding an
-# aeroplane at six thousand feet.
-PER_MISSION = (Flight, Track, Contact)
