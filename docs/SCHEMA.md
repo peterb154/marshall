@@ -58,12 +58,28 @@ the computed course: runway 25 must come out near 250 degrees. An import that
 disagrees with the sign convention fails loudly at every field instead of
 silently at one.
 
-**AUTHORED. Procedure design, which no sim knows.** About eight numbers:
-minima, platform altitude, hold base, which runway is in use, the outer hold
-fix, the approach kind (asr / ils / ndb), and the controller capability
-(radar or not, DME or not).
+**DERIVED, NOT AUTHORED: the runway in use.** It is a function of the wind, and
+the wind is measurable -- `atmosphere.getWind` at any point and altitude, plus
+temperature and pressure:
 
-So a new airfield is: run the importer, supply eight numbers. Not a Python file.
+    10ft: from 180 at 4 kt | 500ft: from 180 at 9 kt | temp 20C  QFE 1012 hPa
+
+Batumi's runways are 13 (125) and 31 (305). Wind from 180 gives 13 a 2.3 kt
+headwind and 31 the same as tailwind, so **13 is in use** -- which is what
+`route.py` hardcodes as `runway="13"`. It is right today and silently wrong the
+first time the weather changes, which is the whole argument: a stored answer to
+a question that has a live input is a bug with a delay on it.
+
+So `approach` has no "runway in use" column. It has one row per published
+procedure, and which one is ACTIVE is computed per mission from the wind. The
+same call gives the altimeter setting, which a controller ought to be reading
+out anyway.
+
+**AUTHORED. Procedure design, which no sim knows.** Minima, platform altitude,
+hold base, the outer hold fix, the approach kind (asr / ils / ndb), and the
+controller capability (radar or not, DME or not). Half a dozen numbers.
+
+So a new airfield is: run the importer, supply six numbers. Not a Python file.
 
 ## Tables
 
@@ -79,7 +95,9 @@ how six degrees goes missing.
 
 **`approach`** — `airfield_id`, `runway_id`, `kind`, `guidance`, `platform_ft`,
 `hold_base_ft`, `ceiling_ft`, `mda_ft`, `outer_hold_fix_id`, `capability`.
-The authored half. One row per published procedure.
+The authored half. One row per published procedure, for EVERY runway, not just
+the one in use -- which runway is active is computed from the wind and is not a
+property of the procedure.
 
 **`station`** — `airfield_id`, `role` ("approach"), `name` ("Batumi Approach"),
 `freq_mhz`, `also` (roles he doubles). The NAME is what a board's `owner`
@@ -126,13 +144,42 @@ The bridge's transcript recorder stays as JSONL files. The line is **aggregate
   * every in-memory copy: the board dict, `_atc_agents`, and the last of the
     per-aircraft dicts hanging off `Bridge`.
 
-## Open questions for you
+## Decided
 
-1. **Is `mission` the right scope key**, or should it be a `sortie` row that
-   everything foreign-keys to, so a wipe is one `DELETE` and a cascade rather
-   than a list of tables to remember?
-2. **Does the board keep history?** Today a released aircraft is deleted. A
-   `left_at` column instead would make "what happened to him" answerable, at
-   the cost of every query growing a `WHERE left_at IS NULL`.
-3. **Which map?** Everything above is scoped by map, which is currently
-   implicit. Caucasus is the only one flown, and the fixes table is global.
+**THE SCOPE KEY IS `mission`.** I floated a `sortie` row and could not define
+it when asked, which is the answer: "mission" has a precise referent -- the
+`.miz` that is loaded and the clock that started with it -- and "sortie" is a
+word for a thing that happens inside one. A key nobody can define is a key that
+will be used inconsistently.
+
+Everything flown carries it, and a world reset is `DELETE ... WHERE mission =`.
+Whether that becomes a `mission` TABLE with cascading foreign keys is an
+implementation choice, not a modelling one, and a table is probably right: it
+turns "remember to clear this too" into something the database enforces.
+
+**THE BOARD KEEPS NO HISTORY.** A released aircraft is gone, and coming back is
+being met as a stranger:
+
+    "Go to untracked and then come back, you get
+     'xxx - radar contact - what are your intentions'"
+
+Which is what a controller actually does, and it removes `left_at`, the
+`WHERE left_at IS NULL` on every query, and the question of when a row stops
+counting. Anything worth keeping about a flight that ended is in `event` and in
+the JSONL recorder, both of which survive the reset.
+
+## Still open
+
+**MAP SCOPING** -- the question I asked badly. Concretely: `fixes` is a global
+table with no map column, and the configured half above is per-map. Caucasus
+has BATUMI and KOBULETI; Syria has none of those and its own; the Marianas
+likewise. Because configuration is NOT wiped on a mission change, loading a
+Syria mission would leave Caucasus fixes sitting in the table, and a fix lookup
+would answer with a point two thousand miles away rather than saying it does not
+know the name. That is the same shape as the T-55s: stale rows that look live
+because nothing scopes them.
+
+So: does `map` go on `fix`, `airfield` and the rest -- or does the importer
+simply own a map at a time and rebuild the configured tables when the map
+changes? The second is less schema and more ceremony; the first is one column
+and lets two maps coexist. I lean to the column.
