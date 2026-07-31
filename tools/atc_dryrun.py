@@ -97,12 +97,30 @@ CLEARANCE = [
 # several times, rather than inferring stability from one pass of a ten-row card.
 READBACK = CLEARANCE[:2]
 
+# THE NEW TEST BED: a departure from the OTHER field.
+#
+# Everything above happens at Batumi, which was the only aerodrome when they
+# were written. This one is the thing that could not be tested before -- a
+# clearance issued by Kobuleti Clearance, for a flight to Batumi, with a
+# departure frequency that has to be KOBULETI Departure's 123.300 and not the
+# arrival field's. Getting that number wrong is a pilot switching to a
+# controller forty miles away and calling into silence.
+KOBULETI_DEP = [
+    ("Sockeye", "Kobuleti Clearance, Viper one one, request IFR clearance to "
+                "Batumi."),
+    ("Sockeye", "@readback"),
+    ("Sockeye", "Kobuleti Ground, Viper one one, ready to taxi."),
+    ("Sockeye", "Kobuleti Departure, Viper one one, airborne, passing one "
+                "thousand for five thousand."),
+]
+
 SCRIPTS = {"formation": FORMATION, "single": SINGLE, "visual": VISUAL,
-           "clearance": CLEARANCE, "readback": READBACK}
+           "clearance": CLEARANCE, "readback": READBACK,
+           "kobuleti": KOBULETI_DEP}
 
 
 def run(script, session_id: str, sep_always: bool = True,
-        scope: str = "", station: str = "approach") -> None:
+        scope: str = "", station: str = "approach", field: str = "") -> None:
     """Drive `script` through the brain. `scope` is a canned radar picture --
     empty means no radar, so position reports are taken at face value exactly as
     they are on a non-radar field."""
@@ -122,7 +140,12 @@ def run(script, session_id: str, sep_always: bool = True,
     # the transmission arrived on and tells the agent in a YOU ARE line; without
     # it every script is answered by Approach, and a clearance delivery script is
     # then being read by the wrong man.
-    me = profile.station_for(station)
+    # WHICH FIELD'S. A role is only unique within an aerodrome now: ask for
+    # "clearance" with no field and you get whichever is listed first, which is
+    # Kobuleti's -- so a Batumi clearance script was about to be answered by a
+    # controller at the other end of the route, in the right words, with the
+    # wrong frequencies in them.
+    me = profile.station_for(station, field=field)
     print(f"\n=== dry run: {session_id} ===", flush=True)
 
     # The plans on file, registered so their spoken names cannot be read as
@@ -251,11 +274,21 @@ if __name__ == "__main__":
     if "--script" in sys.argv:
         name = sys.argv[sys.argv.index("--script") + 1]
     stamp = int(time.time())
+    # WHO ANSWERS EACH SCRIPT, and it is a field as well as a role now.
+    #
     # Clearance delivery happens on the ground with nobody in the letdown, so the
     # separation engine has nothing to say and forcing it on would put a holding
     # instruction under a request for a route.
-    # Clearance delivery is Tower's other hat -- one man has ground, delivery and
-    # tower at a field this size -- so the clearance script is answered by him.
+    #
+    # Batumi no longer folds delivery onto Tower -- it has its own Ground seat
+    # wearing that hat -- so the clearance scripts ask for "clearance" at Batumi
+    # rather than for Tower, and get the man who actually issues it.
+    on_ground = name in ("clearance", "readback")
+    station, field = "approach", R.ARRIVAL_FIELD
+    if on_ground:
+        station, field = "clearance", R.ARRIVAL_FIELD
+    if name == "kobuleti":
+        station, field = "clearance", R.DEPARTURE_FIELD
     run(SCRIPTS[name], session_id=f"dryrun-{name}-{stamp}",
-        sep_always=name not in ("clearance", "readback"),
-        station=("tower" if name in ("clearance", "readback") else "approach"))
+        sep_always=not on_ground and name != "kobuleti",
+        station=station, field=field)

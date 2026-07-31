@@ -267,7 +267,7 @@ def _correlated(session_id: str) -> dict:
 
 
 def fetch_radar(session_id: str = "", url: str = RADAR_URL,
-                timeout: float = 5.0, profile=None) -> Scope:
+                timeout: float = 5.0, profile=None, field: str = "") -> Scope:
     """Grab the current scope (tagged with this session's radar-identified
     callsigns) to hand the controller with the pilot's call. Best-effort -- a
     radar hiccup must not eat the transmission."""
@@ -287,7 +287,9 @@ def fetch_radar(session_id: str = "", url: str = RADAR_URL,
     # The fallback stays for a bridge with no DSN -- a laptop, the dry-run
     # tools -- and for a database that is unreachable while the director is not.
     # It is a second SOURCE, not a second copy: the same rows either way.
-    origin = field_origin(profile) if profile is not None else None
+    # THE SPEAKING CONTROLLER'S FIELD, not the profile's. See `field_origin`:
+    # without it Kobuleti's controllers measure every range from Batumi.
+    origin = field_origin(profile, field) if profile is not None else None
     got = None
     try:
         from marshall.core import scope as _scope
@@ -3107,13 +3109,29 @@ def whisper_vocabulary(bridge, profile, roster=None) -> str:
 PROJECTED: dict[str, tuple] = {}
 
 
-def field_origin(profile) -> tuple | None:
+def field_origin(profile, field: str = "") -> tuple | None:
     """Where THIS controller measures from.
 
     The beacon when the field has one, because that is the published reference
     every range on the plate is quoted against; the arrival fix otherwise. Not a
     module constant, and not the director's -- see `Scope`.
+
+    `field` IS WHICH AERODROME IS ASKING, and without it every controller in the
+    theatre measured from the profile's beacon -- which is Batumi's. That was
+    invisible while Batumi was the only field and wrong the moment Kobuleti
+    existed: an aeroplane sitting on Kobuleti's own runway was handed to
+    Kobuleti Clearance as "23 miles on the 033 radial", because it IS 23 miles
+    from Batumi. Every range and radial that controller spoke would have been
+    measured from an airport forty miles away, and each one is a plausible
+    number, so nothing looks wrong until a pilot flies it.
     """
+    if field:
+        # His own field first. PROJECTED is keyed by fix name and the fields are
+        # named for their aerodromes, so a field with a fix of the same name --
+        # KOBULETI, BATUMI -- resolves directly.
+        got = PROJECTED.get(field.upper())
+        if got:
+            return got
     for attr in ("beacon", "arrival_fix", "outer_hold"):
         f = getattr(profile, attr, None)
         name = getattr(f, "name", "") if f is not None else ""
@@ -4111,7 +4129,8 @@ def hear(bridge, client, model, profile):
     return transcript, client.name_for(client.last_sender_guid), heard_hz
 
 
-def attribute(bridge, client, transcript, srs, session_id, radar_on, ctl):
+def attribute(bridge, client, transcript, srs, session_id, radar_on, ctl,
+              field: str = ""):
     """WHO is talking, decided by something other than what he said.
 
     EXTRACTED VERBATIM, 30 July. Returns the five things the rest of the turn
@@ -4126,7 +4145,11 @@ def attribute(bridge, client, transcript, srs, session_id, radar_on, ctl):
     alone would bind a radio to 37 distinct names, of which ten were
     aeroplanes.
     """
-    scope = (fetch_radar(session_id, profile=getattr(ctl, "profile", None))
+    # `field` is the SPEAKING controller's aerodrome, so his ranges and
+    # radials are measured from his own field rather than from the
+    # profile's beacon at the other end of the route. See `field_origin`.
+    scope = (fetch_radar(session_id, profile=getattr(ctl, "profile", None),
+                         field=field)
              if radar_on else Scope(""))
 
     # What the WORDS claim, still by vote across the sortie: real callsigns
@@ -5091,8 +5114,15 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # anywhere, so a garbled callsign cannot move it. See identity.py and
         # [ARCH-2] / #40; 846 recorded transmissions say the words alone would
         # bind a radio to 37 distinct names, of which ten were aeroplanes.
+        # WHOSE SCOPE THIS IS. The station he called determines the field
+        # every range is measured from -- an aeroplane on Kobuleti's ramp
+        # read as 23 miles out while Kobuleti's own controllers were being
+        # handed Batumi's geometry.
+        _me_fld = profile.station_on((heard_hz or freq_hz) / 1_000_000) \
+            if hasattr(profile, "station_on") else None
         scope, claim, _ident, known, _who = attribute(
-            bridge, client, transcript, srs, session_id, radar_on, ctl)
+            bridge, client, transcript, srs, session_id, radar_on, ctl,
+            field=getattr(_me_fld, "field", "") or "")
 
         _flight_say = membership(bridge, _who, transcript, scope, _ident,
                                  session_id)
