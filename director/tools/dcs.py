@@ -10,7 +10,6 @@ The gRPC stubs are generated from the DCS-gRPC protos and vendored under `_grpc/
 
 from __future__ import annotations
 
-import math
 
 from marshall.core import geo as _geo
 import logging
