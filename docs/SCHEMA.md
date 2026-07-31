@@ -430,3 +430,44 @@ It generalises too. When `traffic` wants to mark a track as one of its own
 spawns, that is a table in `traffic.models`, not a column on `core.track`.
 Otherwise `core` accretes a foreign key per domain and becomes a shared table
 nobody can change without asking everybody.
+
+## When a noun wants to be in two places, it is two nouns
+
+This has now happened three times in one evening, which makes it a rule rather
+than a coincidence:
+
+    procedure    the KIND (how an ILS works -- code, and its phraseology)
+                 the INSTANCE (Batumi ILS 13 -- rows)
+
+    plate        the PICTURE the pilot flies with (drawn, kneeboard)
+                 the PROCEDURE it depicts (data ATC directs from)
+
+    flight plan  the ROUTE (fixes, altitudes, times -- core)
+                 the FILING (callsign, task, approach, cleared -- atc)
+
+Each began as "where does this go, it feels like both", and each time the answer
+was that the question was wrong: the thing had two owners because it was two
+things wearing one word.
+
+**`core.route`** -- an ordered sequence of fixes with altitudes and speeds. Pure
+geography, no ATC semantics. A planner authors one, `traffic` hands one to an
+airliner, the kneeboard draws it, `mission` places waypoints from it. It exists
+whether or not anybody is controlling.
+
+**`atc.flight_plan`** -- a route FILED with ATC: callsign, task, the approach at
+the end, times, and whether it has been cleared. In the real world a flight plan
+is filed *with air traffic control*; that is what the document is FOR. So a
+planner authors routes and assignments, and turning one into a filed intention
+is an ATC act.
+
+It survives the traffic test, which is the point of having one: an AI airliner
+that is scenery has a ROUTE; one that checks in and gets cleared has a FLIGHT
+PLAN. Nothing about the first requires ATC to exist.
+
+And it explains why `flight_plans` reads muddily today -- `origin`,
+`destination`, `route`, `cruise_ft` are the route; `callsign`, `approach`,
+`task`, `label` are the filing; and they are one row.
+
+THE HEURISTIC, since it has paid three times: when a noun seems to belong in two
+modules, do not choose. Split the noun. The version that belongs lower is
+usually the one with no opinion about what it is FOR.
