@@ -212,6 +212,59 @@ def spawn_air(ch, name: str, unit_type: str, lat: float, lon: float, alt_ft: int
         custom_pb2.EvalRequest(lua=lua), timeout=25)
 
 
+def spawn_parked(ch, name: str, unit_type: str, airfield: str = "Batumi",
+                 count: int = 1, side: str = "blue"):
+    """Put aircraft on the RAMP, cold, the way a pilot finds them.
+
+    WHY THIS EXISTS. `spawn_air` is the only aircraft path there was, and it
+    forces altitude (`alt_ft = args.alt or 8000`), so there was no way to make
+    the case this whole system is built around: a man who has just taken a slot
+    and not moved. Every ground behaviour -- the untracked table naming him, the
+    "parked" state, checking in without a radar contact -- was untestable
+    without a human in a cockpit.
+
+    FROM PARKING AREA, not a low-altitude spawn. An aeroplane placed in the air
+    at zero feet with zero speed falls over; DCS wants an airdrome ID and a
+    `TakeOffParking` route point, and then it assigns a real parking spot and
+    the aircraft sits there indefinitely, which is exactly the fixture wanted.
+
+    `uncontrolled` so it stays put. Given a route and a task an AI will start
+    up and taxi, and a moving aeroplane is the case that already worked.
+    """
+    from dcs.custom.v0 import custom_pb2, custom_pb2_grpc
+
+    units = ",".join(f'''[{i + 1}]={{
+        ["type"]="{unit_type}", ["unitId"]={9100 + i}, ["skill"]="Average",
+        ["name"]="{name}-{i + 1}", ["parking_landing"]=0,
+        ["payload"]={{["pylons"]={{}}, ["fuel"]=400, ["flare"]=0,
+                     ["chaff"]=0, ["gun"]=100}},
+    }}''' for i in range(count))
+
+    lua = f'''
+    local ab = Airbase.getByName("{airfield}")
+    if ab == nil then return "no such airfield: {airfield}" end
+    local p = ab:getPoint()
+    local g = {{
+      ["visible"]=false, ["uncontrolled"]=true, ["hidden"]=false,
+      ["route"]={{["points"]={{[1]={{
+          ["alt"]=p.y, ["type"]="TakeOffParking",
+          ["action"]="From Parking Area", ["alt_type"]="BARO",
+          ["speed"]=0, ["x"]=p.x, ["y"]=p.z,
+          ["airdromeId"]=ab:getID(),
+          ["task"]={{["id"]="ComboTask", ["params"]={{["tasks"]={{}}}}}},
+      }}}}}},
+      ["groupId"]=9101, ["units"]={{{units}}},
+      ["y"]=p.z, ["x"]=p.x, ["name"]="{name}", ["communication"]=true,
+      ["start_time"]=0, ["task"]="Nothing", ["frequency"]=124,
+    }}
+    coalition.addGroup(country.id.{LUA_COUNTRY.get(side, "USA")},
+                       Group.Category.AIRPLANE, g)
+    return "parked at {airfield}"
+    '''
+    return custom_pb2_grpc.CustomServiceStub(ch).Eval(
+        custom_pb2.EvalRequest(lua=lua), timeout=25)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--name", default="", help="group name; defaults to the type")
@@ -221,6 +274,10 @@ def main() -> int:
                     help="feet; any value makes this an AIR spawn")
     ap.add_argument("--heading", type=int, default=0, help="air only")
     ap.add_argument("--count", type=int, default=1)
+    ap.add_argument("--ground", metavar="AIRFIELD", nargs="?", const="Batumi",
+                    help="aircraft only: park it cold on the ramp at this "
+                         "airfield (default Batumi) instead of putting it in "
+                         "the air. The case the ATC is actually built around.")
     ap.add_argument("--force", action="store_true",
                     help="spawn even where it makes no sense (water)")
     ap.add_argument("--at", default="BATUMI", help="anchor for --bearing/--range")
@@ -247,13 +304,21 @@ def main() -> int:
         a_lat, a_lon = _at(args.at)
         lat, lon = project(a_lat, a_lon, args.bearing, args.range_nm)
         where = f"{args.range_nm:.0f} nm on the {args.bearing:03.0f} from {args.at.upper()}"
+    elif args.ground:
+        # The airfield IS the position, and the sim picks the parking spot --
+        # asking a caller for a latitude to park at would be asking him to
+        # guess at something DCS knows exactly.
+        lat, lon = _at("BATUMI")
+        where = args.ground
     else:
         raise SystemExit("give either --lat/--lon or --bearing/--range")
 
     COUNTRY = {"red": 1, "blue": 21}
     country = args.country or COUNTRY[args.side]
-    airborne = args.type in AIR_TYPES or args.alt > 0
-    unit_type = (AIR_TYPES if airborne else TYPES).get(args.type, args.type)
+    parked = bool(args.ground) and args.type in AIR_TYPES
+    airborne = (args.type in AIR_TYPES or args.alt > 0) and not parked
+    unit_type = (AIR_TYPES if (airborne or parked) else TYPES).get(
+        args.type, args.type)
     name = args.name or f"{args.type}-{int(abs(lat * 1000)) % 1000}"
     alt_ft = args.alt or (8000 if airborne else 0)
     print(f"spawning {args.count} x {unit_type} as '{name}' ({args.side}"
@@ -261,6 +326,18 @@ def main() -> int:
     print(f"  at {where}  ->  {lat:.5f}, {lon:.5f}")
 
     with grpc.insecure_channel(ADDR) as ch:
+        if parked:
+            print(f"  parking {args.count} x {unit_type} as '{name}' "
+                  f"at {args.ground}")
+            try:
+                r = spawn_parked(ch, name, unit_type, args.ground,
+                                 args.count, args.side)
+                print(f"  {r.json}")
+            except grpc.RpcError as e:
+                print(f"  FAILED: {e.details()}")
+                return 1
+            print("  spawned — cold on the ramp, uncontrolled")
+            return 0
         if not airborne:
             # Only ground units care what is underneath them.
             kind, height = surface_at(ch, lat, lon)

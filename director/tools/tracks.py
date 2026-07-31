@@ -16,6 +16,7 @@ the cache is cold.
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 import time
@@ -117,7 +118,22 @@ from dcs.mission.v0 import mission_pb2, mission_pb2_grpc
 
 log = logging.getLogger(__name__)
 
-FRESH_SEC = 15          # a track older than this is stale -> not shown
+# HOW LONG A POSITION IS WORTH QUOTING. Not how long a unit EXISTS -- those are
+# different questions and conflating them is what this constant used to do.
+#
+# `StreamUnits` is a CHANGE feed: the proto says a unit is published when it is
+# "new or its position or attitude changed", and `max_backoff` exists expressly
+# to "postpone polling units that haven't moved recently". So a parked aeroplane
+# stops being reported, and asking "was this row written in the last 15 seconds"
+# to decide whether the aircraft is THERE answered a question the data cannot
+# answer. A pilot sitting in a cold jet vanished off the scope 15 seconds after
+# he spawned -- which is the founding case this whole system is for.
+#
+# Existence is `gone`, and the world resetting is `mission_start`/`mission_end`.
+# Both are explicit, both come from the sim, and neither needs a clock. See
+# `clear_all` and the loader in the dcs-dedicated-server project this is ported
+# from, which has carried the same three rules for years with no timeout at all.
+STALE_POS_SEC = 15
 _ready = False
 _fixes_loaded = False
 _started = False
@@ -164,6 +180,18 @@ def _ensure_table() -> None:
         # against. A flag would answer "is this a person" and lose "which
         # person", which is the half that identifies anybody.
         conn.execute("ALTER TABLE tracks ADD COLUMN IF NOT EXISTS player TEXT")
+        # IS IT FLYING? The sim's OWN answer, from `Unit.inAir()`.
+        #
+        # This replaces a reconstruction of the same fact from land/takeoff
+        # EVENTS, which was wrong in three ways at once: empty for anything
+        # that spawned parked (no event ever fired), lost entirely on a director
+        # restart (it lived in a dict in memory), and silently incomplete
+        # whenever the event stream dropped. DCS owns this state; keeping a
+        # second copy of it derived from a lossy log was never going to agree.
+        #
+        # NULL means nobody has asked yet, which is a third answer and not the
+        # same as "airborne".
+        conn.execute("ALTER TABLE tracks ADD COLUMN IF NOT EXISTS in_air BOOLEAN")
     _ready = True
 
 
@@ -199,6 +227,99 @@ def _delete(name: str) -> None:
         conn.execute("DELETE FROM tracks WHERE name=%s", (name,))
 
 
+# What a mission reset destroys, and what it must not.
+#
+#     "If the mission restarts the board should be wiped. Everything --
+#      everything starts over. It's a different universe."
+#
+# LIVE STATE goes: the scope, the board, the identity graph, and everything the
+# controller was in the middle of saying. None of it describes the new world and
+# all of it looks authoritative -- eight live-looking board rows survived from
+# missions that had ended days earlier, one of them holding an aeroplane at six
+# thousand feet.
+#
+# CONFIGURATION STAYS: prompts, approaches, flight_plans, fixes, sectors,
+# controllers. Those describe the FIELD, not the sortie, and a controller who
+# forgot the letdown on mission change would be useless.
+#
+# `events` STAYS TOO, and it is the one judgement call here. It is the flight
+# recorder -- a log of what happened, not state that can be wrong -- and wiping
+# it would mean no debrief and no comparison between sorties. It is also what
+# proved `runway_touch` has never once fired on this server. A log accumulates;
+# a world resets.
+_WIPE_ON_RESET = ("tracks", "flights", "contacts",
+                  "session_messages", "session_agents", "memories")
+
+
+def clear_all(why: str = "") -> dict[str, int]:
+    """The world reset. Everything live belonged to the old one.
+
+    Called on `mission_start` and `mission_end`, which is the whole of the
+    original design: a unit exists until the sim says `gone`, and every unit
+    stops existing when the mission does. No clock is involved anywhere.
+
+    THE ROWS THIS WOULD HAVE PREVENTED are worth naming, because they were on
+    the board while this was being written: four T-55s of "Samovar Armour",
+    stationary at two thousand feet, ELEVEN HOURS old, from a mission that had
+    not been loaded since. They are the "cluster of aircraft on the F10 map on
+    a server he was alone on" that `whats_out_there.py` was written to chase,
+    and the only thing keeping them off the scope was the staleness filter --
+    which is to say the bug that hid them was also the bug that hid the pilot.
+
+    THE CONVERSATION GOES WITH IT, and clearing the tables alone would not do
+    it: `app._atc_agents` holds live Agent objects with the conversation in
+    process memory, so a controller would go on referring to an approach flown
+    in a world that no longer exists. Same shape as every other bug this week --
+    a copy in memory outliving the thing it copied.
+    """
+    freed: dict[str, int] = {}
+    with get_pool().connection() as conn:
+        for table in _WIPE_ON_RESET:
+            try:
+                freed[table] = conn.execute(f"DELETE FROM {table}").rowcount
+            except Exception as e:
+                # One missing table must not abandon the rest of the reset.
+                conn.rollback()
+                log.warning("could not clear %s: %s", table, str(e)[:80])
+    try:
+        from app import forget_sessions
+        freed["agents"] = forget_sessions()
+    except Exception as e:
+        log.warning("could not drop the live agents: %s", str(e)[:80])
+    log.info("world reset (%s): %s", why or "mission change",
+             ", ".join(f"{k}={v}" for k, v in freed.items() if v))
+    return freed
+
+
+def reconcile(names: set[str]) -> int:
+    """Delete rows for units the sim no longer has. The safety net.
+
+    `gone` is the primary and this is the backstop, because `gone` can only
+    arrive if somebody is listening: the streams reconnect with backoff, and a
+    unit that despawns during the gap is never reported gone by anyone. The
+    same is true across a director restart.
+
+    A RECONCILER, NOT A REBUILD. It never clears and repopulates -- that would
+    open a window, however brief, where the scope reads empty, and an empty
+    scope is not a neutral state here. Identity corroborates against it,
+    `release_stale` accounts for board entries with it, and a blink would look
+    exactly like every aircraft leaving at once. So it only ever removes what
+    the sim has positively stopped reporting.
+
+    Given an EMPTY set it does nothing at all. "The sim told us about nobody"
+    and "we failed to ask" are indistinguishable at this layer, and deleting
+    the world on a failed scan is precisely the mistake this is guarding.
+    """
+    if not names:
+        return 0
+    with get_pool().connection() as conn:
+        n = conn.execute("DELETE FROM tracks WHERE NOT (name = ANY(%s))",
+                         (list(names),)).rowcount
+    if n:
+        log.info("reconcile: %d row(s) the sim no longer has", n)
+    return n
+
+
 # The sim's category numbers, as the words everything downstream uses.
 _CATEGORY = {
     common_pb2.GROUP_CATEGORY_AIRPLANE: "airplane",
@@ -232,6 +353,168 @@ def _stream_category(category: int, stop: threading.Event) -> None:
             backoff = min(backoff * 2, 15)
 
 
+# How often the sweep runs. A BACKSTOP CADENCE, because it is a backstop again:
+# `land` and `takeoff` events carry the moment an aeroplane changes state, and
+# `gone` carries the moment one ceases to exist. Both are exact and immediate.
+#
+# What is left for the sweep is everything no event will ever mention -- the jet
+# that spawned on a ramp and has simply always been there, and whatever changed
+# while nobody was connected to hear about it. Neither is urgent; both are
+# permanent until something looks.
+#
+# It briefly ran at 5s, when it was the only source of ground state. That was
+# the right cadence for the wrong design.
+SWEEP_SEC = 30
+
+
+# The mission clock the last sweep saw. It only ever goes up inside one world.
+_world: float | None = None
+
+
+def _world_changed(clock: float | None) -> bool:
+    """Is a different mission loaded than the one we last looked at?
+
+    ASKED, NOT LISTENED FOR, and that is the whole point of this function.
+    `mission_start` and `mission_end` exist in the proto and the obvious design
+    is to act on them -- but LOADING A MISSION TEARS DOWN THE EVENT STREAM THAT
+    WOULD REPORT IT. Measured on 31 July: a `LoadMission` produced
+
+        02:55:01 WARNING StreamEvents dropped: ... retry in 1s
+
+    and no mission event ever arrived, because the sim's event plumbing goes
+    away with the mission it belonged to and comes back after the new one has
+    already started. The notification is destroyed by the thing it notifies you
+    of. No amount of correct handling fixes that.
+
+    Comparing observed state has no such hole: the answer is true whenever we
+    ask, whether or not anybody was connected when it changed. The event
+    handler stays as a fast path for the cases it does fire, and this is what
+    makes the reset actually reliable.
+
+    THE START TIME AS WELL AS THE NAME, because reloading the SAME file is a new
+    world too -- which is precisely the test that exposed all this.
+    """
+    global _world
+    if clock is None:
+        return False
+    was, _world = _world, clock
+    # The FIRST look is not a change. The director restarting is not a new
+    # world, and wiping the board every time this process came up would be a
+    # nastier version of the bug being fixed.
+    if was is None:
+        return False
+    # THE MISSION CLOCK RAN BACKWARDS, which only one thing can mean. It counts
+    # seconds since the mission began, so it rises monotonically for the life of
+    # a world and starts again from near zero in the next one.
+    #
+    # WHY NOT THE MISSION FILENAME: reloading the same file is a new world and
+    # the name is identical. Nor the scenario START time -- that is a property
+    # of the .miz, not of this run, so it is also identical. Both were tried on
+    # 31 July and both silently detected nothing, which is the worst kind of
+    # check: it runs, it passes, and the board keeps yesterday's aeroplanes.
+    #
+    # AND NOT A MISSION-ENV RPC EITHER. `GetScenarioCurrentTime` says the same
+    # thing and cannot be reached when it matters: a hot-loaded mission starts
+    # PAUSED, and every mission-environment call deadline-exceeds while it is.
+    # This rides on the sweep's existing Eval, so it costs no extra call and is
+    # simply absent -- `None`, not a false answer -- whenever the sim is not
+    # running to be asked.
+    if clock >= was:
+        return False
+    log.info("mission clock went backwards (%.0fs -> %.0fs): a new world", was, clock)
+    return True
+
+
+def _sweep(stop: threading.Event) -> None:
+    """Ask the sim what exists and what is flying. The only source of both.
+
+    ONE QUESTION, ASKED OF THE THING THAT KNOWS. `inAir()` is DCS's own state,
+    so nothing here infers, remembers or reconstructs -- which is what the
+    land/takeoff event map was doing, and it disagreed with the sim for every
+    aeroplane that spawned parked.
+    """
+    from dcs.custom.v0 import custom_pb2, custom_pb2_grpc
+
+    lua = """
+    local out = {"CLOCK\t" .. tostring(timer.getTime())}
+    for _, side in pairs(coalition.side) do
+      for _, cat in pairs({Group.Category.AIRPLANE, Group.Category.HELICOPTER,
+                           Group.Category.GROUND, Group.Category.SHIP}) do
+        for _, g in pairs(coalition.getGroups(side, cat) or {}) do
+          for _, u in pairs(g:getUnits() or {}) do
+            out[#out+1] = u:getName() .. "\\t" .. tostring(u:inAir())
+          end
+        end
+      end
+    end
+    return table.concat(out, "\\n")
+    """
+    while not stop.wait(SWEEP_SEC):
+        try:
+            with grpc.insecure_channel(DCS_GRPC_ADDR) as ch:
+                r = custom_pb2_grpc.CustomServiceStub(ch).Eval(
+                    custom_pb2.EvalRequest(lua=lua), timeout=20)
+            flying, clock = {}, None
+            for line in json.loads(r.json).split("\n"):
+                if not line:
+                    continue
+                name, _, val = line.partition("\t")
+                if name == "CLOCK":
+                    clock = float(val)
+                    continue
+                flying[name] = (val == "true")
+            # BEFORE ANYTHING ELSE IS BELIEVED. If this is a different world,
+            # the units just read belong to it and everything held belongs to
+            # the last one -- so the wipe has to happen before the upsert, or
+            # the reconcile below would delete the new world's aircraft as
+            # "units the sim no longer has".
+            if _world_changed(clock):
+                clear_all("the mission restarted")
+            if flying:
+                _note_in_air(flying)
+            reconcile(set(flying))
+        except Exception as e:
+            # A failed sweep must never delete anything -- see `reconcile`.
+            log.warning("sweep failed: %s", str(e)[:80])
+
+
+def set_in_air(unit_name: str, in_air: bool) -> None:
+    """One unit's ground state, from the EVENT that changed it.
+
+    The event is the moment; the sweep is the truth. They write the same column
+    on purpose -- there is one answer to "is it flying" and it lives in one
+    place -- but they arrive by different routes because they are good at
+    different things.
+
+    `land` and `takeoff` are exact and instant, and instant matters: touching
+    down is what ends an approach and hands a man to Tower, so learning it a
+    poll late means a poll of vectoring an aeroplane that is already rolling
+    out. The sweep cannot be that prompt without asking the sim constantly.
+
+    But the sweep is the only one that is ever RIGHT about an aeroplane nothing
+    happened to. A jet that spawned on the ramp never landed, so no `land` ever
+    fires and no amount of listening will produce one -- which is exactly how
+    the old in-memory version came to insist a parked Mustang was airborne.
+    """
+    with get_pool().connection() as conn:
+        conn.execute("UPDATE tracks SET in_air = %s WHERE name = %s",
+                     (bool(in_air), unit_name))
+
+
+def _note_in_air(flying: dict[str, bool]) -> None:
+    """Write the sim's ground state onto the rows it belongs to.
+
+    Only for units already in the cache: the stream owns what EXISTS, this owns
+    one column of it. Creating a row here would make two writers of the same
+    table disagree about who is in it.
+    """
+    with get_pool().connection() as conn:
+        conn.execute(
+            "UPDATE tracks SET in_air = v.air FROM (SELECT unnest(%s::text[]) "
+            "AS name, unnest(%s::bool[]) AS air) v WHERE tracks.name = v.name",
+            (list(flying), list(flying.values())))
+
+
 def start_streamer() -> None:
     """Start the position stream in the background (idempotent)."""
     global _started
@@ -252,8 +535,11 @@ def start_streamer() -> None:
                     common_pb2.GROUP_CATEGORY_SHIP):
             threading.Thread(target=_stream_category, args=(cat, stop),
                              daemon=True).start()
+        # AND THE SAFETY NET. `gone` is the primary; this catches the units
+        # whose `gone` arrived while nobody was connected.
+        threading.Thread(target=_sweep, args=(stop,), daemon=True).start()
         _started = True
-        log.info("track streamer started")
+        log.info("track streamer started (sweep every %ds)", SWEEP_SEC)
 
 
 def _resolve(name: str) -> tuple[float, float] | None:
@@ -267,9 +553,8 @@ def _resolve(name: str) -> tuple[float, float] | None:
         with get_pool().connection() as conn:
             r = conn.execute(
                 "SELECT ST_Y(geog::geometry), ST_X(geog::geometry) FROM tracks "
-                "WHERE (lower(label) = %s OR lower(name) = %s) "
-                "AND last_seen > now() - make_interval(secs => %s) LIMIT 1",
-                (key, key, FRESH_SEC)).fetchone()
+                "WHERE (lower(label) = %s OR lower(name) = %s) LIMIT 1",
+                (key, key)).fetchone()
         return (r[0], r[1]) if r else None
     except Exception as e:
         log.warning("_resolve(%s) failed: %s", name, e)
@@ -318,12 +603,13 @@ def radar_cached(bindings: dict | None = None) -> list[str] | None:
                        COALESCE(t.player, '') AS player,
                        COALESCE(t.category, '') AS category,
                        ST_Y(t.geog::geometry) AS lat,
-                       ST_X(t.geog::geometry) AS lon
+                       ST_X(t.geog::geometry) AS lon,
+                       t.coalition,
+                       t.in_air
                 FROM tracks t, bcn
-                WHERE t.last_seen > now() - make_interval(secs => %s)
                 ORDER BY nm
                 """,
-                (BATUMI_LON, BATUMI_LAT, FRESH_SEC)).fetchall()
+                (BATUMI_LON, BATUMI_LAT)).fetchall()
     except Exception as e:
         log.warning("radar_cached failed: %s", e)
         return None
@@ -367,19 +653,20 @@ def contacts(bindings: dict | None = None) -> list[dict] | None:
                        COALESCE(t.category, '') AS category,
                        ST_Y(t.geog::geometry) AS lat,
                        ST_X(t.geog::geometry) AS lon,
-                       t.coalition
+                       t.coalition,
+                       t.in_air
                 FROM tracks t, bcn
-                WHERE t.last_seen > now() - make_interval(secs => %s)
                 ORDER BY nm
-                """, (BATUMI_LON, BATUMI_LAT, FRESH_SEC)).fetchall()
+                """, (BATUMI_LON, BATUMI_LAT)).fetchall()
     except Exception as e:
         log.warning("contacts failed: %s", e)
         return None
-    try:
-        from tools.events import on_the_ground
-        down = on_the_ground()
-    except Exception:
-        down = set()
+    # DOWN, PER THE SIM. `in_air` comes straight from `Unit.inAir()` in the
+    # sweep. This used to read a set rebuilt from land/takeoff events, which is
+    # the same fact reconstructed from a lossy log -- blank for anything that
+    # spawned parked, gone after a director restart. NULL here means the sweep
+    # has not run yet, and that is not the same as "airborne".
+    down = {r[1] for r in rows if r[13] is False}
     naming = _unique_labels(rows)
     out = []
     for group in _clusters(rows):
@@ -528,8 +815,7 @@ def in_formation(label: str) -> bool:
                        degrees(ST_Azimuth(bcn.g, t.geog)),
                        COALESCE(t.player, '')
                 FROM tracks t, bcn
-                WHERE t.last_seen > now() - make_interval(secs => %s)
-                """, (BATUMI_LON, BATUMI_LAT, FRESH_SEC)).fetchall()
+                """, (BATUMI_LON, BATUMI_LAT)).fetchall()
         # THE SAME COLUMNS, IN THE SAME ORDER, AS THE PICTURE QUERY. They had
         # drifted apart -- this one had no groundspeed -- so the two callers
         # handed _clusters rows of different widths and whichever convention it
@@ -605,15 +891,16 @@ def _other_ship(row: list, lead: list, naming: dict, down: set) -> str:
 def _render(rows: list, bindings: dict) -> list[str]:
     lines = []
     naming = _unique_labels(rows)
-    # WHO THE SIM SAYS IS DOWN. Carried in the picture rather than looked up per
-    # contact, because this is rendered on every transmission and the answer is
-    # already in memory. Empty when the event stream has told us nothing, which
-    # is a third answer -- see events.ground_state.
-    try:
-        from tools.events import on_the_ground
-        down = on_the_ground()
-    except Exception:
-        down = set()
+    # WHO THE SIM SAYS IS DOWN, from `Unit.inAir()` on the row itself.
+    #
+    # It used to be a set rebuilt from land/takeoff EVENTS -- the same fact,
+    # reconstructed from a log that never fired for an aeroplane which spawned
+    # parked and was lost outright on a director restart. DCS owns this; there
+    # is no reason to keep a second, worse copy of it.
+    #
+    # `in_air IS NULL` means the sweep has not reached this unit yet, and that
+    # is a third answer: not down, not flying, not known.
+    down = {r[1] for r in rows if len(r) > 13 and r[13] is False}
     for group in _clusters(rows):
         label, name, typ, alt_ft, heading, speed_kt, nm, radial = group[0][:8]
         label = naming.get(name, label)

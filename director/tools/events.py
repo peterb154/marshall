@@ -64,11 +64,6 @@ _started = False
 _lock = threading.Lock()
 _ready = False
 
-# unit name -> True if the sim last said he was on the ground, False if
-# airborne. ABSENT means nothing has been heard about him, which is a third
-# answer and not a synonym for either.
-_on_ground: dict[str, bool] = {}
-
 # The events that move an aeroplane between the ground and the air.
 #
 # `land` ONLY, and `runway_touch` deliberately left out of it. A touch-and-go
@@ -89,6 +84,16 @@ UP = ("takeoff", "runway_takeoff")
 # recording is for replaying a sortie afterwards and the cost of a row is
 # nothing next to the cost of not having it.
 WATCHED = DOWN + UP + (
+    # RECORDED BUT NOT ACTED ON, which is what the note above always claimed
+    # and never did: `runway_touch` was absent from this tuple, so it was never
+    # written, and the table has ZERO of them against 6 `land`s. The one
+    # question anybody needs to ask of it -- does a touch-and-go raise `land`,
+    # or only this? -- was therefore unanswerable from our own data, and the
+    # rule that excludes it rests on a single observation nobody can re-check.
+    #
+    # A row costs nothing. Being unable to settle an argument about a landing
+    # costs a sortie.
+    "runway_touch",
     "birth", "crash", "ejection", "unit_lost", "pilot_dead",
     "player_enter_unit", "player_leave_unit", "engine_startup",
     "engine_shutdown", "connect", "disconnect",
@@ -158,16 +163,30 @@ def _initiator(ev) -> tuple[str, str]:
 
 
 def note(kind: str, unit_name: str, player: str = "", place: str = "") -> None:
-    """Apply one event. Separate from the stream so it can be tested."""
-    if kind in DOWN:
-        _on_ground[unit_name] = True
-    elif kind in UP:
-        _on_ground[unit_name] = False
+    """Apply one event. Separate from the stream so it can be tested.
+
+    GROUND STATE GOES TO THE TRACK, not to a dict in this module. It used to
+    live in `_on_ground` here, which made this process the only thing that knew
+    whether an aeroplane was flying -- so the answer died on every restart, was
+    blank for anything that spawned parked (no `land` had ever fired for it),
+    and could not be read by anything that was not this Python process.
+
+    The column it writes now is the same one the sweep writes from
+    `Unit.inAir()`. One fact, one home, two ways in: the event because it is
+    exact and instant, the sweep because it is right about aeroplanes nothing
+    ever happened to. See `tracks.set_in_air`.
+    """
+    if kind in DOWN or kind in UP:
+        try:
+            from tools.tracks import set_in_air
+            set_in_air(unit_name, kind in UP)
+        except Exception as e:
+            log.warning("could not set ground state from %s for %s: %s",
+                        kind, unit_name, e)
     elif kind == "player_leave_unit":
         # HE HAS VACATED THE POSITION. A callsign is a position rather than a
         # person (#38), so leaving the slot is precisely when the association
         # stops being true -- and it is what the two-hour TTL was approximating.
-        _on_ground.pop(unit_name, None)
         _forget_slot(unit_name)
     _record(kind, unit_name, player, place)
 
@@ -184,20 +203,18 @@ def _forget_slot(unit_name: str) -> None:
                     unit_name, e)
 
 
-def ground_state(unit_name: str) -> bool | None:
-    """True on the ground, False airborne, None if the sim has not said.
-
-    THE THIRD ANSWER IS THE IMPORTANT ONE. The stream drops when the sim
-    pauses, and a director restart begins knowing nothing -- so a caller that
-    read None as "airborne" would tell a parked aeroplane to fly the missed
-    approach, which is the bug this replaces.
-    """
-    return _on_ground.get(unit_name)
-
-
-def on_the_ground() -> set[str]:
-    """Every unit the sim has said is down. For the radar picture."""
-    return {n for n, down in _on_ground.items() if down}
+# `ground_state()` and `on_the_ground()` LIVED HERE, over a module-level dict.
+#
+# They were the only way to ask whether an aeroplane was flying, and the answer
+# was assembled from land/takeoff events alone -- which meant it was empty for
+# every aircraft that spawned on a ramp, thrown away on each restart, and
+# invisible to anything outside this process. Their careful "third answer"
+# (None for "the sim has not said") was real and is preserved: the column is
+# NULL until something knows.
+#
+# The state now lives on the track, written by this module on the event and by
+# the sweep from `Unit.inAir()`. Callers read it with the contact, so there is
+# nothing to look up and nothing to get out of step.
 
 
 def _stream(stop: threading.Event) -> None:
@@ -211,6 +228,25 @@ def _stream(stop: threading.Event) -> None:
                     break
                 backoff = 1.0
                 kind = resp.WhichOneof("event")
+                # THE WORLD RESET, and it is handled BEFORE the initiator guard
+                # below -- which is the trap. A mission event has no initiator
+                # unit, so `_initiator` returns "" and `if not unit: continue`
+                # drops it. Adding these to WATCHED and nothing else would have
+                # looked completely correct and done nothing at all.
+                #
+                # The names are the PROTO FIELD names, snake_case, because that
+                # is what `WhichOneof` returns. The project this is ported from
+                # matches "missionStart"/"missionEnd" -- it reads the event
+                # through `MessageToDict`, which camel-cases them. Copying those
+                # literals across would never have matched either.
+                if kind in ("mission_start", "mission_end"):
+                    log.info("event %s: the world reset, clearing tracks", kind)
+                    try:
+                        from tools.tracks import clear_all
+                        clear_all(kind)
+                    except Exception as e:
+                        log.warning("could not clear tracks on %s: %s", kind, e)
+                    continue
                 if kind not in WATCHED:
                     continue
                 ev = getattr(resp, kind)

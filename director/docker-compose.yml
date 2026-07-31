@@ -39,6 +39,23 @@ services:
       # DELETE this volume block — the bind mount fails on hosts without
       # ~/.aws (typical VPS / fresh LXC).
       - ${HOME}/.aws:/root/.aws
+      # THE SOURCE, MOUNTED OVER WHAT THE IMAGE BAKED IN.
+      #
+      # Without these, `docker compose restart` runs the code from the last
+      # BUILD, silently. It cost a debugging cycle on 31 July: the tracks fix
+      # was edited, the container restarted, /radar kept returning the old
+      # answer, and the obvious reading was that the fix was wrong. A container
+      # that ignores your edits and reports success is indistinguishable from a
+      # bug in the edit.
+      #
+      # The Dockerfile still COPYs all of these, so an image built from here is
+      # self-contained and deploys anywhere. These only override them in place,
+      # which is what a machine you are editing on wants. `restart` now picks up
+      # a code change; `--build` is only needed for dependencies.
+      - ./tools:/app/tools
+      - ./prompts:/app/prompts
+      - ./app.py:/app/app.py
+      - ./migrations:/app/migrations
     ports:
       - "8000:8000"
     restart: unless-stopped

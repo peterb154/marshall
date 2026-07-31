@@ -14,3 +14,8 @@ boto3>=1.35
 # DCS-gRPC tools
 grpcio>=1.60
 protobuf>=4.25
+# The domain schema as a readable, IDE-navigable object model (models.py).
+# The numbered files in migrations/ still OWN the schema; these mirror it, and
+# tests/test_models.py fails if the two drift.
+sqlalchemy>=2.0
+geoalchemy2>=0.15

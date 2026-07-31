@@ -161,6 +161,32 @@ _atc_agents: dict[str, Agent] = {}
 _atc_busy: dict[str, threading.Lock] = {}
 
 
+def forget_sessions() -> int:
+    """Drop every live controller. Called when the world restarts.
+
+        "so should the controller memory be wiped. It doesn't need to remember
+         conversation from last mission. It's a different universe"
+
+    AND CLEARING THE TABLES IS NOT ENOUGH ON ITS OWN, which is the whole reason
+    this exists. `session_messages` is where a conversation is PERSISTED, but
+    these Agent objects hold it in process memory as well -- so a controller
+    whose rows had been deleted would go on referring to an approach flown in a
+    world that no longer exists, and the wipe would look like it had worked.
+
+    The same shape as the ground-state dict and the in-memory board: a copy
+    outliving the thing it copied. Third one this week.
+
+    Dropping the object is the whole of it. The next transmission on that
+    session builds a fresh agent, which is exactly what a new universe wants.
+    """
+    n = len(_atc_agents)
+    _atc_agents.clear()
+    # The locks go too: a lock guards an agent that no longer exists, and
+    # keeping them would leak one entry per session for the life of the process.
+    _atc_busy.clear()
+    return n
+
+
 @app.post("/atc")
 def atc_endpoint(body: dict) -> dict:
     session_id, message = body["session_id"], body["message"]
