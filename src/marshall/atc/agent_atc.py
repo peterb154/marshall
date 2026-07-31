@@ -249,7 +249,22 @@ def fetch_radar(session_id: str = "", url: str = RADAR_URL,
     """Grab the current scope (tagged with this session's radar-identified
     callsigns) to hand the controller with the pilot's call. Best-effort -- a
     radar hiccup must not eat the transmission."""
-    q = f"{url}?{urllib.parse.urlencode({'session_id': session_id})}" if session_id else url
+    # NOT YET READING THE TABLE, AND THE REASON IS THE BULLSEYE.
+    #
+    # `core.scope.contacts()` reads the same rows this endpoint serves, is
+    # tested, and is what finally kills the prose parser -- see its docstring.
+    # Wiring it here was tried and backed out on 31 July because this payload
+    # carries one thing the `tracks` table does not: the BULLSEYE, which comes
+    # from the sim rather than the track stream. Losing it blanks the "from
+    # bullseye" column on the untracked table, which is the reference every
+    # pilot's HSI is set to and the only one that means anything for a contact
+    # nobody is working.
+    #
+    # So the bullseye becomes a row first -- it is world configuration, it
+    # changes when the mission does, and it belongs beside the airfield. Then
+    # this reads the table and the endpoint goes.
+    q = (f"{url}?{urllib.parse.urlencode({'session_id': session_id})}"
+         if session_id else url)
     try:
         with urllib.request.urlopen(q, timeout=timeout) as resp:
             got = json.load(resp)
