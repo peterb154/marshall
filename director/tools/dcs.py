@@ -11,6 +11,8 @@ The gRPC stubs are generated from the DCS-gRPC protos and vendored under `_grpc/
 from __future__ import annotations
 
 import math
+
+from marshall.core import geo as _geo
 import logging
 import os
 
@@ -93,17 +95,22 @@ _M_TO_FT = 3.28084
 
 
 def _bearing_range(lat: float, lon: float) -> tuple[float, float]:
-    """Bearing (deg true, the radial the aircraft sits on) and range (nm) from
-    the Batumi beacon to a point."""
-    p1, p2 = math.radians(BATUMI_LAT), math.radians(lat)
-    dl = math.radians(lon - BATUMI_LON)
-    y = math.sin(dl) * math.cos(p2)
-    x = math.cos(p1) * math.sin(p2) - math.sin(p1) * math.cos(p2) * math.cos(dl)
-    brg = (math.degrees(math.atan2(y, x)) + 360) % 360
-    a = (math.sin((p2 - p1) / 2) ** 2
-         + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2)
-    rng = 2 * _NM * math.asin(min(1.0, math.sqrt(a)))
-    return brg, rng
+    """Bearing (deg TRUE -- the radial the aircraft sits on) and range in nm
+    from the Batumi beacon to a point.
+
+    THE SEVENTH IMPLEMENTATION OF THIS IS GONE. It was a haversine with its own
+    earth-radius constant (3440.065 nm, against `core.geo`'s 6371008.8 m -- the
+    same figure, arrived at separately), living here because until the compose
+    file mounted `marshall` into this container the director COULD NOT IMPORT
+    the shared one. Duplicating was not a shortcut, it was the only option.
+
+    Order is swapped rather than passed through: `core.geo` returns
+    (range, bearing) because every caller wants the distance first, and this
+    one's callers want it the other way round. One transposition here beats a
+    second function everywhere.
+    """
+    nm, brg = _geo.range_bearing_true((BATUMI_LAT, BATUMI_LON), lat, lon)
+    return brg, nm
 
 
 _AIR = (common_pb2.GROUP_CATEGORY_AIRPLANE, common_pb2.GROUP_CATEGORY_HELICOPTER)

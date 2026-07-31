@@ -32,6 +32,13 @@ services:
       - .env
     environment:
       STRANDS_PG_DSN: postgresql://strands:strands@db:5432/strands
+      # MUST MATCH THE DOCKERFILE'S, not replace it. compose `environment:`
+      # OVERRIDES the image's ENV rather than extending it, and setting this to
+      # bare /app silently dropped `/app/_grpc` -- every DCS stub import failed
+      # with "No module named 'dcs'" and the radar went dead. `marshall` is
+      # importable because it is mounted at /app/marshall, which was already
+      # first on this path.
+      PYTHONPATH: /app:/app/_grpc
     volumes:
       # Only needed for Option A (AWS_PROFILE with SSO/SAML/STS creds).
       # rw so boto3 can refresh SSO tokens into ~/.aws/sso/cache.
@@ -52,6 +59,12 @@ services:
       # self-contained and deploys anywhere. These only override them in place,
       # which is what a machine you are editing on wants. `restart` now picks up
       # a code change; `--build` is only needed for dependencies.
+      # THE SHARED CODE. `core` is below both deployables -- one squash, one
+      # bearing, one schema -- and until this line existed the director COULD
+      # NOT IMPORT IT. That is not an inconvenience, it is the cause: `_key`
+      # was written three times and "bearing between two points" seven, because
+      # duplicating was the only thing available. See docs/STRUCTURE.md.
+      - ../src/marshall:/app/marshall
       - ./tools:/app/tools
       - ./prompts:/app/prompts
       - ./app.py:/app/app.py
