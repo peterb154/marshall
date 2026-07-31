@@ -218,18 +218,43 @@ Which is what a controller actually does, and it removes `left_at`, the
 counting. Anything worth keeping about a flight that ended is in `event` and in
 the JSONL recorder, both of which survive the reset.
 
-## Still open
+**`map` IS A COLUMN** on `fix`, `airfield`, `runway` and `approach`.
 
-**MAP SCOPING** -- the question I asked badly. Concretely: `fixes` is a global
-table with no map column, and the configured half above is per-map. Caucasus
-has BATUMI and KOBULETI; Syria has none of those and its own; the Marianas
-likewise. Because configuration is NOT wiped on a mission change, loading a
-Syria mission would leave Caucasus fixes sitting in the table, and a fix lookup
-would answer with a point two thousand miles away rather than saying it does not
-know the name. That is the same shape as the T-55s: stale rows that look live
+Every map's configuration is present all the time, and the mission picks out the
+rows it needs. Nothing is loaded at mission start, so there is no load step to
+get wrong, no window where the field is half-known, and two maps coexist without
+either being torn down.
+
+The alternative -- one map at a time, rebuilt when it changes -- is less schema
+and more ceremony, and the ceremony is the part that gets forgotten. Without the
+column, loading a Syria mission leaves Caucasus fixes in the table and a lookup
+answers with a point two thousand miles away instead of saying it does not know
+the name. The same shape as the eleven-hour-old T-55s: rows that look live
 because nothing scopes them.
 
-So: does `map` go on `fix`, `airfield` and the rest -- or does the importer
-simply own a map at a time and rebuild the configured tables when the map
-changes? The second is less schema and more ceremony; the first is one column
-and lets two maps coexist. I lean to the column.
+### The corollary: configuration is LIVE, so nothing may cache it
+
+    "We can edit them anytime, while a mission is going on."
+
+That is a property worth having and it is not free -- it means no module may
+hold its own copy. Read through to the table, every time.
+
+**IT IS BROKEN TODAY, in the other half of the same disease.** `_load_fixes` in
+the director says so in its own docstring -- *"Once, lazily"* -- sets
+`_fixes_loaded = True`, and never reads the table again for the life of the
+process. It also merges with `setdefault`, so a second read would not overwrite
+what it already had. Edit a fix mid-mission and the controller goes on using the
+old one until somebody restarts a container, with nothing anywhere to say why.
+
+`route.py` is the larger version of the same thing: an entire airfield held as
+Python constants, which is a cache with a process lifetime and no way to
+invalidate it short of a restart.
+
+So the rule for the configured half is the mirror of the rule for the flown
+half. Flown state has one home because copies drift. Configured state has one
+home because copies go STALE, and a stale approach plate is worse than a missing
+one -- it answers confidently.
+
+Where a read per call is genuinely too expensive, the cache carries an explicit
+TTL and says so, the way `_filed` does at 45 seconds. What is not acceptable is
+a cache with no expiry pretending to be a lookup.
