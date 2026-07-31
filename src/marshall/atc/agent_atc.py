@@ -4811,6 +4811,10 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                         note_issued(bridge, cs, text)
                         with radio_lock:
                             print(f"  ATC[vec] {text}", flush=True)
+                            # TELL THE ENGINE WHAT WE JUST CLEARED HIM TO.
+                            # The board is the record of what was agreed, and
+                            # this thread agrees things.
+                            ctl.note_vectored(cs, g.altitude_ft)
                             record(session_id, kind="atc/vector", callsign=cs,
                                    range_nm=round(g.range_nm, 2),
                                    heading=want, alt=g.altitude_ft, text=text)
@@ -4836,6 +4840,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     note_issued(bridge, cs, text)
                     with radio_lock:
                         print(f"  ATC[asr] {text}", flush=True)
+                        ctl.note_vectored(cs, g.altitude_ft)
                         record(session_id, kind="atc/range", callsign=cs,
                                range_nm=round(g.range_nm, 2), phase=g.phase,
                                heading=g.heading, text=text)

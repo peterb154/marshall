@@ -476,6 +476,35 @@ class Controller:
             ac.owner = owner
         return ac
 
+    def note_vectored(self, cs: str, alt_ft: int | None) -> None:
+        """Record an altitude the RADAR side issued, so the board is not stale.
+
+        THE ASR THREAD IS A SECOND CONTROLLER THAT KEPT NO RECORDS. It computes
+        vectors and a descent profile and transmits them directly -- no model,
+        no engine -- and until now it told this class nothing. So the board went
+        on showing whatever `intents.dispatch` last agreed while the pilot was
+        being flown somewhere else entirely. Found on the radio:
+
+            "Doing it says cleared 5,000 but I'm currently cleared to 2,000...
+             I believe the reason the board isn't getting updated is that the
+             ASR process doesn't update the status on the board."
+
+        Correct, and it is the same shape as every other bug this week: two
+        things issuing instructions and one of them keeping the records.
+
+        IT DOES NOT TOUCH `phase`. Being vectored down the approach is not a
+        state transition -- he is already CLEARED and stays so until he reports
+        the field, goes missed, or lands. This records the NUMBER, which is what
+        was wrong; the phase machine is not the ASR's business.
+
+        Nor does it invent an entry. An aircraft the engine has never heard of
+        does not get one because radar talked to him -- that is the ghost door,
+        and `note_radar_contact` guards it the same way.
+        """
+        ac = self.aircraft.get(self._resolve(cs))
+        if ac is not None and alt_ft:
+            ac.assigned_ft = int(alt_ft)
+
     def note_intent(self, cs: str, intent: str) -> None:
         """What he told the controller he wants.
 

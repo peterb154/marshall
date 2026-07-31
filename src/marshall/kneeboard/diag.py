@@ -367,6 +367,14 @@ _PAGE = """<!doctype html><html><head><meta charset="utf-8">
     border-bottom:1px solid var(--rule)}
   td{padding:.28rem .6rem .28rem 0;border-bottom:1px solid #14191D;
     vertical-align:top;word-break:break-word}
+  /* NUMBERS DO NOT WRAP. `word-break:break-word` is right for a callsign or a
+     transcript and wrong for a figure: in a narrow column it broke "2,000" and
+     "1 1 5" across lines, so the board printed its digits vertically and was,
+     in a pilot's words while flying it, "really hard to read".
+     A measurement is one token. Let the column scroll instead -- the table is
+     already inside `.scroll`, which is the right place to give way. */
+  td.n{white-space:nowrap;word-break:normal;text-align:right;
+    font-variant-numeric:tabular-nums}
   tr:last-child td{border-bottom:0}
   .org-engine{background:#12303a;color:#7FB3D5;border-color:#1d4a5a}
   .org-agent{background:#2a2438;color:#b39ddb;border-color:#3d3352}
@@ -529,11 +537,11 @@ function board(d) {
         + `<td>${phase(r)}</td>`
         + `<td class="${lvl('owner', r.owner)}">${esc(r.owner) || '&mdash;'}</td>`
         + `<td class="dim">${esc(r.type)}</td>`
-        + `<td class="dim">${r.freq_mhz ? r.freq_mhz.toFixed(3) : '&mdash;'}</td>`
-        + `<td class="dim">${num(r.heading, 0, '&deg;')}</td>`
-        + `<td class="dim">${num(r.alt_ft, 0, ' ft')}</td>`
-        + `<td class="dim">${num(r.speed_kt, 0, ' kt')}</td>`
-        + `<td class="dim">${num(r.range_nm, 1, ' nm')}</td>`
+        + `<td class="dim n">${r.freq_mhz ? r.freq_mhz.toFixed(3) : '&mdash;'}</td>`
+        + `<td class="dim n">${num(r.heading, 0, '&deg;')}</td>`
+        + `<td class="dim n">${num(r.alt_ft, 0, ' ft')}</td>`
+        + `<td class="dim n">${num(r.speed_kt, 0, ' kt')}</td>`
+        + `<td class="dim n">${num(r.range_nm, 1, ' nm')}</td>`
         + `<td class="${lvl('authority', r.authority)}">${esc(r.authority || 'none')}</td>`
         + '</tr>';
     }).join('') + '</table></div>';
@@ -613,10 +621,10 @@ function untracked(d) {
         + `<td class="${u.level || ''}">${esc(u.derived)}</td>`
         + `<td class="dim">${esc(u.type || '')}</td>`
         + `<td class="${lvl('state', u.state)}">${esc(u.state)}</td>`
-        + `<td class="dim">${num(u.heading, 0, '&deg;')}</td>`
-        + `<td class="dim">${num(u.alt_ft, 0, ' ft')}</td>`
-        + `<td class="dim">${num(u.speed_kt, 0, ' kt')}</td>`
-        + `<td class="dim">${bulls(u)}</td>`
+        + `<td class="dim n">${num(u.heading, 0, '&deg;')}</td>`
+        + `<td class="dim n">${num(u.alt_ft, 0, ' ft')}</td>`
+        + `<td class="dim n">${num(u.speed_kt, 0, ' kt')}</td>`
+        + `<td class="dim n">${bulls(u)}</td>`
         + `<td>${(u.tags || []).map(t => '<span class="pill">' + esc(t)
              + '</span>').join(' ')}</td></tr>`).join('') + '</table></div>';
   }
@@ -679,7 +687,13 @@ function last(l) {
     + `<span class="dim"> ${esc(l.track)}</span></span></li>` + verdict;
   (l.trail || []).forEach(t => {
     const meta = (LEGEND.kind || {})[t.kind] || {};
+    // WHO SAID IT, beside WHEN. `stage` answers when in the turn; `origin`
+    // answers which brain -- engine (deterministic), agent (the model), or
+    // guard (the loop's own rules, refusing before either brain sees the
+    // call). The page does not know which is which; the bridge publishes it.
+    const org = (LEGEND.origin || {})[t.kind] || '';
     out += `<li><span class="k">${esc(meta.stage || t.kind)}</span>`
+      + (org ? `<span class="pill org-${esc(org)}">${esc(org)}</span>` : '')
       + `<span class="${meta.level || ''}">${esc(t.gate || t.text)}`
       + (t.seconds ? `<span class="dim"> ${t.seconds}s ${esc(t.tier || '')}</span>` : '')
       + '</span></li>';

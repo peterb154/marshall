@@ -279,3 +279,33 @@ class TestWhichBrainSaidIt(unittest.TestCase):
         """No directive, no verdict. Most conversation is not an instruction."""
         self.assertEqual(diag._voiced([{"kind": "atc/pilot",
                                         "text": "Sockeye, go ahead."}]), {})
+
+
+class TestTheOriginBadgeIsActuallyRendered(unittest.TestCase):
+    """Publishing the legend is not the same as showing it.
+
+    The origin legend shipped, the CSS for the badges shipped, and the line
+    that RENDERS them did not -- a two-assertion edit whose second assertion
+    failed, so the file was never written while an earlier edit in the same
+    session landed fine. Everything looked right: the tests passed, the data
+    was in `/diag.json`, and the page simply did not draw it. A pilot found it
+    on the radio:
+
+        "on the diag page under the last turn stage by stage, I don't see
+         attribution and chain of thought"
+
+    Testing that a value is PUBLISHED says nothing about whether it is USED, so
+    this reads the page.
+    """
+
+    def test_the_page_reads_the_origin_legend(self):
+        self.assertIn("LEGEND.origin", diag.page())
+
+    def test_and_has_somewhere_to_put_it(self):
+        for origin in ("org-engine", "org-agent", "org-guard"):
+            with self.subTest(origin=origin):
+                self.assertIn(origin, diag.page())
+
+    def test_the_voiced_verdict_is_rendered_too(self):
+        self.assertIn("PARAPHRASED", diag.page())
+        self.assertIn("SILENT", diag.page())
