@@ -389,3 +389,44 @@ That parser is not something to fix. If the bridge reads `tracks`, it is
 something to DELETE, and [#47] closes with it. The prose stays -- the model
 still needs a picture in words -- but it becomes a rendering of the rows, at the
 edge, and never an interchange format between our own components.
+
+## Which models live where
+
+    "I guess a flight (a group of aircraft being controlled as one) is in the
+     atc module. It's an ATC concept nobody else needs to worry about right?"
+
+Right, and it generalises: **shared tables in `core.schema`, domain tables with
+the domain.**
+
+    core.schema     track, airfield, runway, fix, station, approach
+    atc.models      flight, flight_member, clearance, identity
+    traffic.models  (later) the world model, the spawn schedule
+
+`feed` knows tracks. `traffic` thinks in sim GROUPS -- if ATC controls an AI
+four-ship, ATC forms a flight over it and traffic never needs the concept. The
+kneeboard renders rows without knowing when a flight forms. Only `atc` decides
+what a flight IS. The kneeboard importing `atc.models.Flight` to read it is a
+downward dependency and legal.
+
+### The trap this caught
+
+An earlier draft had `track.flight_id` as a nullable foreign key, which was
+elegant -- `IS NULL` means untracked, and the invariant becomes structural
+instead of something a function recomputes.
+
+**It inverts the layering.** `track` is `core`, `flight` is `atc`, so `core`
+would depend on `atc`. And the key must sit on `track` because that is the many
+side, so it cannot simply be turned around.
+
+The association belongs to WHOEVER ASSERTS IT. ATC is what decides this track is
+part of that flight, so the join table is `atc.models.flight_member`, and
+`track` stays innocent. Untracked becomes a LEFT JOIN rather than a NULL test:
+slightly less pretty, and the price of the arrow pointing the right way. It is
+still a fact the schema holds rather than one `publish_state` derives, which was
+the actual win -- that derivation put one aeroplane on the board AND in the
+untracked list on 31 July.
+
+It generalises too. When `traffic` wants to mark a track as one of its own
+spawns, that is a table in `traffic.models`, not a column on `core.track`.
+Otherwise `core` accretes a foreign key per domain and becomes a shared table
+nobody can change without asking everybody.
