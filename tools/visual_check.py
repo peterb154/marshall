@@ -28,16 +28,11 @@ import os
 import subprocess
 import sys
 import time
-import types
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-if "dcs" not in sys.modules:
-    _pkg = types.ModuleType("dcs")
-    _pkg.__path__ = [str(ROOT / "director" / "_grpc" / "dcs")]
-    sys.modules["dcs"] = _pkg
 
 LOG = os.environ.get("MARSHALL_BRIDGE_LOG", "/tmp/marshall-bridge-live.log")
 HZ = float(os.environ.get("MARSHALL_FREQ", "124.0")) * 1e6

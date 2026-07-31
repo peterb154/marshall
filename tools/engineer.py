@@ -27,16 +27,11 @@ import argparse
 import os
 import sys
 import time
-import types
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-if "dcs" not in sys.modules:                     # see asr_autopilot.py
-    _pkg = types.ModuleType("dcs")
-    _pkg.__path__ = [str(ROOT / "director" / "_grpc" / "dcs")]
-    sys.modules["dcs"] = _pkg
 
 from marshall import config
 

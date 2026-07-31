@@ -23,19 +23,17 @@ import argparse
 import math
 import os
 import sys
-import types
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-sys.path.insert(0, str(ROOT / "director" / "_grpc"))
 
-if "dcs" not in sys.modules:                     # see asr_autopilot.py
-    _pkg = types.ModuleType("dcs")
-    _pkg.__path__ = [str(ROOT / "director" / "_grpc" / "dcs")]
-    sys.modules["dcs"] = _pkg
 
 import grpc
+
+from marshall.feed.stubs import bind as _bind
+
+_bind()
 
 ADDR = os.environ.get("DCS_GRPC_ADDR", "127.0.0.1:50051")
 

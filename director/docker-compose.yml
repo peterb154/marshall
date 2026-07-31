@@ -51,7 +51,7 @@ services:
       # with "No module named 'dcs'" and the radar went dead. `marshall` is
       # importable because it is mounted at /app/marshall, which was already
       # first on this path.
-      PYTHONPATH: /app:/app/_grpc
+      PYTHONPATH: /app
     volumes:
       # Only needed for Option A (AWS_PROFILE with SSO/SAML/STS creds).
       # rw so boto3 can refresh SSO tokens into ~/.aws/sso/cache.

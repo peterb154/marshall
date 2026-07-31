@@ -52,7 +52,7 @@ packages = ["src/marshall"]
 [tool.ruff]
 line-length = 88
 target-version = "py312"
-extend-exclude = ["director/_grpc"]      # generated protobuf stubs
+extend-exclude = ["src/marshall/_grpc"]      # generated protobuf stubs
 
 [tool.ruff.lint]
 select = [

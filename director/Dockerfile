@@ -8,7 +8,7 @@ FROM python:3.13-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PYTHONPATH=/app:/app/_grpc
+    PYTHONPATH=/app
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl libpq5 \
@@ -30,7 +30,6 @@ COPY director/tools/     /app/tools/
 # mirrored into Postgres). Both deployables import these, which is the whole
 # point -- see docs/STRUCTURE.md. Compose mounts them over the top for editing.
 COPY src/marshall/       /app/marshall/
-COPY director/_grpc/     /app/_grpc/
 COPY director/prompts/   /app/prompts/
 COPY director/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh

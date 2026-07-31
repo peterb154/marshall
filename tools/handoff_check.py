@@ -31,18 +31,12 @@ import json
 import os
 import sys
 import time
-import types
 import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-sys.path.insert(0, str(ROOT / "director" / "_grpc"))
 
-if "dcs" not in sys.modules:                     # see asr_autopilot.py
-    _pkg = types.ModuleType("dcs")
-    _pkg.__path__ = [str(ROOT / "director" / "_grpc" / "dcs")]
-    sys.modules["dcs"] = _pkg
 
 from marshall.atc import agent_atc as A
 from marshall.core import route as R

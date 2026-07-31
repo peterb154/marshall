@@ -28,7 +28,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-sys.path.insert(0, str(ROOT / "director" / "_grpc"))
 sys.path.insert(0, str(ROOT / "director"))
 
 # `dcs` is claimed by two different things and only one of them can win by path
@@ -40,13 +39,12 @@ sys.path.insert(0, str(ROOT / "director"))
 # container has no pydcs. Binding the name to the stub tree up front, before
 # anything imports either, is the whole fix; this process wants the stubs and
 # has no use for pydcs.
-if "dcs" not in sys.modules:
-    import types
-    _pkg = types.ModuleType("dcs")
-    _pkg.__path__ = [str(ROOT / "director" / "_grpc" / "dcs")]
-    sys.modules["dcs"] = _pkg
 
 import grpc
+
+from marshall.feed.stubs import bind as _bind
+
+_bind()
 
 from marshall.atc import asr
 from marshall.core import route as R

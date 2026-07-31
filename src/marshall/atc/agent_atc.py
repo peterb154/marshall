@@ -3156,23 +3156,14 @@ def push_fixes(base: str, profile) -> int:
     table keeps only the field, `vector` answers "no fix for that", and the
     approach -- which needs none of this -- carries on unaffected.
     """
-    import sys
-    from pathlib import Path as _Path
     from marshall.core import route as R
 
-    # The generated DCS-gRPC stubs live beside the director and are not a
-    # package this process imports normally. pydcs also claims the name `dcs`,
-    # and a regular package shuts the namespace search down -- so the stub tree
-    # has to be bound before anything touches it. Same dance as the tools.
-    _root = _Path(__file__).resolve().parents[3]
-    _stubs = _root / "director" / "_grpc"
-    if str(_stubs) not in sys.path:
-        sys.path.insert(0, str(_stubs))
-    if "dcs" not in sys.modules or not hasattr(sys.modules["dcs"], "__path__"):
-        import types as _types
-        _pkg = _types.ModuleType("dcs")
-        _pkg.__path__ = [str(_stubs / "dcs")]
-        sys.modules["dcs"] = _pkg
+    # THE FIFTH COPY OF THIS DANCE, and the one place the real reason
+    # survived in a comment: "pydcs also claims the name `dcs`". Ruff's
+    # per-file ignores said it was about import ORDER, which was false. One
+    # implementation now, in `feed.stubs`, with the reason written down.
+    from marshall.feed.stubs import bind as _bind_dcs_stubs
+    _bind_dcs_stubs()
 
     # EVERY fix route.py publishes, not only the ones on tonight's sortie. A
     # filed flight plan may route via any of them -- a ferry up the coast goes to

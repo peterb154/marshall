@@ -21,18 +21,14 @@ not what is out there now, it is what was out there then.
 from __future__ import annotations
 
 import sys
-import types
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-_STUBS = ROOT / "director" / "_grpc"
-sys.path.insert(0, str(_STUBS))
-if "dcs" not in sys.modules or not hasattr(sys.modules.get("dcs"), "__path__"):
-    _pkg = types.ModuleType("dcs")
-    _pkg.__path__ = [str(_STUBS / "dcs")]
-    sys.modules["dcs"] = _pkg
+from marshall.feed.stubs import bind as _bind_dcs_stubs
+
+_bind_dcs_stubs()
 
 LUA = """
 local out = {}

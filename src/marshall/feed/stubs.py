@@ -45,10 +45,15 @@ import sys
 import types
 from pathlib import Path
 
-# Where the generated stubs are vendored. Inside the container the Dockerfile
-# also puts this on PYTHONPATH; on the host nothing does, and pydcs would win
-# anyway, so the path is resolved here rather than assumed.
-_ROOT = Path(__file__).resolve().parents[3] / "director" / "_grpc"
+# Where the generated stubs are vendored: INSIDE the package, beside the code
+# that uses them. They lived in `director/_grpc` because that is where the
+# gRPC work started, which put a dependency of the shared `feed` module inside
+# a deployable that `feed` no longer belongs to -- and made every consumer
+# reach across a directory boundary to find it.
+#
+# Resolved from this file rather than assumed on PYTHONPATH, so it works the
+# same whether or not anybody remembered to set one.
+_ROOT = Path(__file__).resolve().parents[1] / "_grpc"
 
 
 def bind() -> None:

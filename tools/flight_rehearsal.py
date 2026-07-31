@@ -104,14 +104,9 @@ def spawn(handle: str, bearing: float, rng: float, alt_ft: int) -> bool:
 
 def despawn(handle: str) -> None:
     import os
-    import types
 
-    stubs = ROOT / "director" / "_grpc"
-    sys.path.insert(0, str(stubs))
-    if "dcs" not in sys.modules or not hasattr(sys.modules.get("dcs"), "__path__"):
-        pkg = types.ModuleType("dcs")
-        pkg.__path__ = [str(stubs / "dcs")]
-        sys.modules["dcs"] = pkg
+    from marshall.feed.stubs import bind as _bind_dcs_stubs
+    _bind_dcs_stubs()
     import grpc
     from dcs.custom.v0 import custom_pb2, custom_pb2_grpc
 
