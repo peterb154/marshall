@@ -520,6 +520,32 @@ class Station:
     # which aerodrome they belong to is a category error rather than a missing
     # value.
     field: str = ""
+    # HOW HE SOUNDS. Never what he decides.
+    #
+    #     "See if you can add some soul to each of the controllers so there's a
+    #      different texture in the way they talk to us. Some might be grouchy.
+    #      Some might be super helpful."
+    #
+    # Eight controllers who are all the same person is the tell that there is
+    # one prompt behind them. Real ones are not interchangeable: the man on
+    # clearance delivery reads you a form, the ground controller at a busy field
+    # has no time for you, and the approach controller talking you down in
+    # weather is the calmest voice you will hear all day. A pilot learns them,
+    # and knowing who he is about to talk to is part of knowing where he is.
+    #
+    # THE LINE THIS MUST NOT CROSS, and it is the whole reason this is a
+    # sentence on a Station rather than eight system prompts: manner changes the
+    # WORDS AROUND the numbers and never the numbers. A grouchy controller
+    # issues the same altitude as a cheerful one, in the same phraseology, with
+    # the same separation behind it -- he is just shorter about it. The moment a
+    # personality is allowed to decline work, skip a required read-back or round
+    # off a heading, it has stopped being a voice and started being a fault, and
+    # it will be diagnosed as one by somebody reading the separation engine.
+    #
+    # `voice` is the Polly timbre; this is the manner spoken in it. They belong
+    # together on the station for the same reason -- a voice handed in
+    # separately drifts from the identity it belongs to.
+    manner: str = ""
 
     @property
     def freqs(self) -> tuple[float, ...]:
@@ -548,7 +574,14 @@ class Station:
 # CENTER IS NOT A FIELD'S CONTROLLER. Approach and Tower belong to an aerodrome;
 # a Center owns a region and hands you between aerodromes, so there is one for
 # the whole theatre rather than one per airfield.
-CENTER = Station("Georgia Center", 139.000, "center", voice="Brian")
+CENTER = Station(
+    "Georgia Center", 139.000, "center", voice="Brian",
+    manner="Unhurried and a little remote, like a man with a very large piece "
+           "of sky and no particular reason to rush. Formal without being "
+           "stiff. He works in whole minutes and hundreds of miles, so a "
+           "fifteen-mile problem does not move him. Never chatty, never curt "
+           "-- just distant, the way a voice sounds when it is not standing at "
+           "the same airfield you are.")
 # THE PUBLISHED FREQUENCY FIRST, the tunable one beside it.
 #
 # AIP Georgia AD 2.UGSB-IAC-12-ILSy (10 AUG 2023) gives APP 124.425 and TWR
@@ -560,9 +593,24 @@ CENTER = Station("Georgia Center", 139.000, "center", voice="Brian")
 # lie on the plate, exclude the warbirds, or carry both. We carry both. One
 # transmission goes out on every frequency the facility owns and each pilot
 # hears it once; see `Station.channels` and `radio/client.transmit`.
+# THE STEADIEST VOICE ON THE MAP, and deliberately so. He is the one talking a
+# pilot down through cloud to a runway he cannot see, which is the single moment
+# in this whole system where a controller's manner does real work. Everybody
+# else can afford a temper.
 APPROACH = Station("Batumi Approach", 124.425, "approach",
                    channels=(124.000,),
-                   also=("departure",), voice="Matthew", field="Batumi")
+                   also=("departure",), voice="Matthew", field="Batumi",
+                   manner="Calm, methodical, and entirely unflappable -- the "
+                          "voice you want in the weather. He talks in an even "
+                          "rhythm and never speeds up, because the man on the "
+                          "other end is flying an instrument approach and "
+                          "takes his pace from yours. Warm, but economical: "
+                          "no chat during the talk-down, and every "
+                          "transmission is a number the pilot needs. If "
+                          "something goes wrong he gets quieter and more "
+                          "precise rather than louder. The one controller who "
+                          "is never, under any circumstances, short with "
+                          "anybody.")
 # GROUND IS ITS OWN SEAT NOW, and it used to be part of Tower's `also`.
 #
 # That was right while Batumi was the only aerodrome and a warbird had four
@@ -574,7 +622,15 @@ APPROACH = Station("Batumi Approach", 124.425, "approach",
 #
 # The 1944 arrangement is not deleted, it moved to `WW2_STATIONS` below.
 TOWER = Station("Batumi Tower", 118.600, "tower", channels=(118.000,),
-                voice="Joey", field="Batumi")
+                voice="Joey", field="Batumi",
+                manner="Cheerful and genuinely pleased to see aeroplanes. He "
+                       "has a window and he uses it -- he will tell you the "
+                       "wind is being kind today, or that he has you visual on "
+                       "a two-mile final. Brisk when there is a sequence to "
+                       "run, friendly the rest of the time, and he says "
+                       "\"welcome back\" to somebody who has just landed out "
+                       "of the weather. Never gushing, and never so chatty "
+                       "that a landing clearance gets buried in it.")
 # 121.900 IS ASSIGNED BY US, not published. The AIP extract we hold for UGSB
 # gives APP and TWR and nothing else, so rather than invent a number with no
 # shape, this takes the frequency that ground control sits on at most of the
@@ -582,7 +638,16 @@ TOWER = Station("Batumi Tower", 118.600, "tower", channels=(118.000,),
 # most we can claim for it.
 GROUND = Station("Batumi Ground", 121.900, "ground",
                  also=("delivery", "clearance"), voice="Stephen",
-                 field="Batumi")
+                 field="Batumi",
+                 manner="Gruff, and has been doing this a very long time. He "
+                        "uses as few words as the job allows and none at all "
+                        "for pleasantries -- \"taxi bravo, hold short one "
+                        "three\" and nothing after it. Faintly put upon by "
+                        "anyone who needs the taxiways explained, though he "
+                        "will explain them, correctly, every time. Not rude "
+                        "and never unsafe: he simply regards conversation as "
+                        "something that happens on other frequencies. A pilot "
+                        "who thanks him gets \"mm-hm\".")
 
 # ---------------------------------------------------------------------------
 # KOBULETI (UG5X) -- the departure field.
@@ -603,7 +668,16 @@ GROUND = Station("Batumi Ground", 121.900, "ground",
 # 125.100 is ASSIGNED. The chart publishes no clearance delivery -- a Soviet-era
 # military field would not have had one -- so this is ours, and marked.
 KOB_CLEARANCE = Station("Kobuleti Clearance", 125.100, "clearance",
-                        also=("delivery",), voice="Gregory", field="Kobuleti")
+                        also=("delivery",), voice="Gregory", field="Kobuleti",
+                        manner="Precise to the point of pedantry, and reads a "
+                               "clearance like a man reading a form -- because "
+                               "that is exactly what it is. Unhurried, "
+                               "slightly officious, mildly satisfied when a "
+                               "read-back is correct and entirely willing to "
+                               "make you do it again when it is not. He will "
+                               "not let a wrong frequency or a wrong altitude "
+                               "past him, ever, and he is polite about it in a "
+                               "way that makes it worse.")
 # 133.000 AND 122.100 ARE BOTH PUBLISHED, and both are the Tower. The chart
 # lists 133.000 as TWR and 122.100 under "Additional Combined Frequencies" as
 # Tower again -- a real facility reachable on two VHF channels, which is what
@@ -618,13 +692,30 @@ KOB_CLEARANCE = Station("Kobuleti Clearance", 125.100, "clearance",
 # it is one more row and one more preset.
 KOB_GROUND = Station("Kobuleti Ground", 133.000, "ground",
                      channels=(122.100,), also=("tower",),
-                     voice="Justin", field="Kobuleti")
+                     voice="Justin", field="Kobuleti",
+                     manner="Working two jobs at once and it shows. Quick, "
+                            "clipped, always slightly ahead of you -- he will "
+                            "give you taxi and the runway in one transmission "
+                            "to save a second one. Not unfriendly, just "
+                            "busy: no wasted syllables, and he expects you to "
+                            "keep up. He is Ground and Tower on the same seat "
+                            "and switches between them without ceremony, so a "
+                            "taxi instruction and a take-off clearance sound "
+                            "like the same man because they are.")
 # 123.300 IS PUBLISHED, as "GCA" -- ground controlled approach, the radar
 # controller. Kobuleti is a PAR/SRA field, so the man on this frequency is the
 # same kind of controller Batumi Approach is, and giving him departures as well
 # as arrivals is what the chart already implies.
 KOB_DEPARTURE = Station("Kobuleti Departure", 123.300, "departure",
-                        also=("approach",), voice="Kevin", field="Kobuleti")
+                        also=("approach",), voice="Kevin", field="Kobuleti",
+                        manner="Dry, laconic, and comfortable with silence. A "
+                               "radar man: he tells you what he sees and then "
+                               "stops talking, and he does not fill the gaps. "
+                               "Occasional deadpan humour, never at the "
+                               "pilot's expense and never during anything that "
+                               "matters. If he says \"radar contact\" and "
+                               "nothing else for four minutes, that is because "
+                               "there is nothing else you need.")
 
 # The mission commander. Not a new kind of machine -- a controller with a wider
 # scope, which is why it is a Station like the others: it has a frequency, a
@@ -635,7 +726,14 @@ KOB_DEPARTURE = Station("Kobuleti Departure", 123.300, "departure",
 # Fourth preset deliberately. A period set has four buttons and the other three
 # are spoken for, so this is the last one available -- which is also true of a
 # real WW2 cockpit and is a reasonable constraint to design inside.
-OVERLORD = Station("Sentry", 131.000, "overlord", voice="Kimberly")
+OVERLORD = Station("Sentry", 131.000, "overlord", voice="Kimberly",
+                   manner="Command, not service. Crisp, directive and "
+                          "impersonal -- she gives a flight a job rather than "
+                          "a heading, and she does not soften it. No small "
+                          "talk, no reassurance, and no interest in how you "
+                          "feel about the tasking. The only voice here that "
+                          "tells you what to do rather than what you are "
+                          "cleared to do.")
 
 STATIONS = [KOB_CLEARANCE, KOB_GROUND, KOB_DEPARTURE, CENTER,
             APPROACH, TOWER, GROUND, OVERLORD]
@@ -733,9 +831,53 @@ class Field_:
     z: float
     elevation_ft: int
     runway: int             # landing heading, magnetic
+    # THE DESIGNATORS THE MISSION USES, for (runway, its reciprocal).
+    #
+    #     "Mission defined runway btw, irl plates and dcs might disagree by a
+    #      digit or two based on changing mag dev over time."
+    #
+    # Which is exactly what happens here, and it is why this cannot be derived
+    # from `runway` by rounding. Batumi's landing heading is 124 magnetic, which
+    # rounds to 12 -- and DCS does call it 12 -- while the current AIP plate
+    # says 13/31, because magnetic drift renamed it and the paint caught up.
+    # Kobuleti is the same story: 064 magnetic, published 07/25.
+    #
+    # Rounding the heading gave "runway 12" and "runway 06", which are the
+    # numbers on nobody's chart. So the DESIGNATOR is data and the HEADING is
+    # geometry, and `runway_in_use` picks an end with the second and names it
+    # with the first.
+    ends: tuple[int, int] = (0, 0)
     msa_sectors: list = field(default_factory=list)   # published, the pilot's
     mva_cells: list = field(default_factory=list)     # surveyed, the controller's
     note: str = ""
+
+    def runway_in_use(self, wind_from_deg: float | None = None) -> int:
+        """The into-wind end, as a two-digit designator. 07, 13, 25, 31.
+
+        COMPUTED, because it is not a property of the aerodrome:
+
+            "'Runway in use' should probably be computed -- based on weather
+             (which is measured from the sim)."
+
+        `runway` is one end's magnetic heading; the other is its reciprocal, and
+        which of the two is "in use" is a fact about the WEATHER. Hardcoding it
+        meant the departure field's controller had nothing to derive it from and
+        guessed -- live, Kobuleti Ground cleared an aircraft to taxi to runway
+        25 with the wind at 090, which is the downwind end of his own runway.
+        Plausible, wrong, and it would have been flown.
+
+        Ties go to the published end, so a dead calm is stable rather than
+        flipping on rounding.
+        """
+        if wind_from_deg is None:
+            wind_from_deg = WIND_FROM_DEG
+        into = self.runway
+        best_off = abs((wind_from_deg - into + 180) % 360 - 180)
+        recip = (self.runway + 180) % 360
+        # Strict, so a dead calm keeps the published end rather than flipping.
+        if abs((wind_from_deg - recip + 180) % 360 - 180) < best_off - 0.001:
+            return self.ends[1]
+        return self.ends[0]
 
     def msa_for(self, bearing_deg: float) -> int:
         """Published MSA -- briefed, charted, and not for vectoring."""
@@ -747,7 +889,7 @@ class Field_:
 
 
 BATUMI_FIELD = Field_(
-    "Batumi", -355811, 617386, 32, 124,
+    "Batumi", -355811, 617386, 32, 124, ends=(13, 31),
     msa_sectors=list(MSA_SECTORS),
     mva_cells=list(MVA_CELLS),
     note="Highest terrain 10,623 ft at 23 nm SE. Missed approach turns LEFT.")
@@ -768,7 +910,7 @@ BATUMI_FIELD = Field_(
 # approach here -- we depart from it -- and the day somebody does, this comment
 # is the thing that should stop them trusting a vectoring altitude.
 KOBULETI_FIELD = Field_(
-    "Kobuleti", -317605, 636704, 59, 64,
+    "Kobuleti", -317605, 636704, 59, 64, ends=(7, 25),
     note="Field elevation 59 ft. Runway 07/25, 2400 m. TACAN 67X KBL, "
          "ILS 111.50 on 07. GCA field: PAR and SRA published.")
 

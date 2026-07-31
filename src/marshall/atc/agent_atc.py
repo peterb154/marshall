@@ -4306,6 +4306,28 @@ def compose_message(bridge, scope, known, transcript, profile, me, fix, nxt,
             "he is holding, and a pilot who has lost track of that gets it "
             "wrong again on the next call. He is flying an aeroplane; do "
             "not make him ask twice.")
+        # WHO HE IS, as distinct from what he does. See `Station.manner`.
+        #
+        # Fenced hard, and the fence is the point rather than boilerplate: a
+        # personality that can decline work or round a heading has stopped
+        # being a voice and become a fault -- and it would be diagnosed by
+        # somebody reading the separation engine, which would be innocent.
+        # So the manner is explicitly told it owns the words AROUND the
+        # numbers and never the numbers.
+        if getattr(me, "manner", ""):
+            parts.append(
+                f"YOUR MANNER: {me.manner}\n"
+                "This is HOW YOU SOUND and nothing more. It never changes "
+                "WHAT you say: the altitudes, headings, frequencies, "
+                "sequence and required read-backs are decided elsewhere and "
+                "are identical whoever is on the microphone. A short-tempered "
+                "controller issues exactly the same clearance as a cheerful "
+                "one and is merely briefer about it. You may never refuse "
+                "work that is yours, skip a read-back, omit a number, round "
+                "one off, or be slower to help because of your manner -- and "
+                "if a pilot is in trouble, lost, or asking for help, every "
+                "personality here drops it instantly and becomes plain, "
+                "clear and useful.")
         also = [r for r in (getattr(me, "also", ()) or ()) if r]
         if also:
             # The other hats this man wears, read off the station rather than

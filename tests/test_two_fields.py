@@ -242,16 +242,89 @@ class TestTheKneeboardSurvivesSevenStations(unittest.TestCase):
 
 
 class TestTheWindPicksTheRunways(unittest.TestCase):
-    """'Runway in use' is not yet computed, so the two must agree by hand."""
+    """The runway in use is COMPUTED, and it caught a live bug.
 
-    def test_the_wind_favours_both_runways_in_use(self):
-        """090/5, chosen so Batumi 13 and Kobuleti 07 are both into it. A
-        headwind component means the angle off the nose is under 90 degrees."""
-        for field, rwy_mag in (("Batumi", 124), ("Kobuleti", 64)):
-            with self.subTest(field=field):
-                off = abs((R.WIND_FROM_DEG - rwy_mag + 180) % 360 - 180)
-                self.assertLess(off, 90,
-                                f"{field} runway {rwy_mag} is downwind")
+        "'Runway in use' should probably be computed -- based on weather
+         (which is measured from the sim)."
+
+    Asked for taxi, Kobuleti Ground cleared an aircraft to runway 25 with the
+    wind at 090 -- the downwind end of his own runway. The plate described only
+    the field being approached, so the departure field's controllers had a
+    frequency and nothing else, and they guessed rather than saying so.
+    """
+
+    def test_todays_wind_gives_both_fields_their_into_wind_end(self):
+        self.assertEqual(R.BATUMI_FIELD.runway_in_use(), 13)
+        self.assertEqual(R.KOBULETI_FIELD.runway_in_use(), 7)
+
+    def test_the_other_end_when_the_wind_turns_round(self):
+        self.assertEqual(R.BATUMI_FIELD.runway_in_use(300), 31)
+        self.assertEqual(R.KOBULETI_FIELD.runway_in_use(250), 25)
+
+    def test_the_designator_is_published_and_not_derived_from_the_heading(self):
+        """Batumi's landing heading is 124 magnetic, which ROUNDS to 12 -- and
+        DCS does call it 12 -- while the current plate says 13/31, because
+        magnetic drift renamed it. Deriving the name from the number gave
+        "runway 12" and "runway 06", which are on nobody's chart."""
+        self.assertEqual(R.BATUMI_FIELD.ends, (13, 31))
+        self.assertEqual(R.KOBULETI_FIELD.ends, (7, 25))
+        self.assertEqual(round(R.BATUMI_FIELD.runway / 10), 12)      # the trap
+        self.assertNotEqual(R.BATUMI_FIELD.runway_in_use(), 12)
+
+    def test_a_calm_wind_does_not_flip_the_runway(self):
+        """Ties go to the published end. A runway that oscillates on rounding
+        is worse than one that is occasionally downwind by a knot."""
+        for f in (R.BATUMI_FIELD, R.KOBULETI_FIELD):
+            with self.subTest(field=f.name):
+                across = (f.runway + 90) % 360
+                self.assertEqual(f.runway_in_use(across), f.ends[0])
+
+    def test_the_approach_profile_agrees_with_the_computed_runway(self):
+        """The ASR is flown to a runway and the field computes one. If they
+        ever disagree, the controller vectors to one and clears to the other.
+
+        COMPARED AS INTEGERS ON PURPOSE, and the reason is a small mess worth
+        recording: `ApproachProfile.runway` is the STRING "13" and
+        `Field_.ends` are ints. Both print identically and `"13" != 13`, so
+        anything comparing them directly is quietly always-unequal. Normalised
+        here rather than papered over -- the two should become one type, and
+        until they do this is the test that would notice the runway drifting
+        apart from the approach flown to it.
+        """
+        self.assertEqual(int(R.BATUMI_ASR.runway),
+                         int(R.BATUMI_FIELD.runway_in_use()))
+
+
+class TestThePlateKnowsAboutTheDepartureField(unittest.TestCase):
+    """Three of seven controllers worked an aerodrome the plate never named."""
+
+    def plate(self):
+        from marshall.atc import briefing
+        return briefing._departure_field()
+
+    def test_it_names_the_field_and_its_runway_in_use(self):
+        txt = " ".join(self.plate())
+        self.assertIn("KOBULETI", txt.upper())
+        self.assertIn("07", txt)
+        self.assertIn(str(R.KOBULETI_FIELD.elevation_ft), txt)
+
+    def test_it_says_ground_is_also_the_tower(self):
+        """The one judgement call in the ladder. A controller who does not know
+        he issues take-off clearances sends the pilot to a frequency that does
+        not exist."""
+        txt = " ".join(self.plate()).lower()
+        self.assertIn("tower", txt)
+        self.assertIn("take-off", txt)
+
+    def test_it_warns_against_reading_batumis_numbers(self):
+        """The failure shape this whole day has been about: a real number
+        belonging to the wrong airport."""
+        self.assertIn("Batumi", " ".join(self.plate()))
+
+    def test_the_runway_on_the_plate_follows_the_wind(self):
+        """Not a hardcoded 07. Change the wind and the plate must change."""
+        self.assertIn(f"**{R.KOBULETI_FIELD.runway_in_use():02d}**",
+                      " ".join(self.plate()))
 
 
 if __name__ == "__main__":

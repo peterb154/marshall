@@ -243,6 +243,18 @@ def run(script, session_id: str, sep_always: bool = True,
         if me:
             parts.append(f"YOU ARE: {me.name} on {me.freq_mhz:.1f}. Identify as "
                          f"that and nothing else.")
+            if getattr(me, "manner", ""):
+                # Same fence as the live loop -- see agent_atc. Manner owns the
+                # words around the numbers and never the numbers.
+                parts.append(
+                    f"YOUR MANNER: {me.manner}\n"
+                    "This is HOW YOU SOUND and nothing more. It never changes "
+                    "WHAT you say: altitudes, headings, frequencies, sequence "
+                    "and required read-backs are identical whoever is on the "
+                    "microphone. You may never refuse work that is yours, skip "
+                    "a read-back, omit a number or round one off because of "
+                    "your manner, and if a pilot is in trouble every "
+                    "personality here drops it and becomes plain and useful.")
             also = [r for r in (getattr(me, "also", ()) or ()) if r]
             if also:
                 parts.append(

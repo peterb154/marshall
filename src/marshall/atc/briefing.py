@@ -150,11 +150,47 @@ def _asr_plate(profile: R.ApproachProfile, flight: str, size: int) -> str:
         "flare: \"cleared to land, wind two seven zero at two zero\".",
         f"- Assignable altitudes: **{profile.platform_ft}** vectoring, "
         f"**{profile.mda_ft}** MDA, **{profile.missed_ft}** missed. Nothing else.",
+        *_departure_field(),
         *_mission(),
         *_sortie(),
         *_threats(),
         *_formation(flight, size, profile),
     ])
+
+
+def _departure_field() -> list[str]:
+    """The OTHER aerodrome, which the plate knew nothing about.
+
+    The plate has always described the field being approached, because that was
+    the only field there was. The sortie now departs Kobuleti, so three of the
+    seven controllers on this frequency list work an aerodrome the plate never
+    mentioned -- they had its frequency and nothing else.
+
+    THEY DID NOT SAY SO. They guessed, and the guess was plausible: asked for
+    taxi, Kobuleti Ground cleared an aircraft to runway 25 with the wind at
+    090, which is the downwind end of his own runway. Nobody would query it on
+    the radio. It is the same failure shape as the radar origin -- a real
+    number belonging to the wrong airport -- and it is why "which runway" is
+    computed here from the wind rather than left to a model that has not been
+    told the field exists.
+    """
+    f = R.KOBULETI_FIELD
+    rwy = f.runway_in_use()
+    return [
+        f"- **DEPARTURE FIELD — {f.name.upper()}.** Field elevation "
+        f"**{f.elevation_ft} ft**. Runways **{f.ends[0]:02d}/{f.ends[1]:02d}**. "
+        f"With today's wind the runway in use is **{rwy:02d}** — taxi, "
+        f"line-up and departures are all {rwy:02d}, and the reciprocal is "
+        f"downwind. Do not offer the other end.",
+        f"- {f.name} is worked by **Kobuleti Clearance 125.1**, **Kobuleti "
+        "Ground 133.0** (who is also its Tower — he issues taxi AND take-off "
+        "clearance, there is no separate tower frequency) and **Kobuleti "
+        "Departure 123.3**. A departure leaves Ground for Departure at about "
+        "**5 miles**.",
+        f"- {f.name} is **40 miles north-east** of Batumi and is a different "
+        "aerodrome with a different runway. Never read Batumi's runway, "
+        "course or minima to somebody standing on it.",
+    ]
 
 
 def _mission() -> list[str]:
