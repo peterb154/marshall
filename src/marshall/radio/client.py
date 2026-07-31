@@ -242,10 +242,33 @@ class SRSClient:
         return self.roster.get(guid) or guid[:6]
 
     # --- voice ----------------------------------------------------------
-    def transmit(self, opus_frames: list[bytes], freq_hz: float, modulation: int = AM,
+    def transmit(self, opus_frames: list[bytes], freq_hz, modulation: int = AM,
                  settle: float = 0.4) -> None:
-        """Send one transmission: a run of Opus frames, paced at 40 ms."""
-        freqs = [(float(freq_hz), modulation, 0)]
+        """Send one transmission: a run of Opus frames, paced at 40 ms.
+
+        `freq_hz` may be ONE frequency or SEVERAL, and several is not a trick --
+        the SRS voice packet carries a variable-length frequency list and always
+        has. This method simply wrapped a single value in it.
+
+        WHY IT MATTERS HERE. The SCR-522 in a P-51 tunes four crystal channels
+        and cannot reach 124.425; a modern radio can, and the published plate
+        says 124.425 because that is the real frequency. So a controller working
+        both has to choose which aircraft to be audible to -- unless one
+        transmission carries both:
+
+            "I wonder if SRS lets us duplex a channel, so we can use both
+             124.425 for modern and 124.00 for a SCR-522 radio seamlessly."
+
+        It does. Verified with three clients: a warbird listening on 124.000, a
+        modern jet on 124.425, and one transmission naming both -- each heard it
+        once. Not a relay, not two calls a beat apart: one packet, one voice, two
+        radios, and neither pilot can tell there was a second frequency.
+
+        This is what makes a mixed-era field possible at all. Without it the
+        1944 Mustang and the F-16 are on different fields.
+        """
+        hz = [freq_hz] if isinstance(freq_hz, (int, float)) else list(freq_hz)
+        freqs = [(float(f), modulation, 0) for f in hz]
         time.sleep(settle)          # let the server register our UDP source
         start = time.monotonic()
         for i, frame in enumerate(opus_frames):

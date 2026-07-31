@@ -292,9 +292,20 @@ class Sortie:
         return self.radio.said() if self.radio else []
 
     def said_on(self, mhz) -> list[str]:
+        """Everything transmitted where a radio tuned to `mhz` would hear it.
+
+        A transmission now names EVERY frequency its facility owns, not one --
+        the published channel a modern radio tunes and a rounded one an SCR-522
+        can reach, so a warbird and a jet hear the same call once each. So this
+        asks whether `mhz` is among them rather than whether it is the only one.
+        """
         hz = mhz * 1_000_000
-        return [t.text for t in (self.radio.sent if self.radio else [])
-                if abs(t.hz - hz) < 1]
+        out = []
+        for t in (self.radio.sent if self.radio else []):
+            got = t.hz if isinstance(t.hz, (list, tuple)) else [t.hz]
+            if any(abs(float(f) - hz) < 1 for f in got):
+                out.append(t.text)
+        return out
 
     def asked(self) -> list[str]:
         """Every message the director was handed. The prompt seam."""

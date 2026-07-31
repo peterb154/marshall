@@ -434,6 +434,61 @@ class Station:
     # and no single place that says which is which. Changing sector should sound
     # like meeting a different person, which is the point of splitting them.
     voice: str = "Matthew"
+    # MORE THAN ONE FREQUENCY FOR ONE MAN, and it is not a convenience.
+    #
+    #     "The reason ours round is that the WW2 airplanes can't tune to those
+    #      finer frequencies... I wonder if SRS lets us duplex a channel, so we
+    #      can use both 124.425 for modern and 124.00 for a SCR-522 radio
+    #      seamlessly."
+    #
+    # It does. The SRS voice packet has always carried a variable-length
+    # frequency list, so one transmission reaches both -- verified live with a
+    # warbird on 124.000 and a jet on 124.425 hearing the same call once.
+    #
+    # The published AIP plate for Batumi says APP 124.425 because that IS the
+    # frequency. The SCR-522 in a P-51 tunes four crystal channels and cannot
+    # reach it. Without this the two aeroplanes are on different fields, and the
+    # only alternatives are lying on the plate or excluding one of them.
+    #
+    # `freq_mhz` stays the PRIMARY -- the published one, what a modern radio
+    # tunes and what the chart prints. `channels` are the same facility, same
+    # controller, same conversation, reachable by older sets.
+    #
+    # AND THE PRESET BUDGET IS WHY A WARBIRD FIELD LOOKS DIFFERENT. The SCR-522
+    # has FOUR crystal channels, set by the mission designer and unchangeable in
+    # the cockpit:
+    #
+    #     "There is probably only room for a single freq per airport in a WW2
+    #      airplane. It will be something like Batumi (source), Senaki
+    #      (destination), Georgia Center (en route) and Sentry (opfor
+    #      controller)."
+    #
+    # So a 1944 field is ONE facility -- one man answering as tower, ground,
+    # approach and departure, because there is no second preset to spend on
+    # splitting him. A modern field presents the same airport as three or four
+    # positions. The AERODROME does not change; what the aeroplane can reach
+    # does.
+    #
+    # `also` already models one controller wearing several hats, and
+    # `AtcCapability` already models what a mission's aircraft can do. Nothing
+    # here needs to know which era it is: a warbird profile declares one Station
+    # with every role in `also`, and a modern one declares several. That is a
+    # data decision per mission, which is what it should be.
+    channels: tuple[float, ...] = ()
+
+    @property
+    def freqs(self) -> tuple[float, ...]:
+        """Every frequency this facility is heard on, primary first."""
+        return (self.freq_mhz, *self.channels)
+
+    def hears(self, mhz: float, tol: float = 0.001) -> bool:
+        """Is this facility listening on that frequency?
+
+        Any of them. A pilot who checks in on the warbird channel is talking to
+        the same controller as one on the published frequency, and every
+        `station_on` lookup has to agree or he is answered by nobody.
+        """
+        return any(abs(f - mhz) < tol for f in self.freqs)
 
 
 # From the Batumi AIP (AD 2.UGSB-IAC-12-ILSy): APP 124.425, TWR 118.600 --
@@ -449,9 +504,21 @@ class Station:
 # a Center owns a region and hands you between aerodromes, so there is one for
 # the whole theatre rather than one per airfield.
 CENTER = Station("Georgia Center", 139.000, "center", voice="Brian")
-APPROACH = Station("Batumi Approach", 124.000, "approach",
+# THE PUBLISHED FREQUENCY FIRST, the tunable one beside it.
+#
+# AIP Georgia AD 2.UGSB-IAC-12-ILSy (10 AUG 2023) gives APP 124.425 and TWR
+# 118.600. Those are the real numbers and they are what the scanned plate on the
+# kneeboard prints, so they are what a pilot reads and expects to dial.
+#
+# An SCR-522 cannot dial them. It has four crystal channels and no fractions, so
+# a 1944 Mustang physically cannot reach 124.425 -- which left three options:
+# lie on the plate, exclude the warbirds, or carry both. We carry both. One
+# transmission goes out on every frequency the facility owns and each pilot
+# hears it once; see `Station.channels` and `radio/client.transmit`.
+APPROACH = Station("Batumi Approach", 124.425, "approach",
+                   channels=(124.000,),
                    also=("departure",), voice="Matthew")
-TOWER = Station("Batumi Tower", 118.000, "tower",
+TOWER = Station("Batumi Tower", 118.600, "tower", channels=(118.000,),
                 also=("ground", "delivery"), voice="Joey")
 
 # The mission commander. Not a new kind of machine -- a controller with a wider
@@ -1005,8 +1072,12 @@ class ApproachProfile:
         hear. Without this the same voice answers as "Batumi Approach" on
         Center's frequency, and the sector split is decoration.
         """
+        # ANY of his frequencies, not just the published one. A facility can be
+        # heard on several -- see `Station.channels` -- and a warbird checking in
+        # on the SCR-522 channel is talking to the same controller as a jet on
+        # the AIP frequency. Matching only the primary answers him with nobody.
         for s in self.stations:
-            if abs(s.freq_mhz - freq_mhz) < 0.001:
+            if s.hears(freq_mhz):
                 return s
         return None
 

@@ -4415,6 +4415,24 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
     def voice_for(hz: float | None):
         """The voice of whoever owns this channel, falling back to the default."""
         return voices.get(round((hz or freq_hz) / 1_000_000, 3), voice)
+    def channels_of(hz: float | None):
+        """Every frequency the facility on this channel is heard on.
+
+        ONE TRANSMISSION, ALL ITS FREQUENCIES. A facility can own several -- the
+        published one a modern radio tunes and a rounded one an SCR-522 can
+        reach -- and answering on only the channel a call ARRIVED on leaves the
+        other aeroplane listening to silence. The SRS packet carries a frequency
+        list, so this costs nothing: one voice, one moment, every radio.
+
+        Falls back to the single channel when no station claims it, which is the
+        engineering line and anything else off the plate.
+        """
+        st = (profile.station_on((hz or freq_hz) / 1_000_000)
+              if hasattr(profile, "station_on") else None)
+        if st is None:
+            return hz or freq_hz
+        return [f * 1_000_000 for f in st.freqs]
+
     model = stt.load_model()
     # Monitor EVERY channel this approach uses, not just one. A WW2 set has
     # four presets and the ARA-8 homes on whatever it is tuned to, so the pilot
@@ -4430,7 +4448,11 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
     # empty frequency; we hear nothing and assume he has not called.
     channels: list[float] = []
     if getattr(profile, "stations", None):
-        channels = [s.freq_mhz for s in profile.stations if s.freq_mhz]
+        # EVERY frequency of every facility, not one each. A station can be
+        # heard on several -- the published one a modern radio tunes and the
+        # rounded one an SCR-522 can reach -- and a warbird checking in on the
+        # channel we are not listening to is a pilot talking to nobody.
+        channels = [f for st in profile.stations for f in st.freqs if f]
     else:
         for fix in (profile.arrival_fix, profile.beacon, profile.outer_hold):
             if fix is not None and fix.freq_mhz and fix.freq_mhz not in channels:
@@ -4578,7 +4600,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             # Answer on the channel he called from -- that is the beacon he is
             # homing, and therefore the only one he can hear.
             client.transmit(voice_for(on_hz).frames(reply),
-                            on_hz or freq_hz, AM)
+                            channels_of(on_hz), AM)
             # He is owed room to read that back, and we want to HEAR the
             # readback -- it is the only check on whether he got the numbers
             # right, and several were mangled on the sortie that prompted this.
@@ -4840,7 +4862,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                                 record(session_id, kind="atc/landed",
                                        callsign=cs, text=bye)
                                 client.transmit(voice_for(final_hz).frames(bye),
-                                                final_hz, AM)
+                                                channels_of(final_hz), AM)
                         continue
                     grounded.discard(cs)        # airborne again: a new sortie
                     flown.add(cs)               # and now a landing is possible
@@ -4900,7 +4922,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                                 # contact Approach, over Approach, is a message
                                 # to everyone except him.
                                 client.transmit(
-                                    voice_for(_hz).frames(_say), _hz, AM)
+                                    voice_for(_hz).frames(_say), channels_of(_hz), AM)
                     elif _nxt is None:
                         handed_off.discard(cs)
 
@@ -4957,7 +4979,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                                    range_nm=round(g.range_nm, 2),
                                    heading=want, alt=g.altitude_ft, text=text)
                             client.transmit(voice_for(final_hz).frames(text),
-                                            final_hz, AM)
+                                            channels_of(final_hz), AM)
                             hold_the_channel_for_a_readback()
                         continue
 
@@ -4983,7 +5005,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                                range_nm=round(g.range_nm, 2), phase=g.phase,
                                heading=g.heading, text=text)
                         client.transmit(voice_for(final_hz).frames(text),
-                                        final_hz, AM)
+                                        channels_of(final_hz), AM)
                         if g.phase != "map":
                             # A range call with a correction in it is an
                             # instruction; the bare "over the point" is not.
@@ -5230,7 +5252,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             print(f"  ATC[simple] (0.0s): {canned}", flush=True)
             with radio_lock:
                 client.transmit(voice_for(heard_hz).frames(canned),
-                                heard_hz or freq_hz, AM)
+                                channels_of(heard_hz), AM)
             continue
 
         directive, stack, vectoring = decide(
@@ -5344,7 +5366,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 record(session_id, kind="atc/challenge", callsign=known,
                        text=reply)
                 client.transmit(voice_for(heard_hz).frames(reply),
-                                heard_hz or freq_hz, AM)
+                                channels_of(heard_hz), AM)
             continue
 
         # OUT OF THE BLUE, WITH NO CALLSIGN. We know who it is from his radio,
@@ -5377,7 +5399,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 record(session_id, kind="atc/challenge", callsign=known,
                        text=reply)
                 client.transmit(voice_for(heard_hz).frames(reply),
-                                heard_hz or freq_hz, AM)
+                                channels_of(heard_hz), AM)
             continue
 
         # THERE IS NO SHIP-TO-SHIP GATE. A transmission addressed to another
