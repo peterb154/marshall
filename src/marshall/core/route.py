@@ -25,7 +25,28 @@ MAGVAR = 6.0
 # Briefed conditions. Wind is the direction it blows FROM.
 CRUISE_TAS_MPH = 220.0
 CRUISE_ALT_FT = 5000
-# FIVE KNOTS FROM THE SOUTH, and much gentler than what came before.
+# FIVE KNOTS FROM THE EAST, and it is the runway that chose it.
+#
+#     "Let's also move the wind to 090 at 5, so runway 13 makes sense."
+#
+# The wind is what makes a runway the runway in use, and 180 did not favour
+# either end of Batumi's 13/31 -- it was a pure crosswind, so landing 13 was a
+# decision the mission had made rather than one the weather justified. A pilot
+# reading the plate had no way to derive the runway in use from anything he
+# could see.
+#
+# 090 fixes both ends of the route at once, which is the point of picking it
+# rather than something merely non-crosswind: Batumi 13 (125 magnetic) and
+# Kobuleti 07 (064 magnetic) are both into the easterly, so the departure end
+# and the arrival end agree without anybody having to special-case one of them.
+#
+# THIS IS STILL THE INPUT AND NOT THE ANSWER. "Runway in use" should be
+# computed from the wind rather than declared beside it -- see SCHEMA.md -- and
+# while that is still a constant in `Field_.runway`, the two have to be kept
+# consistent by hand. Changing the wind here without checking the runways is a
+# way to have the controller land people downwind.
+#
+# WHAT CAME BEFORE, and why it is not 20 mph from 270 any more.
 #
 # It was 20 mph from 270 -- a stiff, near-direct crosswind on runway 13, which
 # is a fine thing to fly against once the procedure works and a poor thing to
@@ -39,7 +60,7 @@ CRUISE_ALT_FT = 5000
 # Changed HERE and nowhere else on purpose: the nav log's timed legs, the
 # plate, the mission file and the controller's landing clearance all read this
 # one number, so they cannot disagree about it.
-WIND_FROM_DEG = 180.0
+WIND_FROM_DEG = 90.0
 WIND_MPH = 5.0 * 1.15078          # five knots, in the mph this file works in
 
 # Altimeter setting. Briefed, written into the mission, and passed on radar
@@ -246,8 +267,16 @@ def leg_altitude(i: int) -> int:
     return CRUISE_ALT_FT
 
 
-def steerpoint(fix) -> int:
+def steerpoint(fix, route=None) -> int:
     """Which numbered point on today's route this is, or 0 if it is not on it.
+
+    `route` DEFAULTS TO THE STRIKE SORTIE and not to the flown transit, which
+    looks backwards and is deliberate. Two different journeys exist now --
+    `SORTIE` out to the target and back, `FIXES` from Kobuleti to Batumi -- and
+    the callers want different ones: the briefing and the radio talk about the
+    sortie's steerpoints, the nav log times the transit's. Changing the default
+    would silently renumber every steerpoint the controller says out loud, which
+    is the sort of change that is only ever noticed in the air.
 
     Numbers because a radio is a bad place for proper nouns. "Steerpoint two"
     survives Whisper, an accent and a bad channel; "FEET WET" comes out as
@@ -255,7 +284,7 @@ def steerpoint(fix) -> int:
     has no chance at all. The names stay for the chart, where a pilot is
     reading rather than listening -- both, and each where it works.
     """
-    for i, f in enumerate(SORTIE):
+    for i, f in enumerate(route if route is not None else SORTIE):
         if f is fix or f.name == fix.name:
             return i + 1
     return 0
@@ -625,6 +654,48 @@ STATIONS = [KOB_CLEARANCE, KOB_GROUND, KOB_DEPARTURE, CENTER,
 # keeps a preset above the ladder rather than a rung inside it.
 PRESET_LADDER = [KOB_CLEARANCE, KOB_GROUND, KOB_DEPARTURE, CENTER,
                  APPROACH, TOWER, GROUND]
+
+
+# WHERE THE SORTIE STARTS AND WHERE IT ENDS.
+#
+#     "Let's move our parked f16s to kobeleti. Let's create a flight plan to fly
+#      from kob to batumi."
+#
+# Two names, written once, because a surprising number of things need to know
+# which end of the route a field is on and every one of them was about to
+# hardcode it: the mission builder decides which ramp the jets sit on, the comms
+# card decides whether a field's controllers are used outbound or inbound, and
+# the nav log times the legs between them.
+#
+# THE SAME SEAT MEANS DIFFERENT THINGS AT THE TWO ENDS, which is the part that
+# is easy to miss. Kobuleti Ground is where you start up; Batumi Ground is where
+# you taxi in. Kobuleti Departure sends you out; Batumi Approach brings you
+# home. A card that describes a station by what the SEAT covers rather than by
+# where it sits on this route tells the pilot that his departure controller
+# handles recoveries -- true of the man, useless on the day.
+DEPARTURE_FIELD = "Kobuleti"
+ARRIVAL_FIELD = "Batumi"
+
+
+# WHAT THE CARD CALLS A BUTTON, and it stopped being a letter.
+#
+# An SCR-522 has four buttons labelled A B C D, so every card this system had
+# ever printed indexed `"ABCD"[i]` -- in six different files. A seven-rung
+# ladder walks straight off the end of that string: four rows print and the
+# fifth raises IndexError, or worse, a slice quietly drops Batumi off the
+# kneeboard and the pilot never learns he had three more.
+#
+# Numbers, because that is what the pilot was promised and what a modern set
+# shows. The letters stay reachable for a period card, where the buttons really
+# are lettered and calling one "preset 3" would not match the cockpit.
+PRESET_LETTERS = "ABCD"
+
+
+def preset_label(n: int, letters: bool = False) -> str:
+    """The label for button `n`, one-based."""
+    if letters and 1 <= n <= len(PRESET_LETTERS):
+        return PRESET_LETTERS[n - 1]
+    return str(n)
 
 
 def preset_of(station) -> int | None:

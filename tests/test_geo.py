@@ -34,6 +34,12 @@ class TestTheNavLogIsNoLongerSixDegreesOut(unittest.TestCase):
         | KOBULETI to INITIAL | 236 M      | 242 M     | 2.39 nm / 23.9nm |
         | INITIAL to BATUMI   | 125 M      | 131 M     | 1.50 nm / 15.0nm |
 
+    Those figures were measured under the mission wind of the day, 180 at 5.
+    The wind is 090 at 5 now -- picked so the runways make sense -- so the
+    HEADINGS below have moved a couple of degrees while the courses have not.
+    The table is left as it was recorded, because it is the evidence for the
+    convergence bug rather than a current statement of the nav log.
+
     `bearing_distance` took `atan2(dz, dx)` off the sim's GRID metres and
     `solve_route` labelled it true. The radar side had applied convergence for
     weeks; the chart half never did. Same map, same fixes, two answers, and the
@@ -49,8 +55,18 @@ class TestTheNavLogIsNoLongerSixDegreesOut(unittest.TestCase):
         self.assertAlmostEqual(got.distance_nm, 23.9, places=1)
 
     def test_initial_to_batumi(self):
+        """129, and it was 131 while the wind was 180/5.
+
+        A HEADING IS WIND-CORRECTED AND A COURSE IS NOT, which is why this
+        number moved when the mission wind went to 090/5 for the runway and the
+        one in `test_the_error_was_exactly_the_convergence` did not. The true
+        course is 135.75 either way; the drift correction is what changed.
+
+        Worth keeping as a heading rather than relaxing to a course: the nav log
+        is what a pilot flies, and it is the wind-corrected number he steers.
+        """
         got = self.legs()["INITIAL -> BATUMI"]
-        self.assertEqual(round(got.heading_mag), 131)
+        self.assertEqual(round(got.heading_mag), 129)
         self.assertAlmostEqual(got.distance_nm, 15.0, places=1)
 
     def test_the_error_was_exactly_the_convergence(self):

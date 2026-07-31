@@ -31,6 +31,19 @@ LADDER = [
     ("Landing, taxi in", ("landed",)),
 ]
 
+# WHICH HALF OF THE SORTIE A LABEL BELONGS TO.
+#
+# A station covers what it covers -- Kobuleti Departure also works approaches,
+# Batumi Ground also works start-ups -- and on a one-field sortie that was the
+# same thing as what you USE him for. Flying Kobuleti to Batumi it stops being
+# the same thing, and the card started telling the pilot his departure
+# controller handled recoveries and that he would start up at the field he was
+# landing at. Both true of the seat. Neither any use in the cockpit.
+#
+# So a field's rows are filtered to the half of the flight that happens there.
+OUTBOUND = ("Start-up, taxi", "Take-off, departure")
+INBOUND = ("Recovery, approach", "Landing, taxi in")
+
 STYLE = """
   .comms { font: 15px/1.5 "Courier New", monospace; color: #2b2620;
            background: #d9cfb4; padding: 18px 20px; }
@@ -49,25 +62,72 @@ STYLE = """
               border-bottom: 1px solid #8a8069; padding-bottom: 3px; }
   .comms .facts td { font-size: 13px; }
   .comms .warn { background: #c9b98f; }
+  .comms .fld { font-size: 12px; color: #5a5142; white-space: nowrap; }
+  .comms .alt { font-size: 12px; font-weight: normal; color: #5a5142; }
+  .comms tr.sep td { height: 6px; padding: 0; border-bottom: 2px solid #8a8069; }
 """
 
 
 def build(profile=P) -> str:
-    stations = list(getattr(profile, "stations", None) or R.STATIONS)
-    letters = "ABCD"
+    # THE LADDER, NOT THE FIRST FOUR OF THE STATION LIST.
+    #
+    # This card used to slice `stations[:4]` and call itself "four presets",
+    # which was true while a warbird's SCR-522 was the only radio in the
+    # theatre. The sortie runs Kobuleti to Batumi now and the ladder is seven
+    # rungs; the old slice would have printed the departure field and Center and
+    # stopped -- handing the pilot a card that goes quiet exactly when he starts
+    # his approach.
+    stations = [s for s in R.PRESET_LADDER
+                if s in (getattr(profile, "stations", None) or R.STATIONS)]
 
     rows = []
-    for i, s in enumerate(stations[:4]):
+    last_field = None
+    for i, s in enumerate(stations, start=1):
+        # A RULE BETWEEN AERODROMES. Seven rows of frequencies read as one
+        # undifferentiated block, and the thing the pilot most needs to see at a
+        # glance is where he stops talking to one airport and starts talking to
+        # the next.
+        fld = getattr(s, "field", "")
+        if last_field is not None and fld != last_field:
+            rows.append("<tr class='sep'><td colspan='5'></td></tr>")
+        last_field = fld
         # What this seat covers, said in the pilot's language rather than the
         # phase table's. He does not care that "arrival" and "holding" are
         # different states; he cares which button to press.
         covers = [s.role, *getattr(s, "also", ())]
         when = [label for label, ph in LADDER
                 if any(phases.owner_of(p) in covers for p in ph)]
+        # Only the half of the sortie that happens at his field. A fieldless
+        # controller -- Center -- keeps whatever is left, which is the enroute
+        # middle, and that is exactly right for him.
+        if fld == R.DEPARTURE_FIELD:
+            when = [w for w in when if w in OUTBOUND]
+        elif fld == R.ARRIVAL_FIELD:
+            when = [w for w in when if w in INBOUND]
+        if not when:
+            # A SEAT THE PHASE MACHINE CANNOT REACH, and Batumi Ground is one.
+            #
+            # `phases` gives "landed" to Tower, which was correct while Tower
+            # also wore the ground hat -- there was nobody else to give it to.
+            # Splitting Ground off left a real controller, on a real preset,
+            # owning no phase at all, so this column rendered a dash for the man
+            # who takes you to the ramp.
+            #
+            # The card says what he does. The gap is in the phase machine and
+            # papering over it here does not close it: until "landed" can hand
+            # on to a ground seat, no automatic handoff will ever send anybody
+            # to this frequency and the pilot has to ask.
+            when = ["Taxi in" if fld == R.ARRIVAL_FIELD else s.role.title()]
+        # EVERY FREQUENCY HE IS ON, because a facility can own several and the
+        # card is the only place a pilot finds that out. The second one is what
+        # a set that cannot dial fractions tunes.
+        extra = "".join(f"<div class='alt'>{c:.3f}</div>"
+                        for c in getattr(s, "channels", ()))
         rows.append(
-            f"<tr><td class='ch'>{letters[i]}</td>"
-            f"<td class='fq'>{s.freq_mhz:.3f}</td>"
+            f"<tr><td class='ch'>{R.preset_label(i)}</td>"
+            f"<td class='fq'>{s.freq_mhz:.3f}{extra}</td>"
             f"<td class='who'>{s.name}</td>"
+            f"<td class='fld'>{fld or '&mdash;'}</td>"
             f"<td class='note'>{'; '.join(when) or '&mdash;'}</td></tr>")
 
     inbound = profile.final_crs
@@ -77,12 +137,13 @@ def build(profile=P) -> str:
 <style>{STYLE}</style>
 <div class="comms">
   <h1>COMMS LADDER</h1>
-  <div class="sub">Four presets, in the order you press them. This card, the
-    aeroplane's radio and the controller all come from one source &mdash; if
-    they ever disagree, believe nothing and say so.</div>
+  <div class="sub">Kobuleti &rarr; Batumi. {len(rows and stations)} presets, in
+    the order you press them. This card, the aeroplane's radio and the
+    controller all come from one source &mdash; if they ever disagree, believe
+    nothing and say so.</div>
 
   <table>
-    <tr><th>CH</th><th>FREQ</th><th>STATION</th><th>WHEN</th></tr>
+    <tr><th>CH</th><th>FREQ</th><th>STATION</th><th>FIELD</th><th>WHEN</th></tr>
     {''.join(rows)}
   </table>
 

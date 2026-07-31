@@ -40,7 +40,7 @@ STYLE = """
 
 def build(profile=P) -> str:
     st = {s.role: s for s in (getattr(profile, "stations", None) or R.STATIONS)}
-    ch = {s.freq_mhz: "ABCD"[i]
+    ch = {s.freq_mhz: R.preset_label(i + 1)
           for i, s in enumerate(getattr(profile, "stations", None) or R.STATIONS)}
     legs = R.solve_route(legs=R.SORTIE_LEGS)
     total_nm = sum(l.distance_nm for l in legs)

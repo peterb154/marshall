@@ -37,7 +37,7 @@ def build(profile: R.ApproachProfile = P) -> str:
 
     freqs = "".join(
         f'<tr><th>{s.name}</th><td class="v">{s.freq_mhz:.3f}</td>'
-        f'<td class="n">{"ABCD"[i]}</td></tr>'
+        f'<td class="n">{R.preset_label(i + 1)}</td></tr>'
         for i, s in enumerate(stations))
 
     calls = "".join(

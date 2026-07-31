@@ -100,37 +100,50 @@ def _stamp() -> str:
 
 
 def build() -> str:
-    # The SORTIE, not the letdown. This page used to show the three beacon legs
-    # of the approach, which stopped being a flight plan the moment the approach
-    # went to radar -- it was a nav log for a journey nobody makes. What a pilot
-    # actually needs is the trip: out to the work, and home.
-    legs = R.solve_route(legs=R.SORTIE_LEGS)
+    # THE TRIP BEING FLOWN, which is now Kobuleti to Batumi.
+    #
+    #     "Let's create a flight plan to fly from kob to batumi... Let's update
+    #      the kneeboard flight plan to reflect the flight and coms ladder."
+    #
+    # This page has been wrong about the journey twice for the same reason: it
+    # kept showing a route somebody used to fly. First the three beacon legs of
+    # the letdown, after the approach went to radar; then the WW2 strike sortie
+    # out of Batumi, after the test bed moved to a transit between two fields. A
+    # nav log for a journey nobody makes is worse than no nav log, because the
+    # pilot times his legs against it.
+    #
+    # `R.FIXES` is the transit -- KOBULETI, INITIAL, BATUMI -- and it is the same
+    # chain the jet's steerpoints are built from in `mission/build.py`, so the
+    # paper and the DTC cannot disagree about where he is going. The strike
+    # sortie is still `R.SORTIE_LEGS` and still what the brief and the route map
+    # draw; it is a different mission, not a stale one.
+    legs = R.solve_route()
     total_nm = sum(l.distance_nm for l in legs)
     total_min = sum(l.minutes for l in legs)
 
     rows = []
     elapsed = 0.0
     # The first line is the departure point itself: no leg flown to reach it.
-    start = R.SORTIE[0]
+    start = R.FIXES[0]
     rows.append(
-        f'<tr><td class="fix">{R.steerpoint(start)}. {start.name}</td>'
+        f'<tr><td class="fix">{R.steerpoint(start, R.FIXES)}. {start.name}</td>'
         f'<td>{start.ident or "&mdash;"}</td>'
         f'<td>{f"{start.freq_mhz:.3f}" if start.freq_mhz else "&mdash;"}</td>'
         f'<td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td>'
         f'<td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td>'
         f'<td class="blank"></td></tr>')
 
-    for i, leg in enumerate(legs):
+    for leg in legs:
         elapsed += leg.minutes
         rows.append(
-            f'<tr><td class="fix">{R.steerpoint(leg.to)}. {leg.to.name}</td>'
+            f'<tr><td class="fix">{R.steerpoint(leg.to, R.FIXES)}. {leg.to.name}</td>'
             f'<td>{leg.to.ident or "&mdash;"}</td>'
             f'<td>{f"{leg.to.freq_mhz:.3f}" if leg.to.freq_mhz else "&mdash;"}</td>'
             f'<td>{leg.course_true:03.0f}</td>'
             f'<td>{leg.wca:+.0f}</td>'
             f'<td><b>{leg.heading_mag:03.0f}</b></td>'
-            f'<td><b>{R.leg_altitude(i):,}</b></td>'
-            f'<td><b>{R.ias_mph(R.CRUISE_TAS_MPH, R.leg_altitude(i))}</b></td>'
+            f'<td><b>{R.CRUISE_ALT_FT:,}</b></td>'
+            f'<td><b>{R.ias_mph(R.CRUISE_TAS_MPH, R.CRUISE_ALT_FT)}</b></td>'
             f'<td>{leg.distance_nm:.1f}</td>'
             f'<td>{leg.groundspeed_mph:.0f}</td>'
             f'<td>{leg.time_str}</td>'
@@ -148,7 +161,7 @@ def build() -> str:
     # to -- and unlike a beacon, a controller needs no receiver in the aeroplane,
     # which is why any airframe can fly the approach.
     channels = "".join(
-        f'<tr><td>{"ABCD"[i]}</td><td>{s.freq_mhz:.3f}</td>'
+        f'<tr><td>{R.preset_label(i + 1)}</td><td>{s.freq_mhz:.3f}</td>'
         f'<td class="fix">{s.name}</td>'
         f'<td style="text-align:left">{s.role.title()}</td></tr>'
         for i, s in enumerate(R.STATIONS))
@@ -162,7 +175,7 @@ def build() -> str:
 <style>{STYLE}</style>
 <div class="sheet">
   <h1>Pilot's Flight Plan and Log</h1>
-  <div class="sub">362nd Fighter Squadron &nbsp;&middot;&nbsp; P-51D-30 &nbsp;&middot;&nbsp; Instrument</div>
+  <div class="sub">{R.DEPARTURE_FIELD} &rarr; {R.ARRIVAL_FIELD} &nbsp;&middot;&nbsp; Instrument &nbsp;&middot;&nbsp; ASR to Batumi</div>
 
   <div class="band">
     <span><b>WIND</b> {R.WIND_FROM_DEG:03.0f}/{R.WIND_MPH:.0f}</span>
@@ -184,7 +197,7 @@ def build() -> str:
 
   <div style="text-align:right;font-size:10px;color:#7a7060;margin:-6px 0 6px">
     built {_stamp()}</div>
-  <h2>Controllers &mdash; SCR-522 Channels</h2>
+  <h2>Controllers &mdash; Comms Ladder</h2>
   <table>
     <tr><th>Ch</th><th>Freq</th><th>Station</th><th>Sector</th></tr>
     {channels}

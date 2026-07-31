@@ -319,7 +319,6 @@ def add_session_slots(m, usa, air_alt_ft: dict | None = None,
     and two -- so that two humans on one frequency are never ambiguous to a
     controller keyed on what it hears (#40).
     """
-    ramp = m.terrain.airports["Batumi"]
     # -- on the ramp -------------------------------------------------------
     #
     # THE JET STARTS HOT, the warbird cold, and that is the pilot's call:
@@ -330,19 +329,60 @@ def add_session_slots(m, usa, air_alt_ft: dict | None = None,
     # the thing under test here is clearance delivery and the departure
     # handoff, not the INS alignment. A Mustang cold is a couple of minutes and
     # is worth keeping -- somebody has to exercise the ramp from properly cold.
-    for name, kind, how in (("Viper", F_16C_50, StartType.Warm),
-                            ("Pony", P_51D_30_NA, StartType.Cold)):
+    # THEY NO LONGER SIT AT THE SAME AERODROME, and that is the whole point of
+    # the new test bed:
+    #
+    #     "Let's move our parked f16s to kobeleti. Let's create a flight plan to
+    #      fly from kob to batumi."
+    #
+    # A sortie that starts and ends at the same field never exercises a handoff
+    # between two facilities, an en-route controller, or the half of the ladder
+    # that belongs to the arrival. Departing Kobuleti and recovering into Batumi
+    # walks every rung: clearance, ground, departure, Center, approach, tower.
+    #
+    # The Mustang stays at Batumi. He has four buttons and cannot carry a
+    # two-field ladder (see `_short_card`), and he is pulled from session
+    # missions anyway -- so parking him where his own controllers are is the
+    # honest arrangement rather than giving him a card he cannot use.
+    for name, kind, how, home in (
+            ("Viper", F_16C_50, StartType.Warm, "Kobuleti"),
+            ("Pony", P_51D_30_NA, StartType.Cold, "Batumi")):
         grp = m.flight_group_from_airport(
-            country=usa, name=name, aircraft_type=kind, airport=ramp,
+            country=usa, name=name, aircraft_type=kind,
+            airport=m.terrain.airports[home],
             start_type=how, group_size=each)
-        # Cold on the ramp means Ground and Tower, not Approach -- he has not
-        # taken off yet and the frequency he needs first is the one that gives
-        # him a clearance.
-        grp.frequency = R.TOWER.freq_mhz
+        # THE FIRST RUNG OF HIS OWN LADDER, not Tower.
+        #
+        # He is parked and has not called anybody yet, so the frequency his
+        # radio comes up on should be the one he actually needs first -- the
+        # clearance seat at the field he is standing on. Coming up on Tower
+        # meant the very first call of the sortie was on the wrong frequency,
+        # which is a poor way to start testing a comms ladder.
+        first = (R.BATUMI_ASR.station_for("clearance", field=home)
+                 or R.BATUMI_ASR.station_for("ground", field=home))
+        grp.frequency = first.freq_mhz
         for n, unit in enumerate(grp.units, start=1):
             unit.name = f"{name} 1-{n}"
             unit.set_client()
-        set_channels(grp)
+        set_channels(grp, home=home)
+        # THE FLIGHT PLAN IN THE AEROPLANE, not only on the kneeboard.
+        #
+        #     "Don't forget to add the flight plan waypoints to f16 dtc."
+        #
+        # A route in the .miz IS the DTC load: the jet reads these into its
+        # steerpoints, so the pilot flies the same fixes the nav log times and
+        # the controller expects him over. Printed on paper alone, the plan is
+        # something he has to hand-enter before engine start and get wrong.
+        #
+        # `R.FIXES[1:]` skips the KOBULETI fix itself -- it sits a few hundred
+        # metres off the field he is parked on, and a steerpoint there is a
+        # waypoint you have already passed on the takeoff roll. Waypoint zero is
+        # the ramp; the plan proper is INITIAL then BATUMI, which is exactly the
+        # two legs `solve_route` times.
+        if home == R.DEPARTURE_FIELD:
+            cruise_m = R.CRUISE_ALT_FT * 0.3048
+            for fix in R.FIXES[1:]:
+                grp.add_waypoint(Point(fix.x, fix.z, m.terrain), cruise_m)
 
     # -- airborne ----------------------------------------------------------
     #
@@ -457,7 +497,18 @@ def build(weather: str = "light", traffic: bool = False,
     # anything outside the wire is a legitimate target.
     for airport in m.terrain.airports.values():
         airport.set_red()
-    m.terrain.airports["Batumi"].set_blue()
+    # TWO BLUE FIELDS NOW, and Kobuleti has to be one of them or the jets
+    # parked there cannot spawn -- a red airport will not take a blue client,
+    # and the failure is a slot that simply is not in the list when the pilot
+    # goes looking for it.
+    #
+    # It costs some of what the single-field arrangement bought: with Batumi
+    # alone there was nowhere to divert, so a go-around meant coming back and
+    # doing it again and a fuel state was a real problem. There is a second
+    # aerodrome now, forty miles up the coast. That is a fair trade for a route
+    # with two ends, and the diversion is a procedure worth being able to fly.
+    for name in ("Batumi", "Kobuleti"):
+        m.terrain.airports[name].set_blue()
 
     # ---- what the map is allowed to tell you --------------------------------
     #
@@ -685,8 +736,8 @@ def _brief_text() -> str:
     total_nm = sum(l.distance_nm for l in legs)
     p = R.BATUMI_ASR
     chans = "\n".join(
-        f"    {'ABCD'[i]}   {s.freq_mhz:7.3f}   {s.name}"
-        for i, s in enumerate(p.stations[:4]))
+        f"    {R.preset_label(i + 1)}   {s.freq_mhz:7.3f}   {s.name}"
+        for i, s in enumerate(p.stations))
     return f"""OPERATION SAMOVAR
 362nd Fighter Squadron - Batumi - Autumn 1945
 
@@ -738,7 +789,8 @@ RADIO - four presets
     Bring the aeroplane back; there is a shortage."""
 
 
-def channels_for(profile=None) -> list[tuple[int, float]]:
+def channels_for(profile=None, limit: int | None = None,
+                 home: str = "") -> list[tuple[int, float]]:
     """The radio card: (button, frequency) for this approach's controllers.
 
     One function so the mission, the kneeboard and the tests cannot disagree
@@ -767,10 +819,38 @@ def channels_for(profile=None) -> list[tuple[int, float]]:
     # seven the pilot was promised.
     ladder = [s for s in R.PRESET_LADDER if s in stations]
     rest = [s for s in stations if s not in ladder]
-    freqs = [s.freq_mhz for s in ladder + rest]
-    while len(freqs) < 4:                       # pad the unused buttons
+    ordered = ladder + rest
+    if limit is not None and len(ordered) > limit:
+        ordered = _short_card(ordered, limit, home)
+    freqs = [s.freq_mhz for s in ordered]
+    while len(freqs) < min(4, limit or 4):      # pad the unused buttons
         freqs.append(freqs[-1] if freqs else 124.0)
     return list(enumerate(freqs, start=1))
+
+
+def _short_card(stations, limit: int, home: str):
+    """Which rungs survive when the radio has fewer buttons than the ladder.
+
+    A SEVEN-RUNG LADDER DOES NOT FIT AN SCR-522, and the first four is the
+    wrong four. Taking the head of the list gives a Batumi-based Mustang three
+    Kobuleti controllers and Center -- nobody at the field he is standing on.
+
+    So: his own aerodrome first, then the region controllers, who are reachable
+    from anywhere and worth a button precisely because they are. Another field's
+    controllers come last and fall off the end.
+
+    THIS IS NOT ENOUGH FOR A TWO-FIELD SORTIE IN A FOUR-BUTTON AEROPLANE and it
+    is worth saying so plainly. Flying Kobuleti to Batumi on an SCR-522 needs
+    his ground, his departure, and the arrival field's approach and tower --
+    four buttons chosen by the ROUTE rather than by the ramp he started on. That
+    wants the sortie's endpoints, which this function is not given. It does not
+    bite today because warbirds are pulled from session missions, and the day it
+    does, this comment is the design note.
+    """
+    mine = [s for s in stations if getattr(s, "field", "") == home] if home else []
+    region = [s for s in stations if not getattr(s, "field", "")]
+    others = [s for s in stations if s not in mine and s not in region]
+    return (mine + region + others)[:limit]
 
 
 def _band_of(mhz: float) -> str | None:
@@ -789,7 +869,14 @@ def _band_of(mhz: float) -> str | None:
     return None
 
 
-def set_channels(group) -> None:
+# A PRESET PANEL RATHER THAN A RECEIVER THAT HAPPENS TO TUNE. The Mustang's
+# second "radio" reports a single channel; a real card needs a bank of buttons.
+# Four is the smallest bank any airframe here has (the SCR-522), so anything
+# below it is not a panel and must not be written to.
+MIN_PRESET_PANEL = 4
+
+
+def set_channels(group, home: str = "") -> None:
     """Write the controller frequencies into a group's radio presets.
 
     pydcs models the four-channel WW2 set natively as `panel_radio`, and both
@@ -838,11 +925,22 @@ def set_channels(group) -> None:
             # A COMM BOX, not any receiver that happens to have a frequency.
             # The Mustang's second "radio" is a single-channel set; writing the
             # controller card to it retuned something that was never a preset
-            # panel. If it cannot hold the whole card it is not the card's home.
-            if len(stock) < len(channels_for()):
+            # panel.
+            #
+            # THE TEST USED TO BE "CAN IT HOLD THE WHOLE CARD" and that was safe
+            # only while the card was four long. The ladder made it eight, and
+            # all-or-nothing then means a four-button SCR-522 gets NOTHING --
+            # every warbird silently back on its stock presets while the
+            # kneeboard prints the ladder, which is the exact fault this
+            # function was written to end.
+            #
+            # So the bar is "is this a preset panel at all", and a box that
+            # holds fewer buttons than the ladder gets as many rungs as it has
+            # -- chosen for where the aeroplane is, not sliced off the front.
+            if len(stock) < MIN_PRESET_PANEL:
                 continue
             box = _band_of(sum(stock) / len(stock)) if stock else None
-            for ch, mhz in channels_for():
+            for ch, mhz in channels_for(limit=len(stock), home=home):
                 if box and _band_of(mhz) != box:
                     continue                    # wrong box for this frequency
                 try:
@@ -968,7 +1066,7 @@ if __name__ == "__main__":
           f"{P.final_crs:03d}M, MDA {P.mda_ft}")
     print(f"weather: {wx}, wind {R.WIND_FROM_DEG:.0f}/{R.WIND_MPH:.0f}\n")
     for i, s in enumerate(R.STATIONS):
-        print(f"  ch {'ABCD'[i]}  {s.freq_mhz:7.3f}  {s.name}")
+        print(f"  ch {R.preset_label(i + 1)}  {s.freq_mhz:7.3f}  {s.name}")
     print()
     for leg in R.solve_route():
         print(f"  {leg.frm.ident} -> {leg.to.ident}   hdg {leg.heading_mag:03.0f}M   "
