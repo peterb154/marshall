@@ -223,7 +223,109 @@ def _last_turn(events: list, now: float) -> dict:
                                   "text": (e.get("text") or "")[:400],
                                   "seconds": e.get("seconds"),
                                   "tier": e.get("tier"), "gate": e.get("gate")})
+    last["voiced"] = _voiced(last["trail"])
     return last
+
+
+# Numbers a controller issues: headings, altitudes, ranges.
+# The figures a clearance is made of, taken only where an instruction word
+# puts them. Anything else in a directive is context.
+_INSTRUCTION = __import__("re").compile(
+    r"(?:heading|maintain|climb|descend|descend and maintain|at)\s+"
+    r"(\d[\d,]*\d|\d)", __import__("re").I)
+
+
+def _figures(text: str) -> str:
+    """Spoken numbers as numerals, so the two sides can be compared at all.
+
+    THE AGENT SPEAKS DIGITS AS WORDS -- "turn left heading one six nine" -- and
+    the engine issues them as figures. Comparing the two directly would report a
+    paraphrase on every correctly voiced turn, which is worse than no check:
+    an alarm that is always on is one nobody reads.
+
+    `callsign._digits` already does this, including the homophones a live
+    rehearsal taught it ("niner", "won", "fore", "ate"). Reusing it rather than
+    writing a fifth version of the same idea -- which is the whole argument of
+    docs/SCHEMA.md, applied to a diagnostics page.
+    """
+    import re as _re
+
+    from marshall.atc.callsign import _digits
+    got = _digits(text or "").replace(",", "")
+    # MAGNITUDES, which `_digits` does not do because a callsign has none. An
+    # altitude is spoken "four thousand" and issued as 4000, so without this the
+    # check would report a paraphrase on every correct altitude -- and the one
+    # number most worth watching is the one it would be wrong about.
+    #
+    # The inverse of `route._spoken_alt`, and deliberately only the two forms a
+    # controller actually uses. "Two thousand five hundred" is one altitude, so
+    # the hundreds are folded into the thousands when they follow.
+    def _mag(m):
+        n = int(m.group(1)) * (1000 if m.group(2).lower() == "thousand" else 100)
+        rest = m.group(3)
+        if rest:
+            n += int(rest) * 100
+        return f" {n} "
+    got = _re.sub(r"\b(\d+)\s*(thousand|hundred)(?:\s+(\d+)\s*hundred)?\b",
+                  _mag, got, flags=_re.I)
+    return got.replace(" ", "")
+
+
+def _voiced(trail: list[dict]) -> dict:
+    """Did the agent SAY the engine's numbers, or paraphrase them?
+
+    THE TWO-BRAIN SEAM, MADE VISIBLE. The deterministic half owns separation and
+    geometry precisely so a model cannot invent them -- but the model is what
+    speaks, so the guarantee only holds if it VOICES the engine's instruction
+    rather than rewording it. A controller who paraphrases "turn left heading
+    one six nine, maintain four thousand" into "come left a bit and stay where
+    you are" has quietly taken the decision back, and nothing anywhere reports
+    it.
+
+    So: every number the engine produced this turn, and whether it appears in
+    what was actually transmitted. Reported, never enforced -- a missing number
+    is sometimes correct (the engine repeats itself; the agent is told not to
+    repeat a range on final) and this is a diagnostic, not a gate. The page
+    shows what was dropped and a human decides whether it mattered.
+    """
+    said = _figures(" ".join(t.get("text") or "" for t in trail
+                                 if t.get("kind", "").startswith("atc/")))
+    # ONLY THE NUMBERS THAT ARE INSTRUCTIONS. A directive carries three kinds
+    # of figure and they are not equal:
+    #
+    #   heading / altitude   an INSTRUCTION. Separation depends on it, the
+    #                        pilot reads it back, and a controller who drops it
+    #                        has changed the clearance.
+    #   range                CONTEXT. "vectoring, fifteen miles" tells him how
+    #                        it is going; no rule says it must be repeated, and
+    #                        on final the agent is expressly told NOT to.
+    #
+    # Judging all three flagged 23 of 47 turns from a real sortie, almost all
+    # for an unspoken range. A check that fires on half the turns is one nobody
+    # reads, which is worse than not having it -- so this asks only about the
+    # figures a clearance is made of.
+    want: list[str] = []
+    for t in trail:
+        if t.get("kind") in ("controller", "asr"):
+            want += _INSTRUCTION.findall(t.get("text") or "")
+    if not want:
+        return {}
+    missing = [n for n in want if n.replace(",", "") not in said]
+    # THREE VERDICTS, NOT TWO, and the third is the one that cost a sortie.
+    #
+    #   voiced       the agent said every figure the engine issued
+    #   paraphrased  it spoke, and dropped one -- it sounds like a clearance
+    #                and is half of one
+    #   SILENT       the engine issued an instruction and NOTHING went out
+    #
+    # Scoring a real sortie, all seventeen failures were the third: the engine
+    # had a heading and an altitude for him and the frequency stayed empty. That
+    # is the broken talk-down, visible in the data the whole time and reported
+    # nowhere -- the pilot found it by noticing the silence himself.
+    verdict = ("voiced" if not missing
+               else "paraphrased" if said else "silent")
+    return {"wanted": want, "missing": missing, "ok": not missing,
+            "spoke": bool(said), "verdict": verdict}
 
 
 def page() -> str:
@@ -266,6 +368,9 @@ _PAGE = """<!doctype html><html><head><meta charset="utf-8">
   td{padding:.28rem .6rem .28rem 0;border-bottom:1px solid #14191D;
     vertical-align:top;word-break:break-word}
   tr:last-child td{border-bottom:0}
+  .org-engine{background:#12303a;color:#7FB3D5;border-color:#1d4a5a}
+  .org-agent{background:#2a2438;color:#b39ddb;border-color:#3d3352}
+  .org-guard{background:#3a2a12;color:#E0A040;border-color:#5a4020}
   .ok{color:var(--ok)} .warn{color:var(--warn)} .bad{color:var(--bad)}
   .dim{color:var(--dim)} .acc{color:var(--accent)}
   .ghost td{background:rgba(212,96,79,.10)}
@@ -550,11 +655,28 @@ function phase(r) {
 function last(l) {
   if (!l || !l.heard) return '<p class="empty">nothing heard yet</p>';
   const auth = lvl('authority', l.authority);
+  // DID THE AGENT SAY THE ENGINE'S NUMBERS? The deterministic half owns
+  // separation so a model cannot invent it -- but the model is what speaks, so
+  // the guarantee only holds if it VOICES the instruction instead of rewording
+  // it. Reported, never enforced: a dropped number is sometimes correct.
+  const v = l.voiced || {};
+  const say = {voiced: ['ok', 'the agent said every figure the engine issued'],
+               paraphrased: ['bad', 'PARAPHRASED &mdash; it spoke and dropped one'],
+               silent: ['bad', 'SILENT &mdash; the engine issued a clearance and '
+                               + 'nothing went out']};
+  const verdict = !v.wanted ? '' : (() => {
+    const [cls, msg] = say[v.verdict] || ['', ''];
+    return `<li><span class="k">voiced</span><span class="${cls}">${msg}`
+      + (v.missing && v.missing.length
+          ? ` &mdash; engine issued ${v.wanted.map(esc).join(', ')}, `
+            + `not said: ${v.missing.map(esc).join(', ')}` : '')
+      + '</span></li>';
+  })();
   let out = '<ul class="trail">'
     + `<li><span class="k">heard</span><span class="heard">${esc(l.heard)}</span></li>`
     + `<li><span class="k">who</span><span>${esc(l.who) || '<i class="dim">unidentified</i>'}`
     + ` <span class="pill ${auth}">${esc(l.authority) || 'none'}</span>`
-    + `<span class="dim"> ${esc(l.track)}</span></span></li>`;
+    + `<span class="dim"> ${esc(l.track)}</span></span></li>` + verdict;
   (l.trail || []).forEach(t => {
     const meta = (LEGEND.kind || {})[t.kind] || {};
     out += `<li><span class="k">${esc(meta.stage || t.kind)}</span>`

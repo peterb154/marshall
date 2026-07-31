@@ -4002,6 +4002,31 @@ def publish_state(bridge, ctl, scope: str, session_id: str,
             # WHO OWNS HIM. Unowned while on the board is the contradiction --
             # he is being separated by nobody in particular.
             "owner": {"": "bad"},
+            # WHICH BRAIN SAID IT. The stage says WHEN in the turn; this says
+            # WHO, and they are different questions the page had no way to ask.
+            #
+            #   engine  deterministic -- separation and geometry. Never a guess,
+            #           and the half that must never be a model's invention.
+            #   agent   Bedrock. Language and judgement.
+            #   guard   the receive loop's own rules, refusing or correcting
+            #           BEFORE either brain sees the call. "You are Sockeye, use
+            #           that callsign" is a guard speaking, not a controller
+            #           deciding -- and reading it as the controller is how a
+            #           mechanical correction gets mistaken for judgement.
+            #
+            # Published here for the same reason every other meaning is: the
+            # page is not allowed to know that `asr` is deterministic.
+            "origin": {
+                "controller": "engine", "asr": "engine",
+                "atc/vector": "engine", "atc/range": "engine",
+                "atc/landed": "engine",
+                "atc/pilot": "agent", "atc/simple": "agent",
+                "dropped": "guard", "ship-to-ship": "guard",
+                "atc/challenge": "guard", "atc/misnamed": "guard",
+                "released": "guard", "flight/created": "guard",
+                "flight/joined": "guard", "flight/refused": "guard",
+                "flight/left": "guard", "flight/dissolved": "guard",
+            },
             "kind": {k: {"stage": st, "level": lv} for k, st, lv in (
                 ("dropped", "admit", "bad"),
                 ("ship-to-ship", "admit", "bad"),

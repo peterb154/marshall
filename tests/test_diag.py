@@ -217,3 +217,65 @@ class TestItSurvivesAnEmptySystem(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestWhichBrainSaidIt(unittest.TestCase):
+    """The two-brain seam, made visible on the page.
+
+    The deterministic half owns separation and geometry precisely so a model
+    cannot invent them -- but the model is what SPEAKS, so the guarantee only
+    holds if it voices the engine's instruction rather than rewording it. A
+    controller who turns "turn left heading one six nine, maintain four
+    thousand" into "come left a bit and hold your altitude" has quietly taken
+    the decision back, and until now nothing anywhere reported it.
+    """
+
+    def test_origin_is_published_for_every_kind_the_trail_shows(self):
+        """Three origins, not two: the loop's own GUARDS refuse and correct
+        before either brain sees the call. "You are Sockeye, use that callsign"
+        is a guard speaking, and reading it as the controller is how a
+        mechanical correction gets mistaken for judgement."""
+        got = publish("Pony 1-1", "362nd_sockeye")["legend"]["origin"]
+        self.assertEqual(got["controller"], "engine")
+        self.assertEqual(got["asr"], "engine")
+        self.assertEqual(got["atc/pilot"], "agent")
+        self.assertEqual(got["atc/misnamed"], "guard")
+
+    def test_the_page_does_not_decide_which_brain_is_which(self):
+        self.assertNotIn("'engine'", diag.page())
+        self.assertNotIn("'deterministic'", diag.page())
+
+    def _turn(self, engine, agent):
+        return diag._voiced([{"kind": "controller", "text": engine},
+                             {"kind": "atc/pilot", "text": agent}])
+
+    def test_spoken_digits_count_as_voiced(self):
+        """The agent says "one six niner"; the engine issued 169. Comparing
+        them raw would report a paraphrase on every correct turn, and an alarm
+        that is always on is one nobody reads."""
+        self.assertTrue(self._turn("turn left heading 169, maintain 4000",
+                                   "turn left heading one six niner, "
+                                   "maintain four thousand")["ok"])
+
+    def test_compound_altitudes_too(self):
+        self.assertTrue(self._turn("descend and maintain 2500",
+                                   "descend and maintain two thousand five "
+                                   "hundred")["ok"])
+
+    def test_a_paraphrase_is_caught(self):
+        got = self._turn("turn left heading 169, maintain 4000",
+                         "come left a little and hold your altitude")
+        self.assertFalse(got["ok"])
+        self.assertEqual(got["missing"], ["169", "4000"])
+
+    def test_and_so_is_a_single_dropped_number(self):
+        """The dangerous one. The heading is voiced and the ALTITUDE is not, so
+        it sounds like a correct instruction and is half of one."""
+        got = self._turn("turn left heading 169, maintain 4000",
+                         "turn left heading one six niner")
+        self.assertEqual(got["missing"], ["4000"])
+
+    def test_a_turn_the_engine_said_nothing_about_is_not_judged(self):
+        """No directive, no verdict. Most conversation is not an instruction."""
+        self.assertEqual(diag._voiced([{"kind": "atc/pilot",
+                                        "text": "Sockeye, go ahead."}]), {})
