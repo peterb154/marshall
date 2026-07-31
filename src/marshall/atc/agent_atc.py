@@ -244,6 +244,27 @@ def record(session_id: str, **fields) -> None:
         print(f"  !! recorder: {e}", flush=True)     # never cost a transmission
 
 
+def _correlated(session_id: str) -> dict:
+    """Track label -> the callsign something has correlated it to.
+
+    From the director's `contacts` table, which is where the correlation is
+    recorded. Best effort: an untagged picture is a worse picture, never a
+    broken one, and this must not be able to fail a transmission.
+    """
+    if not session_id:
+        return {}
+    try:
+        from sqlalchemy import text
+
+        from marshall.core import db
+        with db.session() as s:
+            return {label: cs for cs, label in s.execute(text(
+                "SELECT callsign, track_label FROM contacts WHERE session_id=:s"),
+                {"s": session_id}).all() if cs and label}
+    except Exception:
+        return {}
+
+
 def fetch_radar(session_id: str = "", url: str = RADAR_URL,
                 timeout: float = 5.0, profile=None) -> Scope:
     """Grab the current scope (tagged with this session's radar-identified
@@ -269,7 +290,14 @@ def fetch_radar(session_id: str = "", url: str = RADAR_URL,
     got = None
     try:
         from marshall.core import scope as _scope
-        cs = _scope.contacts(origin=origin)
+        # BINDINGS, so the picture the MODEL reads still names who we have
+        # correlated. Dropping them is what silenced the talk-down: the tag went
+        # missing, `radar_fixes` matched nothing, and the controller obediently
+        # stopped talking on final. It reads the board now and no longer depends
+        # on this -- but the agent still benefits from seeing a contact named,
+        # and a picture that quietly stops naming people is a regression whether
+        # or not anything downstream currently parses it.
+        cs = _scope.contacts(origin=origin, bindings=_correlated(session_id))
         got = {"contacts": cs, "bullseye": _scope.bullseyes(), "picture": ""}
     except Exception:
         got = None
@@ -1320,14 +1348,44 @@ VECTOR_CHANGE_DEG = 12
 VECTOR_MIN_SEC = 20.0
 
 
-def radar_fixes(scope: str, profile=None) -> list[tuple[str, object]]:
-    """Every radar-IDENTIFIED contact as (callsign, Position).
+def radar_fixes(scope: str, profile=None, ctl=None) -> list[tuple[str, object]]:
+    """Every aircraft we can talk down, as (callsign, Position).
 
-    Untagged blips are deliberately skipped: an unidentified aircraft on final
-    is not somebody we can talk to, and guessing produces a confident call to
-    the wrong man.
+    THE BOARD, NOT A BRACKET IN THE PROSE. This used to match `[Sockeye]` in the
+    rendered picture with a regex, which meant the talk-down could only find
+    somebody the DIRECTOR had tagged -- a weaker correlation than the one the
+    bridge already holds, and one that vanishes the moment the picture is drawn
+    without bindings.
+
+    That is exactly what happened on 31 July: `fetch_radar` moved to reading the
+    tracks table and stopped passing bindings, so every contact rendered
+    untagged, this returned an empty list, and the automatic talk-down went
+    silent for a whole sortie -- while the controller was being told "the
+    talk-down is being transmitted automatically every mile, do NOT repeat his
+    range". It obeyed, and nothing filled the silence. The pilot noticed before
+    any test did.
+
+    The board already knows `Sockeye -> 362nd_sockeye` with authority `radar`.
+    Reading it is both stronger evidence and immune to how the picture is drawn.
+
+    Untagged blips are still skipped, for the original reason: an unidentified
+    aircraft on final is not somebody we can talk to, and guessing produces a
+    confident call to the wrong man. "Unidentified" now means "not on the
+    board", which is the same question asked of a better source.
     """
     from marshall.atc import asr
+    if ctl is not None:
+        out = []
+        for row in ctl.board():
+            cs, track = row.get("callsign", ""), row.get("track", "")
+            if not (cs and track):
+                continue
+            fix = radar_fix_by_track(scope, track, profile)
+            if fix is not None:
+                out.append((cs, fix))
+        return out
+    # NO BOARD TO ASK -- the dry-run tools and the older tests. The prose path
+    # stays for them and dies with the last caller that cannot supply one.
     out = []
     for tag, nm, radial, alt, hdg, kt in _FIX.findall(
             identity.flatten_formation(scope or "")):
@@ -4620,7 +4678,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 # it does.
 
 
-                fixes = radar_fixes(scope, profile)
+                fixes = radar_fixes(scope, profile, ctl)
                 # Two contacts is traffic, and traffic means one at a time.
                 traffic = len(fixes) >= 2
                 for cs, pos in fixes:
