@@ -224,6 +224,65 @@ def working(mission: str = "default", controller: str | None = None) -> list[dic
         return [_row(r, cols) for r in cur.fetchall()]
 
 
+def save_board(mission: str, rows: list[dict]) -> dict:
+    """Make the table say exactly what the separation engine believes.
+
+    THE TABLE WAS A WRITE-ONLY MIRROR. The bridge POSTed `bind` and `agree` and
+    never read a row back, so the real board lived in a dict in one process:
+    lost on restart, invisible to anything else, and free to diverge. It did --
+    eight live-looking rows survived from missions that had ended days earlier,
+    one of them the ghost "On" from a misheard word, another holding an
+    aeroplane at six thousand feet since the 28th.
+
+    UPSERT WHAT IS THERE, DELETE WHAT IS NOT, in one transaction. Writing only
+    the rows that changed is how a mirror drifts: the row nobody thought to
+    update is exactly the row that is wrong, and it is indistinguishable from a
+    row that is right.
+
+    THE UNIQUE INDEX IS THE POINT, not an inconvenience to work around. One
+    aeroplane per track per mission has been enforced here since migration 012
+    and was never consulted, while Python grew its own version of the same rule
+    and let a Mustang onto the board twice. A conflict on `flights_track` is the
+    database refusing something that should never have been asked, so it is
+    reported rather than swallowed.
+    """
+    keep = [r for r in rows if r.get("callsign")]
+    names = [r["callsign"] for r in keep]
+    with get_pool().connection() as c:
+        # GONE FIRST. An aeroplane released from the board has to leave the
+        # table before the upserts, or a callsign that changed hands this turn
+        # would collide with the row it is replacing.
+        if names:
+            c.execute("DELETE FROM flights WHERE mission = %s "
+                      "AND NOT (callsign = ANY(%s))", (mission, names))
+        else:
+            c.execute("DELETE FROM flights WHERE mission = %s", (mission,))
+        for r in keep:
+            c.execute(
+                """
+                INSERT INTO flights (mission, callsign, track_name, controller,
+                                     intent, cleared, assigned_ft, missed_count,
+                                     lead_of, claimed_size, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
+                ON CONFLICT (mission, callsign) DO UPDATE SET
+                    track_name   = EXCLUDED.track_name,
+                    controller   = EXCLUDED.controller,
+                    intent       = EXCLUDED.intent,
+                    cleared      = EXCLUDED.cleared,
+                    assigned_ft  = EXCLUDED.assigned_ft,
+                    missed_count = EXCLUDED.missed_count,
+                    lead_of      = EXCLUDED.lead_of,
+                    claimed_size = EXCLUDED.claimed_size,
+                    updated_at   = now()
+                """,
+                (mission, r["callsign"], r.get("track") or None,
+                 r.get("owner") or None, r.get("intent") or None,
+                 r.get("cleared") or "unknown", r.get("assigned_ft"),
+                 int(r.get("missed_count") or 0), r.get("lead_of") or None,
+                 int(r.get("size") or 1)))
+    return {"saved": len(keep)}
+
+
 def due_handoff(mission: str = "default") -> list[dict]:
     """Aircraft inside one controller's airspace while on another's frequency.
 
