@@ -850,6 +850,22 @@ def _short_card(stations, limit: int, home: str):
     mine = [s for s in stations if getattr(s, "field", "") == home] if home else []
     region = [s for s in stations if not getattr(s, "field", "")]
     others = [s for s in stations if s not in mine and s not in region]
+    # THE REGION CONTROLLER KEEPS A BUTTON, and it costs one of his field's.
+    #
+    # Kobuleti gained a Tower, which gave it four rungs of its own -- exactly a
+    # period set's whole capacity -- and Center fell off the end. That is the
+    # wrong four: he is reachable from ANYWHERE, which is precisely what makes
+    # him worth one of only four buttons, and a warbird who loses him has
+    # nobody at all once he leaves the circuit.
+    #
+    # So one seat is reserved for him and the field gives up its last rung.
+    # Which rung that is follows the ladder order, so it is the one furthest
+    # down the departure -- his own Departure controller, whose work Center
+    # takes over anyway.
+    if region and limit > 1:
+        keep = [s for s in region if s.role == "center"][:1] or region[:1]
+        mine = [s for s in mine if s not in keep][:limit - len(keep)]
+        return (mine + keep + [s for s in others if s not in keep])[:limit]
     return (mine + region + others)[:limit]
 
 

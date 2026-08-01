@@ -1061,6 +1061,77 @@ class TestAHoldNobodyWillFly(unittest.TestCase):
         self.assertIs(self.ctl.aircraft["Pony 1-1"].phase, atc.Phase.CLEARED)
 
 
+class TestACheckInDoesNotUndoAClearance(unittest.TestCase):
+    """THE CAUSE of #50, as opposed to the symptom below.
+
+    A pilot checks in every time he changes frequency, and the ladder gives him
+    six or seven of those in a sortie. `check_in` set the phase to ENROUTE
+    unconditionally -- including after he had been cleared for the approach and
+    put in the letdown. Nothing there touches `_letdown`, so he became an
+    ENROUTE aircraft holding the approach slot, and the next `request_approach`
+    walked him into the stack, which only admits UNKNOWN and ENROUTE.
+
+    From there he was simultaneously the aircraft on the approach and one
+    waiting for it, and every request came back "number two". He held at 44 nm
+    and declared an emergency.
+
+    `seed_from_radar` had exactly this guard already. Two functions doing the
+    same job from different evidence, and only one protected the clearance.
+    """
+
+    def setUp(self):
+        self.ctl = atc.Controller(R.BATUMI_ASR)
+        self.ctl.t = 0.0
+
+    def cleared(self, cs="Sockeye"):
+        self.ctl.check_in(cs)
+        self.ctl.note_radar_contact(cs)
+        ac = self.ctl.aircraft[self.ctl._resolve(cs)]
+        ac.phase = atc.Phase.CLEARED
+        self.ctl._letdown = cs
+        self.ctl.out.clear()
+        return ac
+
+    def test_checking_in_again_does_not_demote_a_cleared_aircraft(self):
+        ac = self.cleared()
+        self.ctl.check_in("Sockeye")
+        self.assertIs(ac.phase, atc.Phase.CLEARED)
+
+    def test_the_whole_live_chain_no_longer_deadlocks(self):
+        """Cleared, changes frequency, asks again -- which is just flying the
+        ladder. He must not end up holding behind himself."""
+        ac = self.cleared()
+        self.ctl.check_in("Sockeye")          # the frequency change
+        self.ctl.request_approach("Sockeye")
+        self.assertIsNot(ac.phase, atc.Phase.HOLDING)
+        said = " | ".join(t.text for t in self.ctl.out).lower()
+        self.assertNotIn("number two", said)
+
+    def test_a_landed_aircraft_is_not_put_back_in_the_arrival_flow(self):
+        """Held for the same reason. A jet taxiing in that says something is
+        not an enroute arrival."""
+        self.ctl.check_in("Sockeye")
+        ac = self.ctl.aircraft[self.ctl._resolve("Sockeye")]
+        ac.phase = atc.Phase.LANDED
+        self.ctl.check_in("Sockeye")
+        self.assertIs(ac.phase, atc.Phase.LANDED)
+
+    def test_a_genuine_new_arrival_still_becomes_enroute(self):
+        """The guard must not stop the thing check_in is FOR."""
+        self.ctl.check_in("Hoover")
+        self.assertIs(self.ctl.aircraft[self.ctl._resolve("Hoover")].phase,
+                      atc.Phase.ENROUTE)
+
+    def test_reaching_the_impossible_state_is_recorded_not_absorbed(self):
+        """The repair below is right on the radio and must never be silent --
+        a corrected symptom with no trace is how the cause survived."""
+        ac = self.cleared()
+        ac.phase = atc.Phase.HOLDING          # force it, as the bug used to
+        self.ctl._try_clear(requested_by="Sockeye")
+        self.assertTrue(self.ctl.anomalies, "an impossible state was repaired "
+                                            "with nothing recorded")
+
+
 class TestNobodyIsNumberTwoBehindHimself(unittest.TestCase):
     """The deadlock that ended a live sortie in a Mayday, 31 July.
 

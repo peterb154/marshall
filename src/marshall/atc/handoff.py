@@ -62,6 +62,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from marshall.atc import phases as _phases
+
 # How far out he must be before Tower is finished with him, and how close before
 # Approach gives him back. Defaults, in nautical miles.
 #
@@ -122,13 +124,22 @@ RULES: tuple[Rule, ...] = (
     # he has landed and nobody noticed, or he never left. Either way Tower.
     Rule("approach", "tower", "on_ground"),
     Rule("departure", "tower", "on_ground"),
-    # NOT WRITTEN YET, and deliberately absent rather than guessed:
-    #   Rule("clearance", "ground", "cleared_and_ready")
-    #   Rule("ground",    "tower",  "holding_short")
-    # Both need a state nothing currently reports -- "he has his clearance and
-    # is ready to push" is not a fact the sim gives us, and inventing a
-    # condition before there is anything to satisfy it would be a rule that can
-    # only ever be wrong.
+    # THE GROUND TRANSITIONS ARE NOT ROWS, and that is the design rather than
+    # an omission. These two used to be listed here as deliberately-absent:
+    #
+    #   clearance -> ground   when the clearance has been read back
+    #   ground    -> tower    when he is holding short
+    #
+    # Neither is a distance. Two aircraft parked side by side, one waiting for
+    # a clearance and one waiting for the runway, are the same range and the
+    # same direction and belong to different controllers -- so writing them as
+    # geometry would be inventing a measurement that does not exist.
+    #
+    # They are handled by PHASE OWNERSHIP in `due` instead: a phase with no
+    # geometry is owned outright by the controller the phase table names, and
+    # moving into it IS the handoff. That is what `phases.py` said this design
+    # was for. It also means the next ground procedure -- pushback, de-icing,
+    # progressive taxi -- needs a phase and no row at all.
 )
 
 
@@ -210,6 +221,19 @@ class State:
     on_ground: bool
     range_nm: float | None
     inbound: bool
+    # WHAT HE IS DOING, which is how the ground half of the sortie is handed
+    # over at all.
+    #
+    # Every rule above this is geometry: a range and a direction. That works in
+    # the air and says nothing whatever on the ramp, where the transitions are
+    # procedural -- his clearance was read back correctly, he reported holding
+    # short -- and a distance cannot see any of it. Two aircraft parked side by
+    # side, one waiting for a clearance and one waiting for the runway, are the
+    # same range and the same direction and belong to different controllers.
+    #
+    # Empty means "not told", and everything falls back to the geometry, which
+    # is what the airborne half has always done.
+    phase: str = ""
 
 
 @dataclass(frozen=True)
@@ -239,6 +263,35 @@ def due(profile, me, st: State) -> Verdict | None:
     if me is None or not getattr(me, "role", ""):
         return None
     role = me.role
+    # THE PHASE OWNS HIM, WHERE THERE IS NO GEOMETRY TO ARGUE WITH.
+    #
+    #     "This is what makes a handoff a consequence rather than a special
+    #      case: the phase changes, the owner changes with it."
+    #      -- phases.py, which declared this design before anything used it
+    #
+    # The ground half of a sortie has no distances in it. Clearance hands to
+    # Ground when the clearance is read back; Ground hands to Tower when he is
+    # holding short. Neither is a range, and writing them as ranges would be
+    # inventing a geometry that is not there.
+    #
+    # So a phase whose `aims_at` is "none" -- clearance, taxi, holding short,
+    # landed -- is owned OUTRIGHT by the controller the phase table names, and
+    # moving into it IS the handoff. No row is needed, and adding a ground
+    # procedure later needs no row either.
+    #
+    # Phases that DO aim at something (enroute, arrival, approach) are left to
+    # the rules below, and must be: an arrival in `holding` is owned by
+    # Approach the whole time, but he is Center's until twenty-five miles, and
+    # phase-ownership alone would snatch him at any distance.
+    if st.phase:
+        want = _phases.owner_of(st.phase)
+        aims = getattr(_phases.get(st.phase), "aims_at", "")
+        if want and aims == "none" and want != role \
+                and want not in getattr(me, "also", ()):
+            nxt = profile.station_for(want, field=getattr(me, "field", ""))
+            if nxt is not None:
+                same = (getattr(nxt, "name", None) == getattr(me, "name", None))
+                return Verdict(station=nxt, role=want, same_station=same)
     for rule in RULES:
         if rule.frm != role and rule.frm not in getattr(me, "also", ()):
             continue

@@ -690,18 +690,45 @@ KOB_CLEARANCE = Station("Kobuleti Clearance", 125.100, "clearance",
 # Combining ground and tower into one seat is how a field this size actually
 # runs, so the missing preset costs nothing real. If a separate Tower is wanted
 # it is one more row and one more preset.
-KOB_GROUND = Station("Kobuleti Ground", 133.000, "ground",
-                     channels=(122.100,), also=("tower",),
+# GROUND NO LONGER WEARS THE TOWER HAT, and this is the correction:
+#
+#     "Ground should clear to the runway only, telling them to hold short of
+#      the runway. Once they check in and report holding short they should be
+#      handed off to tower. Ground should not clear for takeoff. That's tower."
+#
+# Combining them was my judgement call when the ladder had no Kobuleti Tower in
+# it, and it was the wrong one. Who owns the RUNWAY is not an economy to be
+# made at a quiet field -- it is the one piece of separation on the aerodrome,
+# and a controller who moves aeroplanes on taxiways must not also be the man
+# who puts them on the strip. So Kobuleti gets its Tower and the ladder gets an
+# eighth rung.
+#
+# 121.900 is ASSIGNED, matching Batumi's ground frequency by convention -- the
+# chart publishes no ground for Kobuleti, which a Soviet-era military field
+# would not have had separately. The published 133.000/122.100 pair goes to
+# TOWER, where the chart puts it.
+KOB_GROUND = Station("Kobuleti Ground", 121.800, "ground",
                      voice="Justin", field="Kobuleti",
-                     manner="Working two jobs at once and it shows. Quick, "
-                            "clipped, always slightly ahead of you -- he will "
-                            "give you taxi and the runway in one transmission "
-                            "to save a second one. Not unfriendly, just "
-                            "busy: no wasted syllables, and he expects you to "
-                            "keep up. He is Ground and Tower on the same seat "
-                            "and switches between them without ceremony, so a "
-                            "taxi instruction and a take-off clearance sound "
-                            "like the same man because they are.")
+                     manner="Brisk and strictly territorial. He owns the "
+                            "taxiways and nothing else, and he is scrupulous "
+                            "about the boundary -- you are cleared TO the "
+                            "runway and told to hold short of it, every time, "
+                            "in those words. Ask him for take-off and he will "
+                            "tell you that is Tower's, without warmth and "
+                            "without apology. No wasted syllables; he expects "
+                            "you to keep up.")
+# THE PUBLISHED TOWER, on the chart's own numbers. 133.000 is TWR and 122.100
+# is listed beside it under the additional combined frequencies -- one facility
+# reachable on two VHF channels, which is what `channels` has always meant.
+KOB_TOWER = Station("Kobuleti Tower", 133.000, "tower",
+                    channels=(122.100,), voice="Joanna", field="Kobuleti",
+                    manner="Owns the runway and nothing else, and is entirely "
+                           "relaxed about it -- there is rarely a queue. Warm "
+                           "and unhurried on the ground, crisp the moment "
+                           "anything is rolling. She will tell you the wind "
+                           "with a take-off clearance because that is what it "
+                           "is for, and she does not chat while an aeroplane "
+                           "is on the strip.")
 # 123.300 IS PUBLISHED, as "GCA" -- ground controlled approach, the radar
 # controller. Kobuleti is a PAR/SRA field, so the man on this frequency is the
 # same kind of controller Batumi Approach is, and giving him departures as well
@@ -735,7 +762,7 @@ OVERLORD = Station("Sentry", 131.000, "overlord", voice="Kimberly",
                           "tells you what to do rather than what you are "
                           "cleared to do.")
 
-STATIONS = [KOB_CLEARANCE, KOB_GROUND, KOB_DEPARTURE, CENTER,
+STATIONS = [KOB_CLEARANCE, KOB_GROUND, KOB_TOWER, KOB_DEPARTURE, CENTER,
             APPROACH, TOWER, GROUND, OVERLORD]
 
 # THE ORDER A PILOT DIALS THEM, which is a fact about the SORTIE and not about
@@ -747,11 +774,21 @@ STATIONS = [KOB_CLEARANCE, KOB_GROUND, KOB_DEPARTURE, CENTER,
 #     "Let's set the radio presets in order of what's required -- k clearance 1,
 #      k ground 2, k departure 3, center 4, b approach 5, b tower 6, b ground 7."
 #
+# EIGHT NOW, because Kobuleti gained a Tower:
+#
+#     "Ground should not clear for takeoff. That's tower."
+#
+# The seven above folded Ground and Tower onto one seat at the departure field,
+# which was my judgement call and the wrong one -- who owns the runway is the
+# one piece of separation on an aerodrome and is not an economy to make. The
+# renumbering is deliberate and everything that prints a card reads this list,
+# so the aeroplane, the kneeboard and the controller move together.
+#
 # Sentry is deliberately NOT on it. He is the mission commander, not a step in
 # the ladder, and a pilot flying Kobuleti to Batumi never needs him -- so he
 # keeps a preset above the ladder rather than a rung inside it.
-PRESET_LADDER = [KOB_CLEARANCE, KOB_GROUND, KOB_DEPARTURE, CENTER,
-                 APPROACH, TOWER, GROUND]
+PRESET_LADDER = [KOB_CLEARANCE, KOB_GROUND, KOB_TOWER, KOB_DEPARTURE,
+                 CENTER, APPROACH, TOWER, GROUND]
 
 
 # WHERE THE SORTIE STARTS AND WHERE IT ENDS.
@@ -1386,10 +1423,24 @@ class ApproachProfile:
             # mission commander was appended -- it would have sent a pilot to
             # land on the overlord's frequency. A list order is not a fact about
             # who works an arrival.
+            # AT THE ARRIVAL FIELD, and the qualifier is not decoration.
+            #
+            # This method answers "who works this phase of the ARRIVAL", and
+            # the arrival happens at one specific aerodrome. Unqualified, it
+            # returns whichever Tower is listed first -- which became Kobuleti's
+            # the moment the departure field got one, so a Batumi landing
+            # clearance would have gone out on Kobuleti's frequency. `say` uses
+            # this to choose the channel it transmits on, so the aeroplane on
+            # short final would simply not have heard it.
+            #
+            # Same fault as `station_for` had, in a method that was missed
+            # because it takes no role and so did not look like a lookup.
+            fld = ARRIVAL_FIELD
             if enroute or banished:
-                s = self.station_for("center") or self.stations[0]
+                s = self.station_for("center", field=fld) or self.stations[0]
             else:
-                s = (self.station_for("tower") or self.station_for("approach")
+                s = (self.station_for("tower", field=fld)
+                     or self.station_for("approach", field=fld)
                      or self.stations[0])
             return s.name, s.freq_mhz
         if banished:

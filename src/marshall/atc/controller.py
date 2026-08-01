@@ -306,6 +306,19 @@ class Controller:
     t: float = 0.0
     _letdown: str | None = None         # callsign currently in the letdown
     _letdown_since: float = 0.0
+    # STATES THAT SHOULD BE IMPOSSIBLE, recorded when they happen anyway.
+    #
+    # The separation engine has invariants -- one aircraft in the letdown, a
+    # cleared aircraft is not also a holder -- and when one breaks, the
+    # symptom on the radio is something a pilot can hear and the cause is
+    # somewhere else entirely. #50 was four transmissions of "you are number
+    # two" with one aeroplane in the sky, and the fault was an unguarded line
+    # in `check_in` two hundred lines away.
+    #
+    # Correcting the radio answer is right. Correcting it SILENTLY is how the
+    # cause survives, so anything that repairs an impossible state says so
+    # here and `/diag` shows it.
+    anomalies: list = field(default_factory=list)
     # Flights that have been broken up. Remembered because a name that means
     # nobody still has to be RECOGNISED as meaning nobody -- and once the
     # break-up stopped putting members on the board, the only evidence a flight
@@ -606,6 +619,16 @@ class Controller:
             return "report established on the final approach course"
         return f"report {self.profile.beacon.name} inbound"
 
+    def _anomaly(self, what: str) -> None:
+        """Record an invariant that broke, and be noisy about it.
+
+        Deliberately not an exception: the pilot is in the air and a controller
+        that raises is worse than one that repairs and complains. But a repair
+        nobody can see is how the CAUSE survives -- see `anomalies`.
+        """
+        self.anomalies.append((self.t, what))
+        print(f"  !! CONTROLLER ANOMALY: {what}", flush=True)
+
     def say(self, to: str, text: str, ref: Aircraft | None = None) -> None:
         """Queue a transmission on the channel this aircraft is actually on.
 
@@ -811,7 +834,34 @@ class Controller:
 
     def check_in(self, cs: str, size: int = 1) -> None:
         ac = self._enter(cs, size)
-        ac.phase, ac.last_report_t = Phase.ENROUTE, self.t
+        # A CHECK-IN DOES NOT UNDO A CLEARANCE. This is the root cause of #50,
+        # and it was one unguarded line.
+        #
+        # A pilot checks in every time he changes frequency, and the ladder
+        # gives him six or seven of those in a sortie. This set him back to
+        # ENROUTE each time -- including AFTER he had been cleared for the
+        # approach and put in the letdown. `_letdown` still named him, because
+        # nothing here touches it. He was then an ENROUTE aircraft holding the
+        # approach slot, so the next `request_approach` walked straight into
+        # the stack (which only admits UNKNOWN/ENROUTE) and made him a HOLDER
+        # who was also the aircraft on the approach.
+        #
+        # From there `_try_clear` found the letdown occupied and told him he
+        # was number two behind the only other aeroplane in the sky, which was
+        # him. He held for four transmissions at 44 nm and declared an
+        # emergency. Live, 31 July, Fred's first sortie.
+        #
+        # `seed_from_radar` directly above has exactly this guard already --
+        # "already known to be on it" -- and returns without touching the
+        # phase. The two functions do the same job from different evidence and
+        # only one of them protected the clearance.
+        #
+        # LANDED is held for the same reason: an aeroplane on the ground that
+        # says something is not enroute, and demoting him would put a taxiing
+        # jet back in the arrival flow.
+        if ac.phase not in (Phase.CLEARED, Phase.LANDED):
+            ac.phase = Phase.ENROUTE
+        ac.last_report_t = self.t
 
         # OUT OF A FLIGHT THAT HAS JUST SPLIT.
         #
@@ -1257,7 +1307,20 @@ class Controller:
             if requested_by and requested_by == self._letdown:
                 ac = self.aircraft.get(self._resolve(requested_by))
                 if ac is not None and ac.phase == Phase.HOLDING:
-                    # Put the board back in step with the clearance he has.
+                    # THIS STATE IS NOW IMPOSSIBLE, and reaching it is a bug
+                    # rather than a case to handle quietly.
+                    #
+                    # The cause was `check_in` resetting a CLEARED aircraft to
+                    # ENROUTE on every frequency change, which let him back
+                    # into the stack while he still held the letdown. That is
+                    # fixed where it happened. This branch stays because the
+                    # radio answer is right whatever the cause -- you never
+                    # tell a man he is number two behind himself -- but it must
+                    # not silently absorb the next thing that breaks the
+                    # invariant, so it says so.
+                    self._anomaly(
+                        f"{requested_by} was HOLDING while holding the "
+                        f"letdown -- something demoted a cleared aircraft")
                     ac.phase, ac.last_report_t = Phase.CLEARED, self.t
                 self.say(requested_by,
                          f"{requested_by}, you are cleared for the approach, "

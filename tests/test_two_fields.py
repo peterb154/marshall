@@ -35,6 +35,7 @@ class TestARoleBelongsToAField(unittest.TestCase):
         for field, role, want in (
                 ("Kobuleti", "clearance", "Kobuleti Clearance"),
                 ("Kobuleti", "ground", "Kobuleti Ground"),
+                ("Kobuleti", "tower", "Kobuleti Tower"),
                 ("Kobuleti", "departure", "Kobuleti Departure"),
                 ("Kobuleti", "approach", "Kobuleti Departure"),
                 ("Batumi", "approach", "Batumi Approach"),
@@ -46,10 +47,12 @@ class TestARoleBelongsToAField(unittest.TestCase):
                 self.assertEqual(P.station_for(role, field=field).name, want)
 
     def test_a_field_never_borrows_the_other_fields_seat(self):
-        """Kobuleti staffs no dedicated Tower. The answer is HIS ground/tower
-        seat, never Batumi's Tower forty miles away."""
+        """Each field staffs its own, and the answer is HIS -- never the one
+        forty miles away."""
         self.assertEqual(P.station_for("tower", field="Kobuleti").name,
-                         "Kobuleti Ground")
+                         "Kobuleti Tower")
+        self.assertEqual(P.station_for("ground", field="Batumi").name,
+                         "Batumi Ground")
 
     def test_an_unstaffed_role_is_none_rather_than_somebody_elses(self):
         """The failure that has to stay a failure. Returning ANY station here
@@ -112,14 +115,19 @@ class TestTheLadder(unittest.TestCase):
          b tower 6, b ground 7"
     """
 
+    # EIGHT RUNGS. Kobuleti gained a Tower when Ground stopped clearing
+    # take-offs, and the renumbering is deliberate -- everything that prints a
+    # card reads PRESET_LADDER, so the aeroplane, the kneeboard and the
+    # controller move together or not at all.
     EXPECTED = [
         (1, "Kobuleti Clearance", 125.100),
-        (2, "Kobuleti Ground", 133.000),
-        (3, "Kobuleti Departure", 123.300),
-        (4, "Georgia Center", 139.000),
-        (5, "Batumi Approach", 124.425),
-        (6, "Batumi Tower", 118.600),
-        (7, "Batumi Ground", 121.900),
+        (2, "Kobuleti Ground", 121.800),
+        (3, "Kobuleti Tower", 133.000),
+        (4, "Kobuleti Departure", 123.300),
+        (5, "Georgia Center", 139.000),
+        (6, "Batumi Approach", 124.425),
+        (7, "Batumi Tower", 118.600),
+        (8, "Batumi Ground", 121.900),
     ]
 
     def test_the_ladder_is_what_was_asked_for(self):
@@ -143,7 +151,8 @@ class TestTheLadder(unittest.TestCase):
         """Not a rung -- a commander -- but still reachable. He used to fall off
         the end when the card was sliced to four."""
         self.assertIsNone(R.preset_of(R.OVERLORD))
-        self.assertAlmostEqual(dict(mb.channels_for(P))[8], 131.000, places=3)
+        last = len(R.PRESET_LADDER) + 1
+        self.assertAlmostEqual(dict(mb.channels_for(P))[last], 131.000, places=3)
 
     def test_the_card_is_no_longer_truncated_to_four(self):
         """The regression this replaces: `stations[:4]` silently dropped Batumi
@@ -167,10 +176,10 @@ class TestAShortRadioGetsTheRightFour(unittest.TestCase):
 
     def test_a_warbird_at_kobuleti_gets_kobuleti(self):
         got = [hz for _, hz in mb.channels_for(P, limit=4, home="Kobuleti")]
-        self.assertIn(125.100, got)
-        self.assertIn(133.000, got)
-        self.assertIn(139.000, got)
-        self.assertNotIn(124.425, got)
+        self.assertIn(125.100, got)          # his clearance
+        self.assertIn(121.800, got)          # his ground
+        self.assertIn(133.000, got)          # his tower
+        self.assertNotIn(124.425, got, "given the other field's approach")
 
     def test_the_region_controller_always_survives_the_cut(self):
         """He is reachable from anywhere, which is exactly what makes him worth

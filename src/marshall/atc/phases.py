@@ -63,8 +63,28 @@ PHASES: dict[str, Phase] = {p.name: p for p in (
                "'readback correct' belongs -- airborne, a correct readback is "
                "answered with silence."),
 
-    Phase("taxi", owner="ground", aims_at="none", follows=("departure",),
-          note="To the holding point. Ground movement, no geometry."),
+    Phase("taxi", owner="ground", aims_at="none", follows=("holding_short",),
+          note="To the holding point AND NO FURTHER. Ground movement, no "
+               "geometry. He is cleared to the runway, not onto it."),
+
+    # GROUND DOES NOT CLEAR ANYBODY FOR TAKE-OFF, and this phase is where that
+    # becomes structural rather than a rule somebody has to remember:
+    #
+    #     "Ground should clear to the runway only, telling them to hold short
+    #      of the runway. Once they check in and report holding short they
+    #      should be handed off to tower. Ground should not clear for takeoff.
+    #      That's tower."
+    #
+    # `taxi` used to run straight to `departure`, so the model said Ground
+    # handed a jet to the radar controller and the runway had no owner at all
+    # in between. Splitting the holding point out gives Tower something to own:
+    # the aeroplane is stopped, on the ground, and the next word he hears is a
+    # take-off clearance from the man who owns the runway.
+    Phase("holding_short", owner="tower", aims_at="none",
+          follows=("departure", "taxi"),
+          note="Stopped at the holding point, on Tower's frequency, waiting "
+               "for the runway. Ground's work is done; nobody is cleared onto "
+               "the runway by anyone but Tower."),
 
     Phase("departure", owner="departure", aims_at="course", follows=("enroute",),
           note="Rolling and climbing out on the runway heading, then turned "

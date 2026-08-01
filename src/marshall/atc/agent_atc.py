@@ -2733,7 +2733,13 @@ def leaving_my_airspace(base: str, session_id: str, callsign: str, me,
     role = want.rsplit("-", 1)[-1]     # 'georgia-center' -> 'center'
     if role == getattr(me, "role", ""):
         return None                    # he is where he should be
-    nxt = (profile.station_for(role)
+    # HIS FIELD. The airspace name gives a role and the role is only unique
+    # within an aerodrome -- unqualified this returned whichever Tower was
+    # listed first, which became Kobuleti's the moment the departure field got
+    # one, so an aircraft leaving Batumi Approach's airspace was handed to a
+    # tower forty miles up the coast. The third place this same fault has
+    # surfaced; the direction of the fix is always to say which field you mean.
+    nxt = (profile.station_for(role, field=getattr(me, "field", ""))
            if hasattr(profile, "station_for") else None)
     # Outbound only: hand him DOWN the ladder (approach -> center), never up.
     # Climbing the ladder is an arrival, and arrivals belong to route.py.

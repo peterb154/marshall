@@ -15,8 +15,12 @@ from marshall.atc import handoff as H
 from marshall.core import route as R
 
 P = R.BATUMI_ASR
-TOWER = P.station_for("tower")
-APPROACH = P.station_for("approach")
+# QUALIFIED, because there are two Towers on the map. Unqualified these were
+# Kobuleti's the moment the departure field got a Tower of its own, and every
+# assertion below would have been about the wrong aerodrome while still
+# passing for some of them. [#51]
+TOWER = P.station_for("tower", field=R.ARRIVAL_FIELD)
+APPROACH = P.station_for("approach", field=R.ARRIVAL_FIELD)
 
 
 def flying(nm, inbound=False):
@@ -144,10 +148,29 @@ class TestApproachAndDepartureAreOneMan(unittest.TestCase):
             P.station_for("departure", field="Batumi").freq_mhz)
 
     def test_a_field_never_borrows_another_fields_controller(self):
-        """Kobuleti staffs no dedicated Tower -- Ground wears that hat. Asking
-        for one must find HIS ground/tower seat, never Batumi Tower."""
+        """Each field staffs its own Tower now, and the answer must be HIS.
+
+        Kobuleti's Ground used to wear the tower hat -- my judgement call when
+        the ladder had no Kobuleti Tower in it, and the wrong one:
+
+            "Ground should not clear for takeoff. That's tower."
+
+        Who owns the runway is the one piece of separation on an aerodrome and
+        is not an economy to make at a quiet field.
+        """
         self.assertEqual(P.station_for("tower", field="Kobuleti").name,
-                         "Kobuleti Ground")
+                         "Kobuleti Tower")
+        self.assertEqual(P.station_for("tower", field="Batumi").name,
+                         "Batumi Tower")
+
+    def test_ground_does_not_cover_the_tower_anywhere(self):
+        """Structural, so the economy cannot creep back in at a new field."""
+        for s in P.stations:
+            if s.role == "ground":
+                with self.subTest(station=s.name):
+                    self.assertNotIn("tower", getattr(s, "also", ()),
+                                     f"{s.name} can clear an aircraft for "
+                                     f"take-off")
 
     def test_a_region_controller_is_reachable_from_any_field(self):
         """Center owns airspace rather than an aerodrome, so he is fieldless and
@@ -235,7 +258,7 @@ class TestTheLadderRunsEndToEnd(unittest.TestCase):
         return None if (v is None or v.same_station) else v.station.name
 
     def test_a_departure_walks_the_whole_way_out(self):
-        self.assertEqual(self.nxt("Kobuleti Ground", H.State(False, 6.0, False)),
+        self.assertEqual(self.nxt("Kobuleti Tower", H.State(False, 6.0, False)),
                          "Kobuleti Departure")
         self.assertEqual(self.nxt("Kobuleti Departure", H.State(False, 30.0, False)),
                          "Georgia Center")
@@ -259,28 +282,49 @@ class TestTheLadderRunsEndToEnd(unittest.TestCase):
     def test_every_rung_of_the_preset_ladder_can_be_left(self):
         """Except the last one on each leg, which is where you stop.
 
-        TWO RUNGS ARE DEAD ENDS TODAY and the pilot has to switch himself.
-        Named here rather than silently tolerated, because a preset nothing can
-        hand you off is indistinguishable in the air from a controller who has
-        forgotten you -- which is exactly what #51 felt like from the cockpit.
+        THERE ARE NONE LEFT, and getting here is what the phase mechanism was
+        for. Both former dead ends closed without a single new rule:
 
-        `Kobuleti Clearance`  the absence is deliberate and documented in
-                              RULES: "he has his clearance and is ready to
-                              push" is not a fact the sim reports, and a
-                              condition invented before anything can satisfy it
-                              is a rule that can only ever be wrong.
+        `Kobuleti Clearance`  `clearance` (delivery) follows `taxi` (ground),
+                              so reading the clearance back hands him on. It
+                              had been listed as deliberately impossible --
+                              "ready to push is not a fact the sim reports" --
+                              which was true and beside the point: it is not a
+                              fact the SIM reports, it is a fact the
+                              CONVERSATION reports.
 
-        `Batumi Ground`       not deliberate. `phases` gives "landed" to Tower,
-                              which was right while Tower wore the ground hat
-                              too; splitting Ground off left a real controller
-                              on a real preset that no rule reaches. [F5]
+        `Batumi Ground`       `landed` (tower) follows `taxi` (ground), so
+                              Tower hands him to Ground to taxi in. That was
+                              F5 on the card, filed as a real gap, and it was
+                              closed by writing the procedure down rather than
+                              by adding a row for it.
 
-        This list shrinking is the measure of the ladder being finished.
+        A preset nothing can hand you off is indistinguishable in the air from
+        a controller who has forgotten you -- which is exactly what #51 felt
+        like from the cockpit. This list staying empty is the check.
+
+        A ROW IS NOT THE ONLY WAY OUT. The ground transitions are phase
+        ownership rather than rules -- moving into a phase somebody else owns
+        IS the handoff -- so a rung can be perfectly reachable with no row
+        naming it. Checking only `RULES` reported Kobuleti Ground as a dead end
+        while `taxi -> holding_short` was already handing him to Tower.
         """
-        expected_dead_ends = {"Kobuleti Clearance", "Batumi Ground"}
-        for s in R.PRESET_LADDER:
+        from marshall.atc import phases as PH
+        expected_dead_ends: set[str] = set()
+
+        def can_leave(s):
             covers = {s.role, *getattr(s, "also", ())}
-            leaves = [r for r in H.RULES if r.frm in covers]
+            if [r for r in H.RULES if r.frm in covers]:
+                return True
+            # Or a no-geometry phase he owns leads to one somebody else owns.
+            mine = [p for p in PH.PHASES.values()
+                    if p.owner in covers and p.aims_at == "none"]
+            return any(PH.owner_of(nxt) not in covers
+                       for p in mine for nxt in p.follows
+                       if PH.owner_of(nxt))
+
+        for s in R.PRESET_LADDER:
+            leaves = can_leave(s)
             with self.subTest(station=s.name):
                 if s.name in expected_dead_ends:
                     self.assertFalse(leaves, f"{s.name} is no longer a dead end "

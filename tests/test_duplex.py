@@ -110,17 +110,20 @@ class TestAFacilityOwnsItsFrequencies(unittest.TestCase):
     def setUp(self):
         from marshall.core import route as R
         self.p = R.BATUMI_ASR
+        # The arrival field, because there are two Towers on the map now and an
+        # unqualified lookup returns whichever is listed first.
+        self.fld = R.ARRIVAL_FIELD
 
     def test_the_published_frequency_is_the_primary(self):
         """AIP Georgia AD 2.UGSB-IAC-12-ILSy: APP 124.425, TWR 118.600. The
         scanned plate on the kneeboard prints these, so they are what a pilot
         reads and expects to dial."""
-        self.assertEqual(self.p.station_for("approach").freq_mhz, 124.425)
-        self.assertEqual(self.p.station_for("tower").freq_mhz, 118.600)
+        self.assertEqual(self.p.station_for("approach", field=self.fld).freq_mhz, 124.425)
+        self.assertEqual(self.p.station_for("tower", field=self.fld).freq_mhz, 118.600)
 
     def test_the_tunable_channel_is_carried_beside_it(self):
-        self.assertIn(124.000, self.p.station_for("approach").freqs)
-        self.assertIn(118.000, self.p.station_for("tower").freqs)
+        self.assertIn(124.000, self.p.station_for("approach", field=self.fld).freqs)
+        self.assertIn(118.000, self.p.station_for("tower", field=self.fld).freqs)
 
     def test_either_one_reaches_the_same_controller(self):
         """The whole point. A warbird on the rounded channel and a jet on the

@@ -704,7 +704,7 @@ class TestHandoffPhraseWithoutARadarFix(unittest.TestCase):
     def setUp(self):
         from marshall.atc import agent_atc
         self.A = agent_atc
-        self.tower = R.BATUMI_ASR.station_for("tower")
+        self.tower = R.BATUMI_ASR.station_for("tower", field=R.ARRIVAL_FIELD)
 
     def test_with_no_fix_it_still_hands_him_over(self):
         said = self.A.handoff_phrase(self.tower, None)
