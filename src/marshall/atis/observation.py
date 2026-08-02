@@ -18,9 +18,23 @@ matter, and every one of them has bitten something in this project already:
                  moment, because one is 26 feet higher than the other.
     runway       computed from the wind, per field. See `Field_.runway_in_use`.
 
-NO DEWPOINT, and it is left out rather than invented. DCS does not model one.
-A real ATIS carries it, and putting a plausible number there would be the same
-mistake as a chart that prints a grid heading and calls it true.
+DEWPOINT IS DERIVED, not invented, and there is a real difference.
+
+DCS does not model one, and my first pass left it out on the grounds that a
+plausible number is the same mistake as a chart printing a grid heading and
+calling it true. That was too pure: the spread is not free to be anything,
+because the sim already tells us where the cloud forms.
+
+    "Dew points can be inferred from cloud base."
+
+Which is the standard rule and it runs the other way round from how it is
+usually quoted: cloud base in feet AGL is about 400 times the temperature/
+dewpoint spread in Celsius, so the base the sim gives us fixes the spread.
+
+That makes the number CONSISTENT with what the pilot can see out of the window
+-- a low ragged base reads as a small spread, a high base as a dry day -- which
+is worth more than accuracy here. With no cloud at all there is nothing to
+derive from, so a dry-day spread is assumed and the code says so.
 """
 
 from __future__ import annotations

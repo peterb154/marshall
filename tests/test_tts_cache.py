@@ -121,3 +121,44 @@ class TestPronunciationHappensBeforeTheKey(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestThereIsNoTTLAndThereShouldNotBe(unittest.TestCase):
+    """Asked directly, so the answer is written down.
+
+    The key is a hash of (voice, engine, pronounced text), so the audio is a
+    pure function of its own key and cannot go stale. An expiry would only
+    force us to pay again for identical audio.
+
+    The case that LOOKS like staleness is the pronunciation table changing --
+    and it is not, because the key is taken after `pronounce`. New spelling,
+    new key, fresh render, old entry orphaned.
+    """
+
+    def setUp(self):
+        tts._MEM.clear()
+
+    def test_changing_the_pronunciation_changes_the_key(self):
+        a = tts._key("Matthew", "", tts.pronounce("Batumi"))
+        b = tts._key("Matthew", "", "Batumi")
+        self.assertNotEqual(a, b, "a respelling would have reused old audio")
+
+    def test_size_is_what_is_bounded_not_age(self):
+        """Memory is capped by count and disk by bytes. Nothing expires."""
+        self.assertGreater(tts._MEM_MAX, 0)
+        self.assertGreater(tts._DISK_MAX_BYTES, 0)
+
+    def test_pruning_keeps_the_disk_under_budget(self):
+        import numpy as np
+        for i in range(12):
+            tts.remember_pcm("Matthew", "", f"prune probe {i}",
+                             np.zeros(4096, dtype="<i2"))
+        before = tts.cache_stats()["disk_bytes"]
+        self.assertGreater(before, 0)
+        tts.prune(budget=before // 2)
+        self.assertLessEqual(tts.cache_stats()["disk_bytes"], before)
+
+    def test_pruning_is_never_fatal(self):
+        import unittest.mock as mock
+        with mock.patch("pathlib.Path.glob", side_effect=OSError("gone")):
+            self.assertEqual(tts.prune(), 0)

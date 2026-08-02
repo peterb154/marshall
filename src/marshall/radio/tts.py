@@ -151,12 +151,57 @@ def remember_pcm(voice_id: str, engine: str, text: str, pcm) -> None:
         tmp.write_bytes(pcm.tobytes())
         tmp.replace(config.TTS_CACHE / f"{k}.pcm")
     except OSError:
-        pass
+        return
+    # Every so often rather than every write -- pruning stats the whole
+    # directory, and doing that on the transmit path would trade a network
+    # round trip for a filesystem one.
+    _STATS["writes"] = _STATS.get("writes", 0) + 1
+    if _STATS["writes"] % 64 == 0:
+        prune()
 
 
 def _trim() -> None:
     while len(_MEM) > _MEM_MAX:
         _MEM.popitem(last=False)
+
+
+# NO TTL, AND ON PURPOSE. The key is a hash of (voice, engine, pronounced
+# text), so the audio is a pure function of its own key and cannot go stale --
+# and if the pronunciation table changes, the pronounced text changes, so the
+# key changes, so it re-renders and the old entry is simply an orphan. An
+# expiry would only force us to pay again for identical audio.
+#
+# WHAT DOES NEED A BOUND IS SIZE. Memory is capped by count; disk was capped by
+# nothing at all. A typical phrase is about 64 KB of PCM and a full ATIS around
+# 700 KB, so a few sorties is tens of megabytes and nothing ever removed any of
+# it. Least-recently-USED rather than oldest-written, because the stock phrases
+# are old and are exactly the ones worth keeping.
+_DISK_MAX_BYTES = 256 * 1024 * 1024
+
+
+def prune(budget: int = _DISK_MAX_BYTES) -> int:
+    """Keep the disk cache under `budget`. Returns bytes removed.
+
+    Never fatal: a cache that cannot tidy itself is still a working cache.
+    """
+    try:
+        files = [(f.stat().st_atime, f.stat().st_size, f)
+                 for f in config.TTS_CACHE.glob("*.pcm")]
+    except OSError:
+        return 0
+    total = sum(sz for _, sz, _ in files)
+    if total <= budget:
+        return 0
+    freed = 0
+    for _atime, size, f in sorted(files):        # least recently used first
+        if total - freed <= budget:
+            break
+        try:
+            f.unlink()
+            freed += size
+        except OSError:
+            pass
+    return freed
 
 
 def cache_stats() -> dict:
@@ -165,7 +210,11 @@ def cache_stats() -> dict:
         on_disk = len(list(config.TTS_CACHE.glob("*.pcm")))
     except OSError:
         on_disk = 0
-    return {"in_memory": len(_MEM), "on_disk": on_disk,
+    try:
+        bytes_ = sum(f.stat().st_size for f in config.TTS_CACHE.glob("*.pcm"))
+    except OSError:
+        bytes_ = 0
+    return {"in_memory": len(_MEM), "on_disk": on_disk, "disk_bytes": bytes_,
             "hits": _STATS["hits"], "misses": _STATS["misses"]}
 
 
