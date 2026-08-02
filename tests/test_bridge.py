@@ -603,9 +603,40 @@ class TestPronunciation(unittest.TestCase):
         self.assertNotIn("Kobuleti", self.say("Contact Kobuleti Departure."))
 
     def test_ordinary_words_are_untouched(self):
-        for said in ("Pony one one, cleared to land runway one three.",
+        """Words not in the table pass through exactly. The examples avoid
+        three, five and nine on purpose -- those ARE in the table now."""
+        for said in ("Pony one one, cleared to land runway one two.",
                      "turn left heading one two four, maintain two thousand"):
             self.assertEqual(self.say(said), said)
+
+    def test_THE_ICAO_DIGITS_ARE_APPLIED_TO_EVERYTHING(self):
+        """The rule that replaced putting ICAO words in `core/say`.
+
+            "If we always regex swap nine for niner before it goes to Polly,
+             wouldn't that make it easier to write phrases in other modules
+             without concern for phraseology like that?"
+
+        Yes -- and the stronger reason is the AGENT, which writes its own prose
+        and says "five thousand" no matter what the prompt asks for. Doing it
+        in the spellers gave "fife" from the engine and "five" from the model
+        in one sortie. Here it catches everything that reaches a pilot,
+        including prose nobody in this repo wrote.
+        """
+        self.assertEqual(self.say("maintain five thousand"),
+                         "maintain fife thousand")
+        self.assertEqual(self.say("heading three six zero"),
+                         "heading tree six zero")
+        self.assertEqual(self.say("altimeter two nine eight nine"),
+                         "altimeter two niner eight niner")
+
+    def test_it_does_not_chew_words_that_merely_contain_them(self):
+        """Whole words only. "fifty" is not "fife-ty" and "ninety" is not
+        "niner-ty" -- the regex has always been word-bounded and this is the
+        change most likely to expose it if it were not."""
+        for said in ("wind two seven zero at fifty",
+                     "ninety knots", "threshold", "nineteen"):
+            with self.subTest(said=said):
+                self.assertEqual(self.say(said), said)
 
     def test_empty(self):
         self.assertEqual(self.say(""), "")

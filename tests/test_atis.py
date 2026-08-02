@@ -200,3 +200,31 @@ class TestTheRunwayHasOneAuthor(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTheLetterRotatesHourly(unittest.TestCase):
+    """On this map it is the only thing that ever advances it.
+
+        "Weather doesn't currently change in dcs missions. Rotate it hourly."
+
+    Which is what a real ATIS does anyway -- re-recorded with the hourly
+    observation whether anything moved or not. A broadcast that rotated on
+    change alone would sit on Alpha all session, and a letter that never
+    changes carries no information: a pilot who heard Alpha once never needs to
+    listen again, which is the opposite of the point.
+    """
+
+    def test_an_hour_rotates_it_even_with_identical_weather(self):
+        now, before = obs(), obs()
+        self.assertTrue(now.same_as(before), "the weather did move; fix the test")
+        self.assertTrue(B.due_for_rotation(now, before, B.ROTATE_AFTER_SEC))
+
+    def test_within_the_hour_it_does_not(self):
+        self.assertFalse(B.due_for_rotation(obs(), obs(), 60.0))
+
+    def test_a_material_change_does_not_wait_for_the_hour(self):
+        self.assertTrue(B.due_for_rotation(obs(wind=270), obs(wind=90), 60.0))
+
+    def test_the_first_recording_is_not_a_rotation(self):
+        """Nothing on the air yet means Alpha, not Bravo."""
+        self.assertFalse(B.due_for_rotation(obs(), None, None))

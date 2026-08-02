@@ -19,6 +19,35 @@ for a heading, "runway seven" for 07, "at zero five" for a wind speed.
 from __future__ import annotations
 
 
+# PLAIN ENGLISH, and the ICAO words are applied later. This is deliberate and
+# it was argued the other way first:
+#
+#     "If we always regex swap nine for niner before it goes to Polly, wouldn't
+#      that make it easier to write phrases in other modules without concern
+#      for phraseology like that?"
+#
+# Yes, and there is a stronger reason than convenience. The AGENT writes its
+# own prose and says "five thousand"; no prompt makes that reliable. So the
+# transcript and the audio diverge whatever we do here -- the only question is
+# whether they diverge CONSISTENTLY. Putting the ICAO words in this table gives
+# "fife" from the engine and "five" from the model in the same sortie, which is
+# the worst of both.
+#
+# So: every module writes plain English, and `radio/tts.SAY_AS` turns it into
+# "tree", "fife" and "niner" on the way to the radio. One rule, applied to
+# everything that reaches a pilot, including prose nobody here wrote.
+#
+# It also makes phraseology ERA-SWAPPABLE. A 1944 controller says "five", not
+# "fife". That is one table rather than a rewrite of every speller.
+#
+# ONE TABLE ALL THE SAME. There were SIX copies of this in this file -- five of
+# them local to a function and written out inline -- so changing a digit was
+# six edits and forgetting one was silent.
+DIGITS = {c: w for c, w in zip("0123456789",
+          ["zero", "one", "two", "three", "four", "five", "six", "seven",
+           "eight", "nine"])}
+
+
 def spell_speed(kt: float) -> str:
     """180 -> 'one eight zero'. A speed, not a heading.
 
@@ -27,9 +56,7 @@ def spell_speed(kt: float) -> str:
     "nine zero", and a controller who pads a speed sounds like he is reading a
     heading. Rounded to the nearest ten, because nobody assigns 183 knots.
     """
-    d = {c: w for c, w in zip("0123456789",
-         ["zero", "one", "two", "three", "four", "five", "six", "seven",
-          "eight", "nine"])}
+    d = DIGITS
     return " ".join(d[c] for c in str(int(round(kt / 10.0)) * 10))
 
 
@@ -40,8 +67,11 @@ def spell_alt(ft: int) -> str:
     a controller says it, not "10 thousand". Reachable since the stack's ceiling
     became the P-51's oxygen limit rather than a four-element list.
     """
-    words = {0: "", 1: "one", 2: "two", 3: "three", 4: "four", 5: "five",
-             6: "six", 7: "seven", 8: "eight", 9: "nine"}
+    # ONE SOURCE FOR THE WORDS. An altitude is said with the same digits
+    # as a heading -- "tree thousand", not "three thousand" -- and this
+    # had its own list, so a change to the ICAO words would have moved
+    # every number in the system except the ones a pilot flies at.
+    words = {0: ""} | {i: DIGITS[str(i)] for i in range(1, 10)}
     th, hu = divmod(ft, 1000)
     # Under a thousand there is no "thousand" to say. This used to emit a
     # leading empty word -- " thousand seven hundred" for 700 -- which was
@@ -80,15 +110,11 @@ def spell_hdg(deg: float) -> str:
     North is THREE SIX ZERO. No controller says "zero zero zero" -- it is not a
     heading anyone flies, and a pilot hearing it wonders what was garbled.
     """
-    d = {c: w for c, w in zip("0123456789",
-         ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"])}
+    d = DIGITS
     hdg = int(round(deg)) % 360 or 360
     return " ".join(d[c] for c in f"{hdg:03d}")
 
 
-DIGITS = {c: w for c, w in zip("0123456789",
-          ["zero", "one", "two", "three", "four", "five", "six", "seven",
-           "eight", "nine"])}
 
 
 def spell_rwy(rwy) -> str:
@@ -114,10 +140,12 @@ def spell_count(n) -> str:
     heading. Above twenty it is left alone; Polly reads "25" correctly and
     nobody needs "two five knots".
     """
-    words = ["zero", "one", "two", "three", "four", "five", "six", "seven",
-             "eight", "nine", "ten", "eleven", "twelve", "thirteen",
-             "fourteen", "fifteen", "sixteen", "seventeen", "eighteen",
-             "nineteen", "twenty"]
+    # The first ten come off DIGITS so a wind of nine knots is said the same
+    # way as a heading of nine zero. Above nine they are ordinary words: "one
+    # zero knots" is a heading habit that reads as a bearing.
+    words = [DIGITS[str(i)] for i in range(10)] + [
+        "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen",
+        "sixteen", "seventeen", "eighteen", "nineteen", "twenty"]
     try:
         i = int(round(float(n)))
     except (TypeError, ValueError):
@@ -127,8 +155,7 @@ def spell_count(n) -> str:
 
 def spell_time(t: float) -> str:
     """Minutes past the hour, spoken as digits: 'at four five'."""
-    d = {c: w for c, w in zip("0123456789",
-         ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"])}
+    d = DIGITS
     return " ".join(d[c] for c in f"{(int(t) // 60) % 60:02d}")
 
 
@@ -155,8 +182,7 @@ def spell_freq(mhz: float) -> str:
     time, and a read-back that is always the same shape is one a controller can
     check at a glance.
     """
-    d = {c: w for c, w in zip("0123456789",
-         ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"])}
+    d = DIGITS
     whole, _, frac = f"{mhz:.3f}".rstrip("0").rstrip(".").partition(".")
     out = " ".join(d[c] for c in whole)
     return out + " decimal " + " ".join(d[c] for c in (frac or "0"))
@@ -164,8 +190,7 @@ def spell_freq(mhz: float) -> str:
 
 def spell_dur(sec: float) -> str:
     """A duration as aviation timing: 204 -> 'three plus two four'."""
-    d = {c: w for c, w in zip("0123456789",
-         ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"])}
+    d = DIGITS
     m, s = divmod(int(round(sec)), 60)
     minutes = d[str(m)] if m < 10 else str(m)
     return f"{minutes} plus " + " ".join(d[c] for c in f"{s:02d}")

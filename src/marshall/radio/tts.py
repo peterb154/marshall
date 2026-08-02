@@ -49,14 +49,47 @@ _POLLY_RATE = 16000  # Polly PCM tops out here -- and matches SRS, so no resampl
 # "RED-back" -- because that is the commoner English word. A controller says
 # "REED-back".
 SAY_AS = {
+    # THE ICAO DIGITS, applied to EVERY outgoing string.
+    #
+    #     "We need to build a pronunciation table in bridge that every string
+    #      is passed through to fix pronunciations."
+    #
+    # `core/say.py` already produces these words for anything the deterministic
+    # controller composes -- but the AGENT writes its own prose and says "five
+    # thousand", so the two brains had drifted apart on phraseology within a
+    # single sortie. A pilot would have heard "fife thousand" from the engine
+    # and "five thousand" from the model, one transmission apart.
+    #
+    # Fixing it here catches both, because everything that reaches a radio
+    # comes through `pcm16k`. The transcript keeps whichever word was written,
+    # which is the documented trade of this table: the fix lives in the audio.
+    "three": "tree",
+    "five": "fife",
+    "nine": "niner",
     "readback": "reed back",
     "readbacks": "reed backs",
-    "Batumi": "Bah too mee",
-    "Kobuleti": "Koh boo LEH tee",
-    "Senaki": "Seh NAH kee",
-    "Kutaisi": "Koo tah EE see",
-    "Sukhumi": "Soo KHOO mee",
-    "Vaziani": "Vah zee AH nee",
+    # CALLSIGNS. Polly reads "Sockeye" as a single Japanese-looking word and
+    # says it like the rice wine. It is two English words and a fish.
+    "Sockeye": "sock eye",
+    # THE GEORGIAN FIELDS, and the previous spellings were a disaster on the
+    # air. They used CAPITALS for the stressed syllable -- "Koh boo LEH tee" --
+    # which is a convention for a human reader and nothing at all to Polly:
+    # a capitalised fragment gets read as an initialism or simply flattened,
+    # so the emphasis never landed and the seams between syllables did.
+    #
+    # Lower case throughout, and syllables joined with hyphens rather than
+    # spaces: a space is a word boundary and Polly pauses at it, which is what
+    # turned three-syllable place names into three separate words.
+    "Batumi": "bah-too-mee",
+    "Kobuleti": "koh-boo-lay-tee",
+    "Senaki": "seh-nah-kee",
+    "Kutaisi": "koo-tah-ee-see",
+    "Sukhumi": "soo-koo-mee",
+    "Vaziani": "vah-zee-ah-nee",
+    "Tsutsnvati": "tsoots-nah-vah-tee",
+    "Gudauta": "goo-dah-oo-tah",
+    "Soganlug": "soh-gahn-loog",
+    "Tbilisi": "tbil-ee-see",
 }
 # Only words actually heard to come out wrong go in here. Guessing at
 # pronunciations Polly already gets right is how you end up "fixing" roger into

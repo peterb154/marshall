@@ -272,7 +272,7 @@ class TestWhichBrainSaidIt(unittest.TestCase):
         """The dangerous one. The heading is voiced and the ALTITUDE is not, so
         it sounds like a correct instruction and is half of one."""
         got = self._turn("turn left heading 169, maintain 4000",
-                         "turn left heading one six niner")
+                         "turn left heading one six nine")
         self.assertEqual(got["missing"], ["4000"])
 
     def test_a_turn_the_engine_said_nothing_about_is_not_judged(self):

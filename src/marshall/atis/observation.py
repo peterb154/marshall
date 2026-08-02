@@ -99,14 +99,26 @@ class Observation:
         return self.ceiling_ft_agl is not None
 
     def same_as(self, other: Observation | None) -> bool:
-        """Would an ATIS keep the same letter?
+        """Would an ATIS keep the same letter, on the weather alone?
 
         A NEW LETTER MEANS "LISTEN AGAIN", so it must not chase noise. The wind
         wandering by a degree is not new information, and rotating on it would
         train pilots to ignore the letter -- which is the one thing the letter
-        is for. Real ATIS rotates on a MATERIAL change, and these are the
-        materials: the runway in use, whether there is a ceiling and roughly
-        where, the visibility band, and a wind shift big enough to fly.
+        is for. So these are the materials: the runway in use, whether there is
+        a ceiling and roughly where, the visibility band, and a wind shift big
+        enough to fly.
+
+        NOT THE ONLY REASON TO ROTATE, and on this map not even the usual one:
+
+            "Weather doesn't currently change in dcs missions. Rotate it
+             hourly."
+
+        Which is what a real ATIS does anyway -- it is re-recorded with the
+        hourly observation whether anything moved or not, and the letter walks
+        on regardless. In a sim whose weather is static this is the ONLY thing
+        that ever advances it, so a broadcast that rotated on change alone
+        would sit on Alpha for the whole session and the letter would carry no
+        information at all. See `atis.serve`.
         """
         if other is None:
             return False

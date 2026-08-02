@@ -104,6 +104,9 @@ class TestTheClearanceItself(unittest.TestCase):
 
     def test_numbers_are_spoken(self):
         said = self.craft()
+        # The AGENT wrote this, not the engine, so it says "five".
+        # `tts.SAY_AS` turns it into "fife" on the way to the radio --
+        # see that table on why the fix lives in the audio.
         self.assertIn("five thousand", said)
         self.assertIn("one two four decimal zero", said)
         self.assertNotIn("124.0", said)

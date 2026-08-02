@@ -60,6 +60,33 @@ def next_letter(previous: str | None) -> str:
         return LETTERS[0]
 
 
+# A real ATIS is re-recorded with the hourly observation whether anything moved
+# or not. Here it is the ONLY thing that ever advances the letter:
+#
+#     "Weather doesn't currently change in dcs missions. Rotate it hourly."
+#
+# A broadcast that rotated on change alone would sit on Alpha for the whole
+# session, and a letter that never changes carries no information -- a pilot
+# who has heard Alpha once never needs to listen again, which is the opposite
+# of what it is for.
+ROTATE_AFTER_SEC = 3600.0
+
+
+def due_for_rotation(obs, previous, recorded_age_sec: float | None) -> bool:
+    """Should this broadcast get the next letter?
+
+    Two reasons, and either is enough: the weather materially moved, or an hour
+    has passed. `recorded_age_sec` is None when nothing is on the air yet,
+    which is the first recording rather than a rotation -- the caller wants
+    Alpha, not Bravo.
+    """
+    if previous is None or recorded_age_sec is None:
+        return False                    # nothing to rotate FROM
+    if not obs.same_as(previous):
+        return True
+    return recorded_age_sec >= ROTATE_AFTER_SEC
+
+
 def spoken(obs, letter: str, zulu: str) -> str:
     """The words. One paragraph, in the order an ATIS says them.
 
@@ -116,15 +143,27 @@ def _round100(ft: int) -> int:
     return int(round(ft / 100.0)) * 100
 
 
+# Statute miles, per the ask, and the sim reports metres.
+M_PER_MILE = 1609.344
+
+
 def _vis(m: int) -> str:
-    """Kilometres, and "one zero or more" above ten -- the distinction between
-    40 km and 45 is not something a pilot acts on."""
-    km = m / 1000.0
-    if km >= 10:
-        return "one zero kilometres or more"
-    if km >= 1:
-        return f"{say.spell_count(int(round(km)))} kilometres"
-    return f"{_digits(str(int(round(m / 100.0)) * 100))} metres"
+    """Miles, and "one zero or more" above ten.
+
+        "Use miles not km."
+
+    The distinction between 40 miles and 45 is not something a pilot acts on,
+    so everything above ten is one phrase. Below a mile it goes to fractions,
+    because that is the band where the number decides whether he can land.
+    """
+    miles = m / M_PER_MILE
+    if miles >= 10:
+        return "one zero miles or more"
+    if miles >= 1:
+        return f"{say.spell_count(int(round(miles)))} miles"
+    if miles >= 0.5:
+        return "one half mile"
+    return "less than one half mile"
 
 
 def _inhg(inhg: float) -> str:
