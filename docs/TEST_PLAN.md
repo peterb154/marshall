@@ -41,13 +41,14 @@ aerodromes rather than four buttons at one:
 | ch | freq | station | when |
 |---|---|---|---|
 | 1 | 125.100 | Kobuleti Clearance | start-up, IFR clearance |
-| 2 | 133.000 (also 122.100) | Kobuleti Ground | taxi — **and take-off**, he wears the tower hat |
-| 3 | 123.300 | Kobuleti Departure | after take-off, to about 5 nm |
-| 4 | 139.000 | Georgia Center | en route |
-| 5 | 124.425 (also 124.000) | Batumi Approach | recovery and the whole ASR |
-| 6 | 118.600 (also 118.000) | Batumi Tower | inside 5 nm, landing |
-| 7 | 121.900 | Batumi Ground | taxi in |
-| 8 | 131.000 | Sentry | mission commander, not a rung |
+| 2 | 121.800 | Kobuleti Ground | taxi to the runway — **not** take-off |
+| 3 | 133.000 (also 122.100) | Kobuleti Tower | holding short, take-off |
+| 4 | 123.300 | Kobuleti Departure | after take-off, to about 5 nm |
+| 5 | 139.000 | Georgia Center | en route |
+| 6 | 124.425 (also 124.000) | Batumi Approach | recovery and the whole ASR |
+| 7 | 118.600 (also 118.000) | Batumi Tower | the landing |
+| 8 | 121.900 | Batumi Ground | taxi in |
+| 9 | 131.000 | Sentry | mission commander, not a rung |
 
 Two frequencies on one row is **one controller on both** — a warbird that cannot
 dial fractions reaches the same man on the round number. Say either.
@@ -55,9 +56,10 @@ dial fractions reaches the same man on the round number. Say either.
 The approach is still all on **124**; you should not be sent to Tower until
 about five miles.
 
-**Preset 7 is not reachable by a handoff.** Nothing hands you to Batumi Ground —
-`phases` gives "landed" to Tower — so after landing you have to ask. That is
-known and on the card as F5, not a surprise to report.
+**Every rung can now be left, and reached.** Both former dead ends closed:
+reading your clearance back hands you to Ground, and landing hands you to Batumi
+Ground for taxi in. If either goes quiet on you, that is a regression and worth
+reporting.
 
 **Priority:** **P1** never flown, this sortie is the first real test ·
 **P2** seen working once, confirming it stuck · **P3** nice to have.
@@ -68,8 +70,10 @@ known and on the card as F5, not a surprise to report.
   the mission holds armour or distant AI. `count_contacts` cannot tell a T-55
   from a Viper. [#45]
 - **The board engages while you are alone**, same cause. `/diag` will show it.
-- **Kobuleti Ground answers a request to take off.** He is Ground and Tower on
-  one seat, which is how a field that size runs. Not a mis-routed call.
+- **Kobuleti Ground REFUSES a request to take off** — "take-off is Tower's,
+  contact Kobuleti Tower one three three decimal zero". That is correct and
+  deliberate: the runway belongs to one controller. Ground clears you *to* the
+  runway and says hold short, every time.
 - **The nav log heading changed by ~2°** from the last card. The wind is 090/5
   now rather than 180/5 — picked so runway 13 at Batumi and 07 at Kobuleti are
   both into it. Courses did not move; the drift correction did.

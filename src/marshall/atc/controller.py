@@ -70,6 +70,25 @@ class Aircraft:
     """
     callsign: str
     phase: Phase = Phase.UNKNOWN
+    # WHAT HE IS DOING, in `phases.py`'s vocabulary, as distinct from `phase`
+    # above -- and they are genuinely two things rather than a duplication.
+    #
+    #   `phase`        SEPARATION state. Where he sits in the stack, whether he
+    #                  is in the letdown, whether he has gone around. The enum
+    #                  exists so this engine can sequence aeroplanes, and every
+    #                  value in it is about the arrival.
+    #
+    #   `sortie_phase` WHAT HE IS DOING. Clearance, taxi, holding short,
+    #                  departure, enroute, approach. It covers the whole flight
+    #                  including the half that has no geometry in it, and it is
+    #                  what decides WHO OWNS HIM -- see `handoff.due`.
+    #
+    # An aeroplane holding short is UNKNOWN to the separation engine and
+    # perfectly well defined to the sortie, which is the case that made the
+    # distinction necessary rather than tidy: the ground half of a flight has
+    # no stack, no levels and no sequence, and forcing it into an arrival enum
+    # would have meant inventing arrival states for a man who has not moved.
+    sortie_phase: str = ""
     assigned_ft: int | None = None
     last_report_t: float = 0.0
     approaches: int = 0
@@ -250,6 +269,45 @@ def spell_hdg(deg: float) -> str:
          ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"])}
     hdg = int(round(deg)) % 360 or 360
     return " ".join(d[c] for c in f"{hdg:03d}")
+
+
+DIGITS = {c: w for c, w in zip("0123456789",
+          ["zero", "one", "two", "three", "four", "five", "six", "seven",
+           "eight", "nine"])}
+
+
+def spell_rwy(rwy) -> str:
+    """A runway designator, digit by digit and TWO of them: 7 -> 'zero seven'.
+
+    Not `spell_hdg`, which pads to three because a heading is three digits. A
+    runway is two, and "runway zero zero seven" is not a thing anybody says.
+    Written out because it went over the air as "runway 07", which Polly reads
+    as "runway seven" -- one digit short of the number painted on it.
+    """
+    try:
+        n = int(rwy)
+    except (TypeError, ValueError):
+        return str(rwy)
+    return " ".join(DIGITS[c] for c in f"{n % 100:02d}")
+
+
+def spell_count(n) -> str:
+    """A small number as a WORD: 6 -> 'six'.
+
+    A wind speed is a quantity, not a bearing, and spelling it digit by digit
+    gives "wind zero nine zero at zero five" -- five knots dressed as a
+    heading. Above twenty it is left alone; Polly reads "25" correctly and
+    nobody needs "two five knots".
+    """
+    words = ["zero", "one", "two", "three", "four", "five", "six", "seven",
+             "eight", "nine", "ten", "eleven", "twelve", "thirteen",
+             "fourteen", "fifteen", "sixteen", "seventeen", "eighteen",
+             "nineteen", "twenty"]
+    try:
+        i = int(round(float(n)))
+    except (TypeError, ValueError):
+        return str(n)
+    return words[i] if 0 <= i < len(words) else str(i)
 
 
 def spell_time(t: float) -> str:
@@ -1207,10 +1265,133 @@ class Controller:
                  f"{words[place] if place < len(words) else place}.")
 
     def _wind_phrase(self) -> str:
-        """The wind, on the clearance that ends with a landing."""
+        """The wind, on the clearance that ends with a landing or a take-off.
+
+        A DIRECTION IS THREE DIGITS AND A SPEED IS NOT. The direction is spelled
+        digit by digit because that is how a bearing is said; the speed is a
+        number said as a number. Slicing the last nine characters off a spelled
+        bearing gave "wind zero nine zero at zero five" -- five knots dressed as
+        a heading, and nobody says that.
+        """
         from marshall.core import route as _R
         return (f"wind {spell_hdg(int(_R.WIND_FROM_DEG))} at "
-                f"{spell_hdg(int(_R.WIND_MPH))[-9:].strip()}.")
+                f"{spell_count(_R.WIND_MPH)}.")
+
+    # -- the ground half ---------------------------------------------------
+    #
+    #     "Clearance should handoff to ground for taxi clearance. Ground should
+    #      clear to the runway only, telling them to hold short of the runway.
+    #      Once they check in and report holding short they should be handed
+    #      off to tower. Ground should not clear for takeoff. That's tower."
+    #
+    # THESE MOVE `sortie_phase` AND NOTHING ELSE. There is no stack on the
+    # ramp, no levels and no sequence, so the separation engine has nothing to
+    # say here and must not pretend otherwise -- an aeroplane holding short is
+    # UNKNOWN to it and perfectly well defined to the sortie.
+    #
+    # The handoffs are a consequence of the phase and are not issued here: see
+    # `handoff.due`, where a phase with no geometry is owned outright by the
+    # controller the phase table names. Adding pushback or de-icing later is a
+    # phase and no code at all.
+
+    def request_clearance(self, cs: str) -> None:
+        """On the ramp, asking for his IFR clearance."""
+        ac = self.get(cs)
+        ac.sortie_phase, ac.last_report_t = "clearance", self.t
+
+    def clearance_read_back(self, cs: str, correct: bool = True) -> None:
+        """The read-back, and the one place 'readback correct' belongs.
+
+        A CORRECT read-back is what ends Delivery's business and hands him to
+        Ground -- so this is the transition, not the words. A WRONG one leaves
+        him exactly where he is, which is the whole point of reading it back:
+        he does not move until the numbers agree.
+        """
+        ac = self.get(cs)
+        ac.last_report_t = self.t
+        if correct:
+            ac.sortie_phase = "taxi"
+
+    def request_taxi(self, cs: str) -> None:
+        """Ready to move. Ground's, and Ground clears him TO the runway only.
+
+        The phase moves either way -- he IS ready to taxi and saying so on the
+        wrong frequency does not make it untrue -- but only Ground issues the
+        instruction. Symmetric with `request_takeoff`: a controller answers for
+        what he owns and points at the man who owns the rest.
+        """
+        ac = self.get(cs)
+        ac.sortie_phase, ac.last_report_t = "taxi", self.t
+        if not self._owns("ground"):
+            self._not_mine(ac, "ground", "Taxi")
+            return
+        rwy = self._runway_in_use()
+        self.say(ac.callsign,
+                 f"{self._addr(ac)}, taxi to runway {rwy}, "
+                 f"hold short of runway {rwy}.")
+
+    def _owns(self, role: str) -> bool:
+        """Is this seat the one that issues that clearance?
+
+        `None` means the bridge has not told us who is speaking, and everything
+        behaves as it always did -- the engine is blind by design and must not
+        start refusing work because it was not told.
+        """
+        me = getattr(self, "_me", None)
+        if me is None or not getattr(me, "role", ""):
+            return True
+        return me.role == role or role in getattr(me, "also", ())
+
+    def _not_mine(self, ac, role: str, what: str) -> None:
+        """Point him at the man who owns it, with the frequency.
+
+        Naming only the position leaves him hunting for a number while taxiing;
+        naming the frequency is the difference between a handoff and a hint.
+        """
+        me = getattr(self, "_me", None)
+        who = self.profile.station_for(role, field=getattr(me, "field", ""))
+        where = (f", contact {who.name} {spell_freq(who.freq_mhz)}"
+                 if who is not None else "")
+        self.say(ac.callsign,
+                 f"{self._addr(ac)}, {what} is {role.title()}'s{where}.")
+
+    def report_holding_short(self, cs: str) -> None:
+        """Stopped at the edge. Ground is finished; Tower owns the runway."""
+        ac = self.get(cs)
+        ac.sortie_phase, ac.last_report_t = "holding_short", self.t
+
+    def request_takeoff(self, cs: str) -> None:
+        """Asking for the runway. TOWER ONLY, and the refusal is deliberate.
+
+        Ground moves aeroplanes on taxiways; the runway is one controller's and
+        nobody else's. A ground controller who answers this is not being
+        helpful, he is issuing a clearance that is not his -- which is the
+        aerodrome half of the invariant that keeps an LLM out of separation.
+        """
+        ac = self.get(cs)
+        ac.last_report_t = self.t
+        if not self._owns("tower"):
+            self._not_mine(ac, "tower", "Take-off")
+            return
+        ac.sortie_phase = "departure"
+        rwy = self._runway_in_use()
+        self.say(ac.callsign,
+                 f"{self._addr(ac)}, runway {rwy}, cleared for take-off, "
+                 f"{self._wind_phrase()}")
+
+    def _runway_in_use(self) -> str:
+        """Two digits, computed from the wind by the FIELD -- see
+        `Field_.runway_in_use`. Read here rather than remembered so a ground
+        instruction and a take-off clearance cannot name different runways."""
+        from marshall.core import route as _R
+        # HIS field, not the profile's. A ground instruction at Kobuleti must
+        # name Kobuleti's runway; the profile describes the approach at the
+        # other end of the route and its runway is 13.
+        me = getattr(self, "_me", None)
+        fld = _R.field_named(getattr(me, "field", "") or _R.ARRIVAL_FIELD)
+        if fld is not None:
+            return spell_rwy(fld.runway_in_use())
+        return spell_rwy(self.profile.runway) if self.profile.runway else "in use"
 
     def request_approach(self, cs: str) -> None:
         # A pilot who calls up asking for the approach directly (no prior check-in

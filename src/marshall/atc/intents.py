@@ -32,6 +32,22 @@ class IntentKind(str, Enum):
     REQUEST_APPROACH = "request_approach"
     REQUEST_BREAKUP = "request_breakup"   # "Pony 1 requesting break-up"
     REQUEST_VISUAL = "request_visual"     # "Pony 1 requests the visual"
+    # THE GROUND HALF, which this taxonomy did not have at all.
+    #
+    # Everything above is an arrival. That was honest while the only aerodrome
+    # was the one being approached, and it left the departure end of a sortie
+    # with no vocabulary: a pilot asking for a clearance, for taxi, or reporting
+    # holding short was classified as `check_in` or `unknown`, so the controller
+    # heard "somebody said something" and the phase never moved.
+    #
+    # These four are what drives the ground procedure. The transitions are not
+    # geometry -- see `handoff.due` on phase ownership -- so the CONVERSATION is
+    # the only thing that can report them, which makes them intents rather than
+    # facts read off the sim.
+    REQUEST_CLEARANCE = "request_clearance"     # "request IFR clearance to Batumi"
+    REQUEST_TAXI = "request_taxi"               # "ready to taxi"
+    REPORT_HOLDING_SHORT = "report_holding_short"   # "holding short one three"
+    REQUEST_TAKEOFF = "request_takeoff"         # "ready for departure"
     UNKNOWN = "unknown"             # hand to the LLM fallback, or ask again
 
     @classmethod
@@ -104,6 +120,20 @@ INTENT_SCHEMA = {
                 "the visual' is asking, 'field in sight' is reporting.\n"
                 "request_breakup: asking to split a formation into individual "
                 "aircraft.\n"
+                "request_clearance: asking for his IFR or departure clearance "
+                "on the ramp -- 'request IFR clearance to Batumi', 'clearance "
+                "on request'. Before he has moved.\n"
+                "request_taxi: ready to move -- 'ready to taxi', 'request "
+                "taxi', 'ready to push'. He has his clearance and wants the "
+                "taxiways.\n"
+                "report_holding_short: STOPPED at the runway edge -- 'holding "
+                "short one three', 'short of the runway', 'at the hold'. This "
+                "is a REPORT of having arrived there, and it is what hands him "
+                "to Tower. Distinct from request_takeoff, which asks for the "
+                "runway itself.\n"
+                "request_takeoff: asking for the runway -- 'ready for "
+                "departure', 'request take-off', 'ready to go'. Only Tower may "
+                "answer it.\n"
                 "'negative, in cloud', 'IMC'. Set `visual` on this one.\n"
                 "unknown: unintelligible, or none of the above. Use it rather "
                 "than inventing a value -- the enum above is exhaustive."),
@@ -294,6 +324,18 @@ def dispatch(ctl: atc.Controller, intent: Intent) -> bool:
             ctl.request_breakup(cs)
         case IntentKind.REQUEST_VISUAL:
             ctl.request_visual(cs, field_in_sight=bool(intent.visual))
+        # THE GROUND HALF. These move `sortie_phase` and the handoffs follow
+        # from it -- see `handoff.due` on phase ownership. Nothing here issues
+        # a handoff itself, which is why adding pushback or de-icing later is a
+        # phase and not another case in this match.
+        case IntentKind.REQUEST_CLEARANCE:
+            ctl.request_clearance(cs)
+        case IntentKind.REQUEST_TAXI:
+            ctl.request_taxi(cs)
+        case IntentKind.REPORT_HOLDING_SHORT:
+            ctl.report_holding_short(cs)
+        case IntentKind.REQUEST_TAKEOFF:
+            ctl.request_takeoff(cs)
         case _:
             return False
     return True

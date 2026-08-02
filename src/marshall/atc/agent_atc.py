@@ -2568,7 +2568,8 @@ def sim_state(scope: str, track: str, pos=None) -> str:
 
 
 def next_controller(scope, track: str, me, profile, fix, *, known: str = "",
-                    session_id: str = "", vectoring=None, mission: str = ""):
+                    session_id: str = "", vectoring=None, mission: str = "",
+                    phase: str = ""):
     """WHO HAS HIM NEXT. The one answer, and there used to be three.
 
     A handoff is decided by three different kinds of evidence, and each is
@@ -2603,8 +2604,13 @@ def next_controller(scope, track: str, me, profile, fix, *, known: str = "",
         # branch may have said otherwise; being down outranks it.
         nxt = None
     elif nxt is None:
-        v = (_handoff.due(profile, me, _handoff_state(scope, track, fix))
-             if me is not None and fix is not None else None)
+        # `phase` is what he is DOING, and it is the only thing that can hand
+        # over the ground half of a sortie -- see `handoff.due`. A parked
+        # aeroplane has no geometry to argue from, so without it Clearance,
+        # Ground and Tower can never let go of anybody.
+        v = (_handoff.due(profile, me,
+                          _handoff_state(scope, track, fix, phase))
+             if me is not None else None)
         # Same man, different name -- Approach answering as Departure is not a
         # handoff and must never be spoken.
         nxt = None if (v is None or v.same_station) else v.station
@@ -2618,7 +2624,7 @@ def next_controller(scope, track: str, me, profile, fix, *, known: str = "",
     return nxt
 
 
-def _handoff_state(scope, track: str, pos) -> object:
+def _handoff_state(scope, track: str, pos, phase: str = "") -> object:
     """The three facts a handoff rule is allowed to look at.
 
     INBOUND IS A TREND, not a position, and it is the whole reason this is not
@@ -2636,7 +2642,7 @@ def _handoff_state(scope, track: str, pos) -> object:
     if hdg is not None and radial is not None:
         from marshall.atc import asr as _asr
         inbound = abs(_asr.angle_diff((radial + 180) % 360, hdg)) < 90
-    return _h.State(on_ground=ground, range_nm=nm, inbound=inbound)
+    return _h.State(on_ground=ground, range_nm=nm, inbound=inbound, phase=phase)
 
 
 def handoff_on_the_event(scope: str, track: str, me, profile) -> object | None:
@@ -5000,8 +5006,12 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     _hz = bridge.heard_on.get(ctl._resolve(cs)) or final_hz
                     _me = (profile.station_on(_hz / 1_000_000)
                            if hasattr(profile, "station_on") else None)
+                    # Same evidence the receive path uses. Without the phase
+                    # the monitor can watch a ramp all day and never move
+                    # anybody off Clearance or Ground.
                     _v = _handoff.due(profile, _me, _handoff_state(
-                        scope, _tk, pos))
+                        scope, _tk, pos,
+                        getattr(_who, "sortie_phase", "") or ""))
                     # SAME MAN, DIFFERENT NAME. Approach and Departure are one
                     # controller on one frequency, so there is nobody to contact
                     # -- he simply answers as Departure while you are going out.
@@ -5587,9 +5597,14 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # live check only the volumes, and between them they reported healthy
         # while Center could not hand anybody over at all. [#51]
         _down = is_on_the_ground(scope, _ident.track, fix)
+        # WHAT HE IS DOING comes off the board. It is the only evidence that
+        # can hand over the ground half of a sortie -- a parked aeroplane has
+        # no range and no direction to argue from.
+        _ac = ctl.aircraft.get(ctl._resolve(known)) if known else None
         nxt = next_controller(scope, _ident.track, me, profile, fix,
                               known=known, session_id=session_id,
-                              vectoring=vectoring)
+                              vectoring=vectoring,
+                              phase=getattr(_ac, "sortie_phase", "") or "")
         # SETTLED. This is the handoff the bridge authorises for this turn, and
         # the transmit path refuses any other -- see `strip_unauthorised_handoff`.
         bridge.handoff_due[0] = nxt

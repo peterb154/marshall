@@ -812,6 +812,21 @@ DEPARTURE_FIELD = "Kobuleti"
 ARRIVAL_FIELD = "Batumi"
 
 
+def field_named(name: str):
+    """The aerodrome a Station belongs to, by name.
+
+    `Station.field` is a string because a Station is data and pointing it at a
+    `Field_` would make the two definitions circular. So this is the join, and
+    it is here rather than at the call sites: a ground instruction and a
+    take-off clearance must read the same runway, and they will only do that if
+    they read it from the same place.
+    """
+    for f in FIELDS:
+        if f.name == name:
+            return f
+    return None
+
+
 # WHAT THE CARD CALLS A BUTTON, and it stopped being a letter.
 #
 # An SCR-522 has four buttons labelled A B C D, so every card this system had
@@ -950,6 +965,10 @@ KOBULETI_FIELD = Field_(
     "Kobuleti", -317605, 636704, 59, 64, ends=(7, 25),
     note="Field elevation 59 ft. Runway 07/25, 2400 m. TACAN 67X KBL, "
          "ILS 111.50 on 07. GCA field: PAR and SRA published.")
+
+# EVERY AERODROME IN THE THEATRE, so `field_named` has something to search and
+# a third field is one entry rather than one more place to remember.
+FIELDS = (BATUMI_FIELD, KOBULETI_FIELD)
 
 
 @dataclass
