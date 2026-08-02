@@ -7,7 +7,11 @@ Fair, and the reason was structural: the words came from four places, in three
 different modules, one of which lived inside a container's directory. This is
 the map. It describes what is TRUE today, not what should be.
 
-## The four sources, in the order they get their say
+**There are five stages now**, and the fifth is the useful one: everything bound
+for a pilot passes through a single table at the radio, which is where
+phraseology is finally settled no matter which of the other four composed it.
+
+## The five sources, in the order they get their say
 
 ### 1. The engine builds the instruction — `atc/controller.py`
 
@@ -20,8 +24,12 @@ They go out as `Tx` objects on `ctl.out`, which `separation_context` joins into
 the **directive**. This is the half that must never be a model's invention, and
 the words exist so that what it decided survives being spoken.
 
-Numbers are spelled here — `spell_alt(4000)` → "four thousand" — because a
-controller says figures, and leaving that to the agent is leaving it to chance.
+Numbers are spelled by **`core/say.py`**, not here — `spell_alt(4000)` →
+"four thousand" — because a controller says figures and leaving that to the
+agent is leaving it to chance. They moved down out of `controller.py` on
+2 August so the ATIS module could use them without importing sideways; a second
+speller is how a runway gets said one way by the tower and another by the
+recording. Six copies of the digit table came out in the same move.
 
 ### 2. The geometry builds the guidance — `atc/asr.py`, `agent_atc.asr_call`
 
@@ -85,6 +93,39 @@ nothing went out at all.
 **Nobody owns tone.** `soul` sets a persona; `rules` sets manner; the plate sets
 facts; and the engine's own sentences have their own voice baked in. Four
 authors, one radio.
+
+*(Partly answered since. Each `Station` carries a `manner` — a sentence, read
+off the station beside its voice and injected per transmission — so the eight
+controllers sound like eight people. It is fenced hard: manner owns the words
+AROUND the numbers and never the numbers, may not decline work or skip a
+read-back, and drops entirely if a pilot is in trouble. That fixes who sounds
+like whom; it does not fix that four components still compose sentences.)*
+
+### 5. The radio normalises it — `radio/tts.py`
+
+**Added 2 August, and it is the one place phraseology is settled for everybody.**
+
+Every string bound for a pilot passes through `pronounce()` on its way to Polly,
+and that table does two different jobs:
+
+    phraseology     three -> tree, five -> fife, nine -> niner
+    pronunciation   Sockeye -> "sock eye", Batumi -> "bah-too-mee"
+
+The first of those was going to live in `core/say.py` as ICAO digit words, which
+is where a controller's phraseology belongs in principle. **The agent is what
+settles it**: it writes its own prose, says "five thousand", and no prompt makes
+that reliable — so the transcript and the audio diverge whatever we do. Doing it
+in the speller gave "fife" from the engine and "five" from the model in the same
+sortie, one transmission apart, which is the worst of both. A test caught it.
+
+So every component writes plain English and this table makes it ICAO on the way
+out. One rule, applied to prose nobody in this repo wrote. The cost is that the
+transcript keeps the written word while the pilot hears the spoken one — the
+documented trade of this table since it was created for "readback".
+
+It also makes phraseology **era-swappable**: a 1944 controller says "five", not
+"fife", which is one table rather than a rewrite of every speller. That is the
+first concrete piece of the `soul.<era>` work.
 
 ## Where it goes
 

@@ -33,16 +33,26 @@ seconds with no sim, no network and no model.
 |---|---|---|---|
 | **7** | **Surfaces** | kneeboard charts, the plate, `/diag`, these documents | `kneeboard/` |
 | **6** | **Language** | turning decisions into English and back. Owns nothing it says | the director agent, prompts, `context.py` |
-| **5** | **Procedure** | what a controller DOES: approaches, clearances, emergencies | `plans.py`, `clearance.py`, and — wrongly — a lot of prose |
-| **4** | **Control** | separation. The board, the stack, sequencing, phases | `controller.py`, `asr.py`, `phases.py`, `geometry.py` |
+| **5** | **Procedure** | what a controller DOES: approaches, clearances, handoffs, the ground | `handoff.py`, `phases.py`, `asr.py`, and — wrongly — a lot of prose |
+| **4** | **Control** | separation. The board, the stack, sequencing | `controller.py`, `geometry.py` |
 | **3** | **Membership** | who is flying with whom | `flights.py` |
 | **2** | **Identity** | which radio is which aeroplane is which person | `identity.py` |
-| **1** | **World** | what exists, where it is, what is published | `tracks`, `events`, `core/route.py` |
-| **0** | **Transport** | audio, frequencies, GUIDs, client names. No aviation | `srs/client.py`, `stt.py`, `tts.py` |
+| **1** | **World** | what exists, where it is, what is published | `tracks`, `events`, `core/route.py`, `atis/` |
+| **0** | **Transport** | audio, frequencies, GUIDs, client names. No aviation | `radio/client.py`, `radio/stt.py`, `radio/tts.py`, `core/say.py` |
+
+**`atis/` sits at layer 1 and that is the point of it.** It observes the world,
+decides the runway in use, and writes it down; controllers at layer 4 and 5
+*read* it. The runway is a decision with one author — two callers computing it
+from the wind agree only while they read the same wind at the same instant.
+
+**`core/say.py` is layer 0** — pure text, no aviation. How a number is said out
+loud, so `atc/` and `atis/` can both use it without either importing the other.
+That is the whole reason it exists: ATIS is a sibling of ATC, not something
+underneath it.
 
 **The good news, and it is genuinely good:** the bottom is already sound.
-`core/route.py` (1,361 lines), `identity.py` (474), `flights.py` (382) and
-`plans.py` (342) each depend on **nothing**. They are real layers with real
+`core/route.py` (2,047 lines), `identity.py` (547) and `flights.py` (403) each
+depend on **nothing**. They are real layers with real
 tests. Nobody has to be talked into this architecture; most of it is built.
 
 **The bad news is one file.** `atc/agent_atc.py` is 3,688 lines and imports from

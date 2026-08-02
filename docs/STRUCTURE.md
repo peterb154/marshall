@@ -44,7 +44,7 @@ MEASURED world; see below for why the procedure is not here).
 **`feed`** -- the sim mirrored into Postgres. The unit stream, `gone`, the
 reconciling sweep, `inAir`, land/takeoff, the mission-clock world reset. It
 writes `track` and nothing reads through it.
-*(today: `director/tools/tracks.py`, `events.py`, `dcs.py`)*
+*(today: `feed/tracks.py`, `events.py`, `dcs.py`)*
 
 **`atc`** -- the deterministic controller. Separation, the holding stack,
 identity resolution, ASR guidance. The part that must never be an LLM's guess.

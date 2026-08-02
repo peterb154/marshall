@@ -781,7 +781,7 @@ RECOVERY
     {p.missed_turn} heading {p.missed_hdg:03d}, climb {p.missed_climb_ft:,}.
     That takes you over water. Everything else takes you into a mountain.
 
-RADIO - four presets
+RADIO - the comms ladder, in the order you press it
 {chans}
 
     Altimeter {R.altimeter_spoken(R.qfe_inhg(p.field_elev_ft))} ({p.altimeter_datum}).

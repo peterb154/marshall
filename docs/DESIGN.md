@@ -201,7 +201,7 @@ track. Timed MAP is the mechanism, not a fallback.
   (DCS-SR-ExternalAudio only transmits). Registers as an External AWACS client;
   RX decodes Opus + surfaces the sender GUID→name; TX paces Opus frames.
 - **STT** — faster-whisper `base.en` on CPU, primed with a domain prompt
-  (`srs/stt.py`, the one shared copy).
+  (`radio/stt.py`, the one shared copy).
 - **Brain** — the director agent over Bedrock (Sonnet); **TTS** — Amazon Polly, a
   distinct voice per controller.
 - **Bridge** (`atc/agent_atc.py`) — STT → radar-inject → `/chat` → strip to
@@ -209,7 +209,7 @@ track. Timed MAP is the mechanism, not a fallback.
 
 ## Autonomous testing
 
-The whole loop runs headless: a **synthetic SRS pilot** (`srs/pilot.py`, Polly
+The whole loop runs headless: a **synthetic SRS pilot** (`radio/pilot.py`, Polly
 out / Whisper back) flies a scripted letdown against the live ATC, and **AI
 traffic** is spawned (late-activation + `group.Activate`) and *commanded* to fly
 real profiles. gRPC can't task AI directly on this build, so the `.miz` embeds a

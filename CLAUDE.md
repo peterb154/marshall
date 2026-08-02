@@ -25,12 +25,41 @@ Batumi beacon letdown is one such flavour, not the baseline. `core/route.py` is
 the single source of truth (fixes, wind, the `ApproachProfile` + its capability);
 the mission builder, the chart, and the ATC all read it, so they can't disagree.
 
+**Two aerodromes, and it changed what "truth" has to mean.** The sortie departs
+**Kobuleti** and recovers into **Batumi** — an eight-rung comms ladder across
+Clearance, Ground, Tower, Departure, Center, Approach, Tower, Ground. Adding the
+second field broke four things that had been correct *by accident*, because a
+question with one possible answer cannot be answered wrongly:
+
+    station_for("tower")   one Tower existed, so first-match was right
+    channels_for()         four presets, so `stations[:4]` lost nothing
+    "ABCD"[i]              four buttons, so the string never ran out
+    field_origin(profile)  one field, so the profile's beacon was his
+
+None are findable by reading. **A role is only unique within an aerodrome** —
+so anything resolving one takes a field, and the wrong answer is always
+plausible: a real controller, a real frequency, a real distance, belonging to
+the wrong airport. See `tests/test_two_fields.py`.
+
 ## Two brains (the invariant)
 - The **agent** (the strands-pg director, its own repo/container) owns language,
   judgment, radar-grounded guidance, three-way identity correlation, and hooks.
 - The deterministic **`atc/controller.py`** owns *separation* — the holding stack,
   one-in-the-letdown, sequencing — which must never be an LLM's guess when there
   is traffic. **An LLM never invents separation between aircraft.**
+
+The aerodrome half of that invariant: **nobody issues a clearance that is not
+his.** Ground clears you *to* the runway and says hold short; only Tower puts an
+aeroplane on it. A controller who helpfully answers for the runway has issued a
+clearance he does not own, which is how two aircraft end up on one strip.
+
+**Who has him next is one function** — `agent_atc.next_controller` — over three
+kinds of evidence in priority order: the sim's events, the `handoff.py` rule
+table, then the PostGIS airspace volumes. It was three separate mechanisms until
+1 August and they disagreed; a pilot found that at 44 nm by declaring an
+emergency (#51). Ground transitions are not rows at all — a phase with no
+geometry is owned outright by the controller `phases.py` names, so moving into
+it IS the handoff.
 
 ## Shape
 One repo, two deployables. They are a single system with a contract between them,
@@ -107,7 +136,7 @@ their card row and their script stay — that is what tells us if a fix rots.
 3. **`tools/atc_dryrun.py`** — the bridge without the radio. Same message
    assembly as the live loop, typed input, so the two-brain seam (does the agent
    VOICE the controller's altitudes or paraphrase them?) is testable in seconds.
-4. **`srs/rehearsal.py` / `srs/pilot.py`** — synthetic pilots over real SRS with
+4. **`radio/rehearsal.py` / `radio/pilot.py`** — synthetic pilots over real SRS with
    Polly and Whisper in the loop.
 5. **A live mission** with AI flights, driven by `mission/ai_control.lua`.
 

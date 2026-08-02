@@ -512,7 +512,7 @@ the tool in her list. Steerpoints were not in her table at all.
    not match.
 
 Tests: C7, C8, C9
-Code: `agent_atc.push_fixes`, `director/tools/tracks.py`, `spawn_ground`
+Code: `agent_atc.push_fixes`, `feed/tracks.py`, `spawn_ground`
 
 ---
 
@@ -1080,7 +1080,7 @@ track in PostGIS with real coordinates, renders them down to one English string,
 and the bridge parses that string back with **six separate regexes** to recover
 numbers that existed as floats one process away.
 
-  producer  `director/tools/tracks.py` — `_clusters`, `_unique_labels`,
+  producer  `feed/tracks.py` — `_clusters`, `_unique_labels`,
             `_render`, `_other_ship`
   consumers `identity.units_on` (`_SCOPE_LINE`, `_FORMATION`, `flatten_formation`),
             and `agent_atc`'s `_FIX`, `_FIX_BY_TRACK`, `_TYPE`, `_scope_geometry`
@@ -2002,7 +2002,7 @@ may become an aeroplane; and nothing unidentified may be sequenced. Together
 they make the single-aircraft case sound and they remove the ghost class. They
 do NOT change the key, so the collision case is untested and unguarded.
 
-**MEASURE FIRST.** `srs/rehearsal.py` already drives synthetic pilots over real
+**MEASURE FIRST.** `radio/rehearsal.py` already drives synthetic pilots over real
 SRS with real Whisper and Polly. A multi-aircraft rehearsal -- four or six
 radios, overlapping calls, deliberately similar callsigns -- would say what
 actually breaks and how often, and turn this from an architectural worry into a

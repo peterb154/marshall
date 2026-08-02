@@ -21,11 +21,14 @@ the sections are reordered.
 | 6 | **H — the approach** | [#19] [#37] [#39] | solo | the main event, and where the open bugs live |
 | 7 | **F — landing and the handoff** | [#41] | solo | the sim's own events now drive Tower. Never flown |
 | 8 | **K — does he remember** | [#43] | solo, better with two | shipped 30 July, never flown |
+| 9 | **R — ATIS and the letter** | [#17] | solo | built 2 August, never heard. Three transmissions on the ramp |
+| 10 | **S — does it sound right** | [#17] | solo | **ears only.** Nothing else on this card can falsify it and I cannot test it at all |
+| 11 | **T — the Kobuleti ILS** | [#3] | solo | a whole second approach added as data. Fly it last; it needs no new procedure from you |
 | — | **D — flights** | [#42] | **two aircraft** | skip it solo. A formation cannot be flown by one aeroplane, and the break-up rules changed on 30 July |
 | — | **E — known broken** | | | read it, so you do not re-find something already understood |
 
-**Solo today?** Q, N, M, J, G, H, F, K — in that order. Only D needs a second
-aeroplane. Note that N3, N5 and N6 inside section N are formation rows and want
+**Solo today?** Q, N, M, J, G, H, F, K, R, S, T — in that order. Only D needs a
+second aeroplane. Note that N3, N5 and N6 inside section N are formation rows and want
 one too; the rest of N is flyable alone and is the part that changed most.
 
 ## How to report
@@ -34,9 +37,9 @@ Say `engineering, come up`, then `test H4 failed, he vectored me at four miles`.
 The ID is the whole point; detail is optional. Engineering answers on whatever
 channel you called from and logs to `build/debug-notes.md`.
 
-**Comms — the ladder, in the order you press it.** The sortie now departs
-**Kobuleti** and recovers into **Batumi**, so the card is seven rungs and two
-aerodromes rather than four buttons at one:
+**Comms — the ladder, in the order you press it.** The sortie departs
+**Kobuleti** and recovers into **Batumi**: eight rungs and two aerodromes,
+rather than the four buttons at one field this started as.
 
 | ch | freq | station | when |
 |---|---|---|---|
@@ -53,8 +56,9 @@ aerodromes rather than four buttons at one:
 Two frequencies on one row is **one controller on both** — a warbird that cannot
 dial fractions reaches the same man on the round number. Say either.
 
-The approach is still all on **124**; you should not be sent to Tower until
-about five miles.
+The approach is all on **124**, and on the ASR you are kept there **to the
+ground** — the controller is your approach aid, so he does not hand you away
+mid-procedure. Landing is what gives you to Tower.
 
 **Every rung can now be left, and reached.** Both former dead ends closed:
 reading your clearance back hands you to Ground, and landing hands you to Batumi
@@ -610,20 +614,30 @@ You are parked at Kobuleti with the radio already on **preset 1**.
 |---|---|---|---|---|
 | **Q1** | Preset 1. *"Kobuleti Clearance, Viper one one, request IFR clearance to Batumi."* | He answers as **Kobuleti Clearance** — not Batumi anything. Clearance to Batumi, an altitude, and a departure frequency of **123.300** | [#1] | **P1** |
 | **Q2** | Read the clearance back, deliberately getting the departure frequency wrong — say *"departure one two four decimal four two five"* | He corrects it. 124.425 is Batumi Approach: a real controller, wrong field. This is the exact failure the field-scoping was built to prevent | [#1] | **P1** |
-| **Q3** | Preset 2. *"Kobuleti Ground, ready to taxi."* | Taxi instruction. He is Ground **and** Tower on one seat, so stay with him for take-off | [#1] | **P1** |
-| **Q4** | Still on preset 2, ask for take-off | Cleared. **Runway 07** — the wind is 090/5 and 07 is into it. If he offers 25, the runway is not being computed from the weather | [#41] | **P1** |
-| **Q5** | Airborne. Say nothing and climb straight ahead | At about **5 nm** he hands you to **Kobuleti Departure, 123.300**, unprompted. Not Batumi. Not on request | [#16] | **P1** |
-| **Q6** | Preset 3, check in with Departure | He answers as **Kobuleti Departure**. Ask him your range from the field: it must be *your* field. On the ramp this read 23 miles because everything was measured from Batumi | [#16] | **P1** |
-| **Q7** | Proceed to INITIAL at 5,000 | Handoff to **Georgia Center** on 139.000 for the en-route leg | [#16] | P2 |
-| **Q8** | Inbound, expect the ASR | Handoff to **Batumi Approach, 124.425**. From here it is section H unchanged | [#19] | P2 |
-| **Q9** | At any point, ask a Kobuleti controller for something only Batumi can give — *"request the ASR"* on preset 2 | He should send you to the right man rather than inventing an answer. A controller who works one field must not clear you into another's approach | [#21] | P3 |
+| **Q3** | Read it back **correctly** | He hands you to **Kobuleti Ground, 121.800**. A correct read-back is what ends Delivery's business — a wrong one leaves you exactly where you are, which is the point of reading it back | [#1] | **P1** |
+| **Q4** | Preset 2. *"Kobuleti Ground, ready to taxi."* | *"Taxi to runway zero seven, hold short of runway zero seven."* **Runway 07** — the wind is 090/5. If he offers 25 the runway is not following the weather | [#41] | **P1** |
+| **Q5** | Still on preset 2, ask **Ground** for take-off | **He refuses**, politely, and sends you to Tower with the frequency: *"take-off is Tower's, contact Kobuleti Tower one three three decimal zero."* Ground owning the runway is the one thing on an aerodrome that must not be shared. If he clears you, that is the most serious finding on this card | [#41] | **P1** |
+| **Q6** | Report holding short | He hands you to **Kobuleti Tower, 133.000** | [#16] | **P1** |
+| **Q7** | Preset 3. Ask Tower for take-off | Cleared, with the runway and the wind | [#41] | **P1** |
+| **Q8** | Airborne. Say nothing and climb straight ahead | At about **5 nm** he hands you to **Kobuleti Departure, 123.300**, unprompted. Not Batumi. Not on request | [#16] | **P1** |
+| **Q9** | Preset 4, check in with Departure | He answers as **Kobuleti Departure**. Ask your range from the field: it must be *your* field. On the ramp this read 23 miles because everything was measured from Batumi | [#16] | **P1** |
+| **Q10** | Proceed to INITIAL at 5,000 | At about **25 nm out** he hands you to **Georgia Center, 139.000**. Nothing could do this until 2 August — Center had no proactive handoff at all in either direction | [#51] | **P1** |
+| **Q11** | Inbound, say nothing | Inside **25 nm** Center hands you to **Batumi Approach, 124.425** unprompted. This is the fix for the sortie that ended in a Mayday: he sat at 44 nm with nothing in the system able to move him on | [#51] | **P1** |
+| **Q12** | At any point, ask a Kobuleti controller for something only Batumi can give — *"request the ASR"* on preset 2 | He should send you to the right man rather than inventing an answer. A controller who works one field must not clear you into another's approach | [#21] | P3 |
 
 **What it is actually checking**
 
-**Q1, Q2 and Q6 are the section.** Q1 and Q2 say the controller knows which
-*airport* he works; Q6 says his geometry is measured from where he is standing.
-Those three are the whole two-field change and everything else is the ladder
+**Q1, Q2, Q5 and Q9 are the section.** Q1 and Q2 say the controller knows which
+*airport* he works; Q5 says he knows which *clearances are his*; Q9 says his
+geometry is measured from where he is standing. Everything else is the ladder
 walking normally.
+
+**Q3 through Q7 are the ground procedure**, which is new on 2 August and has
+never been heard. Clearance hands to Ground on a correct read-back; Ground
+clears you *to* the runway and says hold short; reporting holding short hands
+you to Tower; Tower owns the runway. None of those transitions is a distance —
+they are all driven by what you say — so this is the one part of the ladder a
+script cannot exercise.
 
 **The steerpoints are in the jet.** The flight plan is written into the mission
 as waypoints, so the DTC should come up with INITIAL and BATUMI already loaded —
@@ -636,6 +650,65 @@ frequency, a departure frequency of 124.425, a range of 23 miles while you are
 parked — each is a real controller, a real frequency, a real distance. None of
 them will sound wrong on the radio. Read the numbers against this card rather
 than against whether the reply sounded competent.
+
+---
+
+## R — ATIS, and what a controller does with it
+
+**Never flown.** Built 2 August. The broadcast itself is not on the air yet —
+the transmitter is the last piece — so these rows are about what the
+**controller** does with the information letter, which works now.
+
+| id | do this | expected | issue | pri |
+|---|---|---|---|---|
+| **R1** | Check in with Batumi Approach saying *"with information Bravo"* (use whatever `/diag` shows as current) | *"Information Bravo is current. Say your request."* | [#17] | **P1** |
+| **R2** | Check in claiming the **wrong** letter — *"with Alpha"* | *"Information Bravo is current now, not Alpha."* Then he asks your request. **He must not refuse you anything** | [#17] | **P1** |
+| **R3** | Check in mentioning **no** letter | *"Advise you have information Bravo."* A prompt, not a telling-off | [#17] | P2 |
+| **R4** | Any of the above | Every one ends by asking **what you want**. He must never assume the ASR — that was a real complaint from the air, and there are two approaches published plus a visual | [#17] | **P1** |
+| **R5** | Check in with **Tower** on short final | He says nothing about the ATIS. Quizzing a man at two miles is noise at the worst moment | [#17] | P3 |
+| **R6** | Ask Ground for taxi, note the runway; then ask Tower for take-off | **The same runway**, both times. It comes from the broadcast, not from each controller's own reading of the wind — that is the whole reason it lives in the database | [#17] | **P1** |
+| **R7** | With a wrong letter, immediately ask for the visual | **Granted.** Nothing about the ATIS gates an approach; you may call the field in sight and take the visual at any point | [#10] | **P1** |
+
+**What it is actually checking.** R2 and R7 are the section: the letter is a
+cross-check, never a condition. R6 is the architectural one — two controllers
+naming different runways is what the single source of truth exists to prevent,
+and it only shows up if they disagree.
+
+---
+
+## S — does it sound right
+
+**Read this one with your ears, not the card.** Everything else here can be
+falsified from a transcript; this cannot, and I have no way to test it at all.
+
+| id | listen for | expected | issue | pri |
+|---|---|---|---|---|
+| **S1** | Any altitude, heading or frequency | *"niner"*, *"fife"*, *"tree"* — never nine, five, three. This is applied to **every** string on its way to the radio, including the agent's own prose | [#17] | **P1** |
+| **S2** | Your callsign | **"sock-eye"**, the fish. It was being read as one Japanese-looking word and came out like the rice wine | [#17] | **P1** |
+| **S3** | *"Batumi"*, *"Kobuleti"* | Three and four syllables run together, not spelled out and not paused between. The old spellings used CAPITALS for stress, which Polly reads as an initialism, and SPACES between syllables, which it reads as word breaks | [#17] | **P1** |
+| **S4** | The nine controllers across one sortie | Nine distinct voices and nine distinct manners. Batumi Ground is gruff, Kobuleti Clearance is a pedant, Batumi Approach is the calm one | [#21] | P2 |
+| **S5** | Anything said twice — *"roger"*, *"readback correct"* | **Instant** the second time. It is cached after the first render; a pause there means the cache is not hitting | [#17] | P3 |
+
+**Anything that sounds wrong is a line in a table**, not a code change — see
+`radio/tts.py`. Tell engineering the word and roughly what it sounded like.
+
+---
+
+## T — the Kobuleti ILS
+
+**Never flown.** The point of it is [#3]: a second approach, of a different
+kind, at a different field, added as **data only**. If it needs code, the claim
+that this is data-driven should stop being made.
+
+**The plate is not drawn.** The kneeboard still renders Batumi's ASR, so you
+have numbers and no chart. That is criterion 3 of #3 and it is open.
+
+| id | do this | expected | issue | pri |
+|---|---|---|---|---|
+| **T1** | Recover into **Kobuleti** rather than Batumi, ILS runway 07 | Vectored to intercept, cleared for the ILS. Final course **070**, decision height 200 above the field | [#3] | **P1** |
+| **T2** | Once established, say so | **He hands you to Tower.** This is the difference from the ASR — the aeroplane is flying it, so there is nothing left for Approach to do | [#3] | **P1** |
+| **T3** | Compare against the Batumi ASR | On the ASR you are kept to the ground and never asked to report established, because you have no instrument to know. On the ILS you are asked, because you have | [#3] | **P1** |
+| **T4** | Ask for a vector east of the field | Nothing below **9,600 ft** within 25 nm. There is 8,556 ft of Caucasus out there and it was surveyed for this | [#3] | **P1** |
 
 ---
 
