@@ -956,13 +956,43 @@ BATUMI_FIELD = Field_(
 # `Field_.runway` is in -- see `BATUMI_FIELD` at 124 for the same thing at the
 # other end of the route.
 #
-# NO MSA OR MVA SECTORS, and that is a real gap rather than an oversight. Those
-# are surveyed products and we have not surveyed Kobuleti; the empty lists fall
-# back to the module defaults. It costs nothing today because nobody flies an
-# approach here -- we depart from it -- and the day somebody does, this comment
-# is the thing that should stop them trusting a vectoring altitude.
+# SURVEYED, because an approach is flown here now.
+#
+# This carried no MSA and no MVA, with a comment saying that was a real gap and
+# that the day somebody flew an approach here it should stop them trusting a
+# vectoring altitude. That day is this one, so the terrain was asked instead:
+# every 5 degrees, every half mile, out to 25 nm, highest ground plus a
+# thousand feet rounded up.
+#
+# THE COARSE SCAN WAS NOT SAFE. A first pass at 10 degrees and 1 nm found
+# 8,135 ft; at 5 and a half it found 8,556, and on the western side 2,731
+# became 3,760. A peak between two samples is a peak nobody sees, and the
+# difference here is a thousand feet of clearance that did not exist.
+#
+# The shape is Batumi's, one range further north: sea and coastal plain from
+# the south-west round through north, and the Lesser Caucasus from 090 to 190
+# with 8,556 ft inside 25 miles.
+KOBULETI_MSA = [
+    (90.0, 190.0, 9600),        # the mountains
+    (190.0, 90.0, 4800),        # sea, coast, and the low ground north
+]
+# The controller's, which are lower than the published MSA because they are
+# surveyed per cell rather than per sector. Vectoring west of the field is
+# cheap; vectoring east of it is not.
+KOBULETI_MVA = [
+    (190.0, 90.0, 5.0, 1700),
+    (190.0, 90.0, 10.0, 2500),
+    (190.0, 90.0, 15.0, 3000),
+    (190.0, 90.0, 25.0, 4800),
+    (90.0, 190.0, 5.0, 1600),
+    (90.0, 190.0, 10.0, 5400),
+    (90.0, 190.0, 15.0, 8600),
+    (90.0, 190.0, 25.0, 9600),
+]
+
 KOBULETI_FIELD = Field_(
     "Kobuleti", -317605, 636704, 59, 64, ends=(7, 25),
+    msa_sectors=list(KOBULETI_MSA), mva_cells=list(KOBULETI_MVA),
     note="Field elevation 59 ft. Runway 07/25, 2400 m. TACAN 67X KBL, "
          "ILS 111.50 on 07. GCA field: PAR and SRA published.")
 
@@ -1705,6 +1735,75 @@ BATUMI_APPROACH = ApproachProfile(
 # Runway note: DCS names this runway 13/31 (heading 310 true = 304 magnetic, so
 # 124 magnetic inbound). We brief the course, not the name, and 124 is the same
 # number the old AIP-anchored letdown used.
+# ---------------------------------------------------------------------------
+# KOBULETI ILS RUNWAY 07 -- and it is a ROW, which is the point of it.
+#
+#     "Fly Kobuleti ILS to prove the data drives it." [#3, TEST-1]
+#
+# The stated acceptance was that no file under `src/marshall/atc/` changes to
+# make this work, and none did. Everything below is a number off a chart or a
+# measurement off the sim; the controller, the sequencer, the handoff table and
+# the phase machine were already general enough and were not touched.
+#
+# WHAT MAKES IT SIMPLER THAN THE RADAR APPROACH is one field: `guidance`. On an
+# ASR the controller IS the approach aid -- he reads the range every mile and
+# corrects the heading, and he keeps the aeroplane to the ground. On an ILS the
+# AEROPLANE has localiser and glideslope, so the controller's job ends at the
+# intercept: vector him on, clear him, and hand him to Tower once established.
+# That difference is already in `_inbound_within`, which makes landing the
+# trigger on a talkdown and a distance on everything else.
+#
+# THE FRAME, again, because the chart repeats the error `geo.py` exists for. It
+# prints runway 07 as "070 T"; 070.03 is the DCS GRID heading and the geodesic
+# bearing between the published thresholds is 075.94. Convergence here is
+# +5.91, measured from those thresholds, not Batumi's +5.85.
+#
+# Magnetic works out at 069.9 and is spoken as 070, which is the number painted
+# on the runway -- so the three frames agree for once, and that is a coincidence
+# of this field rather than a rule.
+KOBULETI_ILS = ApproachProfile(
+    controller=KOB_DEPARTURE.name,   # the GCA seat works approaches here
+    beacon=KOBULETI,
+    outer_hold=INITIAL,
+    kind="ils",
+    # THE ONE FIELD THAT CHANGES THE PROCEDURE. He flies it; we position him.
+    guidance="intercept",
+    stations=list(STATIONS),
+    hold_base_ft=4000,
+    final_crs=70,                    # magnetic, and what is painted on it
+    final_crs_true_measured=75.94,   # geodesic, between the published thresholds
+    touchdown_offset_nm=0.648,       # half of 2,400 m, from the field centre
+    grid_convergence_deg=5.91,       # MEASURED here, not borrowed from Batumi
+    magvar_deg=6.0,                  # chart: VAR 6 E (2010)
+    field_elev_ft=KOBULETI_FIELD.elevation_ft,
+    field_thr_elev_ft=KOBULETI_FIELD.elevation_ft,
+    runway="07",
+    platform_ft=2000,
+    ceiling_ft=400,
+    # 200 FT, and this is the number that says what kind of approach it is. An
+    # ILS knows where you are within feet and gets a decision height around
+    # two hundred; the ASR at Batumi has no vertical guidance at all and sits
+    # at seven hundred. Transcribing one from the other is exactly the mistake
+    # `min_hat_ft` was written to stop.
+    min_hat_ft=200,                  # chart: ILS RWY 07, minima 200 - 0.8
+    final_intercept_nm=11.0,
+    fap_nm=6.0,
+    map_nm=0.5,
+    msa_sectors=list(KOBULETI_FIELD.msa_sectors),
+    mva_cells=list(KOBULETI_FIELD.mva_cells),
+    iaf=INITIAL,
+    iaf_alt_ft=3000,
+    chart_name="AERODROME CHART KOBULETI (UG5X), TERPS",
+    altimeter_datum="QFE",           # ex-Soviet field, same as Batumi
+    # NO DESCENT TABLE, and its absence is the procedure rather than a gap. A
+    # stepdown table is what a controller reads to a pilot who has no glidepath.
+    # This one has a three-degree glideslope in the aeroplane, so a table here
+    # would be advisory heights nobody needs and a second opinion on a descent
+    # the instrument is already flying.
+    atc=AtcCapability(radar=True, dme=True, separation="radar", era="modern"),
+)
+
+
 BATUMI_ASR = ApproachProfile(
     controller=APPROACH.name,
     beacon=BATUMI,                  # still the radar reference point, not a nav aid

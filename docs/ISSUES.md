@@ -179,9 +179,10 @@ the Kobuleti test [TEST-1].
 ---
 
 ## [TEST-1] Fly Kobuleti ILS to prove the data drives it — #3
-labels: test
+labels: test, needs-flight-test
 
-**Status:** TODO
+**Status:** BUILT, needs a pilot. `KOBULETI_ILS` exists and criteria 1, 2 and 4
+are met and guarded by `tests/test_ils.py`. Closing it needs somebody to fly it.
 
 The stated proof that this is data-driven and not Batumi-shaped. Load a Kobuleti
 ILS profile and fly it with no code change.
@@ -193,8 +194,27 @@ ILS profile and fly it with no code change.
 3. The plate, the kneeboard and the ATC agree on the field, course and minima.
 4. No file under `src/marshall/atc/` changes to make it work.
 
-Partly de-risked already: handoff distance, the final's frequency and the
-descent table now all derive from the profile.
+**Criterion 4 held.** Adding a second approach, of a different kind, at a
+different field, worked by a different controller, changed exactly one file:
+`core/route.py`, and every line of it is a number off a chart or a measurement
+off the sim. Nothing under `src/marshall/atc/` was touched.
+
+What makes an ILS simpler is ONE field. On a surveillance approach the
+controller IS the approach aid and keeps the aeroplane to the ground; on an ILS
+the aeroplane has localiser and glideslope, so he positions him and lets go.
+`guidance` already carried that and `_inbound_within` already read it.
+
+**The terrain had to be surveyed first.** Kobuleti carried no MSA and no MVA,
+with a comment saying that was a real gap and that the day somebody flew an
+approach here it should stop them trusting a vectoring altitude. So the terrain
+was asked: 5 degrees, half a mile, out to 25 nm. A first pass at 10/1 found
+8,135 ft; the finer one found 8,556, and 2,731 became 3,760 on the western
+side. A peak between two samples is a peak nobody sees, and the difference was
+a thousand feet of clearance that did not exist.
+
+**Still to check in the air:** the plate (criterion 3) is not drawn — the
+kneeboard renders Batumi's ASR and nothing reads `KOBULETI_ILS` yet, so a pilot
+has numbers with no chart.
 
 ---
 
