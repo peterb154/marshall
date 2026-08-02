@@ -54,6 +54,9 @@ def _path(env: str, default: Path) -> Path:
 BUILD_DIR = _path("MARSHALL_BUILD", REPO_ROOT / "build")
 KNEEBOARD_OUT = BUILD_DIR / "kneeboard"
 SOUNDS_DIR = BUILD_DIR / "sounds"
+# Rendered speech, kept between runs. See `radio/tts.py`: the same words in
+# the same voice are the same audio, and Polly is a network call.
+TTS_CACHE = BUILD_DIR / "tts"
 MISSION_OUT = BUILD_DIR / "missions"
 
 # Deployment targets. No default is a real path on anyone's machine -- set these
@@ -74,5 +77,5 @@ SRS_EAM_PASSWORD = os.environ.get("SRS_EAM_PASSWORD", "")
 
 
 def ensure_dirs() -> None:
-    for d in (BUILD_DIR, KNEEBOARD_OUT, SOUNDS_DIR, MISSION_OUT):
+    for d in (BUILD_DIR, KNEEBOARD_OUT, SOUNDS_DIR, MISSION_OUT, TTS_CACHE):
         d.mkdir(parents=True, exist_ok=True)
