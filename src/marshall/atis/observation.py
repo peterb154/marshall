@@ -84,6 +84,12 @@ class Observation:
     sky: str                        # "sky clear" | "few" | ... | "overcast"
     ceiling_ft_agl: int | None      # None when there is no ceiling to report
     temp_c: int
+    # DERIVED FROM THE CLOUD BASE, not invented. See the module docstring: base
+    # in feet AGL is about 400 times the spread in Celsius, so the sim telling
+    # us where cloud forms also tells us the spread. That makes the number
+    # agree with what the pilot can see out of the window, which is worth more
+    # here than accuracy.
+    dewpoint_c: int
     qnh_inhg: float
     qfe_inhg: float
     runway: int                     # the designator in use, computed from wind
@@ -147,6 +153,7 @@ def observe(field, wind_from_deg: float, wind_kt: float, cloud_base_m: float,
             (cloud_base_m - field.elevation_ft / M_TO_FT) * M_TO_FT)))
     return Observation(
         field=field.name,
+        dewpoint_c=int(round(dewpoint_c(temp_c, agl))),
         wind_from_deg=int(round(wind_from_deg)) % 360,
         wind_kt=int(round(wind_kt)),
         visibility_m=int(round(visibility_m)),
@@ -157,6 +164,28 @@ def observe(field, wind_from_deg: float, wind_kt: float, cloud_base_m: float,
         qfe_inhg=round(qfe_inhg, 2),
         runway=field.runway_in_use(wind_from_deg),
     )
+
+
+# Feet of cloud base per degree of temperature/dewpoint spread. The standard
+# rule of thumb, and it runs backwards here: normally you have the spread and
+# want the base, and we have the base and want the spread.
+FT_PER_DEG_SPREAD = 400.0
+# With no cloud there is nothing to derive from, so a dry-day spread is assumed
+# rather than a number picked to look plausible. Said out loud here so the next
+# reader knows which of the two it is.
+CLEAR_DAY_SPREAD_C = 10.0
+
+
+def dewpoint_c(temp_c: float, ceiling_ft_agl: int | None) -> float:
+    """The spread the cloud base implies, subtracted from the temperature.
+
+    Clamped at the temperature itself: a dewpoint above the air temperature is
+    not a thing, and a base of zero feet means saturated rather than negative
+    spread.
+    """
+    if ceiling_ft_agl is None:
+        return temp_c - CLEAR_DAY_SPREAD_C
+    return temp_c - max(0.0, ceiling_ft_agl / FT_PER_DEG_SPREAD)
 
 
 def hpa_to_inhg(hpa: float) -> float:

@@ -110,3 +110,60 @@ class Bullseye(Base):
 # and the association between a track and a flight belongs to ATC, because ATC
 # is what asserts it. A foreign key from `track` to `flight` would point core at
 # a domain, which is the layering upside down. See docs/SCHEMA.md.
+
+
+class Atis(Base):
+    """One aerodrome's current broadcast. THE SOURCE OF TRUTH FOR THE RUNWAY.
+
+        "Atis should probably determine the active runway. Controllers should
+         query the db for that info. One source of truth for that."
+
+    Which corrects a fault that had already appeared twice in this table's
+    absence: `Field_.runway_in_use()` is a pure function of the wind, so ATIS
+    computed it and the ground controller computed it AGAIN when issuing taxi.
+    Two computations of one fact, and they agree only for as long as they are
+    reading the same wind at the same instant. The moment the weather shifts
+    between the recording and the taxi clearance, the broadcast says one runway
+    and Ground says the other -- both correct, both defensible, and a pilot
+    lined up on the wrong strip.
+
+    So the wind is a measurement, the runway is a DECISION, and a decision has
+    one author. ATIS makes it, writes it here, and everybody else reads it.
+    That is also how a real aerodrome works: the runway in use is whatever the
+    ATIS says it is until a controller changes it and re-records.
+
+    A field with no row has no ATIS. Callers fall back to computing it, which
+    is right for an aerodrome nobody broadcasts from, and is not silent -- see
+    `atis.current`.
+    """
+
+    __tablename__ = "atis"
+
+    # The aerodrome's name, as `Field_.name` and `Station.field` spell it. That
+    # string is already the join between a controller and his airport; making
+    # it the key here means no fourth spelling of "Kobuleti".
+    field: Mapped[str] = mapped_column(Text, primary_key=True)
+    # THE INFORMATION LETTER. Alpha, Bravo... and it is a version number a
+    # pilot says back, which is the only reason it exists.
+    letter: Mapped[str] = mapped_column(Text)
+    # THE DECISION. Two digits, as painted on the runway -- not a heading, and
+    # not derived from one: see `Field_.ends` on why 124 magnetic is "13".
+    runway: Mapped[int] = mapped_column(Integer)
+    # The words, kept so the loop and `/diag` read the same recording rather
+    # than two renderings of the same weather.
+    text: Mapped[str] = mapped_column(Text)
+    # The observation behind it, so a controller can answer "say the wind"
+    # without a second trip to the sim, and so `/diag` can show WHY the runway
+    # is what it is.
+    wind_from_deg: Mapped[int | None] = mapped_column(Integer)
+    wind_kt: Mapped[int | None] = mapped_column(Integer)
+    visibility_m: Mapped[int | None] = mapped_column(Integer)
+    sky: Mapped[str | None] = mapped_column(Text)
+    # FEET ABOVE THE FIELD, and the column name says so because the sim's own
+    # number is metres above SEA LEVEL and the two have been confused before.
+    ceiling_ft_agl: Mapped[int | None] = mapped_column(Integer)
+    temp_c: Mapped[int | None] = mapped_column(Integer)
+    dewpoint_c: Mapped[int | None] = mapped_column(Integer)
+    qnh_inhg: Mapped[float | None] = mapped_column(Float)
+    qfe_inhg: Mapped[float | None] = mapped_column(Float)
+    recorded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
