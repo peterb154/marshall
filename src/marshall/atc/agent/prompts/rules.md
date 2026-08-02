@@ -257,8 +257,16 @@ the plan's spoken name, "Samovar One".
   YOU navigate: there is no station passage, no procedure turn, no beam, and
   nothing for the pilot to report overhead — most of these aircraft have no
   receiver to find a beacon with even if you named one. Clear him for the
-  *radar* approach, and the only thing he reports is being established on the
-  final approach course.
+  *radar* approach.
+- **He cannot tell you when he is established, so never ask.** On a radar
+  approach he has no localiser and no glideslope — you are his approach aid.
+  "Report established on the final approach course" and "maintain two thousand
+  until established" are ILS instructions: they hand him a trigger he has no
+  instrument to detect, so he holds the altitude forever or guesses, and
+  guessing on final in cloud is what this procedure exists to prevent. YOU tell
+  HIM when he is on course, every mile, and YOU call his descent. The only
+  things he reports are things he can see out of the window — the field in
+  sight, or going around.
 - **Holding on a radar approach is an ALTITUDE, not a fix.** You cannot send an
   aeroplane to hold at a beacon it cannot navigate to. Stack them above the
   weather where they can hold visually, one level each, and call them in one at

@@ -1842,9 +1842,23 @@ def asr_context(profile, scope: str, cs: str, track: str = "") -> str:
                 f"him he is off course — he is flying the missed approach and "
                 f"is exactly where he should be. Re-sequence him after the "
                 f"climb.")
+    # "UNTIL ESTABLISHED" IS AN ILS INSTRUCTION AND HE CANNOT OBEY IT HERE.
+    #
+    #     "A pilot doesn't know when he is established -- everything he gets he
+    #      gets from the talk down. That instruction belongs in the ils module."
+    #
+    # On a surveillance approach the aeroplane has no localiser and no
+    # glideslope: the controller IS the approach aid. Telling him to hold an
+    # altitude "until established" hands him a trigger he has no instrument to
+    # detect, so he either holds it forever or guesses -- and guessing on final
+    # in cloud is the thing this whole procedure exists to avoid.
+    #
+    # It is the same rule `_report_phrase` states and did not apply: never give
+    # him a trigger he cannot see. Here the CONTROLLER owns the descent and
+    # calls it off the table, so the altitude stands until he says otherwise.
     return (f"ASR: vectoring, {rng} miles{turn}.{swing} Fly heading "
-            f"{g.heading:03d}, maintain {g.altitude_ft} until established on the "
-            f"final approach course.")
+            f"{g.heading:03d}, maintain {g.altitude_ft}. You will call his "
+            f"descent; do not ask him to report established.")
 
 
 def radar_range_for(scope: str, cs: str) -> float | None:

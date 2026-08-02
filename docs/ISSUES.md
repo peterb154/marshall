@@ -2569,3 +2569,31 @@ rung of a seven-rung ladder.
 2. A genuinely wrong callsign is still corrected — this must not be bought by
    disabling the guard, which is [ID-3]/#48's whole point.
 3. Guarded by a unit test over the recorded transmissions, not by ear.
+
+---
+
+## [APP-5] The NDB letdown profile claims radar — #53
+labels: bug
+
+**Status:** OPEN. Found 2 August while making the ILS a vectored procedure.
+
+`BATUMI_APPROACH` — the 1944 beacon letdown, whose entire purpose is the
+non-radar handicap — carries `AtcCapability(radar=True)`.
+
+Nothing reads it today in a way that bites, which is why it has survived. It was
+found because `Controller._vectored` was about to be keyed on `atc.radar`, which
+is the obvious and correct-looking thing to do: a controller with radar vectors.
+Doing so would have given a period letdown radar phraseology — turning an
+aeroplane the controller cannot see.
+
+`_vectored` names the procedures instead (`asr`, `ils`) with a comment saying
+why, so the workaround is visible rather than quiet.
+
+**Acceptance criteria**
+1. The letdown profile's capability says what it is: no radar, procedural
+   separation.
+2. `Controller._vectored` reads the capability rather than a list of procedure
+   names, and the comment explaining why it could not comes out.
+3. The approach sweep is unmoved — this changes what the letdown is ALLOWED to
+   do, and if that changes how it flies, the capability was load-bearing
+   somewhere nobody documented.

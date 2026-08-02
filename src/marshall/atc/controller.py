@@ -276,10 +276,21 @@ class Controller:
     # a time. That is what a controller with radar and a pilot with no navaid
     # actually do, and it is the only thing they CAN do.
 
+    # WHICH PROCEDURES THE CONTROLLER VECTORS FOR. A radar approach and an ILS
+    # both start with him turning the aeroplane onto a course; a beacon letdown
+    # does not, because the pilot navigates it himself off the needle.
+    #
+    # NOT read off `atc.radar`, which would be the obvious thing and is wrong
+    # today: the NDB letdown profile carries radar=True, which looks like a
+    # data error given the whole point of that profile is the non-radar
+    # handicap. Keying on it would quietly give a 1944 letdown radar
+    # phraseology. Named procedures instead, until that flag is worth trusting.
+    VECTORED_KINDS = ("asr", "ils")
+
     @property
     def _vectored(self) -> bool:
         return bool(getattr(self.profile, "vectored", False)
-                    or getattr(self.profile, "kind", "") == "asr")
+                    or getattr(self.profile, "kind", "") in self.VECTORED_KINDS)
 
     def _approach_name(self) -> str:
         return "radar approach" if self._vectored else "beacon approach"
@@ -537,8 +548,23 @@ class Controller:
                 f"expect vectors for the approach, I will call you")
 
     def _report_phrase(self) -> str:
-        """What he should call next. Never a fix he cannot navigate to."""
+        """What he should call next. Never a trigger he cannot detect.
+
+        This used to say "never a fix he cannot navigate to", which is the same
+        rule stated narrowly -- and being ESTABLISHED is exactly such a trigger
+        on a talkdown, where he has no localiser to be established ON:
+
+            "A pilot doesn't know when he is established -- everything he gets
+             he gets from the talk down. That instruction belongs in the ils
+             module."
+
+        So it is asked only where the aeroplane can answer it. On a surveillance
+        approach the controller reads him the course every mile, and the only
+        thing the pilot reports is what he can see out of the window.
+        """
         if self._vectored:
+            if getattr(self.profile, "guidance", "") == "talkdown":
+                return "report the field in sight"
             return "report established on the final approach course"
         return f"report {self.profile.beacon.name} inbound"
 

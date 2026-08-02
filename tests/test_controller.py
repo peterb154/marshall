@@ -332,7 +332,38 @@ class TestApproachVocabulary(unittest.TestCase):
 
     def test_no_beacon_report_is_ever_asked_for_on_a_radar_approach(self):
         self.assertNotIn("beacon", self.asr._report_phrase().lower())
-        self.assertIn("final approach course", self.asr._report_phrase())
+
+    def test_AND_NOT_ESTABLISHED_EITHER_ON_A_TALKDOWN(self):
+        """This test used to assert the opposite, which is how the bug lived.
+
+            "A pilot doesn't know when he is established -- everything he gets
+             he gets from the talk down. That instruction belongs in the ils
+             module."
+
+        On a surveillance approach he has no localiser to be established ON.
+        Asking hands him a trigger he has no instrument to detect, so he holds
+        his altitude forever or guesses -- and guessing on final in cloud is
+        what the procedure exists to prevent.
+
+        It is the same rule the function's own docstring already stated, just
+        written too narrowly: it said "never a fix he cannot navigate to" and
+        meant "never a trigger he cannot detect".
+        """
+        self.assertEqual(self.asr.profile.guidance, "talkdown")
+        self.assertNotIn("established", self.asr._report_phrase().lower())
+
+    def test_he_reports_what_he_can_SEE(self):
+        """The window is the only instrument the procedure gives him."""
+        self.assertIn("field in sight", self.asr._report_phrase())
+
+    def test_but_an_ILS_pilot_IS_asked_to_report_established(self):
+        """He has a localiser, so the trigger is one he can detect -- and this
+        is the half that must not be lost while fixing the other."""
+        import dataclasses
+        ils = atc.Controller(dataclasses.replace(self.asr.profile,
+                                                 guidance="intercept"))
+        self.assertTrue(ils._vectored, "an ILS is vectored onto the localiser")
+        self.assertIn("established", ils._report_phrase().lower())
 
     def test_nothing_the_vectored_controller_says_names_the_beacon(self):
         # The belt-and-braces check: drive a whole arrival and read every
