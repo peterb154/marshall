@@ -228,3 +228,80 @@ class TestTheLetterRotatesHourly(unittest.TestCase):
     def test_the_first_recording_is_not_a_rotation(self):
         """Nothing on the air yet means Alpha, not Bravo."""
         self.assertFalse(B.due_for_rotation(obs(), None, None))
+
+
+class TestApproachConfirmsAndAsks(unittest.TestCase):
+    """What a controller does with the letter, and what he must NOT do.
+
+        "Atc should not gate the approach. In fact, approach should confirm
+         they have information bravo and ask what approach they want."
+
+    The second half fixes a complaint from the air -- "approach just assumed I
+    was flying the ASR" -- and it is the same fault as everywhere else in this
+    system: a controller answering a question the pilot did not ask. Batumi
+    publishes two approaches and a visual is always available; which one he
+    wants is his to say.
+    """
+
+    def setUp(self):
+        import unittest.mock as mock
+        from marshall.atis import store
+        self.mock = mock.patch.object(
+            store, "current",
+            return_value=store.Current(field="Batumi", letter="Bravo",
+                                       runway=13, on_the_air=True))
+        self.mock.start()
+        self.addCleanup(self.mock.stop)
+
+    def said(self, station, letter=""):
+        from marshall.atc import controller as atc
+        from marshall.atc import intents as I
+        ctl = atc.Controller(R.BATUMI_ASR)
+        ctl.t = 0.0
+        ctl._me = station
+        I.dispatch(ctl, I.Intent(kind=I.IntentKind.CHECK_IN,
+                                 callsign="Sockeye", atis_letter=letter))
+        return " ".join(t.text for t in ctl.out)
+
+    def test_the_right_letter_is_confirmed(self):
+        self.assertIn("Bravo is current", self.said(R.APPROACH, "Bravo"))
+
+    def test_the_wrong_letter_is_corrected_and_NOT_refused(self):
+        """He is working from weather that has moved, which is the entire point
+        of the letter existing. He is told, and the sortie continues."""
+        got = self.said(R.APPROACH, "Alpha")
+        self.assertIn("Bravo", got)
+        self.assertIn("not Alpha", got)
+        for refusal in ("unable", "denied", "cannot", "before I can"):
+            with self.subTest(word=refusal):
+                self.assertNotIn(refusal, got.lower())
+
+    def test_saying_nothing_is_a_prompt_not_a_telling_off(self):
+        got = self.said(R.APPROACH, "")
+        self.assertIn("Advise you have information Bravo", got)
+
+    def test_HE_IS_ALWAYS_ASKED_WHAT_HE_WANTS(self):
+        """Never assumed. Two approaches are published here and a visual is
+        always available."""
+        for letter in ("Bravo", "Alpha", ""):
+            with self.subTest(letter=letter):
+                self.assertIn("Say your request", self.said(R.APPROACH, letter))
+
+    def test_tower_does_not_ask_about_the_atis(self):
+        """Asking a man on short final which information he has is noise at the
+        worst possible moment."""
+        got = self.said(R.TOWER, "")
+        self.assertNotIn("information", got.lower())
+
+    def test_a_controller_greets_as_HIMSELF(self):
+        """This read the enroute station unconditionally, so Batumi Approach
+        greeted a pilot as "Georgia Center". The engine is blind by design and
+        that was right while it had no idea who it was -- it has known since
+        `_me` arrived."""
+        self.assertIn("Batumi Approach", self.said(R.APPROACH, "Bravo"))
+        self.assertIn("Kobuleti Clearance", self.said(R.KOB_CLEARANCE, ""))
+
+    def test_a_ground_seat_does_not_ask_for_a_position_report(self):
+        """"Report BATUMI inbound" from Clearance, to a man who has not started
+        his engine, is a radar controller's line out of the wrong mouth."""
+        self.assertNotIn("report", self.said(R.KOB_CLEARANCE, "").lower())

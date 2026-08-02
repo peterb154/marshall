@@ -86,6 +86,10 @@ class Intent:
     # maintain visual separation between your aircraft?", which is gone --
     # separation inside a formation was never the controller's to ask about.
     visual: bool | None = None
+    # The information letter he says he has, as the full word. Empty means he
+    # did not mention one -- which gets a different answer from claiming the
+    # wrong one: the first is a prompt, the second is a correction.
+    atis_letter: str = ""
 
 
 # JSON schema for a structured-output parser (Haiku today, Nova Sonic later).
@@ -149,6 +153,13 @@ INTENT_SCHEMA = {
                    "says he CAN maintain visual separation / is VMC / has the "
                    "others in sight; false if he cannot / is IMC / in cloud; "
                    "null if the transmission is not about conditions."},
+        "atis_letter": {"type": "string",
+                        "description": "the ATIS information letter the pilot "
+                        "says he has, as the full word: 'with Bravo' -> "
+                        "'Bravo', 'we have information charlie' -> 'Charlie'. "
+                        "Empty when he does not mention one -- never guess, "
+                        "because saying nothing and saying the wrong letter "
+                        "get different answers from the controller."},
         "flight_size": {"type": "integer",
                         "description": "how many aircraft are in this flight, if "
                         "the pilot says so: 'flight of four' -> 4, 'Pony one "
@@ -311,6 +322,11 @@ def dispatch(ctl: atc.Controller, intent: Intent) -> bool:
         return True
     match intent.kind:
         case IntentKind.CHECK_IN:
+            # Carried on the aircraft rather than passed down, because the
+            # check-in reply is composed after the phase work and a parameter
+            # would have to be threaded through all of it.
+            if intent.atis_letter:
+                ctl.get(cs).atis_letter = intent.atis_letter
             ctl.check_in(cs, intent.flight_size)
         case IntentKind.REPORT_BEACON:
             ctl.report_beacon(cs, intent.altitude_ft, intent.flight_size)

@@ -102,6 +102,10 @@ class Aircraft:
     # no stack, no levels and no sequence, and forcing it into an arrival enum
     # would have meant inventing arrival states for a man who has not moved.
     sortie_phase: str = ""
+    # WHICH INFORMATION HE SAID HE HAS. Empty means he did not mention one,
+    # which gets a different answer on the radio from claiming the wrong one:
+    # the first is a prompt, the second is a correction.
+    atis_letter: str = ""
     assigned_ft: int | None = None
     last_report_t: float = 0.0
     approaches: int = 0
@@ -538,6 +542,44 @@ class Controller:
             return "report established on the final approach course"
         return f"report {self.profile.beacon.name} inbound"
 
+    def _atis_phrase(self, ac) -> str:
+        """Confirm the information, then ask what he wants. Never refuse.
+
+        Only from a seat that would actually do it -- Approach and Clearance
+        are the two that check, and Tower asking a man on short final which
+        information he has is noise at the worst moment.
+
+        THREE CASES, and they are genuinely different on the radio:
+
+            right letter    acknowledged in passing, then the real question
+            wrong letter    given the current one, because he is working from
+                            weather that has moved -- and that is the entire
+                            point of the letter existing
+            said nothing    asked, without being told off. Most pilots have it
+                            and forgot to say so.
+        """
+        if not self._owns("approach") and not self._owns("clearance"):
+            return ""
+        from marshall.core import route as _R
+        me = getattr(self, "_me", None)
+        fld = _R.field_named(getattr(me, "field", "") or _R.ARRIVAL_FIELD)
+        if fld is None:
+            return ""
+        from marshall.atis import store as _atis
+        now = _atis.current(fld)
+        if not now.on_the_air or not now.letter:
+            # No broadcast at this field. Asking a pilot to confirm an ATIS
+            # that does not exist is how you get a confused read-back.
+            return "Say your request."
+        said = getattr(ac, "atis_letter", "") or ""
+        if said and said.lower() == now.letter.lower():
+            return f"Information {now.letter} is current. Say your request."
+        if said:
+            return (f"Information {now.letter} is current now, not "
+                    f"{said}. Say your request.")
+        return (f"Advise you have information {now.letter}. "
+                f"Say your request.")
+
     def _anomaly(self, what: str) -> None:
         """Record an invariant that broke, and be noisy about it.
 
@@ -803,7 +845,21 @@ class Controller:
             self.say(ac.callsign,
                      f"{self._addr(ac)}, radar contact, say intentions.")
             return
-        here, here_freq = self.profile.station(enroute=True)
+        # WHO IS ACTUALLY SPEAKING, when the bridge has told us.
+        #
+        # This read `station(enroute=True)` unconditionally, which is Center --
+        # so Batumi Approach greeted a pilot as "Georgia Center". The engine is
+        # blind by design and that was the right answer while it had no idea
+        # who it was; it has known since `_me` arrived, and this was still
+        # asking the profile.
+        #
+        # Falls back to the enroute station when nobody has told us, which is
+        # every unit test and the dry runs -- see `_owns` for the same rule.
+        me = getattr(self, "_me", None)
+        if me is not None and getattr(me, "name", ""):
+            here, here_freq = me.name, me.freq_mhz
+        else:
+            here, here_freq = self.profile.station(enroute=True)
         tower, tower_freq = self.profile.station()
         fix = self.profile.arrival_fix
         if fix is not None and tower_freq and tower_freq != here_freq:
@@ -817,9 +873,35 @@ class Controller:
                     f"report {fix.name}. At {fix.name} contact {tower} "
                     f"{spell_freq(tower_freq)} -- you will be homing "
                     f"{self.profile.beacon.name} from there.")
-        else:
+        elif self._owns("approach") or self._owns("center"):
             call = (f"{self._addr(ac)}, {here}, "
                     f"{self._report_phrase()}.")
+        else:
+            # A GROUND SEAT DOES NOT ASK FOR A POSITION REPORT. "Report BATUMI
+            # inbound" from Clearance, to a man who has not started his engine,
+            # is a radar controller's line coming out of the wrong mouth -- and
+            # it only became reachable when the ladder grew seats below
+            # Approach. What Clearance and Ground want is the request, which
+            # `_atis_phrase` asks for.
+            call = f"{self._addr(ac)}, {here}."
+        # THE ATIS AND HIS INTENTIONS, and neither of them gates anything.
+        #
+        #     "Approach should confirm they have information Bravo and ask what
+        #      approach they want."
+        #
+        # Which fixes a real complaint from the air -- "approach just assumed I
+        # was flying the ASR" -- and it is the same fault as everywhere else in
+        # this system: a controller answering a question the pilot did not ask.
+        # There are two approaches published at Batumi and a visual is always
+        # available; which one he wants is his to say.
+        #
+        # ATC DOES NOT GATE THE APPROACH. A wrong letter or no letter is
+        # answered with the current one and the sortie continues -- it is a
+        # courtesy and a cross-check, never a condition. A pilot may call the
+        # field in sight and take the visual at any point regardless.
+        extra = self._atis_phrase(ac)
+        if extra:
+            call = f"{call} {extra}"
         self.say(ac.callsign, call)
 
     # -- formations --------------------------------------------------------
