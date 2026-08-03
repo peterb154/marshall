@@ -652,16 +652,49 @@ None of that exists in the plan. Same class as the invented ranges fixed in
 ## [UI-1] Flight planning front end — #22
 labels: feature
 
-**Status:** TODO — the DB half is [FP-1]
+**Status:** TODO — the DB half is [FP-1]. **Evaluated 3 August; the proposal is
+`docs/PLANNER.md` and it is three phases, not one.**
 
 A pilot files a plan before the sortie and the ATC knows him when he calls. The
-schema arrives with [FP-1]; this is the way in. Evaluate Digital Kneeboard
-Simulator before writing one.
+schema arrives with [FP-1]; this is the way in.
+
+**The DKB evaluation this issue has always asked for.** Digital Kneeboard
+Simulator is a closed squadron platform, well ahead of anything we would build,
+and it should not be raced. But its WW2 gap is STRUCTURAL rather than an
+oversight: every machine-readable thing it exports — DTC profiles, TheWay Lua,
+Loadout Lua — is a data-cartridge transfer, and its supported-aircraft list is
+exactly the DCS modules that have a nav computer to load. A warbird has none.
+There is nothing for it to export to.
+
+Which means the artifact a warbird pilot needs is one DKB does not produce for
+anybody: a timed nav log. `solve_route` and `kneeboard/navlog.py` already make
+it.
+
+**And DKB does not produce what THIS system consumes either.** All four of its
+formats are pilot-facing documents; a filed plan here is an ATC input — what
+Clearance reads back against, what `assigned_plans` records. The `flight_plans`
+schema is already ICAO-shaped and already validates routes against the fix
+table. The gap is narrow: nothing lets a human COMPOSE a plan. Every plan on
+file was authored in a migration.
+
+So: import from DKB (via TheWay Lua, which CombatFlite and DCSPlan also emit —
+compatibility with the ecosystem rather than with one vendor), build the filing
+half, and build the nav-log planner nobody else does. Not a second kneeboard
+designer, which would be a second source of truth for the one thing this project
+exists to keep singular.
+
+**Blocked on one thing:** a real TheWay Lua export to pin the format. Guessing a
+schema from a forum post is how a parser silently drops the last waypoint. The
+`.miz` and DTC import paths do not need it.
 
 **Acceptance criteria**
 1. A plan can be filed without touching the database by hand.
 2. A filed plan is assignable by voice on the night with no further setup.
 3. It survives a mission reload.
+4. A route naming a fix nobody holds is refused AT FILING TIME, with the
+   offending fix named — not discovered on the radio.
+5. One plan serves both cockpits: a nav log for the P-51, DTC waypoints for the
+   F-16, without being entered twice.
 
 ---
 
