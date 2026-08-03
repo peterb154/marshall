@@ -2597,3 +2597,51 @@ why, so the workaround is visible rather than quiet.
 3. The approach sweep is unmoved — this changes what the letdown is ALLOWED to
    do, and if that changes how it flies, the capability was load-bearing
    somewhere nobody documented.
+
+---
+
+## [ARCH-5] `route.py` is six subjects in one file — #54
+labels: refactor
+
+**Status:** DONE 3 August. Split; the façade keeps the contract.
+
+2,057 lines holding conversions, places, airspace, aerodromes, controllers and
+procedures. The size was never the complaint — the COUPLING was. Adding the
+second aerodrome meant editing a station four hundred lines away from the field
+it belongs to, and four of the bugs that shook out of the two-field work were
+that shape: something reaching sideways for a fact nobody had handed it.
+
+Split into `units` / `airspace` / `fixes` / `fields` / `stations` / `approach`,
+depending strictly downward in that order, with `route.py` re-exporting all of
+it. The re-export is deliberate and not laziness: some three hundred call sites
+read `R.BATUMI_ASR`, and the contract they rely on — one place that cannot
+disagree with itself — is unchanged. New code imports the narrow module.
+
+Two things moved rather than merely relocating. `field_named` was in the station
+block with a docstring explaining the circularity it was working around; it is
+the join over `FIELDS` and it lives with them now, and the cycle is gone rather
+than commented. `ias_mph` was inside the fix list because that is where it was
+written, and it is atmosphere.
+
+**Acceptance criteria**
+1. No cycles: each module imports only from those below it.
+2. `from marshall.core import route as R` reaches every name it did before.
+3. The suite, the sweeps and the three kneeboards are unmoved.
+
+---
+
+## [ARCH-6] `agent_atc.py` is the bridge, the loop, the monitor and the assembly — #55
+labels: refactor
+
+**Status:** OPEN
+
+5,802 lines. It is the file every live fix lands in, which is exactly why it
+keeps growing and exactly why that is dangerous: the receive loop, the radar
+injection, the hook scheduler, the guards and the message assembly all share one
+namespace, so a change to any of them can reach any other and nothing says so.
+
+**Acceptance criteria**
+1. The message assembly — what the agent is told, in what order — is a module
+   that can be tested without a radio.
+2. The guards are separable from the loop that runs them.
+3. `tools/atc_dryrun.py` and the live bridge drive the same assembly code.
