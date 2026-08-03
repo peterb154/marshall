@@ -71,7 +71,11 @@ class SRSClient:
         # A unique unit id per client -- reusing one id makes the server collide
         # stale clients and drop radio registrations.
         self.unit_id = UNIT_ID + secrets.randbelow(1_000_000)
-        self.last_rx = 0.0        # when voice last arrived; see someone_is_talking
+        self.last_rx = 0.0        # when voice last arrived, on ANY frequency
+        # When voice last arrived on EACH frequency, keyed by whole Hz. A
+        # controller must stand off for a pilot on HIS channel and nobody
+        # else's -- see `someone_is_talking`.
+        self.last_rx_hz: dict[int, float] = {}
         self.radios: list[dict] = []
         self.packet_id = 1
         self.tcp: socket.socket | None = None
@@ -384,8 +388,11 @@ class SRSClient:
             try:
                 pcm = dec.decode(data[6:6 + audio_len], tts.SAMPLES_PER_FRAME)
                 frames.append(np.frombuffer(pcm, dtype="<i2"))
-                if freq_hz is None and freq_len >= 8:      # first freq block
-                    (freq_hz,) = struct.unpack("<d", data[6 + audio_len:6 + audio_len + 8])
+                _on = None
+                if freq_len >= 8:
+                    (_on,) = struct.unpack("<d", data[6 + audio_len:6 + audio_len + 8])
+                    if freq_hz is None:                    # first freq block
+                        freq_hz = _on
                 # Origin GUID is the last 22 bytes of the packet (relay + origin).
                 self.last_sender_guid = data[-GUID_LEN:].decode("ascii", "ignore")
                 started = True
@@ -393,12 +400,21 @@ class SRSClient:
                 # Somebody is on the air RIGHT NOW. Read by the transmitting
                 # threads so the controller does not talk over a pilot -- see
                 # `someone_is_talking`.
+                #
+                # PER FREQUENCY, because this client listens on all of them.
+                # One timestamp for twelve channels meant a pilot talking to
+                # Kobuleti Clearance held Batumi Approach off the air forty
+                # miles away -- a courtesy applied to the wrong conversation.
+                # It only mattered once there was more than one aerodrome, and
+                # it gets worse with every field added.
                 self.last_rx = time.monotonic()
+                if _on:
+                    self.last_rx_hz[int(round(_on))] = self.last_rx
             except Exception:
                 pass
         return (np.concatenate(frames) if frames else None), freq_hz
 
-    def someone_is_talking(self, within: float = 1.5) -> bool:
+    def someone_is_talking(self, within: float = 1.5, freq_hz=None) -> bool:
         """Is a pilot keying the mic right now?
 
         The radio lock only stops this client's own threads overlapping each
@@ -409,7 +425,19 @@ class SRSClient:
 
         A real radio is half duplex and so is the courtesy: if voice packets
         arrived within the last second and a half, the channel is his.
+
+
+        WHICH CHANNEL. Pass `freq_hz` and the answer is about that frequency
+        alone; omit it and the answer is "anybody, anywhere", which is what
+        this always used to mean and is almost never what a caller wants now.
+        A single controller standing off because a pilot at another aerodrome
+        is talking is not courtesy, it is the wrong conversation.
         """
+        if freq_hz:
+            for hz in (freq_hz if isinstance(freq_hz, (list, tuple)) else [freq_hz]):
+                if time.monotonic() - self.last_rx_hz.get(int(round(hz)), 0.0) < within:
+                    return True
+            return False
         return (time.monotonic() - self.last_rx) < within
 
     def close(self) -> None:

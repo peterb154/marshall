@@ -4628,9 +4628,22 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
     # With two aeroplanes working one controller that is most of the traffic.
     answering = [False]
 
-    def channel_is_free(now: float | None = None) -> tuple[bool, str]:
+    def channel_is_free(now: float | None = None,
+                        on_hz: float | None = None) -> tuple[bool, str]:
+        """Is it courteous to speak? `on_hz` is WHICH channel we mean.
+
+        Omitting it asks "is anybody talking anywhere", which is what this
+        always used to mean and stopped being right when the theatre grew a
+        second aerodrome: one client listens on twelve frequencies, so a pilot
+        checking in with Kobuleti Clearance held Batumi Approach silent forty
+        miles away. A courtesy applied to the wrong conversation.
+
+        A facility's OTHER frequencies count as the same channel -- 124.425 and
+        124.000 are one conversation reaching two kinds of radio -- which is why
+        this asks about `channels_of` rather than the single number.
+        """
         now = now or time.monotonic()
-        if client.someone_is_talking():
+        if client.someone_is_talking(freq_hz=channels_of(on_hz) if on_hz else None):
             return False, "a pilot is transmitting"
         if answering[0]:
             return False, "answering a pilot"
@@ -4989,7 +5002,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                         # same bug as an engineering channel that says nothing,
                         # and it is worse here because it is the last thing that
                         # happens on every flight.
-                        free, why = channel_is_free()
+                        free, why = channel_is_free(on_hz=final_hz)
                         if not free:
                             print(f"  .. holding {cs}'s goodbye: {why}", flush=True)
                             continue          # not marked down; it will repeat
@@ -5060,7 +5073,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     # to is nonsense on the radio.
                     _nxt = None if (_v is None or _v.same_station) else _v.station
                     if _nxt is not None and cs not in handed_off:
-                        free, why = channel_is_free()
+                        free, why = channel_is_free(on_hz=_hz)
                         if free:
                             handed_off.add(cs)
                             _say = for_voice(
@@ -5111,7 +5124,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                                       f" degree reversal for {cs} to see if it "
                                       "persists", flush=True)
                                 continue
-                        free, why = channel_is_free()
+                        free, why = channel_is_free(on_hz=final_hz)
                         if not free:
                             # Do NOT record it as issued -- he never heard it,
                             # and marking it sent would suppress the repeat.
@@ -5143,7 +5156,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     mile = 0 if g.phase == "map" else int(round(g.range_nm))
                     if called.get(cs) == mile:
                         continue
-                    free, why = channel_is_free()
+                    free, why = channel_is_free(on_hz=final_hz)
                     if not free:
                         print(f"  .. holding the {mile} mile call for {cs}: "
                               f"{why}", flush=True)
