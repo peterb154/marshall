@@ -2633,15 +2633,50 @@ written, and it is atmosphere.
 ## [ARCH-6] `agent_atc.py` is the bridge, the loop, the monitor and the assembly — #55
 labels: refactor
 
-**Status:** OPEN
+**Status:** PARTLY DONE 3 August — 5,802 lines down to 4,713. Criteria 1 and 3
+are met; 2 is not.
 
-5,802 lines. It is the file every live fix lands in, which is exactly why it
-keeps growing and exactly why that is dangerous: the receive loop, the radar
-injection, the hook scheduler, the guards and the message assembly all share one
-namespace, so a change to any of them can reach any other and nothing says so.
+It is the file every live fix lands in, which is exactly why it keeps growing
+and exactly why that is dangerous: the receive loop, the radar injection, the
+hook scheduler, the guards and the message assembly shared one namespace, so a
+change to any of them could reach any other and nothing said so.
+
+Four modules are out, chosen because each needs NOTHING from the loop — every
+one takes what it uses as an argument, so the cut is provable rather than
+hopeful:
+
+    voice.py       what reaches the radio, and what must never leave the room
+    talkdown.py    the ASR metronome: where he is, in words, every mile
+    addressing.py  was this call for me, and did he read back what I gave him
+    assembly.py    everything the controller is handed for one transmission
+
+A PURE RE-EXPORT WOULD NOT HAVE BEEN SAFE HERE, unlike `route.py`. Tests
+monkeypatch `A.fetch_radar` and `A.record`, and a caller in another module holds
+its own reference — so the patch would silently stop biting and the test would
+go on passing against the real network. The four blocks that moved have no patch
+surface, which is part of why they went first.
+
+**What it fixed on the way.** `atc_dryrun.py` assembled its own copy of the
+message, with a comment admitting the hazard: every change had to be made twice
+or the mirror drifts. It HAD drifted — "the radio calling itself {known}"
+survived there for weeks after the label stopped coming off the radio, so the
+tool whose whole purpose is showing what the bridge sends was showing the
+opposite. It calls `compose_message` now.
+
+Two tests in `test_manner.py` greped the bridge's SOURCE for `YOUR MANNER:` and
+for the literal `me, "manner"`. Both broke on the move while the behaviour they
+guarded had not changed — the signature of a test written against the wrong
+thing. They call the composer now, and there is a third: a station with no
+manner must get no fence.
 
 **Acceptance criteria**
-1. The message assembly — what the agent is told, in what order — is a module
-   that can be tested without a radio.
-2. The guards are separable from the loop that runs them.
-3. `tools/atc_dryrun.py` and the live bridge drive the same assembly code.
+1. ~~The message assembly — what the agent is told, in what order — is a module
+   that can be tested without a radio.~~ `assembly.compose_message`.
+2. The guards are separable from the loop that runs them. **STILL OPEN** — the
+   guards read and write loop state, so this needs the state to move first.
+3. ~~`tools/atc_dryrun.py` and the live bridge drive the same assembly code.~~
+
+**What is left, and why it is harder.** The remaining 4,713 lines are the
+receive loop, the radar/scope readers, the guards and the director's HTTP
+client. The client is the next clean cut but it carries the monkeypatch surface,
+so it moves with its test doubles or not at all.

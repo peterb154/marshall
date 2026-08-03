@@ -1,9 +1,14 @@
 """Drive the whole ATC brain in text -- the bridge without the radio.
 
-Mirrors exactly what `agent_atc._run_srs` assembles per transmission (radar line,
-SRS identity, the deterministic CONTROLLER directive, the SEPARATION stack, the
-pilot's words) and POSTs it to the director, but takes typed lines instead of
+Calls the SAME `assembly.compose_message` the live loop calls -- radar line, SRS
+identity, the deterministic CONTROLLER directive, the SEPARATION stack, the
+pilot's words -- and POSTs it to the director, but takes typed lines instead of
 Whisper and prints the reply instead of speaking it.
+
+"The same", literally, and not "mirrors": this file used to assemble its own
+copy and it had already drifted from the bridge it claimed to mirror. A dry run
+that shows you something other than what the bridge sends is worse than no dry
+run, because you believe it.
 
 That makes the two-brain seam testable in seconds rather than minutes: you find
 out whether the agent VOICES the controller's break-up altitudes or paraphrases
@@ -21,7 +26,7 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from marshall.atc import agent_atc
+from marshall.atc import agent_atc, assembly
 from marshall.atc import identity, controller as atc
 from marshall.core import route as R
 
@@ -212,61 +217,29 @@ def run(script, session_id: str, sep_always: bool = True,
         if known:
             agent_atc.flight_bind(callsign=known, srs_name=srs,
                                   srs_guid=f"guid-{srs}")
-        # THE SAME BLOCKS THE LIVE LOOP BUILDS, and this is a standing hazard
-        # in this file: it assembles its own copy, so every change to
-        # `compose_message` has to be made twice or the mirror quietly drifts.
-        # It had -- "the radio calling itself {known}" is the line that was
-        # replaced when the label stopped coming off the radio, and reading it
-        # here would tell you the opposite of what the bridge now says.
-        parts = []
-        if known:
-            _also = (f" He called himself {claim} on this transmission; that is "
-                     f"the same man and it is not a discrepancy to raise with "
-                     f"him." if claim and claim.lower() != known.lower() else "")
-            parts.append(
-                f"TRANSMITTER: {known}, identified from his aircraft rather "
-                f"than from anything he said, so this is certain. Address him "
-                f"as {known}.{_also} Same aircraft as every other call from "
-                f"{known} -- keep them together.")
-        else:
-            parts.append("TRANSMITTER: a radio you have not identified yet.")
-        if name_say:
-            parts.append(
-                "CALLSIGN CORRECTION (already decided — SAY THIS FIRST, in "
-                f"these words, then answer his call normally): {name_say}")
-        if directive:
-            parts.append("CONTROLLER (deterministic next step of the approach — "
-                         "voice its altitudes, headings and sequence exactly, add "
-                         f"your radar read, never skip a leg): {directive}")
-        if stack:
-            parts.append(f"SEPARATION (holding stack, one in the letdown): {stack}")
-        if me:
-            parts.append(f"YOU ARE: {me.name} on {me.freq_mhz:.1f}. Identify as "
-                         f"that and nothing else.")
-            if getattr(me, "manner", ""):
-                # Same fence as the live loop -- see agent_atc. Manner owns the
-                # words around the numbers and never the numbers.
-                parts.append(
-                    f"YOUR MANNER: {me.manner}\n"
-                    "This is HOW YOU SOUND and nothing more. It never changes "
-                    "WHAT you say: altitudes, headings, frequencies, sequence "
-                    "and required read-backs are identical whoever is on the "
-                    "microphone. You may never refuse work that is yours, skip "
-                    "a read-back, omit a number or round one off because of "
-                    "your manner, and if a pilot is in trouble every "
-                    "personality here drops it and becomes plain and useful.")
-            also = [r for r in (getattr(me, "also", ()) or ()) if r]
-            if also:
-                parts.append(
-                    f"YOU ALSO WORK: {', '.join(also)} — on this same "
-                    f"frequency, because this field does not staff a separate "
-                    f"position for them. Do the work; do not send him to "
-                    f"another frequency for it.")
-        parts.append(f"PILOT: {text}")
+        # THE SAME BLOCKS THE LIVE LOOP BUILDS -- literally the same function
+        # now, and that is the whole reason this file is trustworthy.
+        #
+        # It used to assemble its own copy, with a comment admitting the hazard:
+        # every change to `compose_message` had to be made twice or the mirror
+        # drifted. It HAD drifted. "the radio calling itself {known}" survived
+        # here for weeks after the label stopped coming off the radio, so a dry
+        # run was quietly telling you the opposite of what the bridge says --
+        # in a tool whose entire purpose is to show you what the bridge says.
+        #
+        # `assembly.compose_message` takes everything as arguments and fetches
+        # nothing, so there is no radio to fake. The blanks below are the things
+        # a dry run genuinely does not have: no live handoff, no flight verdict,
+        # no talkdown in progress.
+        message, _blocks = assembly.compose_message(
+            bridge, scope=scope, known=known, transcript=text, profile=profile,
+            me=me, fix=None, nxt=None, directive=directive, stack=stack,
+            vectoring="", _flight={}, _flight_say="", claim=claim,
+            name_say=name_say)
 
         t0 = time.monotonic()
         try:
-            reply = agent_atc.ask_agent(session_id, "\n".join(parts), "sonnet")
+            reply = agent_atc.ask_agent(session_id, message, "sonnet")
         except Exception as e:
             print(f"  !! agent error: {type(e).__name__}: {e}", flush=True)
             continue
