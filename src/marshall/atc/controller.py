@@ -606,6 +606,28 @@ class Controller:
         return (f"Advise you have information {now.letter}. "
                 f"Say your request.")
 
+    def take_out(self) -> list:
+        """Everything the engine has decided to say, and CLEAR it.
+
+        THE ONLY WAY TO CONSUME THE OUTBOX, and it exists because reading it
+        without clearing it produced a directive containing both a hold and a
+        clearance -- 7 turns in 97 on a real sortie:
+
+            "Hammer one one, hold at BATUMI as published, maintain five
+             thousand. | Hammer one one, cleared radar approach runway 13"
+
+        Those were not one decision. They were two turns' worth, because the
+        drain was conditional -- it ran only when `intents.dispatch` returned
+        True -- so anything queued on a turn it did not handle stayed in the
+        list and reappeared beside the next turn's words. Contradictory
+        instructions in one transmission, from the half that is supposed to be
+        the reliable one.
+
+        Draining is not a caller's decision to make. Whoever reads it takes it.
+        """
+        out, self.out = list(self.out), []
+        return out
+
     def _anomaly(self, what: str) -> None:
         """Record an invariant that broke, and be noisy about it.
 

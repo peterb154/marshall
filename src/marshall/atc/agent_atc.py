@@ -2323,9 +2323,13 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
 
         # An intent with no callsign never reaches the engine. Belt to the
         # braces above: `dispatch` would otherwise be free to invent a key.
-        if intent.callsign and intents.dispatch(ctl, intent):
-            directive = " | ".join(tx.text for tx in ctl.out)
-            ctl.out.clear()
+        if intent.callsign:
+            intents.dispatch(ctl, intent)
+        # DRAINED WHETHER OR NOT THE INTENT WAS HANDLED. This used to run only
+        # when `dispatch` returned True, so a turn it did not handle left the
+        # outbox dirty and those words reappeared beside a LATER turn's -- which
+        # is how a hold and a clearance ended up in one directive.
+        directive = " | ".join(tx.text for tx in ctl.take_out())
     except Exception as e:                       # must not break the call
         print(f"  !! controller classify failed: {e}", flush=True)
 
@@ -5095,8 +5099,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                               flush=True)
                         try:
                             ctl.report_down(cs)
-                            bye = for_voice(" ".join(tx.text for tx in ctl.out))
-                            ctl.out.clear()
+                            bye = for_voice(" ".join(tx.text for tx in ctl.take_out()))
                         except Exception:
                             bye = ""          # a stale stack is not fatal
                         called.pop(cs, None)

@@ -242,6 +242,16 @@ class Sortie:
         # `test_pool.py`.
         from marshall.radio import pool as _pool_mod
         patch(_pool_mod, "SRSClient", lambda *a, **k: radio)
+        # AND NO ATIS. The receive loop starts the broadcast now, and these
+        # tests are about the loop -- an ATIS thread here opens real SRS
+        # clients and talks real gRPC to a sim that is not there, which showed
+        # up as a weather-read failure printed in the middle of a unit run.
+        #
+        # It failed harmlessly, which is the point worth noting: a test doing
+        # real network work is a slow test today and a flaky one tomorrow, and
+        # this one announced itself only because the loop is loud about
+        # failures.
+        patch(A, "_start_atis", lambda *a, **k: None)
         patch(stt, "load_model", lambda *a, **k: object())
         patch(stt, "transcribe", fake_transcribe)
         patch(tts, "Voice", FakeVoice)
