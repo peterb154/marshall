@@ -4682,36 +4682,64 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
     def _interact(message: str, kind: str, tier: str = "sonnet",
                   on_hz: float | None = None, guide=None,
                   to_callsign: str = "") -> None:
+        # THE MODEL CALL DOES NOT NEED THE RADIO, and holding it across one
+        # serialised the wrong thing entirely.
+        #
+        # `radio_lock` exists so two voices are never on the air at once. It was
+        # wrapped around this whole function, which also contains a Bedrock call
+        # -- measured across 372 real transmissions at a median of 3.3 s, p90
+        # 6.4 s and a worst case of 13.5 s. Add the settle and the audio and the
+        # radio was held for roughly 7 to 13 seconds per reply, of which only
+        # the last few were actually speech.
+        #
+        # With one pilot that is invisible: he is waiting for his own answer and
+        # it reads as latency. With two pilots at two aerodromes it is a
+        # controller who has gone deaf -- Kobuleti Tower silent for thirteen
+        # seconds because Batumi Approach is thinking.
+        #
+        # Two controllers may compose at the same time. They contend only for
+        # the moment they speak.
+        #
+        # WHAT THE LOCK WAS ALSO PROTECTING, by accident: `handoff_due` is set
+        # by the receive loop just before this runs, and reading it after a long
+        # unlocked model call could pick up a LATER turn's authorisation. So it
+        # is captured here, while the caller's turn is still the current one.
+        _authorised = bridge.handoff_due[0]
+        t0 = time.monotonic()
+        try:
+            reply = ask_agent(session_id, message, tier, url)
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            print(f"  !! agent error: {e}", flush=True)
+            reply = "Standby."
+        dt = time.monotonic() - t0
+        reply = for_voice(reply, agent=True)
+        # THE ENGINE OWNS THE TALKDOWN. See hush_a_second_talkdown: the
+        # agent's parallel mile calls do not merely duplicate, they hold the
+        # metronome off the air and take the descent instructions with it.
+        reply, hushed = hush_a_second_talkdown(reply, guide)
+        if hushed:
+            print(f"  .. hushed the agent on final: {hushed}", flush=True)
+        # NOBODY IS SENT AWAY WITHOUT THE BRIDGE SAYING SO. The rules ask
+        # the model not to invent a handoff and it did anyway, live, to a
+        # pilot parked on the ramp. Guidance where a guarantee was needed.
+        _me_here = (profile.station_on((on_hz or freq_hz) / 1_000_000)
+                    if hasattr(profile, "station_on") else None)
+        reply, sent = strip_unauthorised_handoff(
+            reply, _authorised,
+            keep_him=(f"{to_callsign}, {_me_here.name}, go ahead."
+                      if to_callsign and _me_here else ""))
+        if sent:
+            print(f"  .. refused an unauthorised handoff: {sent}",
+                  flush=True)
+        if not reply or reply.lower() in NO_CALL:
+            print(f"  ATC[{kind}/{tier}] ({dt:.1f}s): (no call)", flush=True)
+            return
+        # RENDERED BEFORE THE LOCK. Polly is a network call too, and it is
+        # cached -- so this is free on a repeat and must not be a reason to
+        # hold the air on a miss.
+        _frames = voice_for(on_hz).frames(reply)
+        # ONLY THE SPEAKING IS SERIALISED, from here down.
         with radio_lock:
-            t0 = time.monotonic()
-            try:
-                reply = ask_agent(session_id, message, tier, url)
-            except (urllib.error.URLError, TimeoutError, OSError) as e:
-                print(f"  !! agent error: {e}", flush=True)
-                reply = "Standby."
-            dt = time.monotonic() - t0
-            reply = for_voice(reply, agent=True)
-            # THE ENGINE OWNS THE TALKDOWN. See hush_a_second_talkdown: the
-            # agent's parallel mile calls do not merely duplicate, they hold the
-            # metronome off the air and take the descent instructions with it.
-            reply, hushed = hush_a_second_talkdown(reply, guide)
-            if hushed:
-                print(f"  .. hushed the agent on final: {hushed}", flush=True)
-            # NOBODY IS SENT AWAY WITHOUT THE BRIDGE SAYING SO. The rules ask
-            # the model not to invent a handoff and it did anyway, live, to a
-            # pilot parked on the ramp. Guidance where a guarantee was needed.
-            _me_here = (profile.station_on((on_hz or freq_hz) / 1_000_000)
-                        if hasattr(profile, "station_on") else None)
-            reply, sent = strip_unauthorised_handoff(
-                reply, bridge.handoff_due[0],
-                keep_him=(f"{to_callsign}, {_me_here.name}, go ahead."
-                          if to_callsign and _me_here else ""))
-            if sent:
-                print(f"  .. refused an unauthorised handoff: {sent}",
-                      flush=True)
-            if not reply or reply.lower() in NO_CALL:
-                print(f"  ATC[{kind}/{tier}] ({dt:.1f}s): (no call)", flush=True)
-                return
             print(f"  ATC[{kind}/{tier}] ({dt:.1f}s): {reply}", flush=True)
             bridge.last_said[0] = reply
             if to_callsign:
@@ -4721,8 +4749,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                    freq_mhz=(on_hz or freq_hz) / 1_000_000, text=reply)
             # Answer on the channel he called from -- that is the beacon he is
             # homing, and therefore the only one he can hear.
-            client.transmit(voice_for(on_hz).frames(reply),
-                            channels_of(on_hz), AM)
+            client.transmit(_frames, channels_of(on_hz), AM)
             # He is owed room to read that back, and we want to HEAR the
             # readback -- it is the only check on whether he got the numbers
             # right, and several were mangled on the sortie that prompted this.
