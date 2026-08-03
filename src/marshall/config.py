@@ -57,6 +57,14 @@ SOUNDS_DIR = BUILD_DIR / "sounds"
 # Rendered speech, kept between runs. See `radio/tts.py`: the same words in
 # the same voice are the same audio, and Polly is a network call.
 TTS_CACHE = BUILD_DIR / "tts"
+
+# How many SRS clients the bridge transmits with. One client plays one
+# stream at a time, so this is how many controllers can speak at once --
+# and it scales with concurrent SPEECH, not with airports. Ten is generous
+# for one to ten pilots and survives fifty; raising it costs 4 ms and two
+# file descriptors each, so if the pool ever warns about waiting, raise it
+# and stop thinking about it.
+RADIO_POOL_SIZE = int(os.environ.get("MARSHALL_RADIO_POOL", "10"))
 MISSION_OUT = BUILD_DIR / "missions"
 
 # Deployment targets. No default is a real path on anyone's machine -- set these

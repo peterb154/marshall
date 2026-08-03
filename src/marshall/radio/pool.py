@@ -80,6 +80,18 @@ class TransmitPool:
             c.connect(list(radios or []))
             self._free.append(c)
 
+    @property
+    def guids(self) -> set:
+        """Every GUID this pool speaks with.
+
+        Handed to the LISTENER, which must ignore them. The listener and the
+        transmitters are different clients, so SRS delivers our own voice back
+        to us and it is indistinguishable from a pilot -- see
+        `SRSClient.ignore_guids`. Without this a controller stands off for
+        himself for a second and a half after every word.
+        """
+        return {c.guid for c in self._free}
+
     def _lock_for(self, hz: float) -> threading.Lock:
         key = int(round(hz))
         with self._chan_guard:

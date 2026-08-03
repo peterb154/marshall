@@ -25,6 +25,7 @@ class FakeClient:
 
     def __init__(self, *a, **k):
         self.name = k.get("name", "")
+        self.guid = f"guid-{len(FakeClient.live)}"
         self.sent = []
         FakeClient.live.append(self)
 
@@ -58,6 +59,38 @@ class TestItOpensWhatItPromised(unittest.TestCase):
         a_pool(3)
         self.assertEqual([c.name for c in FakeClient.live],
                          ["Marshall-1", "Marshall-2", "Marshall-3"])
+
+
+class TestWeDoNotHearOurselves(unittest.TestCase):
+    """The problem the pool introduces, and the one thing that must go with it.
+
+    With ONE client this could not happen -- SRS does not echo a client to
+    itself. With a pool the listener and the transmitters are different
+    clients, so every word we say comes back and looks exactly like a pilot.
+    The controller then stands off for his own voice for a second and a half
+    after every transmission: the metronome skips, back-to-back calls jitter,
+    and nothing in any log explains it.
+
+    Proved by accident while measuring the settle -- a separate listener heard
+    all 87 frames of the transmitter beside it.
+    """
+
+    def test_the_pool_can_name_every_voice_it_speaks_with(self):
+        p = a_pool(3)
+        self.assertEqual(len(p.guids), 3)
+
+    def test_the_packet_loop_drops_our_own_and_keeps_a_pilots(self):
+        """Read as source, because the decision lives inside a UDP loop that
+        cannot be driven without sockets -- and the whole failure is that the
+        loop stamps a timestamp it should not have."""
+        from pathlib import Path
+        src = (Path(__file__).resolve().parents[1]
+               / "src/marshall/radio/client.py").read_text()
+        body = src[src.index("_guid = data[-GUID_LEN:]"):]
+        body = body[:body.index("self.last_rx = time.monotonic()")]
+        self.assertIn("if _guid in self.ignore_guids:", body)
+        self.assertIn("continue", body,
+                      "our own voice reaches the timestamp anyway")
 
 
 class TestDifferentFrequenciesDoNotWait(unittest.TestCase):

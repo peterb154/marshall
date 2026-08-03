@@ -76,6 +76,19 @@ class SRSClient:
         # controller must stand off for a pilot on HIS channel and nobody
         # else's -- see `someone_is_talking`.
         self.last_rx_hz: dict[int, float] = {}
+        # OUR OWN VOICES, to be ignored when they come back.
+        #
+        # With one client this could not happen: SRS does not echo a client to
+        # itself. With a POOL it does -- the listener and the transmitters are
+        # different clients, so every word Marshall-3 says arrives at the ear
+        # and looks exactly like a pilot. The controller would then stand off
+        # for his own voice for a second and a half after every transmission:
+        # the metronome skips beats, back-to-back calls jitter, and nothing in
+        # any log says why.
+        #
+        # Proved by accident while measuring the settle -- a separate listener
+        # heard all 87 frames of the transmitter beside it.
+        self.ignore_guids: set[str] = set()
         self.radios: list[dict] = []
         self.packet_id = 1
         self.tcp: socket.socket | None = None
@@ -394,7 +407,12 @@ class SRSClient:
                     if freq_hz is None:                    # first freq block
                         freq_hz = _on
                 # Origin GUID is the last 22 bytes of the packet (relay + origin).
-                self.last_sender_guid = data[-GUID_LEN:].decode("ascii", "ignore")
+                _guid = data[-GUID_LEN:].decode("ascii", "ignore")
+                if _guid in self.ignore_guids:
+                    # One of ours. Not a pilot, so it must not hold a
+                    # controller off the air -- see `ignore_guids`.
+                    continue
+                self.last_sender_guid = _guid
                 started = True
                 last = now
                 # Somebody is on the air RIGHT NOW. Read by the transmitting

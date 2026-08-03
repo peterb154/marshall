@@ -3347,7 +3347,7 @@ def push_fixes(base: str, profile) -> int:
     return len(out)
 
 
-def engineering_turn(client, transcript, srs, known, heard_hz, freq_hz,
+def engineering_turn(tx, transcript, srs, known, heard_hz, freq_hz,
                      eng_voice, radio_lock, AM, session_id):
     """The engineer, on the same frequency as everybody else.
 
@@ -3390,9 +3390,12 @@ def engineering_turn(client, transcript, srs, known, heard_hz, freq_hz,
     except OSError as e:
         print(f"  !! could not write the note: {e}", flush=True)
     reply = engineering_ack(True)
+    # `tx` is the transmit POOL now, not the listening client -- it serialises
+    # per frequency itself, so `radio_lock` is only holding the print in step
+    # with the air.
     with radio_lock:
         print(f"  ENG[tx] {reply}", flush=True)
-        client.transmit(eng_voice.frames(reply), _eng_hz, AM)
+        tx.transmit(eng_voice.frames(reply), _eng_hz, AM)
     return True
 
 
@@ -4518,6 +4521,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
     from marshall.core import route as R
     from marshall.radio import stt, tts
     from marshall.radio.client import AM, SRSClient, radio
+    from marshall.radio import pool
 
     freq_hz = freq_mhz * 1_000_000
     session_id = session_id or f"batumi-approach:{freq_mhz:.3f}"
@@ -4588,9 +4592,23 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
     # be all of them. SRS_NAME is the SERVICE; who is speaking is the voice and
     # the callsign in the transmission, which is how a pilot tells them apart in
     # the air anyway.
+    _radios = [radio(mhz * 1_000_000, AM) for mhz in channels]
+    # THE EAR. One client, every frequency, and it never transmits -- so it can
+    # never be blocked by a transmission in progress. It is also the only thing
+    # that decides whether a channel is busy, per channel: see `last_rx_hz`.
     client = SRSClient(host, name=SRS_NAME,
-                       eam_password=config.SRS_EAM_PASSWORD).connect(
-                           [radio(mhz * 1_000_000, AM) for mhz in channels])
+                       eam_password=config.SRS_EAM_PASSWORD).connect(_radios)
+    # THE MOUTHS. A pool, because one client plays one stream at a time and
+    # controllers at two aerodromes should not queue behind each other -- see
+    # `radio/pool.py` for the measurements that sized it.
+    _pool = pool.TransmitPool(host, size=config.RADIO_POOL_SIZE,
+                              radios=_radios, log=lambda m: print(m, flush=True))
+    # AND THE EAR IGNORES THEM. With one client this was impossible: SRS does
+    # not echo a client to itself. With a pool our own voice comes back and
+    # looks exactly like a pilot, so a controller would stand off for himself
+    # for a second and a half after every word.
+    client.ignore_guids |= _pool.guids
+    print(f"  transmitting on {config.RADIO_POOL_SIZE} clients", flush=True)
     ctl = controller.Controller(profile)  # deterministic separation, seeded from the approach
     # PUBLISH BEFORE THE FIRST TRANSMISSION. Otherwise a restarted bridge shows
     # the PREVIOUS one's beliefs until somebody keys a mic -- a board with
@@ -4762,7 +4780,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                    freq_mhz=(on_hz or freq_hz) / 1_000_000, text=reply)
             # Answer on the channel he called from -- that is the beacon he is
             # homing, and therefore the only one he can hear.
-            client.transmit(_frames, channels_of(on_hz), AM)
+            _pool.transmit(_frames, channels_of(on_hz), AM)
             # He is owed room to read that back, and we want to HEAR the
             # readback -- it is the only check on whether he got the numbers
             # right, and several were mangled on the sortie that prompted this.
@@ -5023,7 +5041,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                                 print(f"  ATC[down] {bye}", flush=True)
                                 record(session_id, kind="atc/landed",
                                        callsign=cs, text=bye)
-                                client.transmit(voice_for(final_hz).frames(bye),
+                                _pool.transmit(voice_for(final_hz).frames(bye),
                                                 channels_of(final_hz), AM)
                         continue
                     grounded.discard(cs)        # airborne again: a new sortie
@@ -5087,7 +5105,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                                 # ON HIS CHANNEL. Telling a man on Tower to
                                 # contact Approach, over Approach, is a message
                                 # to everyone except him.
-                                client.transmit(
+                                _pool.transmit(
                                     voice_for(_hz).frames(_say), channels_of(_hz), AM)
                     elif _nxt is None:
                         handed_off.discard(cs)
@@ -5144,7 +5162,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                             record(session_id, kind="atc/vector", callsign=cs,
                                    range_nm=round(g.range_nm, 2),
                                    heading=want, alt=g.altitude_ft, text=text)
-                            client.transmit(voice_for(final_hz).frames(text),
+                            _pool.transmit(voice_for(final_hz).frames(text),
                                             channels_of(final_hz), AM)
                             hold_the_channel_for_a_readback()
                         continue
@@ -5170,7 +5188,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                         record(session_id, kind="atc/range", callsign=cs,
                                range_nm=round(g.range_nm, 2), phase=g.phase,
                                heading=g.heading, text=text)
-                        client.transmit(voice_for(final_hz).frames(text),
+                        _pool.transmit(voice_for(final_hz).frames(text),
                                         channels_of(final_hz), AM)
                         if g.phase != "map":
                             # A range call with a correction in it is an
@@ -5215,7 +5233,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     print(f"  ENG[tx] {line}", flush=True)
                     record(session_id, kind="engineering/tx", text=line)
                     try:
-                        client.transmit(eng_voice.frames(line), hz, AM)
+                        _pool.transmit(eng_voice.frames(line), hz, AM)
                     except Exception as e:
                         print(f"  !! engineering transmit failed: {e}", flush=True)
                 time.sleep(0.3)
@@ -5424,7 +5442,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                    freq_mhz=(heard_hz or freq_hz) / 1_000_000, text=canned)
             print(f"  ATC[simple] (0.0s): {canned}", flush=True)
             with radio_lock:
-                client.transmit(voice_for(heard_hz).frames(canned),
+                _pool.transmit(voice_for(heard_hz).frames(canned),
                                 channels_of(heard_hz), AM)
             continue
 
@@ -5506,7 +5524,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             if _agreed:
                 flight_agree(_fid, **_agreed)
 
-        if engineering_turn(client, transcript, srs, known, heard_hz,
+        if engineering_turn(_pool, transcript, srs, known, heard_hz,
                             freq_hz, eng_voice, radio_lock, AM, session_id):
             continue
         # OUT OF THE BLUE, WITH NO CALLSIGN. We know who it is from his radio,
@@ -5538,7 +5556,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                       flush=True)
                 record(session_id, kind="atc/challenge", callsign=known,
                        text=reply)
-                client.transmit(voice_for(heard_hz).frames(reply),
+                _pool.transmit(voice_for(heard_hz).frames(reply),
                                 channels_of(heard_hz), AM)
             continue
 
@@ -5571,7 +5589,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                       flush=True)
                 record(session_id, kind="atc/challenge", callsign=known,
                        text=reply)
-                client.transmit(voice_for(heard_hz).frames(reply),
+                _pool.transmit(voice_for(heard_hz).frames(reply),
                                 channels_of(heard_hz), AM)
             continue
 

@@ -78,6 +78,11 @@ class FakeRadio:
     def __init__(self, script, guid="atc-guid"):
         self.script = list(script)
         self.guid = guid
+        # OUR OWN VOICES, ignored on the way back in. The real client grew this
+        # when transmitting moved to a pool: the ear and the mouths are now
+        # different clients, so SRS delivers our own words back to us and they
+        # are indistinguishable from a pilot's.
+        self.ignore_guids: set[str] = set()
         self.last_sender_guid = None
         self.sent: list[Transmission] = []
         self._names: dict[str, str] = {}
@@ -100,7 +105,9 @@ class FakeRadio:
     def name_for(self, guid):
         return self._names.get(guid, "")
 
-    def transmit(self, frames, hz, mod):
+    def transmit(self, frames, hz, mod, settle=0.4):
+        # The pool passes `settle`; a warm client gets 0. Accepted and ignored
+        # here -- what a test cares about is what was said, not the pause first.
         self.sent.append(Transmission(_text_of(frames), hz, mod))
 
     def someone_is_talking(self, *a, **k):
@@ -224,6 +231,17 @@ class Sortie:
             return self._replies.pop(0) if self._replies else "RADIO: (no call)"
 
         patch(srs_client, "SRSClient", lambda *a, **k: radio)
+        # THE POOL TOO. It holds its OWN reference to SRSClient, imported at
+        # module load, so patching the client module alone left the pool
+        # building real clients against a real host -- and the symptom was a
+        # sortie in which nothing was ever transmitted.
+        #
+        # One fake radio backs every mouth, which is right for these tests:
+        # they assert what was SAID, and the pool's own behaviour (per-frequency
+        # serialisation, warm settles) is tested against fakes of its own in
+        # `test_pool.py`.
+        from marshall.radio import pool as _pool_mod
+        patch(_pool_mod, "SRSClient", lambda *a, **k: radio)
         patch(stt, "load_model", lambda *a, **k: object())
         patch(stt, "transcribe", fake_transcribe)
         patch(tts, "Voice", FakeVoice)
