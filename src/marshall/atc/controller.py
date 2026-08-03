@@ -41,6 +41,7 @@ from enum import Enum, auto
 
 from marshall.atc import callsign
 from marshall.core import route as R
+from marshall.atc import decision as D
 # The spellers live in `core` now -- ATIS needs them too and cannot import
 # sideways. Re-exported here so `controller.spell_hdg` still resolves.
 from marshall.core.say import (  # noqa: F401
@@ -214,6 +215,13 @@ class Tx:
     t: float
     freq_mhz: float = 0.0
     controller: str = ""
+    # WHAT THIS TRANSMISSION DECIDED, as facts rather than as the sentence
+    # above. Optional while the phrasebook is being moved out -- a site that
+    # has not been converted carries None and behaves exactly as before.
+    #
+    # The point of it is that a decision can be CHECKED against what the agent
+    # actually said, and a sentence cannot. See `decision.verify`.
+    decision: object = None
 
     def __str__(self) -> str:
         chan = f" {self.freq_mhz:.3f}" if self.freq_mhz else ""
@@ -638,7 +646,8 @@ class Controller:
         self.anomalies.append((self.t, what))
         print(f"  !! CONTROLLER ANOMALY: {what}", flush=True)
 
-    def say(self, to: str, text: str, ref: Aircraft | None = None) -> None:
+    def say(self, to: str, text: str, ref: Aircraft | None = None,
+            decided=None) -> None:
         """Queue a transmission on the channel this aircraft is actually on.
 
         `ref` overrides the lookup for the one case where the addressee is no
@@ -651,7 +660,7 @@ class Controller:
         enroute = ac is None or ac.phase in (Phase.UNKNOWN, Phase.ENROUTE)
         banished = ac is not None and ac.phase is Phase.BANISHED
         name, freq = self.profile.station(enroute=enroute, banished=banished)
-        self.out.append(Tx(to, text, self.t, freq, name))
+        self.out.append(Tx(to, text, self.t, freq, name, decision=decided))
 
     def _resolve(self, cs: str) -> str:
         """Which entity owns this callsign.
@@ -1319,7 +1328,8 @@ class Controller:
         rwy = self._runway_in_use()
         self.say(ac.callsign,
                  f"{self._addr(ac)}, taxi to runway {rwy}, "
-                 f"hold short of runway {rwy}.")
+                 f"hold short of runway {rwy}.",
+                 decided=D.Decision(kind="taxi", to=ac.callsign, runway=rwy))
 
     def _owns(self, role: str) -> bool:
         """Is this seat the one that issues that clearance?
@@ -1344,7 +1354,11 @@ class Controller:
         where = (f", contact {who.name} {spell_freq(who.freq_mhz)}"
                  if who is not None else "")
         self.say(ac.callsign,
-                 f"{self._addr(ac)}, {what} is {role.title()}'s{where}.")
+                 f"{self._addr(ac)}, {what} is {role.title()}'s{where}.",
+                 decided=D.Decision(
+                     kind="refuse", to=ac.callsign, role=role,
+                     station=getattr(who, "name", ""),
+                     frequency_mhz=getattr(who, "freq_mhz", None)))
 
     def report_holding_short(self, cs: str) -> None:
         """Stopped at the edge. Ground is finished; Tower owns the runway."""
@@ -1368,7 +1382,9 @@ class Controller:
         rwy = self._runway_in_use()
         self.say(ac.callsign,
                  f"{self._addr(ac)}, runway {rwy}, cleared for take-off, "
-                 f"{self._wind_phrase()}")
+                 f"{self._wind_phrase()}",
+                 decided=D.Decision(kind="cleared_takeoff", to=ac.callsign,
+                                    runway=rwy))
 
     def _runway_in_use(self) -> str:
         """Two digits, ASKED OF THE BROADCAST -- see `atis/store.py`.
@@ -1452,7 +1468,10 @@ class Controller:
                                         and self._next_up() is ac):
             self.say(ac.callsign,
                      f"{self._addr(ac)}, {self.profile.controller}, "
-                     f"{self._hold_phrase(held_at, ac.kit)}.")
+                     f"{self._hold_phrase(held_at, ac.kit)}.",
+                     decided=D.Decision(kind="hold", to=ac.callsign,
+                                        altitude_ft=held_at,
+                                        station=self.profile.controller))
         self._try_clear(requested_by=ac.callsign)
 
     # -- the sequencing core ----------------------------------------------
@@ -1510,8 +1529,12 @@ class Controller:
                          f"continue.")
                 return
             if requested_by:
+                ac2 = self.aircraft.get(self._resolve(requested_by))
                 self.say(requested_by, f"{requested_by}, continue holding, "
-                                       f"number two, expect approach shortly.")
+                                       f"number two, expect approach shortly.",
+                         decided=D.Decision(
+                             kind="continue_hold", to=requested_by,
+                             altitude_ft=getattr(ac2, "assigned_ft", None)))
             return
         ac = self._next_up()
         if ac is None:

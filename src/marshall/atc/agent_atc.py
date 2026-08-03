@@ -35,6 +35,7 @@ from marshall import config
 from marshall.core import names as _names
 from marshall.core import geo as _geo
 from marshall.atc import handoff as _handoff
+from marshall.atc import decision as _decision
 from marshall.atc import flights as fl
 from marshall.atc import identity
 from marshall.atc import picture as _picture
@@ -785,6 +786,9 @@ class Bridge:
         # `strip_unauthorised_handoff`. A one-element list for the same reason
         # `last_said` is: written on the pilot thread, read on the scheduler's.
         self.handoff_due: list = [None]
+        # The decisions behind THIS turn's directive, for verifying that the
+        # agent voiced them -- see `decision.verify`.
+        self.decided: list = []
         self.last_said: list[str] = [""]
         self.last_active_hz: list[float | None] = [None]
         # PER AIRCRAFT, AND THIS IS NOT THEIR RIGHT HOME. What we last told each
@@ -2329,7 +2333,14 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
         # when `dispatch` returned True, so a turn it did not handle left the
         # outbox dirty and those words reappeared beside a LATER turn's -- which
         # is how a hold and a clearance ended up in one directive.
-        directive = " | ".join(tx.text for tx in ctl.take_out())
+        _taken = ctl.take_out()
+        directive = " | ".join(tx.text for tx in _taken)
+        # WHAT THE ENGINE DECIDED, kept beside the words so the bridge can
+        # check afterwards that the pilot actually heard it. See
+        # `decision.verify`: three of seventeen issued altitudes never reached
+        # the air on the last sortie and nothing noticed, because a sentence
+        # cannot be checked and a decision can.
+        bridge.decided[:] = [tx.decision for tx in _taken if tx.decision]
     except Exception as e:                       # must not break the call
         print(f"  !! controller classify failed: {e}", flush=True)
 
@@ -4835,6 +4846,18 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         if not reply or reply.lower() in NO_CALL:
             print(f"  ATC[{kind}/{tier}] ({dt:.1f}s): (no call)", flush=True)
             return
+        # DID HE ACTUALLY SAY IT? The engine's decisions carry their numbers,
+        # so this is a mechanical check rather than an opinion -- no model, no
+        # latency. It does not (yet) change the transmission; it MEASURES the
+        # seam, which is the thing nobody could see before.
+        for _d in list(bridge.decided):
+            _lost = _decision.verify(_d, reply)
+            if _lost:
+                print(f"  .. NOT VOICED [{_d.kind}] {', '.join(_lost)}",
+                      flush=True)
+                record(session_id, kind="not_voiced", callsign=_d.to,
+                       text=f"{_d.kind}: {', '.join(_lost)}")
+        bridge.decided[:] = []
         # RENDERED BEFORE THE LOCK. Polly is a network call too, and it is
         # cached -- so this is free on a repeat and must not be a reason to
         # hold the air on a miss.

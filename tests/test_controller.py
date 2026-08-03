@@ -371,7 +371,7 @@ class TestApproachVocabulary(unittest.TestCase):
         # that cannot find it.
         c = atc.Controller(R.BATUMI_ASR)
         said = []
-        c.say = lambda cs, text: said.append(text)
+        c.say = lambda cs, text, ref=None, decided=None: said.append(text)
         c.check_in("Pony 1-1")
         c.request_approach("Pony 1-1")
         # The controller is CALLED "Batumi Approach", so the bare word proves
@@ -434,7 +434,7 @@ class TestTheBlindEngineIsToldWhatRadarSees(unittest.TestCase):
     def setUp(self):
         self.c = atc.Controller(R.BATUMI_ASR)
         self.said = []
-        self.c.say = lambda cs, text: self.said.append(text)
+        self.c.say = lambda cs, text, ref=None, decided=None: self.said.append(text)
 
     def test_an_aircraft_on_final_is_not_put_in_the_holding_stack(self):
         self.assertTrue(self.c.seen_on_final("Pony 1-1", size=3))
