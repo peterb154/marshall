@@ -899,6 +899,16 @@ class Field_:
     # geometry, and `runway_in_use` picks an end with the second and names it
     # with the first.
     ends: tuple[int, int] = (0, 0)
+    # THE ATIS FREQUENCY, and it belongs to the AERODROME rather than to a
+    # controller. An ATIS is not a person on a radio -- it is a recording the
+    # field puts on the air -- so it is not a `Station` and nothing monitors it
+    # for incoming calls. Zero means this field does not broadcast, which is
+    # the normal case for most aerodromes and is handled rather than assumed.
+    #
+    # ASSIGNED, not published: neither chart we hold gives one. 127.100 and
+    # 127.400 are clear of every controller frequency in the theatre and of the
+    # beacon channels, which is the only real constraint.
+    atis_mhz: float = 0.0
     msa_sectors: list = field(default_factory=list)   # published, the pilot's
     mva_cells: list = field(default_factory=list)     # surveyed, the controller's
     note: str = ""
@@ -941,7 +951,7 @@ class Field_:
 
 
 BATUMI_FIELD = Field_(
-    "Batumi", -355811, 617386, 32, 124, ends=(13, 31),
+    "Batumi", -355811, 617386, 32, 124, ends=(13, 31), atis_mhz=127.100,
     msa_sectors=list(MSA_SECTORS),
     mva_cells=list(MVA_CELLS),
     note="Highest terrain 10,623 ft at 23 nm SE. Missed approach turns LEFT.")
@@ -991,7 +1001,7 @@ KOBULETI_MVA = [
 ]
 
 KOBULETI_FIELD = Field_(
-    "Kobuleti", -317605, 636704, 59, 64, ends=(7, 25),
+    "Kobuleti", -317605, 636704, 59, 64, ends=(7, 25), atis_mhz=127.400,
     msa_sectors=list(KOBULETI_MSA), mva_cells=list(KOBULETI_MVA),
     note="Field elevation 59 ft. Runway 07/25, 2400 m. TACAN 67X KBL, "
          "ILS 111.50 on 07. GCA field: PAR and SRA published.")
