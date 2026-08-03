@@ -185,8 +185,21 @@ def safe_alt(pos: Position, profile) -> int:
     # hundred", never "four thousand five hundred and forty-four".
     want = _round_to(d.assign_ft, 500)
     here = _round_to(pos.alt_ft, 500) if pos.alt_ft else 0
-    # Never above where he already is: this is a descent, and an aeroplane that
-    # is low is not asked to climb back onto a profile.
+    # NEVER ABOVE WHERE HE ALREADY IS -- this is a descent, and an aeroplane
+    # that is low is not asked to climb back onto a profile. MSA still wins,
+    # because it is a floor and not a preference.
+    #
+    # THE WHIPPING IS NOT FIXED HERE, and an attempt to fix it here was a
+    # safety regression: applying `here` after the MSA clamp assigns a level
+    # BELOW the minimum vectoring altitude for an aeroplane that is already
+    # low, which is the one thing this line exists to prevent. A test caught
+    # it -- 5,000 against an 8,000 MVA.
+    #
+    # The cause is real: recomputed every sweep against a descending
+    # aeroplane, this produces a new level a few hundred feet lower each time.
+    # But it is a fact about the PLAN changing continuously, and the fix is
+    # hysteresis on what gets ISSUED -- see `phrasebook.LastSaid`, which is
+    # where the memory of what he was last told already lives.
     return max(msa, min(want, here) if here else want)
 
 
