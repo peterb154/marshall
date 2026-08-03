@@ -127,6 +127,46 @@ It also makes phraseology **era-swappable**: a 1944 controller says "five", not
 "fife", which is one table rather than a rewrite of every speller. That is the
 first concrete piece of the `soul.<era>` work.
 
+## What has actually changed, 3 August
+
+**The engine now emits DECISIONS beside its words.** `decision.py` carries what
+was decided as facts — a kind, a callsign, and the numbers a pilot must
+receive — for the five paths that conflicted most (hold, continue-hold, taxi,
+take-off, refusal). The other 27 `say()` sites are unconverted and behave
+exactly as before.
+
+**Which made the seam measurable.** `decision.verify` asks mechanically whether
+the agent's reply contains the engine's numbers — no model, no latency — and
+logs `NOT VOICED` when it does not. On the sortie before it existed, **three of
+seventeen issued altitudes never reached the air** and nothing noticed. It
+compares WORDS, not digits: "two thousand" and "2000" are the same fact, and a
+verifier comparing one to the other fails every time, which is why `/diag`'s
+fuzzy `voiced` column stayed advisory.
+
+**`phrasebook.py` renders a decision, saying only what changed.** It is BUILT
+AND NOT WIRED — referenced by its own tests and nothing else — which is
+deliberate: measure the seam first, then move the prose. It fixes four
+complaints from the air, all one cause:
+
+    twenty-five "amend"s in one sortie      a routine vector is not an amendment
+    an altitude repeated when unchanged     say what changed, which needs memory
+    altitudes whipping 500 ft a sweep       the planner slides; the pilot hears steps
+    platform reached too early              a continuous slide arrives sooner
+
+The memory holds what he was TOLD, not what was computed — otherwise a
+suppressed slide still moves it and the whipping returns one step slower.
+
+**Headings are issued in fives.** Both frames round together, or he flies 265
+while the geometry expects 267. A published course is exempt: the final approach
+course is 124 because that is what is printed.
+
+*That change needed a second one, and it is the useful lesson.* Rounding alone
+took the sweep from 0 dithering to 7 and 581 turns to 1614 — the turn deadband
+was **also** five degrees, so every rounding step landed exactly on the
+threshold. Two independently sensible numbers resonating, neither wrong alone.
+They live together in `geometry.py` now with a test asserting the deadband stays
+the wider.
+
 ## Where it goes
 
 `STRUCTURE.md` settles the direction: **a procedure ships its own phraseology.**

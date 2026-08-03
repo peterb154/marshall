@@ -695,9 +695,19 @@ falsified from a transcript; this cannot, and I have no way to test it at all.
 | **S3** | *"Batumi"*, *"Kobuleti"* | Three and four syllables run together, not spelled out and not paused between. The old spellings used CAPITALS for stress, which Polly reads as an initialism, and SPACES between syllables, which it reads as word breaks | [#17] | **P1** |
 | **S4** | The nine controllers across one sortie | Nine distinct voices and nine distinct manners. Batumi Ground is gruff, Kobuleti Clearance is a pedant, Batumi Approach is the calm one | [#21] | P2 |
 | **S5** | Anything said twice — *"roger"*, *"readback correct"* | **Instant** the second time. It is cached after the first render; a pause there means the cache is not hitting | [#17] | P3 |
+| **S6** | Any vector while being repositioned | A heading **in fives** — "two five zero", "two six five". Never "two six seven" | [#19] | **P1** |
+| **S7** | The final approach course | **NOT** rounded — it is 125, the number on the plate. Rounding a published course is the one place five degrees is wrong | [#19] | **P1** |
+| **S8** | Several vectors in a row | The word **"amend"** should be rare. It belongs to changing a clearance already given, not to every turn — there were 25 in one sortie | [#45] | **P1** |
+| **S9** | A descent through the repositioning legs | **Steps**, not a slide. Roughly 6500 → 5500 → 3000, not seven numbers 500 ft apart. And no altitude repeated when it has not moved | [#45] | **P1** |
 
 **Anything that sounds wrong is a line in a table**, not a code change — see
 `radio/tts.py`. Tell engineering the word and roughly what it sounded like.
+
+**S6 to S9 are new on 3 August and none has been heard.** S9 is the one to
+watch: the descent planner still slides continuously underneath, and what
+changed is what gets SAID. If you hear the old behaviour — an altitude every
+call, 500 ft apart — the renderer is not on the transmit path yet, which is a
+known gap rather than a bug.
 
 ---
 

@@ -33,12 +33,19 @@ seconds with no sim, no network and no model.
 |---|---|---|---|
 | **7** | **Surfaces** | kneeboard charts, the plate, `/diag`, these documents | `kneeboard/` |
 | **6** | **Language** | turning decisions into English and back. Owns nothing it says | the director agent, prompts, `context.py` |
-| **5** | **Procedure** | what a controller DOES: approaches, clearances, handoffs, the ground | `handoff.py`, `phases.py`, `asr.py`, and — wrongly — a lot of prose |
+| **5** | **Procedure** | what a controller DOES: approaches, clearances, handoffs, the ground | `handoff.py`, `phases.py`, `asr.py`, `decision.py`, `phrasebook.py` |
 | **4** | **Control** | separation. The board, the stack, sequencing | `controller.py`, `geometry.py` |
 | **3** | **Membership** | who is flying with whom | `flights.py` |
 | **2** | **Identity** | which radio is which aeroplane is which person | `identity.py` |
 | **1** | **World** | what exists, where it is, what is published | `tracks`, `events`, `core/route.py`, `atis/` |
 | **0** | **Transport** | audio, frequencies, GUIDs, client names. No aviation | `radio/client.py`, `radio/pool.py`, `radio/stt.py`, `radio/tts.py`, `core/say.py` |
+
+**`decision.py` is the seam between 5 and 6.** The engine decides; the agent
+says. A decision is verifiable and a sentence is not, which is what lets the
+bridge check mechanically that the pilot heard the number the engine chose —
+`phrasebook.py` is the fallback renderer for when he did not. Moving the prose
+out of `controller.py` is in progress: 5 of 32 sites converted, and the
+remaining 27 behave exactly as they did.
 
 **`atis/` sits at layer 1 and that is the point of it.** It observes the world,
 decides the runway in use, and writes it down; controllers at layer 4 and 5
