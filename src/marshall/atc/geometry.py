@@ -122,6 +122,28 @@ def _en(nm: float, bearing_deg: float) -> tuple[float, float]:
 # See docs/SCHEMA.md on one home per rule.
 
 
+# WHAT A CONTROLLER ISSUES, and the deadband that has to go with it.
+#
+#     "Most times, especially en route, heading should be rounded to nearest
+#      5 degrees."
+#
+# Both numbers live here because THEY ARE ONE DECISION. The deadband must be
+# WIDER than the quantum, or a single rounding step lands exactly on the
+# threshold and the turn direction flips every time the commanded heading
+# moves one bucket.
+#
+# That is not a theory. Rounding to five with a five degree deadband took the
+# sweep from 0 dithering to 7 and from 581 turns to 1614 -- nearly three times
+# the direction changes, all of it the two numbers resonating. Widening the
+# deadband to eight brought it to 576 turns and 0 dithering, which is better
+# than the baseline it started from.
+#
+# So: change one and you must change the other, and the test that asserts the
+# gap is the only thing standing between us and that regression coming back.
+HEADING_STEP_DEG = 5
+TURN_DEADBAND_DEG = HEADING_STEP_DEG + 3
+
+
 def turn_direction(from_heading: float, to_heading: float) -> str:
     """Which way round. 'left' or 'right', always the short way.
 
@@ -131,7 +153,7 @@ def turn_direction(from_heading: float, to_heading: float) -> str:
     time it happened.
     """
     delta = angle_diff(to_heading, from_heading)
-    if abs(delta) < 5:
+    if abs(delta) < TURN_DEADBAND_DEG:
         return ""               # already pointing there; "turn" would be noise
     return "left" if delta < 0 else "right"
 

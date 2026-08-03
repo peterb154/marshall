@@ -134,8 +134,14 @@ def fly(range_nm: float, radial_deg: float, heading_deg: float, profile,
     DITHER_WINDOW = 30.0
 
     on_missed = False          # the caller's latch, exactly as the bridge holds it
+    _last_hdg = [None]         # and the quantiser's memory, likewise
     for _ in range(steps):
-        g = asr.guide(pos, profile, on_missed=on_missed)
+        # Carry the last heading so the quantiser has the memory it needs
+        # -- see `guide`. Without it a five degree bucket flips at the
+        # boundary and the sweep measures the flapping, which is real.
+        g = asr.guide(pos, profile, on_missed=on_missed,
+                      last_heading=_last_hdg[0])
+        _last_hdg[0] = g.heading
         if g.phase == "missed":
             on_missed = True
         elif pos.alt_ft >= profile.missed_climb_ft:
@@ -274,8 +280,36 @@ def sweep(profile, sloppy: bool = False,
 # turn provokes fell by a third, which is #19's territory. The single extra
 # rapid flip in clean is not understood and is written down here rather than
 # rounded away.
+# HEADINGS ARE ISSUED IN FIVES NOW, and the two flyable sweeps improved while
+# the deaf one got worse. Both numbers moved for the same reason and it is
+# worth writing down which.
+#
+#     "Most times, especially en route, heading should be rounded to nearest
+#      5 degrees."
+#
+# Rounding ALONE was a bad regression -- clean went from 0 dithering to 7 and
+# from 581 turns to 1614 -- because the turn deadband was ALSO five degrees, so
+# every rounding step landed exactly on the threshold and flipped the commanded
+# turn. Two independently sensible numbers resonating. They live together in
+# `geometry` now with a test asserting the deadband stays the wider of the two.
+#
+#   clean   1296 -> 1296 arrived    0 ->  0 flips    581 ->  576 turns
+#   sloppy  1294 -> 1294 arrived   35 -> 35 flips
+#   deaf       0 ->    0 arrived   72 -> 94 flips
+#
+# THE DEAF NUMBER IS MOVED DELIBERATELY, which is a thing this file otherwise
+# refuses to do. A pilot who never turns is a probe of controller stability and
+# not a sortie -- nobody arrives in it, by definition -- and coarser headings
+# mean the engine re-decides his leg in bigger jumps. Two attempts to recover
+# it failed: a wider deadband did nothing, and turn-reversal hysteresis made it
+# worse and broke sloppy as well. Both reverted.
+#
+#     "Yelling at a non turning pilot is ok."
+#
+# So the trade is taken with the reason recorded: the two sweeps that describe
+# aeroplanes actually flying an approach both held or improved.
 BASELINE = {
-    "clean":  {"arrived": 1296, "dither": 0, "turns": 581},
+    "clean":  {"arrived": 1296, "dither": 0, "turns": 576},
     "sloppy": {"arrived": 1294, "dither": 35, "turns": 1535},
     # --deaf: a pilot who never turns, so ARRIVING IS NOT THE MEASURE -- he is
     # not flying the approach and 20 of 1728 reaching the missed approach point
@@ -283,7 +317,7 @@ BASELINE = {
     # whether the CONTROLLER argues with itself when the geometry refuses to
     # improve: reversals and direction changes. That is #19, and it is invisible
     # to an obedient aeroplane.
-    "deaf":   {"arrived": 0, "dither": 72, "turns": 1945},
+    "deaf":   {"arrived": 0, "dither": 94, "turns": 1945},
     # SPEED. The sweep only ever flew a warbird -- 1,296 approaches, all of
     # them at 200 mph -- so a green run meant "correct for a P-47" and was read
     # as "correct". These fly the identical grid at jet speeds, with the turn

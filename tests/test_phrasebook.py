@@ -127,3 +127,47 @@ class TestClimbIsNotDescend(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTheHeadingQuantumAndItsDeadband(unittest.TestCase):
+    """Two numbers that are one decision.
+
+        "Most times, especially en route, heading should be rounded to nearest
+         5 degrees."
+
+    Rounding alone made things WORSE, measurably: the sweep went from 0
+    dithering to 7 and from 581 turns to 1614, nearly three times the direction
+    changes. The cause was resonance -- the turn deadband was also five
+    degrees, so every single rounding step landed exactly on the threshold and
+    flipped the commanded turn.
+
+    Widening the deadband to eight gave 576 turns and 0 dithering, better than
+    the baseline it started from. This test is what stops the two drifting back
+    together.
+    """
+
+    def test_THE_DEADBAND_IS_WIDER_THAN_THE_QUANTUM(self):
+        from marshall.atc import geometry as G
+        self.assertGreater(G.TURN_DEADBAND_DEG, G.HEADING_STEP_DEG,
+                           "a single rounding step now lands on the threshold "
+                           "-- expect the sweep to triple its turn count")
+
+    def test_one_step_does_not_call_a_turn(self):
+        """The property that matters, stated without the numbers."""
+        from marshall.atc import geometry as G
+        self.assertEqual(G.turn_direction(90, 90 + G.HEADING_STEP_DEG), "")
+
+    def test_two_steps_does(self):
+        from marshall.atc import geometry as G
+        self.assertEqual(G.turn_direction(90, 90 + 2 * G.HEADING_STEP_DEG),
+                         "right")
+
+    def test_headings_come_out_in_fives(self):
+        from marshall.atc import asr
+        for raw in (251.2, 253.9, 267.0, 88.4):
+            with self.subTest(raw=raw):
+                self.assertEqual(asr._round_deg(raw, asr.HEADING_STEP_DEG) % 5, 0)
+
+    def test_north_is_three_sixty_not_zero(self):
+        from marshall.atc import asr
+        self.assertEqual(asr._round_deg(359.6, 5), 360)

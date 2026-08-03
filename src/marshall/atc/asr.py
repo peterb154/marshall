@@ -146,6 +146,21 @@ def _round_to(ft: float, step: int) -> int:
     return int(round(ft / step) * step)
 
 
+# What a controller actually issues -- five degrees enroute and on the
+# repositioning legs, one on final where he is the pilot's only instrument.
+#
+# TAKEN FROM `geometry`, not restated, because it is half of a pair: the turn
+# deadband there must stay wider than this, or the two resonate and every
+# rounding step flips the commanded turn direction. See the comment beside it
+# for what that cost on the sweep.
+from marshall.atc.geometry import HEADING_STEP_DEG  # noqa: E402
+
+
+def _round_deg(deg: float, step: int) -> int:
+    """A heading, to the nearest `step`, and never zero -- north is 360."""
+    return int(round(deg / step) * step) % 360 or 360
+
+
 def safe_alt(pos: Position, profile) -> int:
     """What to assign him while he is being vectored.
 
@@ -463,7 +478,8 @@ def at_touchdown(pos: Position, profile) -> Position:
                     pos.alt_ft, pos.heading_deg)
 
 
-def guide(pos: Position, profile, on_missed: bool = False) -> Guidance:
+def guide(pos: Position, profile, on_missed: bool = False,
+          last_heading: int | None = None) -> Guidance:
     """One radar look -> the next instruction.
 
     Three states, and which one he is in is decided by a single question --
@@ -530,7 +546,56 @@ def guide(pos: Position, profile, on_missed: bool = False) -> Guidance:
         # geometry has to work in -- and the pilot flies a compass, so that is
         # the frame the number has to be said in. One value was doing both jobs
         # and the centreline was being drawn wherever the difference put it.
-        h = round(heading - profile.magvar_deg) % 360
+        #
+        # ROUNDED TO FIVE DEGREES, and the rounding happens HERE rather than at
+        # the point of speaking:
+        #
+        #     "Most times, especially en route, heading should be rounded to
+        #      nearest 5 degrees."
+        #
+        # Which is what a controller issues -- two six five or two seven zero,
+        # not two six seven. And a pilot flying a compass cannot hold a single
+        # degree anyway, so a heading he cannot fly is one he is permanently a
+        # little off, which comes back as chatter. That is the same lesson as
+        # the final approach course: 131.3 gave 16 rapid reversals across the
+        # sweep and 131 gave 2.
+        #
+        # BOTH FRAMES ROUND TOGETHER, which is the part worth being careful
+        # about. If only the spoken number were rounded, he would fly 265 while
+        # the geometry expected 267 -- a two degree bias on every leg that the
+        # aeroplane can never null out, which is exactly the fault that put the
+        # centreline six degrees off the runway. So the MAGNETIC heading is the
+        # decision, and true is derived back from it.
+        #
+        # ON FINAL IT IS ONE DEGREE. Five degrees at six miles is a third of a
+        # mile of cross-track, and the talkdown is the one phase where the
+        # controller is the only instrument the pilot has.
+        # A VECTOR IS ROUNDED; A PUBLISHED COURSE IS NOT. "Turn left heading
+        # two five zero" is a controller's number and comes in fives. The final
+        # approach course is the plate's number -- it is 124 because that is
+        # what is printed, and rounding it to 125 puts a permanent degree of
+        # bias on the one heading that must not have any. Two tests caught it.
+        want_mag = (heading - profile.magvar_deg) % 360
+        on_course = abs(angle_diff(want_mag, profile.final_crs)) < 1.0
+        step = 1 if on_course or phase in ("final", "map") else HEADING_STEP_DEG
+        h = _round_deg(want_mag, step)
+        # HYSTERESIS, and rounding is actively HARMFUL without it. Measured on
+        # the sweep: rounding alone took dithering from 0 to 7 and turns from
+        # 581 to 1614 -- nearly three times the direction changes.
+        #
+        # The cause is the boundary. The ideal heading drifts continuously, so
+        # near the edge of a five degree bucket it rounds up on one sweep and
+        # down on the next, and the aeroplane is turned back and forth across
+        # a line it cannot see. Coarser numbers make each flip BIGGER.
+        #
+        # So a new heading has to beat the old one by a full step before it is
+        # worth issuing. Same shape as the altitude clamp in `phrasebook` --
+        # any value quantised from a continuous one needs this, and the first
+        # of the two to be built should have been the warning for the second.
+        if (last_heading is not None and step > 1
+                and abs(angle_diff(h, last_heading)) < step):
+            h = last_heading % 360 or 360
+        heading = (h + profile.magvar_deg) % 360
         # Deviation is a statement ABOUT THE FINAL APPROACH COURSE, so it is
         # only said to someone flying it. Drifting off course while inbound is
         # exactly what he needs to hear; being "left of course" while
