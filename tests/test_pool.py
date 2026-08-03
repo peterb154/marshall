@@ -32,7 +32,7 @@ class FakeClient:
         return self
 
     def transmit(self, frames, freqs, modulation, settle=0.4):
-        self.sent.append((time.monotonic(), tuple(freqs)))
+        self.sent.append((time.monotonic(), tuple(freqs), settle))
         time.sleep(0.05)          # stand in for paced audio
 
     def close(self):
@@ -104,7 +104,7 @@ class TestTheSAMEFrequencyDoesWait(unittest.TestCase):
             t.start()
         for t in ts:
             t.join()
-        starts = sorted(t for c in FakeClient.live for t, _f in c.sent)
+        starts = sorted(t for c in FakeClient.live for t, _f, _s in c.sent)
         self.assertEqual(len(starts), 2)
         self.assertGreaterEqual(starts[1] - starts[0], 0.04,
                                 "two transmissions overlapped on one frequency")
@@ -119,7 +119,7 @@ class TestTheSAMEFrequencyDoesWait(unittest.TestCase):
             t.start()
         for t in ts:
             t.join()
-        starts = sorted(t for c in FakeClient.live for t, _f in c.sent)
+        starts = sorted(t for c in FakeClient.live for t, _f, _s in c.sent)
         self.assertEqual(len(starts), 2)
         self.assertGreaterEqual(starts[1] - starts[0], 0.04,
                                 "overlapped on a shared channel")
@@ -136,6 +136,42 @@ class TestTheSAMEFrequencyDoesWait(unittest.TestCase):
         for t in ts:
             t.join(timeout=5)
         self.assertFalse([t for t in ts if t.is_alive()], "deadlocked")
+
+
+class TestAWarmClientSkipsTheSettle(unittest.TestCase):
+    """What makes a pool worth more than creating a client per transmission.
+
+    Measured against the real SRS server with a listener counting frames:
+
+        warm client,  settle 0    87/87, four times out of four
+        fresh client, settle 0    87, 86, 87, 87 -- clips, one run in four
+
+    Forty milliseconds is the first syllable of a callsign, and an intermittent
+    clip is worse than a reliable one because nobody can reproduce it. So the
+    first transmission on a client pays the settle and the rest do not, which
+    is 0.4 s off every reply after the first.
+    """
+
+    def test_the_first_transmission_settles_and_the_next_does_not(self):
+        p = a_pool(1)
+        p.transmit([b"x"], 124_425_000)
+        p.transmit([b"x"], 124_425_000)
+        settles = [s for c in FakeClient.live for _t, _f, s in c.sent]
+        self.assertEqual(settles, [0.4, 0.0])
+
+    def test_every_client_settles_once(self):
+        """A pool of three used three times must settle three times -- one per
+        client, not one per pool."""
+        p = a_pool(3)
+        ts = [threading.Thread(target=p.transmit,
+                               args=([b"x"], 120_000_000 + i * 1_000_000))
+              for i in range(3)]
+        for t in ts:
+            t.start()
+        for t in ts:
+            t.join()
+        settles = [s for c in FakeClient.live for _t, _f, s in c.sent]
+        self.assertEqual(sorted(settles), [0.4, 0.4, 0.4])
 
 
 class TestExhaustionWaitsAndSaysSo(unittest.TestCase):

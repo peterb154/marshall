@@ -114,7 +114,26 @@ class TransmitPool:
             with self._pick:
                 client = self._free.pop()
             try:
-                client.transmit(frames, freqs, modulation, settle=settle)
+                # A WARM CLIENT SKIPS THE SETTLE, and this is what makes the
+                # pool worth having rather than creating a client per
+                # transmission at 4 ms a time.
+                #
+                # `transmit` sleeps to let the server register its UDP source.
+                # Measured against the real server with a listener counting
+                # frames: a warm client with settle=0 delivered 87 of 87, four
+                # times out of four. A FRESH client with settle=0 delivered
+                # 87, 86, 87, 87 -- it clips, INTERMITTENTLY, one run in four.
+                #
+                # Forty milliseconds is the first syllable of a callsign, and
+                # an intermittent clip is worse than a reliable one because
+                # nobody can reproduce it. It reads as "he cut off".
+                #
+                # So the first transmission on each client pays the settle and
+                # every one after it does not -- 0.4 s off every reply.
+                warm = getattr(client, "_marshall_warm", False)
+                client.transmit(frames, freqs, modulation,
+                                settle=0.0 if warm else settle)
+                client._marshall_warm = True
             finally:
                 with self._pick:
                     self._free.append(client)
