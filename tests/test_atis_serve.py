@@ -34,6 +34,7 @@ class Rig:
         self.voice = FakeVoice()
         self.published = []
         self.logs = []
+        self.flying = True
 
     def eval_lua(self, _lua):
         return ";".join(
@@ -43,7 +44,7 @@ class Rig:
     def transmit(self, frames, mhz):
         self.sent.append((round(self.now, 1), mhz, frames))
 
-    def run(self, ticks, poll=10.0, repeat=30.0, at=None):
+    def run(self, ticks, poll=10.0, repeat=30.0, at=None, empty=False):
         """ONE serve() call, advanced `ticks` times.
 
         `at` is {tick: fn(rig)} -- the weather changing, the sim dying -- so a
@@ -66,12 +67,18 @@ class Rig:
                                side_effect=lambda o, l, t: self.published.append(l)):
             # Indirection on purpose: `at` hooks swap these mid-run, and a
             # bound method captured at call time would keep the old one.
+            who = None
+            if empty == "dynamic":
+                who = lambda: self.flying            # noqa: E731
+            elif empty:
+                who = lambda: False                  # noqa: E731
             S.serve(self.fields,
                     lambda fr, mhz: self.transmit(fr, mhz),
                     self.voice,
                     lambda lua: self.eval_lua(lua),
                     clock=lambda: self.now, stop=stop, sleep=sleep,
-                    repeat_sec=repeat, poll_sec=poll, log=self.logs.append)
+                    repeat_sec=repeat, poll_sec=poll,
+                    anybody_flying=who, log=self.logs.append)
 
 
 class TestItGoesOnTheAir(unittest.TestCase):
@@ -200,3 +207,39 @@ class TestItStaysOnTheAirWhenThingsBreak(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestItStandsDownOnAnEmptyServer(unittest.TestCase):
+    """A broadcast to nobody costs money and means nothing.
+
+    The letter rotates hourly whether or not anyone is connected, so a server
+    left up for a week spends it re-recording for an empty sky -- about $0.37
+    at two fields and $24 a month at thirty.
+
+    It is also more correct: a pilot who joins should hear a letter that means
+    "this is what I recorded", not one that has been walking the alphabet since
+    Tuesday.
+    """
+
+    def test_an_empty_server_gets_no_transmissions(self):
+        rig = Rig()
+        rig.run(ticks=6, empty=True)
+        self.assertEqual(rig.sent, [])
+        self.assertEqual(rig.voice.rendered, [], "rendered for nobody")
+        self.assertIn("nobody on the server", " ".join(rig.logs))
+
+    def test_it_comes_back_when_somebody_joins(self):
+        rig = Rig()
+        rig.flying = False
+
+        def arrive(r):
+            r.flying = True
+        rig.run(ticks=10, at={3: arrive}, empty="dynamic")
+        self.assertTrue(rig.sent, "never came back on the air")
+        self.assertIn("somebody joined", " ".join(rig.logs))
+
+    def test_it_says_so_once_rather_than_every_poll(self):
+        rig = Rig()
+        rig.run(ticks=8, empty=True)
+        said = [ln for ln in rig.logs if "nobody on the server" in ln]
+        self.assertEqual(len(said), 1, "logged the same thing every tick")

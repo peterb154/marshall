@@ -4515,6 +4515,72 @@ def compose_message(bridge, scope, known, transcript, profile, me, fix, nxt,
     return "\n".join(parts), parts
 
 
+def _start_atis(host: str, ear, profile, session_id: str) -> None:
+    """Put every broadcasting aerodrome on the air, each on its own client.
+
+    NOT FROM THE TRANSMIT POOL, deliberately. An ATIS is twenty-two seconds of
+    audio every thirty -- near enough continuous -- so five fields would hold
+    half a pool of ten permanently and starve the controllers. A dedicated
+    client costs 4 ms and two file descriptors, and there is no practical
+    ceiling: 100 opened in 0.4 s against 524,288 descriptors.
+
+    The ear ignores these too. They are our own voices coming back, and a
+    controller must not stand off for the weather.
+    """
+    from marshall.atis import serve as _serve
+    from marshall.core import route as _R
+    from marshall.radio import tts as _tts
+    from marshall.radio.client import AM as _AM, SRSClient as _Cl, radio as _rad
+
+    fields = [f for f in _R.FIELDS if getattr(f, "atis_mhz", 0)]
+    if not fields:
+        return
+    mouths = {}
+    for f in fields:
+        c = _Cl(host, name=f"ATIS {f.name}").connect([_rad(f.atis_mhz * 1e6, _AM)])
+        mouths[f.name] = c
+        ear.ignore_guids.add(c.guid)
+
+    by_hz = {round(f.atis_mhz, 3): mouths[f.name] for f in fields}
+
+    def transmit(frames, mhz):
+        by_hz[round(mhz, 3)].transmit(frames, mhz * 1e6, _AM)
+
+    def anybody_flying() -> bool:
+        # A broadcast to an empty server costs money and means nothing -- see
+        # `serve`. Best-effort: if we cannot tell, assume somebody is there,
+        # because going silent by mistake is worse than a few cents.
+        try:
+            from marshall.feed import dcs as _dcs
+            return "No player-controlled units" not in _dcs.get_player_units()
+        except Exception:
+            return True
+
+    def run():
+        _serve.serve(fields, transmit,
+                     _tts.Voice(voice_id=_serve.broadcast.ATIS_VOICE,
+                                engine=_serve.broadcast.ATIS_ENGINE),
+                     _eval_lua, mission_clock=None,
+                     anybody_flying=anybody_flying,
+                     log=lambda m: print(m, flush=True))
+
+    threading.Thread(target=run, daemon=True).start()
+
+
+def _eval_lua(lua: str) -> str:
+    """Run Lua in the sim. Its own function so `atis` can be handed a callable
+    and never import the gRPC stubs."""
+    from marshall.feed import stubs
+    stubs.bind()
+    import grpc
+    from dcs.custom.v0 import custom_pb2, custom_pb2_grpc
+    from marshall.feed.dcs import DCS_GRPC_ADDR
+    with grpc.insecure_channel(DCS_GRPC_ADDR) as ch:
+        r = custom_pb2_grpc.CustomServiceStub(ch).Eval(
+            custom_pb2.EvalRequest(lua=lua), timeout=25.0)
+    return str(r.json).strip('"')
+
+
 def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
              session_id: str | None = None, url: str = AGENT_URL) -> None:
     from marshall.atc import asr, controller
@@ -5241,6 +5307,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
     threading.Thread(target=engineering_radio, daemon=True).start()
     threading.Thread(target=scheduler, daemon=True).start()
     threading.Thread(target=asr_monitor, daemon=True).start()
+    _start_atis(host, client, profile, session_id)
 
     while True:
         heard = hear(bridge, client, model, profile)

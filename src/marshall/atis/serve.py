@@ -73,7 +73,7 @@ def rerecord(field, obs, was, now_sec: float, previous_obs=None) -> tuple[str, b
 def serve(fields, transmit, voice, eval_lua, clock=time.monotonic,
           mission_clock=None, stop=None, sleep=time.sleep,
           repeat_sec: float = REPEAT_SEC, poll_sec: float = POLL_SEC,
-          log=print) -> None:
+          anybody_flying=None, log=print) -> None:
     """Run the broadcast until `stop` is set.
 
     `fields` are `Field_`s; any without an `atis_mhz` is skipped, which is the
@@ -90,8 +90,28 @@ def serve(fields, transmit, voice, eval_lua, clock=time.monotonic,
     log("  atis: " + ", ".join(f"{f.name} {f.atis_mhz:.3f}" for f in live))
     seen: dict = {}
 
+    quiet = False
     while stop is None or not stop.is_set():
         now = clock()
+        # NOBODY LISTENING, NOTHING BROADCAST.
+        #
+        # The letter rotates hourly whether or not anyone is connected, and a
+        # server left up for a week would spend it re-recording for an empty
+        # sky -- about $0.37 at two fields and $24 a month at thirty, all of it
+        # talking to nobody.
+        #
+        # It is also more correct. A pilot who joins should hear the weather as
+        # it is with a letter that means "this is what I recorded", not one
+        # that has been walking the alphabet since Tuesday.
+        if anybody_flying is not None and not anybody_flying():
+            if not quiet:
+                log("  atis: nobody on the server, standing by")
+                quiet = True
+            sleep(poll_sec)
+            continue
+        if quiet:
+            log("  atis: somebody joined, back on the air")
+            quiet = False
         try:
             observed = weather.observe_fields(live, eval_lua)
         except Exception as e:
