@@ -61,6 +61,30 @@ emergency (#51). Ground transitions are not rows at all — a phase with no
 geometry is owned outright by the controller `phases.py` names, so moving into
 it IS the handoff.
 
+## The radio: one ear, ten mouths
+`radio/client.py` listens on every frequency and never transmits, so it can
+never be blocked; `radio/pool.py` holds ten clients that speak. Serialisation is
+per FREQUENCY — two controllers at two aerodromes talk at once, two
+transmissions on one channel wait, which is what a blocked transmission is.
+
+Three things that are not obvious and cost real bugs:
+
+- **SRS does not echo a client to itself, but it does echo one client to
+  another.** With a pool our own voice comes back looking exactly like a pilot,
+  so the ear ignores the pool's GUIDs. Without that a controller stands off for
+  himself for 1.5 s after every word.
+- **A warm client skips the 0.4 s settle; a fresh one cannot** — it clips the
+  first frame about one run in four, intermittently. That is why there is a
+  pool rather than a client per transmission, which would otherwise be simpler.
+- **The model call must not hold the radio.** It used to, at a median 3.3 s and
+  a worst case of 13.5 s.
+
+**ATIS is outside all of it** — one client per broadcasting aerodrome, because
+22 seconds of audio every 30 would hold the pool permanently. It decides the
+runway in use and writes it to the `atis` table; controllers READ it rather
+than recomputing from the wind, so the broadcast and a taxi clearance cannot
+name different runways.
+
 ## Shape
 One repo, two deployables. They are a single system with a contract between them,
 so a change that spans the seam (a new clearance the agent must voice, say) lands

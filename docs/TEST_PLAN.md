@@ -53,6 +53,13 @@ rather than the four buttons at one field this started as.
 | 8 | 121.900 | Batumi Ground | taxi in |
 | 9 | 131.000 | Sentry | mission commander, not a rung |
 
+**ATIS** — listen, never transmit. Not presets; tune them by hand.
+
+| field | freq | |
+|---|---|---|
+| Kobuleti | 127.400 | departure |
+| Batumi | 127.100 | arrival |
+
 Two frequencies on one row is **one controller on both** — a warbird that cannot
 dial fractions reaches the same man on the round number. Say either.
 

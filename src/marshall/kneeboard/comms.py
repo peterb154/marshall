@@ -130,6 +130,16 @@ def build(profile=P) -> str:
             f"<td class='fld'>{fld or '&mdash;'}</td>"
             f"<td class='note'>{'; '.join(when) or '&mdash;'}</td></tr>")
 
+    # THE ATIS FREQUENCIES, which belong to the AERODROME rather than to any
+    # controller -- so they are not rungs on the ladder and get their own
+    # block. A pilot tunes one, listens, and never transmits on it.
+    atis_rows = "".join(
+        f"<tr><td class='who'>{f.name}</td>"
+        f"<td class='fq'>{f.atis_mhz:.3f}</td>"
+        f"<td class='note'>{'departure' if f.name == R.DEPARTURE_FIELD else 'arrival'}"
+        f"</td></tr>"
+        for f in R.FIELDS if getattr(f, "atis_mhz", 0))
+
     inbound = profile.final_crs
     rwy = profile.runway or "in use"
     qfe = R.altimeter_spoken(R.qfe_inhg(profile.field_elev_ft))
@@ -146,6 +156,15 @@ def build(profile=P) -> str:
     <tr><th>CH</th><th>FREQ</th><th>STATION</th><th>FIELD</th><th>WHEN</th></tr>
     {''.join(rows)}
   </table>
+
+  <h2>ATIS</h2>
+  <table>
+    <tr><th>FIELD</th><th>FREQ</th><th></th></tr>
+    {atis_rows}
+  </table>
+  <div class="note">Listen before you call. Approach and Clearance will ask
+    which information you have &mdash; a wrong letter is a cross-check, never a
+    refusal, and nothing about it gates an approach.</div>
 
   <h2>BATUMI &mdash; RUNWAY {rwy} &mdash; RADAR APPROACH</h2>
   <table class="facts">

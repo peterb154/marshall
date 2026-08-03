@@ -38,12 +38,17 @@ seconds with no sim, no network and no model.
 | **3** | **Membership** | who is flying with whom | `flights.py` |
 | **2** | **Identity** | which radio is which aeroplane is which person | `identity.py` |
 | **1** | **World** | what exists, where it is, what is published | `tracks`, `events`, `core/route.py`, `atis/` |
-| **0** | **Transport** | audio, frequencies, GUIDs, client names. No aviation | `radio/client.py`, `radio/stt.py`, `radio/tts.py`, `core/say.py` |
+| **0** | **Transport** | audio, frequencies, GUIDs, client names. No aviation | `radio/client.py`, `radio/pool.py`, `radio/stt.py`, `radio/tts.py`, `core/say.py` |
 
 **`atis/` sits at layer 1 and that is the point of it.** It observes the world,
 decides the runway in use, and writes it down; controllers at layer 4 and 5
 *read* it. The runway is a decision with one author — two callers computing it
 from the wind agree only while they read the same wind at the same instant.
+
+**The radio is one ear and ten mouths.** `radio/client.py` listens on every
+frequency and never transmits; `radio/pool.py` holds the clients that speak,
+serialised per frequency rather than globally. Neither knows what an aerodrome
+is — a frequency is a number to them, which is what makes layer 0 layer 0.
 
 **`core/say.py` is layer 0** — pure text, no aviation. How a number is said out
 loud, so `atc/` and `atis/` can both use it without either importing the other.

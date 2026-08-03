@@ -381,7 +381,9 @@ Two defences exist:
 
 - **`OUR_STATIONS`** (`agent_atc.py` — `{"Marshall", "Engineering", "Eartest"}`) makes the receive loop ignore anything transmitted by one of our own SRS names, so even if two do end up on the air they cannot talk to each other forever (, logs `(ignoring X -- that is one of ours, not a pilot)`).
 
-Note the SRS client registers as `SRS_NAME = "Marshall"`, not as "Batumi Approach" — the roster shows the *service*, because one client is Center, Approach and Tower at once. Who is speaking is the voice and the callsign in the transmission.
+Note the SRS client registers as `SRS_NAME = "Marshall"`, not as "Batumi Approach" — the roster shows the *service*, because one client is Center, Approach and Tower at once. Who is speaking is the voice and the callsign in the transmission. The transmit pool registers as `Marshall-1` … `Marshall-10` and the ATIS as `ATIS <field>`; those names are not meaningful either, for the same reason.
+
+**ATIS is separate from all of it.** One client per broadcasting aerodrome (127.100 Batumi, 127.400 Kobuleti), started with the bridge, outside the pool — 22 seconds of audio every 30 is near enough continuous, so five fields would hold half the pool permanently and starve the controllers. It renders once per information letter and loops the cached frames, rotates hourly or on a material weather change, writes the runway in use to the `atis` table, and stands down entirely when nobody is connected.
 
 ### Reading the bridge log during a sortie
 
@@ -652,7 +654,11 @@ The talkdown veto that used to sit here as an `if` moved into the table with it 
 | 14 | `READ-BACK CORRECT` | 3632 | `reads_back_what_we_said` — his numbers match what we issued |
 | 15 | `PILOT: <transcript>` | 3638 | always, and always last |
 
-**22. The POST.** `interact(...)` → `_interact`, which takes `radio_lock` — the single lock shared with the hook scheduler, the mile-call metronome and engineering, so ATC can never talk over itself. `ask_agent` POSTs `{session_id, message, tier}` to `http://localhost:8000/atc` with a **30 s timeout**. `tier` comes from `route_tier` and is always `"sonnet"` unless `MARSHALL_FAST_TIER=1`.
+**22. The POST.** `interact(...)` → `_interact`. **It does NOT hold the radio while it thinks.** `ask_agent` POSTs `{session_id, message, tier}` to `http://localhost:8000/atc` with a **30 s timeout**; `tier` comes from `route_tier` and is always `"sonnet"` unless `MARSHALL_FAST_TIER=1`.
+
+That used to run inside `radio_lock`, which serialised the wrong thing entirely — measured over 372 real transmissions the model call runs at a median 3.3 s, p90 6.4 s and a worst case of 13.5 s, so the air was held for 7 to 13 seconds of which only the last few were speech. With one pilot that reads as latency; with two at two aerodromes it is a controller who has gone deaf. Two controllers compose simultaneously now and contend only when they speak.
+
+One thing the coarse lock was protecting by accident: `handoff_due` is set by the receive loop immediately before this, and reading it after a long unlocked model call could pick up a *later* turn's authorisation. It is captured at entry.
 
 On the director: `atc_endpoint` (`director/app.py`) takes a **non-blocking** per-session lock. If the agent is still answering the previous transmission it returns `{"response": "", "busy": true}` and logs `session ... is still answering the previous call; dropping this one rather than queueing it` — **in the director's log, not the bridge's.** From the bridge that is indistinguishable from a model that chose to say nothing. The agent is Sonnet with thinking **disabled** (`app.py`), one Postgres session per channel, and tools `identify`, `vector`, `set_hook`, clearance, memory, `spawn_ground` (`app.py`). Its context is a `RadioContext` (`director/tools/context.py`, `app.py`) — see **What he is handed, and what he remembers** below, because the distinction decides what he can still know about a conversation five calls ago.
 
@@ -662,7 +668,15 @@ On the director: `atc_endpoint` (`director/app.py`) takes a **non-blocking** per
 
 **25. Nothing to say.** Empty reply, or one of `NO_CALL` (, `{"(no call)", "no call", "(none)", "standby."}`) → logs ` ATC[pilot/sonnet] (2.8s): (no call)` and returns.
 
-**26. TTS and transmit.** `voice_for(on_hz)` picks the Polly voice belonging to the station that owns that channel. `Voice.frames(text)` (`radio/tts.py`) → `pronounce` respellings → Polly PCM 16 kHz → 40 ms Opus frames. `client.transmit(frames, on_hz or freq_hz, AM)` (, `radio/client.py`) sleeps 0.4 s to let the server register the UDP source, then paces frames at 40 ms real time — so a six-second reply holds `radio_lock` for six and a half seconds and everything else waits. **The reply goes out on the frequency the call arrived on**, which is by definition the beacon he is homing.
+**26. TTS and transmit.** `voice_for(on_hz)` picks the Polly voice belonging to the station that owns that channel. `Voice.frames(text)` (`radio/tts.py`) → `pronounce` respellings → **the cache** → Polly PCM 16 kHz → 40 ms Opus frames. Rendering happens *before* the lock, because Polly is a network call too.
+
+`_pool.transmit(frames, channels_of(on_hz), AM)` (`radio/pool.py`) borrows one of ten clients and paces frames at 40 ms real time. **The reply goes out on the frequency the call arrived on** — and on every other frequency that facility owns, so a warbird on 124.000 and a jet on 124.425 hear one call once.
+
+**One ear, ten mouths, and they must not hear each other.** The listening client registers every controller frequency and never transmits, so it can never be blocked. The pool is ten separate clients — and SRS does not echo a client to *itself*, so with one client we could never hear ourselves and with a pool we can. Every word we say comes back looking exactly like a pilot, which would make a controller stand off for his own voice for 1.5 s after each transmission. The ear takes the pool's GUIDs into `ignore_guids`.
+
+**Serialisation is per FREQUENCY, not global.** Two controllers at two aerodromes talk at once; two transmissions on one channel wait, as they must — that is what a blocked transmission is. Locks are taken in sorted order because a facility owning several frequencies makes overlapping channel sets routine.
+
+Measured: 100 clients open in 0.4 s (4 ms each); 10 transmitting at once took 9.8 s wall for 9.4 s of audio against 98 s serialised. A **warm** client skips the 0.4 s settle — a fresh one cannot, and clips a frame roughly one run in four, which is the first syllable of a callsign, intermittently. That is the whole reason a pool beats creating a client per transmission.
 
 Logs: ` ATC[pilot/sonnet] (2.8s): Pony one one, roger, ...`, `record(kind="atc/pilot")` with `to=addressed_to(reply)` — who he *said*, not who we resolved, so the two disagreeing is visible.
 
