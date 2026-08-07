@@ -617,9 +617,19 @@ perfectly and give you the wrong numbers.
 
 You are parked at Kobuleti with the radio already on **preset 1**.
 
+**Your plan is on the board as "Domino"** — Kobuleti to Batumi, KOBULETI /
+INITIAL / BATUMI, five thousand, radar recovery. It is on the new **PLANS** tab
+of the kneeboard along with everything else filed; read it there rather than
+from here, because that tab is what a pilot would actually have.
+
+Until 7 August there was no such row. Every plan on the board departed Batumi,
+so this sortie had nothing on file at all and the first call of the night would
+have been answered with "nothing on file for you" — see [#56].
+
 | id | do this | expected | issue | pri |
 |---|---|---|---|---|
-| **Q1** | Preset 1. *"Kobuleti Clearance, Viper one one, request IFR clearance to Batumi."* | He answers as **Kobuleti Clearance** — not Batumi anything. Clearance to Batumi, an altitude, and a departure frequency of **123.300** | [#1] | **P1** |
+| **Q1** | Preset 1. *"Kobuleti Clearance, Viper one one, request clearance."* | He answers as **Kobuleti Clearance** — not Batumi anything — and gives you **Domino** without asking which. He knows you are calling from Kobuleti and it is the only plan that departs Kobuleti. Clearance to Batumi, an altitude, and a departure frequency of **123.300** | [#1] [#57] | **P1** |
+| **Q1b** | Instead say *"...request IFR clearance to Batumi."* | He should **ask which** and Domino must be among the ones he offers. Every plan on the board ends at Batumi, so naming the destination narrows nothing — a controller who picks one confidently here has guessed. Before 7 August this resolved to *Anvil*: a real plan, someone else's sortie, because "Kobuleti" in your callsign line scored against Anvil's task | [#57] | **P1** |
 | **Q2** | Read the clearance back, deliberately getting the departure frequency wrong — say *"departure one two four decimal four two five"* | He corrects it. 124.425 is Batumi Approach: a real controller, wrong field. This is the exact failure the field-scoping was built to prevent | [#1] | **P1** |
 | **Q3** | Read it back **correctly** | He hands you to **Kobuleti Ground, 121.800**. A correct read-back is what ends Delivery's business — a wrong one leaves you exactly where you are, which is the point of reading it back | [#1] | **P1** |
 | **Q4** | Preset 2. *"Kobuleti Ground, ready to taxi."* | *"Taxi to runway zero seven, hold short of runway zero seven."* **Runway 07** — the wind is 090/5. If he offers 25 the runway is not following the weather | [#41] | **P1** |
@@ -631,6 +641,7 @@ You are parked at Kobuleti with the radio already on **preset 1**.
 | **Q10** | Proceed to INITIAL at 5,000 | At about **25 nm out** he hands you to **Georgia Center, 139.000**. Nothing could do this until 2 August — Center had no proactive handoff at all in either direction | [#51] | **P1** |
 | **Q11** | Inbound, say nothing | Inside **25 nm** Center hands you to **Batumi Approach, 124.425** unprompted. This is the fix for the sortie that ended in a Mayday: he sat at 44 nm with nothing in the system able to move him on | [#51] | **P1** |
 | **Q12** | At any point, ask a Kobuleti controller for something only Batumi can give — *"request the ASR"* on preset 2 | He should send you to the right man rather than inventing an answer. A controller who works one field must not clear you into another's approach | [#21] | P3 |
+| **Q13** | On any Kobuleti frequency ask *"say again the ground frequency"*, then *"and tower?"* | **121.800** and **133.000**. Until 7 August he was handed no frequency but Departure's and invented the rest — he answered "Ground is one three three decimal zero" (that is Tower) and "Tower is one one eight decimal zero" (that is *Batumi* Tower). Both in faultless phraseology. He now carries his own field's list | [#58] | **P1** |
 
 **What it is actually checking**
 

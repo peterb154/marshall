@@ -69,6 +69,49 @@ _NOISE = {
 }
 
 
+# WHO HE IS TALKING TO IS NOT WHAT HE IS ASKING FOR.
+#
+# A transmission opens by naming a station -- "Kobuleti Clearance, Viper one
+# one, request IFR clearance to Batumi" -- and that field name is a form of
+# ADDRESS. It says where the pilot is standing, not where his sortie goes.
+#
+# Scored as content it is poison, because the aerodrome a pilot departs from is
+# exactly the aerodrome another plan is likely to mention. That request resolved
+# to Anvil: "Escort a transport as far as Kobuleti", Batumi to Batumi. The word
+# "Kobuleti" came out of the callsign line and hit Anvil's task, which is the
+# heaviest field there is; "Batumi" hit its route and its destination. A pilot
+# on the Kobuleti ramp says the name of his field in the first two words of
+# every transmission he makes, so this fires on all of them.
+#
+# The ROLES are a closed set and none of them is ever a plan's name, so an
+# address can be recognised without this module knowing the station table.
+_ADDRESS = re.compile(
+    r"\b[a-z]+\s+(?:clearance|delivery|ground|tower|approach|departure|"
+    r"centre|center|control|radar|director|arrival)\b", re.I)
+
+
+def _spoken(said: str) -> str:
+    """His request with the station he is addressing taken out of it."""
+    return _ADDRESS.sub(" ", said or "")
+
+
+def _addressed_field(said: str) -> str:
+    """The aerodrome he is CALLING, which is the aerodrome he is standing on.
+
+    Dropping the address outright was the first fix and it threw away real
+    information: "Kobuleti Clearance" is not a description of his sortie, but it
+    does say where he is, and where he is IS his origin. Stripped completely,
+    "request IFR clearance to Batumi" stopped matching the one plan that departs
+    Kobuleti and offered him the five that do not -- asking a question with the
+    right answer missing, which is worse than asking a plain one.
+
+    So the address is read for exactly one thing and scored against exactly one
+    field. It cannot reach a task or a route, which is where the poison was.
+    """
+    m = _ADDRESS.search(said or "")
+    return m.group(0).split()[0].lower() if m else ""
+
+
 def _words(text: str, drop: set[str] = frozenset()) -> set[str]:
     return {w for w in re.findall(r"[a-z0-9]+", (text or "").lower())
             if w not in _NOISE and w not in drop and len(w) > 1}
@@ -81,7 +124,7 @@ def score(said: str, plan: dict) -> tuple[int, list[str]]:
     he thinks it is that one -- "the CAS to Tsutsnvati" reads as a controller
     who knows the plan, where "Samovar One" reads as a database.
     """
-    want = _words(said)
+    want = _words(_spoken(said))
     if not want:
         return 0, []
     pts, why = 0, []
@@ -127,8 +170,12 @@ def score(said: str, plan: dict) -> tuple[int, list[str]]:
     #
     # Weighted above a destination and below a task: an origin is worth more
     # than "everyone lands there" and less than what he is going to do.
-    orig_hits = want & _words(plan.get("origin"))
-    if orig_hits:
+    # HIS OWN WORDS FIRST, then where he is calling from -- either is evidence
+    # of an origin and they are worth the same, so a pilot who says "the transit
+    # out of Kobuleti" and one who simply calls Kobuleti Clearance are read the
+    # same way. Counted once: saying both is not twice the evidence.
+    orig = _words(plan.get("origin"))
+    if (want & orig) or (_addressed_field(said) in orig and orig):
         pts += 4
         why.append("origin")
     return pts, why
