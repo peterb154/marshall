@@ -2522,9 +2522,17 @@ would let a second aircraft in behind him.
    never "number two". Guarded by `TestNobodyIsNumberTwoBehindHimself`.
 2. A genuine second aircraft is still told "number two". Same class.
 3. The letdown is not released by the re-affirmation.
-4. **Still open:** what returned him to `HOLDING` while cleared. The deadlock is
-   gone, but the state transition that caused it has not been found, and until
-   it is this is a guard rather than a cure.
+4. ~~**Still open:** what returned him to `HOLDING` while cleared.~~ **FOUND
+   2 August.** `Controller.check_in` reset `ac.phase = Phase.ENROUTE`
+   unconditionally, so *any* frequency change put a cleared aircraft back in the
+   queue — and the eight-rung ladder changes frequency seven times, which is why
+   this surfaced the moment there were two aerodromes. One unguarded line, two
+   hundred lines from the symptom, with `seed_from_radar` directly above it
+   already carrying the guard. It is a cure now rather than a guard.
+
+**Flown by:** card rows **H18** (ask again while cleared) and **H19** (check in
+on a new frequency while cleared) — the second is the root cause, and it needs
+the ladder to provoke it.
 
 ---
 
@@ -2719,7 +2727,10 @@ so it moves with its test doubles or not at all.
 ## [FP-3] The sortie being flown was not on the board — #56
 labels: bug
 
-**Status:** CLOSED 7 August, before the flight rather than after it.
+**Status:** FIXED 7 August; awaiting the flight. The row is on the board and
+resolves in the live director, but the acceptance criterion is that a pilot gets
+his clearance on the radio — card **Q1** — so this is `needs-flight-test` and a
+green sweep does not close it.
 
 Every filed plan departed Batumi. Correct while Batumi was the only aerodrome
 with controllers, and it stopped being correct the day Kobuleti got a full
@@ -2785,7 +2796,10 @@ pilot saying one more word.
 ## [BUG-5] The controller invented every frequency except Departure's — #58
 labels: bug
 
-**Status:** CLOSED 7 August. Found in the dry run, not in the air.
+**Status:** FIXED 7 August; awaiting the flight. Found in the dry run, not in
+the air — and the air is where it is confirmed, because what is being checked is
+a number a controller says out loud. Card row **Q13** asks him for his own
+field's ground and tower frequencies. `needs-flight-test`.
 
 Kobuleti Clearance told a pilot **"Ground is one three three decimal zero"** —
 that is Kobuleti TOWER; Ground is 121.800 — and **"Tower is one one eight
@@ -2853,3 +2867,49 @@ Each of these reported something other than what it did, and each was believed.
 The lesson is the one already in `atc_dryrun`'s own comment about the message it
 used to assemble by hand: **a tool that shows you something other than what the
 system does is worse than no tool, because you believe it.**
+
+---
+
+## [OPS-4] The card check was blind to a quarter of the card — #60
+labels: bug
+
+**Status:** HALF FIXED 7 August. It can see the rows now; what it says about
+them is still wrong.
+
+`issue_sync` matches a cockpit row as `| H7 | P2 | ... [#19]`. Sections **Q, R,
+S and T** — added 2 August, the two-field ladder, ATIS, phraseology and the
+Kobuleti ILS — write their IDs in bold, and Q has a lettered row: `| **Q1b** |`.
+The pattern matched none of them. Fourteen rows in Q alone were invisible, and
+the check reported "labelled `needs-flight-test` and no row cites it" for issues
+whose rows were sitting on the card in the section written for them.
+
+**A check that silently ignores a quarter of the document is worse than none,
+because its silence reads as agreement.** Same fault as the three tools in #59,
+in the thing that is supposed to catch faults — and it survived because it was
+un-runnable: it needs `GH_TOKEN`, and the token was exported from a branch of
+`.bashrc` that returns early for non-interactive shells, so every automated run
+failed on `gh auth` before reaching this.
+
+**What it now reports, and why that is also wrong.** Seventeen rows cite closed
+issues, and the tool's advice is to strike them through and keep the script as
+the regression. That advice is right for a row that has been FLOWN. Every one of
+these is in a section that has never been flown: they cite the issue whose fix
+they exercise, and those fixes were closed on earlier sorties at a single
+aerodrome — which is exactly the condition under which four of them were
+*correct by accident*.
+
+So the card conflates two things behind one `[#n]`:
+
+* **the finding this row is chasing** — open, and the row retires when it closes
+* **the fix this row exercises** — closed, and the row is the regression check
+  that tells us if it rots
+
+They want different columns and different handling. Striking Q6, Q8 and Q9
+because #16 is closed would delete the only rows that test handoffs between two
+aerodromes.
+
+**Acceptance criteria**
+1. A row can name a closed fix as its subject without being reported as stale.
+2. A row chasing an open finding still retires when that finding closes.
+3. The check runs in a non-interactive shell — if it cannot reach GitHub it says
+   SKIPPED and names what is unguarded, rather than failing on `gh auth`.

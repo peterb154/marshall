@@ -309,3 +309,89 @@ class TestTheOriginBadgeIsActuallyRendered(unittest.TestCase):
     def test_the_voiced_verdict_is_rendered_too(self):
         self.assertIn("PARAPHRASED", diag.page())
         self.assertIn("SILENT", diag.page())
+
+
+class TestTheLastTurnRowIsLaidOutRight(unittest.TestCase):
+    """A pilot sent a screenshot: the stage rows were a hundred-pixel ribbon of
+    single words down the left of the page, under a badge stretched across the
+    full width.
+
+    `.trail li` is a two-column grid -- stage label, then value. The origin pill
+    was emitted as a THIRD child, so it took the 1fr column for itself and the
+    text landed in an implicit fourth column, which grid sizes to min-content.
+
+    THE EXISTING TESTS ALL PASSED. They ask whether the pill is rendered, and it
+    was; nothing asked WHERE. Only `decide` and `speak` carry an origin, so the
+    two rows without one -- `heard` and `who` -- went on looking perfect, which
+    is why a broken page still read as a working one at a glance.
+
+    This parses the template the page actually ships rather than mirroring it,
+    because a Python copy of the JS is two things that can disagree.
+    """
+
+    def row(self) -> str:
+        """The trail row's markup, with every optional part present."""
+        import re
+        js = diag.page()
+        start = js.index('out += `<li><span class="k">')
+        end = js.index("'</span></li>';", start) + len("'</span></li>';")
+        chunk = js[start:end]
+        # Every literal segment, in order: the backtick templates and the one
+        # quoted tail. Taking each conditional's truthy branch gives the row as
+        # it renders when the turn has an origin AND a timing -- which is the
+        # case that broke.
+        parts = re.findall(r"`([^`]*)`|'([^']*)'", chunk)
+        html = "".join(a or b for a, b in parts)
+        return re.sub(r"\$\{[^}]*\}", "X", html)
+
+    def test_the_stage_row_has_exactly_two_columns(self):
+        from html.parser import HTMLParser
+
+        class Kids(HTMLParser):
+            depth = 0
+            def __init__(self):
+                super().__init__()
+                self.top = []
+            def handle_starttag(self, tag, attrs):
+                if tag == "li":
+                    self.depth = 1
+                    return
+                if self.depth == 1:
+                    self.top.append(dict(attrs).get("class", ""))
+                if self.depth:
+                    self.depth += 1
+            def handle_endtag(self, tag):
+                if self.depth:
+                    self.depth -= 1
+
+        k = Kids()
+        k.feed(self.row())
+        self.assertEqual(len(k.top), 2,
+                         f"a two-column grid row has {len(k.top)} children: "
+                         f"{k.top} -- anything past the second lands in an "
+                         f"implicit min-content column")
+
+    def test_the_origin_pill_is_inside_the_value(self):
+        """Not beside it. The `who` row above already does this correctly and
+        is the pattern."""
+        row = self.row()
+        pill = row.index('class="pill org-')
+        value = row.index('<span class="X">')
+        self.assertLess(value, pill,
+                        "the pill is emitted before the value span, which "
+                        "makes it a sibling and steals the value's column")
+
+    def test_the_value_column_cannot_be_widened_by_long_text(self):
+        """minmax(0,1fr), not 1fr. A grid track defaults to a min-content floor,
+        so one long unbroken transcript pushes the row wider than the page."""
+        self.assertIn("minmax(0,1fr)", diag.page())
+
+    def test_anything_extra_still_lands_in_the_value_column(self):
+        """The durable half. Emitting the pill in the right place fixes today's
+        row; this makes the NEXT child added to a stage row land in column two
+        instead of inventing a column of its own."""
+        self.assertIn(".trail li>*:not(.k){grid-column:2}", diag.page())
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -391,8 +391,14 @@ _PAGE = """<!doctype html><html><head><meta charset="utf-8">
   .pill{display:inline-block;padding:0 .4em;border:1px solid currentColor;
     border-radius:2px;font-size:.7rem;letter-spacing:.05em}
   .trail{margin:0;padding:0;list-style:none;font-size:.83rem}
+  /* Column one is the stage label; column two is EVERYTHING else. Stated as a
+     rule rather than left to child order, because grid's answer to an extra
+     child is a new implicit column sized to min-content -- which is how one
+     added pill turned the last turn into a column of single words. minmax(0,)
+     so a long unbroken transcript wraps instead of widening the row. */
   .trail li{padding:.2rem 0;border-bottom:1px solid #14191D;display:grid;
-    grid-template-columns:5.5rem 1fr;gap:.7rem}
+    grid-template-columns:5.5rem minmax(0,1fr);gap:.7rem}
+  .trail li>*:not(.k){grid-column:2}
   .trail li:last-child{border-bottom:0}
   .trail .k{color:var(--dim);font-size:.7rem;letter-spacing:.09em;
     text-transform:uppercase;padding-top:.15rem}
@@ -712,9 +718,22 @@ function last(l) {
     // guard (the loop's own rules, refusing before either brain sees the
     // call). The page does not know which is which; the bridge publishes it.
     const org = (LEGEND.origin || {})[t.kind] || '';
+    // THE PILL GOES INSIDE THE VALUE, not beside it.
+    //
+    // `.trail li` is a two-column grid -- the stage label, then everything
+    // else. Emitted as a THIRD child the pill took the 1fr column for itself
+    // and the text was pushed into an implicit fourth column, which grid sizes
+    // to min-content: a hundred-pixel ribbon down the left of the page, one
+    // word per line, under a badge stretched across the full width.
+    //
+    // Only DECIDE and SPEAK carry an origin, so `heard` and `who` -- two
+    // children each -- went on looking perfect, which is why this survived. The
+    // `who` row above already had it right: its pill is inline inside the
+    // value, and that is the pattern.
     out += `<li><span class="k">${esc(meta.stage || t.kind)}</span>`
-      + (org ? `<span class="pill org-${esc(org)}">${esc(org)}</span>` : '')
-      + `<span class="${meta.level || ''}">${esc(t.gate || t.text)}`
+      + `<span class="${meta.level || ''}">`
+      + (org ? `<span class="pill org-${esc(org)}">${esc(org)}</span> ` : '')
+      + `${esc(t.gate || t.text)}`
       + (t.seconds ? `<span class="dim"> ${t.seconds}s ${esc(t.tier || '')}</span>` : '')
       + '</span></li>';
   });

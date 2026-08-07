@@ -8,10 +8,20 @@ source and GitHub as a copy. Run it whenever the file gains an issue.
     uv run python tools/file_issues.py --dry-run     # see what it would do
     uv run python tools/file_issues.py
 
-Idempotent: an entry that already carries a number is skipped, so re-running
-after adding one issue files exactly that one. Nothing is ever edited or closed
-from here -- issues get closed by a human flying the test, which is the point of
-the exercise.
+Idempotent: an entry GitHub already holds is skipped, so re-running after adding
+one issue files exactly that one. Nothing is ever edited or closed from here --
+issues get closed by a human flying the test, which is the point of the exercise.
+
+"ALREADY FILED" MEANS GITHUB HAS IT, not that the markdown says so. This used to
+skip any entry carrying a number, which treats a number typed into a heading as
+proof the issue exists. Eleven did not: five had been given numbers by hand over
+previous sessions and six more in one afternoon, all of them plausible, none of
+them on GitHub -- and this script reported "0 not yet filed" every time it ran,
+which is the most reassuring possible way to do nothing.
+
+`issue_sync.py` was reporting the drift correctly the whole time. Nobody could
+run it, because it needs the token and the token was set in an interactive-only
+branch of a shell profile.
 """
 
 from __future__ import annotations
@@ -76,6 +86,16 @@ def ensure_labels(gh: str, labels: set[str]) -> None:
         subprocess.run([gh, "label", "create", name], capture_output=True)
 
 
+def known_numbers(gh: str) -> set[int]:
+    """Every issue number GitHub actually holds, open or closed."""
+    r = subprocess.run([gh, "issue", "list", "--state", "all", "--limit", "500",
+                        "--json", "number", "-q", ".[].number"],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        raise SystemExit(f"could not read the issue list: {r.stderr.strip()}")
+    return {int(n) for n in r.stdout.split()}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--dry-run", action="store_true")
@@ -88,9 +108,24 @@ def main() -> int:
     gh = gh_path()
     text = ISSUES.read_text(encoding="utf-8")
     issues = parse(text)
-    todo = [i for i in issues if not i["number"]]
 
-    print(f"{len(issues)} issues in {ISSUES.name}; {len(todo)} not yet filed")
+    # ASK GITHUB WHAT IT HAS. An entry is filed when GitHub holds that number,
+    # not when the markdown claims one -- see the note at the top of this file.
+    have = known_numbers(gh)
+    todo = [i for i in issues
+            if not i["number"] or int(i["number"]) not in have]
+
+    stale = [i for i in todo if i["number"]]
+    print(f"{len(issues)} issues in {ISSUES.name}; {len(have)} on GitHub; "
+          f"{len(todo)} not yet filed")
+    if stale:
+        # Say it out loud. A heading that names an issue number nobody can open
+        # is worse than one with no number: the commit trailer points at it, the
+        # test card cites it, and every one of those links is dead.
+        print(f"  {len(stale)} of them CLAIM a number GitHub does not have -- "
+              f"they will be filed and renumbered:")
+        for i in stale:
+            print(f"    was #{i['number']:<4} [{i['slug']}] {i['title'][:52]}")
     if args.dry_run:
         for i in todo:
             print(f"  [{i['slug']}] {i['title']}"

@@ -45,9 +45,21 @@ CARD = ROOT / "docs" / "TEST_PLAN.md"
 
 HEAD = re.compile(r"^## \[([A-Z]+-\d+)\]\s+(.*?)(?:\s+—\s+#(\d+))?\s*$", re.M)
 STATUS = re.compile(r"^\*\*Status:\*\*\s*([A-Z/]+)", re.M)
-# A cockpit row: "| H7 | P2 | ... [#19] ...". Struck-through IDs are already
-# retired and are not a finding.
-ROW = re.compile(r"^\|\s*(~~)?([A-Z]\d+)~?~?\s*\|.*?\[#(\d+)\]", re.M)
+# A cockpit row: "| H7 | P2 | ... [#19] ..." or "| **Q1b** | ... [#57] ...".
+# Struck-through IDs are already retired and are not a finding.
+#
+# THE BOLD FORM AND THE LETTERED SUFFIX ARE NOT DECORATION -- they are how the
+# four newest sections are written, and this pattern could not see any of them.
+# Q, R, S and T went in on 2 August with fourteen rows in Q alone, and every one
+# was invisible here: the check reported "labelled needs-flight-test and no row
+# cites it" for issues whose rows were sitting on the card, in the section
+# written for them.
+#
+# A check that silently ignores a quarter of the document is worse than no
+# check, because its silence reads as agreement -- the same fault as the three
+# tools in #59, in the thing that is supposed to catch faults.
+ROW = re.compile(r"^\|\s*(~~)?\**([A-Z]\d+[a-z]?)\**~?~?\s*\|.*?\[#(\d+)\]",
+                 re.M)
 
 # Statuses that mean "this is finished". Everything else is live work.
 DONE = {"VALIDATED", "CLOSED", "DONE"}
