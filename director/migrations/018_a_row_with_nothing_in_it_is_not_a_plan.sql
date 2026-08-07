@@ -1,0 +1,22 @@
+-- Take the empty row off the board before a pilot has to read past it.
+--
+-- `362nd-batumi-asr-2` carries a callsign and an approach and nothing else: no
+-- label, no origin, no destination, no route, no task, not active. It is a
+-- working row from the day the second ship was wired up, and it has been on the
+-- board ever since.
+--
+-- IT ONLY BECAME VISIBLE TODAY, which is why it survived. The plans page has
+-- existed since the board did, but it was never given a kneeboard tab -- so the
+-- board lived in the database and on the controller's side of the radio, and
+-- nobody had ever looked at it the way a pilot would. Rendered, it is a plan
+-- with no name, above a route that is blank.
+--
+-- Migration 012 already wrote the rule this breaks: a stale plan on a test
+-- board is worse than a missing one, because it answers a request, plausibly,
+-- with something nobody wrote. An unlabelled row cannot be ASKED for -- there
+-- is nothing to say -- but it can still be matched, and what it would clear a
+-- man onto is nowhere.
+--
+-- Nothing references it: no assigned_plans row, no code, no document.
+
+DELETE FROM flight_plans WHERE name = '362nd-batumi-asr-2';

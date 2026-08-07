@@ -291,8 +291,20 @@ def add_testbed(m, usa) -> None:
 
 
 def add_session_slots(m, usa, air_alt_ft: dict | None = None,
-                      each: int = 2) -> None:
+                      each: int = 2) -> list[tuple[int, str]]:
     """Eight client slots for a two-pilot session: half on the ramp, half airborne.
+
+    RETURNS ITS OWN (unit id, type) SLOTS, and that return value is not
+    decoration. `write_presets` injects the SCR-522 channel file under a path
+    keyed on the unit id, and it was being handed the list built by `build` --
+    which names the STANDING flight, the one `--session` deletes a few lines
+    later. So a session mission wrote radio presets for four Mustangs and two
+    Thunderbolts that were no longer in the file, and wrote none at all for the
+    eight aeroplanes somebody was about to fly.
+
+    It did not bite because the F-16 takes its presets from the mission table
+    instead, and the F-16 is what has been flown. A session Mustang has been
+    mute the whole time and nobody has sat in one to find out.
 
         "two F-16's on the ground and 2 P-51s on the ground, two F-16s in the
          air, 2 P-51s in the air"
@@ -344,6 +356,7 @@ def add_session_slots(m, usa, air_alt_ft: dict | None = None,
     # two-field ladder (see `_short_card`), and he is pulled from session
     # missions anyway -- so parking him where his own controllers are is the
     # honest arrangement rather than giving him a card he cannot use.
+    mine: list[tuple[int, str]] = []
     for name, kind, how, home in (
             ("Viper", F_16C_50, StartType.Warm, "Kobuleti"),
             ("Pony", P_51D_30_NA, StartType.Cold, "Batumi")):
@@ -364,6 +377,7 @@ def add_session_slots(m, usa, air_alt_ft: dict | None = None,
         for n, unit in enumerate(grp.units, start=1):
             unit.name = f"{name} 1-{n}"
             unit.set_client()
+            mine.append((unit.id, kind.id))
         set_channels(grp, home=home)
         # THE FLIGHT PLAN IN THE AEROPLANE, not only on the kneeboard.
         #
@@ -409,11 +423,13 @@ def add_session_slots(m, usa, air_alt_ft: dict | None = None,
             # route waypoints and defaults to about 83 knots -- below an F-16's
             # stall. This trap has now bitten four times in this file.
             unit.speed = speed_ms
+            mine.append((unit.id, kind.id))
         set_channels(grp)
         for fix in R.FIXES[1:]:
             grp.add_waypoint(Point(fix.x, fix.z, m.terrain), alt_m)
         for wp in grp.points:
             wp.speed = speed_ms
+    return mine
 
 
 def build(weather: str = "light", traffic: bool = False,
@@ -649,7 +665,11 @@ def build(weather: str = "light", traffic: bool = False,
         keep = [g for g in usa.plane_group
                 if g.name not in ("Pony", "Hammer")]
         usa.plane_group = keep
-        add_session_slots(m, usa, _air, each=session_each)
+        # AND THE PRESET LIST IS REPLACED, not appended to. Everything collected
+        # up to here belongs to aeroplanes that were just deleted; keeping them
+        # writes a radio file for a unit id that is not in the mission and, far
+        # worse, leaves the eight that ARE with none.
+        session_slots = add_session_slots(m, usa, _air, each=session_each)
 
     # NO BEACON TRANSMITTERS.
     #
@@ -693,6 +713,18 @@ def build(weather: str = "light", traffic: bool = False,
     #
     # Collected as the groups are built rather than listed here by hand, so
     # adding an airframe to the squadron cannot leave it mute.
+    #
+    # A SESSION MISSION IS THE SESSION SLOTS AND NOTHING ELSE, because the
+    # standing flight and the Jugs have been deleted from the country by the
+    # time this runs. Appending them anyway wrote SETTINGS.lua for unit ids that
+    # are not in the file -- harmless -- and, in the same stroke, wrote none for
+    # the eight aeroplanes somebody was about to fly, which is not.
+    #
+    # It has never been noticed because the F-16 takes its presets from the
+    # mission table instead and the F-16 is what gets flown. A session Mustang
+    # has been mute since session missions were added.
+    if session:
+        return m, list(session_slots)
     slots = list(client_slots)
     slots += [(u.id, P_51D_30_NA.id) for u in flight.units]
     slots += [(u.id, P_47D_30.id) for u in jugs.units]
@@ -1076,8 +1108,34 @@ if __name__ == "__main__":
           "light": "overcast, base 1500 ft above ceiling",
           "hard": "overcast at ceiling (minimums)"}[weather]
     P = R.BATUMI_ASR
-    print(f"\n{FLIGHT_SIZE} x P-51D-30 + 2 x P-47D-30, airborne over "
-          f"{R.AIR_START.name} at {R.CRUISE_ALT_FT:,} ft")
+    # WHAT WAS ACTUALLY BUILT, read off the mission, not off a sentence.
+    #
+    # This line was the fixed string "4 x P-51D-30 + 2 x P-47D-30, airborne over
+    # REHEARSAL" no matter what was in the .miz. Under `--session` -- which
+    # deletes the standing flight and puts F-16s on the Kobuleti ramp -- it
+    # reported four Mustangs and two Thunderbolts airborne, and there were
+    # neither: eight client slots, half of them Vipers, none of them a P-47.
+    #
+    # It cost an hour of hunting for missing F-16s that were in the file all
+    # along, and it would have cost more than that if it had been believed on
+    # the way to the server. A build report is the only thing standing between
+    # a rebuild and a deploy, and one that describes the mission it USED to
+    # build is worse than printing nothing.
+    seats: dict[str, list[str]] = {}
+    for c in mission.coalition.values():
+        for country in c.countries.values():
+            for g in getattr(country, "plane_group", []):
+                for u in g.units:
+                    if not getattr(u, "skill", None) or "Client" not in str(u.skill):
+                        continue
+                    seats.setdefault(u.unit_type.id, []).append(u.name)
+    if seats:
+        print()
+        for kind in sorted(seats):
+            who = sorted(seats[kind])
+            print(f"  {len(who)} x {kind} client: {', '.join(who)}")
+    else:
+        print("\n  NO CLIENT SLOTS -- nobody can fly this mission")
     print(f"{P.kind.upper()} approach runway {P.runway}, final course "
           f"{P.final_crs:03d}M, MDA {P.mda_ft}")
     print(f"weather: {wx}, wind {R.WIND_FROM_DEG:.0f}/{R.WIND_MPH:.0f}\n")

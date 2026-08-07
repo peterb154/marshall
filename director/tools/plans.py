@@ -107,6 +107,30 @@ def score(said: str, plan: dict) -> tuple[int, list[str]]:
         # destination match is nearly free and must not outweigh a task.
         pts += 1
         why.append("destination")
+
+    # WHERE HE IS LEAVING FROM, which only started carrying information when a
+    # plan appeared that does not depart Batumi.
+    #
+    # Every plan used to share an origin as well as a destination, so scoring it
+    # would have added a point to all of them and changed nothing -- which is
+    # why it was never scored, and the note at the top of this file says as
+    # much. The Kobuleti departure makes it the single most discriminating field
+    # on the board: it is the only row whose origin is not Batumi.
+    #
+    # THIS REPLACES THE WRONG FIX. The same request resolved by putting the
+    # place names into that plan's TASK -- "transit from Kobuleti to Batumi" --
+    # and the task is scored at ten a word. That gave one plan triple credit for
+    # "Batumi" (task, route, destination) and turned "IFR to Batumi, ready to
+    # copy" -- a request every plan on the board answers equally -- into a
+    # confident clearance onto somebody else's sortie. A task says what he is
+    # DOING; the endpoints have their own fields and must be read from them.
+    #
+    # Weighted above a destination and below a task: an origin is worth more
+    # than "everyone lands there" and less than what he is going to do.
+    orig_hits = want & _words(plan.get("origin"))
+    if orig_hits:
+        pts += 4
+        why.append("origin")
     return pts, why
 
 

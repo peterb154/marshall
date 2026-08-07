@@ -241,13 +241,56 @@ def compose_message(bridge, scope, known, transcript, profile, me, fix, nxt,
             "frequency Tower is not on — he then believes it, and so does "
             "everyone listening. Correct him in the same breath as the "
             "answer, and name the frequency he is ON as well as the one he "
-            f"wanted: \"Pony one one, this is {me.name}, "
-            f"{controller.spell_freq(me.freq_mhz)} — Tower is one one "
-            "eight decimal zero\" — then give him what he asked for. Saying only which "
-            "frequency he wanted leaves him still not knowing which button "
-            "he is holding, and a pilot who has lost track of that gets it "
-            "wrong again on the next call. He is flying an aeroplane; do "
-            "not make him ask twice.")
+            "wanted, reading BOTH numbers off YOUR FIELD below. Then give "
+            "him what he asked for. Saying only which frequency he wanted "
+            "leaves him still not knowing which button he is holding, and a "
+            "pilot who has lost track of that gets it wrong again on the "
+            "next call. He is flying an aeroplane; do not make him ask "
+            "twice.")
+        # HIS OWN FIELD'S FREQUENCIES, HANDED TO HIM.
+        #
+        # This block is the fix for a controller inventing numbers, and the
+        # reason it was inventing them is worth keeping: it was never given
+        # any. The only frequency in the brief was DEPARTURE FREQUENCY, added
+        # after a clearance and a taxi instruction disagreed about it, so
+        # Departure came out right and everything else was guessed.
+        #
+        # Kobuleti Clearance told a pilot "Ground is one three three decimal
+        # zero" -- that is Kobuleti TOWER; Ground is 121.800. It also told him
+        # "Tower is one one eight decimal zero", which is BATUMI Tower's second
+        # channel, at the field he had not taken off for yet. Both were read
+        # confidently, in the right phraseology, and a pilot has no way to know.
+        #
+        # THE WORKED EXAMPLE ABOVE USED TO CONTAIN THAT NUMBER. It said
+        # 'Tower is one one eight decimal zero' as an illustration of the
+        # phrasing, and the model lifted it verbatim as fact -- so the brief was
+        # not merely failing to supply the frequency, it was teaching a wrong
+        # one. An example in a prompt is data to a model; it may not contain a
+        # number that could be mistaken for this field's.
+        #
+        # A REAL CONTROLLER KNOWS HIS OWN AERODROME'S FREQUENCIES. Handing them
+        # over is not a hint, it is the correction of an omission -- and it is
+        # the same list the comms card prints and the aeroplane's presets are
+        # built from, so the card, the radio and the man cannot disagree.
+        mine = [s for s in (getattr(profile, "stations", None) or [])
+                if getattr(s, "field", "") == getattr(me, "field", "")
+                and getattr(me, "field", "")]
+        if mine:
+            rows = "; ".join(
+                f"{s.name} {controller.spell_freq(s.freq_mhz)}" for s in mine)
+            _fld = R.field_named(me.field)
+            if _fld is not None and getattr(_fld, "atis_mhz", 0):
+                rows += (f"; {me.field} ATIS "
+                         f"{controller.spell_freq(_fld.atis_mhz)}")
+            parts.append(
+                f"YOUR FIELD — {me.field}: {rows}. These are the ONLY "
+                f"frequencies you may name for {me.field}. Any other number "
+                f"you say for this field is one you have invented, and a "
+                f"pilot sent to an invented frequency calls into silence and "
+                f"has no way of telling that from a controller who has "
+                f"stopped answering. If you are asked for a position this "
+                f"field does not staff, say so and keep him — do not "
+                f"manufacture a number for it.")
         # WHO HE IS, as distinct from what he does. See `Station.manner`.
         #
         # Fenced hard, and the fence is the point rather than boilerplate: a
@@ -296,14 +339,23 @@ def compose_message(bridge, scope, known, transcript, profile, me, fix, nxt,
         # pilot has no way to tell which one is wrong. The clearance is built
         # from this same station list, so quoting it here means the two
         # cannot disagree.
+        # AND IT IS HIS FIELD'S DEPARTURE, not the first one in the list.
+        #
+        # This walked `profile.stations` for anything whose role was
+        # "departure" and took the first match -- the same first-match mistake
+        # `station_for` was rewritten to stop making, surviving in one more
+        # place because a one-aerodrome mission cannot expose it. Kobuleti
+        # Departure happens to be listed first, so Kobuleti clearances came out
+        # right by accident; a BATUMI clearance was about to name a controller
+        # at the far end of the route, in perfect phraseology, with the wrong
+        # field's number in it.
+        #
+        # `station_for` takes a field and answers his field first, so it cannot
+        # reach across the theatre for a plausible stranger.
         if getattr(me, "role", "") in ("tower", "ground", "delivery") or (
                 "delivery" in [r for r in (getattr(me, "also", ()) or ())]):
-            _dep = None
-            for _s in (getattr(profile, "stations", None) or []):
-                _roles = [getattr(_s, "role", ""), *(getattr(_s, "also", ()) or ())]
-                if "departure" in _roles:
-                    _dep = _s
-                    break
+            _dep = profile.station_for("departure",
+                                       field=getattr(me, "field", ""))
             if _dep is not None:
                 parts.append(
                     f"DEPARTURE FREQUENCY: {_dep.name} on "

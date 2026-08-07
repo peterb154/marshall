@@ -32,6 +32,7 @@ from marshall.kneeboard import brief as build_brief
 from marshall.kneeboard import routemap as build_routemap
 from marshall.kneeboard import comms as build_comms
 from marshall.kneeboard import navlog as build_kneeboard
+from marshall.kneeboard import plans as build_plans
 from marshall.kneeboard import plate as build_plate
 
 from marshall.core import route as R
@@ -61,6 +62,20 @@ def pages(profile: R.ApproachProfile = R.BATUMI_ASR):
          lambda: build_comms.build(profile)),
         ("{a1c8e0f2-3b47-4d91-9f2a-6c5e10b74d01}", "NAV LOG", "navlog",
          build_kneeboard.build),
+        # WHAT IS ON FILE, which the pilot has to be able to READ before he can
+        # ask for it. `plans.py` was written for exactly this and was never
+        # given a tab, so the board existed in the database, on the controller's
+        # side of the radio, and nowhere the pilot could see it.
+        #
+        # Its own docstring says the reason plainly: he cannot ask for "Marlin"
+        # if he cannot remember what is on the board. Clearance delivery is the
+        # first exchange of the sortie and it opens with him naming a plan.
+        #
+        # Built LIVE on every page turn, not baked at container start -- plans
+        # are filed by migration and by hand between sorties, and a page built
+        # at boot shows last night's board with no way to tell.
+        ("{9f3c7b21-0e84-4a6d-b57f-1d2043c8ea96}", "PLANS", "plans",
+         build_plans.build),
         ("{b2d9f103-4c58-4ea2-a03b-7d6f21c85e02}", f"{profile.kind.upper()} {rwy}",
          "asr", lambda: asr_plate.build(profile)),
     ]

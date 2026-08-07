@@ -244,7 +244,16 @@ def run(script, session_id: str, sep_always: bool = True,
             print(f"  !! agent error: {type(e).__name__}: {e}", flush=True)
             continue
         dt = time.monotonic() - t0
-        last = agent_atc.for_voice(reply)
+        # agent=True, because the MODEL wrote this. Without it a reply with no
+        # RADIO: marker prints in full here and is SILENCE on the live radio --
+        # so the dry run showed four turns of the controller narrating his own
+        # reasoning that a pilot would never have heard, and hid the failure
+        # that actually matters, which is that he said nothing at all.
+        #
+        # The same drift as the hand-built message this file used to carry: a
+        # tool that shows you something other than what the bridge does is worse
+        # than no tool, because you believe it.
+        last = agent_atc.for_voice(reply, agent=True)
         print(f"  ATC ({dt:.1f}s): {last}", flush=True)
 
     print("\n--- controller state ---")

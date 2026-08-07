@@ -35,7 +35,7 @@ sys.path.insert(0, str(ROOT / "director"))
 
 from tools import plans as P
 
-# Mirrors migrations/012. Kept here so the sweep runs with no database, no
+# Mirrors migrations/012, 017 and 019. Kept here so the sweep runs with no database, no
 # container and no network -- the point of a tier-1 check is that there is
 # nothing to bring up first. `--live` reads the real rows instead, which is how
 # you catch this copy drifting from what is actually on file.
@@ -60,6 +60,15 @@ FILED = [
      "origin": "Batumi", "destination": "Batumi", "cruise_ft": 4000,
      "route": "BATUMI, KOBULETI, BATUMI",
      "task": "Escort a transport as far as Kobuleti"},
+    # THE ONE THAT DOES NOT DEPART BATUMI, and the reason the two cases below
+    # matter more than they look. It shares the word "Kobuleti" with Anvil, and
+    # a pilot standing on the Kobuleti ramp says that word in his callsign line
+    # every single transmission -- so the request that must resolve to this plan
+    # arrives pre-loaded with a token that scores for a different one.
+    {"name": "362nd-kobuleti-batumi", "label": "Domino", "callsign": None,
+     "origin": "Kobuleti", "destination": "Batumi", "cruise_ft": 5000,
+     "route": "KOBULETI, INITIAL, BATUMI",
+     "task": "Transit and radar recovery"},
 ]
 
 # (what he says, what should happen, why this phrasing is in the list)
@@ -87,6 +96,37 @@ CASES = [
      "ASK", "a place that fits two plans"),
     ("Hoover one one, request clearance, the one with the beacon letdown",
      "362nd-batumi-ndb", "the words that tell the two apart"),
+
+    # -- THE KOBULETI DEPARTURE, the sortie actually being flown and the first
+    #    row on the board that does not start at Batumi.
+    #
+    #    It went unfiled until the evening it was needed: every plan departed
+    #    Batumi, so a pilot on the Kobuleti ramp asking for his clearance was
+    #    told, in perfect phraseology, that there was nothing on file for him.
+    #    Nothing errors -- it is the first transmission of the night, and it
+    #    sounds exactly like having mistyped your own callsign.
+    ("Kobuleti Clearance, Viper one one, request clearance, Domino",
+     "362nd-kobuleti-batumi", "the Kobuleti departure, named"),
+
+    #    ORIGIN IS A REAL DISCRIMINATOR NOW and was not before -- one row, one
+    #    origin that is not Batumi. Note the field he is standing on is in his
+    #    callsign line on every transmission, so this must work with "Kobuleti"
+    #    appearing for reasons that have nothing to do with the plan.
+    ("Viper one one, ready to copy, the transit out of Kobuleti",
+     "362nd-kobuleti-batumi", "the origin alone, which only one plan has"),
+
+    #    AND ONE THAT ASKS, which looks like a weakness and is the safe answer.
+    #    Naming both endpoints scores Anvil nearly as well as Domino, because
+    #    Anvil's JOB is going to Kobuleti -- its task says so, legitimately, and
+    #    the task is the heaviest field there is. Telling them apart needs the
+    #    direction of "FROM Kobuleti TO Batumi", which nothing here parses.
+    #
+    #    Recorded as ASK rather than tuned away. Moving the origin weight until
+    #    this one case flips is fitting the scorer to the sweep, and the cost of
+    #    being wrong is a clearance onto somebody else's sortie; the cost of
+    #    asking is the pilot saying one more word.
+    ("Viper one one, clearance for the transit from Kobuleti to Batumi",
+     "ASK", "both endpoints -- Anvil's task legitimately owns Kobuleti too"),
 
     # -- the civil form, which separates nothing here: everything comes home to
     #    Batumi, so a destination match must not be enough on its own.

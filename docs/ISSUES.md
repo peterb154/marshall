@@ -2713,3 +2713,143 @@ manner must get no fence.
 receive loop, the radar/scope readers, the guards and the director's HTTP
 client. The client is the next clean cut but it carries the monkeypatch surface,
 so it moves with its test doubles or not at all.
+
+---
+
+## [FP-3] The sortie being flown was not on the board — #56
+labels: bug
+
+**Status:** CLOSED 7 August, before the flight rather than after it.
+
+Every filed plan departed Batumi. Correct while Batumi was the only aerodrome
+with controllers, and it stopped being correct the day Kobuleti got a full
+station set and the F-16s moved to its ramp — silently, because nothing fails.
+
+A pilot on the Kobuleti ramp asks for his clearance and is told, in perfect
+phraseology, that there is nothing on file for him. That is the first
+transmission of the night and it is indistinguishable from having mistyped your
+own callsign.
+
+Filed as **Domino** (migration 017), Kobuleti → Batumi, KOBULETI/INITIAL/BATUMI,
+five thousand, recovering on the Batumi radar approach.
+
+**Three more things fell out of filing it.**
+
+1. **The plans board had no kneeboard tab.** `kneeboard/plans.py` was written so
+   a pilot can read what is on file — its own docstring says he cannot ask for
+   "Marlin" if he cannot remember the board — and it was never wired into
+   `site.py`. The board existed in the database and on the controller's side of
+   the radio, and nowhere the pilot could see it. It is now a PLANS tab.
+
+2. **A row with nothing in it** (`362nd-batumi-asr-2`: a callsign, an approach,
+   and no label, route, origin or task) had been on the board since the second
+   ship was wired up. Invisible until something rendered it. Removed in 018.
+
+3. **`origin` was never scored** — see #57.
+
+---
+
+## [FP-4] A task that repeats the destination outscores the board — #57
+labels: bug
+
+**Status:** CLOSED 7 August.
+
+Domino was filed with the task "transit from Kobuleti to Batumi, radar
+recovery", which reads well and is scored at ten points a word. The route and
+the destination already carry BATUMI, so one plan collected credit for the same
+fact three times — and `"IFR to Batumi, ready to copy"`, a request every plan
+answers equally and which the sweep exists to keep AMBIGUOUS, resolved
+confidently onto the Kobuleti departure.
+
+Migration 012's warning exactly: not an error, a plausible answer to a question
+nobody asked. A pilot at Batumi would have been cleared onto a sortie starting
+at another aerodrome.
+
+**The real fix was that `origin` was not scored at all.** It never carried
+information — every plan left Batumi, so scoring it would have added one point
+to all of them — and `plans.py` says so at the top. Domino makes it the most
+discriminating field on the board: one row, one origin that is not Batumi. So
+the endpoints are read from their own fields, and the task went back to saying
+what he is DOING (019), which is what the other five already did.
+
+**Left open deliberately.** "Clearance for the transit FROM Kobuleti TO Batumi"
+asks rather than resolving, because Anvil's task legitimately owns the word
+Kobuleti — going there is its job. Telling them apart needs the DIRECTION, which
+nothing parses. Recorded as ASK in the sweep rather than tuned away: moving a
+weight until one case flips is fitting the scorer to the test, the cost of being
+wrong is a clearance onto somebody else's sortie, and the cost of asking is the
+pilot saying one more word.
+
+---
+
+## [BUG-5] The controller invented every frequency except Departure's — #58
+labels: bug
+
+**Status:** CLOSED 7 August. Found in the dry run, not in the air.
+
+Kobuleti Clearance told a pilot **"Ground is one three three decimal zero"** —
+that is Kobuleti TOWER; Ground is 121.800 — and **"Tower is one one eight
+decimal zero"**, which is Batumi Tower's second channel, at the field he had not
+taken off for yet. Both in correct phraseology, confidently, and a pilot has no
+way to tell.
+
+It was inventing them because it had never been given any. The only frequency in
+the brief was DEPARTURE FREQUENCY, added after a clearance and a taxi
+instruction disagreed about it — so Departure came out right and everything else
+was guessed.
+
+**And the brief was teaching one of the wrong ones.** The YOU ARE block carried a
+worked example of correcting a pilot on the wrong button, and the example
+contained a literal `"Tower is one one eight decimal zero"`. The model lifted it
+verbatim as fact. An example in a prompt is data to a model; it may not contain
+a number that could be mistaken for this field's.
+
+Fixed by handing the controller **his own aerodrome's station list** — the same
+one the comms card prints and the aeroplane's presets are built from, so the
+card, the radio and the man cannot disagree. A real controller knows his own
+field's frequencies; supplying them corrects an omission rather than adding a
+hint.
+
+**And the departure lookup was the two-field bug again**, walking
+`profile.stations` for the first role match. `station_for` was rewritten to stop
+doing that; this one kept doing it. Kobuleti Departure is listed first, so
+Kobuleti was right by accident and a BATUMI clearance was about to name a
+controller forty miles up the coast.
+
+Guarded in `tests/test_two_fields.py`, including channels — the frequency that
+actually leaked was a `channels` entry and not a `freq_mhz`, so a check walking
+only `freq_mhz` passed against the broken brief and guarded nothing.
+
+---
+
+## [OPS-3] Three tools that lied about what they had done — #59
+labels: bug
+
+**Status:** CLOSED 7 August.
+
+Not one bug; one shape, found three times in an afternoon of pre-flight checks.
+Each of these reported something other than what it did, and each was believed.
+
+1. **`atc_dryrun` printed replies the radio would never carry.** It called
+   `for_voice(reply)` without `agent=True`, so a reply with no `RADIO:` marker
+   printed in full — and is SILENCE on the live radio. It showed four turns of
+   the controller narrating his own reasoning that a pilot would never have
+   heard, and hid the failure that actually matters: that he said nothing.
+
+2. **The mission builder's summary was a fixed string.** `"4 x P-51D-30 + 2 x
+   P-47D-30, airborne over REHEARSAL"` no matter what was built. Under
+   `--session` it reported four Mustangs and two Thunderbolts airborne; there
+   were eight client slots, half of them F-16s on the Kobuleti ramp, and no
+   P-47 at all. It cost an hour hunting for aircraft that were in the file the
+   whole time. It reads the mission now.
+
+3. **`write_presets` was handed the units `--session` had just deleted.** So a
+   session mission wrote SCR-522 preset files for four Mustangs and two
+   Thunderbolts that were no longer in the .miz, and wrote none at all for the
+   eight aeroplanes somebody was about to fly. It has never bitten because the
+   F-16 takes its presets from the mission table and the F-16 is what gets
+   flown — a session Mustang has been mute since session missions were added.
+
+The lesson is the one already in `atc_dryrun`'s own comment about the message it
+used to assemble by hand: **a tool that shows you something other than what the
+system does is worse than no tool, because you believe it.**

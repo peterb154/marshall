@@ -336,5 +336,99 @@ class TestThePlateKnowsAboutTheDepartureField(unittest.TestCase):
                       " ".join(self.plate()))
 
 
+def _foreign_numbers(field: str):
+    """Every number belonging to some OTHER aerodrome, CHANNELS INCLUDED.
+
+    The channels are the point. The frequency this bug actually leaked was
+    Batumi Tower's 118.000, which is a `channels` entry and not its `freq_mhz`
+    of 118.600 -- so a check that walked only `freq_mhz` passed against the
+    broken brief and would have guarded nothing. A facility owns several
+    numbers and every one of them is wrong at the wrong field.
+    """
+    for s in R.STATIONS:
+        if getattr(s, "field", "") in ("", field):
+            continue
+        yield s, s.freq_mhz
+        for c in getattr(s, "channels", ()) or ():
+            yield s, c
+
+
+class TestTheControllerIsHandedHisOwnFrequencies(unittest.TestCase):
+    """The fifth thing that was correct by accident, found 7 August by driving
+    the Kobuleti departure through the dry run.
+
+    A controller was never handed ANY frequency except Departure's -- that one
+    block having been added after a clearance and a taxi instruction disagreed
+    about it. Everything else he said, he invented, and he invented it fluently:
+
+        "Ground is one three three decimal zero"    that is Kobuleti TOWER
+        "Tower is one one eight decimal zero"       that is BATUMI Tower
+
+    The second one came out of the brief itself. The YOU ARE block carried a
+    worked example of how to correct a pilot on the wrong button, and the
+    example contained a literal frequency -- so the model lifted it as fact. An
+    example in a prompt is data to a model.
+    """
+
+    def compose(self, me):
+        from marshall.atc import agent_atc as A
+        from marshall.atc import assembly
+        return assembly.compose_message(
+            A.Bridge(), scope="", known="Viper 1-1", transcript="request taxi",
+            profile=R.BATUMI_ASR, me=me, fix=None, nxt=None, directive="",
+            stack="", vectoring="", _flight={}, _flight_say="", claim="",
+            name_say="")[0]
+
+    def test_every_station_at_his_field_is_named(self):
+        for me in (R.KOB_CLEARANCE, R.GROUND):
+            msg = self.compose(me)
+            for s in R.STATIONS:
+                if getattr(s, "field", "") != me.field:
+                    continue
+                with self.subTest(who=me.name, names=s.name):
+                    self.assertIn(s.name, msg,
+                                  f"{me.name} is not told about {s.name}")
+
+    def test_no_other_aerodromes_frequency_is_in_the_block(self):
+        """The failure is never a nonsense number. It is a REAL frequency
+        belonging to the wrong airport, said in perfect phraseology, and the
+        pilot has no way to tell."""
+        from marshall.atc import controller
+        msg = self.compose(R.KOB_CLEARANCE)
+        block = [ln for ln in msg.split("\n") if ln.startswith("YOUR FIELD")]
+        self.assertTrue(block, "no field frequency block at all")
+        for s, hz in _foreign_numbers(R.KOB_CLEARANCE.field):
+            with self.subTest(stranger=f"{s.name} {hz}"):
+                self.assertNotIn(controller.spell_freq(hz), block[0])
+
+    def test_the_worked_example_carries_no_frequency_of_its_own(self):
+        """A number in an example is a number the model will say. This is what
+        put Batumi Tower's channel in a Kobuleti clearance."""
+        from marshall.atc import controller
+        msg = self.compose(R.KOB_CLEARANCE)
+        head = msg.split("YOUR FIELD")[0]
+        for s, hz in _foreign_numbers(R.KOB_CLEARANCE.field):
+            with self.subTest(stranger=f"{s.name} {hz}"):
+                self.assertNotIn(controller.spell_freq(hz), head,
+                                 f"{s.name}'s {hz} is quoted at Kobuleti")
+
+    def test_departure_is_his_fields_and_not_the_first_in_the_list(self):
+        """`station_for` was rewritten to stop taking the first role match;
+        this lookup kept doing it. Kobuleti Departure is listed first, so
+        Kobuleti was right by accident and Batumi was about to send a pilot
+        forty miles up the coast."""
+        msg = self.compose(R.GROUND)          # Batumi Ground issues clearances
+        want = R.BATUMI_ASR.station_for("departure", field="Batumi")
+        line = [ln for ln in msg.split("\n")
+                if ln.startswith("DEPARTURE FREQUENCY")]
+        self.assertTrue(line, "Batumi Ground is told no departure frequency")
+        self.assertIn(want.name, line[0])
+        self.assertNotIn("Kobuleti", line[0])
+
+    def test_the_atis_of_his_field_travels_with_them(self):
+        msg = self.compose(R.KOB_CLEARANCE)
+        self.assertIn("Kobuleti ATIS", msg)
+
+
 if __name__ == "__main__":
     unittest.main()
