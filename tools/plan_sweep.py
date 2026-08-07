@@ -136,6 +136,15 @@ CASES = [
     # -- nothing on file. Saying so is the correct answer and the hard one.
     ("Hoover one one, request clearance to Vaziani",
      "NONE", "somewhere nobody filed for"),
+    #    ...AND THE SAME REQUEST WITH THE STATION NAMED, which is how a pilot
+    #    actually opens a transmission and which used to change the answer.
+    #    Addressing a controller gave every plan at his field a standing four
+    #    points, so on a board trimmed to one plan the man who asked for Vaziani
+    #    was read back a clearance to Batumi. The address is context; it breaks
+    #    ties between plans his words already point at and can never be the
+    #    match on its own.
+    ("Kobuleti Clearance, Viper one one, request clearance to Vaziani",
+     "NONE", "somewhere nobody filed for, with the station addressed"),
     ("Hoover one one, request clearance for the tanker track",
      "NONE", "a task nobody filed"),
 
@@ -159,12 +168,41 @@ def outcome(hit: dict) -> str:
     return "NONE"
 
 
+def unrunnable(want: str, filed: list[dict]) -> str:
+    """Why this case cannot be asked of THIS board, or "" if it can.
+
+    THE FIXTURE ALWAYS EXPRESSES EVERY CASE -- it was written to. A live board
+    is whatever somebody filed, and it can be trimmed to one plan for a night's
+    flying, at which point most of this sweep is asking a question the data
+    cannot answer.
+
+    A case that cannot be asked must SAY SO. Running it anyway gives a FAIL that
+    means "the board changed", which is not a finding and which teaches everyone
+    to ignore a red sweep -- and skipping it silently is worse, because the run
+    then reports success for work it did not do.
+    """
+    if want == "ASK" and len(filed) < 2:
+        return f"needs two plans that could both fit; the board has {len(filed)}"
+    if want.startswith("362nd-") and not any(p.get("name") == want
+                                             for p in filed):
+        return f"{want} is not on this board"
+    return ""
+
+
 def main(argv: list[str]) -> int:
-    filed = live_plans() if "--live" in argv else FILED
+    live = "--live" in argv
+    filed = live_plans() if live else FILED
     print(f"{len(filed)} plan(s) on file\n")
 
-    ok = True
+    ok, skipped = True, []
     for said, want, why in CASES:
+        gap = unrunnable(want, filed) if live else ""
+        if gap:
+            skipped.append((why, gap))
+            print(f"  SKIP  {why}")
+            print(f'        "{said}"')
+            print(f"        {gap}")
+            continue
         hit = P.pick(said, filed, callsign="Hoover 1-1")
         got = outcome(hit)
         good = got == want
@@ -188,6 +226,13 @@ def main(argv: list[str]) -> int:
         print("  " + P.clearance(plan, flight_id=7, departure_freq=124.0,
                                  initial_ft=plan.get("cruise_ft") or 0))
 
+    if skipped:
+        # Named, every time. "Skipped is reported, never silent" -- a check that
+        # quietly did not run reads exactly like one that passed.
+        print(f"\n{len(skipped)} case(s) this board cannot express:")
+        for why, gap in skipped:
+            print(f"  - {why}: {gap}")
+        print("  The FIXTURE still exercises all of them; run without --live.")
     print("\nall cases behaved" if ok else "\nSOME CASES FAILED")
     return 0 if ok else 1
 

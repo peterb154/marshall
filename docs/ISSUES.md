@@ -2913,3 +2913,50 @@ aerodromes.
 2. A row chasing an open finding still retires when that finding closes.
 3. The check runs in a non-interactive shell — if it cannot reach GitHub it says
    SKIPPED and names what is unguarded, rather than failing on `gh auth`.
+
+---
+
+## [FP-5] The board is the sortie, and the address is not a request — #61
+labels: bug
+
+**Status:** CLOSED 7 August.
+
+    "lets clean up the flight plan database - leave only the one kobuleti to
+     batumi ifr"
+
+Five of the six rows were the single-aerodrome TEST board from migration 012 —
+built so the wrong answer would be available. That is the right board for
+testing clearance delivery and the wrong one for flying, because every row is an
+answer a pilot might be handed by mistake. Migration 020 leaves Domino.
+
+**A migration alone would have been self-reversing.**
+`agent_atc.load_and_push_plate` upserted `362nd-batumi-asr` with `active=true`
+on every start, so the deleted row — and the active flag with it — came back on
+the next bridge restart. The board would have looked clean until nobody was
+watching. The bridge seeds `BOOTSTRAP_PLAN` now, named once so a migration and
+the bootstrap cannot disagree, and it no longer writes a Mustang's callsign onto
+a plan an F-16 flies.
+
+**Trimming the board then exposed two faults in the resolver**, neither of which
+can appear on a five-plan board — there is always another plan to be ambiguous
+with, so a standing bonus to the local one changes no outcome:
+
+1. **"Request clearance to Vaziani" was answered with a clearance to Batumi.**
+   Reading the ORIGIN off the station he addressed (#57) gave every plan at his
+   field four points on *every* transmission, because every transmission opens
+   by naming a station. With one plan on the board that floor was enough to win.
+   The address is banked separately now: it breaks ties between plans his own
+   words already point at, and can never be the match on its own.
+2. **"Kobuleti Clearance, Viper one one, request clearance" was answered with
+   "nothing on file".** The plainest request in aviation. The station name
+   survived into the test for *did he name something specific*, so addressing a
+   controller read as asking for a sortie nobody had filed.
+
+Both are the same mistake in two places, and it is the one this whole file keeps
+finding: **something reaching sideways for a fact it should have been handed.**
+
+**What this costs, stated plainly.** `plan_assign_check` needs two filed plans
+and now SKIPS, naming #1 as unguarded — which is the suite working as intended.
+`plan_sweep --live` skips eleven of its sixteen cases and names each one; the
+inline fixture still exercises all sixteen with no database, so tier-1 coverage
+is unchanged. Re-running migration 012 restores the test board.

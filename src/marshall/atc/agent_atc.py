@@ -231,6 +231,12 @@ def _post_json(url: str, obj: dict, timeout: float = 6.0) -> dict:
 # at the worst possible moment.
 
 MISSION = os.environ.get("MARSHALL_MISSION", "default")
+# THE FILED PLAN THE BRIDGE SEEDS AND READS ITS APPROACH FROM.
+#
+# Named once, here, because it is written by a migration and by the bootstrap
+# below, and those two disagreeing is exactly how a deleted row comes back. See
+# migrations/017 (it was filed) and 020 (the rest of the board was cleared).
+BOOTSTRAP_PLAN = "362nd-kobuleti-batumi"
 APPROACH_NAME = ""              # set when the active flight plan is loaded
 
 # What a mission commander is, as opposed to an air traffic controller. Handed
@@ -289,9 +295,23 @@ def load_and_push_plate(profile, base: str = BASE_URL):
     try:
         _put_json(f"{base}/approaches/batumi-asr",
                   {"field": profile.beacon.name, "data": R.profile_to_dict(profile)})
-        _put_json(f"{base}/flightplans/362nd-batumi-asr",
-                  {"callsign": R.FLIGHT_CALLSIGN, "approach": "batumi-asr",
-                   "active": True})
+        # THE PLAN THIS SEEDS IS THE ONE BEING FLOWN.
+        #
+        # It used to be `362nd-batumi-asr` -- a Batumi-to-Batumi row from the
+        # single-aerodrome era -- upserted with active=true on every start. That
+        # made it impossible to take off the board: migration 020 deletes it,
+        # and the next bridge restart put it straight back and took the active
+        # flag with it. A cleanup that survives only until nobody is watching is
+        # worse than none.
+        #
+        # NO CALLSIGN. It wrote `R.FLIGHT_CALLSIGN` into the row, which is a
+        # Mustang's name on a plan an F-16 flies tonight. `plans.py` is explicit
+        # that a filed plan belongs to NOBODY until a clearance copies it into
+        # `assigned_plans`, so the column changes no decision -- it is simply
+        # untrue, and it is the sort of untrue thing somebody later reads as a
+        # fact.
+        _put_json(f"{base}/flightplans/{BOOTSTRAP_PLAN}",
+                  {"approach": "batumi-asr", "active": True})
         fp = _get_json(f"{base}/flightplan/active")
         if fp.get("approach"):
             # Remember which procedure this is, so a flight's row can say what

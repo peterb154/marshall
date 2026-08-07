@@ -1,0 +1,43 @@
+-- The board is the sortie being flown, and nothing else.
+--
+--     "lets clean up the flight plan database - leave only the one kobuleti to
+--      batumi ifr"
+--
+-- Five of the six rows are Batumi-to-Batumi sorties from the single-aerodrome
+-- era. They were built as a TEST BOARD -- migration 012 says so plainly: five
+-- plans so that the wrong answer is available, one pair that genuinely cannot
+-- be told apart, enough distinct tasks that most requests resolve first time.
+-- That was the right board for testing clearance delivery and it is the wrong
+-- board for flying a sortie, because every one of them is an answer a pilot
+-- might be given by mistake.
+--
+-- Domino stays: Kobuleti to Batumi, KOBULETI / INITIAL / BATUMI, five thousand,
+-- radar recovery.
+--
+-- IT ALSO BECOMES ACTIVE, and that is not tidiness. `active` is how the bridge
+-- finds the approach at start-up: it reads `/flightplan/active` and loads that
+-- row's procedure. `362nd-batumi-asr` held the flag, so deleting it without
+-- moving it would leave the bridge with no active plan and no approach.
+--
+-- WHAT WOULD HAVE UNDONE THIS. `agent_atc.load_and_push_plate` upserts
+-- `362nd-batumi-asr` with active=true on EVERY start, so the deleted row would
+-- have reappeared -- and taken the active flag with it -- on the next bridge
+-- restart. A migration alone would have been cosmetic and self-reversing, which
+-- is worse than not doing it: the board would look clean until the moment
+-- nobody was watching. The bridge bootstraps this row now.
+--
+-- The five deleted rows are not lost. They are in migration 012, which is where
+-- they were written, and restoring the test board is re-running it.
+--
+-- THE SWEEP KEEPS ITS OWN COPY. `tools/plan_sweep.py` holds the five-plan
+-- fixture inline and exercises every ambiguity case against it with no database
+-- at all, so trimming the live board costs no coverage. Its `--live` mode now
+-- SKIPS the cases a one-plan board cannot express and names each one, rather
+-- than failing on data that is correct.
+
+-- assigned_plans.template is ON DELETE SET NULL, so a flight cleared on one of
+-- these keeps its copied routing and merely forgets which template it came
+-- from. There are no such rows today; this note is for the night there are.
+DELETE FROM flight_plans WHERE name <> '362nd-kobuleti-batumi';
+
+UPDATE flight_plans SET active = true WHERE name = '362nd-kobuleti-batumi';

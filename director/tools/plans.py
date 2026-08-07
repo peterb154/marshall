@@ -126,8 +126,8 @@ def score(said: str, plan: dict) -> tuple[int, list[str]]:
     """
     want = _words(_spoken(said))
     if not want:
-        return 0, []
-    pts, why = 0, []
+        return 0, [], 0
+    pts, why, context = 0, [], 0
 
     label = (plan.get("label") or "").lower()
     if label and label in (said or "").lower():
@@ -175,10 +175,26 @@ def score(said: str, plan: dict) -> tuple[int, list[str]]:
     # out of Kobuleti" and one who simply calls Kobuleti Clearance are read the
     # same way. Counted once: saying both is not twice the evidence.
     orig = _words(plan.get("origin"))
-    if (want & orig) or (_addressed_field(said) in orig and orig):
+    if want & orig:
         pts += 4
         why.append("origin")
-    return pts, why
+    elif orig and _addressed_field(said) in orig:
+        # THE ADDRESS IS CONTEXT, NOT A REQUEST, and the difference only shows
+        # on a board trimmed to one plan.
+        #
+        # Every transmission opens by naming a station, so this fires on all of
+        # them -- which meant the local plan carried a standing four points that
+        # had nothing to do with what the pilot asked for. "Kobuleti Clearance,
+        # request clearance to VAZIANI" scored those four, was the only plan on
+        # the board, and won: a man who asked for an aerodrome nobody filed for
+        # was read back a clearance to Batumi.
+        #
+        # So it is banked separately. It breaks ties between plans his own words
+        # already point at, and it can never BE the match -- see `pick`, where
+        # "did he name anything on file" now asks about his words alone.
+        context += 4
+        why.append("origin (from who he called)")
+    return pts + context, why, pts
 
 
 def pick(said: str, plans: list[dict], callsign: str | None = None) -> dict:
@@ -191,10 +207,15 @@ def pick(said: str, plans: list[dict], callsign: str | None = None) -> dict:
     if not plans:
         return {"none": True}
 
-    scored = [(s, w, p) for p, (s, w) in ((p, score(said, p)) for p in plans)]
+    graded = [(p, score(said, p)) for p in plans]
+    scored = [(s, w, p) for p, (s, w, _) in graded]
     best = max((s for s, _, _ in scored), default=0)
 
-    if best == 0:
+    # NOTHING HE SAID POINTS AT A PLAN. Measured on his WORDS, with the standing
+    # bonus every plan at this aerodrome collects from being addressed taken
+    # back out -- otherwise the local plan always looks like a match and a
+    # request nobody filed for is answered with whatever is nearest.
+    if max((words for _, (_, _, words) in graded), default=0) == 0:
         # He NAMED something and nothing on file is it. "Request clearance to
         # Vaziani" is not an ambiguous request, it is a request that cannot be
         # filled, and offering him a menu of three plans that all go somewhere
@@ -204,7 +225,13 @@ def pick(said: str, plans: list[dict], callsign: str | None = None) -> dict:
         # be taken out of what he said -- without it "Hoover" is a word that
         # matches no plan, and every request would read as a request for
         # somewhere nobody filed for. Asking is the safe way to be wrong.
-        if callsign and _words(said, drop=_words(callsign)):
+        # `_spoken`, not `said`: the station he is calling is not something he
+        # NAMED. Left in, "Kobuleti Clearance, Viper one one, request clearance"
+        # -- the plainest request there is -- read as a pilot who had asked for
+        # something specific, so instead of being offered the board he was told
+        # nothing on file matched. The address has to come out here for the same
+        # reason it comes out of the scoring.
+        if callsign and _words(_spoken(said), drop=_words(callsign)):
             return {"none": True}
 
         # Nothing in what he said points at a plan.

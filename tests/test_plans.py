@@ -339,3 +339,65 @@ class TestAPlanOnFileBelongsToNobody(unittest.TestCase):
         got = P.pick("request clearance for the CAS over Tsutsnvati",
                      self.ONE_EACH, callsign="Hoover 1-1")
         self.assertEqual((got.get("plan") or {}).get("label"), "Samovar")
+
+
+class TestTheStationHeCallsIsNotSomethingHeAskedFor(unittest.TestCase):
+    """Every transmission opens by naming a station, and that name is where the
+    pilot IS -- not what he wants.
+
+    Both halves of this were found on a board trimmed to a single plan, which is
+    what a night's flying actually uses. On the five-plan test board neither
+    shows: there is always another plan to be ambiguous with, so a standing
+    bonus to the local one changes no outcome.
+    """
+
+    ONE = [{"name": "362nd-kobuleti-batumi", "label": "Domino", "callsign": None,
+            "origin": "Kobuleti", "destination": "Batumi", "cruise_ft": 5000,
+            "route": "KOBULETI, INITIAL, BATUMI",
+            "task": "Transit and radar recovery"}]
+
+    def got(self, said):
+        r = P.pick(said, self.ONE, callsign="Viper 1-1")
+        if r.get("plan"):
+            return r["plan"]["label"]
+        return "ASK" if r.get("ambiguous") else "NONE"
+
+    def test_the_plainest_request_there_is_gets_the_only_plan(self):
+        """"Kobuleti Clearance, Viper one one, request clearance" answered NONE.
+        The station name survived into the "did he name something specific?"
+        test, so the plainest request in aviation read as a pilot asking for a
+        sortie nobody had filed."""
+        for said in ("Kobuleti Clearance, Viper one one, request clearance",
+                     "Kobuleti Clearance, Viper one one, ready to copy",
+                     "Kobuleti Ground, Viper one one, request IFR clearance"):
+            with self.subTest(said=said):
+                self.assertEqual(self.got(said), "Domino")
+
+    def test_somewhere_nobody_filed_for_is_still_refused(self):
+        """And the other direction, which is the dangerous one. Addressing a
+        controller gave his field's plans four points on every transmission, so
+        the man who asked for VAZIANI -- with one plan on the board -- was read
+        back a clearance to Batumi. A real aerodrome, a real clearance, and not
+        the one he asked for."""
+        for said in ("Kobuleti Clearance, Viper one one, request clearance to Vaziani",
+                     "Kobuleti Clearance, Viper one one, clearance for the tanker track"):
+            with self.subTest(said=said):
+                self.assertEqual(self.got(said), "NONE")
+
+    def test_the_address_still_breaks_a_tie_it_did_not_create(self):
+        """It is context, not noise. Where his own words already point at more
+        than one plan, where he is calling from is what tells them apart."""
+        two = [*self.ONE,
+               {"name": "362nd-batumi-run", "label": "Kettle",
+                "callsign": None, "origin": "Batumi",
+                "destination": "Batumi", "cruise_ft": 5000,
+                "route": "BATUMI, INITIAL, BATUMI",
+                "task": "Transit and radar recovery"}]
+        r = P.pick("Kobuleti Clearance, Viper one one, request the transit",
+                   two, callsign="Viper 1-1")
+        self.assertEqual((r.get("plan") or {}).get("label"), "Domino")
+        self.assertIn("origin (from who he called)", r.get("why") or [])
+
+
+if __name__ == "__main__":
+    unittest.main()
