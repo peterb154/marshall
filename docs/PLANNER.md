@@ -112,9 +112,11 @@ which already exists.
 
 Three phases, each independently useful, each shippable alone.
 
-### Phase 1 — file a plan without a migration
+### Phase 1 — file a plan without a migration — **DONE 8 August**
 
-The narrowest thing that closes #22. A `POST /flightplans` on the director plus
+`POST /plans` on the director, `/file` on the kneeboard, and
+`director/tools/filing.py` holding every rule. The narrowest thing that closes
+#22. A `POST /flightplans` on the director plus
 a form on the kneeboard server, writing the row the schema already defines.
 
 Validation is the substance, not the form: a route naming a fix nobody holds
@@ -122,9 +124,27 @@ must be **refused at filing time**, because the alternative is a controller
 clearing an aeroplane to a place that does not exist and discovering it on the
 radio. The fix table is the authority and it is already there.
 
-*Acceptance:* a plan filed through the page is assignable by voice on the night,
-survives a mission reload, and a bad route is rejected with the offending fix
-named.
+*Acceptance:* ~~a plan filed through the page is assignable by voice on the
+night, survives a mission reload, and a bad route is rejected with the offending
+fix named.~~ All three, verified end to end: "Hammerhead" filed through the page,
+resolved on two spoken phrasings with no further setup, and still on the board
+after a bridge restart.
+
+**The validation is server-side and takes the board as arguments**, so the rules
+are tested with no Postgres, no container and no director — the same split
+`atis/serve.py` uses for its clock and its radio. What it refuses is the list of
+mistakes actually made in the week it was written: a fix nobody holds (named
+individually, so a six-fix route says which of the six), a label already on the
+board, a label with a spoken number in it, an approach that does not exist, and
+deleting the ACTIVE plan out from under the bridge. What it only *warns* about is
+judgement: a label that sounds like another, an altitude that is not a round
+hundred, and a task repeating its own endpoints — the #57 mistake, caught at the
+keyboard now instead of on the radio.
+
+**The page decides nothing.** It asks `/plans/check` while you type and again on
+submit, and its route box offers the fixes the director actually holds, so the
+typo is a thing you cannot make rather than a thing you are told about. A form
+that knew the rules would be a second copy of them.
 
 ### Phase 2 — import a planned route
 

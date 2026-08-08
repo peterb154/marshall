@@ -424,6 +424,47 @@ def plans_endpoint() -> dict:
     return {"plans": filed()}
 
 
+# --- filing a plan, which until #22 meant writing a migration ----------------
+# The validation is the substance and it lives in `tools/filing.py`, server-side,
+# because the kneeboard form is one caller and curl is another. A check that
+# lives in the page is a check the next caller does not run.
+@app.post("/plans")
+def file_plan_endpoint(body: dict) -> dict:
+    """File a plan, or refuse it and say which part cannot be flown."""
+    from tools.filing import file_plan
+    return file_plan(body, updating=body.get("updating", ""))
+
+
+@app.post("/plans/check")
+def check_plan_endpoint(body: dict) -> dict:
+    """What would be refused, without filing anything. Lets a form say so while
+    somebody is still typing rather than after they have pressed the button."""
+    from tools.filing import check_live
+    bad, warn = check_live(body, updating=body.get("updating", ""))
+    return {"refused": bad, "warnings": warn}
+
+
+@app.delete("/plans/{name}")
+def unfile_plan_endpoint(name: str) -> dict:
+    from tools.filing import unfile
+    return unfile(name)
+
+
+@app.get("/plans/fixes")
+def plan_fixes_endpoint() -> dict:
+    """Every place a route may name. The form offers these and nothing else, so
+    a typo is a thing you cannot make rather than a thing you are told about."""
+    from tools.filing import known_fixes
+    return {"fixes": sorted(known_fixes())}
+
+
+@app.get("/plans/approaches")
+def plan_approaches_endpoint() -> dict:
+    """The procedures a filed plan may name on arrival."""
+    from tools.filing import known_approaches
+    return {"approaches": sorted(known_approaches())}
+
+
 @app.get("/plans/resolve")
 def resolve_plan_endpoint(said: str, callsign: str = "") -> dict:
     """Which plan he means, without assigning it. The dry run for the radio, and

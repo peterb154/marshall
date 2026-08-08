@@ -38,12 +38,15 @@ external Nginx Proxy Manager that fronts this host. See deploy/docker-compose.ym
 """
 
 import importlib
+import json
 import os
 import sys
 import threading
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+
+from marshall.kneeboard import plans
 from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse,
                                RedirectResponse)
 
@@ -171,6 +174,8 @@ _HOME = """<!doctype html><meta charset="utf-8"><title>Marshall</title>
   <p>Procedural radio ATC &middot; kneeboard charts</p>
   <a href="/kneeboard/">&rarr; kneeboard charts</a>
   <a href="/flighttest/">&rarr; flight test card</a>
+  <a href="/file">&rarr; file a flight plan
+    <span class="why">&mdash; a desk page; the board the controller reads</span></a>
   <a href="/diag">&rarr; live diagnostics</a>
   <a href="/docs">&rarr; documents</a>
   <p class="why">charts, card and diagnostics are OpenKneeboard Web Dashboard
@@ -239,6 +244,75 @@ def _may_control(token: str) -> None:
                    "and restart the kneeboard")
     if token != CONTROL_TOKEN:
         raise HTTPException(status_code=403, detail="bad control token")
+
+
+# --- filing a plan: a thin proxy, and deliberately thin ----------------------
+#
+# The kneeboard runs in a container and the browser cannot reach the director
+# directly, so these forward. They add NOTHING: no validation, no defaulting, no
+# rewriting. Every rule about what a plan may contain is the director's, and a
+# proxy that "helpfully" fixed something up would be a second opinion in the one
+# place this project keeps singular.
+#
+# UNGATED, unlike `/control/*`. Filing a plan is not restarting the bridge --
+# nothing here touches a running sortie, `active` is not a field a form may set,
+# and the ACTIVE plan cannot be deleted. If this ever leaves the LAN it wants
+# the same token the control routes use.
+async def _director(method: str, path: str, body: bytes | None = None):
+    import urllib.error
+    import urllib.request
+    url = f"{plans.DIRECTOR}{path}"
+    req = urllib.request.Request(url, data=body, method=method,
+                                 headers={"content-type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=6) as r:
+            return JSONResponse(json.loads(r.read() or b"{}"), headers=NO_CACHE)
+    except urllib.error.HTTPError as e:
+        return JSONResponse({"refused": [f"the director said {e.code}"]},
+                            status_code=e.code, headers=NO_CACHE)
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        # SAID, not swallowed. A form that silently does nothing reads as a
+        # plan that was filed.
+        return JSONResponse(
+            {"refused": [f"could not reach the director at {plans.DIRECTOR} "
+                         f"— {e}"]}, status_code=503, headers=NO_CACHE)
+
+
+@app.get("/file", response_class=HTMLResponse)
+async def file_a_plan():
+    from marshall.kneeboard import filing
+    return HTMLResponse(filing.build(), headers=NO_CACHE)
+
+
+@app.get("/plans")
+async def plans_read():
+    return await _director("GET", "/plans")
+
+
+@app.get("/plans/fixes")
+async def plans_fixes():
+    return await _director("GET", "/plans/fixes")
+
+
+@app.get("/plans/approaches")
+async def plans_approaches():
+    return await _director("GET", "/plans/approaches")
+
+
+@app.post("/plans/check")
+async def plans_check(request: Request):
+    return await _director("POST", "/plans/check", await request.body())
+
+
+@app.post("/plans")
+async def plans_file(request: Request):
+    return await _director("POST", "/plans", await request.body())
+
+
+@app.delete("/plans/{name}")
+async def plans_unfile(name: str):
+    from urllib.parse import quote
+    return await _director("DELETE", f"/plans/{quote(name)}")
 
 
 @app.get("/control/bridge")

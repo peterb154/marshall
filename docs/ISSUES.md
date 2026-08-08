@@ -652,8 +652,9 @@ None of that exists in the plan. Same class as the invented ranges fixed in
 ## [UI-1] Flight planning front end — #22
 labels: feature
 
-**Status:** TODO — the DB half is [FP-1]. **Evaluated 3 August; the proposal is
-`docs/PLANNER.md` and it is three phases, not one.**
+**Status:** PHASE 1 DONE 8 August — a plan can be filed from a page and the
+board no longer needs a migration. Phases 2 (import) and 3 (the warbird nav-log
+planner) are open; the proposal is `docs/PLANNER.md`.
 
 A pilot files a plan before the sortie and the ATC knows him when he calls. The
 schema arrives with [FP-1]; this is the way in.
@@ -688,13 +689,14 @@ schema from a forum post is how a parser silently drops the last waypoint. The
 `.miz` and DTC import paths do not need it.
 
 **Acceptance criteria**
-1. A plan can be filed without touching the database by hand.
-2. A filed plan is assignable by voice on the night with no further setup.
-3. It survives a mission reload.
-4. A route naming a fix nobody holds is refused AT FILING TIME, with the
-   offending fix named — not discovered on the radio.
+1. ~~A plan can be filed without touching the database by hand.~~ `/file`.
+2. ~~A filed plan is assignable by voice on the night with no further setup.~~
+3. ~~It survives a mission reload.~~
+4. ~~A route naming a fix nobody holds is refused AT FILING TIME, with the
+   offending fix named — not discovered on the radio.~~ Named one at a time, so
+   a six-fix route says which of the six.
 5. One plan serves both cockpits: a nav log for the P-51, DTC waypoints for the
-   F-16, without being entered twice.
+   F-16, without being entered twice. **STILL OPEN — this is Phase 3.**
 
 ---
 
