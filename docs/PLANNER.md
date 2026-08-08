@@ -1,7 +1,8 @@
 # The flight planner — what to build, and what to import instead
 
-**Status:** proposal, 3 August 2026. Research for [UI-1] #22, which has said
-"Evaluate Digital Kneeboard Simulator before writing one" since it was filed.
+**Status:** researched 3 August 2026, **Phase 1 built 8 August**. For [UI-1] #22,
+which has said "Evaluate Digital Kneeboard Simulator before writing one" since it
+was filed. Phases 2 and 3 are open; Phase 2 is blocked on one sample file (§7).
 
 This is that evaluation, and the answer is: **import from it, do not race it,
 and build the thing it structurally cannot** — which turns out to be the thing
@@ -115,9 +116,8 @@ Three phases, each independently useful, each shippable alone.
 ### Phase 1 — file a plan without a migration — **DONE 8 August**
 
 `POST /plans` on the director, `/file` on the kneeboard, and
-`director/tools/filing.py` holding every rule. The narrowest thing that closes
-#22. A `POST /flightplans` on the director plus
-a form on the kneeboard server, writing the row the schema already defines.
+`director/tools/filing.py` holding every rule — the narrowest thing that closes
+#22, writing the row the schema already defines.
 
 Validation is the substance, not the form: a route naming a fix nobody holds
 must be **refused at filing time**, because the alternative is a controller
