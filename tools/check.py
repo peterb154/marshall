@@ -39,6 +39,10 @@ CHECKS = [
      "bugs the first time it ran", False),
     ("unit suite", [PY, "-m", "pytest", "-q"],
      "the separation engine, callsign identity, phraseology, the geometry", False),
+    ("nothing new is unwired", [PY, "tools/unwired.py"],
+     "#69 — a thing that exists and nothing reaches. The dominant failure mode "
+     "here: a complete state machine nobody called, an attribute read six times "
+     "and assigned never, a clearance stored and never read back out", False),
     ("approach sweep", [PY, "tools/asr_sweep.py"],
      "1,296 approaches: arrivals, dithering, where they establish", False),
     ("approach sweep, sloppy pilot", [PY, "tools/asr_sweep.py", "--sloppy"],

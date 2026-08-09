@@ -3303,3 +3303,52 @@ without a size.
 2. ~~It carries the route and the cruise level.~~
 3. ~~It distinguishes a clearance read back from one that was not.~~
 4. ~~A flight with no plan reads as it always did.~~
+
+---
+
+## [OPS-6] Audit for the thing that exists and nothing uses — #69
+labels: architecture
+
+**Status:** DONE 9 August. `tools/unwired.py`, in `check.py`.
+
+    "So that problem -- where we have a system and nothing is using it... that's
+     happened several times. Is this something you can audit for?"
+
+It has happened at least six times and it is the dominant failure mode of this
+project. Not bugs in what was written — the written thing is usually correct —
+but a correct thing no path reaches:
+
+| what | what it cost |
+|---|---|
+| `phases.guide` | a dispatcher written to fly the phase he is in; the arrival's geometry was called directly instead, and a departing F-16 was told he had gone around (#63) |
+| `Controller._me` | read in six places, assigned in none — so Kobuleti Tower cleared a take-off on Batumi's runway (#58) |
+| `flight_strip` | the plan, route and level were assigned, stored and joined; the strip read none of them (#68) |
+| `phrasebook.render` | built, tested, never wired — and the tests made it look alive |
+| `kneeboard/plans.py` | a page a pilot needs, with no tab (#56) |
+| `AtcCapability.era` | declared, never consulted, and the code says so in a comment |
+
+**Four shapes, all detectable:** a function nothing calls; an attribute read but
+never assigned; something only its own TESTS call; a module nothing imports.
+
+**What it cannot do, stated plainly.** It cannot tell whether a thing is called
+on the path that MATTERS. `asr.guide` was called constantly, by the wrong
+caller — no static pass finds that, only a sortie does. And a METHOD cannot be
+qualified (`ctl.get()` — `ctl` is an object, not a module), so methods are judged
+on their bare name and get false negatives. Module-level functions get the strong
+answer.
+
+**Proved against the real bugs rather than asserted.** Reintroduce the two
+historical faults into a copy of the tree and it names both:
+
+    DEFINED AND NOTHING CALLS IT
+      phases:guide          function  src/marshall/atc/phases.py:185
+    READ BUT NEVER ASSIGNED
+      _me                   attribute
+
+**Keyed on `module:name`, always.** Bare names cannot answer this: `guide` is
+defined in both `asr.py` and `phases.py`, and keyed on the bare name whichever
+file sorted first owned the answer while the other was invisible.
+
+**Baselined**, like the approach sweep, because a public helper and a framework
+entry point look unused and are not — 75 known today. It fails only on something
+NEW, since a check that is always red is a check nobody reads.
