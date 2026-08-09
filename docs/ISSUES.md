@@ -3140,3 +3140,56 @@ path skips the agent, the engine, the phase and the role entirely. It is a block
 around the whole system, and blocks are smells. It survives for now because a
 radio check genuinely needs no model — but anything with substance must not come
 back through it.
+
+---
+
+## [SEP-2] Ground cleared an aircraft for take-off, and argued about it — #65
+labels: bug, needs-flight-test
+
+**Status:** FIXED 9 August; awaiting the flight. Card row **Q5** is the check.
+
+    ATC:   Sockeye, Kobuleti Ground, cleared for takeoff runway zero seven.
+    PILOT: you are not authorized to clear for departure
+    ATC:   negative ... there is no separate tower here, I am also your tower,
+           cleared for takeoff runway zero seven
+    ATC:   negative, Kobuleti has no separate tower, I am Ground and Tower both
+           on one two one decimal eight
+
+The card says this is the most serious finding it can record: *"Ground owning the
+runway is the one thing on an aerodrome that must not be shared."* Two separate
+faults produced it.
+
+**The brief never said what a seat does NOT own.** Kobuleti Ground's `also` is
+empty and the `YOUR FIELD` block lists Kobuleti Tower on 133.000, so both facts
+were in front of the model. Every block told it what it IS; none told it what it
+is NOT, and it reasoned its way into the gap and then defended the position.
+There is a `NOT YOURS: THE RUNWAY` block now, read off the station table so a
+field that genuinely folds Tower onto Ground says the opposite from the same
+code. Scoped to the ground seats: on a GCA the radar controller relays Tower's
+landing clearance rather than sending a man in cloud to another radio, and that
+procedure must survive.
+
+**And the engine got it right and a guard deleted it — three times.**
+
+    CONTROLLER: Sockeye, Take-off is Tower's, contact Kobuleti Tower one three
+                three decimal zero.
+    .. refused an unauthorised handoff: <that sentence>
+    .. NOT VOICED [refuse] one three three decimal zero, Kobuleti Tower
+
+`strip_unauthorised_handoff` removes any "contact somebody" the bridge did not
+authorise — correct for a handoff the MODEL invented, exactly wrong for one the
+ENGINE decided. A refusal IS a redirect and is authorised by definition, and
+`_not_mine` already emits a `refuse` Decision carrying the station and the
+frequency, so the authorisation was sitting unused in the decision the whole
+time. It is read now.
+
+That is the shape of every guard in this file: a referee deleting output rather
+than a rule preventing it — see #63.
+
+**Acceptance criteria**
+1. Ground refuses a take-off request and names Tower's frequency.
+2. The refusal actually reaches the air.
+3. Ground does not agree it is also Tower when challenged.
+4. A field whose Ground genuinely also works Tower still clears take-offs.
+5. The GCA relay is unaffected: Approach still passes the landing clearance on
+   its own frequency.

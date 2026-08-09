@@ -332,6 +332,63 @@ def compose_message(bridge, scope, known, transcript, profile, me, fix, nxt,
                 f"names has the RIGHT button pressed. Do the work; do not "
                 f"send him to another frequency for it, and never name a "
                 f"frequency that is not on the plate.")
+        # WHAT IS NOT HIS TO GIVE, which the brief had never once said.
+        #
+        # Every block above tells a controller what he IS. None told him what he
+        # is NOT, and on 9 August Kobuleti Ground filled the gap itself:
+        #
+        #   ATC: Sockeye, Kobuleti Ground, cleared for takeoff runway zero seven.
+        #   PILOT: you are not authorized to clear for departure
+        #   ATC: negative ... there is no separate tower here, I am also your
+        #        tower, cleared for takeoff runway zero seven
+        #   ATC: negative, Kobuleti has no separate tower, I am Ground and Tower
+        #        both on one two one decimal eight
+        #
+        # Kobuleti Ground's `also` is empty and the YOUR FIELD block above lists
+        # Kobuleti Tower on 133.000, so the brief already held both facts. It
+        # asserted the opposite anyway, twice, when challenged. That is what a
+        # missing negative costs: the model had nothing SAYING no, so it
+        # reasoned its way to yes.
+        #
+        # Read off the station table, not written here, so a field that really
+        # does fold Tower onto Ground -- `also=("tower",)` -- says the opposite
+        # from the same code. The card calls this the most serious finding it
+        # can record: "Ground owning the runway is the one thing on an aerodrome
+        # that must not be shared."
+        # SCOPED TO THE GROUND SEATS, deliberately, and not to every seat that
+        # is not Tower. On a talkdown the radar controller flies the whole
+        # approach on his own frequency and RELAYS Tower's landing clearance
+        # rather than sending a man in cloud to another radio -- which is real
+        # GCA practice and is why `final_hz` keeps him on Approach. Telling
+        # Approach it may not clear a landing would break that.
+        #
+        # Where the rule is absolute is on the ground: Clearance and Ground do
+        # not own the runway, ever, under any procedure.
+        _mine = {getattr(me, "role", ""), *(getattr(me, "also", ()) or ())}
+        _on_the_ground = bool(_mine & {"ground", "clearance", "delivery"})
+        if "tower" not in _mine and _on_the_ground:
+            _twr = profile.station_for("tower", field=getattr(me, "field", ""))
+            _where = (f" — that is {_twr.name} on "
+                      f"{controller.spell_freq(_twr.freq_mhz)}"
+                      if _twr is not None else "")
+            parts.append(
+                f"NOT YOURS: THE RUNWAY. You may not clear anyone to take off, "
+                f"to land, to line up, or to cross{_where}. This is not a "
+                f"formality and it is not yours to waive: two aeroplanes on one "
+                f"strip is how people die, and it is prevented by exactly one "
+                f"man owning it. If a pilot asks you for take-off, send him to "
+                f"Tower with the frequency — do not clear him, do not tell him "
+                f"there is no Tower, and do not agree that you are also Tower. "
+                f"If he insists, repeat the frequency.")
+        if "ground" not in _mine and getattr(me, "role", "") != "clearance":
+            _gnd = profile.station_for("ground", field=getattr(me, "field", ""))
+            if _gnd is not None:
+                parts.append(
+                    f"NOT YOURS: THE GROUND. Taxi and parking are "
+                    f"{_gnd.name}'s, on "
+                    f"{controller.spell_freq(_gnd.freq_mhz)}. A pilot who has "
+                    f"vacated the runway goes to him.")
+
         # WHOM HE CALLS AFTER HE ROLLS, from the published stations rather
         # than from the model's memory of what it said a minute ago.
         #

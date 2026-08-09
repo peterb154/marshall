@@ -283,3 +283,78 @@ class TestAParkedAeroplaneHasNoApproachGeometry(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTheBriefSaysWhatIsNotYours(unittest.TestCase):
+    """The card calls this the most serious finding it can record: "Ground
+    owning the runway is the one thing on an aerodrome that must not be shared."
+
+    On 9 August Kobuleti Ground cleared an aircraft for take-off, was challenged
+    by the pilot, and doubled down twice:
+
+        "negative ... there is no separate tower here, I am also your tower,
+         cleared for takeoff runway zero seven"
+        "negative, Kobuleti has no separate tower, I am Ground and Tower both
+         on one two one decimal eight"
+
+    Kobuleti Ground's `also` is empty and the YOUR FIELD block lists Kobuleti
+    Tower on 133.000, so the brief already held both facts. It asserted the
+    opposite anyway. Every block told the controller what he IS; none told him
+    what he is NOT, and the model reasoned its way into the gap.
+    """
+
+    def brief(self, station):
+        from marshall.atc import agent_atc as A
+        from marshall.atc import assembly
+        from marshall.core import route as R
+        return assembly.compose_message(
+            A.Bridge(), scope="", known="Sockeye",
+            transcript="ready for departure", profile=R.BATUMI_ASR, me=station,
+            fix=None, nxt=None, directive="", stack="", vectoring="",
+            _flight={}, _flight_say="", claim="", name_say="")[0]
+
+    def test_a_ground_seat_is_told_the_runway_is_not_his(self):
+        from marshall.core import route as R
+        for st in (R.KOB_GROUND, R.KOB_CLEARANCE, R.GROUND):
+            with self.subTest(who=st.name):
+                said = self.brief(st)
+                self.assertIn("NOT YOURS: THE RUNWAY", said)
+                self.assertIn("do not agree that you are also Tower", said)
+
+    def test_and_told_which_frequency_to_send_him_to(self):
+        """Naming only the position leaves him hunting for a number while
+        holding short."""
+        from marshall.core import route as R
+        self.assertIn("Kobuleti Tower", self.brief(R.KOB_GROUND))
+        self.assertIn("one three three decimal zero", self.brief(R.KOB_GROUND))
+
+    def test_a_tower_seat_is_not_told_the_runway_is_not_his(self):
+        from marshall.core import route as R
+        for st in (R.KOB_TOWER, R.TOWER):
+            with self.subTest(who=st.name):
+                self.assertNotIn("NOT YOURS: THE RUNWAY", self.brief(st))
+
+    def test_the_radar_seat_keeps_its_talkdown_relay(self):
+        """On a GCA the radar controller flies the whole approach on his own
+        frequency and relays Tower's landing clearance rather than sending a man
+        in cloud to another radio. Telling Approach it may not clear a landing
+        would break the procedure."""
+        from marshall.core import route as R
+        self.assertNotIn("NOT YOURS: THE RUNWAY", self.brief(R.APPROACH))
+
+    def test_a_tower_seat_is_told_the_ramp_is_not_his(self):
+        """Batumi Tower cleared a pilot to taxi to parking after landing, which
+        is Ground's."""
+        from marshall.core import route as R
+        said = self.brief(R.TOWER)
+        self.assertIn("NOT YOURS: THE GROUND", said)
+        self.assertIn("one two one decimal nine", said)
+
+    def test_a_field_that_really_does_fold_them_together_says_the_opposite(self):
+        """Read off the station table, not written into the prose. A seat whose
+        `also` includes tower genuinely owns the runway and must not be told
+        otherwise."""
+        import dataclasses
+        from marshall.core import route as R
+        both = dataclasses.replace(R.KOB_GROUND, also=("tower",))
+        self.assertNotIn("NOT YOURS: THE RUNWAY", self.brief(both))

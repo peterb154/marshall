@@ -581,6 +581,10 @@ class Bridge:
         # `strip_unauthorised_handoff`. A one-element list for the same reason
         # `last_said` is: written on the pilot thread, read on the scheduler's.
         self.handoff_due: list = [None]
+        # Redirects the ENGINE decided this turn -- a clearance that is not this
+        # seat's, pointed at the man who owns it. Authorised by definition; see
+        # `separation_context`.
+        self.refuse_due: list = []
         # The decisions behind THIS turn's directive, for verifying that the
         # agent voiced them -- see `decision.verify`.
         self.decided: list = []
@@ -1805,6 +1809,27 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
         # the air on the last sortie and nothing noticed, because a sentence
         # cannot be checked and a decision can.
         bridge.decided[:] = [tx.decision for tx in _taken if tx.decision]
+        # A REFUSAL IS A REDIRECT, AND THE ENGINE AUTHORISED IT.
+        #
+        # `strip_unauthorised_handoff` removes any "contact somebody" the bridge
+        # did not authorise, which is right for a handoff the MODEL invented and
+        # exactly wrong for one the ENGINE decided. It ate this three times in
+        # one sortie:
+        #
+        #   CONTROLLER: Sockeye, Take-off is Tower's, contact Kobuleti Tower
+        #               one three three decimal zero.
+        #   .. refused an unauthorised handoff: <that sentence>
+        #   .. NOT VOICED [refuse] one three three decimal zero, Kobuleti Tower
+        #
+        # So Ground went on clearing him for take-off while the one sentence
+        # that would have stopped it was deleted on the way to the radio -- the
+        # engine being right and overruled by a guard, which is the shape of
+        # every guard in this file.
+        #
+        # `_not_mine` emits a `refuse` Decision carrying the station and the
+        # frequency, so the authorisation is already sitting in the decision.
+        bridge.refuse_due[:] = [d for d in bridge.decided
+                                if getattr(d, "kind", "") == "refuse"]
     except Exception as e:                       # must not break the call
         print(f"  !! controller classify failed: {e}", flush=True)
 
@@ -3821,7 +3846,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # by the receive loop just before this runs, and reading it after a long
         # unlocked model call could pick up a LATER turn's authorisation. So it
         # is captured here, while the caller's turn is still the current one.
-        _authorised = bridge.handoff_due[0]
+        _authorised = bridge.handoff_due[0] or (bridge.refuse_due or None)
         t0 = time.monotonic()
         try:
             reply = ask_agent(session_id, message, tier, url)
