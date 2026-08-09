@@ -482,5 +482,68 @@ class TestTheEngineIsToldWhichControllerItIs(unittest.TestCase):
                 self.assertIs(R.BATUMI_ASR.station_on(station.freq_mhz), station)
 
 
+class TestNobodyIsSentToTheOtherAerodromesTower(unittest.TestCase):
+    """The last three unscoped `station_for` calls, found in a live log.
+
+    On final at BATUMI a pilot was told "contact Kobuleti Tower one three three
+    decimal zero for landing", and after touchdown at Batumi he was welcomed by
+    "Kobuleti Tower" -- the last thing said on the whole sortie. Both took the
+    first role match from a list that happens to start with Kobuleti.
+
+    The landing clearance was wrong the other way round: it read
+    `profile.runway`, which is the runway of the approach being FLOWN, so
+    Kobuleti Tower cleared a landing on runway one three.
+    """
+
+    def landed_on(self, station, profile=R.BATUMI_ASR):
+        from marshall.atc import controller as C
+        c = C.Controller(profile)
+        c._me, c.working = station, station.role
+        ac = c.get("Sockeye")
+        ac.phase = C.Phase.CLEARED
+        c.report_landed("Sockeye")
+        return " ".join(t.text for t in c.take_out())
+
+    def test_approach_hands_him_to_his_own_fields_tower(self):
+        said = self.landed_on(R.APPROACH)
+        self.assertIn("Batumi Tower", said)
+        self.assertNotIn("Kobuleti", said)
+
+    def test_a_kobuleti_seat_hands_him_to_kobuleti(self):
+        self.assertIn("Kobuleti Tower", self.landed_on(R.KOB_DEPARTURE))
+
+    def test_the_landing_clearance_names_HIS_runway(self):
+        """Not the approach profile's. All three ground clearances -- taxi,
+        take-off and landing -- must name one runway, and it is the one in use
+        at the field he is actually at."""
+        self.assertIn("runway one three", self.landed_on(R.TOWER))
+        self.assertIn("runway zero seven", self.landed_on(R.KOB_TOWER))
+
+    def test_the_welcome_after_touchdown_is_his_own_tower(self):
+        from marshall.atc import controller as C
+        for station, want, wrong in ((R.TOWER, "Batumi Tower", "Kobuleti"),
+                                     (R.KOB_TOWER, "Kobuleti Tower", "Batumi")):
+            with self.subTest(who=station.name):
+                c = C.Controller(R.BATUMI_ASR)
+                c._me = station
+                c.get("Sockeye")
+                c.report_down("Sockeye")
+                said = " ".join(t.text for t in c.take_out())
+                self.assertIn(want, said)
+                self.assertNotIn(wrong, said)
+
+    def test_no_unscoped_role_lookups_are_left_in_the_engine(self):
+        """The class, not the instance. Five of these have been found one at a
+        time; this fails on the sixth."""
+        import pathlib
+        import re
+        for mod in ("controller.py", "agent_atc.py", "assembly.py"):
+            src = (pathlib.Path(__file__).resolve().parents[1]
+                   / "src" / "marshall" / "atc" / mod).read_text()
+            bad = re.findall(r'station_for\(\s*"[a-z]+"\s*\)', src)
+            with self.subTest(module=mod):
+                self.assertEqual(bad, [], f"{mod} resolves a role with no field")
+
+
 if __name__ == "__main__":
     unittest.main()

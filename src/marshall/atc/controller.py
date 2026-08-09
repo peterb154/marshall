@@ -1201,7 +1201,14 @@ class Controller:
         # clearance the speaker had no authority to issue. A pilot cannot tell
         # the difference on the radio, which is exactly why it matters: he lands
         # believing he was cleared, and Tower never knew he was there.
-        twr = self.profile.station_for("tower")
+        # HIS field. `station_for` answers the first role match when it is not
+        # given one, and on a two-aerodrome map that is a real controller at
+        # the wrong airport -- a pilot on final at Batumi was told to "contact
+        # Kobuleti Tower one three three decimal zero for landing", and then
+        # welcomed on the ground by Kobuleti Tower, forty miles from where he
+        # had parked.
+        twr = self.profile.station_for(
+            "tower", field=getattr(getattr(self, "_me", None), "field", ""))
         if self.working and twr is not None and self.working != "tower":
             self.say(ac.callsign,
                      f"{self._addr(ac)}, roger, field in sight, contact "
@@ -1211,9 +1218,14 @@ class Controller:
         # He has the field. What a controller owes him now is the CLEARANCE and
         # the wind -- not a verdict on whether the landing is assured, which is
         # the pilot's call and not a phrase a real controller uses.
+        # THE RUNWAY IN USE AT HIS FIELD, not the profile's. `profile.runway`
+        # is the runway of the approach being FLOWN, which is the arrival
+        # field's -- so Kobuleti Tower cleared a landing on runway one three,
+        # which is at Batumi. Same source as the taxi and take-off clearances,
+        # so all three name one runway; see `_runway_in_use`.
         self.say(ac.callsign,
                  f"{self._addr(ac)}, roger, cleared to land runway "
-                 f"{self.profile.runway or 'in use'}, {self._wind_phrase()}")
+                 f"{self._runway_in_use()}, {self._wind_phrase()}")
         self._try_clear()
 
     def report_down(self, cs: str) -> None:
@@ -1235,7 +1247,10 @@ class Controller:
         ac.map_t = None
         if self._letdown == ac.callsign:
             self._letdown = None
-        twr = (self.profile.station_for("tower")
+        # HIS field. This welcomed a pilot who had just landed at Batumi as
+        # "Kobuleti Tower" -- the last thing said on the whole sortie.
+        twr = (self.profile.station_for(
+                   "tower", field=getattr(getattr(self, "_me", None), "field", ""))
                if hasattr(self.profile, "station_for") else None)
         who = f"{twr.name}, " if twr else ""
         self.say(ac.callsign,

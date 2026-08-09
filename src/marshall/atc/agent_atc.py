@@ -2164,11 +2164,13 @@ def handoff_on_the_event(scope: str, track: str, me, profile) -> object | None:
     if unit is None:
         return None
     role = getattr(me, "role", "")
+    # HIS field, not the first role match -- see `Controller._runway_in_use`.
+    fld = getattr(me, "field", "")
     if unit.on_ground and role == "approach":
-        return profile.station_for("tower")
+        return profile.station_for("tower", field=fld)
     if not unit.on_ground and role == "tower":
         # Airborne again: Tower owns the runway, not the departure.
-        return profile.station_for("approach")
+        return profile.station_for("approach", field=fld)
     return None
 
 
@@ -3939,9 +3941,13 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # genuinely does take him at the intercept, so the old behaviour stands.
         _final = None
         if hasattr(profile, "station_for"):
-            _final = (profile.station_for("approach")
+            # The ARRIVAL field's, explicitly. This is the frequency the
+            # talkdown goes out on, so a first-role-match answer would put the
+            # mile calls on another aerodrome's channel.
+            _fld = R.ARRIVAL_FIELD
+            _final = (profile.station_for("approach", field=_fld)
                       if getattr(profile, "guidance", "") == "talkdown"
-                      else profile.station_for("tower"))
+                      else profile.station_for("tower", field=_fld))
         final_hz = (_final.freq_mhz * 1_000_000) if _final else freq_hz
         called: dict[str, int] = {}
         vectored: dict[str, int] = {}      # last heading issued, per aircraft
