@@ -3193,3 +3193,69 @@ than a rule preventing it — see #63.
 4. A field whose Ground genuinely also works Tower still clears take-offs.
 5. The GCA relay is unaffected: Approach still passes the landing clearance on
    its own frequency.
+
+---
+
+## [PHR-4] The check-in greeting was one sentence for every seat — #66
+labels: bug, needs-flight-test
+
+**Status:** FIXED 9 August; awaiting the flight.
+
+    "why would it ask for the field in sight, and why would it be asking for
+     information alpha at this field"
+
+He had lifted off Kobuleti ninety seconds earlier. Kobuleti Departure answered
+with the ARRIVAL greeting — report the field in sight, advise you have
+information Alpha, say your request — five times across the sortie, including
+from Georgia Center thirty miles out.
+
+**The seat is not what tells the two jobs apart.** Kobuleti Departure carries
+`also=("approach",)`, correctly, because it works Kobuleti's arrivals too — so
+`_owns("approach")` was true for a climbing aircraft. One controller frequently
+works both ends: Batumi Approach also works its departures.
+
+The PHASE tells them apart, and `phases.py` has said so since it was written —
+`owner_of("arrival")` is approach, `owner_of("departure")` is departure. It
+could not be asked until #63 made the phase real.
+
+Also out: the ATIS question. A pilot climbing out on a clearance he read back
+four minutes ago has already said what he wants, and the information he needs is
+the one at the field he is going TO. Approach and Clearance ask; Departure and
+Center do not.
+
+**Acceptance criteria**
+1. A departing aircraft is greeted with "radar contact" and nothing about the
+   field or the letter.
+2. The same seat working an ARRIVAL still asks — that half must not be lost.
+3. Center does not ask a man thirty miles out to report the field in sight.
+4. A voice out of nowhere with no phase is still treated as arriving, which is
+   what every sortie looked like before the ladder grew a ground half.
+
+---
+
+## [OPS-5] Frequencies are looked up, not carried — #67
+labels: architecture
+
+**Status:** DONE 9 August.
+
+    "giving the agent a tool to look up ANY frequency on demand is more
+     scalable and we dont need to waste tokens on every call"
+
+`look_up_frequency(place, position)` on the director. The axis is not "prompt
+versus tool" in general: a controller works ONE aerodrome, so his own field's
+handful of lines is cheap and constant and stays in the brief — he knows his own
+tower the way he knows his own name, and a round trip for the commonest question
+there is would be latency for nothing. Everywhere ELSE is unbounded: thirty
+fields at four to eight seats each is two hundred lines carried on every
+transmission of every sortie to answer a question a pilot asks twice a night.
+
+It removes a failure as well as tokens. Asked for a frequency it had not been
+given, the controller invented one — confidently, in correct phraseology, with a
+plausible number. The tool answers from the station list the bridge already
+publishes into `approaches`, so it cannot drift from `route.py`, and it says
+outright when a position does not exist: *"There is no Vaziani position on the
+published list... do not offer a number."* An empty result would invite the
+model to fill the silence itself, which is the failure being removed.
+
+Same bargain as `vector`: an exact answer is available, so an estimate is never
+acceptable.

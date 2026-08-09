@@ -598,6 +598,20 @@ class Controller:
         """
         if not self._owns("approach") and not self._owns("clearance"):
             return ""
+        # AND ONLY OF SOMEBODY ARRIVING, or on the ground about to depart.
+        #
+        #     "I had an IFR flight plan open and now they're asking for my
+        #      intent."
+        #
+        # A pilot climbing out on a clearance he read back four minutes ago has
+        # already said what he wants, and the ATIS he needs is the one at the
+        # field he is going TO, not the one he just left. Departure and Center
+        # ask him nothing; Approach and Clearance ask, which is who actually
+        # does it.
+        _on_the_ramp = (getattr(ac, "sortie_phase", "") or "").lower() in (
+            "", "unknown", "clearance", "taxi", "holding_short")
+        if not self._arriving(ac) and not _on_the_ramp:
+            return ""
         from marshall.core import route as _R
         me = getattr(self, "_me", None)
         fld = _R.field_named(getattr(me, "field", "") or _R.ARRIVAL_FIELD)
@@ -872,6 +886,30 @@ class Controller:
         self._letdown, self._letdown_since = ac.callsign, self.t
         return True
 
+    def _arriving(self, ac) -> bool:
+        """Is this aeroplane on its way IN?
+
+        The question a check-in reply turns on, and nothing used to ask it. One
+        controller frequently works both ends -- Kobuleti Departure also works
+        Kobuleti's arrivals, Batumi Approach also works its departures -- so the
+        SEAT cannot answer it and the phase can.
+
+        Unknown counts as arriving, because that is what every sortie looked
+        like until the ladder grew a ground half: a voice out of nowhere,
+        inbound, wanting an approach. Being asked to report the field in sight
+        when you are not arriving is untidy; NOT being asked when you are is a
+        controller who has not understood what you want.
+        """
+        from marshall.atc import phases as _phases
+        phase = (getattr(ac, "sortie_phase", "") or "").lower()
+        if not phase or phase == "unknown":
+            return True
+        # `rtb` is going home, which is arriving with more miles to run.
+        # `enroute` deliberately is NOT: the long middle of a sortie could be
+        # bound anywhere, and Georgia Center asking a man thirty miles out to
+        # report the field in sight is the same wrong question one seat over.
+        return _phases.owner_of(phase) == "approach" or phase == "rtb"
+
     def check_in(self, cs: str, size: int = 1) -> None:
         ac = self._enter(cs, size)
         # A CHECK-IN DOES NOT UNDO A CLEARANCE. This is the root cause of #50,
@@ -952,9 +990,26 @@ class Controller:
                     f"report {fix.name}. At {fix.name} contact {tower} "
                     f"{spell_freq(tower_freq)} -- you will be homing "
                     f"{self.profile.beacon.name} from there.")
-        elif self._owns("approach") or self._owns("center"):
+        elif self._arriving(ac) and (self._owns("approach")
+                                     or self._owns("center")):
             call = (f"{self._addr(ac)}, {here}, "
                     f"{self._report_phrase()}.")
+        elif self._owns("departure") or self._owns("center"):
+            # A DEPARTING AIRCRAFT IS NOT ASKED TO REPORT THE FIELD IN SIGHT.
+            #
+            #     "why would it ask for the field in sight, and why would it be
+            #      asking for information alpha at this field"
+            #
+            # He had just lifted off. Kobuleti Departure wears the approach hat
+            # -- `also=("approach",)`, correctly, because it works Kobuleti's
+            # arrivals too -- so `_owns("approach")` was true and he got the
+            # ARRIVAL greeting on climb-out. The seat could not tell the two
+            # jobs apart, because a seat is not what tells them apart.
+            #
+            # The PHASE is. One man works both, and what he says depends on
+            # which way the aeroplane is going -- see `phases.py`, which has
+            # said so since it was written.
+            call = f"{self._addr(ac)}, {here}, radar contact."
         else:
             # A GROUND SEAT DOES NOT ASK FOR A POSITION REPORT. "Report BATUMI
             # inbound" from Clearance, to a man who has not started his engine,

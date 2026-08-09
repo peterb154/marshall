@@ -287,13 +287,19 @@ def compose_message(bridge, scope, known, transcript, profile, me, fix, nxt,
                          f"{controller.spell_freq(_fld.atis_mhz)}")
             parts.append(
                 f"YOUR FIELD — {me.field}: {rows}. These are the ONLY "
-                f"frequencies you may name for {me.field}. Any other number "
-                f"you say for this field is one you have invented, and a "
-                f"pilot sent to an invented frequency calls into silence and "
-                f"has no way of telling that from a controller who has "
-                f"stopped answering. If you are asked for a position this "
-                f"field does not staff, say so and keep him — do not "
-                f"manufacture a number for it.")
+                f"frequencies you may name from memory, because they are the "
+                f"only ones you have been given. Any other number you produce "
+                f"for {me.field} is one you have invented, and a pilot sent to "
+                f"an invented frequency calls into silence and has no way of "
+                f"telling that from a controller who has stopped answering. "
+                f"If you are asked for a position this field does not staff, "
+                f"say so and keep him.\n"
+                f"ANYWHERE ELSE ON THE MAP, CALL `look_up_frequency`. You do "
+                f"not know another aerodrome's frequencies and must not "
+                f"recall one — the tool has every published station and will "
+                f"tell you plainly when a position does not exist, which is an "
+                f"answer worth passing on. Same rule as `vector`: an exact "
+                f"answer is available, so an estimate is never acceptable.")
         # WHO HE IS, as distinct from what he does. See `Station.manner`.
         #
         # Fenced hard, and the fence is the point rather than boilerplate: a

@@ -547,3 +547,105 @@ class TestNobodyIsSentToTheOtherAerodromesTower(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestAnotherFieldsFrequencyIsLookedUpNotRecalled(unittest.TestCase):
+    """His own aerodrome is in the brief; everywhere else is a tool call.
+
+        "giving the agent a tool to look up ANY frequency on demand is more
+         scalable and we dont need to waste tokens on every call"
+
+    That is the axis. A controller works ONE field, so its handful of lines is
+    cheap and constant; the rest of the map is thirty aerodromes at four to
+    eight seats each, carried on every transmission of every sortie to answer a
+    question a pilot asks twice a night.
+    """
+
+    def brief(self, station):
+        from marshall.atc import agent_atc as A
+        from marshall.atc import assembly
+        return assembly.compose_message(
+            A.Bridge(), scope="", known="Sockeye",
+            transcript="say the frequency for Batumi Tower", profile=R.BATUMI_ASR,
+            me=station, fix=None, nxt=None, directive="", stack="",
+            vectoring="", _flight={}, _flight_say="", claim="", name_say="")[0]
+
+    def test_he_is_told_to_call_the_tool_for_anywhere_else(self):
+        said = self.brief(R.KOB_CLEARANCE)
+        self.assertIn("look_up_frequency", said)
+        self.assertIn("must not", said.split("look_up_frequency")[1][:200])
+
+    def test_his_own_fields_frequencies_are_still_handed_to_him(self):
+        """Not replaced by the tool. A controller knows his own tower the way he
+        knows his own name, and a round trip for it would be latency on the
+        commonest question there is."""
+        said = self.brief(R.KOB_CLEARANCE)
+        self.assertIn("YOUR FIELD — Kobuleti", said)
+        self.assertIn("Kobuleti Tower", said)
+
+    def test_and_no_other_aerodromes_numbers_are_carried(self):
+        """The scaling half. If another field's frequency is in the prompt, the
+        tool has bought nothing."""
+        from marshall.atc import controller
+        head = self.brief(R.KOB_CLEARANCE)
+        for s, hz in _foreign_numbers(R.KOB_CLEARANCE.field):
+            with self.subTest(stranger=f"{s.name} {hz}"):
+                self.assertNotIn(controller.spell_freq(hz), head)
+
+
+class TestTheCheckInReplyDependsOnWhichWayHeIsGoing(unittest.TestCase):
+    """One seat, two jobs.
+
+        "why would it ask for the field in sight, and why would it be asking
+         for information alpha at this field"
+
+    He had just lifted off Kobuleti. Kobuleti Departure wears the approach hat
+    -- `also=("approach",)`, correctly, because it works Kobuleti's arrivals too
+    -- so `_owns("approach")` was true and a climbing aircraft got the ARRIVAL
+    greeting. The seat cannot tell the two jobs apart, because a seat is not
+    what tells them apart. The PHASE is, and `phases.py` has said so since it
+    was written.
+    """
+
+    def greeting(self, station, phase):
+        from marshall.atc import controller as C
+        c = C.Controller(R.BATUMI_ASR)
+        c._me = station
+        c.get("Sockeye").sortie_phase = phase
+        c.check_in("Sockeye")
+        return " ".join(t.text for t in c.take_out())
+
+    def test_a_departing_aircraft_is_not_asked_for_the_field(self):
+        said = self.greeting(R.KOB_DEPARTURE, "departure")
+        self.assertIn("radar contact", said)
+        self.assertNotIn("field in sight", said)
+
+    def test_nor_for_an_information_letter_he_has_already_left_behind(self):
+        """The ATIS he needs is the one where he is GOING. He read a clearance
+        back four minutes ago; he has said what he wants."""
+        self.assertNotIn("information",
+                         self.greeting(R.KOB_DEPARTURE, "departure").lower())
+
+    def test_the_same_seat_working_an_arrival_still_asks(self):
+        """The half that must not be lost. Kobuleti Departure genuinely does
+        work Kobuleti's arrivals."""
+        said = self.greeting(R.KOB_DEPARTURE, "arrival")
+        self.assertIn("field in sight", said)
+
+    def test_center_does_not_ask_a_man_thirty_miles_out(self):
+        said = self.greeting(R.CENTER, "enroute")
+        self.assertNotIn("field in sight", said)
+
+    def test_a_ground_seat_asks_for_the_request_and_the_letter(self):
+        """Clearance is one of the two positions that genuinely checks the
+        ATIS, and a man on the ramp has not said what he wants yet."""
+        said = self.greeting(R.KOB_CLEARANCE, "clearance")
+        self.assertIn("Say your request", said)
+        self.assertNotIn("field in sight", said)
+
+    def test_a_voice_out_of_nowhere_is_still_treated_as_arriving(self):
+        """Every sortie looked like this until the ladder grew a ground half:
+        no phase, inbound, wanting an approach. Being asked when you are not
+        arriving is untidy; NOT being asked when you are is a controller who has
+        not understood what you want."""
+        self.assertIn("field in sight", self.greeting(R.APPROACH, ""))

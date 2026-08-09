@@ -50,6 +50,7 @@ from tools.approaches import (
 )
 from tools.clearance import clearance_tools
 from tools.context import RadioContext, scrub
+from tools.frequencies import frequency_tools
 from tools.hooks import due_hooks, hook_tools
 from tools.identify import bindings_for, identify_tools
 from marshall.feed.events import start_events
@@ -116,6 +117,17 @@ def build_agent(session_id: str) -> Agent:
             # facts about what was filed, and a controller who improvises them
             # has cleared somebody to an altitude nobody wrote down.
             *clearance_tools(),
+            # ANY FREQUENCY ON THE MAP, on demand. His OWN field's are in the
+            # brief -- a controller works one aerodrome and knows it cold -- and
+            # everywhere else is unbounded: thirty fields at four to eight seats
+            # each would be two hundred lines carried on every transmission to
+            # answer a question a pilot asks twice a night.
+            #
+            # It also removes a real failure rather than saving tokens. Asked
+            # for a frequency it had not been given, the controller invented one,
+            # confidently and in correct phraseology, and a pilot sent to an
+            # invented frequency calls into silence.
+            *frequency_tools(),
             *memory_tools(namespace=session_id),
             # The OVERLORD's hands. One agent covers every position and picks
             # its manner from which frequency was called, so the tool is here
