@@ -230,8 +230,6 @@ class TestIdentityPersists(unittest.TestCase):
             self.assertTrue(reg.resolve("g", "Sockeye", **kw).why)
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class TestBorrowedAuthorityCannotBeSelfMade(unittest.TestCase):
@@ -807,3 +805,70 @@ class TestNoOneMayNameHimself(unittest.TestCase):
         self.assertEqual(r.speaking_as("sockeye"), "sockeye")
         r.create("Apex", "sockeye")
         self.assertEqual(r.speaking_as("sockeye"), "Apex")
+
+
+class TestACallsignIsCorrectedOnCheckInOnly(unittest.TestCase):
+    """#52, and it was five corrections in one sortie.
+
+    Every one was a fragment of a READ-BACK -- an English word that happened to
+    sit in front of a number we had just given him:
+
+        "Write 305 to send 6,500 sockeye"   -> "Send six, I do not have you
+        "Clear to land one tree, sockeye"      on the board"
+        "305, 2000, slow into 250, sockeye" -> "Into two zero, ..."
+
+    The last arrived directly after a landing clearance.
+
+    IDENTITY DOES NOT DEPEND ON ANY OF IT. The SRS GUID and the radar track say
+    who he is, so a wrong callsign cannot misroute a clearance or put a ghost in
+    the stack. The correction is a courtesy, and a courtesy must fail silent.
+
+    So it is asked on CHECK-IN only -- which is the one moment a wrong callsign
+    matters, because it is what everyone else on the frequency heard him call
+    himself. A read-back is structurally mid-conversation, so the whole class
+    disappears rather than being filtered word by word.
+    """
+
+    def misnamed(self, claim, said, known="sockeye"):
+        from marshall.atc import agent_atc as A
+        from marshall.atc.addressing import misnamed
+
+        class Ctl:
+            def board(self):
+                return []
+        return misnamed(A.Bridge(), Ctl(), claim, known, known, said=said)
+
+    def test_the_five_readbacks_from_the_sortie_are_silent(self):
+        for said, claim in (
+                ("Write 305 to send 6,500 sockeye", "Send 6"),
+                ("Clear to land one tree, sockeye", "Land 1-3"),
+                ("305, 2000, slow into 250, sockeye", "Into 2-0"),
+                ("Go on to approach 124 decimal 425, sockeye", "Decimal 4-5"),
+                ("Batumi Approach, sockeye, with you 12,000 levels", "You 1-2")):
+            with self.subTest(claim=claim):
+                self.assertEqual(self.misnamed(claim, said), "",
+                                 f"{claim!r} was read as a callsign")
+
+    def test_a_genuinely_wrong_callsign_is_still_corrected(self):
+        """The feature this exists for. He uses a name nobody answers to and
+        does NOT use his own, which is what tells the two apart."""
+        got = self.misnamed(
+            "Falcon 1-1", "Batumi Approach, Falcon one one, request the approach")
+        self.assertIn("Falcon one one", got)
+        self.assertIn("Sockeye", got)
+
+    def test_the_check_in_gate_is_the_frequency_he_was_last_heard_on(self):
+        """The narrowing itself. `heard_on` is written after this check, so it
+        still holds the previous channel -- a different one means he is calling
+        a controller who has not heard from him yet."""
+        import pathlib
+
+        from marshall.atc import agent_atc as A
+        src = pathlib.Path(A.__file__).read_text()
+        self.assertIn("_checking_in = _was_on != (heard_hz or freq_hz)", src)
+        self.assertIn("if claim and _checking_in and _key not in bridge.corrected:",
+                      src)
+
+
+if __name__ == "__main__":
+    unittest.main()

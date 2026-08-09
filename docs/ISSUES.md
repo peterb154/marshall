@@ -2590,29 +2590,50 @@ indistinguishable from being forgotten):
 ## [ID-6] Frequency read-backs are parsed as callsigns — #52
 labels: bug
 
-**Status:** OPEN. Found live, 31 July.
+**Status:** CLOSED 9 August. Confirmed live first — five corrections in one
+sortie, every one a fragment of a read-back:
 
-Reading a frequency back produced callsign corrections addressed to fragments of
-the number:
+    "Write 305 to send 6,500 sockeye"   -> "Send six, I do not have you on the board"
+    "Clear to land one tree, sockeye"   -> "Land one three, ..."
+    "305, 2000, slow into 250, sockeye" -> "Into two zero, ..."
+    "Go on to approach 124 decimal 425, sockeye"  -> "Decimal four five, ..."
+    "Batumi Approach, sockeye, with you 12,000"   -> "You one two, ..."
 
-    PILOT: "124, decimal four. Batumi Approach, sockeye, over."
-    ATC:   "Decimal four, I do not have you on the board. You are Sockeye..."
-    ATC:   "Batumi four, I do not have you on the board..."
+The last arrived directly after a landing clearance.
 
-The identity was correct throughout — he was never mis-bound, and the correction
-names the right callsign. The fault is that a number spoken in a read-back is
-treated as a claimed callsign at all, so the controller opens every reply by
-correcting a name nobody used.
+**Not fixed by a better parser, because that question does not converge.**
+`_plausible_callsign` says so in its own docstring: any English word in front of
+a digit is a candidate, and a read-back is made of our own words and numbers.
+Six ghosts were fixed one denylisted word at a time and one of those fixes
+created the next ghost.
 
-Cosmetic in effect, but it is on **every** frequency change, which is once per
-rung of a seven-rung ladder.
+**IDENTITY NEVER DEPENDED ON IT.** The SRS GUID and the radar track say who is
+talking, so a wrong callsign cannot misroute a clearance or put a ghost in the
+stack. The correction is a COURTESY — and a courtesy must fail silent. It was
+failing loud.
+
+So the question was narrowed instead of the parser widened. A wrong callsign
+matters exactly when it is what everyone else on the frequency heard him call
+himself, which is the **check-in** — not the ninth read-back. Real controllers
+work that way. And a read-back is structurally mid-conversation, so the entire
+class disappears rather than being filtered word by word.
+
+Gated on `heard_on`, which still holds the previous frequency at that point, so
+a different channel means a controller who has not heard from him yet. No new
+state. A second, free guard: a man does not give himself two callsigns in one
+transmission, so a claim is ignored when the transmission also contains the name
+his radio answers to.
+
+**Also out:** `heard 'X', but this radio is Y` compared raw strings and fired 23
+times in that sortie — 19 of them `Sockeye` against `sockeye`, pure case, burying
+the four real mishearings (Sakai, Sucka, Sucker, "Write 2-5-5"). It uses
+`_matches_name` now, which is what the rest of the identity path uses.
 
 **Acceptance criteria**
-1. A read-back containing a frequency produces no callsign correction.
-2. A genuinely wrong callsign is still corrected — this must not be bought by
-   disabling the guard, which is [ID-3]/#48's whole point.
-3. Guarded by a unit test over the recorded transmissions, not by ear.
-
+1. ~~A read-back is never mistaken for a callsign.~~ All five from the sortie,
+   guarded in `tests/test_identity.py`.
+2. ~~A pilot who checks in under a name nobody answers to is still corrected.~~
+3. ~~The log notes an identity mismatch only when there is one.~~
 ---
 
 ## [APP-5] The NDB letdown profile claims radar — #53

@@ -1664,7 +1664,14 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
         # controller who does not know who is calling asks, and he cannot
         # sequence somebody he cannot name. The cost of the old behaviour was a
         # holding stack with three aeroplanes in it, two of which were sentences.
-        if intent.callsign and known and intent.callsign != known:
+        if intent.callsign and known and not _matches_name(intent.callsign, known):
+            # NOTED ONLY WHEN THEY ACTUALLY DISAGREE. This compared raw strings,
+            # so "Sockeye" against a radio bound as "sockeye" printed a warning
+            # -- 19 times in one sortie, against 4 real mishearings (Sakai,
+            # Sucka, Sucker, "Write 2-5-5"). A log line that fires on a case
+            # difference is a log line nobody reads, and it was burying the ones
+            # that meant something. `_matches_name` is the comparison the rest
+            # of the identity path already uses.
             print(f"  .. heard '{intent.callsign}', but this radio is {known}",
                   flush=True)
             intent = dataclasses.replace(intent, callsign=known)
@@ -4336,10 +4343,41 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # who is talking. Deterministic -- whether a name is on the board is a
         # fact about the board -- so the agent is handed the words rather than
         # the question. Once per radio per wrong name; see `Bridge.corrected`.
+        #
+        # ON CHECK-IN ONLY, and that narrowing is the fix for #52.
+        #
+        # A wrong callsign has no operational consequence here: identity comes
+        # off the SRS GUID and the radar track, so a bad name cannot misroute a
+        # clearance or put a ghost in the stack. The correction is a courtesy,
+        # and a courtesy must fail SILENT. It was failing loud -- five times in
+        # one sortie, every one a fragment of a read-back:
+        #
+        #     "Write 305 to send 6,500 sockeye"  -> "Send six, I do not have
+        #                                            you on the board"
+        #     "Clear to land one tree, sockeye"  -> "Land one three, ..."
+        #
+        # The last arrived directly after a landing clearance. `_plausible_
+        # callsign` cannot separate these and says so: any English word before a
+        # digit is a candidate, and a read-back is made of our own words and
+        # numbers. That question does not converge.
+        #
+        # A NARROWER QUESTION DOES. A wrong callsign matters exactly when it is
+        # what everyone else on the frequency heard him call himself -- which is
+        # the CHECK-IN, not the ninth read-back. Real controllers work this way:
+        # corrected when you first call up, not every time you acknowledge a
+        # heading. And a read-back is structurally mid-conversation, so the
+        # whole class disappears rather than being filtered.
+        #
+        # `heard_on` still holds the LAST frequency here -- it is written forty
+        # lines below -- so a different channel means he is calling a controller
+        # who has not heard from him yet. No new state.
         _name_say = ""
         _key = (client.last_sender_guid or "", (claim or "").lower())
-        if claim and _key not in bridge.corrected:
-            _name_say = misnamed(bridge, ctl, claim, known, _who)
+        _was_on = bridge.heard_on.get(known) if known else None
+        _checking_in = _was_on != (heard_hz or freq_hz)
+        if claim and _checking_in and _key not in bridge.corrected:
+            _name_say = misnamed(bridge, ctl, claim, known, _who,
+                                 said=transcript)
             if _name_say:
                 bridge.corrected.add(_key)
                 print(f"  .. correcting {claim!r} — nobody answers to it",

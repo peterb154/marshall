@@ -67,7 +67,8 @@ def addressed_to_another_aircraft(transcript: str, speaker: str,
 _heard_names: dict[str, int] = {}
 
 
-def misnamed(bridge, ctl, claim: str, known: str, who: str) -> str:
+def misnamed(bridge, ctl, claim: str, known: str, who: str,
+             said: str = "") -> str:
     """What the controller says when a pilot uses a callsign nobody answers to.
 
         "if a pilot says 'falcon 1-1, approach' and there is no falcon 1-1 (a
@@ -97,6 +98,31 @@ def misnamed(bridge, ctl, claim: str, known: str, who: str) -> str:
     from marshall.atc import callsign as C
     if not claim:
         return ""
+    # A MAN DOES NOT GIVE HIMSELF TWO CALLSIGNS IN ONE TRANSMISSION.
+    #
+    # This is the whole of #52 and it cost five corrections in one sortie:
+    #
+    #     "Write 305 to send 6,500 sockeye"       -> "Send six, I do not have
+    #     "Clear to land one tree, sockeye"          you on the board"
+    #     "305, 2000, slow into 250, sockeye"     -> "Into two zero, ..."
+    #     "Go on to approach 124 decimal 425,     -> "Decimal four five, ..."
+    #      sockeye"
+    #
+    # Every one is a fragment of a READ-BACK -- an English word that happened to
+    # sit in front of a number we ourselves had just given him. The last of them
+    # arrived immediately after a landing clearance: "Land one three, I do not
+    # have you on the board."
+    #
+    # `_plausible_callsign` cannot tell them apart, and the comment on its edge
+    # rule already suspected as much: any English word in front of a digit is a
+    # candidate, and a read-back is made of our own words and numbers.
+    #
+    # But the transmission answers it. He said "sockeye", the radio says he is
+    # Sockeye, and those agree -- so whatever else in the sentence looked like a
+    # name is not a second aeroplane. A pilot using the WRONG callsign, which is
+    # what this function is for, does not also use the right one.
+    if said and known and _names_himself(said, known):
+        return ""
     ok = {n.lower() for n in bridge.flights.names()}
     ok |= {n.lower() for n in known_flight_names()}
     for n in (known, who):
@@ -116,6 +142,20 @@ def misnamed(bridge, ctl, claim: str, known: str, who: str) -> str:
         return (f"{said}, I do not have you on the board. "
                 f"You are {C.parse(known).spoken} — use that callsign.")
     return f"{said}, I do not have you on the board. Say your callsign."
+
+
+def _names_himself(said: str, known: str) -> bool:
+    """Does this transmission contain the callsign this radio answers to?
+
+    Matched on the FLIGHT NAME rather than the whole callsign, because a
+    read-back ends "...sockeye" and not "...sockeye one one" -- a pilot drops
+    the numbers when the controller has been talking to him for ten minutes,
+    which is exactly the stretch of a sortie where this fired.
+    """
+    from marshall.atc import callsign as C
+    name = (C.parse(known).flight or known).split()
+    name = name[0].lower() if name else ""
+    return bool(name) and name in (said or "").lower()
 
 
 def _matches_name(a: str, b: str) -> bool:

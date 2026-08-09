@@ -195,7 +195,8 @@ def run(script, session_id: str, sep_always: bool = True,
         name_say = ""
         if claim and _key not in bridge.corrected:
             name_say = agent_atc.misnamed(bridge, ctl, claim, known,
-                                          identity.handle(ident.track or srs))
+                                          identity.handle(ident.track or srs),
+                                          said=text)
             if name_say:
                 bridge.corrected.add(_key)
                 print(f"  CORRECTION: {name_say}", flush=True)
