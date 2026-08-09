@@ -39,6 +39,12 @@ _FIELDS = ("callsign", "track_name", "srs_guid", "srs_name", "intent",
            "destination", "claimed_size", "controller", "procedure", "runway",
            "cleared", "assigned_ft", "assigned_hdg", "sequence_no",
            "missed_count", "promised", "promised_at", "lead_of", "flight_plan",
+           # THE SPOKEN LABEL, beside the plan's key. The key is
+           # "362nd-kobuleti-batumi"; the label is "Domino", which is the word
+           # the pilot said and the word a controller would use back. A strip
+           # carrying only the key can either read a database row aloud or say
+           # nothing, and it said nothing.
+           "flight_plan_label",
            "origin", "route", "cruise_ft", "clearance_ack")
 
 

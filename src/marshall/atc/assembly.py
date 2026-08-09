@@ -87,9 +87,44 @@ def flight_strip(f: dict) -> str:
     if not f:
         return ""
     bits = [f.get("callsign") or "unidentified"]
-    if f.get("claimed_size", 1) and f["claimed_size"] > 1:
+    # `.get` on BOTH halves. This read `f["claimed_size"]` after a `.get` with a
+    # default, so any row without the key raised -- and the strip is composed on
+    # every transmission, so a KeyError here takes the turn down.
+    if (f.get("claimed_size") or 1) > 1:
         bits.append(f"flight of {f['claimed_size']}")
-    if f.get("intent") or f.get("destination"):
+    # THE CLEARANCE HE IS ALREADY FLYING, which no controller after Clearance
+    # was ever told about.
+    #
+    #     "I had an IFR flight plan open and now they're asking for my intent."
+    #
+    # Assignment has always worked: the plan is matched from what he said,
+    # COPIED into `assigned_plans` against his flight, joined into
+    # `flight_state`, and stamped when he reads it back. Every field is
+    # populated and correct. This function -- the only thing that tells the next
+    # controller what he has inherited -- read none of them.
+    #
+    # So Departure, Center and Approach each met a man with a filed route and a
+    # cleared cruise altitude and asked him what he wanted. A strip exists
+    # precisely so the next controller starts knowing that.
+    if f.get("flight_plan") or f.get("route"):
+        _label = f.get("flight_plan_label") or f.get("label")
+        plan = [f"on {_label}" if _label else "IFR as filed"]
+        if f.get("origin") and f.get("destination"):
+            plan.append(f"{f['origin']} to {f['destination']}")
+        if f.get("route"):
+            # Hyphens, not commas. The strip is already a comma list and a route
+            # inside it reads as four more fields.
+            plan.append("via " + "-".join(
+                x.strip() for x in str(f["route"]).split(",") if x.strip()))
+        if f.get("cruise_ft"):
+            plan.append(f"cruise {int(f['cruise_ft']):,} ft")
+        # READ BACK OR NOT, because an unacknowledged clearance is not agreed
+        # and the difference is exactly what `clearance_ack` was added to
+        # record. A controller who assumes agreement has an aeroplane flying a
+        # route nobody confirmed.
+        plan.append("read back" if f.get("clearance_ack") else "NOT read back")
+        bits.append(", ".join(plan))
+    elif f.get("intent") or f.get("destination"):
         bits.append(f"{f.get('intent') or 'inbound'} "
                     f"{f.get('destination') or ''}".strip())
     if f.get("procedure"):

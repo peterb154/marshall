@@ -3259,3 +3259,47 @@ model to fill the silence itself, which is the failure being removed.
 
 Same bargain as `vector`: an exact answer is available, so an estimate is never
 acceptable.
+
+---
+
+## [FP-6] The clearance was assigned and no later controller was told — #68
+labels: bug
+
+**Status:** DONE 9 August.
+
+    "is the flight plan assignment working? I ask clearance for off to batumi
+     but I don't think anything is happening with that"
+
+**It was working, completely.** A pilot asks Clearance for "Domino"; the plan is
+matched from his own words, COPIED into `assigned_plans` against his flight,
+denormalised onto `flights`, joined into `flight_state`, and stamped when he
+reads it back. The 9 August sortie has the row: flight 780, Domino, Kobuleti to
+Batumi, 5,000 ft, acknowledged at 20:48:52. Every field populated and correct.
+
+And `flight_strip` — the one thing that tells the next controller what he has
+inherited — read **none** of them. Not the plan, not the route, not the cruise
+level, not whether it had been acknowledged. So Departure, Center and Approach
+each met a man with a filed route and a cleared altitude and asked him what he
+wanted:
+
+> *"I had an IFR flight plan open and now they're asking for my intent."*
+
+Which is the same shape as everything else this week — #63, #58, #52 — the data
+exists, is correct, and nothing reads it.
+
+**Two things went with it.** `flights` kept the plan's KEY and not its LABEL, so
+a strip could either read `362nd-kobuleti-batumi` aloud or say nothing; the
+spoken label is denormalised now beside the route and the level, for the same
+reason those are — relabelling a template later must not retrospectively change
+what somebody was cleared on.
+
+And a latent crash: `f.get("claimed_size", 1) and f["claimed_size"]` made the
+guard truthy from the default and then subscripted a missing key. The strip is
+composed on every transmission, so that took the whole turn down for any row
+without a size.
+
+**Acceptance criteria**
+1. ~~The strip names the plan by the label the pilot said.~~
+2. ~~It carries the route and the cruise level.~~
+3. ~~It distinguishes a clearance read back from one that was not.~~
+4. ~~A flight with no plan reads as it always did.~~

@@ -119,6 +119,7 @@ def assign(flight_id: int, plan: dict, *, mission: str = "default",
     # provenance and the read-back, the flight row keeps what was agreed.
     from tools import flights as F
     F.agree(flight_id, flight_plan=row.get("name"),
+            flight_plan_label=row.get("label"),
             destination=row.get("destination"),
             route=route or row.get("route"), cruise_ft=row.get("cruise_ft"),
             clearance_ack=None)
