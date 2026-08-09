@@ -2899,7 +2899,8 @@ def decide(bridge, ctl, transcript, scope, known, track, engaged, profile):
     return directive, stack, vectoring
 
 
-def settle(bridge, directive, stack, vectoring, fix, profile, known, ctl):
+def settle(bridge, directive, stack, vectoring, fix, profile, known, ctl,
+           scope: str = "", track: str = ""):
     """One aeroplane, one instruction. Which authority owns him this turn.
 
     EXTRACTED VERBATIM, 30 July. `reconcile` exists because a pilot was once
@@ -2916,10 +2917,29 @@ def settle(bridge, directive, stack, vectoring, fix, profile, known, ctl):
     """
     from marshall.atc import asr
 
+    # AN AEROPLANE ON THE GROUND HAS NO APPROACH GEOMETRY, and this is the
+    # second place that has had to learn it.
+    #
+    # `asr.guide` answers where he is on the letdown. Asked about a jet parked
+    # on a ramp -- low, slow, a few hundred yards from the field -- it answers
+    # "map": through the missed approach point, below minimums, past the
+    # threshold. All true of the numbers and none of it true of the aeroplane.
+    #
+    # `reconcile` then reads that phase and suppresses the engine's directive,
+    # so the deterministic TAXI CLEARANCE was dropped on the ramp and the agent
+    # improvised one. It said runway zero seven, which is right, and it was
+    # right by luck -- nothing had handed it a runway.
+    #
+    # `asr_context` has guarded this since a pilot "sitting on the ramp at
+    # thirty-nine feet was told he had gone around". That guard is one function
+    # and this path did not call it. Same question, same answer, one source:
+    # the sim's own on-ground flag when there is one, alt and speed when there
+    # is not.
+    down = fix is not None and is_on_the_ground(scope, track or known, fix)
     guide = (asr.guide(fix, profile,
                        on_missed=flying_the_missed(bridge, known or "?", fix, profile,
                                                    ctl))
-             if fix is not None else None)
+             if fix is not None and not down else None)
     directive, stack, vectoring, dropped = reconcile(
         directive, stack, vectoring, guide)
     return directive, stack, vectoring, guide, dropped
@@ -4449,6 +4469,34 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # stays pure rich Sonnet: radar-aware, fluent, no classify on the path.
         engaged = SEP_ALWAYS or n_contacts >= 2 or len(ctl.aircraft) >= 2
 
+        # WHICH CONTROLLER THE ENGINE IS, SET BEFORE THE ENGINE DECIDES.
+        #
+        # `Controller` reads `self._me` in six places -- the runway in use, who
+        # owns a clearance, how he addresses a pilot -- and NOTHING HAS EVER
+        # ASSIGNED IT. Every one of those reads is `getattr(self, "_me", None)`,
+        # so every one has silently taken the no-station branch since the day it
+        # was written.
+        #
+        # What that cost, found on the radio nine minutes before a take-off:
+        # `_runway_in_use` falls back to ARRIVAL_FIELD when it does not know its
+        # own station, so KOBULETI TOWER CLEARED AN AIRCRAFT FOR TAKE-OFF ON
+        # RUNWAY ONE THREE -- Batumi's runway, at a field whose runway is 07,
+        # to a pilot holding short of 07 who had read back 07 twice. And
+        # `_owns`, the rule that stops a controller issuing a clearance that is
+        # not his, treats an unknown station as "blind by design and must not
+        # refuse" -- correct as a default and wrong as a permanent condition,
+        # because it meant Ground could clear a take-off and never did refuse.
+        #
+        # It was invisible until today because the taxi and take-off clearances
+        # were being suppressed before anybody heard them -- see `settle`. One
+        # fix exposed the other.
+        #
+        # The frequency is the only honest source: a role is unique only within
+        # an aerodrome, and the button he pressed is what says which aerodrome.
+        _on_mhz = (heard_hz or freq_hz) / 1_000_000
+        ctl._me = (profile.station_on(_on_mhz)
+                   if hasattr(profile, "station_on") else None)
+
         # Deterministic short-circuit: a radio check or a closing acknowledgement
         # gets an instant canned reply -- the rich agent adds nothing. Not mid-
         # sequence, where the controller may need to react to it.
@@ -4514,7 +4562,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         _fid = _flight.get("id")
 
         directive, stack, vectoring, _g, dropped = settle(bridge,
-            directive, stack, vectoring, _fix, profile, known, ctl)
+            directive, stack, vectoring, _fix, profile, known, ctl,
+            scope=scope, track=_ident.track or "")
         if dropped:
             print(f"  .. {dropped}", flush=True)
 
@@ -4652,8 +4701,11 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # which is an implementation convenience the pilot must never be able to
         # hear -- without this the same voice answers as "Batumi Approach" on
         # Center's frequency and the sector split is decoration.
-        on_mhz = (heard_hz or freq_hz) / 1_000_000
-        me = profile.station_on(on_mhz) if hasattr(profile, "station_on") else None
+        # Computed once, at the top of the turn, and handed to the engine there
+        # -- see `ctl._me`. Read back rather than recomputed so the station the
+        # engine decided with and the station the agent is told it is cannot
+        # differ.
+        me = ctl._me
         # By track, for the same reason everything else is: a stale label made
         # this None for a whole approach, which silently disabled the talkdown
         # guard below as well.

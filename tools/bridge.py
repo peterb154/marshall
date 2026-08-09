@@ -52,13 +52,50 @@ DEFAULT_ARGS = ["--srs", os.environ.get("SRS_HOST", "192.168.0.35"),
 
 
 def _env() -> dict:
+    """The environment the bridge runs with, assembled from the ONE place the
+    live configuration lives -- the director's compose file and its `.env`.
+
+    THE BRIDGE IS A HOST PROCESS AND THE DATABASE IS IN COMPOSE. Everything the
+    bridge shares with the director -- the ATIS letter, the runway in use, the
+    fix table -- goes through Postgres, and it had no way to reach it: the
+    container gets `STRANDS_PG_DSN` on the compose network, and nothing ever set
+    the host equivalent. So `atis.serve` published nothing, every recording
+    logged "PUBLISH FAILED", and the runway a controller names fell back to a
+    computation instead of the broadcast -- which is the exact disagreement
+    `atis/store.py` exists to prevent.
+
+    It was loud, to its credit. It said so on every rotation for two days.
+    """
     env = dict(os.environ)
     env.setdefault("PYTHONPATH", str(ROOT / "src"))
     if "DCS_GRPC_ADDR" not in env:
         for line in (ROOT / "director" / ".env").read_text().splitlines():
             if line.startswith("DCS_GRPC_ADDR="):
                 env["DCS_GRPC_ADDR"] = line.split("=", 1)[1].strip()
+    # READ OFF THE COMPOSE FILE, not written out here. The credentials and the
+    # published port are declared there; copying them into a second file is how
+    # they come to disagree, and this repo is public so they may not be pasted
+    # into it at all.
+    if "MARSHALL_PG_DSN" not in env:
+        got = _compose_dsn()
+        if got:
+            env["MARSHALL_PG_DSN"] = got
     return env
+
+
+def _compose_dsn() -> str:
+    """`postgresql://user:pass@localhost:PORT/db` from director/docker-compose.yml."""
+    try:
+        text = (ROOT / "director" / "docker-compose.yml").read_text()
+    except OSError:
+        return ""
+    import re
+    who = dict(re.findall(r"POSTGRES_(USER|PASSWORD|DB):\s*(\S+)", text))
+    port = re.search(r'"(\d+):5432"', text)
+    if not (who.get("USER") and who.get("DB") and port):
+        return ""
+    return (f"postgresql://{who['USER']}:{who.get('PASSWORD', '')}"
+            f"@localhost:{port.group(1)}/{who['DB']}")
 
 
 def running() -> list[int]:

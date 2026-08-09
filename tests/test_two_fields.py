@@ -430,5 +430,57 @@ class TestTheControllerIsHandedHisOwnFrequencies(unittest.TestCase):
         self.assertIn("Kobuleti ATIS", msg)
 
 
+class TestTheEngineIsToldWhichControllerItIs(unittest.TestCase):
+    """`Controller._me` was read in six places and assigned in none.
+
+    Found on the radio, 9 August, nine minutes before a take-off: Kobuleti
+    Tower cleared an aircraft for take-off on RUNWAY ONE THREE. That is
+    Batumi's runway. He was holding short of 07, at a field whose runway is 07,
+    and had read back 07 twice.
+
+    `_runway_in_use` falls back to ARRIVAL_FIELD when it does not know its own
+    station, and it never knew: every read was `getattr(self, "_me", None)` and
+    nothing ever set the attribute. `_owns` -- the rule that stops a controller
+    issuing a clearance that is not his -- takes an unknown station as "blind by
+    design, must not refuse", which is right as a default and wrong as a
+    permanent condition.
+
+    Invisible until the same day, because the ground clearances were being
+    suppressed before anyone heard them. One fix exposed the other.
+    """
+
+    def controller(self, station):
+        from marshall.atc import controller as C
+        c = C.Controller(R.BATUMI_ASR)
+        c._me = station
+        return c
+
+    def test_each_field_gets_its_own_runway(self):
+        for station, want in ((R.KOB_TOWER, "zero seven"),
+                              (R.KOB_GROUND, "zero seven"),
+                              (R.TOWER, "one three"),
+                              (R.GROUND, "one three")):
+            with self.subTest(who=station.name):
+                self.assertEqual(self.controller(station)._runway_in_use(), want)
+
+    def test_the_bridge_actually_sets_it(self):
+        """The half that was missing. A controller that CAN be told its station
+        is worth nothing if the loop never tells it -- which was the state of
+        this for as long as `_me` has existed."""
+        import pathlib
+        from marshall.atc import agent_atc as A
+        src = pathlib.Path(A.__file__).read_text()
+        self.assertIn("ctl._me = ", src,
+                      "nothing in the bridge assigns the engine's station")
+
+    def test_it_is_set_from_the_frequency_and_not_the_profile(self):
+        """A role is unique only within an aerodrome, so the button he pressed
+        is the only honest source. Taking it from the profile would name the
+        arrival field's controller for every call of the sortie."""
+        for station in (R.KOB_TOWER, R.KOB_GROUND, R.TOWER, R.GROUND):
+            with self.subTest(who=station.name):
+                self.assertIs(R.BATUMI_ASR.station_on(station.freq_mhz), station)
+
+
 if __name__ == "__main__":
     unittest.main()

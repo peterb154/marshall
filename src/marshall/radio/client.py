@@ -398,6 +398,39 @@ class SRSClient:
             if len(data) <= GUID_LEN:
                 continue
             _plen, audio_len, freq_len = struct.unpack("<HHH", data[:6])
+            # WHOSE PACKET IS THIS -- ASKED FIRST, AND THAT ORDER IS THE BUG.
+            #
+            # The GUID check used to happen at the BOTTOM of this block, after
+            # the audio had been decoded into `frames` and after the frequency
+            # had been taken. `continue` then skipped only the bookkeeping, and
+            # both of the things that mattered had already happened:
+            #
+            #   * OUR OWN VOICE WENT INTO THE PILOT'S UTTERANCE. SRS does not
+            #     echo a client to itself but it does echo one client to
+            #     another, and the ear and the transmit pool are different
+            #     clients -- so the controller's last reply came back, was
+            #     decoded, and was prepended to whatever the pilot said next.
+            #     A live sortie transcribed as:
+            #
+            #       PILOT: sockeye, your on Kobuleti Clearance, 125 decimal 1,
+            #       not ground, ground is 121 decimal 8, taxi requests go there.
+            #       Kobuleti Ground, sockeye with information alpha ready to taxi.
+            #
+            #     The first sentence is the CONTROLLER'S. The agent was being
+            #     handed its own words back as though the pilot had said them.
+            #
+            #   * THE FREQUENCY CAME OFF THE WRONG PACKET. `freq_hz` is set from
+            #     the first block seen, and ours arrived first -- so a pilot
+            #     transmitting on Ground 121.800 was logged, answered and
+            #     STATION-RESOLVED as though he were on Clearance 125.100. He
+            #     was told repeatedly that he was on the wrong frequency by a
+            #     controller reading our own transmission's channel.
+            #
+            # One `continue`, moved up. Everything below it now sees only
+            # packets from somebody who is not us.
+            _guid = data[-GUID_LEN:].decode("ascii", "ignore")
+            if _guid in self.ignore_guids:
+                continue
             try:
                 pcm = dec.decode(data[6:6 + audio_len], tts.SAMPLES_PER_FRAME)
                 frames.append(np.frombuffer(pcm, dtype="<i2"))
@@ -406,12 +439,6 @@ class SRSClient:
                     (_on,) = struct.unpack("<d", data[6 + audio_len:6 + audio_len + 8])
                     if freq_hz is None:                    # first freq block
                         freq_hz = _on
-                # Origin GUID is the last 22 bytes of the packet (relay + origin).
-                _guid = data[-GUID_LEN:].decode("ascii", "ignore")
-                if _guid in self.ignore_guids:
-                    # One of ours. Not a pilot, so it must not hold a
-                    # controller off the air -- see `ignore_guids`.
-                    continue
                 self.last_sender_guid = _guid
                 started = True
                 last = now
