@@ -251,15 +251,23 @@ class TestAParkedAeroplaneHasNoApproachGeometry(unittest.TestCase):
         return Position(range_nm=range_nm, radial_deg=125.0, alt_ft=alt_ft,
                         heading_deg=305.0, speed_kt=speed_kt)
 
-    def settle(self, pos):
+    def settle(self, pos, phase=""):
+        """`ctl` is real now, because the phase is what decides whether any
+        geometry is flown at all -- see `phases.derive`. Passing None meant
+        "no controller", which since 9 August correctly means "no idea what
+        phase he is in" and therefore no guidance."""
         from marshall.atc import agent_atc as A
+        from marshall.atc import controller as C
         from marshall.core import route as R
+        ctl = C.Controller(R.BATUMI_ASR)
+        ac = ctl.get("Sockeye")
+        ac.sortie_phase = phase
         return A.settle(A.Bridge(), "taxi to runway zero seven", "", "",
-                        pos, R.BATUMI_ASR, "Sockeye", None, scope="", track="")
+                        pos, R.BATUMI_ASR, "Sockeye", ctl, scope="", track="")
 
     def test_a_jet_on_the_ramp_gets_no_guidance_and_keeps_its_clearance(self):
         directive, _stack, _v, guide, dropped = self.settle(
-            self.pos(alt_ft=65, speed_kt=0, range_nm=0.3))
+            self.pos(alt_ft=65, speed_kt=0, range_nm=0.3), phase="taxi")
         self.assertIsNone(guide, "approach geometry was computed on the ramp")
         self.assertEqual(dropped, "", f"something was suppressed: {dropped}")
         self.assertIn("zero seven", directive,
@@ -269,7 +277,7 @@ class TestAParkedAeroplaneHasNoApproachGeometry(unittest.TestCase):
         """The guard must not cost the case it sits next to. Same low altitude,
         but moving, and further out."""
         _d, _s, _v, guide, _dropped = self.settle(
-            self.pos(alt_ft=1200, speed_kt=180, range_nm=6.0))
+            self.pos(alt_ft=1200, speed_kt=180, range_nm=6.0), phase="approach")
         self.assertIsNotNone(guide, "guidance was suppressed for a live approach")
 
 

@@ -115,3 +115,45 @@ class TestNoWrittenCallsignReachesThePilot(unittest.TestCase):
                      "Contact Tower one one eight decimal zero."):
             with self.subTest(text):
                 self.assertEqual(for_voice(text), text)
+
+
+class TestTheCannedRepliesKnowWhoIsTalking(unittest.TestCase):
+    """A pilot's report: Batumi Ground "seems to be from a prior generation...
+    not using callsigns, mispronouncing my callsign".
+
+    It was from a prior generation. `simple_response` predates GUID identity and
+    never learned about it -- it dug a callsign out of the WORDS with a regex,
+    which is the mistake the rest of the system spent a fortnight removing. And
+    closing calls are what land in this path, so Ground and Tower are where it
+    showed.
+    """
+
+    def canned(self, said, known="Sockeye"):
+        from marshall.atc.voice import simple_response
+        return simple_response(said, known) or ""
+
+    def test_a_readback_fragment_is_never_used_as_a_name(self):
+        for said in ("Batumi Ground, sockeye just off runway one three, "
+                     "request taxi to parking",
+                     "sockeye is down and stopped, clear of the active"):
+            with self.subTest(said=said):
+                got = self.canned(said)
+                self.assertTrue(got.startswith("Sockeye,"), got)
+                self.assertNotIn("Runway", got)
+                self.assertNotIn("The one", got)
+
+    def test_the_radio_beats_the_transcript(self):
+        """He calls himself something else entirely; the GUID says Sockeye."""
+        got = self.canned("Falcon one one, clear of the runway")
+        self.assertTrue(got.startswith("Sockeye,"), got)
+
+    def test_with_no_identity_it_still_falls_back_to_the_words(self):
+        """The regex earns its place only here -- an unidentified radio is the
+        one case where what he said is all there is."""
+        got = self.canned("Batumi Tower, Falcon one one, clear of the runway",
+                          known="")
+        self.assertTrue(got.startswith("Falcon one one,"), got)
+
+    def test_and_never_a_hyphenated_callsign_over_the_air(self):
+        """Polly reads "Falcon 1-1" as "Falcon one TO one"."""
+        self.assertNotIn("-", self.canned("clear of the runway", "Falcon 1-1"))

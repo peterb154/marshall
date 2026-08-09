@@ -3045,3 +3045,98 @@ request produces *"taxi to runway one three"*. Both were reachable before.
 4. ~~Not knowing where he is never blocks anything.~~
 5. ~~An aeroplane still reaches the board: `check_in` and `request_approach`
    are reachable airborne on every procedure.~~
+
+---
+
+## [ARCH-8] The state machine was written, complete, and unwired — #63
+labels: architecture
+
+**Status:** DONE 9 August. The foundation, not a fix.
+
+    "think about ARCHITECTURE not quick fixes. Blocks are usually smells. This
+     system is going to get much more complicated once we have this basic
+     behavior addressed. We need solid foundation"
+
+`phases.py` has held a complete and correct table since it was written: fifteen
+phases, each declaring **who works him**, **what the geometry aims at**, and
+**what may legally follow**. Its own docstring says it exists so that "nobody
+has to remember which" and to stop "three different ideas of what is happening
+getting loose".
+
+**Two modules read it** — the comms kneeboard page and `handoff.py`. Not the
+controller, not the geometry, not the reply composition.
+
+**Five of the fifteen phases were ever set**, all by ground intents. Nothing
+ever set `enroute`, `arrival`, `holding`, `approach`, `missed` or `landed`, so
+an aeroplane's phase froze on `"departure"` the moment it rotated.
+
+**And `phases.guide` — a dispatcher written to fly the phase he is in and return
+None for the ones we do not fly — had never been called by anything.**
+`settle` called the arrival's geometry directly, for every aeroplane, in every
+phase. So an F-16 one mile off Kobuleti at 950 ft and 403 knots, climbing away
+on runway heading, was told *"he has gone around, one miles. Missed approach:
+fly heading 330, climb 3000."* The arithmetic was right; the question was wrong,
+and nothing in the code was able to notice.
+
+That is why the guards exist. Every one of them — `strip_unauthorised_handoff`,
+`hush_a_second_talkdown`, the vector holds, `reconcile`'s suppressions — is a
+referee deleting output that should never have been produced, because nothing
+asked whose turn it was first.
+
+**What was added is the missing half:** `phases.derive` computes the phase from
+FACTS — the sim's on-ground flag, the arrival engine's own clearance state
+(authoritative because it is what issued the clearance), and who is working him.
+Illegal transitions are refused against `follows` and the current phase kept.
+`settle` now asks the dispatcher instead of the arrival geometry.
+
+**Two corrections to the table**, both making it tell the truth about code that
+already existed:
+
+* `arrival` was declared with no handler while `asr.guide` had been flying it
+  all along — the "vectoring, twenty three miles, turn right" calls are that
+  phase, and they happen long before anybody is cleared.
+* `departure` followed only `enroute`. The sortie this system flies is
+  twenty-four miles; on a hop that short Departure hands straight to Approach
+  and there is no enroute segment at all, so the transition was being refused
+  as illegal.
+
+**Acceptance criteria**
+1. ~~A departing aircraft is never given the arrival's geometry.~~
+2. ~~An aircraft being vectored towards the final still gets guidance, before
+   any clearance.~~
+3. ~~The phase advances from facts rather than from what anybody said.~~
+4. ~~An illegal transition is refused and the current phase kept.~~
+5. Every producer consults the phase. **PARTLY** — the geometry does; the reply
+   composition and the authority to issue a clearance do not yet (#64).
+
+---
+
+## [PHR-3] The canned replies were from a prior generation — #64
+labels: bug
+
+**Status:** DONE 9 August.
+
+    "Batumi ground seems to be from a prior generation.. Not using callsigns,
+     mispronouncing my callsign"
+
+It was. `simple_response` — the zero-latency path for radio checks and closing
+calls — predates GUID identity and never learned about it. It dug a callsign out
+of the WORDS with a regex, which is the mistake the rest of the system spent a
+fortnight removing:
+
+    "Batumi Ground, sockeye just off runway one three, request taxi"
+        -> "Runway one three, roger, welcome, taxi to parking..."
+    "...will exit the runway when able, and I will contact ground"
+        -> "The one, roger, welcome, taxi to parking..."
+
+Closing calls are exactly what lands in this path, so Ground and Tower are where
+it showed — which is why one seat sounded a generation behind the others.
+
+It is handed `known` now. The regex stays only for a radio the bridge has not
+identified at all, which is the one case where the words are all there is.
+
+**Still open, and the reason this is a bypass rather than a feature:** the canned
+path skips the agent, the engine, the phase and the role entirely. It is a block
+around the whole system, and blocks are smells. It survives for now because a
+radio check genuinely needs no model — but anything with substance must not come
+back through it.

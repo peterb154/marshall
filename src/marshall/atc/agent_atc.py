@@ -38,6 +38,7 @@ from marshall.atc import handoff as _handoff
 from marshall.atc import decision as _decision
 from marshall.atc import flights as fl
 from marshall.atc import identity
+from marshall.atc import phases as _phases
 from marshall.atc import picture as _picture
 
 # THE PARTS THAT MOVED OUT, RE-IMPORTED SO THE LOOP READS AS IT DID.
@@ -2950,10 +2951,49 @@ def settle(bridge, directive, stack, vectoring, fix, profile, known, ctl,
     # the sim's own on-ground flag when there is one, alt and speed when there
     # is not.
     down = fix is not None and is_on_the_ground(scope, track or known, fix)
-    guide = (asr.guide(fix, profile,
-                       on_missed=flying_the_missed(bridge, known or "?", fix, profile,
-                                                   ctl))
-             if fix is not None and not down else None)
+
+    # WHICH PHASE HE IS IN, ASKED BEFORE ANY GEOMETRY IS FLOWN.
+    #
+    # `phases.py` has held a complete table since it was written -- fifteen
+    # phases, each naming who works him, what the geometry aims at and what may
+    # legally follow -- and `phases.guide` is a dispatcher whose whole purpose
+    # is to fly the phase he is in and return None for the ones we do not fly.
+    # NOTHING HAS EVER CALLED IT. This line called the arrival's geometry
+    # directly, for every aeroplane, in every phase.
+    #
+    # So an F-16 one mile off Kobuleti at 950 feet and 403 knots, climbing away
+    # on runway heading, was told: "he has gone around, one miles. Missed
+    # approach: fly heading 330, climb 3000." The arithmetic was right. The
+    # question was wrong, and there was nothing in the code able to notice.
+    #
+    # `derive` is the other half that was missing: five of the fifteen phases
+    # were ever set, all by ground intents, so an aeroplane's phase froze on
+    # "departure" the moment it rotated. Facts move it now -- the sim's
+    # on-ground flag, and the arrival engine's own clearance state, which is
+    # authoritative because it is what ISSUED the clearance.
+    # `ctl` is None in the dry run and in the tests that drive `settle`
+    # directly, and a controller the bridge has not been given is the ordinary
+    # blind case rather than an error -- see `Controller._owns`.
+    _ac = (ctl.aircraft.get(ctl._resolve(known))
+           if (ctl is not None and known) else None)
+    phase = _phases.derive(
+        getattr(_ac, "sortie_phase", "") or "",
+        on_ground=down if fix is not None else None,
+        separation=(getattr(getattr(_ac, "phase", None), "name", "") or "").lower(),
+        was_airborne=bool(getattr(_ac, "approaches", 0)),
+        worked_by=getattr(getattr(ctl, "_me", None), "role", "") if ctl else "")
+    if _ac is not None and phase and phase != _ac.sortie_phase:
+        print(f"  .. phase: {_ac.sortie_phase or '(none)'} -> {phase}", flush=True)
+        _ac.sortie_phase = phase
+
+    guide = (_phases.guide(phase, fix, profile)
+             if fix is not None and not down and _phases.flies_geometry(phase)
+             else None)
+    # The missed-approach latch still belongs to the geometry that reads it, so
+    # it is applied to the phase the dispatcher was given rather than lost.
+    if guide is not None and flying_the_missed(bridge, known or "?", fix,
+                                               profile, ctl):
+        guide = asr.guide(fix, profile, on_missed=True)
     directive, stack, vectoring, dropped = reconcile(
         directive, stack, vectoring, guide)
     return directive, stack, vectoring, guide, dropped
@@ -4549,7 +4589,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # Deterministic short-circuit: a radio check or a closing acknowledgement
         # gets an instant canned reply -- the rich agent adds nothing. Not mid-
         # sequence, where the controller may need to react to it.
-        canned = simple_response(transcript)
+        canned = simple_response(transcript, known)
         if canned and not engaged:
             canned = for_voice(canned)
             # RECORDED, like every other transmission. This one was not, and it

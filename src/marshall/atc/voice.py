@@ -68,14 +68,35 @@ _CLOSE = re.compile(r"down and stopped|clear of the (?:runway|active)|off the ru
                     r"parking|shutting down|clear of active", re.I)
 
 
-def simple_response(transcript: str) -> str | None:
+def simple_response(transcript: str, known: str = "") -> str | None:
     """Instant canned reply for the handful of calls where the rich agent adds
     nothing -- a radio check, a closing acknowledgement. Returns None for anything
     with substance, which goes to the agent. Deterministic simple responses inside
-    the rich experience, at zero cost/latency."""
+    the rich experience, at zero cost/latency.
+
+    `known` IS THE ANSWER TO "WHO IS THIS", and passing it is the whole of the
+    fix below. This function predates GUID identity and never learned about it:
+    it dug a callsign out of the WORDS with a regex, which is the mistake the
+    rest of the system spent a fortnight removing.
+
+        "Batumi Ground, sockeye just off runway one three, request taxi"
+            -> "Runway one three, roger, welcome, taxi to parking..."
+
+        "...will exit the runway when able, and I will contact ground"
+            -> "The one, roger, welcome, taxi to parking..."
+
+    A pilot's report of this was that Batumi Ground "seems to be from a prior
+    generation... not using callsigns, mispronouncing my callsign", which is
+    exactly right: it IS from a prior generation, and closing calls are the ones
+    that land here, so Ground and Tower are where it shows.
+
+    The radio already told us who keyed the mic. Nothing in a transcript beats
+    that, and the regex stays only for the case where the bridge has not
+    identified him at all.
+    """
     from marshall.atc import callsign as C, intents
     m = re.search(r"\b([A-Za-z]+(?:\s+(?:one|two|three|four|five|six|seven|eight|"
-                  r"niner|nine|\d+))+)", transcript, re.I)
+                  r"niner|nine|\d+))+)", transcript, re.I) if not known else None
     # SPOKEN, not canonical. This interpolated "Falcon 1-1" straight into
     # speech, and Polly reads the hyphen: it comes out "Falcon one TO one",
     # which a pilot hears as "Falcon one two one" and reports as the controller
@@ -87,9 +108,13 @@ def simple_response(transcript: str) -> str | None:
     # .spoken. Only the canned replies -- a radio check, a closing
     # acknowledgement -- took the shortcut, and closing calls are exactly what
     # Tower gets. Verified through Polly and Whisper rather than guessed at.
-    cs = intents.normalize_callsign(m.group(1)) if m else "Station calling"
-    if m:
+    if known:
+        cs = C.parse(known).spoken or known
+    elif m:
+        cs = intents.normalize_callsign(m.group(1))
         cs = C.parse(cs).spoken or cs
+    else:
+        cs = "Station calling"
     if _CHECK.search(transcript):
         return f"{cs}, loud and clear."
     if _CLOSE.search(transcript):

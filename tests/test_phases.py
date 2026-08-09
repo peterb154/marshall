@@ -88,4 +88,9 @@ class TestDispatch(unittest.TestCase):
             self.assertIsNone(phases.guide(name, self.pos, R.BATUMI_ASR), name)
 
     def test_flown_lists_exactly_what_has_a_handler(self):
-        self.assertEqual(set(phases.FLOWN), {"approach", "missed"})
+        """`arrival` joined on 9 August, and it is a correction rather than a
+        feature: `asr.guide` has flown that phase since it was written -- the
+        "vectoring, twenty three miles, turn right" calls are it, and they
+        happen long before anybody is cleared. The table said the phase had no
+        handler while the code flew it anyway."""
+        self.assertEqual(set(phases.FLOWN), {"arrival", "approach", "missed"})
