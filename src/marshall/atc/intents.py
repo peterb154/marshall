@@ -308,12 +308,30 @@ def parse(transcript: str, llm=None) -> Intent:
 
 # --- driving the controller -------------------------------------------------
 
-def dispatch(ctl: atc.Controller, intent: Intent) -> bool:
+def dispatch(ctl: atc.Controller, intent: Intent,
+             on_ground: bool | None = None) -> bool:
     """Route one Intent to the controller. Returns False if unhandled, so the
-    caller can ask the pilot to say again rather than guess."""
+    caller can ask the pilot to say again rather than guess.
+
+    GATED ON WHAT THE PROCEDURE CONTAINS -- see `reachable.py`. This used to be
+    a flat `match intent.kind`: a label from a classifier, straight to a
+    controller method, with nothing asking whether the action existed. A pilot
+    reading back a heading on a radar approach was routed to "reported over the
+    approach beacon" twelve times in one sortie, on a procedure that has no
+    beacon.
+    """
     cs = intent.callsign
     if not cs or intent.kind is IntentKind.UNKNOWN:
         return False
+    # NOT AN ERROR, AND NOT A "SAY AGAIN". An unreachable action means the
+    # engine has nothing to do with this transmission -- the ordinary case for
+    # a read-back, which the agent answers with "roger" perfectly well. True,
+    # because it IS handled: by doing nothing, on purpose.
+    from marshall.atc import reachable as _reach
+    if not _reach.reachable(intent.kind, ctl.profile, on_ground=on_ground):
+        ctl.note_unreachable(_reach.why_not(intent.kind, ctl.profile,
+                                            on_ground=on_ground))
+        return True
     # A formation that has been split no longer names an aeroplane. Ask rather
     # than infer -- picking lead is a guess, and a controller who cannot tell two
     # men apart must not act as though he can.

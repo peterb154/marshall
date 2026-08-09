@@ -1786,7 +1786,12 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
         # An intent with no callsign never reaches the engine. Belt to the
         # braces above: `dispatch` would otherwise be free to invent a key.
         if intent.callsign:
-            intents.dispatch(ctl, intent)
+            # ON THE GROUND OR NOT, from the same one function everything else
+            # asks -- the sim's own flag when there is one, altitude and speed
+            # when there is not. None when nothing knows, which never blocks.
+            _down = (is_on_the_ground(scope, track or intent.callsign, fix)
+                     if (scope or fix is not None) else None)
+            intents.dispatch(ctl, intent, on_ground=_down)
         # DRAINED WHETHER OR NOT THE INTENT WAS HANDLED. This used to run only
         # when `dispatch` returned True, so a turn it did not handle left the
         # outbox dirty and those words reappeared beside a LATER turn's -- which

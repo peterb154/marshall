@@ -2983,3 +2983,65 @@ and now SKIPS, naming #1 as unguarded — which is the suite working as intended
 `plan_sweep --live` skips eleven of its sixteen cases and names each one; the
 inline fixture still exercises all sixteen with no database, so tier-1 coverage
 is unchanged. Re-running migration 012 restores the test board.
+
+---
+
+## [ARCH-7] The router had no idea what was possible — #62
+labels: architecture
+
+**Status:** DONE 9 August. Found by a pilot, from the cockpit, not by a test.
+
+    "why would one of the brains (the one doing the wrong thing) be invoked at
+     all when that phase of flight isn't happening. I feel like there is a
+     fundamental flaw in the state machinery"
+
+There was, and it is smaller and dumber than "split brain" suggests.
+
+**What happened.** On a RADAR approach, a pilot read back a heading twelve
+times — *"Left one four zero, two thousand five hundred, sockeye"*. The intent
+classifier's own written instruction for `report_beacon` says *"ANY position,
+altitude or progress report ... if he is telling you where he is or what he is
+doing, it is this one"*, so a heading-and-altitude read-back matched. `dispatch`
+was a flat `match intent.kind` — label straight to method — so it ran
+`report_beacon`, which means *"reported over the approach beacon"*. That saw him
+cleared, started the station-passage clock, and said:
+
+> *"roger, station passage two plus three two, report field in sight or missed
+> approach"*
+
+Twelve times, on a procedure with no beacon, to a pilot with no receiver for one.
+
+**The flaw is not the classifier.** Even a perfect one cannot help: nothing
+between "what I think he said" and "act on it" asked whether the action EXISTS
+in this procedure, at this phase, at this field. The engine's state was consulted
+only inside the method, after it had been chosen and was committed to answering.
+
+**The fix is one rule, not a table of special cases.** An action is reachable
+when the procedure contains it and the aeroplane is somewhere it could be
+performed. A beacon report is station passage: that exists on a letdown the
+PILOT navigates, or for a controller with NO RADAR who has no other way of
+learning where anybody is. On a vectored procedure with radar there is no
+station to pass and his altitude is on the scope already.
+
+**Unreachable is not an error and never a "say again"** — a read-back needs no
+engine action and the agent answers it with "roger". It is logged, because the
+last unlogged suppression repeated twelve times before anyone noticed.
+
+**Why the talkdown has always been the good part**, and this is the general
+lesson: it is pure geometry on a four-second clock and never asks what anybody
+said, so a mis-heard sentence cannot tell it the wrong thing. The deterministic
+engine should be driven by FACTS, not sentences. Radar gives it facts; a
+classifier gives it a guess about words.
+
+**What the mutation test showed** when the gate is removed: that same read-back
+produces *"hold at five thousand, right turns"* — a HOLD — and an airborne taxi
+request produces *"taxi to runway one three"*. Both were reachable before.
+
+**Acceptance criteria**
+1. ~~`report_beacon` never runs on a radar approach or an ILS.~~
+2. ~~It still runs on the beacon letdown, and for any non-radar controller.~~
+3. ~~Airborne-only actions cannot fire on the ground, and ground-only actions
+   cannot fire airborne.~~
+4. ~~Not knowing where he is never blocks anything.~~
+5. ~~An aeroplane still reaches the board: `check_in` and `request_approach`
+   are reachable airborne on every procedure.~~

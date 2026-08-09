@@ -250,6 +250,10 @@ class Controller:
     # cause survives, so anything that repairs an impossible state says so
     # here and `/diag` shows it.
     anomalies: list = field(default_factory=list)
+    # Actions the classifier chose that the procedure does not contain. Not
+    # failures -- see `note_unreachable` -- but a count worth watching, because
+    # a taxonomy that stops fitting shows up here first.
+    unreachable: list = field(default_factory=list)
     # Flights that have been broken up. Remembered because a name that means
     # nobody still has to be RECOGNISED as meaning nobody -- and once the
     # break-up stopped putting members on the board, the only evidence a flight
@@ -645,6 +649,24 @@ class Controller:
         """
         self.anomalies.append((self.t, what))
         print(f"  !! CONTROLLER ANOMALY: {what}", flush=True)
+
+    def note_unreachable(self, why: str) -> None:
+        """An action the classifier chose that this procedure does not contain.
+
+        NOT an anomaly. Nothing is broken -- a pilot read something back and the
+        classifier, which only ever sees one sentence and a fixed menu, picked
+        the nearest label. The engine declining to act is the correct outcome
+        and the agent answers him normally.
+
+        Logged anyway, and this is the whole reason it is a method rather than a
+        bare `return`: the last suppression that went unlogged repeated twelve
+        times in one sortie before a pilot noticed on the radio. If this line
+        starts appearing on every transmission, the taxonomy is wrong and that
+        should be visible from the log rather than from the air.
+        """
+        if why:
+            self.unreachable.append((self.t, why))
+            print(f"  .. engine stood down: {why}", flush=True)
 
     def say(self, to: str, text: str, ref: Aircraft | None = None,
             decided=None) -> None:
