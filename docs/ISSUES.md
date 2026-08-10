@@ -3844,7 +3844,8 @@ is not always red.
 ## [HO-3] Nothing hands a landed aircraft to Batumi Ground — #77
 labels: bug
 
-**Status:** OPEN. Split out of [HO-2]/#51 on 10 August, where it had been a
+**Status:** FIXED 10 August with [SEP-5] / #88, needs the next sortie. It was
+one of three symptoms of the same unreachable branch, not a gap of its own.
 bullet under "still dead ends" in an issue all of whose own criteria are met.
 
     F5. After landing and clearing the runway, wait. Say nothing.
@@ -4409,3 +4410,62 @@ conversation with one is not the other's to remember.
 restored when the agent's reply omits it — but there was no reply at all, so
 nothing was appended to. A total agent failure still loses the clearance, and
 that is a different mechanism from the one built today.
+
+---
+
+## [SEP-5] Every ground handoff failed, and one `elif` did it — #88
+labels: bug, needs-flight-test
+
+**Status:** FIXED 10 August, needs the next sortie.
+
+Three failures in one sortie, and in each the **agent proposed the right handoff
+and the authorisation deleted it**:
+
+    .. refused an unauthorised handoff: Sockeye, roger, holding short runway
+       zero seven, contact Tower one three three decimal zero when ready.
+    ATC: sockeye, Kobuleti Ground, go ahead.
+
+| card | should have | did |
+|---|---|---|
+| Q3 | correct read-back hands Clearance → Ground | *"Readback correct."* and nothing |
+| Q6 | holding short hands Ground → Tower | *"go ahead"* |
+| F5 | landing hands Approach/Tower → Batumi Ground (#77) | *"go ahead"* |
+
+**`next_controller` reads three kinds of evidence in order** — the sim's
+events, the rule table, then the airspace volumes. The rule-table step holds the
+PHASE branch, written specifically for the ground half of a sortie, whose own
+comment reads:
+
+> A parked aeroplane has no geometry to argue from, so without it Clearance,
+> Ground and Tower can never let go of anybody.
+
+It sat behind `elif`, on the far side of `if down: nxt = None`. **So the branch
+written for aeroplanes that are parked ran only for aeroplanes that were
+flying**, and the comment named precisely the aircraft that could never reach
+it. The event guard is right — being down outranks an event — but it was
+suppressing the one mechanism that works on the ground.
+
+**Everything else was already correct.** `phases.py` has described
+`clearance → taxi`, `taxi → holding_short` and `landed → taxi` since it was
+written; `clearance_read_back`, `request_taxi`, `report_holding_short` and
+`request_takeoff` all set the phase. Nothing could read it from the ground.
+
+**Two more, found in the same place.** `report_down` set the separation enum
+`Phase.LANDED` but not `sortie_phase`, so even with the branch reachable a
+landed aeroplane had no phase to hand over on. And Tower's last transmission
+ended *"taxi to parking"* —
+
+    "Batumi Tower ... just gave me clearance to taxi to parking when that's
+     ground's job"
+
+Right, and it is the same fault as Ground clearing an aircraft for take-off, in
+the other direction. Tower owns the runway; the taxiways are Ground's. He says
+*"exit the runway when able"* and the phase hands him over.
+
+**And the canned close-out was swallowing the call entirely.** *"Clear of the
+active, request taxi to parking"* matched the closing-acknowledgement
+short-circuit and got a canned *"taxi to parking when ready"* from whatever seat
+was speaking — so the engine never saw it, the phase never moved, and nothing
+ever handed him to Ground. A closing acknowledgement **asks for nothing**; a
+request belongs to the engine, where `request_taxi` refuses it from Tower and
+names Ground with the frequency.

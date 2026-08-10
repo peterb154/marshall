@@ -376,3 +376,95 @@ class TestRangeWithoutDirectionIsAmbiguous(unittest.TestCase):
                 blind.append(name)
         self.assertEqual(blind, [], f"{blind} cannot tell an arrival from a "
                                     f"departure at the same range")
+
+
+class TheGroundLadderCanActuallyLetGo(unittest.TestCase):
+    """Every ground handoff failed at once, and one line of control flow did it.
+
+    `next_controller` reads three kinds of evidence in order: the sim's events,
+    the rule table, then the airspace volumes. The rule-table step is where the
+    PHASE branch lives -- the one written specifically for the ground half of a
+    sortie, whose own comment says:
+
+        A parked aeroplane has no geometry to argue from, so without it
+        Clearance, Ground and Tower can never let go of anybody.
+
+    It sat behind `elif`, on the far side of `if down: nxt = None`. So the test
+    written for aeroplanes that are parked ran only for aeroplanes that were
+    flying, and the comment named exactly the aircraft that could never reach
+    it.
+
+    Live, 10 August, three failures from one sortie -- and in each the AGENT
+    proposed the right handoff and the authorisation deleted it:
+
+        Q3  a correct clearance read-back did not hand him to Ground
+        Q6  reporting holding short did not hand him to Tower
+        F5  landing did not hand him to Batumi Ground (#77)
+
+            .. refused an unauthorised handoff: Sockeye, roger, holding short
+               runway zero seven, contact Tower one three three decimal zero
+            ATC: sockeye, Kobuleti Ground, go ahead.
+
+    The phase table has described all three since it was written. Nothing could
+    read it from the ground.
+    """
+
+    def setUp(self):
+        from marshall.core import route as R
+        self.R = R
+        self.profile = R.BATUMI_ASR
+
+    def station(self, name):
+        return next(s for s in self.R.STATIONS if s.name == name)
+
+    def due(self, me_name, phase):
+        """What the ladder says, for a man on the ground in this phase."""
+        from marshall.atc import handoff
+        me = self.station(me_name)
+        st = handoff.State(on_ground=True, range_nm=0.0, inbound=False,
+                           phase=phase)
+        return handoff.due(self.profile, me, st)
+
+    def test_a_read_back_hands_clearance_to_ground(self):
+        # `clearance_read_back(correct=True)` moves the phase to `taxi`, and
+        # taxi is Ground's.
+        v = self.due("Kobuleti Clearance", "taxi")
+        self.assertIsNotNone(v, "Clearance can never let go of anybody")
+        self.assertEqual(v.role, "ground")
+        self.assertEqual(v.station.name, "Kobuleti Ground")
+
+    def test_holding_short_hands_ground_to_tower(self):
+        v = self.due("Kobuleti Ground", "holding_short")
+        self.assertIsNotNone(v, "Ground can never let go of anybody")
+        self.assertEqual(v.role, "tower")
+        self.assertEqual(v.station.name, "Kobuleti Tower")
+
+    def test_a_landed_aircraft_goes_to_the_ground_of_HIS_field(self):
+        # #77. The arrival field's Ground, not the departure field's -- the
+        # wrong answer here is a real controller forty miles away.
+        v = self.due("Batumi Tower", "taxi")
+        self.assertIsNotNone(v)
+        self.assertEqual(v.station.name, "Batumi Ground")
+
+    def test_tower_keeps_him_while_he_is_still_landed(self):
+        # `landed` is Tower's own phase. He is not handed on until he is
+        # taxiing, which is what reporting clear of the runway establishes.
+        self.assertIsNone(self.due("Batumi Tower", "landed"))
+
+    def test_a_seat_that_also_works_the_next_role_does_not_hand_over(self):
+        # Batumi Ground carries also=("delivery", "clearance"); a pilot reading
+        # back a clearance to him is not handed to himself.
+        v = self.due("Batumi Ground", "taxi")
+        self.assertIsNone(v, "he handed the aircraft to the man already holding it")
+
+    def test_the_phase_branch_is_reachable_while_on_the_ground(self):
+        # THE REGRESSION ITSELF. Everything above tests `handoff.due`, which was
+        # right the whole time; this tests that `next_controller` asks it.
+        import inspect
+        from marshall.atc import agent_atc
+        src = inspect.getsource(agent_atc.next_controller)
+        i_down = src.index("nxt = None if down else handoff_on_the_event")
+        i_due = src.index("_handoff.due(")
+        self.assertLess(i_down, i_due)
+        self.assertIn("if nxt is None and me is not None:", src,
+                      "the phase branch must not be gated on being airborne")

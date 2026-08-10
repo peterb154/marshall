@@ -1309,6 +1309,14 @@ class Controller:
         """
         ac = self.get(cs)
         ac.phase, ac.last_report_t = Phase.LANDED, self.t
+        # THE SORTIE PHASE, TOO, and leaving it out is why nothing could hand a
+        # landed aeroplane to Ground (#77). `Phase.LANDED` is the SEPARATION
+        # engine's enum -- where he sits in the arrival queue. `sortie_phase` is
+        # what he is DOING, and it is the one the ladder reads: `handoff.due`
+        # gives a phase whose `aims_at` is "none" to the controller the phase
+        # table names, and `landed` is Tower's. Without it he stayed in whatever
+        # phase the approach left him in and the ground ladder never resumed.
+        ac.sortie_phase = "landed"
         ac.map_t = None
         if self._letdown == ac.callsign:
             self._letdown = None
@@ -1318,9 +1326,19 @@ class Controller:
                    "tower", field=getattr(getattr(self, "_me", None), "field", ""))
                if hasattr(self.profile, "station_for") else None)
         who = f"{twr.name}, " if twr else ""
+        # "TAXI TO PARKING" IS NOT TOWER'S TO SAY, and this said it on every
+        # landing. Tower owns the runway; the taxiways are Ground's. A pilot
+        # reported it from the cockpit:
+        #
+        #     "Batumi Tower ... just gave me clearance to taxi to parking when
+        #      that's ground's job"
+        #
+        # Exactly the fault that made Ground clear an aircraft for take-off, in
+        # the other direction -- a seat answering for something it does not own.
+        # What Tower owes him is the runway: get off it. Where to go afterwards
+        # is the next controller's, and the phase above is what hands him over.
         self.say(ac.callsign,
-                 f"{self._addr(ac)}, {who}welcome. Exit the runway when able, "
-                 f"taxi to parking. Good day.")
+                 f"{self._addr(ac)}, {who}welcome. Exit the runway when able.")
         self._try_clear()
 
     def request_visual(self, cs: str, field_in_sight: bool = False) -> None:

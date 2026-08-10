@@ -449,7 +449,7 @@ told to climb to three thousand. **Never flown.** See [#41].
 | F2 | P1 | Go around from short final | **No handoff to Tower**, and no reversal back towards the field while you are climbing out. A go-around at half a mile is closer than a landing at one | [#41], [#19] |
 | F3 | P2 | Touch and go | You are **not** handed to Tower for the few seconds you are on the runway — `runway_touch` is deliberately not acted on | [#41] `DOWN` |
 | F4 | P2 | Land, stop, leave the slot, take a new aeroplane and check in | The old callsign is **gone from the board**. Watch `/diag` — a leftover here is the ghost that held a real pilot in the stack for a whole approach | [#41] `player_leave_unit` |
-| F5 | P2 | After landing and clearing the runway, wait. Say nothing | **Nothing hands you to Batumi Ground.** This is the known gap: `phases` gives "landed" to Tower, so preset 7 has a real controller on it that no rule ever sends you to. Then ask for taxi on 121.900 and confirm he answers as **Batumi Ground** — the seat works, only the handoff to it is missing | [#77] |
+| F5 | **P1** | After landing and clearing the runway, wait. Say nothing | He hands you to **Batumi Ground, 121.900**, unprompted. This was the last dead end in the ladder: `report_down` set the separation enum but not the sortie phase, and the phase branch that hands a parked aeroplane over could not run while he was on the ground. Tower should also **not** clear you to taxi to parking — that is Ground's; he says *exit the runway when able* | [#88] |
 
 ---
 

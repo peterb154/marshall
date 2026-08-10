@@ -2194,19 +2194,39 @@ def next_controller(scope, track: str, me, profile, fix, *, known: str = "",
     a different path from the bridge is not a check, it is a second opinion.
     """
     down = is_on_the_ground(scope, track, fix)
-    nxt = handoff_on_the_event(scope, track, me, profile)
-    if down:
-        # A man on the runway is Tower's and is going nowhere. The event
-        # branch may have said otherwise; being down outranks it.
-        nxt = None
-    elif nxt is None:
+    # A man on the runway is Tower's and is going nowhere. The EVENT branch may
+    # have said otherwise -- being down outranks it.
+    nxt = None if down else handoff_on_the_event(scope, track, me, profile)
+    if nxt is None and me is not None:
         # `phase` is what he is DOING, and it is the only thing that can hand
         # over the ground half of a sortie -- see `handoff.due`. A parked
         # aeroplane has no geometry to argue from, so without it Clearance,
         # Ground and Tower can never let go of anybody.
-        v = (_handoff.due(profile, me,
-                          _handoff_state(scope, track, fix, phase))
-             if me is not None else None)
+        #
+        # ...AND IT USED TO BE UNREACHABLE FROM THE GROUND. This branch sat
+        # behind `elif`, on the far side of `if down: nxt = None` -- so the one
+        # test written for aeroplanes that are parked ran only for aeroplanes
+        # that were flying. Every ground handoff in the ladder failed at once,
+        # and the comment three lines above named exactly the aircraft that
+        # could never reach it.
+        #
+        # Live, 10 August, all three from one sortie: a correct clearance
+        # read-back did not hand him to Ground; reporting holding short did not
+        # hand him to Tower; and landing did not hand him to Batumi Ground
+        # (#77). In each case the AGENT proposed the right handoff, the
+        # authorisation said no because this line had not run, and the pilot
+        # got "go ahead" instead:
+        #
+        #     .. refused an unauthorised handoff: Sockeye, roger, holding short
+        #        runway zero seven, contact Tower one three three decimal zero
+        #     ATC: sockeye, Kobuleti Ground, go ahead.
+        #
+        # Safe while down BECAUSE the phase branch only fires for phases whose
+        # `aims_at` is "none" -- clearance, taxi, holding_short, landed -- which
+        # are precisely the phases an aeroplane is in while it is on the ground.
+        # The airspace-volume branch below stays gated on `not down`, and must:
+        # a parked jet is not "leaving my airspace".
+        v = _handoff.due(profile, me, _handoff_state(scope, track, fix, phase))
         # Same man, different name -- Approach answering as Departure is not a
         # handoff and must never be spoken.
         nxt = None if (v is None or v.same_station) else v.station

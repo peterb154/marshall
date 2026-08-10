@@ -774,15 +774,39 @@ class TestTheEndOfAnApproachIsAudible(unittest.TestCase):
         self.assertTrue(said.strip(), "silence is the bug")
         self.assertIn("hoover one one", said, "and it has to be addressed to him")
 
-    def test_it_tells_him_where_to_go(self):
+    def test_it_tells_him_to_get_off_the_runway(self):
         """"Landing assured, good day" is what you say to somebody still in the
         air. Said to a man sitting on the runway it is a controller who has not
         noticed the aeroplane arrive; what a tower says after the roll is where
-        to go."""
+        to go.
+
+        CHANGED 10 August: it used to end "taxi to parking", and this asserted
+        it. A pilot reported it from the cockpit -- *"Batumi Tower just gave me
+        clearance to taxi to parking when that's ground's job"* -- and he is
+        right. Tower owns the RUNWAY; the taxiways are Ground's. It is the same
+        fault as Ground clearing an aircraft for take-off, in the other
+        direction, and the same invariant refuses both.
+
+        So what Tower owes him is the runway: get off it. Where to go afterwards
+        is the next controller's, and `sortie_phase = "landed"` is what hands
+        him over.
+        """
         self.ctl.report_down("Hoover 1-1")
         said = " ".join(t.text for t in self.ctl.out).lower()
         self.assertIn("runway", said)
-        self.assertIn("parking", said)
+        self.assertNotIn("parking", said,
+                         "Tower issued a taxi clearance that is not his")
+
+    def test_being_down_moves_the_sortie_phase(self):
+        """Without this nothing can hand a landed aeroplane to Ground (#77).
+
+        `Phase.LANDED` is the SEPARATION engine's enum -- where he sits in the
+        arrival queue. `sortie_phase` is what he is DOING, and it is the one the
+        ladder reads.
+        """
+        self.ctl.report_down("Hoover 1-1")
+        ac = self.ctl.get("Hoover 1-1")
+        self.assertEqual(ac.sortie_phase, "landed")
 
     def test_reporting_a_landing_from_the_air_still_reads_that_way(self):
         """The other case must not become a taxi instruction to an aeroplane on

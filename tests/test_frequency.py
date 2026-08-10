@@ -90,7 +90,12 @@ class TestNoWrittenCallsignReachesThePilot(unittest.TestCase):
         """The backstop must not be the only defence: a reply composed wrongly
         is still wrong in the log, which is what anybody debugging reads."""
         from marshall.atc.agent_atc import simple_response
-        said = simple_response("Batumi Tower, Falcon one one, taxi to parking, "
+        # A CLOSING ACKNOWLEDGEMENT, not a request. "taxi to parking" is now a
+        # REQUEST and goes to the engine, where Ground answers it and Tower
+        # refuses -- so it is no longer a canned reply at all (#77). The point
+        # of this test is how a canned reply SPELLS a callsign, so it needs a
+        # transcript that still gets one.
+        said = simple_response("Batumi Tower, Falcon one one, down and stopped, "
                                "good day.")
         self.assertIsNotNone(said)
         self.assertNotIn("1-1", said)
@@ -133,8 +138,11 @@ class TestTheCannedRepliesKnowWhoIsTalking(unittest.TestCase):
         return simple_response(said, known) or ""
 
     def test_a_readback_fragment_is_never_used_as_a_name(self):
-        for said in ("Batumi Ground, sockeye just off runway one three, "
-                     "request taxi to parking",
+        # Both are CLOSING acknowledgements. The taxi request that used to sit
+        # here now goes to the engine instead of getting a canned reply (#77):
+        # only Ground may clear a taxi, and a short-circuit that answers from
+        # whatever seat is speaking cannot know which seat it is.
+        for said in ("sockeye just off runway one three, down and stopped",
                      "sockeye is down and stopped, clear of the active"):
             with self.subTest(said=said):
                 got = self.canned(said)

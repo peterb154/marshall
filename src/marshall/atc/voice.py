@@ -66,6 +66,9 @@ def debug_note(transcript: str) -> str | None:
 _CHECK = re.compile(r"radio check|how do you (?:read|copy)|how copy|read you|comm check", re.I)
 _CLOSE = re.compile(r"down and stopped|clear of the (?:runway|active)|off the runway|"
                     r"parking|shutting down|clear of active", re.I)
+# ...unless he is ASKING for something. A request is the engine's, however
+# closing the rest of the sentence sounds.
+_ASKS = re.compile(r"\brequest\b|\btaxi\b|\bcan i\b|\bready\b|\?", re.I)
 
 
 def simple_response(transcript: str, known: str = "") -> str | None:
@@ -117,8 +120,31 @@ def simple_response(transcript: str, known: str = "") -> str | None:
         cs = "Station calling"
     if _CHECK.search(transcript):
         return f"{cs}, loud and clear."
-    if _CLOSE.search(transcript):
-        return f"{cs}, roger, welcome, taxi to parking when ready, good day."
+    # A CLOSING ACKNOWLEDGEMENT ASKS FOR NOTHING. That is what makes it safe to
+    # answer without the engine -- and "clear of the active, REQUEST TAXI TO
+    # PARKING" is not one, it is a request, and it belongs to Ground.
+    #
+    # This swallowed it, and answered from whatever seat was speaking:
+    #
+    #     PILOT: Batumi Tower, sockeye is clear of active, request taxi to
+    #            parking.
+    #     ATC:   Sockeye, roger, welcome, taxi to parking when ready, good day.
+    #
+    #     "Batumi Tower ... just gave me clearance to taxi to parking when
+    #      that's ground's job"
+    #
+    # Two faults in one line. Tower issued a clearance that is not his -- the
+    # aerodrome half of the invariant -- and the short-circuit meant the ENGINE
+    # never saw the call, so the sortie phase never moved to `taxi` and nothing
+    # ever handed him to Ground (#77). Sending it on fixes both: `request_taxi`
+    # refuses it from Tower, names Ground with the frequency, and moves the
+    # phase that carries the handoff.
+    if _CLOSE.search(transcript) and not _ASKS.search(transcript):
+        # And the acknowledgement is now only that. It used to end "taxi to
+        # parking when ready", which is a clearance, and no seat may issue one
+        # it does not own -- including this one, which does not know which seat
+        # it is.
+        return f"{cs}, roger, welcome, good day."
     return None
 
 # When woken by a hook (or asked anything) the agent may decide no call is
