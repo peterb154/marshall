@@ -23,6 +23,10 @@ Three things are checked:
   UNFLOWN    no issue labelled `needs-flight-test` is missing from the card. The
              label says a human is the only instrument that can close it; if it
              is not on the card, nobody will ever pick it up
+  ROWS       no two cockpit rows share an ID. "H18 failed" has to name ONE
+             test -- two rows called H18 sat on the card for days, one of them
+             cited by #50, and a pilot reporting it would have been reporting
+             either
   UNIQUE     no two issues share a slug. [OPS-4] must mean one thing -- the
              slug is how a human refers to these in conversation and in a
              commit, and I filed three collisions in two days without noticing
@@ -178,6 +182,17 @@ def main() -> int:
     # OPS-4, OPS-5 and OPS-6 -- by appending to the file without reading up, and
     # nothing said a word. The NUMBER is unique because GitHub assigns it; the
     # SLUG is chosen by hand and is what anybody actually says out loud.
+    # THE SAME DISEASE ON THE CARD. Row IDs are stable forever because issues
+    # and attestations cite them -- "flown by card rows H18/H19" is in #50 --
+    # so two rows called H18 means a pilot's report names neither. Found the
+    # day the slug check went in, by looking for the same shape one document
+    # over.
+    seen_rows: dict[str, int] = {}
+    dup_rows = []
+    for _struck, rid, _reg, _num in ROW.findall(card):
+        seen_rows[rid] = seen_rows.get(rid, 0) + 1
+    dup_rows = sorted(r for r, n in seen_rows.items() if n > 1)
+
     seen_slugs: dict[str, str] = {}
     dup_slugs = []
     for e in items:
@@ -277,6 +292,11 @@ def main() -> int:
         if len(body_drift) > 12:
             print(f"  ...and {len(body_drift) - 12} more")
         print("  Run: uv run python tools/file_issues.py --sync")
+    if dup_rows:
+        print("TWO COCKPIT ROWS WITH THE SAME ID")
+        for rid in dup_rows:
+            print(f"  {rid} appears {seen_rows[rid]} times")
+        print("  A pilot reporting \"H18 failed\" would be naming neither.")
     if dup_slugs:
         print("TWO ISSUES WITH THE SAME NAME")
         for slug, first, second in dup_slugs:
@@ -284,7 +304,8 @@ def main() -> int:
         print("  The number is unique because GitHub assigns it; the slug is")
         print("  chosen by hand and is what anybody says out loud. Renumber the")
         print("  LATER one -- first use keeps the name.")
-    if not (drift or unfiled or stale_rows or unflown or dup_slugs or body_drift):
+    if not (drift or unfiled or stale_rows or unflown or dup_slugs or body_drift
+            or dup_rows):
         print("in step: statuses match, everything filed, every row still earns "
               "its place, and no two issues share a name")
         return 0
