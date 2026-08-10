@@ -100,19 +100,26 @@ def assign(flight_id: int, plan: dict, *, mission: str = "default",
             """
             INSERT INTO assigned_plans
                 (mission, flight_id, template, label, origin, destination,
-                 route, cruise_ft, task, approach)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 route, cruise_ft, task, approach, squawk)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (flight_id) DO UPDATE SET
                 template=EXCLUDED.template, label=EXCLUDED.label,
                 origin=EXCLUDED.origin, destination=EXCLUDED.destination,
                 route=EXCLUDED.route, cruise_ft=EXCLUDED.cruise_ft,
                 task=EXCLUDED.task, approach=EXCLUDED.approach,
+                squawk=EXCLUDED.squawk,
                 assigned_at=now(), acked_at=NULL
             """,
             (mission, flight_id, row.get("name"), row.get("label"),
              row.get("origin"), row.get("destination"),
              route or row.get("route"), row.get("cruise_ft"),
-             row.get("task"), row.get("approach")))
+             row.get("task"), row.get("approach"),
+             # THE SQUAWK, RECORDED RATHER THAN RECOMPUTED. It is derived from
+             # the flight id, so it was reproducible -- and being reproducible
+             # is not the same as being on the strip. A read-back can only be
+             # judged against the clearance that was issued, and this was the
+             # one element of it nothing kept. See migration 023.
+             _squawk_for(flight_id)))
     # And onto the flight's own row, because that is what everything else reads
     # -- the state view, the plate, anything asking "where is he going". Written
     # in the same call as the copy so the two cannot drift; the copy keeps the
@@ -126,6 +133,17 @@ def assign(flight_id: int, plan: dict, *, mission: str = "default",
     # acked_at is cleared on an amendment on purpose. A read-back covers the
     # clearance he was given, and he has not read back the new one yet.
     return assigned(flight_id) or {}
+
+
+def _squawk_for(flight_id: int) -> str:
+    """The squawk this flight was given. Derived, so it never disagrees with
+    the words that were spoken -- `plans` composes the clearance from the same
+    function."""
+    try:
+        from tools.plans import squawk_for
+        return squawk_for(flight_id)
+    except Exception:                       # never lose a clearance to this
+        return ""
 
 
 def ack(flight_id: int) -> dict:

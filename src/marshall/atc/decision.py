@@ -59,6 +59,7 @@ KINDS = (
     "say_again",         # I did not get that
     "ack",               # roger, and nothing else
     "refuse",            # not mine to give -- see `owner`
+    "advise_atis",       # tell me you have the current information
 )
 
 
@@ -89,6 +90,14 @@ class Decision:
     # station table along with it.
     station: str = ""
     role: str = ""
+    # THE INFORMATION LETTER, and it is a fact a pilot must receive like any
+    # other. The engine asked for it three times on one sortie -- "Advise you
+    # have information Alpha" -- and the agent dropped it every time, silently,
+    # because the check-in path composes PROSE and only a Decision is verified.
+    atis_letter: str = ""
+    # THE TRANSPONDER CODE. Four octal digits, spoken one by one -- never
+    # "sixty-five twenty-one" -- which is why it is a string and not an int.
+    squawk: str = ""
 
     # The hold pattern, when there is one. A dict rather than five more fields
     # because nothing outside a hold reads it.
@@ -197,6 +206,16 @@ def accepted_forms(d: Decision) -> list[tuple[str, list[str], float | None]]:
     # the name reported a perfectly good transmission as a miss.
     if d.station:
         out.append((d.station, [d.station], None))
+    # A LETTER, NOT A NUMBER. "Information Alpha" is the whole fact -- the word
+    # "information" alone is not it, and neither is a bare "alpha" in a
+    # sentence about something else.
+    if d.atis_letter:
+        want = f"information {d.atis_letter}"
+        out.append((want, [want], None))
+    if d.squawk:
+        digits = str(d.squawk).strip()
+        out.append((say.spell_squawk(digits), [say.spell_squawk(digits), digits],
+                    float(digits) if digits.isdigit() else None))
     return out
 
 

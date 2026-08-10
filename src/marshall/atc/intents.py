@@ -45,6 +45,18 @@ class IntentKind(str, Enum):
     # the only thing that can report them, which makes them intents rather than
     # facts read off the sim.
     REQUEST_CLEARANCE = "request_clearance"     # "request IFR clearance to Batumi"
+    # THE FIFTH, AND IT WAS MISSING. `Controller.clearance_read_back` has
+    # existed since the ground procedure was written, with a docstring calling
+    # it "the transition, not the words" -- and nothing on the radio path could
+    # ever call it, because the taxonomy had no way to say "he read something
+    # back". Only the tests reached it.
+    #
+    # So a read-back was classified as a check-in, the controller answered
+    # "advise you have information Alpha" to a man reciting a squawk, and
+    # Delivery could never finish with him. Exactly the failure the comment
+    # above describes for holding short, in the transmission that happens on
+    # every single IFR flight.
+    READ_BACK = "read_back"                     # "cleared to Batumi, five thousand, squawk..."
     REQUEST_TAXI = "request_taxi"               # "ready to taxi"
     REPORT_HOLDING_SHORT = "report_holding_short"   # "holding short one three"
     REQUEST_TAKEOFF = "request_takeoff"         # "ready for departure"
@@ -90,6 +102,18 @@ class Intent:
     # did not mention one -- which gets a different answer from claiming the
     # wrong one: the first is a prompt, the second is a correction.
     atis_letter: str = ""
+    # DID HE GET THE CLEARANCE RIGHT? None means nobody has judged it, which is
+    # the honest default and is not the same as False.
+    #
+    # It is filled by the BRIDGE, not by the classifier, and not by the agent:
+    # `decision.verify` compares what he said against the clearance actually on
+    # the board -- the same mechanism, and the same code, that checks the
+    # CONTROLLER said what the engine decided. One verifier, both directions.
+    #
+    # A model asked "was that read-back correct?" would answer confidently
+    # either way, and the answer decides whether an aircraft is handed to
+    # another controller. That is not a language judgement.
+    correct: bool | None = None
 
 
 # JSON schema for a structured-output parser (Haiku today, Nova Sonic later).
@@ -127,6 +151,13 @@ INTENT_SCHEMA = {
                 "request_clearance: asking for his IFR or departure clearance "
                 "on the ramp -- 'request IFR clearance to Batumi', 'clearance "
                 "on request'. Before he has moved.\n"
+                "read_back: REPEATING something he was just given, to prove "
+                "he wrote it down -- 'cleared to Batumi as filed, maintain five "
+                "thousand, squawk six five two one', 'left two seven zero, two "
+                "thousand'. He is not asking for anything and not reporting "
+                "where he is; he is saying our own numbers back. This is what "
+                "ends clearance delivery's business with him, so it matters "
+                "that it is not filed as a check-in.\n"
                 "request_taxi: ready to move -- 'ready to taxi', 'request "
                 "taxi', 'ready to push'. He has his clearance and wants the "
                 "taxiways.\n"
@@ -364,6 +395,13 @@ def dispatch(ctl: atc.Controller, intent: Intent,
         # phase and not another case in this match.
         case IntentKind.REQUEST_CLEARANCE:
             ctl.request_clearance(cs)
+        case IntentKind.READ_BACK:
+            # WHETHER IT WAS RIGHT IS NOT THE ROUTER'S CALL. `intent.correct` is
+            # None when nobody has judged it, and the engine then leaves the
+            # phase alone -- a transition on an unjudged read-back would hand a
+            # pilot to Ground in the same breath as being told his squawk is
+            # wrong. See `Controller.clearance_read_back`.
+            ctl.clearance_read_back(cs, correct=intent.correct)
         case IntentKind.REQUEST_TAXI:
             ctl.request_taxi(cs)
         case IntentKind.REPORT_HOLDING_SHORT:

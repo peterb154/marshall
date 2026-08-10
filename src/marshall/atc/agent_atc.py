@@ -586,6 +586,15 @@ class Bridge:
         # would fill the frequency with the correction instead of the approach,
         # and he has already heard it. See `misnamed`.
         self.corrected: set = set()
+        # THE CLEARANCE EACH AIRCRAFT WAS ACTUALLY GIVEN, keyed on his callsign.
+        #
+        # The engine does not compose the IFR clearance -- the director's tool
+        # does, from the plan on file -- so the engine has no memory of it and
+        # cannot judge a read-back from its own state. The board does have it,
+        # and every element of it since migration 023 put the squawk back.
+        # Cached here per turn so `_read_back_correct` is a comparison and not
+        # a database round trip in the middle of a transmission.
+        self.cleared_plan: dict = {}
         # The handoff the BRIDGE authorised for this turn, or None. Read by the
         # transmit path, which refuses to let the agent invent one -- see
         # `strip_unauthorised_handoff`. A one-element list for the same reason
@@ -1625,6 +1634,39 @@ def may_be_vectored(bridge, ctl, cs: str, traffic: bool = False,
 _UNASKED = object()
 
 
+def _read_back_correct(bridge, known: str, transcript: str) -> bool | None:
+    """Did he repeat the clearance he was given? None when we cannot tell.
+
+    The clearance is composed by the director's tool, so the ENGINE never issued
+    it and cannot judge it from memory -- but the board records what was
+    assigned, and `assigned_plans` has carried every element since migration 023
+    put the squawk back. That row is a decision in all but name, so it becomes
+    one and goes through `decision.verify`.
+
+    NONE RATHER THAN A GUESS. No board row, no clearance, no judgement -- and
+    `clearance_read_back` leaves the phase alone. An unjudged read-back treated
+    as correct hands a pilot to Ground in the same breath as being told his
+    squawk is wrong, which is what would have happened on 10 August:
+
+        PILOT: ...maintain 5000, squawk 1256, frequencies 123.3
+        ATC:   Sockeye, squawk incorrect, correct squawk is six five two one.
+
+    Altitude and frequency were both right; only the squawk was wrong, so
+    anything short of the whole clearance would have called that correct.
+    """
+    plan = getattr(bridge, "cleared_plan", {}).get((known or "").lower())
+    if not plan:
+        return None
+    d = _decision.Decision(
+        kind="clearance", to=known,
+        altitude_ft=plan.get("cruise_ft") or None,
+        frequency_mhz=plan.get("departure_mhz") or None,
+        squawk=plan.get("squawk") or "")
+    if not _decision.accepted_forms(d):
+        return None                     # nothing to check him against
+    return not _decision.verify(d, transcript)
+
+
 def separation_context(bridge, ctl, transcript: str, scope: str = "",
                        known: str = "", track: str = "",
                        intent=_UNASKED) -> tuple[str, str]:
@@ -1655,6 +1697,20 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
             intent = bedrock_intent.classify(transcript)
         if intent is None:
             return "", ""
+
+        # WAS THE READ-BACK RIGHT? Judged here, against the clearance actually
+        # on the board, by the SAME function that checks the controller said
+        # what the engine decided -- `decision.verify`. One verifier, both
+        # directions: it asks whether every fact of a decision survived being
+        # spoken, and a read-back is exactly that question with the speakers
+        # swapped.
+        #
+        # Not the classifier's job and not the agent's. A model asked "was that
+        # correct?" answers confidently either way, and the answer decides
+        # whether an aircraft is handed to another controller.
+        if intent.kind is intents.IntentKind.READ_BACK:
+            intent = dataclasses.replace(
+                intent, correct=_read_back_correct(bridge, known, transcript))
 
         # ONE RADIO IS ONE AEROPLANE. Whose call this is comes from the GUID
         # that keyed the mic, never from what Whisper made of the words.
@@ -4897,6 +4953,20 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             track_name=(_ident.track or None) if _fix is not None else None,
         ) if (client.last_sender_guid or known) else {}
         _fid = _flight.get("id")
+        # WHAT HE WAS CLEARED TO, kept for the NEXT transmission -- which is the
+        # read-back. A clearance and its read-back are never the same turn, so
+        # caching it as the board hands it over is enough and costs no extra
+        # read. See `_read_back_correct`.
+        if known and (_flight.get("cruise_ft") or _flight.get("squawk")):
+            bridge.cleared_plan[known.lower()] = {
+                "cruise_ft": _flight.get("cruise_ft"),
+                "squawk": _flight.get("squawk") or "",
+                "departure_mhz": getattr(
+                    profile.station_for("departure",
+                                        field=getattr(getattr(ctl, "_me", None),
+                                                      "field", "")),
+                    "freq_mhz", None),
+            }
 
         directive, stack, vectoring, _g, dropped = settle(bridge,
             directive, stack, vectoring, _fix, profile, known, ctl,

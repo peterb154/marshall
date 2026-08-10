@@ -71,6 +71,22 @@ class Phase(Enum):
     LANDED = auto()
 
 
+def _atis_letter_in(phrase: str) -> str:
+    """The information letter a phrase is about, if any.
+
+    `_atis_phrase` has four shapes -- current, superseded, not yet advised, and
+    no broadcast at all -- and three of them name a letter. Read once, here,
+    rather than by each caller guessing which shape it got.
+
+    A module function rather than a method: it needs nothing from the
+    controller, and `tools/unwired.py` cannot tell a static method that is
+    called from one that is dead -- which is a fair complaint about putting a
+    pure string function on a class in the first place.
+    """
+    m = re.search(r"information ([A-Za-z]+)", phrase or "")
+    return m.group(1) if m else ""
+
+
 @dataclass
 class Aircraft:
     """One entity the controller separates.
@@ -1036,7 +1052,23 @@ class Controller:
         extra = self._atis_phrase(ac)
         if extra:
             call = f"{call} {extra}"
-        self.say(ac.callsign, call)
+        # THE LETTER IS A FACT, so it goes across the seam as one.
+        #
+        #     "he never once said 'advise you have information alpha'"
+        #
+        # The engine asked for it on three consecutive transmissions and the
+        # agent dropped it every time. Nothing noticed, because this path
+        # composes PROSE and only a `Decision` is verified -- the whole point of
+        # #79. A directive the engine issued can still vanish silently as long
+        # as it carries no decision, which is what this closes.
+        #
+        # Attached whenever a letter is in play at all, not only for the
+        # "advise you have" wording: "information Bravo is current now, not
+        # Alpha" carries the same fact and is just as droppable.
+        letter = _atis_letter_in(extra)
+        self.say(ac.callsign, call,
+                 decided=(D.Decision(kind="advise_atis", to=ac.callsign,
+                                     atis_letter=letter) if letter else None))
 
     # -- formations --------------------------------------------------------
     def _identify_phrase(self, members: list[str],
@@ -1421,7 +1453,7 @@ class Controller:
         ac = self.get(cs)
         ac.sortie_phase, ac.last_report_t = "clearance", self.t
 
-    def clearance_read_back(self, cs: str, correct: bool = True) -> None:
+    def clearance_read_back(self, cs: str, correct: bool | None = True) -> None:
         """The read-back, and the one place 'readback correct' belongs.
 
         A CORRECT read-back is what ends Delivery's business and hands him to
@@ -1431,7 +1463,12 @@ class Controller:
         """
         ac = self.get(cs)
         ac.last_report_t = self.t
-        if correct:
+        # NONE IS NOT FALSE. None means nobody could judge it -- no clearance on
+        # the board to compare against -- and an unjudged read-back must leave
+        # the phase exactly where it is. Treating it as correct would hand a
+        # pilot to Ground in the same breath as being told his squawk is wrong;
+        # treating it as wrong would strand a man who read it back perfectly.
+        if correct is True:
             ac.sortie_phase = "taxi"
 
     def request_taxi(self, cs: str) -> None:

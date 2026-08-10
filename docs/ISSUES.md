@@ -4517,3 +4517,59 @@ A plan whose origin is not the field he is calling from is not a candidate for
    other way round, so this is not a Kobuleti special case.
 5. Two plans from the SAME field still produce a question (that is Q1b, and it
    must not regress into picking one confidently).
+
+---
+
+## [SEAM-7] The engine could not hear a read-back, and could not check its own directive — #90
+labels: bug, needs-flight-test
+
+**Status:** FIXED 10 August, needs the next sortie.
+
+Two findings from one clearance-delivery exchange, and they are the same fault
+seen from both ends of the seam.
+
+**1. There is no `read_back` intent.** `Controller.clearance_read_back` has
+existed since the ground procedure was written — its docstring calls a correct
+read-back *"the transition, not the words"* — and **nothing on the radio path
+could ever call it.** Only the tests did. `intents.py` names four ground intents
+and says outright why they must exist: *"the CONVERSATION is the only thing that
+can report them."* The read-back is the fifth and it was missing.
+
+So a read-back was filed as a check-in. The controller answered *"advise you
+have information Alpha"* to a man reciting a squawk, three times, and Delivery
+could never finish with him:
+
+    "Clearance did not hand me off to ground"
+
+That is precisely the failure the same file already documents for holding short
+— *"classified as check_in or unknown, so the controller heard 'somebody said
+something' and the phase never moved"* — in the one transmission that happens on
+every IFR flight.
+
+**2. The ATIS advisory carried no `Decision`, so it could vanish.** The engine
+asked for the information letter on three consecutive transmissions and the
+agent dropped it every time, silently:
+
+    "he never once said 'advise you have information alpha'"
+
+#79 built the mechanism that catches exactly this, and the check-in path did not
+use it: it composes prose, and only a `Decision` is verified. A directive the
+engine issued can still disappear as long as it carries no decision.
+
+**Judged by the same verifier, both directions.** `decision.verify` asks whether
+every fact of a decision survived being spoken. A read-back is that question
+with the speakers swapped, so it is the same function — not a model asked *"was
+that correct?"*, which would answer confidently either way and decide whether an
+aircraft changes controller.
+
+**Which needed the clearance to be fully recorded.** `assigned_plans` held the
+limit, route, level and approach — everything a pilot writes down except the
+**squawk**, which was computed from the flight id when the words were composed
+and then thrown away. Migration 023 stores it and puts it on `flight_state`,
+because a fact that lives only in the copy is a fact nothing can reach. It
+matters: on the sortie the level and the frequency were both read back right and
+only the squawk was wrong, so **anything short of the whole clearance would have
+called that read-back correct** and handed him on mid-correction.
+
+`None` is not `False`. No clearance on the board means no judgement, and an
+unjudged read-back leaves the phase exactly where it is.

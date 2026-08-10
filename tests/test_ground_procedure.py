@@ -358,3 +358,164 @@ class TestTheBriefSaysWhatIsNotYours(unittest.TestCase):
         from marshall.core import route as R
         both = dataclasses.replace(R.KOB_GROUND, also=("tower",))
         self.assertNotIn("NOT YOURS: THE RUNWAY", self.brief(both))
+
+
+class AReadBackIsATransmissionTheSystemCanHear(unittest.TestCase):
+    """The fifth ground intent, and it was missing.
+
+    `Controller.clearance_read_back` has existed since the ground procedure was
+    written, with a docstring calling it *"the transition, not the words"* --
+    and nothing on the radio path could ever call it, because the taxonomy had
+    no way to say "he read something back". Only these tests reached it.
+
+    So a read-back was filed as a check-in, the controller answered *"advise you
+    have information Alpha"* to a man reciting a squawk, and Delivery could
+    never finish with him. Live, twice, on 10 August:
+
+        "Clearance did not hand me off to ground"
+
+    Exactly the failure `intents.py` already describes for holding short --
+    *"classified as check_in or unknown, so the controller heard 'somebody said
+    something' and the phase never moved"* -- in the transmission that happens
+    on every IFR flight.
+    """
+
+    def setUp(self):
+        from marshall.atc import controller as atc, intents
+        from marshall.core import route as R
+        self.intents = intents
+        self.ctl = atc.Controller(R.BATUMI_ASR)
+        self.ctl.check_in("Sockeye 1-1")
+        self.ctl.out.clear()
+
+    def fire(self, correct):
+        i = self.intents.Intent(self.intents.IntentKind.READ_BACK,
+                                "Sockeye 1-1", correct=correct)
+        self.intents.dispatch(self.ctl, i)
+        return self.ctl.get("Sockeye 1-1")
+
+    def test_the_kind_exists(self):
+        self.assertTrue(hasattr(self.intents.IntentKind, "READ_BACK"))
+
+    def test_a_correct_read_back_ends_delivery_s_business(self):
+        self.assertEqual(self.fire(True).sortie_phase, "taxi")
+
+    def test_a_wrong_one_leaves_him_where_he_is(self):
+        # "He does not move until the numbers agree" -- the whole point of
+        # reading it back.
+        before = self.ctl.get("Sockeye 1-1").sortie_phase
+        self.assertEqual(self.fire(False).sortie_phase, before)
+
+    def test_an_UNJUDGED_read_back_leaves_him_where_he_is(self):
+        """None is not False, and it is not True either.
+
+        None means nothing could judge it -- no clearance on the board to
+        compare against. Treating that as correct would hand a pilot to Ground
+        in the same breath as being told his squawk is wrong, which is exactly
+        the transmission that happened on 10 August.
+        """
+        before = self.ctl.get("Sockeye 1-1").sortie_phase
+        self.assertEqual(self.fire(None).sortie_phase, before)
+
+    def test_the_classifier_is_told_about_it(self):
+        # A kind the schema does not describe is a kind the model cannot return.
+        schema = str(self.intents.SCHEMA if hasattr(self.intents, "SCHEMA")
+                     else self.intents.__dict__)
+        self.assertIn("read_back", schema)
+
+
+class TheReadBackIsJudgedAgainstTheClearance(unittest.TestCase):
+    """One verifier, both directions.
+
+    `decision.verify` asks whether every fact of a decision survived being
+    spoken. A read-back is that question with the speakers swapped, so it is the
+    same function -- not a second opinion, and not a model asked "was that
+    correct?", which would answer confidently either way and decide whether an
+    aircraft changes controller.
+    """
+
+    def clearance(self):
+        from marshall.atc import decision as D
+        return D.Decision(kind="clearance", to="Sockeye 1-1", altitude_ft=5000,
+                          frequency_mhz=123.3, squawk="6521")
+
+    def test_the_real_wrong_read_back_is_caught(self):
+        # 10 August, verbatim: altitude and frequency right, squawk wrong.
+        # Anything short of the WHOLE clearance would have called this correct
+        # and handed him on mid-correction.
+        from marshall.atc import decision as D
+        said = ("cleared to Batumi as filed, climb maintain 5000, "
+                "squawk 1256, frequencies 123.3")
+        self.assertEqual(D.verify(self.clearance(), said), ["six five two one"])
+
+    def test_the_corrected_read_back_passes(self):
+        from marshall.atc import decision as D
+        said = ("cleared to Batumi, maintain five thousand, departure one two "
+                "three decimal three, squawk six five two one")
+        self.assertEqual(D.verify(self.clearance(), said), [])
+
+    def test_digits_are_the_same_clearance(self):
+        from marshall.atc import decision as D
+        self.assertEqual(
+            D.verify(self.clearance(), "Batumi, 5000, 123.3, squawk 6521"), [])
+
+    def test_a_squawk_is_spoken_digit_by_digit(self):
+        from marshall.core import say
+        self.assertEqual(say.spell_squawk("6521"), "six five two one")
+        self.assertEqual(say.spell_squawk(6521), "six five two one")
+
+    def test_no_clearance_on_the_board_means_no_judgement(self):
+        from marshall.atc import agent_atc
+        b = agent_atc.Bridge()
+        self.assertIsNone(agent_atc._read_back_correct(b, "Sockeye 1-1", "anything"))
+
+
+class TheAtisLetterCrossesTheSeam(unittest.TestCase):
+    """A directive the engine issued can still vanish, if it carries no decision.
+
+        "he never once said 'advise you have information alpha'"
+
+    The engine asked on three consecutive transmissions and the agent dropped it
+    every time, silently -- because the check-in path composes PROSE, and only a
+    `Decision` is verified. #79 built the mechanism; this path did not use it.
+    """
+
+    def test_the_letter_is_a_fact_the_verifier_checks(self):
+        from marshall.atc import decision as D
+        d = D.Decision(kind="advise_atis", to="Sockeye 1-1", atis_letter="Alpha")
+        self.assertEqual(D.verify(d, "Sockeye, say your request."),
+                         ["information Alpha"])
+        self.assertEqual(
+            D.verify(d, "Sockeye, advise you have information Alpha."), [])
+
+    def test_a_dropped_letter_is_restored(self):
+        from marshall.atc import decision as D
+        d = D.Decision(kind="advise_atis", to="Sockeye 1-1", atis_letter="Alpha")
+        self.assertIn("information Alpha", D.repair(d, "Sockeye, go ahead."))
+
+    def test_check_in_attaches_it(self):
+        import unittest.mock as mock
+        from marshall.atc import controller as atc
+        from marshall.atis import store
+        from marshall.core import route as R
+        c = atc.Controller(R.BATUMI_ASR)
+        with mock.patch.object(store, "current",
+                               return_value=mock.Mock(on_the_air=True,
+                                                      letter="Alpha")):
+            c.check_in("Sockeye 1-1")
+        kinds = [t.decision.kind for t in c.take_out() if t.decision]
+        self.assertIn("advise_atis", kinds)
+
+    def test_no_broadcast_means_no_decision(self):
+        # Asking a pilot to confirm an ATIS that does not exist is how you get a
+        # confused read-back; a decision with no letter would be worse still.
+        import unittest.mock as mock
+        from marshall.atc import controller as atc
+        from marshall.atis import store
+        from marshall.core import route as R
+        c = atc.Controller(R.BATUMI_ASR)
+        with mock.patch.object(store, "current",
+                               return_value=mock.Mock(on_the_air=False,
+                                                      letter="")):
+            c.check_in("Sockeye 1-1")
+        self.assertEqual([t.decision for t in c.take_out() if t.decision], [])

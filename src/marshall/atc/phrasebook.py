@@ -164,6 +164,13 @@ def render(d, last: LastSaid | None = None, amended: bool = False) -> str:
     if d.kind == "refuse":
         f = say.spell_freq(d.frequency_mhz) if d.frequency_mhz else ""
         return f"that is {d.role.title()}'s, contact {d.station} {f}".strip()
+    if d.kind == "clearance":
+        # The engine does not compose an IFR clearance -- the director's tool
+        # does, from the plan -- so there is nothing to render here and saying
+        # so is better than inventing half of one.
+        return ""
+    if d.kind == "advise_atis":
+        return f"advise you have information {d.atis_letter}"
     if d.kind == "ack":
         return "roger"
     return d.note or ""

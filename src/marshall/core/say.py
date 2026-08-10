@@ -132,6 +132,20 @@ def spell_rwy(rwy) -> str:
     return " ".join(DIGITS[c] for c in f"{n % 100:02d}")
 
 
+def spell_squawk(code) -> str:
+    """A transponder code, digit by digit: 6521 -> "six five two one".
+
+    Never "sixty-five twenty-one", and never padded -- a squawk is four octal
+    digits and each is read on its own. It lives here beside the other spellers
+    for the reason the module exists: one convention, one home, so the words a
+    controller says and the words a read-back is checked against cannot drift.
+    """
+    digits = str(code).strip()
+    if not digits.isdigit():
+        return digits
+    return " ".join(DIGITS[c] for c in digits)
+
+
 def spell_count(n) -> str:
     """A small number as a WORD: 6 -> 'six'.
 
