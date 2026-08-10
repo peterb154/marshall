@@ -3959,7 +3959,8 @@ output nothing acts on. A referee that watches and never blows the whistle.
 `asr.py`, `controller.py` and `decision.py` — but **not by `agent_atc.py`**, so
 it is not on the response path at all.
 
-**Status:** DONE 10 August, offline. Needs a sortie to confirm on the air.
+**Status:** BUILT 10 August, needs a pilot. Offline evidence and tests
+are below; what it changes is what the RADIO says, so a sortie closes it.
 
 **The evidence was already on disk** — no flight required. `NOT VOICED` has been
 recorded to the flight recorder all along, and every sortie ever flown holds
@@ -4044,7 +4045,8 @@ caught it the moment the last caller moved.
 ## [SEAM-2] `reconcile` arbitrates authority by searching prose for the word "hold" — #80
 labels: bug, architecture
 
-**Status:** DONE 10 August, offline. Needs a sortie to confirm on the air.
+**Status:** BUILT 10 August, needs a pilot. Offline evidence and tests
+are below; what it changes is what the RADIO says, so a sortie closes it.
 
 **It found a regression I had just introduced, which is the real story.**
 `reconcile` suppressed the holding *sentence*; #79 then repaired any decided
