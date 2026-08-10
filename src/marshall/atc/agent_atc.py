@@ -1353,8 +1353,14 @@ def radar_range_for(scope: str, cs: str) -> float | None:
     return None
 
 
-def reconcile(directive: str, stack: str, vectoring: str,
-              g=None) -> tuple[str, str, str, str]:
+# The decision kinds that ARE a holding instruction. Named once, here, so the
+# question "is this a hold?" has a single answer instead of being re-derived
+# from prose at each site that cares.
+HOLDING_KINDS = ("hold", "continue_hold")
+
+
+def reconcile(directive: str, stack: str, vectoring: str, g=None,
+              decisions=()) -> tuple[str, str, str, str, list]:
     """Decide which authority owns this aeroplane, and silence the others.
 
     Three things have an opinion about what happens next. The separation engine
@@ -1391,24 +1397,62 @@ def reconcile(directive: str, stack: str, vectoring: str,
                                    altitudes in one transmission is how this
                                    started.
 
-    Returns the three parts as they should be used, plus a note of what was
-    dropped and why, so a suppression is visible in the log rather than silent.
+    IT ASKED THE PROSE, and that is what this fixes. The test was
+    `"hold" in directive.lower()` -- the function whose entire job is deciding
+    which authority owns an aeroplane, reading another component's English for a
+    keyword. It worked only because `controller.py` happened to write that word,
+    so a rephrasing there silently changed a separation decision two modules
+    away, with no test able to see the connection.
+
+    AND SUPPRESSING THE SENTENCE IS NO LONGER ENOUGH. Since #79 the bridge
+    REPAIRS any decided fact the agent did not voice -- so a holding clearance
+    dropped here came straight back on the air through the repair, telling a
+    pilot established on final to climb and hold. That is precisely the bug this
+    function was written to prevent, re-entering through the door built to fix a
+    different one. Verified before it flew.
+
+    So a suppression now removes the DECISION as well as the words, and this
+    returns the decisions that still stand.
+
+    Returns (directive, stack, vectoring, what was dropped and why, decisions
+    that survive).
     """
+    kept = list(decisions)
+
+    def holding() -> bool:
+        """Is there a holding instruction this turn?
+
+        By KIND when the engine supplied a decision, and by the word only when
+        it did not -- six of thirty-two `say` calls carry a decision today, so
+        removing the fallback would silently stop suppressing holds for the
+        rest. The fallback is the remaining tea-leaf reading and it goes when
+        every path carries its decision (#80 criterion 4).
+        """
+        if decisions:
+            return any(getattr(d, "kind", "") in HOLDING_KINDS for d in decisions)
+        return bool(directive) and "hold" in directive.lower()
+
+    def without_holds() -> list:
+        return [d for d in kept if getattr(d, "kind", "") not in HOLDING_KINDS]
+
     if g is None:
-        return directive, stack, vectoring, ""
+        return directive, stack, vectoring, "", kept
     if g.phase == "missed":
         dropped = "holding/vector suppressed: he is flying the missed approach"
-        return "", stack, vectoring, dropped if (directive or stack) else ""
+        return "", stack, vectoring, (dropped if (directive or stack) else ""), \
+            without_holds()
     if g.established or g.phase in ("final", "map"):
-        if directive and "hold" in directive.lower():
+        if holding():
             return "", stack, vectoring, ("holding clearance suppressed: radar "
-                                          "shows him established on the approach")
-        return directive, stack, vectoring, ""
-    if directive and "hold" in directive.lower():
+                                          "shows him established on the approach"), \
+                without_holds()
+        return directive, stack, vectoring, "", kept
+    if holding():
+        # The vector goes, not the hold -- so the decisions all stand.
         return directive, stack, "", ("vector suppressed: he has been told to "
                                       "hold, and two altitudes in one "
-                                      "transmission is the bug this prevents")
-    return directive, stack, vectoring, ""
+                                      "transmission is the bug this prevents"), kept
+    return directive, stack, vectoring, "", kept
 
 
 # WHO IS FLYING THE PUBLISHED MISSED APPROACH, and has not finished it.
@@ -3044,8 +3088,13 @@ def settle(bridge, directive, stack, vectoring, fix, profile, known, ctl,
     if guide is not None and flying_the_missed(bridge, known or "?", fix,
                                                profile, ctl):
         guide = asr.guide(fix, profile, on_missed=True)
-    directive, stack, vectoring, dropped = reconcile(
-        directive, stack, vectoring, guide)
+    # THE DECISIONS GO IN AND THE SURVIVORS COME BACK. A suppression that edited
+    # only the words left the decision on the bridge, where #79's repair put it
+    # straight back on the air -- a holding clearance to an aeroplane radar shows
+    # established on final. `reconcile` owns both halves now.
+    directive, stack, vectoring, dropped, kept = reconcile(
+        directive, stack, vectoring, guide, list(bridge.decided))
+    bridge.decided[:] = kept
     return directive, stack, vectoring, guide, dropped
 
 

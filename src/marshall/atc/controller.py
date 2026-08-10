@@ -1168,6 +1168,9 @@ class Controller:
             # perfectly ordinary.
             slot = self._free_slot()
             if slot is None:
+                # NOT a `hold` decision: there is no hold to give. Naming it one
+                # would have `reconcile` suppress a vector to protect a holding
+                # clearance that does not exist.
                 self.say(ac.callsign,
                          f"{self._addr(ac)}, no holding available, remain clear.")
                 return
@@ -1177,8 +1180,15 @@ class Controller:
             # approach to hold over a beacon he has no receiver for -- the exact
             # thing the phrase function exists to decide. Two ways of saying the
             # same thing is how one of them ends up wrong.
+            # A DECISION BESIDE THE WORDS. `reconcile` decides which authority
+            # owns this aeroplane, and it used to answer "is this a hold?" by
+            # searching this sentence for the word -- so a rephrasing here
+            # silently changed a separation decision two modules away. It reads
+            # the kind now, which is why every holding path has to carry one.
             self.say(ac.callsign,
-                     f"{self._addr(ac)}, {self._hold_phrase(slot, ac.kit)}.")
+                     f"{self._addr(ac)}, {self._hold_phrase(slot, ac.kit)}.",
+                     decided=D.Decision(kind="hold", to=ac.callsign,
+                                        altitude_ft=slot))
             self._try_clear()
         elif ac.phase == Phase.CLEARED:
             # Established inbound on the beam: start the station-passage clock.
@@ -1354,7 +1364,9 @@ class Controller:
         self.say(ac.callsign,
                  f"{self._addr(ac)}, {self._hold_phrase(ac.assigned_ft, ac.kit)}. "
                  f"Expect the visual, you are number "
-                 f"{words[place] if place < len(words) else place}.")
+                 f"{words[place] if place < len(words) else place}.",
+                 decided=D.Decision(kind="hold", to=ac.callsign,
+                                    altitude_ft=ac.assigned_ft))
 
     def _wind_phrase(self) -> str:
         """The wind, on the clearance that ends with a landing or a take-off.

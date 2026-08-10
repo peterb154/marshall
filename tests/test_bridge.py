@@ -709,6 +709,13 @@ class TestOneAircraftOneInstruction(unittest.TestCase):
     HOLD = "Pony 1-1, hold present position, maintain five thousand."
     VEC = "ASR: vectoring, eight miles. Fly heading 120."
 
+    # THE SAME HOLD AS A DECISION. `reconcile` reads the kind now rather than
+    # searching the sentence for the word -- see the class below, which is the
+    # regression that forced it.
+    def hold_decision(self):
+        from marshall.atc import decision as D
+        return D.Decision(kind="hold", to="Pony 1-1", altitude_ft=5000)
+
     def test_a_hold_is_suppressed_for_an_aircraft_on_the_approach(self):
         # Established and inbound: on the centreline, pointing down it. Both
         # numbers come from the profile because both used to be written out --
@@ -717,7 +724,7 @@ class TestOneAircraftOneInstruction(unittest.TestCase):
         crs = _R.BATUMI_ASR.final_crs_true
         g = self.g(8, (crs + 180) % 360, crs)
         self.assertTrue(g.established or g.phase in ("final", "map"))
-        directive, _, vectoring, dropped = agent_atc.reconcile(
+        directive, _, vectoring, dropped, _kept = agent_atc.reconcile(
             self.HOLD, "", self.VEC, g)
         self.assertEqual(directive, "", "he was told to hold while on final")
         self.assertTrue(vectoring, "the talk-down was dropped instead")
@@ -726,7 +733,8 @@ class TestOneAircraftOneInstruction(unittest.TestCase):
     def test_the_missed_approach_owns_him_completely(self):
         g = self.g(5, 120, 330, alt=1600)
         self.assertEqual(g.phase, "missed")
-        directive, _, _, dropped = agent_atc.reconcile(self.HOLD, "", self.VEC, g)
+        directive, _, _, dropped, _kept = agent_atc.reconcile(
+            self.HOLD, "", self.VEC, g)
         self.assertEqual(directive, "")
         self.assertIn("missed", dropped)
 
@@ -735,7 +743,7 @@ class TestOneAircraftOneInstruction(unittest.TestCase):
         # altitude in the same transmission, which is how this started.
         g = self.g(20, 60, 60)
         self.assertFalse(g.established)
-        directive, _, vectoring, dropped = agent_atc.reconcile(
+        directive, _, vectoring, dropped, _kept = agent_atc.reconcile(
             self.HOLD, "", self.VEC, g)
         self.assertTrue(directive, "the holding clearance was lost")
         self.assertEqual(vectoring, "")
@@ -745,13 +753,16 @@ class TestOneAircraftOneInstruction(unittest.TestCase):
         # It is about the OTHER aircraft, so no state of this one silences it.
         for g in (self.g(8, 304, 124), self.g(5, 120, 330, 1600),
                   self.g(20, 60, 60)):
-            _, stack, _, _ = agent_atc.reconcile(self.HOLD, "STACK: two", self.VEC, g)
+            _, stack, _, _, _ = agent_atc.reconcile(
+                self.HOLD, "STACK: two", self.VEC, g)
             self.assertEqual(stack, "STACK: two")
 
     def test_with_no_radar_nothing_is_suppressed(self):
         # Blind, we have no grounds to overrule anyone.
-        d, s, v, dropped = agent_atc.reconcile(self.HOLD, "S", self.VEC, None)
+        d, s, v, dropped, kept = agent_atc.reconcile(
+            self.HOLD, "S", self.VEC, None, [self.hold_decision()])
         self.assertEqual((d, s, v, dropped), (self.HOLD, "S", self.VEC, ""))
+        self.assertEqual(len(kept), 1, "nothing was suppressed")
 
 
 class TestNoiseDoesNotStealTheRadio(unittest.TestCase):

@@ -4044,7 +4044,47 @@ caught it the moment the last caller moved.
 ## [SEAM-2] `reconcile` arbitrates authority by searching prose for the word "hold" — #80
 labels: bug, architecture
 
-**Status:** OPEN.
+**Status:** DONE 10 August, offline. Needs a sortie to confirm on the air.
+
+**It found a regression I had just introduced, which is the real story.**
+`reconcile` suppressed the holding *sentence*; #79 then repaired any decided
+fact the agent had not voiced, reading `bridge.decided` — which still held the
+hold. So the suppressed clearance came straight back on the air:
+
+    reconcile:  directive -> ""   ("radar shows him established on the approach")
+    #79 repair: appends "hold at present position, maintain five thousand"
+
+A pilot established on final, told to climb and hold — **the exact bug
+`reconcile` was written to prevent, re-entering through the door built to fix a
+different one.** Caught before it flew by asking what the two changes do
+together rather than what each does alone. A guard that edits prose while the
+structured decision survives is not a guard.
+
+So `reconcile` owns both halves now: it takes the decisions, and returns the
+ones that still stand. `settle` writes those back to `bridge.decided`.
+
+**And it reads kinds instead of words.** `HOLDING_KINDS = ("hold",
+"continue_hold")`. Two cases the substring could not do:
+
+* *"remain at present position, maintain five thousand"* — a hold with no
+  "hold" in it. Suppressed correctly now, missed entirely before.
+* *"taxi to runway one three, hold short of runway one three"* — a GROUND
+  instruction the substring read as a holding clearance and would have
+  suppressed.
+
+The two holding paths in `controller.py` now carry `Decision`s; the
+"no holding available" path deliberately does not, since there is no hold to
+give and naming it one would suppress a vector to protect a clearance that does
+not exist.
+
+**Criterion 4 is NOT met and is deliberately deferred.** Six of thirty-two
+`say()` calls carry a decision, so `reconcile` keeps a prose fallback for the
+rest — removing it would silently stop suppressing holds on every path that has
+not migrated, which is worse than the bug being fixed. The fallback is marked,
+tested, and goes when every path carries its decision. Rendering *after*
+reconciliation is the same migration and belongs with it.
+
+
 
     if directive and "hold" in directive.lower():
 

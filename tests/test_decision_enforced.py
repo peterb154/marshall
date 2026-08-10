@@ -174,3 +174,127 @@ class TheBridgeAppendsRatherThanReplaces(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ASuppressedDecisionCannotComeBackThroughTheRepair(unittest.TestCase):
+    """The two fixes met, and one undid the other. #80.
+
+    `reconcile` exists because a pilot established on the final approach course
+    at ten miles was told, in ONE transmission, that he was on final AND to
+    climb to five thousand and hold. It suppresses the holding clearance when
+    radar shows him established.
+
+    It suppressed the WORDS. Since #79 the bridge repairs any decided fact the
+    agent did not voice -- reading `bridge.decided`, which still held the hold.
+    So the suppressed clearance came straight back on the air, through the door
+    built to fix a different problem. Caught before it flew, by asking what the
+    two changes do together rather than what each does alone.
+
+    A guard that edits prose while the structured decision survives is not a
+    guard. `reconcile` owns both halves now.
+    """
+
+    def setUp(self):
+        from marshall.atc import agent_atc
+        self.A = agent_atc
+        self.hold = D.Decision(kind="hold", to="Sockeye 1-1", altitude_ft=5000)
+        self.words = "Sockeye, hold at present position, maintain five thousand."
+        self.vec = "ASR: vectoring, eight miles. Fly heading 130."
+
+    class _OnFinal:
+        phase, established = "final", True
+
+    class _Missed:
+        phase, established = "missed", False
+
+    class _OutOfPosition:
+        phase, established = "downwind", False
+
+    def test_established_on_final_keeps_neither_the_words_nor_the_decision(self):
+        d, _s, _v, dropped, kept = self.A.reconcile(
+            self.words, "", self.vec, self._OnFinal(), [self.hold])
+        self.assertEqual(d, "")
+        self.assertIn("suppressed", dropped)
+        self.assertEqual(kept, [],
+                         "the hold survived as a decision and #79 would put it "
+                         "back on the air -- two altitudes in one transmission")
+
+    def test_the_missed_approach_takes_the_decision_too(self):
+        _d, _s, _v, dropped, kept = self.A.reconcile(
+            self.words, "", self.vec, self._Missed(), [self.hold])
+        self.assertIn("missed", dropped)
+        self.assertEqual(kept, [])
+
+    def test_suppressing_the_VECTOR_keeps_the_hold(self):
+        # The other direction: he is out of position and told to wait, so the
+        # holding clearance is the instruction and must reach him.
+        d, _s, v, dropped, kept = self.A.reconcile(
+            self.words, "", self.vec, self._OutOfPosition(), [self.hold])
+        self.assertTrue(d)
+        self.assertEqual(v, "")
+        self.assertIn("two altitudes", dropped)
+        self.assertEqual(len(kept), 1, "the hold he must actually fly was lost")
+
+    def test_other_decisions_are_untouched_by_a_hold_suppression(self):
+        # Only the holding decision goes. A landing clearance in the same turn
+        # is a different fact and still owed.
+        land = D.Decision(kind="cleared_land", to="Sockeye 1-1", runway="13")
+        _d, _s, _v, _dropped, kept = self.A.reconcile(
+            self.words, "", self.vec, self._OnFinal(), [self.hold, land])
+        self.assertEqual([k.kind for k in kept], ["cleared_land"])
+
+
+class ReconcileReadsTypesNotProse(unittest.TestCase):
+    """`"hold" in directive.lower()` decided which authority owned an aeroplane.
+
+    It worked only because `controller.py` happened to write that word. A
+    rephrasing there -- "remain at present position", "continue to orbit" --
+    silently changed a separation decision two modules away, and no test could
+    see the connection because the two files share nothing but a substring.
+    """
+
+    def setUp(self):
+        from marshall.atc import agent_atc
+        self.A = agent_atc
+
+    class _OnFinal:
+        phase, established = "final", True
+
+    def test_a_hold_phrased_without_the_word_is_still_a_hold(self):
+        # THE POINT. These words contain no "hold" at all.
+        said = "Sockeye, remain at present position, maintain five thousand."
+        d = D.Decision(kind="hold", to="Sockeye 1-1", altitude_ft=5000)
+        out, _s, _v, dropped, kept = self.A.reconcile(
+            said, "", "ASR: eight miles.", self._OnFinal(), [d])
+        self.assertEqual(out, "", "the rephrased hold was not recognised")
+        self.assertIn("suppressed", dropped)
+        self.assertEqual(kept, [])
+
+    def test_a_sentence_mentioning_holding_short_is_not_a_hold(self):
+        # "hold short" is a GROUND instruction and has nothing to do with the
+        # stack. The substring test could not tell them apart.
+        said = "Sockeye, taxi to runway one three, hold short of runway one three."
+        d = D.Decision(kind="taxi", to="Sockeye 1-1", runway="13")
+        out, _s, v, _dropped, kept = self.A.reconcile(
+            said, "", "ASR: eight miles.", self._OnFinal(), [d])
+        self.assertEqual(out, said, "a taxi clearance was suppressed as a hold")
+        self.assertEqual(len(kept), 1)
+        self.assertTrue(v)
+
+    def test_continue_hold_counts(self):
+        d = D.Decision(kind="continue_hold", to="Sockeye 1-1")
+        out, _s, _v, _dropped, kept = self.A.reconcile(
+            "Sockeye, continue holding.", "", "ASR: eight miles.",
+            self._OnFinal(), [d])
+        self.assertEqual(out, "")
+        self.assertEqual(kept, [])
+
+    def test_with_no_decisions_it_still_falls_back_to_the_words(self):
+        # Six of thirty-two `say` calls carry a decision today. Removing the
+        # fallback would silently stop suppressing holds for the rest, which is
+        # a worse bug than the one being fixed. It goes when they all carry one.
+        out, _s, _v, dropped, _kept = self.A.reconcile(
+            "Sockeye, hold at present position, maintain five thousand.", "",
+            "ASR: eight miles.", self._OnFinal(), [])
+        self.assertEqual(out, "")
+        self.assertIn("suppressed", dropped)
