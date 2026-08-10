@@ -192,10 +192,19 @@ def fetch_radar(session_id: str = "", url: str = RADAR_URL,
 
 
 def ask_agent(session_id: str, message: str, tier: str = "sonnet",
-              url: str = AGENT_URL, timeout: float = 30.0) -> str:
-    """POST one transcript to the routed ATC endpoint; `tier` picks the model."""
+              url: str = AGENT_URL, timeout: float = 30.0,
+              role: str = "", also=()) -> str:
+    """POST one transcript to the routed ATC endpoint; `tier` picks the model.
+
+    `role` IS SENT FROM HERE BECAUSE HERE IS THE TRUSTED SIDE. The bridge knows
+    which station owns this frequency before the call is made, and nothing a
+    pilot says can change it -- so the seat decides which tools the agent is
+    given (`director/tools/capability.py`) rather than a paragraph of prose
+    asking it not to use them.
+    """
     body = json.dumps({"session_id": session_id, "message": message,
-                       "tier": tier}).encode()
+                       "tier": tier, "role": role,
+                       "also": list(also or ())}).encode()
     req = urllib.request.Request(url, data=body,
                                  headers={"content-type": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -3760,6 +3769,24 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
     def voice_for(hz: float | None):
         """The voice of whoever owns this channel, falling back to the default."""
         return voices.get(round((hz or freq_hz) / 1_000_000, 3), voice)
+
+    def seat_on(hz: float | None) -> tuple[str, tuple]:
+        """Which seat owns this channel, as (role, also).
+
+        Resolved from the FREQUENCY, which is the one fact about a transmission
+        that no pilot can influence -- the same reason `station_on` decides who
+        is speaking rather than anything in the transcript. It tells the director
+        which tools this agent may be given (#81).
+
+        ("", ()) when nothing claims the channel, which the director reads as
+        "the bridge did not say" and answers with the full tool set -- a
+        capability system that silently disarmed a controller because a lookup
+        missed would be worse than none.
+        """
+        st = profile.station_on(round((hz or freq_hz) / 1_000_000, 3))
+        if st is None:
+            return "", ()
+        return getattr(st, "role", "") or "", tuple(getattr(st, "also", ()) or ())
     def channels_of(hz: float | None):
         """Every frequency the facility on this channel is heard on.
 
@@ -3957,7 +3984,9 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         _authorised = bridge.handoff_due[0] or (bridge.refuse_due or None)
         t0 = time.monotonic()
         try:
-            reply = ask_agent(session_id, message, tier, url)
+            _role, _also = seat_on(on_hz)
+            reply = ask_agent(session_id, message, tier, url,
+                              role=_role, also=_also)
         except (urllib.error.URLError, TimeoutError, OSError) as e:
             print(f"  !! agent error: {e}", flush=True)
             reply = "Standby."

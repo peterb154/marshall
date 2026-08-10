@@ -40,6 +40,7 @@ from marshall.feed.dcs import (
     spawn_ground,
     radar_picture,
 )
+from tools.capability import capabilities, describe
 from tools.approaches import (
     active_flight_plan,
     get_approach,
@@ -99,7 +100,20 @@ def _bedrock(model_id: str) -> BedrockModel:
                         additional_request_fields={"thinking": {"type": "disabled"}})
 
 
-def build_agent(session_id: str) -> Agent:
+def build_agent(session_id: str, role: str = "", also=()) -> Agent:
+    """One controller's agent. `role` decides which tools he is GIVEN.
+
+    THE SEAT IS THE KEY, not a paragraph of prose. `spawn_ground` used to be in
+    every controller's hands with the Overlord brief telling an approach
+    controller not to use it -- which costs tokens on every call and relies on
+    the model obeying rather than on the capability being absent. See
+    `tools/capability.py`; what is absent cannot be called.
+
+    Empty `role` keeps the full set, so an older bridge or a direct call behaves
+    exactly as before.
+    """
+    may = capabilities(role, also)
+    log.info("agent for %s [%s]", session_id, describe(role, also))
     return Agent(
         model=_bedrock(MODEL_ID),
         system_prompt=_system_prompt_for(session_id),
@@ -114,14 +128,14 @@ def build_agent(session_id: str) -> Agent:
         # it stays a decision rather than a drift. A controller has no business
         # unpausing the sim; whoever sets a sortie up does.
         tools=[
-            *identify_tools(session_id),  # correlate a voice callsign to a radar track
-            vector,                       # heading + distance to a fix or another aircraft
-            *hook_tools(session_id),      # "wake me in N seconds" — proactive callbacks
+            *(identify_tools(session_id) if "identify" in may else []),
+            *([vector] if "vector" in may else []),
+            *(hook_tools(session_id) if "hooks" in may else []),
             # Clearance delivery. The words come back finished because the
             # numbers in a clearance — route, altitude, frequency, squawk — are
             # facts about what was filed, and a controller who improvises them
             # has cleared somebody to an altitude nobody wrote down.
-            *clearance_tools(),
+            *(clearance_tools() if "clearance" in may else []),
             # ANY FREQUENCY ON THE MAP, on demand. His OWN field's are in the
             # brief -- a controller works one aerodrome and knows it cold -- and
             # everywhere else is unbounded: thirty fields at four to eight seats
@@ -132,18 +146,18 @@ def build_agent(session_id: str) -> Agent:
             # for a frequency it had not been given, the controller invented one,
             # confidently and in correct phraseology, and a pilot sent to an
             # invented frequency calls into silence.
-            *frequency_tools(),
-            *memory_tools(namespace=session_id),
-            # The OVERLORD's hands. One agent covers every position and picks
-            # its manner from which frequency was called, so the tool is here
-            # for all of them and the overlord brief is what says who may use
-            # it. An approach controller has no reason to put armour in a
-            # valley and its own brief tells it so.
+            *(frequency_tools() if "frequency" in may else []),
+            *(memory_tools(namespace=session_id) if "memory" in may else []),
+            # THE OVERLORD'S HANDS, AND ONLY HIS. This was given to every seat,
+            # with the overlord brief left to say who might use it -- an
+            # approach controller carrying, on every single transmission, the
+            # ability to put armour in a valley and a paragraph asking it not
+            # to. Prose is not a permission system; absence is.
             #
-            # Without this, asking Sentry for a target produced a confident,
-            # detailed answer and nothing on the ground -- which is the worst
+            # Sentry still needs it. Without it, asking for a target produced a
+            # confident, detailed answer and nothing on the ground -- the worst
             # kind of wrong, because a pilot flies out and looks for it.
-            spawn_ground,
+            *([spawn_ground] if "spawn" in may else []),
         ],
         session_manager=PgSessionManager(session_id=session_id),
         # WHAT HE IS HANDED versus WHAT HE REMEMBERS -- see tools/context.py.
@@ -173,7 +187,9 @@ start_events()
 # consistent conversation.
 _FAST = _bedrock(FAST_MODEL_ID)
 _SMART = _bedrock(MODEL_ID)
-_atc_agents: dict[str, Agent] = {}
+# Keyed on (session_id, role, also) -- see `atc_endpoint`. One bridge works
+# every frequency under one session, so the seat is part of the key.
+_atc_agents: dict[tuple, Agent] = {}
 
 # One agent per session, and an agent cannot take two calls at once. The bridge
 # gives up on a slow answer and moves on; the agent does not, so the NEXT
@@ -214,6 +230,12 @@ def forget_sessions() -> int:
 def atc_endpoint(body: dict) -> dict:
     session_id, message = body["session_id"], body["message"]
     tier = body.get("tier", "sonnet")
+    # WHICH SEAT IS SPEAKING, from the TRUSTED side. The bridge resolves the
+    # station from the frequency before the call is made; nothing the pilot says
+    # can change it. It decides which tools this agent is given -- see
+    # `tools/capability.py`.
+    role = (body.get("role") or "").strip().lower()
+    also = tuple(body.get("also") or ())
     lock = _atc_busy.setdefault(session_id, threading.Lock())
     # Non-blocking on purpose. QUEUEING would be worse on a radio than dropping:
     # the caller has already given up and moved on, so a queued answer arrives
@@ -225,7 +247,14 @@ def atc_endpoint(body: dict) -> dict:
         return {"session_id": session_id, "response": "", "busy": True,
                 "tier": tier}
     try:
-        agent = _atc_agents.get(session_id)
+        # KEYED ON THE SEAT AS WELL AS THE SESSION. One bridge monitors every
+        # frequency in the theatre under ONE session id, so the role varies
+        # within a session -- caching on the session alone would hand Batumi
+        # Approach whatever tool set Sentry was built with, which is exactly the
+        # leak this is closing. The session is still the session, so the
+        # conversation on a shared channel is unchanged.
+        _key = (session_id, role, also)
+        agent = _atc_agents.get(_key)
         # THE PLATE CAN CHANGE UNDER A CACHED AGENT. The bridge pushes a fresh
         # plate to /prompts at startup, built from route.py for the mission it
         # is about to fly -- but the Agent's system prompt was assembled when it
@@ -243,14 +272,14 @@ def atc_endpoint(body: dict) -> dict:
                      session_id)
             agent = None
         if agent is None:
-            agent = build_agent(session_id)
+            agent = build_agent(session_id, role, also)
             # A restart restores the transcript from Postgres exactly as it was
             # written, situation blocks and all. `apply_management` would clean
             # it up -- but only AFTER the first call had already paid for it, so
             # the one turn following a director restart would be the most
             # expensive of the sortie. Scrub on the way in instead.
             scrub(agent.messages)
-            _atc_agents[session_id] = agent
+            _atc_agents[_key] = agent
         agent.model = _FAST if tier == "haiku" else _SMART
         result = agent(message)
         return {"session_id": session_id, "response": str(result), "tier": tier}

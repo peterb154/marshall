@@ -1,0 +1,152 @@
+"""What a controller is GIVEN, decided by the seat rather than by a paragraph.
+
+    #81 [SEAM-3]
+
+One agent was built with one tool list for every session, `spawn_ground`
+included, and the Overlord brief was what told an approach controller not to put
+armour in a valley. **Prose is not a permission system.** It costs tokens on
+every transmission describing capabilities the seat may not use, and it relies on
+the model obeying an instruction rather than on the capability being absent.
+
+WHAT IS ABSENT CANNOT BE CALLED. That is the same argument as the one that keeps
+an LLM out of separation: authority is structural, not advisory.
+
+THE SEAT COMES FROM THE FREQUENCY, which is the one fact about a transmission no
+pilot can influence -- the same reason `station_on` decides who is speaking
+rather than anything in the transcript.
+"""
+
+import sys
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "director"))
+
+from tools.capability import capabilities
+
+from marshall.core import route as R
+
+
+class OnlyTheOverlordMayPutThingsInTheWorld(unittest.TestCase):
+    """`spawn_ground` is the dangerous one and the reason this exists."""
+
+    def test_no_aerodrome_controller_is_given_spawn(self):
+        for s in R.STATIONS:
+            if s.role == "overlord":
+                continue
+            self.assertNotIn("spawn", capabilities(s.role, s.also),
+                             f"{s.name} was handed the ability to put armour "
+                             f"in a valley")
+
+    def test_sentry_keeps_it(self):
+        sentry = next(s for s in R.STATIONS if s.role == "overlord")
+        self.assertIn("spawn", capabilities(sentry.role, sentry.also),
+                      "without it, asking for a target produces a confident "
+                      "answer and nothing on the ground")
+
+
+class ClearanceFollowsTheSeatIncludingWhatItALSOWorks(unittest.TestCase):
+    """A role is not one string. A field this size folds seats together."""
+
+    def test_a_delivery_position_may_clear(self):
+        st = next(s for s in R.STATIONS if s.role == "clearance")
+        self.assertIn("clearance", capabilities(st.role, st.also))
+
+    def test_a_ground_that_also_works_clearance_may_clear(self):
+        # Batumi Ground carries also=("delivery", "clearance"). Reading the
+        # primary role alone would disarm a controller who genuinely does the
+        # job -- the failure in the safe direction, but still a failure.
+        st = next(s for s in R.STATIONS
+                  if s.name == "Batumi Ground")
+        self.assertIn("clearance", st.also)
+        self.assertIn("clearance", capabilities(st.role, st.also))
+
+    def test_a_plain_ground_may_not(self):
+        st = next(s for s in R.STATIONS if s.name == "Kobuleti Ground")
+        self.assertEqual(st.also, ())
+        self.assertNotIn("clearance", capabilities(st.role, st.also))
+
+    def test_a_tower_may_not(self):
+        for s in R.STATIONS:
+            if s.role == "tower" and "clearance" not in s.also:
+                self.assertNotIn("clearance", capabilities(s.role, s.also))
+
+
+class EverySeatKeepsWhatEverySeatNeeds(unittest.TestCase):
+    """Knowing who is calling, measuring a range, being woken, looking up a
+    frequency, remembering the sortie. Disarming any of these breaks the job."""
+
+    def test_the_universal_set(self):
+        for s in R.STATIONS:
+            got = capabilities(s.role, s.also)
+            for want in ("identify", "vector", "hooks", "frequency", "memory"):
+                self.assertIn(want, got, f"{s.name} lost {want}")
+
+
+class AnUnknownSeatIsNotDisarmed(unittest.TestCase):
+    """A capability system that silently disarmed a controller because a lookup
+    missed would be worse than none at all."""
+
+    def test_no_role_means_everything(self):
+        got = capabilities("", ())
+        self.assertIn("spawn", got)
+        self.assertIn("clearance", got)
+
+    def test_an_unrecognised_role_still_gets_the_universal_set(self):
+        got = capabilities("harbourmaster", ())
+        self.assertIn("identify", got)
+        self.assertNotIn("spawn", got,
+                         "an unknown seat must not inherit the dangerous one")
+
+
+class TheDirectorActuallyHonoursIt(unittest.TestCase):
+    """The map is only worth having if `build_agent` reads it.
+
+    This is the check that would have caught the original bug: the capability
+    table could be perfect and every controller still be handed everything.
+    """
+
+    def setUp(self):
+        self.src = (Path(__file__).resolve().parent.parent
+                    / "director" / "app.py").read_text()
+
+    def test_spawn_is_conditional(self):
+        self.assertIn('*([spawn_ground] if "spawn" in may else [])', self.src)
+
+    def test_clearance_is_conditional(self):
+        self.assertIn('if "clearance" in may else []', self.src)
+
+    def test_the_agent_cache_is_keyed_on_the_seat(self):
+        # ONE BRIDGE, ONE SESSION, THIRTEEN FREQUENCIES. The role varies within
+        # a session, so caching on the session alone would hand Batumi Approach
+        # whatever tool set Sentry was built with -- reopening the leak through
+        # the cache.
+        self.assertIn("_key = (session_id, role, also)", self.src)
+        self.assertIn("_atc_agents[_key] = agent", self.src)
+
+    def test_the_role_comes_from_the_request_not_the_transcript(self):
+        self.assertIn('body.get("role")', self.src)
+
+
+class TheBridgeSendsTheSeat(unittest.TestCase):
+
+    def setUp(self):
+        from marshall.atc import agent_atc
+        import inspect
+        self.src = inspect.getsource(agent_atc)
+
+    def test_ask_agent_carries_role_and_also(self):
+        self.assertIn('"role": role', self.src)
+        self.assertIn('"also": list(also or ())', self.src)
+
+    def test_the_seat_is_resolved_from_the_frequency(self):
+        self.assertIn("def seat_on(", self.src)
+        self.assertIn("profile.station_on(", self.src)
+
+    def test_an_unclaimed_channel_reports_no_seat(self):
+        # Which the director reads as "the bridge did not say".
+        self.assertIn('return "", ()', self.src)
+
+
+if __name__ == "__main__":
+    unittest.main()

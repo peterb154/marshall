@@ -4149,7 +4149,51 @@ leaves instead of being handed the facts.
 ## [SEAM-3] Every controller is handed every tool, and prose says who may use them — #81
 labels: architecture
 
-**Status:** OPEN.
+**Status:** DONE 10 August, verified against the running director.
+
+`director/tools/capability.py` maps a seat to what it may reach for, and
+`build_agent` constructs the tool list from it. **What is absent cannot be
+called** — the same argument that keeps an LLM out of separation: authority is
+structural, not advisory.
+
+| seat | gets |
+|---|---|
+| every controller | identify, vector, hooks, frequency, memory |
+| clearance / delivery, or a seat that `also` works them | + clearance |
+| **overlord (Sentry) only** | + spawn |
+
+**A role is not one string.** Batumi Ground carries `also=("delivery",
+"clearance")` and Kobuleti Departure `also=("approach",)` — a field this size
+folds seats together, so a capability is granted if the primary role *or*
+anything it also works qualifies. Reading the primary alone would disarm a
+controller who genuinely does the job.
+
+**Three things worth recording.**
+
+*The seat comes from the FREQUENCY*, which is the one fact about a transmission
+no pilot can influence — the same reason `station_on` decides who is speaking
+rather than anything in the transcript. The bridge resolves it and sends it;
+nothing in the message can change it.
+
+*The agent cache had to be re-keyed.* One bridge monitors every frequency in the
+theatre under **one** session id, so the role varies within a session. Caching
+on the session alone would have handed Batumi Approach whatever tool set Sentry
+was built with — reopening the leak through the cache. It is keyed on
+`(session_id, role, also)` now; the session is still the session, so a shared
+channel's conversation is unchanged.
+
+*An unknown seat is not disarmed.* Empty role returns the full set, because a
+capability system that silently took a tool away from a controller after a
+lookup missed would be worse than none. Older bridges and direct calls behave
+exactly as before.
+
+**Verified live**, not only in tests — three POSTs to the running `/atc`:
+
+    agent for captest-approach [approach: frequency, hooks, identify, memory, vector]
+    agent for captest-overlord [overlord: frequency, hooks, identify, memory, spawn, vector]
+    agent for captest-ground   [ground+clearance: clearance, frequency, hooks, identify, memory, vector]
+
+
 
 `build_agent` gives one tool list to every session, `spawn_ground` included, and
 the Overlord brief is what tells an approach controller not to put armour in a
