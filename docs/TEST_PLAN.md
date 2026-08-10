@@ -43,6 +43,17 @@ Say `engineering, come up`, then `test H4 failed, he vectored me at four miles`.
 The ID is the whole point; detail is optional. Engineering answers on whatever
 channel you called from and logs to `build/debug-notes.md`.
 
+### Who you are on the radio
+
+**Your callsign is the name radar prints — `Sockeye`.** Not `Viper 1-1`, which
+is the mission's name for the SLOT you took. The system is right to correct you,
+and this card was wrong to tell you otherwise: Q1 and H18 both scripted the slot
+name, so a pilot reading the card was instructed to misname himself and then
+told off for it.
+
+`/diag`'s Untracked table shows both side by side — `362nd_Sockeye` as the sim
+publishes it, `Sockeye` as it is derived — which is the point of P1.
+
 ### The issue column says one of two different things
 
 A row's `[#n]` used to mean whatever the writer had in mind, and the two
@@ -335,7 +346,7 @@ name in one sortie.
 
 | ID | Prio | Test | What should happen | Fix under test |
 |----|------|------|--------------------|----------------|
-| H18 | P1 | **Cleared for the approach, ask for it again.** Once you have the approach clearance, request it a second time — "Viper one one, request the approach" | *"You are cleared"*, in some form. **Never "number two"** — behind whom? There is nobody else up. On Fred's 31 July sortie this told the only aeroplane in the sky he was second behind himself, four transmissions running at 44 nm, and he declared an emergency to break the loop. From the cockpit it is indistinguishable from being forgotten | [#50] |
+| H18 | P1 | **Cleared for the approach, ask for it again.** Once you have the approach clearance, request it a second time — "Sockeye, request the approach" | *"You are cleared"*, in some form. **Never "number two"** — behind whom? There is nobody else up. On Fred's 31 July sortie this told the only aeroplane in the sky he was second behind himself, four transmissions running at 44 nm, and he declared an emergency to break the loop. From the cockpit it is indistinguishable from being forgotten | [#50] |
 | H19 | P1 | Then **change frequency and check in again** while still cleared | Still cleared. The root cause of H18 was a check-in resetting a CLEARED aircraft to en-route on *every* frequency change — so the ladder, which changes frequency seven times, was the thing most likely to trigger it | [#50] |
 | H11 | P2 | With Shooter, or by asking for the approach while somebody else is on it: **get yourself held** | *"hold at five thousand, right turns, one eight zero outbound one minute, then three six zero inbound one minute"* — a shape and a clock you can actually fly with no navaid. Not "hold at BATUMI as published" | hold |
 | H13 | P2 | Fly the approach **fast** — 400 kt or more — and watch the turn from base onto final | He may overshoot: **known open**, criterion 2. The sweep at 450 kt says 181 dithering events and a 5.1 nm turn radius against a 3 nm base leg — so expect **left/right reversals**, not a clean overshoot. Report how far through you go | [#39] |
@@ -671,7 +682,7 @@ have been answered with "nothing on file for you" — see [#56].
 
 | id | do this | expected | issue | pri |
 |---|---|---|---|---|
-| **Q1** | Preset 1. *"Kobuleti Clearance, Viper one one, request clearance."* | He answers as **Kobuleti Clearance** — not Batumi anything — and gives you **Domino** without asking which. He knows you are calling from Kobuleti and it is the only plan that departs Kobuleti. Clearance to Batumi, an altitude, and a departure frequency of **123.300** | [#56] | **P1** |
+| **Q1** | Preset 1. *"Kobuleti Clearance, Sockeye, request clearance."* — **your own callsign**, the one radar prints, not the jet's slot name | He answers as **Kobuleti Clearance** — not Batumi anything — and gives you **Domino** without asking which. He knows you are calling from Kobuleti and it is the only plan that departs Kobuleti. Clearance to Batumi, an altitude, and a departure frequency of **123.300** | [#56] | **P1** |
 | **Q1a** | With **both** Domino and Silverstate on the board, ask Kobuleti Clearance for a clearance | **Domino, unasked.** Silverstate departs *Nellis*, three thousand miles away, and is not even active — a plan that is not from your field is not yours, and offering it as a choice is the resolver ignoring what it knows. On 10 August he offered both and made the pilot pick | [#89] | **P1** |
 | **Q1b** | Instead say *"...request IFR clearance to Batumi."* | He should **ask which** and Domino must be among the ones he offers. Every plan on the board ends at Batumi, so naming the destination narrows nothing — a controller who picks one confidently here has guessed. Before 7 August this resolved to *Anvil*: a real plan, someone else's sortie, because "Kobuleti" in your callsign line scored against Anvil's task | [R#57] | **P1** |
 | ~~Q2~~ | Read the clearance back, deliberately getting the departure frequency wrong — say *"departure one two four decimal four two five"* | He corrects it. 124.425 is Batumi Approach: a real controller, wrong field. This is the exact failure the field-scoping was built to prevent | [#1] | **P1** |
