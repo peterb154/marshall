@@ -165,5 +165,58 @@ def inspect_source(fn) -> str:
     return inspect.getsource(fn)
 
 
+class ComposeDsnSurvivesABindAddress(unittest.TestCase):
+    """The bridge finds Postgres by reading the compose file, and a bind
+    address in the port mapping must not hide it.
+
+    A SECURITY FIX BROKE THE RADIO, briefly, and this is the guard. Binding the
+    database to loopback changed `"5432:5432"` to `"127.0.0.1:5432:5432"`; the
+    pattern that discovers the port did not allow for an address, returned no
+    match, and the bridge came up with no Postgres at all -- no ATIS letter, no
+    runway in use, no board. The only symptom would have been "PUBLISH FAILED"
+    on every recording, which is exactly the class of silent degradation this
+    repo keeps finding.
+    """
+
+    def _dsn_from(self, mapping: str) -> str:
+        import importlib.util as iu
+        import tempfile
+        from pathlib import Path
+        root = Path(__file__).resolve().parent.parent
+        spec = iu.spec_from_file_location("_b", root / "tools" / "bridge.py")
+        mod = iu.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "director").mkdir()
+            (Path(d) / "director" / "docker-compose.yml").write_text(
+                "services:\n  db:\n    environment:\n"
+                "      POSTGRES_USER: strands\n"
+                "      POSTGRES_PASSWORD: strands\n"
+                "      POSTGRES_DB: strands\n"
+                f"    ports:\n      - {mapping}\n")
+            mod.ROOT = Path(d)
+            return mod._compose_dsn()
+
+    def test_a_loopback_bound_port_is_still_found(self):
+        self.assertIn("localhost:5432", self._dsn_from('"127.0.0.1:5432:5432"'))
+
+    def test_a_bare_mapping_still_works(self):
+        self.assertIn("localhost:5432", self._dsn_from('"5432:5432"'))
+
+    def test_a_moved_host_port_is_honoured(self):
+        self.assertIn("localhost:15432", self._dsn_from('"127.0.0.1:15432:5432"'))
+
+    def test_the_real_compose_file_yields_a_usable_dsn(self):
+        # The one that would actually have caught it: read what ships.
+        import importlib.util as iu
+        from pathlib import Path
+        root = Path(__file__).resolve().parent.parent
+        spec = iu.spec_from_file_location("_b2", root / "tools" / "bridge.py")
+        mod = iu.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        dsn = mod._compose_dsn()
+        self.assertTrue(dsn.startswith("postgresql://"), f"no DSN found: {dsn!r}")
+        self.assertIn("@localhost:", dsn)
+
 if __name__ == "__main__":
     unittest.main()

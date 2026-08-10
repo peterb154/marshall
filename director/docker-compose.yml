@@ -21,10 +21,19 @@ services:
       # board read had to be an HTTP call to a hand-written handler, and twelve
       # CRUD endpoints grew in front of a database everybody could have read.
       #
-      # Bound to the LAN, unauthenticated beyond the password, exactly the
-      # posture DCS-gRPC on 50051 already has. Do not expose this beyond the
-      # LAN: it is the whole world model.
-      - "5432:5432"
+      # LOOPBACK ONLY, and the comment here used to say "bound to the LAN"
+      # while the mapping said `5432:5432` -- which binds 0.0.0.0, every
+      # interface. An outside audit read the line and the port and reported the
+      # gap. The prose was the thing that was wrong: nothing enforced it.
+      #
+      # 127.0.0.1 is not a compromise here, it is the accurate version of what
+      # was intended. The only host process that needs this is the BRIDGE, and
+      # `tools/bridge.py::_compose_dsn` already builds `...@localhost:5432`.
+      # The director container does not use this mapping at all -- it reaches
+      # Postgres as `db:5432` on the compose network. So nothing legitimate
+      # loses access, and the whole world model stops being offered to the LAN
+      # behind the password `strands`.
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U strands -d strands"]
       interval: 3s
@@ -82,6 +91,22 @@ services:
       - ./app.py:/app/app.py
       - ./migrations:/app/migrations
     ports:
+      # NOT loopback, and it is worth saying why rather than leaving it looking
+      # like an oversight beside the database above.
+      #
+      # The KNEEBOARD is a container on another compose project and reaches the
+      # director as `host.docker.internal:8000` -- i.e. across the docker bridge
+      # (172.17.0.1), not over 127.0.0.1. Binding this to loopback, which is the
+      # obvious hardening and what an audit will recommend, silently breaks
+      # every kneeboard page that reads live state. Verified before changing it.
+      #
+      # STILL UNAUTHENTICATED, and that is the real exposure: this endpoint owns
+      # prompts, sessions and flight state, and anything on the LAN can POST to
+      # it. Closing it properly means either putting the kneeboard on this
+      # project's network and then binding loopback, or giving the API a token.
+      # Tracked as #74 rather than half-done here, because a change that breaks
+      # the kneeboard during a sortie is worse than the exposure it removes on a
+      # LAN nobody else is on.
       - "8000:8000"
     restart: unless-stopped
 

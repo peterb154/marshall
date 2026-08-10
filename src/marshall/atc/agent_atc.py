@@ -7,7 +7,7 @@ transcript to the strands-pg agent instead. The agent knows the plate (soul +
 rules), holds one shared session per channel+mission, asks for clarification
 when it's lost, and answers in radio phraseology.
 
-    STT (Whisper) -> POST /chat (agent, ~2-4s) -> Polly -> SRS transmit
+    STT (Whisper) -> POST /atc (agent, ~2-4s) -> Polly -> SRS transmit
 
 The agent may NOT invent a level -- its rules pin the assignable altitudes to
 the published plate. Separation-critical sequencing across multiple aircraft is
@@ -1754,24 +1754,49 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
         # is the fact everything else on a radar approach depends on -- see
         # Controller.may_be_sequenced. Told on every transmission, so losing him
         # is as visible as finding him.
+        # ONE LOOKUP, TRACK FIRST, AND EVERYTHING BELOW READS IT.
+        #
+        # BY TRACK, because this asked the scope for the CALLSIGN, and the
+        # picture labels a manned contact by player name -- so unless something
+        # had already tagged the line, radar_fix found nobody and he was marked
+        # NOT radar identified on every single transmission. Everything on a
+        # vectored approach depends on that flag, so he was never really on the
+        # approach at all:
+        #
+        #     "im not sure batumi approach ever REALLY had me on the
+        #      approach until the very end"
+        #
+        # The board bears him out: UNSEEN for the whole sortie.
+        #
+        # THAT FIX WENT TO ONE CALL SITE AND NOT ITS SIBLINGS, which an outside
+        # audit caught and which is this repo's most familiar shape. `seen` was
+        # switched to the track; the `fix` two lines below, the airframe, and
+        # the ground check were all left asking by callsign. `radar_fix` needs a
+        # BRACKETED TAG and `radar_fix_by_track` does not, so an identified but
+        # untagged contact came out in the worst possible state: seen=True with
+        # no geometry at all.
+        #
+        # Worse than either half alone. `may_be_sequenced` saw radar contact, so
+        # the aircraft was treated as a radar arrival -- while the seed below,
+        # the one thing that stops an aeroplane already established on final
+        # being filed as a new arrival and stacked, silently never ran.
+        fix = radar_fix_by_track(scope, track, ctl.profile) if track else None
+        if fix is None:
+            fix = radar_fix(scope, intent.callsign, ctl.profile)
         if intent.callsign:
-            # BY TRACK. This asked the scope for the CALLSIGN, and the picture
-            # labels a manned contact by player name -- so unless something had
-            # already tagged the line, radar_fix found nobody and he was marked
-            # NOT radar identified on every single transmission. Everything on a
-            # vectored approach depends on that flag, so he was never really on
-            # the approach at all:
-            #
-            #     "im not sure batumi approach ever REALLY had me on the
-            #      approach until the very end"
-            #
-            # The board bears him out: UNSEEN for the whole sortie.
-            seen = (radar_fix_by_track(scope, track, ctl.profile) is not None
-                    if track else
-                    radar_fix(scope, intent.callsign, ctl.profile) is not None)
-            ctl.note_radar_contact(intent.callsign, seen)
+            ctl.note_radar_contact(intent.callsign, fix is not None)
 
-        _typ = aircraft_type_on_scope(scope, intent.callsign)
+        # THE AIRFRAME BY TRACK TOO. `aircraft_type_on_scope` reads the prose
+        # line and needs the same bracketed tag, so equipment detection failed
+        # in exactly the same case -- and an unknown airframe falls back to
+        # "assume modern", which is how a 1944 fighter gets offered a hold on a
+        # station it cannot receive.
+        _typ = ""
+        if track and isinstance(scope, Scope):
+            _c = scope.of(track)
+            _typ = (_c or {}).get("type") or ""
+        if not _typ:
+            _typ = aircraft_type_on_scope(scope, intent.callsign)
         if _typ:
             from marshall.atc import equipment as _eq
             ctl.note_equipment(intent.callsign, _eq.receivers(_typ))
@@ -1779,7 +1804,6 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
         # Seed the blind engine from the scope BEFORE it decides anything. An
         # aircraft radar shows established on the approach must not be filed as
         # a new arrival and stacked -- see Controller.seen_on_final.
-        fix = radar_fix(scope, intent.callsign, ctl.profile)
         if fix is not None:
             from marshall.atc import asr as _asr
             g = _asr.guide(fix, ctl.profile,

@@ -33,7 +33,7 @@ generator, and the ATC all read it, so a chart can never disagree with the sim.
 ## The agent controller
 
 Runs in the strands-pg director (its own repo/container on the LXC), reached by
-the SRS bridge over HTTP (`/chat`). Per pilot transmission the bridge hands it the
+the SRS bridge over HTTP (`/atc`). Per pilot transmission the bridge hands it the
 transcript plus, when radar is on, a **RADAR** line — every contact as range and
 radial off the beacon, altitude, heading. The agent:
 
@@ -204,7 +204,7 @@ track. Timed MAP is the mechanism, not a fallback.
   (`radio/stt.py`, the one shared copy).
 - **Brain** — the director agent over Bedrock (Sonnet); **TTS** — Amazon Polly, a
   distinct voice per controller.
-- **Bridge** (`atc/agent_atc.py`) — STT → radar-inject → `/chat` → strip to
+- **Bridge** (`atc/agent_atc.py`) — STT → radar-inject → `/atc` → strip to
   radio-plain → transmit, plus the hook scheduler, all behind one radio lock.
 
 ## Autonomous testing

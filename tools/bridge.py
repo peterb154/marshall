@@ -96,7 +96,13 @@ def _compose_dsn() -> str:
         return ""
     import re
     who = dict(re.findall(r"POSTGRES_(USER|PASSWORD|DB):\s*(\S+)", text))
-    port = re.search(r'"(\d+):5432"', text)
+    # THE BIND ADDRESS IS OPTIONAL, and leaving it out of this pattern is how a
+    # security fix breaks the radio. The mapping was `"5432:5432"`; binding it
+    # to loopback made it `"127.0.0.1:5432:5432"`, this regex stopped matching,
+    # the DSN came back empty, and the bridge silently lost Postgres -- which
+    # is the ATIS letter, the runway in use and the board. Nothing would have
+    # said so except "PUBLISH FAILED" on every recording.
+    port = re.search(r'"(?:[\d.]+:)?(\d+):5432"', text)
     if not (who.get("USER") and who.get("DB") and port):
         return ""
     return (f"postgresql://{who['USER']}:{who.get('PASSWORD', '')}"

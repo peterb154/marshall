@@ -81,13 +81,30 @@ def gh_flight_test() -> dict[int, list[str]]:
     return got
 
 
-def gh_states() -> dict[int, str]:
+def gh_states() -> dict[int, str] | None:
+    """GitHub's state per issue, or None when GitHub cannot be reached."""
     gh = shutil.which("gh") or str(Path.home() / ".local" / "bin" / "gh")
     out = subprocess.run(
         [gh, "issue", "list", "--state", "all", "--limit", "200",
          "--json", "number,state"], capture_output=True, text=True)
     if out.returncode != 0:
-        sys.exit(f"gh failed: {out.stderr.strip() or 'no output'}")
+        # EXIT 2 -- "could not run", not "they disagree". `tools/check.py` reads
+        # 2 as SKIP and reports it by name, which is the difference between a
+        # gate that is offline and a gate that is failing.
+        #
+        # An outside audit ran this without a token, got a red check, and
+        # reasonably reported that the standard local quality gate depends on
+        # the network. It also MASKED the real result: this check is genuinely
+        # failing right now on card/issue drift (#60), and an auth error printed
+        # in the same red made that indistinguishable from a firewall.
+        #
+        # A check that goes red for two unrelated reasons is a check nobody can
+        # act on -- the same reason the approach sweep gates on a baseline
+        # rather than on the known-open bugs.
+        why = (out.stderr or "").strip() or "no output"
+        print(f"cannot reach GitHub, so ISSUES.md and the card were NOT "
+              f"compared: {why.splitlines()[0]}", file=sys.stderr)
+        return None
     return {i["number"]: i["state"] for i in json.loads(out.stdout or "[]")}
 
 
@@ -116,6 +133,8 @@ def main() -> int:
     text = ISSUES.read_text(encoding="utf-8")
     card = CARD.read_text(encoding="utf-8")
     state = gh_states()
+    if state is None:
+        return 2                      # SKIP, not FAIL -- see gh_states
     flight_test = gh_flight_test()
     items = entries(text)
 

@@ -45,10 +45,12 @@ tools/         render.sh — screenshot a chart with headless Edge/Chrome
 
 ## Status
 
-Early. The ATC state machine, the intent parser, the chart generators and the
-mission generator all run and are testable in plain text. The SRS voice bridge
-(fork of [SkyEye](https://github.com/dharmab/skyeye)'s client), Whisper STT and
-TTS are next. See `deploy/` for how the pieces run beside a sim server.
+Flying. The ATC state machine, the intent parser, the chart generators and the
+mission generator all run and are testable in plain text. The **SRS voice bridge
+is built and live** (`marshall.atc.agent_atc`, `marshall/radio/`) — Whisper STT,
+Polly TTS and a ten-client transmit pool — and sorties are flown against it on
+two theatres, Caucasus and Nevada. See `deploy/` for how the pieces run beside a
+sim server, and `docs/WIRING.md` for what actually talks to what.
 
 ## Docs
 

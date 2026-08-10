@@ -3610,3 +3610,146 @@ the full run. `bind()` now evicts the submodules too.
 *reasoning* — that a timeout is blamed on a pause when the sim says paused and
 explicitly not on the map — plus the wall clock, which is the only thing that
 catches fault 2.
+
+---
+
+## [OPS-5] The director API is unauthenticated and published to the LAN — #74
+labels: architecture
+
+**Status:** OPEN. Raised by the Codex audit, 10 August; the database half is
+fixed, this half is deferred deliberately.
+
+`director/docker-compose.yml` publishes the agent on `8000:8000` — every
+interface — and `docs/WIRING.md` confirms the HTTP surface has no
+authentication. It owns prompts, sessions, flight state and mutating endpoints,
+so anything on the LAN can rewrite the controller's brief.
+
+**Why it is not simply bound to loopback like Postgres was.** The kneeboard is
+a container in another compose project and reaches the director as
+`host.docker.internal:8000` — across the docker bridge, not over 127.0.0.1.
+Binding loopback is the obvious hardening and the one an audit recommends, and
+it silently breaks every kneeboard page that reads live state. Verified before
+changing anything, which is why only the database moved.
+
+Two real fixes, either acceptable:
+
+1. Put the kneeboard on the director's compose network and address the agent as
+   `agent:8000`, then bind `127.0.0.1:8000:8000`. Cleanest; needs the kneeboard
+   deploy to move.
+2. Give the API a shared token and require it, so LAN reachability stops being
+   equivalent to authority.
+
+Deferred rather than half-done: a change that breaks the kneeboard mid-sortie is
+worse than the exposure it removes on a LAN nobody else is on. Not a licence to
+leave it — it becomes wrong the moment anybody else connects.
+
+---
+
+## [OPS-6] Codex audit, 10 August — an outside reading of the tree — #75
+labels: architecture
+
+**Status:** DONE 10 August, except the deferred half of [OPS-5].
+
+An external audit (`CODEX_FINDINGS.md`) reviewed the docs against the tree. Five
+findings; **all five verified against the code, none spurious**. The one that
+mattered had escaped every one of our own checks.
+
+**1. HIGH, and correct — a fix that went to one call site and not its siblings.**
+On 1 August `seen` was switched from asking the scope by callsign to asking by
+TRACK, because `radar_fix` needs a bracketed tag and a manned contact is labelled
+by player name. Its three siblings were left asking by callsign: the `fix` that
+seeds the engine, the airframe lookup, and the ground check. So an identified but
+untagged contact came out in the state worse than either half —
+
+    seen = True     `may_be_sequenced` treats him as a radar arrival
+    fix  = None     and the seed saying "he is already on final" never runs
+
+— and an aeroplane established on the approach is filed as a new arrival and
+**stacked**, which is exactly what the radar seed exists to prevent. Equipment
+failed in the same case, and an unknown airframe falls back to "assume modern".
+
+Fixed: one lookup, track first, and everything downstream reads it.
+`tests/test_untagged_final.py` — verified to FAIL on the pre-fix code. No
+existing test caught it because every scope fixture in the suite carries a
+*tagged* contact, and untagged-but-tracked is the state every pilot is in for
+the first seconds of every sortie.
+
+**2. HIGH, partly — Postgres and the agent published on all interfaces.** True.
+`"5432:5432"` binds 0.0.0.0 while the comment beside it claimed "bound to the
+LAN" — the prose was the thing that was wrong, and nothing enforced it. Postgres
+is now `127.0.0.1:5432:5432`; the only host process needing it is the bridge,
+which already dials `localhost`, and the director container uses `db:5432` on
+the compose network. Verified refused from the LAN and still readable by the
+bridge. The agent port is [OPS-5].
+
+*That change broke the radio for about a minute*, which is the lesson worth
+keeping: `bridge.py::_compose_dsn` matched `"(\d+):5432"`, a bind address made it
+stop matching, and the bridge would have come up with **no Postgres at all** — no
+ATIS letter, no runway in use, no board, and no symptom but `PUBLISH FAILED` on
+every recording. Pattern widened, and pinned by a test that reads the real
+compose file.
+
+**3. MEDIUM, and fair — the local gate was network-dependent.** `issue_sync`
+called `sys.exit` on a `gh` failure, so no token meant a red check. Worse, it
+*masked* the real result: this check is genuinely failing on card/issue drift
+(#60), and an auth error in the same red was indistinguishable from a firewall.
+It exits **2** now, which `check.py` already reads as SKIP and reports by name.
+Verified both ways: without a token it SKIPs and says why; with one it still
+FAILs on the real drift.
+
+The broader ask — `--unit` vs `--release` modes — is **declined for now**.
+`check.py` already prints every skip with what it leaves unguarded and says
+"Skipped is not passed"; a second mode would add a way to run the gate that
+looks stricter without changing what is actually verified. Revisit when there is
+CI, which is the only place the distinction earns its keep.
+
+**4. MEDIUM, already tracked** — `agent_atc.py` at ~4,950 lines with untestable
+nested loop functions. Accurate, and it is #55.
+
+**5. MEDIUM, and all four examples correct** — doc drift. `/chat` vs `/atc` in
+DESIGN and the module docstring (the bridge has used `/atc` since the two-tier
+router); README calling the voice stack "next" when it has been flying for
+weeks; `SCHEMA.md` presenting an unapplied proposal with no marker; WIRING
+describing the prompt-cache scar that `app.py` closed on 29 July. All four
+corrected, with SCHEMA.md given a prominent SUPERSEDED banner rather than being
+deleted — the argument in it is still the reason the second and third airfields
+were cheap.
+
+**What this says about our own checks.** `tools/unwired.py` looks for things
+nothing reaches; nothing looks for a fix applied to one of several call sites
+that should have moved together. That is the shape of finding 1, of the `_me`
+bug, and of the two-fields lesson. Worth a check of its own — filed as #76.
+
+---
+
+## [ARCH-11] Audit for a fix applied to one call site and not its siblings — #76
+labels: architecture, tooling
+
+**Status:** OPEN. Raised by [OPS-6], 10 August.
+
+`tools/unwired.py` finds a correct thing nothing reaches. It cannot find the
+other half of the same disease: **a correct thing reached from three places, two
+of which still ask the old way.**
+
+Three instances, all found by somebody else rather than by us:
+
+| | |
+|---|---|
+| `Controller._me` | read in six places, assigned in none |
+| `station_for` / `channels_for` / `"ABCD"[i]` / `field_origin` | four questions that had one answer until Kobuleti |
+| `seen` vs `fix` vs airframe vs ground check | one moved to the track, three did not — [OPS-6] finding 1 |
+
+The shape is always the same and always invisible to reading: several call sites
+asking the same question by different routes, where the routes agreed until a
+second field, a second map, or an untagged contact made them disagree. The wrong
+answer is never absurd — it is a real controller, a real frequency, a real
+distance, belonging to something else.
+
+**Sketch.** For a given helper pair (`radar_fix` / `radar_fix_by_track`,
+`station_for(role)` / `station_for(role, field)`), find call sites of the WEAKER
+one that sit in the same function as a call to the stronger. That is exactly the
+signature of a half-applied fix, and it is mechanical. Start with the pairs we
+already know are hazardous rather than trying to discover them.
+
+Not a lint rule — a repo-shaped check, like `unwired.py`, with a baseline so it
+is not always red.
