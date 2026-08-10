@@ -3155,12 +3155,18 @@ def settle(bridge, directive, stack, vectoring, fix, profile, known, ctl,
     # blind case rather than an error -- see `Controller._owns`.
     _ac = (ctl.aircraft.get(ctl._resolve(known))
            if (ctl is not None and known) else None)
+    _worked_by = getattr(getattr(ctl, "_me", None), "role", "") if ctl else ""
     phase = _phases.derive(
         getattr(_ac, "sortie_phase", "") or "",
         on_ground=down if fix is not None else None,
         separation=(getattr(getattr(_ac, "phase", None), "name", "") or "").lower(),
         was_airborne=bool(getattr(_ac, "approaches", 0)),
-        worked_by=getattr(getattr(ctl, "_me", None), "role", "") if ctl else "")
+        worked_by=_worked_by,
+        refused=lambda cur, want: print(
+            f"  .. phase REFUSED: {cur} cannot lead to {want} "
+            f"(worked by {_worked_by or 'nobody'}, "
+            f"{'down' if down else 'airborne'}) — he stays in {cur}",
+            flush=True))
     if _ac is not None and phase and phase != _ac.sortie_phase:
         print(f"  .. phase: {_ac.sortie_phase or '(none)'} -> {phase}", flush=True)
         _ac.sortie_phase = phase
@@ -3193,8 +3199,13 @@ def settle(bridge, directive, stack, vectoring, fix, profile, known, ctl,
     # here; asking it to derive its own would be a second answer to the question
     # this function exists to settle.
     if vectoring and not flies:
-        print(f"  .. ASR guidance suppressed: he is in the {phase} phase, "
-              f"which does not fly the approach", flush=True)
+        # NAME THE INPUTS, not just the verdict. "He is in the departure phase"
+        # is the consequence; who is working him and whether the sim says he is
+        # down are what produced it, and without them a reader can only guess --
+        # which is exactly what happened on 10 August.
+        print(f"  .. ASR guidance suppressed: phase {phase} does not fly the "
+              f"approach (worked by {_worked_by or 'nobody'}, "
+              f"{'down' if down else 'airborne'})", flush=True)
         vectoring = ""
     # The missed-approach latch still belongs to the geometry that reads it, so
     # it is applied to the phase the dispatcher was given rather than lost.

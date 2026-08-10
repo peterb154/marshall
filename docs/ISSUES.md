@@ -4573,3 +4573,75 @@ called that read-back correct** and handed him on mid-correction.
 
 `None` is not `False`. No clearance on the board means no judgement, and an
 unjudged read-back leaves the phase exactly where it is.
+
+---
+
+## [SEP-6] A refused phase transition welds an aeroplane into `departure` — #91
+labels: bug, needs-flight-test
+
+**Status:** DIAGNOSED, not fixed. The mechanism is proven and the log now
+reports it; the trigger has not been reproduced offline.
+
+An aircraft sat in `departure` from rotation to thirteen miles on the approach
+— through Center, through the hand-off to Batumi Approach, through *"I'll take
+the surveillance approach into one three"* — and the only trace was the
+consequence, printed twenty times:
+
+    .. ASR guidance suppressed: he is in the departure phase
+
+**The mechanism is certain.** `derive("departure", on_ground=True,
+was_airborne=False)` wants `taxi`; `departure` may only lead to `enroute` or
+`arrival`; the transition is refused and the phase kept. Correct in itself —
+*"landed while enroute"* is not a thing — but **refused silently**, so one bad
+`on_ground` reading welds the phase in place for the rest of the sortie. Proven
+by test, not by reading.
+
+**What I could not reproduce** is the `on_ground=True` while airborne. Every
+offline run of that path — real `Scope`, real contacts, `_me` on 124.425 —
+flips `departure → arrival` correctly. The radar lines in the recorder show him
+airborne throughout. So the trigger is real and I do not have it, and I am not
+going to guess a fix into the separation path.
+
+**What is fixed:** `derive` now reports a refusal, and the suppression names the
+inputs rather than the verdict:
+
+    .. phase REFUSED: departure cannot lead to taxi (worked by approach,
+       airborne) — he stays in departure
+    .. ASR guidance suppressed: phase departure does not fly the approach
+       (worked by approach, airborne)
+
+Same rule as `check.py`: **skipped is reported, never silent.** A phase that
+will not move is otherwise indistinguishable from one nothing is trying to
+move, and that difference is the whole diagnosis.
+
+---
+
+## [SEP-7] A third path to the approach geometry, ungated — #92
+labels: bug
+
+**Status:** OPEN. Found while diagnosing [SEP-6].
+
+#86 gated the ASR geometry on the phase in `settle`, because `asr_context`
+reached `asr.guide` with no phase check and flew a departure on approach
+vectors. **There is a third caller.** The proactive monitor calls
+`asr.guide(pos, profile, ...)` directly, gated only on `may_be_vectored` —
+nothing about the phase.
+
+So on 10 August the pilot-path guidance was suppressed on every transmission
+while the monitor went on transmitting vectors:
+
+    .. ASR guidance suppressed: he is in the departure phase
+    ATC[vec] Sockeye, turn right heading three zero five, maintain two thousand.
+    ATC[pilot/sonnet]: Sockeye, negative, amend — turn left heading one six zero
+
+A controller whose turn-by-turn guidance is switched off, still vectoring, with
+nothing reconciling the two. The pilot reported the result: *"approach flipped
+the heading almost 180 degrees a couple times."*
+
+**Not fixed yet, deliberately.** Gating the monitor is the consistent answer —
+one question asked the same way everywhere — but with [SEP-6] unresolved it
+would make the controller go **silent** on an approach instead of erratic, which
+is worse. The phase has to be trustworthy first.
+
+`asr.guide` now has three callers and two of them have a phase gate. That is the
+shape [ARCH-11]/#76 exists to find, three times over.

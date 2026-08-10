@@ -230,7 +230,7 @@ ON_THE_GROUND = ("clearance", "taxi", "holding_short", "landed")
 
 def derive(current: str, *, on_ground: bool | None = None,
            separation: str = "", was_airborne: bool = False,
-           worked_by: str = "") -> str:
+           worked_by: str = "", refused=None) -> str:
     """The phase he is in NOW, from what is known rather than what was said.
 
     `separation` is the arrival engine's own enum -- HOLDING, CLEARED, MISSED,
@@ -244,6 +244,11 @@ def derive(current: str, *, on_ground: bool | None = None,
     refused and the current phase kept, because "cleared for the approach while
     holding" is legal and "landed while enroute" is not, and the one place that
     knows is this table.
+
+    `refused(current, wanted)` is called when that happens, so the refusal
+    appears in the log instead of only its consequences. A phase that will not
+    move is indistinguishable from a phase nothing is trying to move, and the
+    difference is the whole diagnosis.
     """
     want = _wanted(current, on_ground, (separation or "").lower(), was_airborne,
                    (worked_by or "").lower())
@@ -251,7 +256,26 @@ def derive(current: str, *, on_ground: bool | None = None,
         return current or want
     if not current or current == "unknown":
         return want                     # nothing to transition FROM
-    return want if may_follow(current, want) else current
+    if may_follow(current, want):
+        return want
+    # REFUSED, AND SAYING SO IS THE POINT. A transition the table calls illegal
+    # is correctly refused -- but refusing SILENTLY is how a phase gets welded
+    # in place. One bad input once, and the aeroplane stays in that phase for
+    # the rest of the sortie with nothing anywhere saying why.
+    #
+    # That is not hypothetical. On 10 August an aircraft sat in `departure` from
+    # rotation to thirteen miles on the approach -- through Center, through the
+    # hand-off to Batumi Approach, through "I'll take the surveillance approach"
+    # -- and the only trace was the CONSEQUENCE, twenty times over:
+    #
+    #     .. ASR guidance suppressed: he is in the departure phase
+    #
+    # which says what happened and nothing about why. The refusal that caused it
+    # left no record at all. Same rule as `check.py`: skipped is reported, never
+    # silent.
+    if refused is not None:
+        refused(current, want)
+    return current
 
 
 def _wanted(current: str, on_ground: bool | None, sep: str,

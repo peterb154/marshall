@@ -244,3 +244,58 @@ class TheApproachGeometryStaysOffTheDeparture(unittest.TestCase):
             "", "", "ASR: vectoring, nine miles. Fly heading 250.", None, [])
         self.assertTrue(v, "reconcile does not filter vectoring without a guide")
         self.assertEqual(dropped, "")
+
+
+class ARefusedTransitionIsNotSilent(unittest.TestCase):
+    """A phase that will not move looks exactly like one nothing is moving.
+
+    `derive` correctly refuses an illegal transition and keeps the current
+    phase -- "landed while enroute" is not a thing. Refusing SILENTLY is how a
+    phase gets welded in place: one bad input once, and the aeroplane stays
+    there for the rest of the sortie with nothing anywhere saying why.
+
+    On 10 August an aircraft sat in `departure` from rotation to thirteen miles
+    on the approach -- through Center, through the hand-off to Batumi Approach,
+    through "I'll take the surveillance approach" -- and the only trace was the
+    consequence, twenty times over:
+
+        .. ASR guidance suppressed: he is in the departure phase
+
+    which says what happened and nothing about why. The refusal that caused it
+    left no record at all. Same rule as `check.py`: skipped is reported, never
+    silent.
+    """
+
+    def test_an_illegal_transition_calls_back(self):
+        from marshall.atc import phases
+        seen = []
+        # `departure` may lead to enroute or arrival, never to taxi.
+        got = phases.derive("departure", on_ground=True, was_airborne=False,
+                            refused=lambda cur, want: seen.append((cur, want)))
+        self.assertEqual(got, "departure", "an illegal transition must not happen")
+        self.assertEqual(seen, [("departure", "taxi")],
+                         "the refusal that pins the phase left no trace")
+
+    def test_a_legal_transition_does_not(self):
+        from marshall.atc import phases
+        seen = []
+        got = phases.derive("departure", on_ground=False, worked_by="approach",
+                            refused=lambda c, w: seen.append((c, w)))
+        self.assertEqual(got, "arrival")
+        self.assertEqual(seen, [], "a transition that happened is not a refusal")
+
+    def test_no_callback_is_fine(self):
+        from marshall.atc import phases
+        self.assertEqual(
+            phases.derive("departure", on_ground=True, was_airborne=False),
+            "departure")
+
+    def test_the_bridge_reports_who_is_working_him(self):
+        # The verdict without its inputs is what made this undiagnosable: the
+        # log said "he is in the departure phase" and nothing about the two
+        # facts that decide it.
+        import inspect
+        from marshall.atc import agent_atc
+        src = inspect.getsource(agent_atc.settle)
+        self.assertIn("phase REFUSED", src)
+        self.assertIn("worked by", src)
