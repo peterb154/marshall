@@ -26,6 +26,11 @@ Three things are checked:
   UNIQUE     no two issues share a slug. [OPS-4] must mean one thing -- the
              slug is how a human refers to these in conversation and in a
              commit, and I filed three collisions in two days without noticing
+  BODY       the text on GitHub still matches the markdown. `file_issues.py`
+             wrote a body once and never again, so 58 of 76 had drifted --
+             including #70, which went on telling a reader that the Nevada
+             terrain surveys were outstanding after they had been flown and
+             recorded. Fix with `file_issues.py --sync`
 
 `--fix` only ever writes the STATUS line, and only from closed-on-GitHub to
 CLOSED. It will not reopen anything and it will not touch prose: a status is
@@ -92,6 +97,23 @@ def gh_flight_test() -> dict[int, list[str]]:
         if "needs-flight-test" in labs:
             got[i["number"]] = labs
     return got
+
+
+def gh_bodies() -> dict[int, str]:
+    """Every issue body, in ONE call.
+
+    Per-issue `gh issue view` is 76 round trips and about forty seconds, which
+    is the kind of cost that gets a check quietly dropped from the gate. The
+    list endpoint returns bodies just as happily.
+    """
+    gh = shutil.which("gh") or str(Path.home() / ".local" / "bin" / "gh")
+    out = subprocess.run(
+        [gh, "issue", "list", "--state", "all", "--limit", "300",
+         "--json", "number,body"], capture_output=True, text=True)
+    if out.returncode != 0:
+        return {}
+    return {i["number"]: (i.get("body") or "")
+            for i in json.loads(out.stdout or "[]")}
 
 
 def gh_states() -> dict[int, str] | None:
@@ -164,6 +186,29 @@ def main() -> int:
         else:
             seen_slugs[e["slug"]] = e["num"] or "?"
 
+    # THE MIRROR HAS TO STILL BE A MIRROR. `ISSUES.md` is the source; GitHub is
+    # the copy a reader may open first, and a copy that stopped being updated is
+    # not a mirror but a second, older document that looks equally authoritative.
+    # PARSED BY `file_issues.parse`, NOT BY A SECOND COPY OF IT. Whatever counts
+    # as "the body" has to be the same string this checker compares and that
+    # pusher sends, or the check goes permanently red on a difference nobody can
+    # act on -- which is worse than not checking, and is the fault this tool
+    # exists to catch.
+    bodies = gh_bodies()
+    body_drift = []
+    if bodies:
+        import importlib.util as _iu
+        _spec = _iu.spec_from_file_location(
+            "_file_issues", ROOT / "tools" / "file_issues.py")
+        _fi = _iu.module_from_spec(_spec)
+        _spec.loader.exec_module(_fi)
+        for i in _fi.parse(text):
+            if not i["number"]:
+                continue
+            n = int(i["number"])
+            if n in bodies and bodies[n].strip() != i["body"].strip():
+                body_drift.append((i["slug"], n))
+
     drift, unfiled, stale_rows = [], [], []
     for e in items:
         if not e["num"]:
@@ -225,6 +270,13 @@ def main() -> int:
         print("NEEDS A PILOT, BUT IS NOT ON THE CARD")
         for n in sorted(unflown):
             print(f"  #{n} is labelled needs-flight-test and no row cites it")
+    if body_drift:
+        print("GITHUB IS SHOWING OLDER TEXT THAN ISSUES.md")
+        for slug, n in body_drift[:12]:
+            print(f"  #{n} [{slug}]")
+        if len(body_drift) > 12:
+            print(f"  ...and {len(body_drift) - 12} more")
+        print("  Run: uv run python tools/file_issues.py --sync")
     if dup_slugs:
         print("TWO ISSUES WITH THE SAME NAME")
         for slug, first, second in dup_slugs:
@@ -232,7 +284,7 @@ def main() -> int:
         print("  The number is unique because GitHub assigns it; the slug is")
         print("  chosen by hand and is what anybody says out loud. Renumber the")
         print("  LATER one -- first use keeps the name.")
-    if not (drift or unfiled or stale_rows or unflown or dup_slugs):
+    if not (drift or unfiled or stale_rows or unflown or dup_slugs or body_drift):
         print("in step: statuses match, everything filed, every row still earns "
               "its place, and no two issues share a name")
         return 0

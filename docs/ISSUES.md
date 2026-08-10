@@ -416,6 +416,13 @@ labels: needs-flight-test
 
 **Status:** SHIPPED/UNVERIFIED — commits `631173a`, `50cebe7`
 
+**Needs re-triage before anybody works it (10 Aug).** Its closure condition —
+"no new ghost from a live sortie" — does not match its `needs-synthetic-check`
+label, and the identity work since (#40, #41, #48, #52) moved the safety
+boundary this was written against. Do not start from the text below. Decide
+first whether the present corpus IS the contract (then close it with an
+attestation) or restate it as a bounded admission-rule regression.
+
 A garbled call put an aircraft called `Waypoint 3` in the holding stack; another
 produced `21-2`; "I have two aircraft" became `Have 2`.
 
@@ -1066,6 +1073,11 @@ labels: architecture
 sixth (deleting `flatten_formation` and the regexes) is gated on migrating the
 test fixtures, not on the code.
 
+**Remaining scope (10 Aug).** Structured contacts, category and most consumers
+are in the tree and tested. What is left is **fixture migration, then deleting
+the fallback regex path and `flatten_formation`** — the parsers are the thing
+this issue exists to remove, and they are still reachable.
+
 **What landed.** `/radar` serves `{picture, contacts, bullseye}`. Positions are
 ABSOLUTE — the old `nm`/`radial` were measured from a module constant, so every
 consumer on the map read ranges from Batumi and got its traffic sorted by
@@ -1508,6 +1520,13 @@ labels: architecture, needs-design
 
 **Status:** TODO — design first. Do not build the obvious fix.
 
+**Needs a current-state design note before implementation (10 Aug).** #41
+changed the event and slot assumptions this was written on, and it overlaps
+#40 without duplicating it. Write down the actual keys, their lifetime and
+cleanup, the known collision path, and the exact failing test or live scenario
+to be solved — then work it. Starting from the narrative below would be
+refactoring against a system that no longer exists.
+
     "Falcon 1-1 is not a person, it's a position in a flight. A person might
      participate in different flights in a night."
 
@@ -1596,6 +1615,12 @@ lesson, that a name is not an aeroplane), and the two-hour expiry now in
 labels: bug, needs-flight-test
 
 **Status:** SHIPPED/UNVERIFIED for the pattern; **criterion 2 still open**.
+
+**Remaining scope (10 Aug).** The base-leg pattern is BUILT and flown by the
+sweeps; the original point-vs-pattern design question is settled. What is left
+is narrower and worth stating so nobody re-opens the design: **speed-scaled
+turn-in and intercept geometry**, plus the non-turning case (`--deaf`). Read the
+diagnosis below as history, not as a plan.
 
 Built 27 July. The reposition is now three legs — downwind, base, final — each a
 TRACK with a heading he can hold, joined by intercepting a line rather than
@@ -2000,6 +2025,12 @@ labels: architecture, needs-flight-test
 
 **Status:** SHIPPED/UNVERIFIED — `ffb6bab`..`a17998f`. The
 ladder is built and running; no pilot has flown it. Card section B.
+
+**Documentation conflict, resolve before working it (10 Aug).** This reads as
+shipped here while `docs/WIRING.md` still describes the separation engine as
+keyed on a Whisper-derived string. One of the two is wrong and it decides
+whether there is any work left at all. Settle that first; sequence #38 before
+this if the model itself is still in question.
 
 **Was:** TODO — design first, and MEASURE before building.
 
@@ -2502,6 +2533,12 @@ labels: needs-flight-test
 
 **Status:** FIXED — commit pending. Found live, 31 July, on Fred's first sortie.
 
+**Remaining scope (10 Aug).** The cause is no longer unknown and this issue
+should not read as an investigation: `Controller.check_in` reset the phase
+unconditionally on a frequency change, which is what returned a CLEARED
+aircraft to HOLDING. What is left is **flying card rows H18/H19** to prove it in
+the air.
+
 Sockeye was cleared for the approach, which put him in the letdown. Something
 then returned him to `HOLDING` while he still held the slot, so he was at once
 the aircraft **on** the approach and an aircraft **waiting** for it.
@@ -2583,7 +2620,11 @@ behaved" while Center could not hand anybody over at all.
 indistinguishable from being forgotten):
 - `Kobuleti Clearance` — deliberate; "he has his clearance and is ready to push"
   is not a fact the sim reports.
-- `Batumi Ground` — not deliberate; see F5 on the card.
+- `Batumi Ground` — not deliberate, and **it is now its own issue rather than a
+  loose end hanging off this one.** An issue whose own criteria are all met but
+  which stays open as a container for a different defect is how work gets lost:
+  close it and the defect goes with it, leave it open and nobody can tell what
+  it is waiting for. See [HO-3] / #77.
 
 ---
 
@@ -2699,6 +2740,12 @@ labels: refactor
 
 **Status:** PARTLY DONE 3 August — 5,802 lines down to 4,713. Criteria 1 and 3
 are met; 2 is not.
+
+**Remaining scope (10 Aug).** `voice`, `talkdown`, `addressing` and `assembly`
+are extracted and the dry-run and live paths share assembly. What is left is
+criterion 2 alone: **separating loop-owned state from the guards that read it**,
+so `_run_srs` and `asr_monitor` become callable by a test. This is a scoped
+refactor, not evidence that the bridge is still a monolith.
 
 It is the file every live fix lands in, which is exactly why it keeps growing
 and exactly why that is dangerous: the receive loop, the radar injection, the
@@ -3468,6 +3515,11 @@ labels: architecture
 **Status:** FOUNDATION DONE 10 August. `comms` converted; the rest follow the
 same pattern.
 
+**Remaining scope (10 Aug).** The Card, theatre-aware `comms` and the Nevada
+hold behaviour are done. What is left is exactly six page migrations:
+`navlog`, `asr_plate`, `aip_plate`, `e6b`, `brief`, `site`. The diag and
+flight-test pages are deliberately out of scope — they are good as they are.
+
     "1) Ww2 is a feature, not the purpose. 2) There are aspects of the kneeboard
      eventually that will be pilot specific... 3) we're going to need a dynamic
      kb system eventually... but hard coding batumi stuff isn't cool"
@@ -3779,3 +3831,41 @@ already know are hazardous rather than trying to discover them.
 
 Not a lint rule — a repo-shaped check, like `unwired.py`, with a baseline so it
 is not always red.
+
+
+---
+
+## [HO-3] Nothing hands a landed aircraft to Batumi Ground — #77
+labels: bug
+
+**Status:** OPEN. Split out of [HO-2]/#51 on 10 August, where it had been a
+bullet under "still dead ends" in an issue all of whose own criteria are met.
+
+    F5. After landing and clearing the runway, wait. Say nothing.
+        Nothing hands you to Batumi Ground.
+
+The seat works: taxi in on 121.900 and a real controller answers as Batumi
+Ground. What is missing is the rule that SENDS you there. `phases.py` gives
+`landed` to Tower, so preset 8 has a live controller on it that nothing ever
+hands you to — and in the air a preset nobody hands you to is indistinguishable
+from having been forgotten.
+
+**Why it is not merely cosmetic.** The whole point of the eight-rung ladder is
+that every rung can be both left and reached; #51 closed the two Center gaps on
+exactly that argument. This is the last one, and it is at the end of the sortie
+where a pilot is least able to tell "the system dropped me" from "I missed a
+call".
+
+**Ground transitions are not geometry**, which is what makes this cheap: a phase
+with no volume is owned outright by the controller `phases.py` names, so moving
+into it IS the handoff. The rule wants to be `landed -> ground at the arrival
+field`, in the same table as the rest.
+
+**Acceptance criteria**
+1. After landing and clearing, the pilot is handed to Batumi Ground with the
+   frequency, unprompted, with no request.
+2. It is the ARRIVAL field's Ground — not Kobuleti's, which is the failure mode
+   two aerodromes made reachable.
+3. `tests/test_handoff_rules.py` covers it, and the structural test that every
+   rule reads the trend still passes.
+4. Card row F5 stops describing a known gap and becomes an ordinary check.

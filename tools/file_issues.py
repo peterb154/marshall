@@ -9,8 +9,24 @@ source and GitHub as a copy. Run it whenever the file gains an issue.
     uv run python tools/file_issues.py
 
 Idempotent: an entry GitHub already holds is skipped, so re-running after adding
-one issue files exactly that one. Nothing is ever edited or closed from here --
-issues get closed by a human flying the test, which is the point of the exercise.
+one issue files exactly that one. Nothing is ever CLOSED from here -- issues get
+closed by a human flying the test, which is the point of the exercise.
+
+    uv run python tools/file_issues.py --sync     # push changed bodies too
+
+BODIES DRIFT, AND THAT IS WHAT `--sync` IS FOR. This script wrote a body once,
+at filing time, and never again -- so every issue on GitHub carried the text it
+was born with while `ISSUES.md` went on being edited. An outside grooming pass
+found the result: **#70 still told a reader the Nevada MVA and grid-convergence
+surveys were outstanding**, when both had been flown and recorded with measured
+values, which reads as a live safety blocker that does not exist. #3 said TODO
+for an approach that is built and test-covered; #50 said the cause of a requeue
+was unknown when the issue text names it.
+
+"Nothing is ever edited" was a rule about not CLOSING things behind a human's
+back, and it silently grew to cover the body as well. The markdown is the
+source and GitHub is the copy -- a copy that stops being updated is not a
+mirror, it is a second, older document that looks equally authoritative.
 
 "ALREADY FILED" MEANS GITHUB HAS IT, not that the markdown says so. This used to
 skip any entry carrying a number, which treats a number typed into a heading as
@@ -99,6 +115,8 @@ def known_numbers(gh: str) -> set[int]:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--sync", action="store_true",
+                    help="also push bodies that have drifted from ISSUES.md")
     args = ap.parse_args()
 
     if not (os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")):
@@ -126,6 +144,11 @@ def main() -> int:
               f"they will be filed and renumbered:")
         for i in stale:
             print(f"    was #{i['number']:<4} [{i['slug']}] {i['title'][:52]}")
+    # BEFORE the dry-run return, or `--sync --dry-run` silently reports nothing
+    # -- which is the one combination somebody runs first to see what it will do.
+    if args.sync and not todo:
+        return sync_bodies(gh, issues, args.dry_run)
+
     if args.dry_run:
         for i in todo:
             print(f"  [{i['slug']}] {i['title']}"
@@ -154,6 +177,47 @@ def main() -> int:
 
     ISSUES.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("numbers written back to docs/ISSUES.md")
+    return 0
+
+
+def sync_bodies(gh, issues, dry_run: bool = False) -> int:
+    """Push any body GitHub holds that no longer matches the markdown.
+
+    Compared rather than blindly written, so a run that changes nothing says so
+    and a run that changes ten things names them. Titles too: a slug rename has
+    to reach the mirror or the two documents disagree about what a thing is
+    called, which is how [OPS-4] came to mean two issues.
+    """
+    changed = 0
+    for i in issues:
+        if not i["number"]:
+            continue
+        n = int(i["number"])
+        r = subprocess.run([gh, "issue", "view", str(n), "--json", "body,title"],
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            continue
+        import json as _json
+        got = _json.loads(r.stdout or "{}")
+        want_title = f"[{i['slug']}] {i['title']}"
+        same_body = (got.get("body") or "").strip() == i["body"].strip()
+        same_title = (got.get("title") or "").strip() == want_title
+        if same_body and same_title:
+            continue
+        what = ("body" if not same_body else "") + \
+               ("+title" if not same_title else "")
+        print(f"  #{n:<5} [{i['slug']}] {what} drifted")
+        changed += 1
+        if dry_run:
+            continue
+        cmd = [gh, "issue", "edit", str(n), "--body", i["body"]]
+        if not same_title:
+            cmd += ["--title", want_title]
+        e = subprocess.run(cmd, capture_output=True, text=True)
+        if e.returncode != 0:
+            print(f"     !! failed: {e.stderr.strip()}", file=sys.stderr)
+    print(f"{changed} issue(s) {'would be ' if dry_run else ''}brought in step"
+          if changed else "every body on GitHub matches ISSUES.md")
     return 0
 
 
