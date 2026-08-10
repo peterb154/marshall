@@ -3089,9 +3089,37 @@ def settle(bridge, directive, stack, vectoring, fix, profile, known, ctl,
         print(f"  .. phase: {_ac.sortie_phase or '(none)'} -> {phase}", flush=True)
         _ac.sortie_phase = phase
 
+    flies = _phases.flies_geometry(phase)
     guide = (_phases.guide(phase, fix, profile)
-             if fix is not None and not down and _phases.flies_geometry(phase)
+             if fix is not None and not down and flies
              else None)
+    # ...AND THE SAME GATE ON THE PROSE, which is the half that reached the air.
+    #
+    # `decide` builds `vectoring` from `asr_context`, which asks `asr.guide`
+    # DIRECTLY and checks only three things: is the approach vectored, do we
+    # have a fix, is he on the ground. No phase. So the moment an aeroplane
+    # rotated off Kobuleti it began receiving BATUMI's approach geometry:
+    #
+    #     ASR: he has gone around, two miles. Missed approach: fly heading 125,
+    #          climb 3000.
+    #     ASR: vectoring, nine miles. Turn left. Fly heading 250, maintain 3000.
+    #
+    # and the agent voiced it as Kobuleti Departure. A whole departure was flown
+    # on approach vectors -- turned through six headings and descended to two
+    # thousand while climbing out to five, thirty miles from either field.
+    #
+    # THE GATE ABOVE COULD NOT HELP. It suppresses `guide`, and `reconcile`
+    # arbitrates only when there IS a guide -- `g is None` returns everything
+    # untouched, including the vectoring nothing had checked. Two paths to one
+    # geometry, one of them gated: the same shape as #76, found in flight.
+    #
+    # Gated here rather than inside `asr_context` because the phase is derived
+    # here; asking it to derive its own would be a second answer to the question
+    # this function exists to settle.
+    if vectoring and not flies:
+        print(f"  .. ASR guidance suppressed: he is in the {phase} phase, "
+              f"which does not fly the approach", flush=True)
+        vectoring = ""
     # The missed-approach latch still belongs to the geometry that reads it, so
     # it is applied to the phase the dispatcher was given rather than lost.
     if guide is not None and flying_the_missed(bridge, known or "?", fix,

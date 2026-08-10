@@ -4335,3 +4335,77 @@ through is what retires a row from the cockpit list.
 **Regression:** `tests/test_diag.py` — every section renders rows, every section
 has a GUID and a tab label, no two share a GUID, row IDs carry no markup, and E
 holds exactly its two rows.
+
+---
+
+## [SEP-3] A whole departure was flown on approach vectors — #86
+labels: bug, needs-flight-test
+
+**Status:** FIXED 10 August, needs the next sortie.
+
+Ninety seconds after rotating off Kobuleti, climbing out for Batumi:
+
+    ASR: he has gone around, two miles. Missed approach: fly heading 125,
+         climb 3000.
+    ASR: vectoring, nine miles. Turn left. Fly heading 250, maintain 3000.
+    ATC: Sockeye, Kobuleti Departure, radar contact, turn left heading three
+         zero five, maintain three thousand.
+
+He was turned through six headings and **descended to two thousand while
+climbing out to five**, thirty miles from either aerodrome, and he flew it —
+the instructions were confident, in correct phraseology, and about the wrong
+procedure at the wrong field. This is what the pilot reported as *"conflicting
+instructions on the ASR approach"*.
+
+**Two paths to one geometry, and only one of them gated.** `settle` asks
+`flies_geometry(phase)` before calling `phases.guide`, and `departure` answers
+False — so the structured guide was correctly `None`, exactly as designed. But
+`decide` had already built the *prose* from `asr_context`, which calls
+`asr.guide` directly and checks only three things: is the approach vectored, is
+there a fix, is he on the ground. **No phase.** The prose is what goes into the
+agent's prompt, so the gate that worked protected the half nobody hears.
+
+And `reconcile` could not save it: it arbitrates only when there *is* a guide,
+so `g is None` returned everything untouched — the ungated vectoring included.
+
+The same shape as #76, a fix applied to one call site and not its sibling,
+found by flying it rather than by reading it. Gated in `settle`, where the phase
+is derived; asking `asr_context` to derive its own would be a second answer to
+the question `settle` exists to settle.
+
+---
+
+## [SEP-4] Seven agents, one session, and a landing clearance lost — #87
+labels: bug
+
+**Status:** FIXED 10 August.
+
+On short final at Batumi:
+
+    CONTROLLER: Sockeye, roger, cleared to land runway one three, wind zero
+                nine zero at six.
+    !! agent error: HTTP Error 500: Internal Server Error
+    ATC[pilot/sonnet] (0.0s): (no call)
+
+The engine issued the landing clearance and **the pilot heard nothing.**
+
+    psycopg.errors.UniqueViolation: duplicate key value violates unique
+    constraint "session_messages_pkey"
+    DETAIL: Key (session_id, agent_id, message_id)=(hooks, default, 38)
+            already exists.
+
+**Introduced by #81, hours earlier.** Keying the agent cache on the seat was
+right — one bridge works every frequency under one session id, so the role
+varies within a session. What I missed is that each of those agents then
+constructed its own `PgSessionManager(session_id="hooks")` with its own message
+counter. Seven agents were built for this sortie; sooner or later two of them
+wrote message 38.
+
+The conversation store is per seat now, which is also the more honest model:
+Kobuleti Ground and Batumi Approach are different people, and a pilot's
+conversation with one is not the other's to remember.
+
+**Worth noting for #79:** the repair could not help here. A decided fact is
+restored when the agent's reply omits it — but there was no reply at all, so
+nothing was appended to. A total agent failure still loses the clearance, and
+that is a different mechanism from the one built today.

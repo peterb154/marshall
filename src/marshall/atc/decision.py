@@ -152,19 +152,45 @@ def accepted_forms(d: Decision) -> list[tuple[str, list[str], float | None]]:
     Returns [(canonical spoken form, [string renderings], numeric value or None)].
     """
     from marshall.core import say
+    def _num(v) -> float | None:
+        """The numeric value of a field, or None when there is not one.
+
+        NOTHING HERE MAY RAISE. This function is called on the transmit path
+        for every decision of every turn, so an exception is not a wrong answer
+        -- it is a dead controller. `accepted_forms` did `float(d.runway)` and
+        `Controller.request_taxi` had been carrying `runway="zero seven"` since
+        long before any of this, because `_runway_in_use` returns the SPOKEN
+        form. It killed the bridge on the ramp, mid-sortie, at Q4.
+
+        The old verifier compared strings only, so it never had to care what
+        was in the field. Adding value comparison added a way to crash on data
+        that had always been there.
+        """
+        try:
+            return float(str(v).strip().replace(",", "").lstrip("0") or 0)
+        except (TypeError, ValueError):
+            return None
+
     out: list[tuple[str, list[str], float | None]] = []
     if d.altitude_ft is not None:
-        n = int(d.altitude_ft)
-        out.append((say.spell_alt(n), [say.spell_alt(n)], float(n)))
+        n = _num(d.altitude_ft)
+        if n is not None:
+            out.append((say.spell_alt(int(n)), [say.spell_alt(int(n))], n))
     if d.heading_deg is not None:
-        n = int(d.heading_deg)
-        out.append((say.spell_hdg(n), [say.spell_hdg(n), f"{n:03d}"], float(n)))
+        n = _num(d.heading_deg)
+        if n is not None:
+            out.append((say.spell_hdg(int(n)),
+                        [say.spell_hdg(int(n)), f"{int(n):03d}"], n))
     if d.runway:
+        # ALREADY SPOKEN IS A VALID RUNWAY. `spell_rwy("zero seven")` returns it
+        # unchanged, so the canonical form is right either way; only the numeric
+        # alternative is unavailable, and a missing alternative is not a fault.
         out.append((say.spell_rwy(d.runway), [say.spell_rwy(d.runway)],
-                    float(str(d.runway).strip().lstrip("0") or 0)))
+                    _num(d.runway)))
     if d.frequency_mhz is not None:
-        f = float(d.frequency_mhz)
-        out.append((say.spell_freq(f), [say.spell_freq(f)], f))
+        f = _num(d.frequency_mhz)
+        if f is not None:
+            out.append((say.spell_freq(f), [say.spell_freq(f)], f))
     # A STATION IS A NAME, not a number, and must not be held to the numeric
     # rules below -- "Kobuleti Tower one three three decimal zero" is the name
     # followed by the frequency, and treating the digits after it as part of

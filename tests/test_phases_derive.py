@@ -179,3 +179,68 @@ class TestTheDepartureFromTheNinthOfAugust(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheApproachGeometryStaysOffTheDeparture(unittest.TestCase):
+    """A whole departure was flown on approach vectors. Live, 10 August.
+
+    Ninety seconds after rotating off Kobuleti, on his way to Batumi:
+
+        ASR: he has gone around, two miles. Missed approach: fly heading 125,
+             climb 3000.
+        ASR: vectoring, nine miles. Turn left. Fly heading 250, maintain 3000.
+        ATC: Sockeye, Kobuleti Departure, radar contact, turn left heading
+             three zero five, maintain three thousand.
+
+    He was turned through six headings and descended to two thousand while
+    climbing out to five, thirty miles from either aerodrome, and he flew it --
+    the instructions were confident, in correct phraseology, and wrong.
+
+    TWO PATHS TO ONE GEOMETRY, ONE OF THEM GATED. `settle` asks
+    `flies_geometry(phase)` before calling `phases.guide`, and `departure` says
+    False, so the structured guide was correctly None. But `decide` had already
+    built the PROSE from `asr_context`, which calls `asr.guide` directly and
+    checks only three things -- vectored approach, a fix, not on the ground.
+    No phase.
+
+    And `reconcile` could not save it: it arbitrates only when there IS a guide,
+    so `g is None` returned everything untouched, the ungated vectoring
+    included. The same shape as #76 -- a fix applied to one call site and not
+    its sibling -- found by flying it.
+    """
+
+    def phases_that_fly(self):
+        from marshall.atc import phases
+        return {n for n in phases.PHASES if phases.flies_geometry(n)}
+
+    def test_only_the_arrival_phases_fly_the_approach(self):
+        self.assertEqual(self.phases_that_fly(), {"arrival", "approach", "missed"})
+
+    def test_departure_does_not(self):
+        from marshall.atc import phases
+        self.assertFalse(phases.flies_geometry("departure"),
+                         "a climbing aeroplane is not on the approach")
+
+    def test_enroute_does_not(self):
+        from marshall.atc import phases
+        self.assertFalse(phases.flies_geometry("enroute"))
+
+    def test_the_gate_is_applied_to_the_prose_too(self):
+        # THE ACTUAL REGRESSION. The structured guide was already gated; the
+        # string the agent reads was not, and the string is what reached the
+        # air. A test on `flies_geometry` alone would have passed throughout.
+        import inspect
+        from marshall.atc import agent_atc
+        src = inspect.getsource(agent_atc.settle)
+        self.assertIn("if vectoring and not flies:", src,
+                      "the ASR prose must be suppressed for a phase that does "
+                      "not fly the approach, not only the structured guide")
+
+    def test_reconcile_cannot_be_relied_on_for_this(self):
+        # Documented as a test because it is the reason the gate must be in
+        # `settle`: with no guide, reconcile passes everything through.
+        from marshall.atc import agent_atc
+        _d, _s, v, dropped, _kept = agent_atc.reconcile(
+            "", "", "ASR: vectoring, nine miles. Fly heading 250.", None, [])
+        self.assertTrue(v, "reconcile does not filter vectoring without a guide")
+        self.assertEqual(dropped, "")

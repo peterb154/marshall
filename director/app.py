@@ -100,6 +100,33 @@ def _bedrock(model_id: str) -> BedrockModel:
                         additional_request_fields={"thinking": {"type": "disabled"}})
 
 
+def store_id(session_id: str, role: str = "") -> str:
+    """The key this controller's CONVERSATION is stored under.
+
+    ONE AGENT PER SEAT MEANS ONE SESSION PER SEAT, and missing that cost a
+    landing clearance. #81 keyed the agent cache on the seat -- correctly, since
+    one bridge works every frequency under one session id -- but left every one
+    of those agents constructing `PgSessionManager(session_id="hooks")`. Seven
+    agents, seven independent message counters, one table:
+
+        psycopg.errors.UniqueViolation: duplicate key value violates unique
+        constraint "session_messages_pkey"
+        DETAIL: Key (session_id, agent_id, message_id)=(hooks, default, 38)
+                already exists.
+
+    The endpoint returned 500, the bridge logged an agent error, and "cleared to
+    land runway one three" was never transmitted. A pilot on short final heard
+    nothing.
+
+    Separating them is also the more honest model. Kobuleti Ground and Batumi
+    Approach are different people; a pilot's conversation with one is not the
+    other's to remember. `context.py` already says the window belongs to a
+    CHANNEL rather than to a pilot -- this makes that true, where before every
+    seat in the theatre shared one transcript.
+    """
+    return f"{session_id}:{role}" if role else session_id
+
+
 def build_agent(session_id: str, role: str = "", also=()) -> Agent:
     """One controller's agent. `role` decides which tools he is GIVEN.
 
@@ -113,7 +140,8 @@ def build_agent(session_id: str, role: str = "", also=()) -> Agent:
     exactly as before.
     """
     may = capabilities(role, also)
-    log.info("agent for %s [%s]", session_id, describe(role, also))
+    store = store_id(session_id, role)
+    log.info("agent for %s [%s]", store, describe(role, also))
     return Agent(
         model=_bedrock(MODEL_ID),
         system_prompt=_system_prompt_for(session_id),
@@ -147,7 +175,7 @@ def build_agent(session_id: str, role: str = "", also=()) -> Agent:
             # confidently and in correct phraseology, and a pilot sent to an
             # invented frequency calls into silence.
             *(frequency_tools() if "frequency" in may else []),
-            *(memory_tools(namespace=session_id) if "memory" in may else []),
+            *(memory_tools(namespace=store) if "memory" in may else []),
             # THE OVERLORD'S HANDS, AND ONLY HIS. This was given to every seat,
             # with the overlord brief left to say who might use it -- an
             # approach controller carrying, on every single transmission, the
@@ -159,7 +187,9 @@ def build_agent(session_id: str, role: str = "", also=()) -> Agent:
             # kind of wrong, because a pilot flies out and looks for it.
             *([spawn_ground] if "spawn" in may else []),
         ],
-        session_manager=PgSessionManager(session_id=session_id),
+        # PER SEAT. See `store_id` -- sharing one session across seven agents
+        # collided on the message primary key and cost a landing clearance.
+        session_manager=PgSessionManager(session_id=store),
         # WHAT HE IS HANDED versus WHAT HE REMEMBERS -- see tools/context.py.
         # The live state (radar, stack, strip, plate) is re-derived and injected
         # on every call, so keeping the old copies bought nothing and cost 2,448
