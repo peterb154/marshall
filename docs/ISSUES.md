@@ -2584,7 +2584,7 @@ the ladder to provoke it.
 ## [HO-2] Georgia Center has no proactive handoff at all — #51
 labels: bug
 
-**Status:** FIXED — one cascade, `agent_atc.next_controller`. Found live, 31 July.
+**Status:** CLOSED — one cascade, `agent_atc.next_controller`. Found live, 31 July.
 
 `handoff.RULES` contains no rule whose `frm` is `center`. The proactive monitor
 therefore can never hand anybody off Center — only the receive path can, via
@@ -3225,7 +3225,7 @@ back through it.
 ## [SEP-2] Ground cleared an aircraft for take-off, and argued about it — #65
 labels: bug, needs-flight-test
 
-**Status:** FIXED 9 August; awaiting the flight. Card row **Q5** is the check.
+**Status:** CLOSED 9 August; awaiting the flight. Card row **Q5** is the check.
 
     ATC:   Sockeye, Kobuleti Ground, cleared for takeoff runway zero seven.
     PILOT: you are not authorized to clear for departure
@@ -3278,7 +3278,7 @@ than a rule preventing it — see #63.
 ## [PHR-4] The check-in greeting was one sentence for every seat — #66
 labels: bug, needs-flight-test
 
-**Status:** FIXED 9 August; awaiting the flight.
+**Status:** CLOSED 9 August; awaiting the flight.
 
     "why would it ask for the field in sight, and why would it be asking for
      information alpha at this field"
@@ -4469,3 +4469,51 @@ was speaking — so the engine never saw it, the phase never moved, and nothing
 ever handed him to Ground. A closing acknowledgement **asks for nothing**; a
 request belongs to the engine, where `request_taxi` refuses it from Tower and
 names Ground with the frequency.
+
+---
+
+## [FP-7] A second theatre's plan made the board ambiguous again — #89
+labels: bug, needs-flight-test
+
+**Status:** OPEN. Found in the flight recorder, 10 August — the pilot marked
+card row Q1 complete, and the transcript says otherwise.
+
+Q1 asks for a clearance at Kobuleti and expects **Domino, without being asked
+which**, because it is the only plan that departs Kobuleti. What happened:
+
+    PILOT: Kobuleti Clearance, Viper 1-1, request clearance.
+    ATC:   ... I have two plans on file — transit and radar recovery, filed as
+           Domino, or transit and instrument recovery, filed as Silverstate.
+           Say which one is yours.
+
+The board:
+
+| label | origin | destination | active |
+|---|---|---|---|
+| Domino | Kobuleti | Batumi | **true** |
+| Silverstate | Nellis | Tonopah | false |
+
+He was offered a plan from **another theatre, three thousand miles away, that
+is not even active** — and made to choose. Two facts either of which should
+have settled it on its own.
+
+**This is #61 recurring, exactly as #61 predicted.** That issue trimmed the
+board to one plan and recorded why the resolver's faults had been invisible:
+*"there is always another plan to be ambiguous with, so a standing bonus to the
+local one changes no outcome."* Adding `Silverstate` for Nevada (migration 022)
+put a second plan back, and the ambiguity came with it.
+
+**Not an argument for one plan on the board.** Multiple filed plans is the
+point of the flight-planner work; the resolver simply has to use what it knows.
+A plan whose origin is not the field he is calling from is not a candidate for
+"which of these is yours" — it is not his at all.
+
+**Acceptance criteria**
+1. Asking for a clearance at Kobuleti with Domino and Silverstate on file gives
+   Domino, unasked.
+2. A plan whose origin is a different aerodrome is never offered as a choice.
+3. An inactive plan is never offered as a choice.
+4. Asking at Nellis with both on file gives Silverstate — the same rule, the
+   other way round, so this is not a Kobuleti special case.
+5. Two plans from the SAME field still produce a question (that is Q1b, and it
+   must not regress into picking one confidently).

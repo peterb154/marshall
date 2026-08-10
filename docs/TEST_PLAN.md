@@ -641,6 +641,14 @@ not have it, and that is worth reporting rather than squinting past.
 
 ## Q — the ladder, Kobuleti to Batumi
 
+**Flown 10 August, solo in an F-16 (Sockeye).** Q2, Q4, Q5, Q7, Q8, Q9, Q9b,
+Q10 and Q11 passed and are struck — their scripts stay as the regression record.
+Attested at `be7fefb`.
+
+Still live: **Q1** (he offered both plans instead of picking Domino — see #89),
+**Q3** and **Q6** (the ground handoffs, fixed since and unflown — #88), and
+**Q12/Q13**, which were not reached.
+
 **Never flown. This is the new test bed and the reason the card changed.**
 
 Until today the theatre had one aerodrome, so a "handoff" only ever moved you
@@ -664,18 +672,19 @@ have been answered with "nothing on file for you" — see [#56].
 | id | do this | expected | issue | pri |
 |---|---|---|---|---|
 | **Q1** | Preset 1. *"Kobuleti Clearance, Viper one one, request clearance."* | He answers as **Kobuleti Clearance** — not Batumi anything — and gives you **Domino** without asking which. He knows you are calling from Kobuleti and it is the only plan that departs Kobuleti. Clearance to Batumi, an altitude, and a departure frequency of **123.300** | [#56] | **P1** |
+| **Q1a** | With **both** Domino and Silverstate on the board, ask Kobuleti Clearance for a clearance | **Domino, unasked.** Silverstate departs *Nellis*, three thousand miles away, and is not even active — a plan that is not from your field is not yours, and offering it as a choice is the resolver ignoring what it knows. On 10 August he offered both and made the pilot pick | [#89] | **P1** |
 | **Q1b** | Instead say *"...request IFR clearance to Batumi."* | He should **ask which** and Domino must be among the ones he offers. Every plan on the board ends at Batumi, so naming the destination narrows nothing — a controller who picks one confidently here has guessed. Before 7 August this resolved to *Anvil*: a real plan, someone else's sortie, because "Kobuleti" in your callsign line scored against Anvil's task | [R#57] | **P1** |
-| **Q2** | Read the clearance back, deliberately getting the departure frequency wrong — say *"departure one two four decimal four two five"* | He corrects it. 124.425 is Batumi Approach: a real controller, wrong field. This is the exact failure the field-scoping was built to prevent | [#1] | **P1** |
+| ~~Q2~~ | Read the clearance back, deliberately getting the departure frequency wrong — say *"departure one two four decimal four two five"* | He corrects it. 124.425 is Batumi Approach: a real controller, wrong field. This is the exact failure the field-scoping was built to prevent | [#1] | **P1** |
 | **Q3** | Read it back **correctly** | He hands you to **Kobuleti Ground, 121.800**. A correct read-back is what ends Delivery's business — a wrong one leaves you exactly where you are, which is the point of reading it back | [#1] | **P1** |
-| **Q4** | Preset 2. *"Kobuleti Ground, ready to taxi."* | *"Taxi to runway zero seven, hold short of runway zero seven."* **Runway 07** — the wind is 090/5. If he offers 25 the runway is not following the weather | [#41] | **P1** |
-| **Q5** | Still on preset 2, ask **Ground** for take-off | **He refuses**, politely, and sends you to Tower with the frequency: *"take-off is Tower's, contact Kobuleti Tower one three three decimal zero."* Ground owning the runway is the one thing on an aerodrome that must not be shared. If he clears you, that is the most serious finding on this card | [#65] | **P1** |
+| ~~Q4~~ | Preset 2. *"Kobuleti Ground, ready to taxi."* | *"Taxi to runway zero seven, hold short of runway zero seven."* **Runway 07** — the wind is 090/5. If he offers 25 the runway is not following the weather | [#41] | **P1** |
+| ~~Q5~~ | Still on preset 2, ask **Ground** for take-off | **He refuses**, politely, and sends you to Tower with the frequency: *"take-off is Tower's, contact Kobuleti Tower one three three decimal zero."* Ground owning the runway is the one thing on an aerodrome that must not be shared. If he clears you, that is the most serious finding on this card | [#65] | **P1** |
 | **Q6** | Report holding short | He hands you to **Kobuleti Tower, 133.000** | [R#16] | **P1** |
-| **Q7** | Preset 3. Ask Tower for take-off | Cleared, with the runway and the wind | [#41] | **P1** |
-| **Q8** | Airborne. Say nothing and climb straight ahead | At about **5 nm** he hands you to **Kobuleti Departure, 123.300**, unprompted. Not Batumi. Not on request | [R#16] | **P1** |
-| **Q9** | Preset 4, check in with Departure | He answers as **Kobuleti Departure**. Ask your range from the field: it must be *your* field. On the ramp this read 23 miles because everything was measured from Batumi | [R#16] | **P1** |
-| **Q9b** | Listen to how that check-in is ANSWERED | A **departure** greeting. He must not ask you to report the field in sight, and must not ask whether you have information Alpha — you left the ground ninety seconds ago. It happened five times in one sortie, including from Center at thirty miles. The seat does not tell the two jobs apart; the PHASE does | [#66] | **P1** |
-| **Q10** | Proceed to INITIAL at 5,000 | At about **25 nm out** he hands you to **Georgia Center, 139.000**. Nothing could do this until 2 August — Center had no proactive handoff at all in either direction | [#51] | **P1** |
-| **Q11** | Inbound, say nothing | Inside **25 nm** Center hands you to **Batumi Approach, 124.425** unprompted. This is the fix for the sortie that ended in a Mayday: he sat at 44 nm with nothing in the system able to move him on | [#51] | **P1** |
+| ~~Q7~~ | Preset 3. Ask Tower for take-off | Cleared, with the runway and the wind | [#41] | **P1** |
+| ~~Q8~~ | Airborne. Say nothing and climb straight ahead | At about **5 nm** he hands you to **Kobuleti Departure, 123.300**, unprompted. Not Batumi. Not on request | [R#16] | **P1** |
+| ~~Q9~~ | Preset 4, check in with Departure | He answers as **Kobuleti Departure**. Ask your range from the field: it must be *your* field. On the ramp this read 23 miles because everything was measured from Batumi | [R#16] | **P1** |
+| ~~Q9b~~ | Listen to how that check-in is ANSWERED | A **departure** greeting. He must not ask you to report the field in sight, and must not ask whether you have information Alpha — you left the ground ninety seconds ago. It happened five times in one sortie, including from Center at thirty miles. The seat does not tell the two jobs apart; the PHASE does | [#66] | **P1** |
+| ~~Q10~~ | Proceed to INITIAL at 5,000 | At about **25 nm out** he hands you to **Georgia Center, 139.000**. Nothing could do this until 2 August — Center had no proactive handoff at all in either direction | [#51] | **P1** |
+| ~~Q11~~ | Inbound, say nothing | Inside **25 nm** Center hands you to **Batumi Approach, 124.425** unprompted. This is the fix for the sortie that ended in a Mayday: he sat at 44 nm with nothing in the system able to move him on | [#51] | **P1** |
 | **Q12** | At any point, ask a Kobuleti controller for something only Batumi can give — *"request the ASR"* on preset 2 | He should send you to the right man rather than inventing an answer. A controller who works one field must not clear you into another's approach | [R#21] | P3 |
 | **Q13** | On any Kobuleti frequency ask *"say again the ground frequency"*, then *"and tower?"* | **121.800** and **133.000**. Until 7 August he was handed no frequency but Departure's and invented the rest — he answered "Ground is one three three decimal zero" (that is Tower) and "Tower is one one eight decimal zero" (that is *Batumi* Tower). Both in faultless phraseology. He now carries his own field's list | [#58] | **P1** |
 

@@ -434,8 +434,30 @@ class TheFlightCardActuallyReachesTheCockpit(unittest.TestCase):
         for letter in ("Q", "R", "S", "T"):
             self.assertIn(letter, got)
             self.assertTrue(got[letter], f"section {letter} is empty")
-        self.assertIn("Q1", got["Q"])
-        self.assertIn("Q9b", got["Q"])
+
+    def test_the_page_shows_exactly_the_live_rows(self):
+        """Counted against the card, not against a list of names.
+
+        This used to name Q1 and Q9b. Q9b was flown on 10 August and struck --
+        which is the card working exactly as intended -- and the test failed for
+        it. A check that breaks when a pilot retires a row teaches people to
+        stop retiring rows.
+        """
+        import re
+        from pathlib import Path as _P
+        card = (_P(__file__).resolve().parent.parent
+                / "docs" / "TEST_PLAN.md").read_text()
+        rendered = {letter: len(rows) for letter, _t, rows in self.sections()}
+        for letter, n in rendered.items():
+            if letter == "E":          # a different animal; see `sections`
+                continue
+            start = card.index(f"## {letter} — ")
+            end = card.index("\n## ", start + 4)
+            live = len([l for l in card[start:end].splitlines()
+                        if re.match(r"^\|\s*\**[A-Z]\d+[a-z]?\**\s*\|", l)])
+            self.assertEqual(n, live,
+                             f"section {letter}: {n} rendered, {live} live on "
+                             f"the card")
 
     def test_row_ids_carry_no_markup(self):
         # A pilot says "S10 failed", not "asterisk asterisk S 10".
