@@ -3431,7 +3431,7 @@ NEW, since a check that is always red is a check nobody reads.
 ## [ARCH-9] A second map: Nellis and Tonopah — #70
 labels: architecture
 
-**Status:** DATA AND MISSION DONE 9 August. Not yet flown; two surveys
+**Status:** CLOSED AND MISSION DONE 9 August. Not yet flown; two surveys
 outstanding.
 
     "How well do you think this system is going to transport to a totally
