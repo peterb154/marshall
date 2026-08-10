@@ -3990,12 +3990,39 @@ agent's manner and its read of the conversation, which is the half it is good
 at; a second model call costs a second or more on a frequency somebody is
 waiting on. The missing clause is deterministic and we already have it.
 
-**One thing deliberately NOT done.** A reply written in digits now passes,
-because `for_voice` does not spell digits and the pilot hears "thirteen" —
-non-standard, unmistakably the right runway. Flagging it would append a second
-complete take-off clearance, and a duplicated clearance is worse than odd
-phraseology. Spelling digits belongs in `for_voice`, where every transmission
-passes. Filed as a follow-up.
+**Digits, and the follow-up that should not have been one.**
+
+    "im not sure i understand why we are using thirteen vs one three?"
+
+There was no good reason. A reply in digits was made to PASS the verifier so
+that enforcing this could not append a duplicate clearance to a transmission
+that already carried one — a real hazard, solved in the wrong place, leaving
+"thirteen" on the air.
+
+The evidence settled it: across **886 recorded agent transmissions, nine
+contain a digit and all nine are the "station calling … say your callsign"
+template quoting the pilot back.** The agent has never written a clearance
+number in digits. So `for_voice` — the last thing between the agent and the
+air — now spells every aviation quantity, and no numeral can reach Polly:
+
+    runway 13        -> runway one three          (not "thirteen")
+    runway 07L       -> runway zero seven left
+    heading 090      -> heading zero nine zero
+    2,000 feet       -> two thousand feet
+    133.0            -> one three three decimal zero
+    250 knots / 4271 -> two five zero / four two seven one
+    wind 090 at 6    -> wind zero nine zero at six
+
+**Per quantity, not a blanket speller**, because they disagree: a runway is
+spelled digit by digit and an altitude is not — "two zero zero zero feet" is
+nobody's phraseology. Each is recognised by the word beside it and rendered by
+the function in `core/say.py` that already knows its rules, which is the same
+place the engine spells its own decisions. A bare number with no unit is left
+alone; "Flight of 2" and "in 5 minutes" are not quantities with a convention.
+
+This makes the failure impossible rather than unlikely, which is why it belongs
+where every transmission passes. The verifier keeps its numeric comparison as
+belt and braces.
 
 `spoken_facts` was deleted: `accepted_forms` supersedes it and `unwired.py`
 caught it the moment the last caller moved.

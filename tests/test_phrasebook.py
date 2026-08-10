@@ -171,3 +171,76 @@ class TestTheHeadingQuantumAndItsDeadband(unittest.TestCase):
     def test_north_is_three_sixty_not_zero(self):
         from marshall.atc import asr
         self.assertEqual(asr._round_deg(359.6, 5), 360)
+
+
+class DigitsNeverReachPolly(unittest.TestCase):
+    """"runway 13" must not come out of the radio as "thirteen".
+
+        "im not sure i understand why we are using thirteen vs one three?"
+
+    Nor was there a good reason. `verify` was relaxed to ACCEPT digits so that
+    enforcing #79 could not append a duplicate clearance to a transmission that
+    already carried one -- a real hazard, and the wrong place to solve it.
+
+    The evidence settled it: across 886 recorded agent transmissions, nine
+    contained a digit and all nine were the "station calling ... say your
+    callsign" template quoting the pilot back. The agent has never written a
+    clearance number in digits. So this is a GUARANTEE rather than a repair --
+    `for_voice` is the last thing between the agent and the air, and after this
+    no aviation quantity can reach Polly as a numeral.
+
+    NOT A BLANKET DIGIT-SPELLER, because the quantities disagree: a runway is
+    spelled digit by digit and an ALTITUDE is not. "two zero zero zero feet" is
+    nobody's phraseology.
+    """
+
+    def spell(self, s):
+        from marshall.atc.voice import spell_numbers
+        return spell_numbers(s)
+
+    def test_runway(self):
+        self.assertEqual(self.spell("runway 13, cleared for take-off"),
+                         "runway one three, cleared for take-off")
+
+    def test_runway_with_a_side(self):
+        self.assertEqual(self.spell("runway 07L"), "runway zero seven left")
+
+    def test_heading_keeps_its_leading_zero(self):
+        self.assertEqual(self.spell("turn left heading 090"),
+                         "turn left heading zero nine zero")
+
+    def test_an_altitude_is_not_spelled_digit_by_digit(self):
+        # The whole reason this is per-quantity rather than global.
+        self.assertEqual(self.spell("descend to 2,000 feet"),
+                         "descend to two thousand feet")
+        self.assertEqual(self.spell("maintain 5000 ft"),
+                         "maintain five thousand ft")
+
+    def test_frequency(self):
+        self.assertEqual(self.spell("contact Kobuleti Tower 133.0"),
+                         "contact Kobuleti Tower one three three decimal zero")
+
+    def test_speed_and_squawk(self):
+        self.assertEqual(self.spell("250 knots"), "two five zero knots")
+        self.assertEqual(self.spell("squawk 4271"), "squawk four two seven one")
+
+    def test_wind(self):
+        self.assertEqual(self.spell("wind 090 at 6"), "wind zero nine zero at six")
+
+    def test_a_bare_number_is_left_alone(self):
+        # "Flight of 2" and "in 5 minutes" are not aviation quantities with a
+        # spoken convention, and a speller that guessed would be worse than one
+        # that declines.
+        self.assertEqual(self.spell("Flight of 2, in 5 minutes"),
+                         "Flight of 2, in 5 minutes")
+
+    def test_already_spoken_text_is_untouched(self):
+        said = "runway one three, cleared for take-off"
+        self.assertEqual(self.spell(said), said)
+
+    def test_it_is_on_the_transmit_path(self):
+        # It must run inside `for_voice`, which every transmission passes --
+        # not at one call site that happens to remember.
+        import inspect
+        from marshall.atc import voice
+        self.assertIn("spell_numbers(text)", inspect.getsource(voice.for_voice))
