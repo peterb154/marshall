@@ -850,8 +850,18 @@ def channels_for(profile=None, limit: int | None = None,
     # one, so "every controller is reachable" stays true without disturbing the
     # seven the pilot was promised.
     ladder = [s for s in R.PRESET_LADDER if s in stations]
+    # ...AND WHEN NONE OF THEM IS A RUNG, THE PROFILE'S OWN ORDER IS THE LADDER.
+    #
+    # `PRESET_LADDER` names Caucasus stations. A Nevada profile matches none of
+    # them, so every Nellis controller fell into `rest` and the card came out in
+    # whatever order the list happened to be built in -- which is the same
+    # inaudibility failure as a dropped rung, arrived at from the other side.
+    #
+    # A theatre's station list is already written in the order a pilot presses
+    # the buttons, so using it is not a fallback so much as the general case
+    # that the Caucasus ladder is one instance of.
     rest = [s for s in stations if s not in ladder]
-    ordered = ladder + rest
+    ordered = (ladder + rest) if ladder else stations
     if limit is not None and len(ordered) > limit:
         ordered = _short_card(ordered, limit, home)
     freqs = [s.freq_mhz for s in ordered]

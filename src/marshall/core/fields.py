@@ -54,7 +54,31 @@ class Field_:
     atis_mhz: float = 0.0
     msa_sectors: list = field(default_factory=list)   # published, the pilot's
     mva_cells: list = field(default_factory=list)     # surveyed, the controller's
+    # MAGNETIC VARIATION, HERE RATHER THAN AS ONE CONSTANT FOR THE WHOLE WORLD.
+    #
+    # `units.MAGVAR` is 6.0 -- the Caucasus -- and `geo.GRID_CONVERGENCE_DEG` is
+    # 5.74, measured at Batumi, with a comment saying outright that it "belongs
+    # to the FIELD" and is "here as a default until the airfield table exists".
+    # The airfield table has existed since Kobuleti; the numbers never moved.
+    #
+    # It costs nothing while there is one map and it is wrong the moment there
+    # are two: Nevada is 12 EAST. Applying 6 there puts every magnetic heading a
+    # controller says six degrees out -- which no test catches, because every
+    # test flies the Caucasus.
+    #
+    # Zero means "use the theatre default", so nothing that exists today
+    # changes and a new field states its own.
+    magvar_deg: float = 0.0
+    # The angle between DCS grid north and true north AT THIS FIELD. It varies
+    # with longitude across a transverse Mercator, so it is a property of the
+    # place and not of the map -- see SCHEMA.md on how it is measured.
+    grid_convergence_deg: float = 0.0
     note: str = ""
+
+    def variation(self) -> float:
+        """This field's magnetic variation, or the theatre's if it has none."""
+        from marshall.core.units import MAGVAR
+        return self.magvar_deg or MAGVAR
 
     def runway_in_use(self, wind_from_deg: float | None = None) -> int:
         """The into-wind end, as a two-digit designator. 07, 13, 25, 31.

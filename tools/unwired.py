@@ -162,6 +162,12 @@ class Refs(ast.NodeVisitor):
         # variables -- `_taken`, `_who`, `_typ` -- which are assigned as Names
         # and so looked like attributes nobody wrote. Five hundred rows of
         # noise, and the one real finding buried in it.
+        # NAMES THAT CAME OUT OF A STRING, kept apart. A string constant is
+        # good enough evidence for cross-module dispatch -- `phases.py` really
+        # does call `asr:guide` through one -- and NOT good enough to say a
+        # function is called from its own file, because the string that names
+        # it may be the dispatch table declaring it rather than a call.
+        self.from_strings: set[str] = set()
         self.attr_read: set[str] = set()
         # ONLY AN ATTRIBUTE STORE. A LOCAL VARIABLE OF THE SAME NAME IS NOT ONE,
         # and that distinction is the whole check: `_me` was read as
@@ -213,6 +219,7 @@ class Refs(ast.NodeVisitor):
         if isinstance(node.value, str) and len(node.value) < 200:
             for part in node.value.replace(":", " ").replace(".", " ").split():
                 self.names.add(part)
+                self.from_strings.add(part)
 
     def visit_Call(self, node):
         # getattr(x, "name") reads a name the AST would otherwise miss.
@@ -229,14 +236,14 @@ class Refs(ast.NodeVisitor):
 
 
 def refs_of(path: Path):
-    """(names used, attributes read, attributes written)."""
+    """(names used, attributes read, attributes written, names from strings)."""
     try:
         tree = ast.parse(path.read_text(encoding="utf-8"))
     except (SyntaxError, UnicodeDecodeError):
-        return set(), set(), set()
+        return set(), set(), set(), set()
     r = Refs()
     r.visit(tree)
-    return r.names, r.attr_read, r.attr_written
+    return r.names, r.attr_read, r.attr_written, r.from_strings
 
 
 def audit() -> dict[str, list]:
@@ -302,11 +309,17 @@ def audit() -> dict[str, list]:
         for _p, r in where.items():
             if key in r[0]:
                 return True
-            # A MODULE-PRIVATE NAME CAN ONLY BE CALLED FROM ITS OWN MODULE, so
-            # a bare hit at home is conclusive even when the name is shared --
-            # `_stations` exists in two files and each is called only by its
-            # neighbours, which read as unused until this.
-            if bare.startswith("_") and _p == home and bare in r[0]:
+            # A BARE HIT IN ITS OWN FILE IS CONCLUSIVE, shared name or not:
+            # Python resolves a bare name in a module to that module's own
+            # definition. Without this, `mission/nevada.py` calling its own
+            # `build()` read as uncalled, because `build` is also defined in
+            # `mission/build.py` and the two modules share a stem.
+            #
+            # EXCEPT FROM A STRING, which may be the dispatch table declaring
+            # the handler rather than anything calling it -- `phases.py`
+            # contains "marshall.atc.asr:guide" and `phases.guide` being
+            # uncalled is the bug this tool was written to find.
+            if _p == home and bare in (r[0] - r[3]):
                 return True
             if (loose or bare_count.get(bare, 0) <= 1) and bare in r[0]:
                 return True
@@ -326,9 +339,9 @@ def audit() -> dict[str, list]:
     # take-off clearance on another aerodrome's runway. Attribute stores only:
     # a LOCAL variable of the same name is not an assignment to the attribute,
     # and counting it hid exactly this.
-    read = (set().union(*(a for _, a, _ in prod_refs.values()))
+    read = (set().union(*(a for _, a, _, _ in prod_refs.values()))
             if prod_refs else set())
-    written = (set().union(*(w for _, _, w in prod_refs.values()))
+    written = (set().union(*(w for _, _, w, _ in prod_refs.values()))
                if prod_refs else set())
     known = {k.split(":", 1)[1] for k in defs}
     for name in sorted(read - written - properties - known):

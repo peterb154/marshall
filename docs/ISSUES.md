@@ -3352,3 +3352,71 @@ file sorted first owned the answer while the other was invisible.
 **Baselined**, like the approach sweep, because a public helper and a framework
 entry point look unused and are not — 75 known today. It fails only on something
 NEW, since a check that is always red is a check nobody reads.
+
+---
+
+## [ARCH-9] A second map: Nellis and Tonopah — #70
+labels: architecture
+
+**Status:** DATA AND MISSION DONE 9 August. Not yet flown; two surveys
+outstanding.
+
+    "How well do you think this system is going to transport to a totally
+     different map and field? ... There had not been anything in code that locks
+     it into caucuses"
+
+**Measured rather than assumed.** Stripping comments and docstrings, twenty-nine
+CODE references to a Caucasus place survive outside the data modules — and
+twenty-four are kneeboard PROSE, page titles and briefing text with "Batumi"
+written into them. The architecture is already field-parameterised because
+adding Kobuleti forced it to be; what is genuinely map-bound is data.
+
+**NTTR installed** on the server (`NEVADA_terrain`), and `core/nevada.py` holds
+Nellis (KLSV) and Tonopah Test Range (KTNX) — fields, stations, fixes and an ILS
+to each. **Every number comes from the sim's own `Beacons.lua` and `Radio.lua`,
+cross-checked against the published plate, and the two agree:** DCS models
+Nellis Tower on 132.550 and that is the real Tower frequency; the localiser
+antenna bearings reproduce the published courses once you remember the antenna
+points back up the approach.
+
+**Three things the second map found that the first could not.**
+
+1. **Magnetic variation is per FIELD, not per theatre.** Nellis 12E, Tonopah
+   16E — four degrees apart on one map. `units.MAGVAR` was one constant and
+   `geo.GRID_CONVERGENCE_DEG` carried a comment saying it "belongs to the FIELD
+   ... here as a default until the airfield table exists". The table has existed
+   since Kobuleti. It lives on `Field_` now, defaulting to the theatre so
+   nothing that exists today moves.
+2. **`PRESET_LADDER` names Caucasus stations**, so every Nellis controller fell
+   into the leftovers and the comms card came out in list order — the same
+   inaudibility as a dropped rung, reached from the other side. A theatre's
+   station list is already written in the order the buttons are pressed, so it
+   IS the ladder when none of the Caucasus rungs apply.
+3. **`ends[0]` must be the end whose heading is `runway`.** Written the other
+   way round, Nellis named runway 03 with the wind from 210 — the downwind end
+   of its own ILS runway, which is precisely the fault that put a Kobuleti
+   departure on 25 in a 090 wind. Now guarded across all four fields.
+
+And the runway designators prove `Field_.ends`'s original point on a second map:
+Tonopah is painted **15/33** and its heading is **141**, which rounds to 14. A
+first draft of the test asserted the designator could be derived from the
+heading — the exact derivation this codebase exists to warn against.
+
+**Mission:** `marshall.mission.nevada` — F-16s **hot in parking** at Nellis,
+comms ladder on the VHF box, DTC steerpoints to TPH and Tonopah, wind 210 so
+both ILS ends are in use. A separate builder from the 362nd's 1944 sortie on
+purpose; they share `channels_for`, `set_channels` and `write_presets` and
+nothing else.
+
+**Outstanding, and neither is optional before anyone is vectored:**
+1. **MVA survey at both fields.** `tools/survey_terrain.py` exists for this.
+   Nellis sits in a bowl with terrain above 11,000 ft inside thirty miles.
+   Batumi's cells over Nevada are not conservative, they are fiction. Asserted
+   empty in `tests/test_nevada.py` so it cannot be quietly forgotten.
+2. **Grid convergence measured at each field**, the same way Batumi's 5.74 and
+   Kobuleti's 5.91 were.
+
+**Also open:** SIDs, STARs and the remaining instrument procedures are not
+modelled — only the ILS to one end of each field. Nellis has parallel runways
+(03L/21R, 03R/21L) and `Field_` models one pair; the ILS is on 21L, so that is
+the pair described. A parallel-runway field wants an L/R designator on the end.
