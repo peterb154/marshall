@@ -48,7 +48,12 @@ MODULE = "marshall.atc.agent_atc"
 DEFAULT_ARGS = ["--srs", os.environ.get("SRS_HOST", "192.168.0.35"),
                 os.environ.get("MARSHALL_FREQ_MHZ", "124.0"),
                 os.environ.get("MARSHALL_VOICE", "Matthew"),
-                os.environ.get("MARSHALL_SESSION", "hooks")]
+                os.environ.get("MARSHALL_SESSION", "hooks"),
+                # WHICH MAP. The profile the bridge runs carries the station
+                # list, so this decides which frequencies the ear opens and who
+                # answers on them -- see core/theatre.py. Started with, never
+                # inherited: `tools/bridge.py restart --theatre nevada`.
+                "--theatre", os.environ.get("MARSHALL_THEATRE", "caucasus")]
 
 
 def _env() -> dict:
@@ -252,6 +257,11 @@ def watch() -> int:
 
 def main() -> int:
     what = (sys.argv[1] if len(sys.argv) > 1 else "status").lower()
+    # `bridge.py restart --theatre nevada`. Set before DEFAULT_ARGS is read at
+    # start, so the flag and the environment cannot say different things.
+    if "--theatre" in sys.argv:
+        os.environ["MARSHALL_THEATRE"] = sys.argv[sys.argv.index("--theatre") + 1]
+        DEFAULT_ARGS[-1] = os.environ["MARSHALL_THEATRE"]
     if what == "status":
         return status()
     if what == "stop":

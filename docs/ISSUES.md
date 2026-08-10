@@ -3486,3 +3486,54 @@ general and is accidentally specific.
 3. ~~Every approach can actually hold somebody.~~
 4. The remaining pages take a Card. **OPEN** — `navlog`, `asr_plate`,
    `aip_plate`, `e6b`, `brief`, `site`.
+
+---
+
+## [ARCH-10] The bridge is started with a map, and the sim confirms it — #72
+labels: architecture
+
+**Status:** DONE 10 August. Live on Nevada.
+
+    "Tell me what you mean that the bridge runs Caucasus profile."
+
+One line: `profile = load_and_push_plate(R.BATUMI_ASR)`. That object is not
+merely an arrival — it carries the STATION LIST, so it decides which frequencies
+the ear opens and who `station_on` says is speaking. Beside it the ATIS served
+`R.FIELDS` and the bootstrap wrote a Kobuleti-to-Batumi plan.
+
+So on the Nevada mission the bridge was deaf, and in one place wrong:
+
+| | |
+|---|---|
+| Nellis Clearance 120.900 | nobody listening on it |
+| **121.800** | reaches **Kobuleti Ground** — the one frequency the two maps share |
+| ATIS | Batumi and Kobuleti weather on 127.100/127.400 |
+
+The middle one is the shape this project keeps meeting: not silence, but a real
+controller at a real field answering confidently for the wrong airport.
+
+`core/theatre.py` is the selection, made once. The bridge takes its approach,
+fields, stations and bootstrap plan from it; the kneeboard Card builds from it.
+Started with `--theatre nevada`, never inherited.
+
+**Should it come from the sim?** In principle yes — it is this project's own
+rule. In practice `env.mission.theatre` is not exposed to the mission scripting
+environment, and `GetMissionName` is a filename convention rather than a fact
+about the terrain. So **the flag chooses and the sim confirms**: a field the
+theatre claims to own is converted through `coord.LOtoLL` and checked against
+where that field really is. A wrong theatre is not subtle — Batumi's metres on
+the Nevada map return 36.29 N, 107.98 W, about 150° from Batumi.
+
+**Two things I got wrong on the way, both left written down.** I recorded that
+`coord.LOtoLL` HANGS on off-map coordinates and built the check around treating
+a timeout as proof. It does not hang; it answers instantly and wrongly, which is
+far more useful. The hangs were the sim's Eval service being unreachable at all —
+`return "hello"` timed out identically — because a freshly restarted server has
+not started its scripting environment. **A conclusion drawn while one component
+was down and attributed to the component being measured.** So a timeout is now
+"could not check" and only a real answer in the wrong place is a refusal.
+
+Nevada plan filed as **Silverstate** (migration 022), cruise 24,000 — chosen
+against the surveyed minima, not for roundness: Tonopah's vectoring cells reach
+10,500 and its stack starts at 12,000, so the Caucasus levels of three to eleven
+thousand would be inside the terrain.

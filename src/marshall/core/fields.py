@@ -69,6 +69,11 @@ class Field_:
     # Zero means "use the theatre default", so nothing that exists today
     # changes and a new field states its own.
     magvar_deg: float = 0.0
+    # WHERE IT REALLY IS. Not used to fly anything -- the sim's own projection
+    # does that -- but it is what lets a component CHECK that the theatre it was
+    # told to run is the map actually loaded. See `theatre.verify`.
+    lat: float = 0.0
+    lon: float = 0.0
     # The angle between DCS grid north and true north AT THIS FIELD. It varies
     # with longitude across a transverse Mercator, so it is a property of the
     # place and not of the map -- see SCHEMA.md on how it is measured.
@@ -119,6 +124,7 @@ class Field_:
 
 BATUMI_FIELD = Field_(
     "Batumi", -355811, 617386, 32, 124, ends=(13, 31), atis_mhz=127.100,
+    lat=41.6103, lon=41.5997,            # UGSB, published
     msa_sectors=list(MSA_SECTORS),
     mva_cells=list(MVA_CELLS),
     note="Highest terrain 10,623 ft at 23 nm SE. Missed approach turns LEFT.")
@@ -169,6 +175,7 @@ KOBULETI_MVA = [
 
 KOBULETI_FIELD = Field_(
     "Kobuleti", -317605, 636704, 59, 64, ends=(7, 25), atis_mhz=127.400,
+    lat=41.9297, lon=41.8656,            # UG5X, published
     msa_sectors=list(KOBULETI_MSA), mva_cells=list(KOBULETI_MVA),
     note="Field elevation 59 ft. Runway 07/25, 2400 m. TACAN 67X KBL, "
          "ILS 111.50 on 07. GCA field: PAR and SRA published.")

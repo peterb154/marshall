@@ -132,6 +132,7 @@ NELLIS_FIELD = Field_(
     # 210, which is the downwind end of the ILS runway. Exactly the fault that
     # put a Kobuleti departure on runway 25 in a 090 wind.
     "Nellis", -398195, -17233, 1869, 209, ends=(21, 3), atis_mhz=118.400,
+    lat=36.2352, lon=-115.0330,          # Beacons.lua positionGeo
     magvar_deg=12.0, grid_convergence_deg=1.16, mva_cells=list(NELLIS_MVA),
     note="Nellis AFB (KLSV). Field elevation 1,869 ft -- a mile above Batumi, "
          "which is the first thing here that has never been exercised. "
@@ -245,6 +246,7 @@ TONOPAH_MVA = [
 
 TONOPAH_FIELD = Field_(
     "Tonopah", -226613, -174653, 5550, 141, ends=(15, 33), atis_mhz=118.600,
+    lat=37.7979, lon=-116.7803,          # Beacons.lua positionGeo
     magvar_deg=16.0, grid_convergence_deg=0.13, mva_cells=list(TONOPAH_MVA),
     note="Tonopah Test Range (KTNX). Field elevation 5,550 ft -- nearly a mile "
          "above Nellis and three above Batumi. 15/33, 12,001 x 150 ft, ILS to "

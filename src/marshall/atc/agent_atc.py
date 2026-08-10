@@ -34,6 +34,7 @@ import urllib.request
 from marshall import config
 from marshall.core import names as _names
 from marshall.core import geo as _geo
+from marshall.core import theatre as _theatre
 from marshall.atc import handoff as _handoff
 from marshall.atc import decision as _decision
 from marshall.atc import flights as fl
@@ -232,12 +233,6 @@ def _post_json(url: str, obj: dict, timeout: float = 6.0) -> dict:
 # at the worst possible moment.
 
 MISSION = os.environ.get("MARSHALL_MISSION", "default")
-# THE FILED PLAN THE BRIDGE SEEDS AND READS ITS APPROACH FROM.
-#
-# Named once, here, because it is written by a migration and by the bootstrap
-# below, and those two disagreeing is exactly how a deleted row comes back. See
-# migrations/017 (it was filed) and 020 (the rest of the board was cleared).
-BOOTSTRAP_PLAN = "362nd-kobuleti-batumi"
 APPROACH_NAME = ""              # set when the active flight plan is loaded
 
 # What a mission commander is, as opposed to an air traffic controller. Handed
@@ -292,9 +287,15 @@ def load_and_push_plate(profile, base: str = BASE_URL):
     and the plate share one profile."""
     from marshall.atc import briefing
     from marshall.core import route as R
+    from marshall.core import theatre as _theatre
 
+    # WHICH WORLD, asked once. The key this is stored under used to be the
+    # literal "batumi-asr", so a Nevada bridge would have overwritten the
+    # Caucasus approach in the director's table with Tonopah's numbers under
+    # Batumi's name -- and every later reader would have believed it.
+    _th = _theatre.current()
     try:
-        _put_json(f"{base}/approaches/batumi-asr",
+        _put_json(f"{base}/approaches/{_th.approach_key}",
                   {"field": profile.beacon.name, "data": R.profile_to_dict(profile)})
         # THE PLAN THIS SEEDS IS THE ONE BEING FLOWN.
         #
@@ -311,8 +312,8 @@ def load_and_push_plate(profile, base: str = BASE_URL):
         # `assigned_plans`, so the column changes no decision -- it is simply
         # untrue, and it is the sort of untrue thing somebody later reads as a
         # fact.
-        _put_json(f"{base}/flightplans/{BOOTSTRAP_PLAN}",
-                  {"approach": "batumi-asr", "active": True})
+        _put_json(f"{base}/flightplans/{_th.bootstrap_plan}",
+                  {"approach": _th.approach_key, "active": True})
         fp = _get_json(f"{base}/flightplan/active")
         if fp.get("approach"):
             # Remember which procedure this is, so a flight's row can say what
@@ -3573,11 +3574,13 @@ def _start_atis(host: str, ear, profile, session_id: str) -> None:
     controller must not stand off for the weather.
     """
     from marshall.atis import serve as _serve
-    from marshall.core import route as _R
+    from marshall.core import theatre as _theatre
     from marshall.radio import tts as _tts
     from marshall.radio.client import AM as _AM, SRSClient as _Cl, radio as _rad
 
-    fields = [f for f in _R.FIELDS if getattr(f, "atis_mhz", 0)]
+    # THE THEATRE'S FIELDS, not the Caucasus ones. This broadcast Batumi and
+    # Kobuleti weather on 127.100 and 127.400 whatever map was loaded.
+    fields = [f for f in _theatre.current().fields if getattr(f, "atis_mhz", 0)]
     if not fields:
         return
     mouths = {}
@@ -3639,7 +3642,22 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
     # THIS bridge's state. Not a module global, so a second one -- another
     # field, another frequency, a test -- gets its own. [LAYERS.md] step 2.
     bridge = Bridge()
-    profile = load_and_push_plate(R.BATUMI_ASR)       # DB is the source of truth
+    # THE THEATRE'S APPROACH, and this one line is what "the bridge runs the
+    # Caucasus profile" meant. The profile is not merely an arrival: it carries
+    # the STATION LIST, so it decides which frequencies the ear opens and who
+    # `station_on` says is speaking. Hardcoded to Batumi, a Nevada sortie found
+    # a bridge listening on twelve Caucasus channels -- deaf to Nellis
+    # Clearance, and answering 121.800 as KOBULETI Ground because that is the
+    # one frequency the two maps happen to share.
+    _th = _theatre.current()
+    print(f"  theatre: {_th.name} — {_th.departure} to {_th.arrival}", flush=True)
+    # ...AND CHECKED AGAINST THE SIM. The flag chooses; the sim confirms. A
+    # bridge holding the wrong map's frequencies does not fail, it answers
+    # confidently for another world -- see `theatre.verify` on why this is a
+    # check rather than the source.
+    _ok, _why = _theatre.verify(_th, _eval_lua)
+    print(f"  {'' if _ok else '!! '}{_why}", flush=True)
+    profile = load_and_push_plate(_th.approach)       # DB is the source of truth
     radar_on = profile.atc.radar          # a no-radar mission works purely procedural
     # One voice per controller. Changing frequency should sound like meeting a
     # different person -- that is most of what makes a sector split feel real,
@@ -4890,10 +4908,24 @@ if __name__ == "__main__":
     import sys
 
     if len(sys.argv) > 1 and sys.argv[1] == "--srs":
+        # WHICH MAP, AS A START ARGUMENT. It is read from the environment by
+        # `theatre.current()`, and setting it here means the bridge is STARTED
+        # with a theatre rather than inheriting whatever happened to be exported
+        # -- which is the difference between a decision and an accident when the
+        # thing being decided is which airport a controller works.
+        if "--theatre" in sys.argv:
+            want = sys.argv[sys.argv.index("--theatre") + 1]
+            from marshall.core import theatre as _t
+            if want.strip().lower() not in _t.THEATRES:
+                print(f"no theatre called {want!r}. "
+                      f"Known: {', '.join(sorted(_t.THEATRES))}")
+                raise SystemExit(2)
+            os.environ["MARSHALL_THEATRE"] = want.strip().lower()
         if not claim_the_frequency():
             raise SystemExit(1)
-        voice = sys.argv[4] if len(sys.argv) > 4 else "Matthew"
-        session = sys.argv[5] if len(sys.argv) > 5 else None
+        voice = sys.argv[4] if len(sys.argv) > 4 and not sys.argv[4].startswith("--") else "Matthew"
+        session = sys.argv[5] if len(sys.argv) > 5 and not sys.argv[5].startswith("--") else None
         _run_srs(sys.argv[2], float(sys.argv[3]), voice, session)
     else:
-        print("usage: agent_atc.py --srs <host> <freq_mhz> [voice] [session]")
+        print("usage: agent_atc.py --srs <host> <freq_mhz> [voice] [session] "
+              "[--theatre caucasus|nevada]")
