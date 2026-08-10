@@ -2392,7 +2392,7 @@ person is his handle), [#41] (the sim already tells us).
 
 ---
 
-## [ID-3] Nobody may name himself — the label comes off the aeroplane, not the radio — #48
+## [ID-7] Nobody may name himself — the label comes off the aeroplane, not the radio — #48
 
 labels: architecture, needs-flight-test
 
@@ -2497,7 +2497,7 @@ labels: chore
 
 ---
 
-## [SEQ-1] Nobody is number two behind himself — #50
+## [SEQ-2] Nobody is number two behind himself — #50
 labels: needs-flight-test
 
 **Status:** FIXED — commit pending. Found live, 31 July, on Fred's first sortie.
@@ -2896,8 +2896,34 @@ system does is worse than no tool, because you believe it.**
 ## [OPS-4] The card check was blind to a quarter of the card — #60
 labels: bug
 
-**Status:** HALF FIXED 7 August. It can see the rows now; what it says about
-them is still wrong.
+**Status:** CLOSED 10 August. All three criteria met and `check.py` is green
+on this check for the first time.
+
+**What the row's `[#n]` means is now written down and enforced.** `[#n]` says
+the row is CHASING finding n and retires when n closes; `[R#n]` says the row
+EXERCISES the fix in n and is the regression that tells us if it rots — closing
+n is when it starts earning its keep. The seventeen rows are `[R#n]` now, so
+Q6/Q8/Q9 — the only rows that test handoffs between two aerodromes — stay on the
+card instead of being struck for citing a single-aerodrome fix. The convention is
+documented on the card itself, not just here.
+
+Criterion 3 was fixed alongside the Codex audit: `issue_sync` exits **2** when it
+cannot reach GitHub, which `check.py` reads as SKIP and reports by name, rather
+than failing on `gh auth` and masking the real drift.
+
+**Two more faults found while closing it, neither in the acceptance criteria.**
+Q5 — the take-off-refusal row, the one the card calls the most serious finding it
+can record — cited **#41** while #65 was filed saying "card row Q5 is the check".
+So the row and its issue each thought the other was covered. And #66 had no row
+at all. Both fixed: Q5 recites #65, and Q9b is the departure-greeting check.
+
+**And the check gained a rule it should always have had.** Nothing verified that
+a slug is unique, and I filed three collisions in two days — [OPS-4], [OPS-5] and
+[OPS-6] each named two different issues — by appending to this file without
+reading up. The number is unique because GitHub assigns it; the slug is chosen by
+hand and is what anybody says out loud. Renamed to OPS-7/8/9, plus two older
+collisions ([ID-3] on #14 and #48, [SEQ-1] on #15 and #50), and the check now
+refuses a duplicate.
 
 `issue_sync` matches a cockpit row as `| H7 | P2 | ... [#19]`. Sections **Q, R,
 S and T** — added 2 August, the two-field ladder, ATIS, phraseology and the
@@ -3540,7 +3566,7 @@ thousand would be inside the terrain.
 
 ---
 
-## [OPS-4] A paused sim is the quietest failure we have, and nothing could unpause it — #73
+## [OPS-7] A paused sim is the quietest failure we have, and nothing could unpause it — #73
 labels: architecture, tooling
 
 **Status:** DONE 10 August. Verified against the live server, paused and running.
@@ -3613,7 +3639,7 @@ catches fault 2.
 
 ---
 
-## [OPS-5] The director API is unauthenticated and published to the LAN — #74
+## [OPS-8] The director API is unauthenticated and published to the LAN — #74
 labels: architecture
 
 **Status:** OPEN. Raised by the Codex audit, 10 August; the database half is
@@ -3645,10 +3671,10 @@ leave it — it becomes wrong the moment anybody else connects.
 
 ---
 
-## [OPS-6] Codex audit, 10 August — an outside reading of the tree — #75
+## [OPS-9] Codex audit, 10 August — an outside reading of the tree — #75
 labels: architecture
 
-**Status:** DONE 10 August, except the deferred half of [OPS-5].
+**Status:** DONE 10 August, except the deferred half of [OPS-8].
 
 An external audit (`CODEX_FINDINGS.md`) reviewed the docs against the tree. Five
 findings; **all five verified against the code, none spurious**. The one that
@@ -3680,7 +3706,7 @@ LAN" — the prose was the thing that was wrong, and nothing enforced it. Postgr
 is now `127.0.0.1:5432:5432`; the only host process needing it is the bridge,
 which already dials `localhost`, and the director container uses `db:5432` on
 the compose network. Verified refused from the LAN and still readable by the
-bridge. The agent port is [OPS-5].
+bridge. The agent port is [OPS-8].
 
 *That change broke the radio for about a minute*, which is the lesson worth
 keeping: `bridge.py::_compose_dsn` matched `"(\d+):5432"`, a bind address made it
@@ -3725,7 +3751,7 @@ bug, and of the two-fields lesson. Worth a check of its own — filed as #76.
 ## [ARCH-11] Audit for a fix applied to one call site and not its siblings — #76
 labels: architecture, tooling
 
-**Status:** OPEN. Raised by [OPS-6], 10 August.
+**Status:** OPEN. Raised by [OPS-9], 10 August.
 
 `tools/unwired.py` finds a correct thing nothing reaches. It cannot find the
 other half of the same disease: **a correct thing reached from three places, two

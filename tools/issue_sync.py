@@ -23,6 +23,9 @@ Three things are checked:
   UNFLOWN    no issue labelled `needs-flight-test` is missing from the card. The
              label says a human is the only instrument that can close it; if it
              is not on the card, nobody will ever pick it up
+  UNIQUE     no two issues share a slug. [OPS-4] must mean one thing -- the
+             slug is how a human refers to these in conversation and in a
+             commit, and I filed three collisions in two days without noticing
 
 `--fix` only ever writes the STATUS line, and only from closed-on-GitHub to
 CLOSED. It will not reopen anything and it will not touch prose: a status is
@@ -58,7 +61,17 @@ STATUS = re.compile(r"^\*\*Status:\*\*\s*([A-Z/]+)", re.M)
 # A check that silently ignores a quarter of the document is worse than no
 # check, because its silence reads as agreement -- the same fault as the three
 # tools in #59, in the thing that is supposed to catch faults.
-ROW = re.compile(r"^\|\s*(~~)?\**([A-Z]\d+[a-z]?)\**~?~?\s*\|.*?\[#(\d+)\]",
+# `[R#n]` IS A DIFFERENT CLAIM FROM `[#n]`, and conflating them is #60. A row
+# citing `[#n]` is CHASING finding n and is spent when n closes. A row citing
+# `[R#n]` EXERCISES the fix in n and is the regression that tells us if it rots
+# -- closing n is exactly when it starts earning its keep.
+#
+# Seventeen rows were written in the first form meaning the second, so this
+# check told us to strike out the only rows that test handoffs between two
+# aerodromes, on the grounds that the single-aerodrome fixes they exercise had
+# been closed on earlier sorties -- which is the condition under which four of
+# them were correct BY ACCIDENT.
+ROW = re.compile(r"^\|\s*(~~)?\**([A-Z]\d+[a-z]?)\**~?~?\s*\|.*?\[(R)?#(\d+)\]",
                  re.M)
 
 # Statuses that mean "this is finished". Everything else is live work.
@@ -138,6 +151,19 @@ def main() -> int:
     flight_test = gh_flight_test()
     items = entries(text)
 
+    # TWO ISSUES WITH ONE NAME, which is how [OPS-4] came to mean both "the card
+    # check was blind" and "a paused sim". I did that three times in two days --
+    # OPS-4, OPS-5 and OPS-6 -- by appending to the file without reading up, and
+    # nothing said a word. The NUMBER is unique because GitHub assigns it; the
+    # SLUG is chosen by hand and is what anybody actually says out loud.
+    seen_slugs: dict[str, str] = {}
+    dup_slugs = []
+    for e in items:
+        if e["slug"] in seen_slugs:
+            dup_slugs.append((e["slug"], seen_slugs[e["slug"]], e["num"] or "?"))
+        else:
+            seen_slugs[e["slug"]] = e["num"] or "?"
+
     drift, unfiled, stale_rows = [], [], []
     for e in items:
         if not e["num"]:
@@ -152,13 +178,18 @@ def main() -> int:
         elif gs == "OPEN" and e["status"] in DONE:
             drift.append((e, n, f"open on GitHub, reads {e['status']}"))
 
-    for struck, rid, num in ROW.findall(card):
+    for struck, rid, regression, num in ROW.findall(card):
         # A STRUCK ROW IS ALREADY RETIRED. The regex captured the marker and
         # the loop threw it away, so every row a pilot had just flown and
         # crossed off was reported as a finding -- the check telling you to do
         # the thing you had done. Its own comment said struck IDs are not a
         # finding; the code did not act on it.
         if struck:
+            continue
+        # A REGRESSION ROW IS NEVER STALE. Its subject is a CLOSED fix by
+        # definition -- that is what makes it a regression -- so reporting it
+        # would be reporting the design.
+        if regression:
             continue
         if state.get(int(num)) == "CLOSED":
             stale_rows.append((rid, int(num)))
@@ -168,7 +199,10 @@ def main() -> int:
     # was unguarded, and #39 sat labelled `needs-design` after it had shipped --
     # which is how a thing gets built, put on the card, and still read as
     # unstarted.
-    on_card = {int(n) for _, _, n in ROW.findall(card)}
+    # BOTH FORMS COUNT AS COVERAGE. A pilot flying an `[R#n]` row is exercising
+    # n just as surely as one flying `[#n]`; the notation says why the row
+    # exists, not whether it tests the thing.
+    on_card = {int(n) for _, _, _, n in ROW.findall(card)}
     unflown = [n for n, labs in flight_test.items()
                if state.get(n) == "OPEN" and n not in on_card]
 
@@ -191,8 +225,16 @@ def main() -> int:
         print("NEEDS A PILOT, BUT IS NOT ON THE CARD")
         for n in sorted(unflown):
             print(f"  #{n} is labelled needs-flight-test and no row cites it")
-    if not (drift or unfiled or stale_rows or unflown):
-        print("in step: statuses match, everything filed, no closed rows on the card")
+    if dup_slugs:
+        print("TWO ISSUES WITH THE SAME NAME")
+        for slug, first, second in dup_slugs:
+            print(f"  [{slug}] is both #{first} and #{second}")
+        print("  The number is unique because GitHub assigns it; the slug is")
+        print("  chosen by hand and is what anybody says out loud. Renumber the")
+        print("  LATER one -- first use keeps the name.")
+    if not (drift or unfiled or stale_rows or unflown or dup_slugs):
+        print("in step: statuses match, everything filed, every row still earns "
+              "its place, and no two issues share a name")
         return 0
 
     if args.fix and drift:

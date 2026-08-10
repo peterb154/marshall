@@ -37,6 +37,26 @@ Say `engineering, come up`, then `test H4 failed, he vectored me at four miles`.
 The ID is the whole point; detail is optional. Engineering answers on whatever
 channel you called from and logs to `build/debug-notes.md`.
 
+### The issue column says one of two different things
+
+A row's `[#n]` used to mean whatever the writer had in mind, and the two
+meanings pull opposite ways when the issue closes:
+
+| notation | means | when #n closes |
+|---|---|---|
+| `[#n]` | **this row is chasing finding #n** — it exists because something is wrong | the row has served its purpose; **retire it** (strike the ID through) |
+| `[R#n]` | **this row exercises the fix in #n** — it is the regression check | **nothing happens.** The row is why we would find out if that fix rotted |
+
+Seventeen rows sat in the first form while meaning the second, so the check
+told us to delete the only rows that test handoffs between two aerodromes —
+because the single-aerodrome fixes they exercise had been closed on earlier
+sorties. *A row is not spent because its subject is fixed; it is spent when a
+pilot has flown it.* See #60.
+
+**Striking a row through retires it from the cockpit list and keeps its
+script** — that is the record of what was flown, and it is the only thing that
+retires a row.
+
 **Comms — the ladder, in the order you press it.** The sortie departs
 **Kobuleti** and recovers into **Batumi**: eight rungs and two aerodromes,
 rather than the four buttons at one field this started as.
@@ -631,18 +651,19 @@ have been answered with "nothing on file for you" — see [#56].
 | id | do this | expected | issue | pri |
 |---|---|---|---|---|
 | **Q1** | Preset 1. *"Kobuleti Clearance, Viper one one, request clearance."* | He answers as **Kobuleti Clearance** — not Batumi anything — and gives you **Domino** without asking which. He knows you are calling from Kobuleti and it is the only plan that departs Kobuleti. Clearance to Batumi, an altitude, and a departure frequency of **123.300** | [#56] | **P1** |
-| **Q1b** | Instead say *"...request IFR clearance to Batumi."* | He should **ask which** and Domino must be among the ones he offers. Every plan on the board ends at Batumi, so naming the destination narrows nothing — a controller who picks one confidently here has guessed. Before 7 August this resolved to *Anvil*: a real plan, someone else's sortie, because "Kobuleti" in your callsign line scored against Anvil's task | [#57] | **P1** |
+| **Q1b** | Instead say *"...request IFR clearance to Batumi."* | He should **ask which** and Domino must be among the ones he offers. Every plan on the board ends at Batumi, so naming the destination narrows nothing — a controller who picks one confidently here has guessed. Before 7 August this resolved to *Anvil*: a real plan, someone else's sortie, because "Kobuleti" in your callsign line scored against Anvil's task | [R#57] | **P1** |
 | **Q2** | Read the clearance back, deliberately getting the departure frequency wrong — say *"departure one two four decimal four two five"* | He corrects it. 124.425 is Batumi Approach: a real controller, wrong field. This is the exact failure the field-scoping was built to prevent | [#1] | **P1** |
 | **Q3** | Read it back **correctly** | He hands you to **Kobuleti Ground, 121.800**. A correct read-back is what ends Delivery's business — a wrong one leaves you exactly where you are, which is the point of reading it back | [#1] | **P1** |
 | **Q4** | Preset 2. *"Kobuleti Ground, ready to taxi."* | *"Taxi to runway zero seven, hold short of runway zero seven."* **Runway 07** — the wind is 090/5. If he offers 25 the runway is not following the weather | [#41] | **P1** |
-| **Q5** | Still on preset 2, ask **Ground** for take-off | **He refuses**, politely, and sends you to Tower with the frequency: *"take-off is Tower's, contact Kobuleti Tower one three three decimal zero."* Ground owning the runway is the one thing on an aerodrome that must not be shared. If he clears you, that is the most serious finding on this card | [#41] | **P1** |
-| **Q6** | Report holding short | He hands you to **Kobuleti Tower, 133.000** | [#16] | **P1** |
+| **Q5** | Still on preset 2, ask **Ground** for take-off | **He refuses**, politely, and sends you to Tower with the frequency: *"take-off is Tower's, contact Kobuleti Tower one three three decimal zero."* Ground owning the runway is the one thing on an aerodrome that must not be shared. If he clears you, that is the most serious finding on this card | [#65] | **P1** |
+| **Q6** | Report holding short | He hands you to **Kobuleti Tower, 133.000** | [R#16] | **P1** |
 | **Q7** | Preset 3. Ask Tower for take-off | Cleared, with the runway and the wind | [#41] | **P1** |
-| **Q8** | Airborne. Say nothing and climb straight ahead | At about **5 nm** he hands you to **Kobuleti Departure, 123.300**, unprompted. Not Batumi. Not on request | [#16] | **P1** |
-| **Q9** | Preset 4, check in with Departure | He answers as **Kobuleti Departure**. Ask your range from the field: it must be *your* field. On the ramp this read 23 miles because everything was measured from Batumi | [#16] | **P1** |
+| **Q8** | Airborne. Say nothing and climb straight ahead | At about **5 nm** he hands you to **Kobuleti Departure, 123.300**, unprompted. Not Batumi. Not on request | [R#16] | **P1** |
+| **Q9** | Preset 4, check in with Departure | He answers as **Kobuleti Departure**. Ask your range from the field: it must be *your* field. On the ramp this read 23 miles because everything was measured from Batumi | [R#16] | **P1** |
+| **Q9b** | Listen to how that check-in is ANSWERED | A **departure** greeting. He must not ask you to report the field in sight, and must not ask whether you have information Alpha — you left the ground ninety seconds ago. It happened five times in one sortie, including from Center at thirty miles. The seat does not tell the two jobs apart; the PHASE does | [#66] | **P1** |
 | **Q10** | Proceed to INITIAL at 5,000 | At about **25 nm out** he hands you to **Georgia Center, 139.000**. Nothing could do this until 2 August — Center had no proactive handoff at all in either direction | [#51] | **P1** |
 | **Q11** | Inbound, say nothing | Inside **25 nm** Center hands you to **Batumi Approach, 124.425** unprompted. This is the fix for the sortie that ended in a Mayday: he sat at 44 nm with nothing in the system able to move him on | [#51] | **P1** |
-| **Q12** | At any point, ask a Kobuleti controller for something only Batumi can give — *"request the ASR"* on preset 2 | He should send you to the right man rather than inventing an answer. A controller who works one field must not clear you into another's approach | [#21] | P3 |
+| **Q12** | At any point, ask a Kobuleti controller for something only Batumi can give — *"request the ASR"* on preset 2 | He should send you to the right man rather than inventing an answer. A controller who works one field must not clear you into another's approach | [R#21] | P3 |
 | **Q13** | On any Kobuleti frequency ask *"say again the ground frequency"*, then *"and tower?"* | **121.800** and **133.000**. Until 7 August he was handed no frequency but Departure's and invented the rest — he answered "Ground is one three three decimal zero" (that is Tower) and "Tower is one one eight decimal zero" (that is *Batumi* Tower). Both in faultless phraseology. He now carries his own field's list | [#58] | **P1** |
 
 **What it is actually checking**
@@ -681,13 +702,13 @@ the transmitter is the last piece — so these rows are about what the
 
 | id | do this | expected | issue | pri |
 |---|---|---|---|---|
-| **R1** | Check in with Batumi Approach saying *"with information Bravo"* (use whatever `/diag` shows as current) | *"Information Bravo is current. Say your request."* | [#17] | **P1** |
-| **R2** | Check in claiming the **wrong** letter — *"with Alpha"* | *"Information Bravo is current now, not Alpha."* Then he asks your request. **He must not refuse you anything** | [#17] | **P1** |
-| **R3** | Check in mentioning **no** letter | *"Advise you have information Bravo."* A prompt, not a telling-off | [#17] | P2 |
-| **R4** | Any of the above | Every one ends by asking **what you want**. He must never assume the ASR — that was a real complaint from the air, and there are two approaches published plus a visual | [#17] | **P1** |
-| **R5** | Check in with **Tower** on short final | He says nothing about the ATIS. Quizzing a man at two miles is noise at the worst moment | [#17] | P3 |
-| **R6** | Ask Ground for taxi, note the runway; then ask Tower for take-off | **The same runway**, both times. It comes from the broadcast, not from each controller's own reading of the wind — that is the whole reason it lives in the database | [#17] | **P1** |
-| **R7** | With a wrong letter, immediately ask for the visual | **Granted.** Nothing about the ATIS gates an approach; you may call the field in sight and take the visual at any point | [#10] | **P1** |
+| **R1** | Check in with Batumi Approach saying *"with information Bravo"* (use whatever `/diag` shows as current) | *"Information Bravo is current. Say your request."* | [R#17] | **P1** |
+| **R2** | Check in claiming the **wrong** letter — *"with Alpha"* | *"Information Bravo is current now, not Alpha."* Then he asks your request. **He must not refuse you anything** | [R#17] | **P1** |
+| **R3** | Check in mentioning **no** letter | *"Advise you have information Bravo."* A prompt, not a telling-off | [R#17] | P2 |
+| **R4** | Any of the above | Every one ends by asking **what you want**. He must never assume the ASR — that was a real complaint from the air, and there are two approaches published plus a visual | [R#17] | **P1** |
+| **R5** | Check in with **Tower** on short final | He says nothing about the ATIS. Quizzing a man at two miles is noise at the worst moment | [R#17] | P3 |
+| **R6** | Ask Ground for taxi, note the runway; then ask Tower for take-off | **The same runway**, both times. It comes from the broadcast, not from each controller's own reading of the wind — that is the whole reason it lives in the database | [R#17] | **P1** |
+| **R7** | With a wrong letter, immediately ask for the visual | **Granted.** Nothing about the ATIS gates an approach; you may call the field in sight and take the visual at any point | [R#10] | **P1** |
 
 **What it is actually checking.** R2 and R7 are the section: the letter is a
 cross-check, never a condition. R6 is the architectural one — two controllers
@@ -703,11 +724,11 @@ falsified from a transcript; this cannot, and I have no way to test it at all.
 
 | id | listen for | expected | issue | pri |
 |---|---|---|---|---|
-| **S1** | Any altitude, heading or frequency | *"niner"*, *"fife"*, *"tree"* — never nine, five, three. This is applied to **every** string on its way to the radio, including the agent's own prose | [#17] | **P1** |
-| **S2** | Your callsign | **"sock-eye"**, the fish. It was being read as one Japanese-looking word and came out like the rice wine | [#17] | **P1** |
-| **S3** | *"Batumi"*, *"Kobuleti"* | Three and four syllables run together, not spelled out and not paused between. The old spellings used CAPITALS for stress, which Polly reads as an initialism, and SPACES between syllables, which it reads as word breaks | [#17] | **P1** |
-| **S4** | The nine controllers across one sortie | Nine distinct voices and nine distinct manners. Batumi Ground is gruff, Kobuleti Clearance is a pedant, Batumi Approach is the calm one | [#21] | P2 |
-| **S5** | Anything said twice — *"roger"*, *"readback correct"* | **Instant** the second time. It is cached after the first render; a pause there means the cache is not hitting | [#17] | P3 |
+| **S1** | Any altitude, heading or frequency | *"niner"*, *"fife"*, *"tree"* — never nine, five, three. This is applied to **every** string on its way to the radio, including the agent's own prose | [R#17] | **P1** |
+| **S2** | Your callsign | **"sock-eye"**, the fish. It was being read as one Japanese-looking word and came out like the rice wine | [R#17] | **P1** |
+| **S3** | *"Batumi"*, *"Kobuleti"* | Three and four syllables run together, not spelled out and not paused between. The old spellings used CAPITALS for stress, which Polly reads as an initialism, and SPACES between syllables, which it reads as word breaks | [R#17] | **P1** |
+| **S4** | The nine controllers across one sortie | Nine distinct voices and nine distinct manners. Batumi Ground is gruff, Kobuleti Clearance is a pedant, Batumi Approach is the calm one | [R#21] | P2 |
+| **S5** | Anything said twice — *"roger"*, *"readback correct"* | **Instant** the second time. It is cached after the first render; a pause there means the cache is not hitting | [R#17] | P3 |
 | **S6** | Any vector while being repositioned | A heading **in fives** — "two five zero", "two six five". Never "two six seven" | [#19] | **P1** |
 | **S7** | The final approach course | **NOT** rounded — it is 125, the number on the plate. Rounding a published course is the one place five degrees is wrong | [#19] | **P1** |
 | **S8** | Several vectors in a row | The word **"amend"** should be rare. It belongs to changing a clearance already given, not to every turn — there were 25 in one sortie | [#45] | **P1** |
