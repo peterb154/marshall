@@ -4081,8 +4081,40 @@ not exist.
 `say()` calls carry a decision, so `reconcile` keeps a prose fallback for the
 rest — removing it would silently stop suppressing holds on every path that has
 not migrated, which is worse than the bug being fixed. The fallback is marked,
-tested, and goes when every path carries its decision. Rendering *after*
-reconciliation is the same migration and belongs with it.
+tested, and goes when the remaining paths carry theirs.
+
+**How many is "the remaining paths"? Not all thirty-two — about eleven more.**
+
+    "for criterion 4 - should we include a decision on all 32?"
+
+The rule is *a `Decision` exists where there is a **fact a pilot must actually
+receive*** — a level, a runway, a station, a frequency. That is what `verify`
+checks and what `repair` restores, and it is the only thing either can act on.
+
+Still owed one (~11):
+
+| | |
+|---|---|
+| `cleared to land runway X` | `cleared_land` + runway |
+| `cleared visual approach runway X` ×2 | `cleared_visual` + runway |
+| `cleared <approach> runway X` ×3 | `cleared_approach` + runway |
+| `descend and maintain X` ×2 | `climb` + altitude |
+| `negative, you are assigned X` | altitude |
+| `field in sight, contact <station>` | `handoff` + station |
+| the missed-approach instruction | `missed` + its level |
+
+Correctly carrying none (~15): *"roger"*, *"radar contact, say intentions"*,
+*"no flight to break up"*, *"not radar identified, say your callsign"*,
+*"heard a Mustang overhead"*, *"welcome, exit the runway when able"*, the
+break-up announcements, *"no report"*. **There is nothing in them to verify and
+nothing to repair**, and giving them a `Decision` would create a verifiable
+object with no facts — plus a phrasebook rendering nobody needs.
+
+**And over-applying is not free.** Every `Decision` is now both verified and
+*repairable*, so one attached to a sentence the agent may legitimately
+paraphrase produces a spurious second transmission. That is the cost this
+sequencing exists to avoid: each new kind wants its phrasebook rendering and its
+own test before it is trusted to speak.
 
 
 
