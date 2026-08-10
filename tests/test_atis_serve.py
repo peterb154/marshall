@@ -36,8 +36,14 @@ class Rig:
         self.published = []
         self.logs = []
         self.flying = True
+        self.reads = []
+
+    def rendered_reads(self):
+        """How many times the sim was asked for the weather."""
+        return self.reads
 
     def eval_lua(self, _lua):
+        self.reads.append(round(self.now, 1))
         return ";".join(
             f"{f.name}|{self.wind:.1f}|2.57|300|0|80000|20.0|101090"
             for f in self.fields)
@@ -61,12 +67,24 @@ class Rig:
         stop = threading.Event()
         n = {"i": 0}
 
-        def sleep(_s):
-            self.now += poll
-            n["i"] += 1
-            if at and n["i"] in at:
-                at[n["i"]](self)
-            if n["i"] >= ticks:
+        def sleep(secs):
+            # HONOUR THE ARGUMENT. This added a fixed `poll` however long serve
+            # asked to wait, so the loop's own granularity was invisible to
+            # every test here -- including the one that matters, how long the
+            # radio is actually quiet between playbacks.
+            #
+            # A TICK IS A POLL PERIOD, NOT AN ITERATION. `serve` sleeps in one
+            # second steps now so it can honour a five second gap, so counting
+            # iterations would have shrunk every test here from forty seconds of
+            # sortie to four. `ticks` still means what it always meant -- how
+            # many poll periods pass -- and the hooks in `at` still fire on the
+            # boundary they always did.
+            self.now += secs if secs else poll
+            while n["i"] < int(self.now // poll):
+                n["i"] += 1
+                if at and n["i"] in at:
+                    at[n["i"]](self)
+            if self.now >= ticks * poll:
                 stop.set()
 
         import unittest.mock as mock
@@ -311,3 +329,53 @@ class TheWeatherGoesOutOnBothBoxes(unittest.TestCase):
                     self.assertNotIn(round(mhz, 3), theirs,
                                      f"{f.name} ATIS sits on a controller's "
                                      f"frequency")
+
+
+class TheRadioIsNotQuietForLong(unittest.TestCase):
+    """How long a pilot waits between hearing the loop.
+
+        "the gap between atis loop re-playing is too long.. must be at least
+         20 secs. Should be 5 sec or so"
+
+    It was, and the arithmetic is worth keeping because it was backwards.
+    `last_played` was stamped BEFORE a transmit that BLOCKS for the length of
+    the audio -- it paces Opus frames at 40 ms -- and the interval was measured
+    between STARTS. So the silence a listener actually heard was
+
+        repeat - duration, rounded up to the ten-second poll
+
+    which means a LONGER recording gave a SHORTER silence, and a fifteen-second
+    one gave twenty seconds of nothing on a thirty-second repeat.
+
+    Measured from the END it is simply the gap, whatever the recording's length,
+    and that is the only version a listener can perceive.
+    """
+
+    def gaps(self, rig):
+        """Silence between one playback ending and the next beginning."""
+        out = []
+        for (t0, _f, _fr), (t1, _f2, _fr2) in zip(rig.sent, rig.sent[1:]):
+            out.append(round(t1 - t0, 1))
+        return out
+
+    def test_the_gap_is_about_five_seconds(self):
+        rig = Rig()
+        rig.run(ticks=6, repeat=S.GAP_SEC)
+        self.assertGreaterEqual(len(rig.sent), 3, "it barely played at all")
+        for g in self.gaps(rig):
+            self.assertLessEqual(g, S.GAP_SEC + S.TICK_SEC,
+                                 f"the radio was quiet for {g}s")
+
+    def test_the_default_gap_is_short(self):
+        self.assertLessEqual(S.GAP_SEC, 10.0)
+        # And the loop can actually honour it: a tick longer than the gap makes
+        # a five second silence into a ten second one.
+        self.assertLess(S.TICK_SEC, S.GAP_SEC)
+
+    def test_the_weather_is_not_re_read_every_tick(self):
+        # The tick is short so the gap can be short. Re-reading the sim at that
+        # rate would be twelve times the work for a number that changes hourly.
+        rig = Rig()
+        rig.run(ticks=6)
+        self.assertLessEqual(len(rig.rendered_reads()), 8,
+                             "the weather is being read on the loop's clock")

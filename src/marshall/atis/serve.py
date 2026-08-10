@@ -35,14 +35,29 @@ from dataclasses import dataclass, field as _field
 
 from marshall.atis import broadcast, store, weather
 
-# How often the recording goes out. Real ATIS is continuous; this is a
-# compromise with a radio that other people are using -- long enough that a
-# pilot who tunes in never waits absurdly, short enough not to be a nuisance if
-# somebody has the frequency up by mistake.
-REPEAT_SEC = 30.0
+# THE QUIET BETWEEN PLAYBACKS, measured from the END of one to the start of the
+# next. Real ATIS is continuous; this is as close as is polite on a radio other
+# people are using.
+#
+# IT USED TO BE AN INTERVAL BETWEEN STARTS, and that is a different thing
+# entirely. `last_played` was stamped BEFORE a transmit that blocks for the
+# length of the audio, so the actual silence was `repeat - duration`, rounded up
+# to the ten-second poll -- and a fifteen-second recording gave twenty seconds
+# of nothing:
+#
+#     "the gap between atis loop re-playing is too long.. must be at least 20
+#      secs. Should be 5 sec or so"
+#
+# Measured from the end, the gap is the gap whatever the recording's length,
+# which is also the only version a listener can hear.
+GAP_SEC = 5.0
 # How often the weather is re-read. Cheap, and it is what notices the hour
-# turning over.
+# turning over. Deliberately much longer than the gap: re-reading is not what
+# paces the broadcast.
 POLL_SEC = 10.0
+# The loop's own granularity. It must be smaller than the gap or the gap cannot
+# be honoured -- with a ten-second tick, a five-second silence is ten.
+TICK_SEC = 1.0
 
 
 @dataclass
@@ -94,8 +109,8 @@ def atis_freqs(field) -> tuple:
 
 def serve(fields, transmit, voice, eval_lua, clock=time.monotonic,
           mission_clock=None, stop=None, sleep=time.sleep,
-          repeat_sec: float = REPEAT_SEC, poll_sec: float = POLL_SEC,
-          anybody_flying=None, log=print) -> None:
+          repeat_sec: float = GAP_SEC, poll_sec: float = POLL_SEC,
+          anybody_flying=None, log=print, tick_sec: float = TICK_SEC) -> None:
     """Run the broadcast until `stop` is set.
 
     `fields` are `Field_`s; any without an `atis_mhz` is skipped, which is the
@@ -107,6 +122,32 @@ def serve(fields, transmit, voice, eval_lua, clock=time.monotonic,
     """
     on_air = {f.name: Airwave() for f in fields if getattr(f, "atis_mhz", 0)}
     live = [f for f in fields if getattr(f, "atis_mhz", 0)]
+    # When the weather was last read. A list so the loop below can write it.
+    last_read = [None]
+
+    def _replay(now: float) -> None:
+        """Put each field's recording back on the air once its gap has elapsed.
+
+        `last_played` is stamped AFTER the transmit returns, so it marks the END
+        of the audio. `transmit` blocks for the length of the recording -- it
+        paces Opus frames at 40 ms -- so stamping it before made the wait
+        `gap - duration` and a longer recording meant a shorter silence, which
+        is backwards.
+        """
+        for f in live:
+            was = on_air[f.name]
+            if not was.frames or now - was.last_played < repeat_sec:
+                continue
+            try:
+                transmit(was.frames, *atis_freqs(f))
+            except Exception as e:
+                log(f"  !! atis transmit failed on "
+                    f"{'/'.join(f'{x:.3f}' for x in atis_freqs(f))}: {e}")
+            finally:
+                # Stamped even on failure, or a broken radio becomes a tight
+                # retry loop hammering the air.
+                was.last_played = clock()
+
     if not live:
         log("  atis: no field broadcasts; nothing to do")
         return
@@ -140,6 +181,15 @@ def serve(fields, transmit, voice, eval_lua, clock=time.monotonic,
         if quiet:
             log("  atis: somebody joined, back on the air")
             quiet = False
+        # THE WEATHER IS READ ON ITS OWN CLOCK, not on the loop's. The tick has
+        # to be short enough to honour a five-second gap; re-reading the sim
+        # every second to achieve that would be twelve times the work for a
+        # number that changes on the hour.
+        if last_read[0] is not None and now - last_read[0] < poll_sec:
+            _replay(now)
+            sleep(tick_sec)
+            continue
+        last_read[0] = now
         try:
             observed = weather.observe_fields(live, eval_lua)
         except Exception as e:
@@ -179,12 +229,5 @@ def serve(fields, transmit, voice, eval_lua, clock=time.monotonic,
                         f"({'first' if not seen.get(f.name) else 'new'})")
                 seen[f.name] = obs
 
-            if was.frames and now - was.last_played >= repeat_sec:
-                was.last_played = now
-                try:
-                    transmit(was.frames, *atis_freqs(f))
-                except Exception as e:
-                    log(f"  !! atis transmit failed on "
-                        f"{'/'.join(f'{x:.3f}' for x in atis_freqs(f))}: {e}")
-
-        sleep(poll_sec)
+        _replay(now)
+        sleep(tick_sec)
