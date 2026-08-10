@@ -267,7 +267,11 @@ TONOPAH_APPROACH = Station("Silverbow Approach", 119.450, "approach",
                                   "valley floor is high and the ridges are "
                                   "higher.")
 
-TONOPAH_STATIONS = [TONOPAH_TOWER, TONOPAH_GROUND, TONOPAH_APPROACH]
+# IN LADDER ORDER, which for the ARRIVAL field is approach, tower, ground --
+# the order a pilot presses them coming home. Written tower-first, the comms
+# card put Silverbow Approach on the button AFTER Tower, so the recovery
+# controller sat below the man who takes you at four miles.
+TONOPAH_STATIONS = [TONOPAH_APPROACH, TONOPAH_TOWER, TONOPAH_GROUND]
 
 # THE ENROUTE PICTURE. Tonopah VORTAC (TPH) on 117.200, channel 119, is a real
 # world_* beacon in the sim rather than an airfield one -- the navaid the leg
@@ -305,7 +309,13 @@ NELLIS_ILS = ApproachProfile(
     kind="ils",
     guidance="intercept",
     stations=list(NEVADA_STATIONS),
+    # THE CEILING IS A WARBIRD'S, AND HAD TO MOVE. `hold_top_ft` defaults to
+    # 10,000 -- "P-51: oxygen, not airspace", which is exactly right for a
+    # Mustang and meaningless for an F-16 over Nevada. Nellis's own MVA reaches
+    # 10,500 to the north-west, so the default ceiling was BELOW the ground a
+    # holding aircraft has to clear.
     hold_base_ft=9000,               # the valley floor is 1,869 and the ridges
+    hold_top_ft=16000,
     final_crs=209,                   # magnetic, and what is painted on 21L
     final_crs_true_measured=220.11,  # Beacons.lua: localiser antenna + 180
     touchdown_offset_nm=0.83,        # half of 10,051 ft, from the field centre
@@ -346,7 +356,13 @@ TONOPAH_ILS = ApproachProfile(
     kind="ils",
     guidance="intercept",
     stations=list(NEVADA_STATIONS),
+    # AND AT TONOPAH IT WAS FATAL TO THE STACK ENTIRELY. Base 12,000 against a
+    # 10,000 ceiling is an EMPTY list -- `stack_ft` is `range(base, top+1)` --
+    # so the controller had no level to give anybody and `_free_slot` would have
+    # returned None on the first arrival. A field whose ramp is at 5,550 ft
+    # simply cannot hold under a limit written for oxygen at ten.
     hold_base_ft=12000,              # 5,550 ft of field, then the ridges
+    hold_top_ft=20000,
     final_crs=141,                   # magnetic, painted 15
     final_crs_true_measured=157.08,  # Beacons.lua: I-RVP antenna + 180
     touchdown_offset_nm=0.99,        # half of 12,001 ft

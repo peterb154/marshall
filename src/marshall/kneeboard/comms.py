@@ -15,9 +15,9 @@ is the order the buttons get pressed: ground, departure, enroute, and back.
 from __future__ import annotations
 
 from marshall.atc import phases
-from marshall.core import route as R
-
-P = R.BATUMI_ASR
+from marshall.core.stations import preset_label
+from marshall.core.units import altimeter_spoken, qfe_inhg
+from marshall.kneeboard.card import Card, current
 
 # The sortie, in order, and which phase sends you to each button. Only phases
 # that actually change the frequency appear -- a ladder listing every state
@@ -68,7 +68,19 @@ STYLE = """
 """
 
 
-def build(profile=P) -> str:
+def build(card: Card | None = None, profile=None) -> str:
+    """The radio card, for whichever theatre this kneeboard is serving.
+
+    A CARD IN, A PAGE OUT. This used to take a profile and then read the
+    stations, the fields and the sortie's two ends out of `route` -- so the
+    parameter chose the approach and the module chose the theatre, and pointing
+    it at Nevada produced Nellis frequencies under Batumi headings.
+
+    `profile` is still accepted because callers pass it, and it overrides the
+    card's own. Everything else comes off the card.
+    """
+    card = card or current()
+    profile = profile or card.profile
     # THE LADDER, NOT THE FIRST FOUR OF THE STATION LIST.
     #
     # This card used to slice `stations[:4]` and call itself "four presets",
@@ -77,8 +89,17 @@ def build(profile=P) -> str:
     # rungs; the old slice would have printed the departure field and Center and
     # stopped -- handing the pilot a card that goes quiet exactly when he starts
     # his approach.
-    stations = [s for s in R.PRESET_LADDER
-                if s in (getattr(profile, "stations", None) or R.STATIONS)]
+    # THE LADDER IS THE CARD'S STATION LIST, in its own order.
+    #
+    # This intersected `route.PRESET_LADDER`, which names Caucasus stations,
+    # so a Nevada card came out EMPTY -- a comms page with no frequencies on
+    # it at all, which is the inaudibility failure this file's docstring is
+    # about, arrived at from a third direction.
+    #
+    # A theatre's station list is already written in the order the buttons
+    # are pressed, so it IS the ladder.
+    stations = [s for s in card.stations
+                if s in (getattr(profile, "stations", None) or card.stations)]
 
     rows = []
     last_field = None
@@ -100,9 +121,9 @@ def build(profile=P) -> str:
         # Only the half of the sortie that happens at his field. A fieldless
         # controller -- Center -- keeps whatever is left, which is the enroute
         # middle, and that is exactly right for him.
-        if fld == R.DEPARTURE_FIELD:
+        if fld == card.departure:
             when = [w for w in when if w in OUTBOUND]
-        elif fld == R.ARRIVAL_FIELD:
+        elif fld == card.arrival:
             when = [w for w in when if w in INBOUND]
         if not when:
             # A SEAT THE PHASE MACHINE CANNOT REACH, and Batumi Ground is one.
@@ -117,14 +138,14 @@ def build(profile=P) -> str:
             # papering over it here does not close it: until "landed" can hand
             # on to a ground seat, no automatic handoff will ever send anybody
             # to this frequency and the pilot has to ask.
-            when = ["Taxi in" if fld == R.ARRIVAL_FIELD else s.role.title()]
+            when = ["Taxi in" if fld == card.arrival else s.role.title()]
         # EVERY FREQUENCY HE IS ON, because a facility can own several and the
         # card is the only place a pilot finds that out. The second one is what
         # a set that cannot dial fractions tunes.
         extra = "".join(f"<div class='alt'>{c:.3f}</div>"
                         for c in getattr(s, "channels", ()))
         rows.append(
-            f"<tr><td class='ch'>{R.preset_label(i)}</td>"
+            f"<tr><td class='ch'>{preset_label(i)}</td>"
             f"<td class='fq'>{s.freq_mhz:.3f}{extra}</td>"
             f"<td class='who'>{s.name}</td>"
             f"<td class='fld'>{fld or '&mdash;'}</td>"
@@ -136,18 +157,18 @@ def build(profile=P) -> str:
     atis_rows = "".join(
         f"<tr><td class='who'>{f.name}</td>"
         f"<td class='fq'>{f.atis_mhz:.3f}</td>"
-        f"<td class='note'>{'departure' if f.name == R.DEPARTURE_FIELD else 'arrival'}"
+        f"<td class='note'>{'departure' if f.name == card.departure else 'arrival'}"
         f"</td></tr>"
-        for f in R.FIELDS if getattr(f, "atis_mhz", 0))
+        for f in card.fields if getattr(f, "atis_mhz", 0))
 
     inbound = profile.final_crs
     rwy = profile.runway or "in use"
-    qfe = R.altimeter_spoken(R.qfe_inhg(profile.field_elev_ft))
-    return f"""<title>Comms &amp; Batumi {rwy}</title>
+    qfe = altimeter_spoken(qfe_inhg(profile.field_elev_ft))
+    return f"""<title>Comms &amp; {card.arrival} {rwy}</title>
 <style>{STYLE}</style>
 <div class="comms">
   <h1>COMMS LADDER</h1>
-  <div class="sub">Kobuleti &rarr; Batumi. {len(rows and stations)} presets, in
+  <div class="sub">{card.departure} &rarr; {card.arrival}. {len(rows and stations)} presets, in
     the order you press them. This card, the aeroplane's radio and the
     controller all come from one source &mdash; if they ever disagree, believe
     nothing and say so.</div>
@@ -166,7 +187,7 @@ def build(profile=P) -> str:
     which information you have &mdash; a wrong letter is a cross-check, never a
     refusal, and nothing about it gates an approach.</div>
 
-  <h2>BATUMI &mdash; RUNWAY {rwy} &mdash; RADAR APPROACH</h2>
+  <h2>{card.arrival.upper()} &mdash; RUNWAY {rwy} &mdash; {profile.kind.upper()} APPROACH</h2>
   <table class="facts">
     <tr><td>Final approach course</td><td><b>{inbound:03d}&deg;</b> magnetic</td></tr>
     <tr><td>Initial approach fix</td>
@@ -189,7 +210,7 @@ def build(profile=P) -> str:
     <tr><td>Altimeter</td>
         <td><b>{qfe}</b> ({profile.altimeter_datum})</td></tr>
     <tr><td>Wind</td>
-        <td>{int(R.WIND_FROM_DEG):03d} at {int(R.WIND_MPH)} mph</td></tr>
+        <td>{int(card.wind_from_deg):03d} at {int(card.wind_mph)} mph</td></tr>
     <tr><td>Holding</td>
         <td><b>{profile.stack_ft[0]:,} ft</b> and up, in clear air &mdash;
             {profile.hold_outbound_hdg:03d} outbound,

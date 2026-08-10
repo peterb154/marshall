@@ -3433,3 +3433,56 @@ aerodrome. It takes `--field` now, resolved across both maps.
 modelled — only the ILS to one end of each field. Nellis has parallel runways
 (03L/21R, 03R/21L) and `Field_` models one pair; the ILS is on 21L, so that is
 the pair described. A parallel-runway field wants an L/R designator on the end.
+
+---
+
+## [KB-3] A kneeboard page is a function of a Card — #71
+labels: architecture
+
+**Status:** FOUNDATION DONE 10 August. `comms` converted; the rest follow the
+same pattern.
+
+    "1) Ww2 is a feature, not the purpose. 2) There are aspects of the kneeboard
+     eventually that will be pilot specific... 3) we're going to need a dynamic
+     kb system eventually... but hard coding batumi stuff isn't cool"
+
+**The problem, measured.** Seven of the nine pages take a `profile` argument and
+then read the theatre out of module constants anyway — so the parameter chooses
+the approach and the module chooses the map. `navlog.py` reaches ten and takes
+no profile at all. That is why **24 of the 29 surviving Caucasus code references
+in this system are kneeboard prose**: a page cannot be pointed at another field,
+it has to be rewritten.
+
+**`kneeboard/card.py`** holds everything a page may read — theatre, fields,
+departure and arrival, stations, profile, wind — and pages take it as an
+argument. Nothing they read is a module constant.
+
+The deferred half is **declared rather than left to be discovered**: `pilot` and
+`plan` are on the Card and empty. A per-pilot page is that field being filled
+in, not a new mechanism; a planned-flight dashboard is `plan`, which
+`flight_state` already joins and `assembly.flight_strip` already reads.
+
+**WW2 stays a feature, not the frame.** Some pages genuinely ARE the 1944 sortie
+— the beacon plate, the strike route map, the squadron brief — and those remain
+Caucasus on purpose and say so. What must not happen is a page that means to be
+general and is accidentally specific.
+
+**Two real bugs fell out of converting the first page.**
+
+1. The comms ladder intersected `route.PRESET_LADDER`, which names Caucasus
+   stations — so a Nevada card came out **empty**. A comms page with no
+   frequencies is the inaudibility failure that file's docstring is about,
+   reached from a third direction.
+2. **`hold_top_ft` defaults to 10,000 ft** — *"P-51: oxygen, not airspace"*.
+   Tonopah's stack starts at 12,000, and `stack_ft` is `range(base, top + 1)`,
+   so it was an **empty list**: a controller with no level to give and
+   `_free_slot` returning None to the first arrival. Nellis's own survey reaches
+   10,500 ft, above the default ceiling — a holding level below the terrain.
+
+**Acceptance criteria**
+1. ~~A page renders correctly for a theatre it was not written for.~~
+2. ~~Its prose follows the theatre, not just its data.~~ Correct frequencies
+   under the wrong airport's title is worse than a failure.
+3. ~~Every approach can actually hold somebody.~~
+4. The remaining pages take a Card. **OPEN** — `navlog`, `asr_plate`,
+   `aip_plate`, `e6b`, `brief`, `site`.

@@ -175,3 +175,77 @@ class TestWhatIsHonestlyStillMissing(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTheKneeboardTakesACardNotATheatre(unittest.TestCase):
+    """Seven of nine pages took a `profile` argument and then read the theatre
+    out of module constants anyway, so the parameter was decoration -- which is
+    why twenty-four of the twenty-nine surviving Caucasus references in this
+    system are kneeboard prose."""
+
+    def comms(self, theatre):
+        import os
+        from marshall.kneeboard import card, comms
+        os.environ["MARSHALL_THEATRE"] = theatre
+        try:
+            return comms.build(card.current())
+        finally:
+            os.environ.pop("MARSHALL_THEATRE", None)
+
+    def test_the_nevada_card_has_nevada_frequencies_and_no_others(self):
+        from marshall.core import route as R
+        said = self.comms("nevada")
+        self.assertIn("120.900", said)
+        self.assertIn("Silverbow Approach", said)
+        for s in R.STATIONS:
+            with self.subTest(stranger=s.name):
+                self.assertNotIn(s.name, said)
+
+    def test_the_caucasus_card_is_unchanged(self):
+        said = self.comms("caucasus")
+        self.assertIn("Kobuleti Clearance", said)
+        self.assertIn("Batumi", said)
+        self.assertNotIn("Nellis", said)
+
+    def test_the_headings_follow_the_theatre(self):
+        """A page whose DATA moves and whose PROSE does not is worse than one
+        that fails: correct frequencies under the wrong airport's title."""
+        self.assertIn("<title>Comms &amp; Tonopah", self.comms("nevada"))
+        self.assertIn("<title>Comms &amp; Batumi", self.comms("caucasus"))
+
+    def test_the_ladder_is_the_cards_own_station_order(self):
+        """This intersected `route.PRESET_LADDER`, which names Caucasus
+        stations, so a Nevada card came out EMPTY -- a comms page with no
+        frequencies at all."""
+        import re
+        rows = re.findall(r"<td class='ch'>(\d+)</td>", self.comms("nevada"))
+        self.assertEqual(len(rows), 8)
+
+    def test_the_arrival_fields_approach_comes_before_its_tower(self):
+        """The order the buttons are pressed coming home. Written tower-first,
+        the recovery controller sat below the man who takes you at four miles."""
+        said = self.comms("nevada")
+        self.assertLess(said.index("Silverbow Approach"),
+                        said.index("Silverbow Tower"))
+
+
+class TestTheHoldingStackIsNotAWarbirdsCeiling(unittest.TestCase):
+    """`hold_top_ft` defaults to 10,000 -- "P-51: oxygen, not airspace" -- which
+    is right for a Mustang and meaningless for an F-16 over Nevada."""
+
+    def test_every_approach_can_actually_hold_somebody(self):
+        """`stack_ft` is `range(base, top + 1)`, so a base above the ceiling is
+        an EMPTY list: a controller with no level to give and `_free_slot`
+        returning None to the first arrival. Tonopah's base is 12,000."""
+        for p in (N.NELLIS_ILS, N.TONOPAH_ILS, R.BATUMI_ASR, R.KOBULETI_ILS):
+            with self.subTest(approach=p.chart_name[:30]):
+                self.assertTrue(p.stack_ft, "nowhere to hold anybody")
+
+    def test_the_stack_clears_the_ground_it_sits_over(self):
+        """Nellis's own survey reaches 10,500 ft north-west, which is above the
+        default ceiling. A holding level below the terrain is not a hold."""
+        for p, f in ((N.NELLIS_ILS, N.NELLIS_FIELD),
+                     (N.TONOPAH_ILS, N.TONOPAH_FIELD)):
+            with self.subTest(field=f.name):
+                self.assertGreaterEqual(max(p.stack_ft),
+                                        max(c[3] for c in f.mva_cells))
