@@ -1035,10 +1035,29 @@ def write_presets(miz: Path, slots: list[tuple[int, str]]) -> None:
         else:
             skipped[kind] = skipped.get(kind, 0) + 1
     for kind, n in wrote.items():
-        print(f"  presets written for {n} x {kind}")
+        print(f"  presets written for {n} x {kind}  (avionics file)")
+    # TWO WAYS AN AEROPLANE GETS ITS PRESETS, and this warned about only one.
+    #
+    # A WW2 set stores them in an Avionics SETTINGS.lua, which is what the loop
+    # above writes. Everything modern carries them in the GROUP's radio table,
+    # which `set_channels` fills from pydcs's `panel_radio` -- so the F-16 was
+    # correctly given the whole nine-rung ladder on its VHF box and this still
+    # announced, in red, that it would "fly on the airframe defaults".
+    #
+    # Alarming and untrue, which is worse than silent: the honest reading is
+    # that the jet has no comms card, and the answer to that is to dial eight
+    # frequencies by hand or rebuild something that was already right.
+    #
+    # So it now asks the airframe. No panel_radio AND no avionics file is a real
+    # gap; panel_radio is `set_channels`'s business and is not this function's
+    # to report on.
+    from dcs.planes import plane_map
     for kind, n in skipped.items():
-        print(f"  !! NO preset file for {n} x {kind} -- it will fly on the "
-              f"airframe defaults")
+        if getattr(plane_map.get(kind), "panel_radio", None):
+            print(f"  presets written for {n} x {kind}  (group radio table)")
+            continue
+        print(f"  !! NO presets at all for {n} x {kind} -- no avionics file and "
+              f"no radio panel; it will fly on the airframe defaults")
     with zipfile.ZipFile(miz, "w", zipfile.ZIP_DEFLATED) as zf:
         for n, data in blobs.items():
             zf.writestr(n, data)
