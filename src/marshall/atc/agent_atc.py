@@ -3693,16 +3693,26 @@ def _start_atis(host: str, ear, profile, session_id: str) -> None:
     fields = [f for f in _theatre.current().fields if getattr(f, "atis_mhz", 0)]
     if not fields:
         return
+    # ONE CLIENT PER FIELD, WITH A RADIO ON EVERY BAND IT BROADCASTS. SRS will
+    # not carry a frequency the client has not tuned, so the UHF side needs its
+    # own radio in the connect -- the multicast then costs one packet.
+    from marshall.atis.serve import atis_freqs
     mouths = {}
     for f in fields:
-        c = _Cl(host, name=f"ATIS {f.name}").connect([_rad(f.atis_mhz * 1e6, _AM)])
+        c = _Cl(host, name=f"ATIS {f.name}").connect(
+            [_rad(mhz * 1e6, _AM) for mhz in atis_freqs(f)])
         mouths[f.name] = c
         ear.ignore_guids.add(c.guid)
 
-    by_hz = {round(f.atis_mhz, 3): mouths[f.name] for f in fields}
+    # Keyed on EVERY frequency the field uses, so a transmit call can be routed
+    # by any one of them.
+    by_hz = {round(mhz, 3): mouths[f.name] for f in fields for mhz in atis_freqs(f)}
 
-    def transmit(frames, mhz):
-        by_hz[round(mhz, 3)].transmit(frames, mhz * 1e6, _AM)
+    def transmit(frames, *mhz):
+        """One packet, every frequency this field broadcasts on."""
+        if not mhz:
+            return
+        by_hz[round(mhz[0], 3)].transmit(frames, [m * 1e6 for m in mhz], _AM)
 
     def anybody_flying() -> bool:
         # A broadcast to an empty server costs money and means nothing -- see

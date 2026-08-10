@@ -934,6 +934,17 @@ def _band_of(mhz: float) -> str | None:
 MIN_PRESET_PANEL = 4
 
 
+def _atis_fields() -> list:
+    """The fields whose ATIS goes on the UHF buttons, departure end first.
+
+    Ordered rather than alphabetical: preset 1 is the field you start at and 2
+    is the one you recover into, which is the same order the comms ladder is
+    pressed in and the order a pilot thinks about them.
+    """
+    out = [R.field_named(R.DEPARTURE_FIELD), R.field_named(R.ARRIVAL_FIELD)]
+    return [f for f in out if f is not None]
+
+
 def set_channels(group, home: str = "") -> None:
     """Write the controller frequencies into a group's radio presets.
 
@@ -998,6 +1009,29 @@ def set_channels(group, home: str = "") -> None:
             if len(stock) < MIN_PRESET_PANEL:
                 continue
             box = _band_of(sum(stock) / len(stock)) if stock else None
+            # THE UHF BOX GETS THE ATIS, not the controller ladder.
+            #
+            #     "put atis on uhf frequencies also - set them to uhf preset
+            #      1 & 2 (kobeleti and batumi)"
+            #
+            # Every controller on this map is VHF, so the UHF panel was left on
+            # its stock 250-305 and did nothing for the sortie -- while the one
+            # thing a pilot wants on the box he is NOT talking on is the
+            # weather. Buttons 1 and 2, departure field then arrival, matching
+            # the order the ladder is pressed in.
+            #
+            # The band test still applies: if an airframe's second box is not
+            # UHF this writes nothing, rather than putting 279 somewhere that
+            # cannot reach it.
+            if box == "uhf":
+                for ch, f in enumerate(_atis_fields(), start=1):
+                    if not f.atis_uhf_mhz or _band_of(f.atis_uhf_mhz) != "uhf":
+                        continue
+                    try:
+                        unit.set_radio_channel_preset(radio_id, ch, f.atis_uhf_mhz)
+                    except (TypeError, KeyError, IndexError):
+                        break
+                continue
             for ch, mhz in channels_for(limit=len(stock), home=home):
                 if box and _band_of(mhz) != box:
                     continue                    # wrong box for this frequency

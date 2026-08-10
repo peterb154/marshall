@@ -52,6 +52,25 @@ class Field_:
     # 127.400 are clear of every controller frequency in the theatre and of the
     # beacon channels, which is the only real constraint.
     atis_mhz: float = 0.0
+    # THE SAME BROADCAST ON THE OTHER BOX.
+    #
+    #     "put atis on uhf frequencies also ... and multicast those atis
+    #      messages on UHF & VHF"
+    #
+    # A modern jet carries two radios and a pilot is usually working the
+    # controllers on one of them; making him retune the box he is talking on to
+    # hear the weather is exactly the friction an ATIS exists to remove. One
+    # transmission carries both -- the SRS voice packet has always held a
+    # variable-length frequency list, which is the same mechanism that lets a
+    # controller be audible to an SCR-522 and a modern radio at once.
+    #
+    # ASSIGNED, like the VHF pair beside it: no chart we hold publishes one.
+    # Chosen clear of the F-16's stock UHF presets, which cluster at 250-270
+    # and 305, so setting these on buttons 1 and 2 costs nothing useful.
+    #
+    # Zero means this field does not broadcast on UHF, and the VHF side is
+    # unaffected -- a field with one is not a field with neither.
+    atis_uhf_mhz: float = 0.0
     msa_sectors: list = field(default_factory=list)   # published, the pilot's
     mva_cells: list = field(default_factory=list)     # surveyed, the controller's
     # MAGNETIC VARIATION, HERE RATHER THAN AS ONE CONSTANT FOR THE WHOLE WORLD.
@@ -123,7 +142,8 @@ class Field_:
 
 
 BATUMI_FIELD = Field_(
-    "Batumi", -355811, 617386, 32, 124, ends=(13, 31), atis_mhz=127.100,
+    "Batumi", -355811, 617386, 32, 124, ends=(13, 31),
+    atis_mhz=127.100, atis_uhf_mhz=280.000,
     lat=41.6103, lon=41.5997,            # UGSB, published
     msa_sectors=list(MSA_SECTORS),
     mva_cells=list(MVA_CELLS),
@@ -174,7 +194,8 @@ KOBULETI_MVA = [
 ]
 
 KOBULETI_FIELD = Field_(
-    "Kobuleti", -317605, 636704, 59, 64, ends=(7, 25), atis_mhz=127.400,
+    "Kobuleti", -317605, 636704, 59, 64, ends=(7, 25),
+    atis_mhz=127.400, atis_uhf_mhz=279.000,
     lat=41.9297, lon=41.8656,            # UG5X, published
     msa_sectors=list(KOBULETI_MSA), mva_cells=list(KOBULETI_MVA),
     note="Field elevation 59 ft. Runway 07/25, 2400 m. TACAN 67X KBL, "

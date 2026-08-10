@@ -29,6 +29,7 @@ class Rig:
     def __init__(self, fields=None, wind=90):
         self.fields = fields or [R.KOBULETI_FIELD]
         self.sent = []
+        self.sent_all = []
         self.now = 0.0
         self.wind = wind
         self.voice = FakeVoice()
@@ -41,8 +42,14 @@ class Rig:
             f"{f.name}|{self.wind:.1f}|2.57|300|0|80000|20.0|101090"
             for f in self.fields)
 
-    def transmit(self, frames, mhz):
-        self.sent.append((round(self.now, 1), mhz, frames))
+    def transmit(self, frames, *mhz):
+        """ONE PACKET, EVERY FREQUENCY. `serve` multicasts a field's ATIS on
+        its VHF and its UHF together -- the SRS voice packet carries a
+        frequency list, so the weather reaches the box a pilot is working
+        without a second transmission. The rig records the first frequency as
+        the field's identity and keeps the whole list beside it."""
+        self.sent.append((round(self.now, 1), mhz[0], frames))
+        self.sent_all.append((round(self.now, 1), tuple(mhz), frames))
 
     def run(self, ticks, poll=10.0, repeat=30.0, at=None, empty=False):
         """ONE serve() call, advanced `ticks` times.
@@ -73,7 +80,7 @@ class Rig:
             elif empty:
                 who = lambda: False                  # noqa: E731
             S.serve(self.fields,
-                    lambda fr, mhz: self.transmit(fr, mhz),
+                    lambda fr, *mhz: self.transmit(fr, *mhz),
                     self.voice,
                     lambda lua: self.eval_lua(lua),
                     clock=lambda: self.now, stop=stop, sleep=sleep,
@@ -243,3 +250,64 @@ class TestItStandsDownOnAnEmptyServer(unittest.TestCase):
         rig.run(ticks=8, empty=True)
         said = [ln for ln in rig.logs if "nobody on the server" in ln]
         self.assertEqual(len(said), 1, "logged the same thing every tick")
+
+
+class TheWeatherGoesOutOnBothBoxes(unittest.TestCase):
+    """One transmission, VHF and UHF together.
+
+        "put atis on uhf frequencies also ... and multicast those atis
+         messages on UHF & VHF"
+
+    A modern jet carries two radios and a pilot is usually working the
+    controllers on one of them. Making him retune the box he is TALKING on to
+    hear the weather is exactly the friction an ATIS exists to remove.
+
+    It costs one packet, not two: the SRS voice packet has always carried a
+    variable-length frequency list -- the same mechanism that lets one
+    controller be audible to an SCR-522 and a modern radio at once. Two
+    transmissions would cost a second render, a second slot on the air, and a
+    chance for the two to drift apart mid-letter.
+    """
+
+    def test_both_frequencies_in_one_call(self):
+        rig = Rig()
+        rig.run(ticks=4)
+        self.assertTrue(rig.sent_all, "nothing went out at all")
+        _t, freqs, _frames = rig.sent_all[0]
+        self.assertEqual(freqs, (R.KOBULETI_FIELD.atis_mhz,
+                                 R.KOBULETI_FIELD.atis_uhf_mhz))
+
+    def test_it_is_one_transmission_not_two(self):
+        rig = Rig()
+        rig.run(ticks=4)
+        # One entry per broadcast, carrying both frequencies -- not two entries.
+        self.assertEqual(len(rig.sent_all), len(rig.sent))
+        for _t, freqs, _f in rig.sent_all:
+            self.assertEqual(len(freqs), 2)
+
+    def test_a_field_with_no_uhf_keeps_its_vhf(self):
+        # One is not neither. A field that broadcasts on VHF alone must not go
+        # silent because it has no UHF assigned.
+        import dataclasses
+        vhf_only = dataclasses.replace(R.KOBULETI_FIELD, atis_uhf_mhz=0.0)
+        rig = Rig(fields=[vhf_only])
+        rig.run(ticks=4)
+        self.assertTrue(rig.sent_all)
+        _t, freqs, _f = rig.sent_all[0]
+        self.assertEqual(freqs, (R.KOBULETI_FIELD.atis_mhz,))
+
+    def test_the_two_fields_do_not_share_a_uhf_frequency(self):
+        # The whole point of a per-field ATIS is that they are different
+        # broadcasts. Sharing a frequency would put Batumi's weather on
+        # Kobuleti's button.
+        uhf = [f.atis_uhf_mhz for f in R.FIELDS if f.atis_uhf_mhz]
+        self.assertEqual(len(uhf), len(set(uhf)))
+
+    def test_no_atis_frequency_collides_with_a_controller(self):
+        theirs = {round(s.freq_mhz, 3) for s in R.STATIONS}
+        for f in R.FIELDS:
+            for mhz in (f.atis_mhz, f.atis_uhf_mhz):
+                if mhz:
+                    self.assertNotIn(round(mhz, 3), theirs,
+                                     f"{f.name} ATIS sits on a controller's "
+                                     f"frequency")

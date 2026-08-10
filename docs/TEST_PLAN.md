@@ -79,12 +79,16 @@ rather than the four buttons at one field this started as.
 | 8 | 121.900 | Batumi Ground | taxi in |
 | 9 | 131.000 | Sentry | mission commander, not a rung |
 
-**ATIS** — listen, never transmit. Not presets; tune them by hand.
+**ATIS** — listen, never transmit. **On the UHF box now**, buttons 1 and 2, so
+you can hear the weather without leaving the controller you are working. The
+same broadcast goes out on both bands in one transmission.
 
-| field | freq | |
-|---|---|---|
-| Kobuleti | 127.400 | departure |
-| Batumi | 127.100 | arrival |
+| field | UHF preset | VHF | |
+|---|---|---|---|
+| Kobuleti | **1** — 279.000 | 127.400 | departure |
+| Batumi | **2** — 280.000 | 127.100 | arrival |
+
+The VHF ladder on box 2 is unchanged: presets 1–9, Clearance through Sentry.
 
 Two frequencies on one row is **one controller on both** — a warbird that cannot
 dial fractions reaches the same man on the round number. Say either.

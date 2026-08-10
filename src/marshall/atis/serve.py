@@ -70,6 +70,28 @@ def rerecord(field, obs, was, now_sec: float, previous_obs=None) -> tuple[str, b
     return was.letter, False
 
 
+def atis_freqs(field) -> tuple:
+    """Every frequency this field's ATIS goes out on, VHF first.
+
+    ONE TRANSMISSION, BOTH BOXES. A modern jet carries two radios and a pilot is
+    usually working the controllers on one of them; making him retune the box he
+    is talking on to hear the weather is the friction an ATIS exists to remove.
+
+    It costs nothing: the SRS voice packet has always carried a variable-length
+    frequency list, which is the same mechanism that lets one controller be
+    audible to an SCR-522 and a modern radio at once. A second transmission
+    would cost a second render, a second slot on the air, and a chance for the
+    two to drift apart mid-letter.
+
+    A field with no UHF assigned keeps its VHF alone -- one is not neither.
+    """
+    out = [getattr(field, "atis_mhz", 0.0)]
+    uhf = getattr(field, "atis_uhf_mhz", 0.0)
+    if uhf:
+        out.append(uhf)
+    return tuple(x for x in out if x)
+
+
 def serve(fields, transmit, voice, eval_lua, clock=time.monotonic,
           mission_clock=None, stop=None, sleep=time.sleep,
           repeat_sec: float = REPEAT_SEC, poll_sec: float = POLL_SEC,
@@ -79,7 +101,8 @@ def serve(fields, transmit, voice, eval_lua, clock=time.monotonic,
     `fields` are `Field_`s; any without an `atis_mhz` is skipped, which is the
     normal case for an aerodrome that does not broadcast.
 
-    `transmit(frames, mhz)` puts audio on the air. `voice.frames(text)` renders
+    `transmit(frames, *mhz)` puts audio on the air, on EVERY frequency given --
+    one packet, both bands. See `atis_freqs`. `voice.frames(text)` renders
     it. Neither is imported here -- see the module docstring.
     """
     on_air = {f.name: Airwave() for f in fields if getattr(f, "atis_mhz", 0)}
@@ -87,7 +110,12 @@ def serve(fields, transmit, voice, eval_lua, clock=time.monotonic,
     if not live:
         log("  atis: no field broadcasts; nothing to do")
         return
-    log("  atis: " + ", ".join(f"{f.name} {f.atis_mhz:.3f}" for f in live))
+    # NAME EVERY FREQUENCY IT IS ACTUALLY ON. This printed the VHF alone, so a
+    # multicast that had quietly stopped reaching the UHF box would look
+    # identical to one that had not.
+    log("  atis: " + ", ".join(
+        f"{f.name} " + "/".join(f"{mhz:.3f}" for mhz in atis_freqs(f))
+        for f in live))
     seen: dict = {}
 
     quiet = False
@@ -154,8 +182,9 @@ def serve(fields, transmit, voice, eval_lua, clock=time.monotonic,
             if was.frames and now - was.last_played >= repeat_sec:
                 was.last_played = now
                 try:
-                    transmit(was.frames, f.atis_mhz)
+                    transmit(was.frames, *atis_freqs(f))
                 except Exception as e:
-                    log(f"  !! atis transmit failed on {f.atis_mhz:.3f}: {e}")
+                    log(f"  !! atis transmit failed on "
+                        f"{'/'.join(f'{x:.3f}' for x in atis_freqs(f))}: {e}")
 
         sleep(poll_sec)
