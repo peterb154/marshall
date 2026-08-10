@@ -395,3 +395,81 @@ class TestTheLastTurnRowIsLaidOutRight(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheFlightCardActuallyReachesTheCockpit(unittest.TestCase):
+    """The card a pilot reads must be the card that was written.
+
+        "Where will I find Q1-Q9 plus S10-S12 and H20-H21 -- they arent on the
+         flighttest kneeboard"
+
+    They were not. TWO faults, and between them the kneeboard was showing six
+    pages of fifteen and 47 rows of 120.
+
+    ONE: the row pattern matched only a bare `| H4 |`, so every section written
+    since 2 August was invisible -- Q, R, S and T rendered ZERO rows between
+    them. That is #60 exactly, in a second tool: that issue fixed the same
+    blindness in `tools/issue_sync.py`, which REPORTS on the card, and nobody
+    looked at the page a pilot actually reads.
+
+    TWO: eleven sections had no GUID, and a section with no GUID is not
+    published at all. The builder said so on every run -- "section Q has no
+    GUID and will NOT appear" -- into a container start-up log nobody reads.
+    A loud warning in a place nobody looks is a silent one.
+    """
+
+    def sections(self):
+        from marshall.kneeboard import flighttest
+        return flighttest.sections()
+
+    def test_every_section_has_rows(self):
+        for letter, title, rows in self.sections():
+            self.assertTrue(rows, f"section {letter} ({title}) renders no rows")
+
+    def test_the_bold_sections_are_there(self):
+        # Q, R, S and T are written with bold IDs. The card opens by telling a
+        # pilot to fly Q FIRST.
+        got = {letter: [r["id"] for r in rows]
+               for letter, _t, rows in self.sections()}
+        for letter in ("Q", "R", "S", "T"):
+            self.assertIn(letter, got)
+            self.assertTrue(got[letter], f"section {letter} is empty")
+        self.assertIn("Q1", got["Q"])
+        self.assertIn("Q9b", got["Q"])
+
+    def test_row_ids_carry_no_markup(self):
+        # A pilot says "S10 failed", not "asterisk asterisk S 10".
+        for letter, _t, rows in self.sections():
+            for r in rows:
+                self.assertNotIn("*", r["id"], f"{letter}: {r['id']!r}")
+                self.assertNotIn("~", r["id"], f"{letter}: {r['id']!r}")
+
+    def test_retired_rows_are_not_shown(self):
+        # Striking a row through is what takes it off the cockpit list; the
+        # script stays as the regression record. Section E is "known broken,
+        # do not report these as new" and had swallowed twelve retired rows
+        # because its slice ran to end of file.
+        got = {letter: [r["id"] for r in rows]
+               for letter, _t, rows in self.sections()}
+        self.assertEqual(got.get("E"), ["E1", "E2"])
+
+    def test_every_section_is_published(self):
+        from marshall.kneeboard import flighttest
+        letters = {letter for letter, _t, _r in self.sections()}
+        missing = [x for x in letters if x not in flighttest.GUIDS]
+        self.assertEqual(missing, [],
+                         f"sections {missing} have no GUID and will not appear "
+                         f"on the kneeboard at all")
+
+    def test_every_section_has_a_tab_label(self):
+        from marshall.kneeboard import flighttest
+        letters = {letter for letter, _t, _r in self.sections()}
+        missing = [x for x in letters if x not in flighttest.SHORT]
+        self.assertEqual(missing, [], f"sections {missing} have no tab label")
+
+    def test_no_two_sections_share_a_guid(self):
+        # OpenKneeboard remembers the page a pilot was on; a reused identifier
+        # drops him somewhere he did not choose.
+        from marshall.kneeboard import flighttest
+        vals = list(flighttest.GUIDS.values())
+        self.assertEqual(len(vals), len(set(vals)))

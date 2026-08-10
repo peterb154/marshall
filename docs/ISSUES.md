@@ -4290,3 +4290,48 @@ this call cost 8,000 tokens?"* answerable without asking the model.
 
 Deliberately last. The shape of the plan should be argued by the briefs that
 exist, not designed before any of them do.
+
+---
+
+## [KB-4] Two thirds of the flight test card never reached the cockpit — #85
+labels: bug
+
+**Status:** DONE 10 August.
+
+    "Where will I find Q1–Q9 plus S10–S12 and H20–H21 -- they arent on the
+     flighttest kneeboard"
+
+They were not there, and neither was most of the rest. **Six pages of fifteen
+and 47 rows of 120** were reaching the aeroplane. Two independent faults.
+
+**1. The row pattern could not see a bold ID.** `_ROW` matched only a bare
+`| H4 |`, so every section written since 2 August rendered **zero rows** — Q
+(the two-aerodrome ladder, fifteen rows), R (ATIS), S (phraseology) and T (the
+Kobuleti ILS). The card opens by telling a pilot to *fly Q first*.
+
+This is **#60 exactly, in a second tool.** That issue fixed the identical
+blindness in `tools/issue_sync.py`, which *reports* on the card — and nobody
+looked at the page a pilot actually reads. One document, two tools, two
+different ideas of what a row is.
+
+**2. Eleven sections had no GUID**, and a section with no GUID is not published
+at all: D, F, K, L, M, N, P, Q, R, S, T. The builder said so on every single
+run — *"section Q has no GUID and will NOT appear on the kneeboard"* — into a
+container start-up log that nobody reads. **A loud warning in a place nobody
+looks is a silent one**, which is the same lesson as the frequency table and the
+runway in use: being right in a log is not being reachable.
+
+GUIDs are derived `uuid5` from a fixed namespace and the section letter rather
+than rolled at random, so regenerating the table cannot hand a pilot a different
+identifier for the same page and drop him somewhere he did not choose.
+
+**A third thing, found on the way.** Section E's slice ran to end of file,
+because it is the last *lettered* section and "Already flown, and kept as the
+regression record" is not one — so twelve retired rows appeared on the page
+whose whole job is telling a pilot what **not** to report. Sections stop at the
+next heading of any kind now, and a struck row is skipped everywhere: striking
+through is what retires a row from the cockpit list.
+
+**Regression:** `tests/test_diag.py` — every section renders rows, every section
+has a GUID and a tab label, no two share a GUID, row IDs carry no markup, and E
+holds exactly its two rows.

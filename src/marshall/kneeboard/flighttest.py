@@ -41,6 +41,34 @@ GUIDS = {
     # OpenKneeboard remembers the page a pilot was on, and reusing an
     # identifier drops him somewhere he did not choose.
     "J": "{c5d2916a-7e48-4b3f-91ac-2d06f8b4e77c}",
+    # ELEVEN SECTIONS HAD NO GUID AND SO DID NOT EXIST IN THE COCKPIT.
+    #
+    # The card opens by telling a pilot to fly Q FIRST -- the two-aerodrome
+    # ladder, fifteen rows, the reason the card was rewritten -- and Q was not
+    # on the kneeboard at all. Nor were R, S, T, or D, F, K, L, M, N and P.
+    # Six pages of fifteen were reaching the aeroplane.
+    #
+    # The tool said so on every build: "section Q has no GUID and will NOT
+    # appear". It prints into a container's start-up log, which nobody reads,
+    # so a loud warning in a place nobody looks is a silent one. That is the
+    # same lesson as the frequency table and the runway in use: being right in
+    # a log is not the same as being reachable.
+    #
+    # Derived from a fixed namespace and the section letter (uuid5) rather than
+    # rolled at random, so regenerating this table cannot hand a pilot a
+    # different identifier for the same page and drop him somewhere he did not
+    # choose.
+    "D": "{ab69f853-6119-5365-a027-b8636e683b07}",
+    "F": "{f02f089b-77c7-532b-a89b-ce4970c88089}",
+    "K": "{a11164c8-98db-50e5-a813-c9df7a66c5c3}",
+    "L": "{e14ceaf1-ecb4-5674-9fec-f3811a8142e2}",
+    "M": "{c190d23a-3483-5d03-a4ec-ad60ccc6fbc7}",
+    "N": "{6b469f68-f0b5-535b-967b-6bcbb3c48730}",
+    "P": "{b2ab0ee5-938a-543f-ae4d-416b15694118}",
+    "Q": "{d6a34be0-ca2a-5c21-a6cd-5d780cada813}",
+    "R": "{51e91239-722a-59e1-83e0-b5c61ccb1589}",
+    "S": "{911a0a23-a5b8-58ca-91f0-a4ba16a94a9f}",
+    "T": "{f70ee367-2201-53fa-85b7-c0f74a483eef}",
 }
 
 # Tab labels. OpenKneeboard's tab strip is narrow and the pilot is reading it
@@ -50,10 +78,31 @@ GUIDS = {
 # remembers the page a pilot was on, and handing an old identifier to a new
 # document would drop him somewhere he did not choose.
 SHORT = {"A": "PREFLT", "E": "KNOWN", "G": "CLNC", "H": "APPROACH",
-         "J": "WHO"}
+         "J": "WHO", "D": "FLIGHTS", "F": "LAND", "K": "MEMORY", "L": "CHANNEL",
+         "M": "SPEED", "N": "NAMES", "P": "TRACKED", "Q": "LADDER",
+         "R": "ATIS", "S": "SOUND", "T": "ILS"}
 
 _SECTION = re.compile(r"^## ([A-Z]) — (.+)$", re.M)
-_ROW = re.compile(r"^\|\s*([A-Z]\d+[a-z]?)\s*\|(.+)$")
+# A cockpit row. THE BOLD AND STRUCK FORMS ARE NOT DECORATION -- this pattern
+# matched only a bare `| H4 |`, so every section written since 2 August was
+# invisible ON THE KNEEBOARD ITSELF: Q, R, S and T rendered ZERO rows between
+# them -- the two-field ladder, ATIS, the phraseology checks and the Kobuleti
+# ILS. The card opens by telling a pilot to fly Q FIRST, and Q was not there.
+#
+# This is exactly #60, in a second tool. That issue fixed the same blindness in
+# `tools/issue_sync.py`, which reports on the card; nobody looked at the page a
+# pilot actually reads. A check and a display reading one document with two
+# different ideas of what a row is.
+_ROW = re.compile(r"^\|\s*(?:~~)?\**([A-Z]\d+[a-z]?)\**(?:~~)?\s*\|(.+)$")
+
+
+def _row_id(cell: str) -> str:
+    """The ID as it should be SPOKEN, with the markup taken off.
+
+    A pilot says "S10 failed", not "asterisk asterisk S 10". The cell carries
+    the emphasis the table uses; the identifier does not.
+    """
+    return cell.strip().strip("*").strip("~").strip("*").strip()
 _ISSUE = re.compile(r"^## \[([A-Z]+-\d+)\]\s+(.*?)(?:\s+—\s+#(\d+))?\s*$", re.M)
 # "**A1** — what this row is actually checking." The table has to stay terse to
 # be readable as a table; the sentence is what makes it flyable by somebody who
@@ -97,11 +146,26 @@ def sections() -> list[tuple[str, str, list[dict]]]:
     card = _read("TEST_PLAN.md")
     notes = why()
     found = list(_SECTION.finditer(card))
+    # ...AND STOPS AT THE NEXT HEADING OF ANY KIND. Slicing to the next LETTERED
+    # section made the last one run to end of file, so section E -- "known
+    # broken, do not report these as new" -- swallowed "Already flown, and kept
+    # as the regression record" and the closing notes. Invisible while the row
+    # pattern could not see a struck ID; the moment it could, twelve retired
+    # rows appeared on the page that tells a pilot what NOT to report.
+    heads = [mm.start() for mm in re.finditer(r"(?m)^## ", card)]
     out = []
-    for i, m in enumerate(found):
-        end = found[i + 1].start() if i + 1 < len(found) else len(card)
+    for m in found:
+        after = [h for h in heads if h > m.start()]
+        end = after[0] if after else len(card)
         rows = []
         for line in card[m.end():end].splitlines():
+            # A STRUCK ROW IS RETIRED. Striking the ID through is what takes a
+            # row off the cockpit list once a pilot has flown it -- the script
+            # stays as the regression record, but a pilot's attention is the
+            # scarcest thing here and it must not be spent on finished work.
+            # See #60 for the two things a row's `[#n]` can mean.
+            if line.lstrip().startswith("| ~~"):
+                continue
             rm = _ROW.match(line)
             if not rm or set(rm.group(2)) <= set("-| "):
                 # Section E is a different animal: a list of things you WILL see
@@ -125,6 +189,7 @@ def sections() -> list[tuple[str, str, list[dict]]]:
             else:
                 ident, what, expect, issue = cells[:4]
                 prio = ""
+            ident = _row_id(ident)
             rows.append({"id": ident, "prio": prio, "what": what,
                          "expect": expect, "issue": issue,
                          "why": notes.get(ident, "")})
