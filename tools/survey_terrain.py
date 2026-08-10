@@ -54,7 +54,11 @@ CLEARANCE_FT = 1000
 def eval_lua(ch, lua: str) -> str:
     from dcs.custom.v0 import custom_pb2, custom_pb2_grpc
     return custom_pb2_grpc.CustomServiceStub(ch).Eval(
-        custom_pb2.EvalRequest(lua=lua), timeout=60).json
+        # A WHOLE GRID IN ONE CALL, so the deadline is the grid's and not a
+        # single sample's. Twelve sectors by four rings at half-mile steps is
+        # tens of thousands of `land.getHeight` calls; sixty seconds was the
+        # Caucasus's answer and Nevada is bigger and higher.
+        custom_pb2.EvalRequest(lua=lua), timeout=600).json
 
 
 def survey(ch, field, sectors: int, bands: list[float], step_nm: float) -> dict:
@@ -97,15 +101,41 @@ def survey(ch, field, sectors: int, bands: list[float], step_nm: float) -> dict:
     return eval_lua(ch, lua)
 
 
+def _known() -> list:
+    """Every aerodrome the system holds, whichever map it is on."""
+    from marshall.core import nevada as N
+    return [*R.FIELDS, *N.NEVADA_FIELDS]
+
+
+def _field_named(name: str):
+    return next((f for f in _known()
+                 if f.name.lower() == (name or "").strip().lower()), None)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--sectors", type=int, default=12, help="30-degree spokes")
     ap.add_argument("--bands", default="5,10,15,25",
                     help="range rings in nm, comma separated")
     ap.add_argument("--step", type=float, default=0.5, help="sample step, nm")
+    # WHICH FIELD, because this was written when there was one.
+    #
+    # `field = R.BATUMI` was hardcoded, so the one tool that turns terrain into
+    # a vectoring minimum could only ever answer for the field it was written
+    # at. That is fine while a theatre has one aerodrome and is exactly the
+    # shape of every other bug this project has had since it grew a second.
+    #
+    # Resolved across every field the system knows, on either map, by name.
+    ap.add_argument("--field", default="Batumi",
+                    help="which aerodrome to survey (Batumi, Kobuleti, "
+                         "Nellis, Tonopah)")
     args = ap.parse_args()
 
-    field = R.BATUMI
+    field = _field_named(args.field)
+    if field is None:
+        print(f"no field called {args.field!r}. Known: "
+              f"{', '.join(f.name for f in _known())}")
+        return 1
     bands = [float(b) for b in args.bands.split(",")]
     arc = 360.0 / args.sectors
     print(f"surveying {field.name} — {args.sectors} sectors of {arc:.0f} deg, "

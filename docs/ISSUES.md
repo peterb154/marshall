@@ -3408,13 +3408,26 @@ both ILS ends are in use. A separate builder from the 362nd's 1944 sortie on
 purpose; they share `channels_for`, `set_channels` and `write_presets` and
 nothing else.
 
-**Outstanding, and neither is optional before anyone is vectored:**
-1. **MVA survey at both fields.** `tools/survey_terrain.py` exists for this.
-   Nellis sits in a bowl with terrain above 11,000 ft inside thirty miles.
-   Batumi's cells over Nevada are not conservative, they are fiction. Asserted
-   empty in `tests/test_nevada.py` so it cannot be quietly forgotten.
-2. **Grid convergence measured at each field**, the same way Batumi's 5.74 and
-   Kobuleti's 5.91 were.
+**Both surveys DONE 10 August**, and the numbers are the argument for having
+run them rather than borrowing:
+
+* **MVA**, from `land.getHeight` over a polar grid — the same heightmap the
+  aeroplane hits. Nellis: 48 cells, 3,000–10,500 ft, with 2,000 ft under the
+  approach and 9,416 ft twenty-five miles north-west. Tonopah: 48 cells and
+  **nothing below 6,500 ft anywhere** — a controller there manoeuvres above
+  Batumi's highest terrain all the time. Batumi's cells here would not have been
+  conservative, they would have been fiction: its high ground is south-east and
+  its low ground is the sea.
+* **Grid convergence**, from the sim's own `coord.LOtoLL`: Nellis +1.16,
+  Tonopah +0.13. **Cross-checked**, which is what makes them trustworthy rather
+  than merely produced — convergence is `(λ − λ₀)·sin φ`, so each field implies
+  a central meridian, and two fields 120 nm apart both give **−117.0**. Batumi's
+  single recorded value never had that check available.
+
+`tools/survey_terrain.py` had `field = R.BATUMI` hardcoded, so the one tool that
+turns terrain into a vectoring minimum could only ever answer for the field it
+was written at — the same shape as every other bug since this grew a second
+aerodrome. It takes `--field` now, resolved across both maps.
 
 **Also open:** SIDs, STARs and the remaining instrument procedures are not
 modelled — only the ILS to one end of each field. Nellis has parallel runways

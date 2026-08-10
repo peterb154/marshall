@@ -60,19 +60,38 @@ def build(*, hot: bool = True, each: int = 2, wind_from: int = 210,
         m.weather.clouds_thickness = 2000
         m.weather.visibility = 4000
 
+    # SEATS AT BOTH ENDS, because a two-field sortie is only half testable from
+    # one of them. The Kobuleti-to-Batumi run could only ever be flown outbound;
+    # anybody wanting to test an arrival had to fly the whole leg first, and the
+    # return trip -- Tonopah's ILS, Silverbow's ladder, a departure from a field
+    # a mile and a half up -- was never reachable in under twenty minutes.
+    #
+    # Hot at both, so either direction starts on the radio rather than on a
+    # checklist.
+    slots: list[tuple[int, str]] = []
+    for name, home, first in (("Viper", "Nellis", N.NELLIS_CLEARANCE),
+                              ("Dagger", "Tonopah", N.TONOPAH_TOWER)):
+        slots += _seats(m, usa, name, home, first, hot, each)
+    return m, slots
+
+
+def _seats(m, usa, name: str, home: str, first, hot: bool, each: int):
+    """One flight of client slots, hot in parking at `home`."""
     slots: list[tuple[int, str]] = []
     grp = m.flight_group_from_airport(
-        country=usa, name="Viper", aircraft_type=F_16C_50,
-        airport=m.terrain.airports["Nellis"],
+        country=usa, name=name, aircraft_type=F_16C_50,
+        airport=m.terrain.airports[home],
         start_type=StartType.Warm if hot else StartType.Cold,
         group_size=each)
     # THE FIRST RUNG OF HIS OWN LADDER. He is parked and has not called anybody,
-    # so the radio should come up on the seat he actually needs first -- the
-    # same rule as Kobuleti, and the reason a sortie does not open on the wrong
-    # frequency.
-    grp.frequency = N.NELLIS_CLEARANCE.freq_mhz
+    # so the radio comes up on the seat he actually needs first -- the same rule
+    # as Kobuleti, and the reason a sortie does not open on the wrong frequency.
+    # Tonopah staffs no
+    # delivery position -- Silverbow Tower works clearances too, `also=
+    # ("clearance", "delivery")` -- so the first rung there is Tower.
+    grp.frequency = first.freq_mhz
     for i, unit in enumerate(grp.units, start=1):
-        unit.name = f"Viper 1-{i}"
+        unit.name = f"{name} 1-{i}"
         unit.set_client()
         slots.append((unit.id, F_16C_50.id))
     set_channels(grp)
@@ -83,13 +102,16 @@ def build(*, hot: bool = True, each: int = 2, wind_from: int = 210,
     # wrong before engine start.
     alt_m = CRUISE_FT * 0.3048
     speed_ms = CRUISE_KT * 0.514444
-    for fix in (N.TPH, N.TONOPAH_FIELD):
+    # THE ROUTE IS THE OTHER FIELD, whichever end he starts at. Both flights get
+    # TPH in the middle because the VORTAC is on the leg either way.
+    away = N.NELLIS_FIELD if home == "Tonopah" else N.TONOPAH_FIELD
+    for fix in (N.TPH, away):
         grp.add_waypoint(Point(fix.x, fix.z, m.terrain), alt_m)
     for wp in grp.points:
         wp.speed = speed_ms
     for unit in grp.units:
         unit.speed = speed_ms
-    return m, slots
+    return slots
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -129,9 +151,12 @@ def main(argv: list[str] | None = None) -> int:
     for p in (N.NELLIS_ILS, N.TONOPAH_ILS):
         print(f"    {p.chart_name}: runway {p.runway}, course {p.final_crs:03d}M"
               f", minima {p.min_hat_ft} ft, MDA {p.mda_ft:,} ft")
-    print("\n  NOT SURVEYED: minimum vectoring altitudes at either field. Run "
-          "tools/survey_terrain.py\n  before anybody is vectored -- Batumi's "
-          "cells over Nevada would be fiction.")
+    print("\n  vectoring minima, surveyed out of the sim:")
+    for f in N.NEVADA_FIELDS:
+        lo = min(c[3] for c in f.mva_cells)
+        hi = max(c[3] for c in f.mva_cells)
+        print(f"    {f.name}: {len(f.mva_cells)} cells, {lo:,}-{hi:,} ft, "
+              f"grid convergence {f.grid_convergence_deg:+.2f}")
     return 0
 
 

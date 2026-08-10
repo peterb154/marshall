@@ -30,14 +30,17 @@ approach on a single frequency -- which happens to be the real Tower frequency.
 The ladder below is the published one; the DCS radio is Tower's rung of it, so
 a pilot who tunes what the mission editor shows him reaches the right man.
 
-WHAT IS NOT HERE, AND MUST BE MEASURED RATHER THAN GUESSED: the minimum
-vectoring altitudes. Batumi's were surveyed out of the sim with
-`tools/survey_terrain.py` over a polar grid, and Nellis needs the same before
-anybody is vectored -- it sits in a bowl with terrain above 11,000 ft inside
-thirty miles, where Batumi's highest is 10,623 at twenty-three. Numbers from one
-map applied to the other are not conservative, they are fiction. `mva_cells` is
-deliberately empty until that survey is run, and `mva_for` falls back to the
-published MSA, which is the safe direction to be wrong in.
+BOTH SURVEYS ARE DONE, 10 August, and neither was optional. The minimum
+vectoring altitudes come from `land.getHeight` over a polar grid at each field
+-- the same heightmap the aeroplane will hit -- and the grid convergence from
+the sim's own `coord.LOtoLL`. Numbers borrowed from the Caucasus would not have
+been conservative here, they would have been fiction: Batumi's high ground is
+south-east and its low ground is the sea, while Nellis has 2,000 ft under the
+approach and 9,416 ft twenty-five miles north-west, and Tonopah has no ground
+below 6,500 ft anywhere in twenty-five miles.
+
+WHAT IS STILL NOT HERE: SIDs, STARs and the other instrument procedures. Only
+the ILS to one end of each field is modelled.
 """
 
 from __future__ import annotations
@@ -61,6 +64,67 @@ from marshall.core.stations import Station
 # pair. The ILS is on 21L, so that is the pair described. A parallel-runway field
 # wants an L/R designator on the end and this is where that will be noticed --
 # noted rather than papered over.
+# SURVEYED OUT OF THE SIM, 10 August, with `tools/survey_terrain.py --field
+# Nellis` -- `land.getHeight` over a polar grid, twelve 30-degree spokes and
+# rings at 5, 10, 15 and 25 nm, highest ground in each cell plus a thousand feet
+# of clearance rounded up to the next five hundred.
+#
+# THE SHAPE OF THE GROUND IS THE ARGUMENT FOR SURVEYING IT. Nellis sits with
+# 2,000 ft under the approach and 9,416 ft twenty-five miles to the north-west,
+# so a single number for the whole terminal area is either useless or lethal
+# depending on which way he is pointing. Batumi's cells applied here would have
+# been fiction: its high ground is south-east and its low ground is the sea.
+NELLIS_MVA = [
+    (  0.0,  30.0,   5.0,   3500),
+    (  0.0,  30.0,  10.0,   5500),
+    (  0.0,  30.0,  15.0,   5500),
+    (  0.0,  30.0,  25.0,   7000),
+    ( 30.0,  60.0,   5.0,   3500),
+    ( 30.0,  60.0,  10.0,   4500),
+    ( 30.0,  60.0,  15.0,   4500),
+    ( 30.0,  60.0,  25.0,   5000),
+    ( 60.0,  90.0,   5.0,   4000),
+    ( 60.0,  90.0,  10.0,   4000),
+    ( 60.0,  90.0,  15.0,   5500),
+    ( 60.0,  90.0,  25.0,   6500),
+    ( 90.0, 120.0,   5.0,   4500),
+    ( 90.0, 120.0,  10.0,   4000),
+    ( 90.0, 120.0,  15.0,   3500),
+    ( 90.0, 120.0,  25.0,   6000),
+    (120.0, 150.0,   5.0,   5000),
+    (120.0, 150.0,  10.0,   4000),
+    (120.0, 150.0,  15.0,   4500),
+    (120.0, 150.0,  25.0,   6000),
+    (150.0, 180.0,   5.0,   5000),
+    (150.0, 180.0,  10.0,   4000),
+    (150.0, 180.0,  15.0,   5000),
+    (150.0, 180.0,  25.0,   5000),
+    (180.0, 210.0,   5.0,   3000),
+    (180.0, 210.0,  10.0,   3500),
+    (180.0, 210.0,  15.0,   4500),
+    (180.0, 210.0,  25.0,   6000),
+    (210.0, 240.0,   5.0,   3000),
+    (210.0, 240.0,  10.0,   3500),
+    (210.0, 240.0,  15.0,   4000),
+    (210.0, 240.0,  25.0,   7000),
+    (240.0, 270.0,   5.0,   3000),
+    (240.0, 270.0,  10.0,   3500),
+    (240.0, 270.0,  15.0,   5000),
+    (240.0, 270.0,  25.0,   9500),
+    (270.0, 300.0,   5.0,   3500),
+    (270.0, 300.0,  10.0,   3500),
+    (270.0, 300.0,  15.0,   4500),
+    (270.0, 300.0,  25.0,   8500),
+    (300.0, 330.0,   5.0,   3500),
+    (300.0, 330.0,  10.0,   6000),
+    (300.0, 330.0,  15.0,   7500),
+    (300.0, 330.0,  25.0,  10000),
+    (330.0, 360.0,   5.0,   3500),
+    (330.0, 360.0,  10.0,   6500),
+    (330.0, 360.0,  15.0,   8000),
+    (330.0, 360.0,  25.0,  10500),
+]
+
 NELLIS_FIELD = Field_(
     # ORDER MATTERS: `ends[0]` is the end whose heading is `runway`. 209 is the
     # 21 end, so the pair is (21, 03) and not (03, 21) -- written the wrong way
@@ -68,11 +132,11 @@ NELLIS_FIELD = Field_(
     # 210, which is the downwind end of the ILS runway. Exactly the fault that
     # put a Kobuleti departure on runway 25 in a 090 wind.
     "Nellis", -398195, -17233, 1869, 209, ends=(21, 3), atis_mhz=118.400,
-    magvar_deg=12.0,
+    magvar_deg=12.0, grid_convergence_deg=1.16, mva_cells=list(NELLIS_MVA),
     note="Nellis AFB (KLSV). Field elevation 1,869 ft -- a mile above Batumi, "
          "which is the first thing here that has never been exercised. "
          "03R/21L 10,051 x 150 ft, ILS on 21L. TACAN LSV 12X. Parallel "
-         "03L/21R not modelled. MVA cells NOT surveyed; see the module note.")
+         "03L/21R not modelled. MVA surveyed 10 August.")
 
 # THE LADDER, from the published plate. DCS itself gives Nellis a single
 # "NellisControl" covering ground, tower and approach on 132.550 -- which is the
@@ -124,12 +188,67 @@ NELLIS_DEPARTURE = Station("Nellis Departure", 135.100, "departure",
 # VARIATION 16 EAST, against Nellis's 12. Two fields on one map with four
 # degrees between them -- which is why a single theatre-wide MAGVAR was always
 # going to be wrong somewhere, and why it now lives on the field.
+# THE SAME SURVEY AT TONOPAH, and the numbers say why the field is interesting:
+# the RAMP is at 5,550 ft and the lowest cell anywhere in twenty-five miles is
+# 6,500. There is no low ground to descend into. A controller working this field
+# is manoeuvring above the highest terrain Batumi has, all the time.
+TONOPAH_MVA = [
+    (  0.0,  30.0,   5.0,   7000),
+    (  0.0,  30.0,  10.0,   7000),
+    (  0.0,  30.0,  15.0,   7500),
+    (  0.0,  30.0,  25.0,   8500),
+    ( 30.0,  60.0,   5.0,   7000),
+    ( 30.0,  60.0,  10.0,   7000),
+    ( 30.0,  60.0,  15.0,  10000),
+    ( 30.0,  60.0,  25.0,  10500),
+    ( 60.0,  90.0,   5.0,   7000),
+    ( 60.0,  90.0,  10.0,   7000),
+    ( 60.0,  90.0,  15.0,   8500),
+    ( 60.0,  90.0,  25.0,  10500),
+    ( 90.0, 120.0,   5.0,   7000),
+    ( 90.0, 120.0,  10.0,   7000),
+    ( 90.0, 120.0,  15.0,   7500),
+    ( 90.0, 120.0,  25.0,   9500),
+    (120.0, 150.0,   5.0,   7000),
+    (120.0, 150.0,  10.0,   7000),
+    (120.0, 150.0,  15.0,   7000),
+    (120.0, 150.0,  25.0,   8000),
+    (150.0, 180.0,   5.0,   7000),
+    (150.0, 180.0,  10.0,   8000),
+    (150.0, 180.0,  15.0,   8000),
+    (150.0, 180.0,  25.0,   8000),
+    (180.0, 210.0,   5.0,   7500),
+    (180.0, 210.0,  10.0,   8500),
+    (180.0, 210.0,  15.0,   7500),
+    (180.0, 210.0,  25.0,   7500),
+    (210.0, 240.0,   5.0,   8000),
+    (210.0, 240.0,  10.0,   8000),
+    (210.0, 240.0,  15.0,   6500),
+    (210.0, 240.0,  25.0,   9000),
+    (240.0, 270.0,   5.0,   8000),
+    (240.0, 270.0,  10.0,   8000),
+    (240.0, 270.0,  15.0,   7500),
+    (240.0, 270.0,  25.0,   7500),
+    (270.0, 300.0,   5.0,   7500),
+    (270.0, 300.0,  10.0,   7500),
+    (270.0, 300.0,  15.0,   7000),
+    (270.0, 300.0,  25.0,   8000),
+    (300.0, 330.0,   5.0,   7000),
+    (300.0, 330.0,  10.0,   7500),
+    (300.0, 330.0,  15.0,   7500),
+    (300.0, 330.0,  25.0,   7500),
+    (330.0, 360.0,   5.0,   7000),
+    (330.0, 360.0,  10.0,   7500),
+    (330.0, 360.0,  15.0,   7500),
+    (330.0, 360.0,  25.0,   9000),
+]
+
 TONOPAH_FIELD = Field_(
     "Tonopah", -226613, -174653, 5550, 141, ends=(15, 33), atis_mhz=118.600,
-    magvar_deg=16.0,
+    magvar_deg=16.0, grid_convergence_deg=0.13, mva_cells=list(TONOPAH_MVA),
     note="Tonopah Test Range (KTNX). Field elevation 5,550 ft -- nearly a mile "
          "above Nellis and three above Batumi. 15/33, 12,001 x 150 ft, ILS to "
-         "both ends. MVA cells NOT surveyed; see the module note.")
+         "both ends. MVA surveyed 10 August: no cell below 6,500 ft.")
 
 TONOPAH_GROUND = Station("Silverbow Ground", 127.250, "ground",
                          channels=(335.500,), field="Tonopah", voice="Joey",
@@ -190,7 +309,17 @@ NELLIS_ILS = ApproachProfile(
     final_crs=209,                   # magnetic, and what is painted on 21L
     final_crs_true_measured=220.11,  # Beacons.lua: localiser antenna + 180
     touchdown_offset_nm=0.83,        # half of 10,051 ft, from the field centre
-    grid_convergence_deg=0.0,        # NOT MEASURED -- see the module note
+    # MEASURED 10 August the way SCHEMA.md prescribes: a point ten kilometres
+    # due GRID north of the field, converted through the sim's own
+    # `coord.LOtoLL`, and the true bearing back to it IS the convergence.
+    #
+    # CROSS-CHECKED, and this is what makes the number trustworthy rather than
+    # merely produced. Convergence on a transverse Mercator is
+    # (lambda - lambda0) * sin(phi), so each field implies a central meridian:
+    # Nellis gives -116.995 and Tonopah gives -116.992. Two independent
+    # measurements a hundred and twenty miles apart agreeing on a round -117 is
+    # not a coincidence, and it is a check Batumi's single value never had.
+    grid_convergence_deg=1.16,
     magvar_deg=12.0,                 # AirNav: 12E (2015)
     field_elev_ft=NELLIS_FIELD.elevation_ft,
     field_thr_elev_ft=NELLIS_FIELD.elevation_ft,
@@ -221,7 +350,7 @@ TONOPAH_ILS = ApproachProfile(
     final_crs=141,                   # magnetic, painted 15
     final_crs_true_measured=157.08,  # Beacons.lua: I-RVP antenna + 180
     touchdown_offset_nm=0.99,        # half of 12,001 ft
-    grid_convergence_deg=0.0,        # NOT MEASURED -- see the module note
+    grid_convergence_deg=0.13,       # measured; see NELLIS_ILS on the method
     magvar_deg=16.0,                 # AirNav: 16E (2005)
     field_elev_ft=TONOPAH_FIELD.elevation_ft,
     field_thr_elev_ft=TONOPAH_FIELD.elevation_ft,

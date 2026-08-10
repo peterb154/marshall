@@ -111,22 +111,66 @@ class TestTheLadderTransports(unittest.TestCase):
                 self.assertEqual(got.name, want)
 
 
-class TestWhatIsHonestlyMissing(unittest.TestCase):
-    """Stated as a test so it cannot be quietly forgotten."""
+class TestTheGroundWasActuallyMeasured(unittest.TestCase):
+    """Surveyed 10 August with `land.getHeight` over a polar grid -- the same
+    heightmap the aeroplane hits -- and the numbers are the argument for having
+    done it rather than borrowing Batumi's."""
 
-    def test_the_vectoring_altitudes_are_not_surveyed(self):
-        """Batumi's MVA cells were surveyed out of the sim over a polar grid.
-        Nevada has none yet, and Batumi's numbers over Nevada would be fiction
-        -- the field alone is a mile up. Empty means `mva_for` falls back to the
-        published MSA, which is the safe direction to be wrong in."""
+    def test_both_fields_have_a_full_grid(self):
         for f in N.NEVADA_FIELDS:
             with self.subTest(field=f.name):
-                self.assertEqual(f.mva_cells, [], "survey done -- update this")
+                self.assertEqual(len(f.mva_cells), 48)   # 12 spokes x 4 rings
 
-    def test_grid_convergence_is_not_measured_either(self):
-        for p in (N.NELLIS_ILS, N.TONOPAH_ILS):
-            with self.subTest(approach=p.chart_name):
-                self.assertEqual(p.grid_convergence_deg, 0.0)
+    def test_no_cell_is_below_the_ground_it_covers(self):
+        """A minimum vectoring altitude that does not clear the terrain is
+        worse than none: it is an instruction to descend into it."""
+        for f in N.NEVADA_FIELDS:
+            for lo, hi, rng, alt in f.mva_cells:
+                with self.subTest(field=f.name, sector=(lo, hi), nm=rng):
+                    self.assertGreater(alt, f.elevation_ft)
+
+    def test_tonopah_has_no_low_ground_at_all(self):
+        """The ramp is at 5,550 ft and the lowest cell within twenty-five miles
+        is 6,500. A controller there manoeuvres above Batumi's highest terrain
+        all the time, which is exactly why borrowed cells would have been
+        fiction rather than merely imprecise."""
+        self.assertGreaterEqual(min(c[3] for c in N.TONOPAH_FIELD.mva_cells),
+                                6500)
+
+    def test_nellis_varies_hugely_by_bearing(self):
+        """2,000 ft under the approach, 9,416 ft twenty-five miles north-west.
+        One number for the whole terminal area is either useless or lethal
+        depending which way he is pointing."""
+        f = N.NELLIS_FIELD
+        self.assertLess(f.mva_for(180, 5), f.mva_for(330, 25) - 5000)
+
+    def test_grid_convergence_was_measured_at_each_field(self):
+        for f in N.NEVADA_FIELDS:
+            with self.subTest(field=f.name):
+                self.assertNotEqual(f.grid_convergence_deg, 0.0)
+
+    def test_the_two_measurements_agree_on_one_central_meridian(self):
+        """The cross-check that makes them trustworthy rather than merely
+        produced. Convergence on a transverse Mercator is
+        (lambda - lambda0) * sin(phi), so each field implies a central meridian
+        -- and two fields a hundred and twenty miles apart both give -117.
+
+        Batumi's single recorded value never had this check available."""
+        import math
+        for f, lat, lon in ((N.NELLIS_FIELD, 36.2352, -115.0330),
+                            (N.TONOPAH_FIELD, 37.7979, -116.7803)):
+            with self.subTest(field=f.name):
+                lam0 = lon - f.grid_convergence_deg / math.sin(math.radians(lat))
+                self.assertAlmostEqual(lam0, -117.0, delta=0.05)
+
+
+class TestWhatIsHonestlyStillMissing(unittest.TestCase):
+    """Stated as a test so it cannot be quietly forgotten."""
+
+    def test_only_one_approach_per_field_is_modelled(self):
+        """Tonopah has an ILS to BOTH ends in the sim -- I-RVP to 15 and I-UVV
+        to 33 -- and only 15 is built. SIDs and STARs are not modelled at all."""
+        self.assertEqual(N.TONOPAH_ILS.runway, "15")
 
 
 if __name__ == "__main__":
