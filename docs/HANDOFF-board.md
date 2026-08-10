@@ -1,5 +1,11 @@
 # Fix the board join
 
+    Type: HISTORICAL DEBRIEF
+    Validated against: a session handoff
+
+> A snapshot of one problem at one moment. Superseded by the identity work; do not implement from it.
+
+
 One aeroplane has four names in this system and nothing joins them:
 
 | string | where it comes from |

@@ -1,5 +1,11 @@
 # Where the controller's words come from
 
+    Type: CURRENT REFERENCE
+    Validated against: 10 August 2026
+
+> Where the controller's words come from.
+
+
     "I don't know how/where that works today - I hope I can figure it out after
      this refactor."
 

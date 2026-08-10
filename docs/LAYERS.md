@@ -1,5 +1,11 @@
 # Layers — what stands on what
 
+    Type: CURRENT REFERENCE
+    Validated against: 10 August 2026
+
+> What may depend on what. The dependency rule and the stages of a turn are CURRENT; the brief mechanism and the extraction plan later in the file are DESIGN INTENT, and the honest list of where we break the rule today is current.
+
+
 `DESIGN.md` says what this is **for**. `WIRING.md` says what it **does** today.
 This says what may depend on what, so complexity can be built on foundations
 that are already trusted rather than beside them.

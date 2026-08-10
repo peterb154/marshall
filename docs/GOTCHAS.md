@@ -1,5 +1,11 @@
 # Gotchas
 
+    Type: CURRENT REFERENCE
+    Validated against: 10 August 2026
+
+> Traps that cost real time. Trust these.
+
+
 Hard-won, mostly undocumented. Each cost real time; several present as silent
 failures with nothing useful in a log.
 

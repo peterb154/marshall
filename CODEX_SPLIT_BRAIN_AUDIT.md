@@ -8,6 +8,11 @@ The useful formulation is not simply "two brains" but:
 
 > **A deterministic safety kernel plus a probabilistic interaction layer.**
 
+Use that formulation in new code and docs. “Split brain” is useful historical
+shorthand, but implies two peers with overlapping authority. They must not be
+peers: the deterministic side authorises constrained operational facts, while
+the model participates in an interaction under those constraints.
+
 The bugs found around this boundary do not argue for letting an LLM sequence
 aircraft. They show that the boundary must become typed, ordered, and enforced
 rather than being mediated mostly by competing prose and downstream guards.
@@ -46,6 +51,13 @@ The agent owns work that is inherently open-ended:
 - discretionary, radar-grounded commentary where no deterministic procedure
   applies; and
 - invoking domain tools for facts it does not carry.
+
+The interaction layer is deliberately broader than *language*. A radar
+controller may make discretionary judgments that cannot sensibly be encoded as
+a state machine; the important restriction is that it cannot create a
+safety-critical commitment, alter an authoritative fact, or call a capability
+outside its role. Calling it the “probabilistic language side” would therefore
+understate both its useful judgment and the boundary it must respect.
 
 This avoids two bad extremes: an LLM inventing safety-critical clearances, or a
 large and brittle deterministic parser attempting to encode all human radio
@@ -250,3 +262,53 @@ quality before moving all rules. Couple that with role-scoped tools and a compac
 radar brief. The deterministic kernel should decide which capabilities and facts
 the interaction layer sees; the interaction layer should not be asked to ignore
 irrelevant capabilities or rediscover state it could have been handed.
+
+### A concrete context contract
+
+Build each turn from a deterministic `ContextPlan`, not by growing a prompt:
+
+```text
+ContextPlan
+  invariant brief     small, universal radio/safety rules
+  role brief          station authority, local responsibilities, voice/persona
+  task brief          active phase or bounded duty (for example clearance or ASR)
+  live situation      selected current contacts, current directive, runway/strip
+  dialogue window     recent words and replies only; never prior telemetry
+  capabilities        the exact read/write tools this role and task may invoke
+  retrieval policy    exact lookup tools for facts intentionally left out
+```
+
+Every entry needs a deterministic inclusion predicate, a priority, a measured
+token cost, and a version/name logged with the turn. The resulting manifest is
+as important as the prompt text: it makes “why did Approach know that?” and
+“why did this call cost 8,000 tokens?” answerable without asking the model.
+
+“Texture of a real person” should come from a stable role/persona brief, the
+shared radio dialogue, and explicit continuity facts (an outstanding clearance,
+a promised callback, the last issued instruction). It should *not* come from
+retaining old radar pictures or handing every controller the whole world. Keep
+authoritative operational continuity in deterministic/persistent state; give
+the model only the small, relevant rendering of it.
+
+### Safest implementation order
+
+1. Add a pure, unit-tested `ContextPlan` selector. Initially have it reproduce
+   today's prompt and tools exactly while logging the proposed role/task/brief
+   manifest and token count. This makes the refactor observable before it
+   changes controller behaviour.
+2. Split `rules.md` into the invariant brief, role briefs, and task briefs.
+   Migrate one bounded workflow first (clearance delivery is a good candidate,
+   because its facts are already deterministic).
+3. Construct the agent's tools from the plan, rather than giving every station
+   `spawn_ground` and relying on prose to prohibit it. The trusted bridge must
+   supply the role/station; include it in the session key or assert it cannot
+   change within that session, so histories cannot cross-contaminate roles.
+4. Replace wholesale radar injection with a compact relevance-selected picture
+   plus an exact lookup tool for the rest. Define relevance as a deterministic
+   policy (addressed aircraft, active sequence, nearby conflicts, and current
+   handoff), then measure it against busy traffic.
+5. Add replay tests and flight-card evidence for three outcomes together:
+   required facts still reach the radio, a question survives intervening shared
+   traffic, and the model neither sees nor can invoke an irrelevant capability.
+   Track prompt tokens, model latency, tool calls, and failed decision
+   verification as release metrics.

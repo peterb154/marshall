@@ -1,5 +1,15 @@
 # Naming the parts, and the layout that follows
 
+    Type: PROPOSAL — a target layout, not today's
+    Validated against: not applied
+
+> **This describes a layout we do not have.** Parts of it landed — `route.py`
+> was split, `feed/` exists, the director merged into the repo — and the rest is
+> intent. It reads in places as though it were describing today, which is
+> exactly the ambiguity that makes a proposal dangerous to onboard from: a new
+> reader cannot tell the target from the tree. Check any claim here against the
+> actual directory before acting on it. `START_HERE.md` has the current layout.
+
 A proposal to mark up. Companion to `SCHEMA.md`: that one is about where FACTS
 live, this one is about where CODE lives, and they have the same root cause.
 

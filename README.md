@@ -2,12 +2,17 @@
 
 Procedural radio ATC, mission generation and kneeboard charts for flight sims.
 
-Marshall makes a flight sim feel like real instrument flying: a blind,
-non-radar approach controller that talks to human pilots over
+Marshall makes a flight sim feel like real instrument flying: a full radio ATC
+service that talks to human pilots over
 [SRS](https://github.com/ciribob/DCS-SimpleRadioStandalone), missions generated
 from a single route definition, and matching kneeboard charts served straight to
-the cockpit. It is sim- and aircraft-agnostic — a P-51 beacon letdown and an
-F-16 ILS are just different *profiles* driving the same controller.
+the cockpit. It is sim-, map- and aircraft-agnostic — a P-51 beacon letdown at
+Batumi and an F-16 ILS into Tonopah are different *profiles* driving the same
+controller.
+
+**New here?** Read [`docs/START_HERE.md`](docs/START_HERE.md) first. It is two
+pages and it says what runs today, which process decides what, and which
+document to believe when two disagree.
 
 > Named for the naval **Marshal** — the controller who runs the holding stack
 > and pushes aircraft down the approach one at a time. That is exactly what the
@@ -15,30 +20,47 @@ F-16 ILS are just different *profiles* driving the same controller.
 
 ## Why it's built this way
 
-**The controller is blind.** No radar, no telemetry, no connection to the sim.
-Its entire world model is what pilots report on the radio, plus a clock. That is
-deliberate: the moment it can see you, the navigation stops mattering. You get
-exactly the service your flying earns, and separation is by *assigned altitude* —
-it holds only if pilots fly their level.
+**Real ATC by default; blind flying is a setting.** A capable, radar-equipped
+agent is the controller's brain. *Handicaps* — no radar, no DME, blind
+procedural separation, 1944 phraseology — are a per-mission `AtcCapability` you
+dial in. The Batumi beacon letdown is one such flavour, not the baseline.
 
-**One route definition feeds everything.** Beacons, frequencies, the holding
-stack and the approach live in one place (`core/`). The mission generator and
-the chart generator both read it, so a chart can never disagree with the sim.
+> This paragraph used to say the opposite: *"the controller is blind, no radar,
+> no telemetry, no connection to the sim"*, and *"the AI is ears and mouth,
+> never the brain"*. That was true early and was left standing for weeks after
+> it stopped being — so the first thing anybody read described the inverse of
+> the system. Kept visible here rather than quietly overwritten, because a
+> README that lies is the most expensive kind of stale document.
 
-**The AI is ears and mouth, never the brain.** Speech-to-text and language
-understanding turn a pilot transmission into one structured *intent*; a
-deterministic state machine decides every clearance. An LLM never invents an
-altitude — separation depends on them.
+**Two brains, and the split is the invariant.** The agent owns language,
+judgment, radar-grounded guidance and identity correlation. The deterministic
+`atc/controller.py` owns *separation* — the holding stack, one-in-the-letdown,
+sequencing. **An LLM never invents separation between aircraft.**
+
+**One route definition feeds everything.** Fields, beacons, frequencies, the
+holding stack and the approach live in one place (`core/`). The mission
+generator, the chart generator and the controller all read it, so a chart can
+never disagree with the sim.
+
+**Nobody issues a clearance that is not his.** Ground clears you *to* the
+runway and says hold short; only Tower puts an aeroplane on it. A role is only
+unique *within an aerodrome*, which is the lesson the second airfield taught and
+the third confirmed.
 
 ## Layout
 
 ```
 src/marshall/
-  core/        route + per-field ApproachProfile (the single source of truth)
-  mission/     .miz generator (pydcs) + terrain survey tools
-  kneeboard/   chart generators (nav log, approach plate, E6B) + HTTP server
-  atc/         the field-agnostic controller state machine + the intent seam
-  telemetry/   (future) live map for spectators
+  core/        route, fields, stations, ApproachProfile, theatre (the truth)
+  atc/         the SRS bridge (agent_atc), the deterministic controller,
+               intents, phases, the generated plate
+  radio/       two-way SRS client, STT, TTS, the transmit pool, rehearsal
+  atis/        per-field broadcast; decides the runway in use
+  feed/        DCS-gRPC: live tracks, events, sim control
+  mission/     .miz generators (pydcs) + terrain survey tools
+  kneeboard/   Card-driven chart generators + HTTP server
+director/      its own container stack: the Bedrock agent on strands-pg
+               (Postgres + PostGIS + pgvector), prompts, identity, tools
 deploy/        docker-compose + env template
 tools/         render.sh — screenshot a chart with headless Edge/Chrome
 ```
@@ -54,8 +76,16 @@ sim server, and `docs/WIRING.md` for what actually talks to what.
 
 ## Docs
 
-- [`docs/DESIGN.md`](docs/DESIGN.md) — architecture, the ATC stack, the approach mechanic
-- [`docs/GOTCHAS.md`](docs/GOTCHAS.md) — hard-won, mostly-undocumented traps (pydcs, DCS radio, OpenKneeboard)
+Start with [`docs/START_HERE.md`](docs/START_HERE.md), which lists the rest and
+says which one wins when they disagree.
+
+- [`docs/START_HERE.md`](docs/START_HERE.md) — **read first.** What runs today, in two pages
+- [`docs/DESIGN.md`](docs/DESIGN.md) — what the system is *for*
+- [`docs/WIRING.md`](docs/WIRING.md) — what it actually *does*, organised symptom-first
+- [`docs/LAYERS.md`](docs/LAYERS.md) — what may depend on what
+- [`docs/GOTCHAS.md`](docs/GOTCHAS.md) — traps that cost real time (pydcs, DCS radio, SRS)
+- [`docs/ISSUES.md`](docs/ISSUES.md) — the work, with acceptance criteria
+- [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md) — the flight test card a pilot flies
 
 ## Quick start
 

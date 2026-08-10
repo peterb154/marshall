@@ -1,5 +1,11 @@
 # The flight planner — what to build, and what to import instead
 
+    Type: CURRENT REFERENCE
+    Validated against: 10 August 2026
+
+> The flight planner. Phase 1 is built; the rest is a plan and says so.
+
+
 **Status:** researched 3 August 2026, **Phase 1 built 8 August**. For [UI-1] #22,
 which has said "Evaluate Digital Kneeboard Simulator before writing one" since it
 was filed. Phases 2 and 3 are open; Phase 2 is blocked on one sample file (§7).

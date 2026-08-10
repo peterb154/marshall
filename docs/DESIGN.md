@@ -1,5 +1,11 @@
 # Marshall — Design
 
+    Type: CURRENT REFERENCE
+    Validated against: 10 August 2026
+
+> What the system is FOR. `WIRING.md` is what it does; `START_HERE.md` is the two-page orientation.
+
+
 Procedural + agentic radio ATC, mission generation, and kneeboard charts for
 flight sims. Sim- and aircraft-agnostic: a P-51 beacon letdown and an F-16 ILS are
 different `ApproachProfile`s driving the same machinery.

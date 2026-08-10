@@ -1,5 +1,11 @@
 # Backlog
 
+    Type: SUPERSEDED — POINTER ONLY
+    Validated against: superseded 2 August 2026
+
+> The work moved to `ISSUES.md`. Kept because older commits cite it.
+
+
 **The WORK now lives in `docs/ISSUES.md`** — one entry per thing, each with
 acceptance criteria, cross-referenced from the flight test card. Start there if
 you are looking for what to do next.

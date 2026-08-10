@@ -1,5 +1,11 @@
 # Flight test card
 
+    Type: WORK RECORD
+    Validated against: 10 August 2026
+
+> The card a pilot flies.
+
+
 One sortie, in order. Every row names an **issue** in `docs/ISSUES.md`, which
 carries the acceptance criteria — so a failure points at one commit and one
 function rather than at "the ATC was weird".

@@ -1,5 +1,8 @@
 # The schema, proposed
 
+    Type: SUPERSEDED PROPOSAL
+    Validated against: never applied
+
 > **STATUS: SUPERSEDED PROPOSAL — do not read this as the running system.**
 > This is a design sketch from before the two-theatre work, kept for its
 > reasoning. It was **never applied as written**. The live schema is

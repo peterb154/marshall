@@ -1,5 +1,11 @@
 # The work, as issues
 
+    Type: WORK RECORD
+    Validated against: 10 August 2026
+
+> The backlog. Read an issue's **Remaining scope** block, not its historical diagnosis — several describe a system that has since been rebuilt. GitHub is a projection of this file; never edit a body there.
+
+
 The single list. Every shipped fix that a human still has to sign off on, every
 open bug, and every feature not yet built — each with acceptance criteria you
 could hand to somebody else.
@@ -3869,3 +3875,62 @@ field`, in the same table as the rest.
 3. `tests/test_handoff_rules.py` covers it, and the structural test that every
    rule reads the trend still passes.
 4. Card row F5 stops describing a known gap and becomes an ordinary check.
+
+---
+
+## [OPS-10] The documentation was deep, and unsafe to onboard from — #78
+labels: architecture, tooling
+
+**Status:** DONE 10 August.
+
+    "it is not yet safe as a new-agent onboarding system ... it will spend too
+     long deciding which document describes today versus history."
+
+Correct, and the sharpest instance is the worst possible one. **`README.md` —
+the first thing anybody reads — described the inverse of the architecture:**
+
+> The controller is blind. No radar, no telemetry, no connection to the sim.
+> The AI is ears and mouth, never the brain.
+
+against `CLAUDE.md`'s opening line, *"Real ATC by default. A capable,
+radar-equipped agent is the controller's brain."* Both true once; one left
+standing for weeks after it stopped being. A new reader could form the wrong
+model of the whole system and start changing things before reaching any document
+that would correct them.
+
+**What landed**
+
+- **`docs/START_HERE.md`** — two pages, linked first from README and CLAUDE.md:
+  what runs today, the invariant, where state lives, the deployables, the test
+  tiers, the known limits, and **which document wins when two disagree** (code
+  and executable config, then tests, then WIRING, then ISSUES' *Remaining
+  scope*, then history).
+- **`docs/RECIPES.md`** — the five cross-cutting changes: add a field, add an
+  approach, add a kneeboard page, change a handoff or a controller decision,
+  change a prompt. Each names the file that OWNS the fact, the trap that has
+  already bitten there, what to run, and whether it puts a row on the card.
+- **README's architecture section rewritten**, with the old text kept visible as
+  a quote rather than quietly overwritten — a README that lies is the most
+  expensive kind of stale document, and hiding the correction loses the lesson.
+- **Every document under `docs/` declares a `Type:`** — current reference, work
+  record, proposal, or historical debrief — plus what it was validated against.
+  `STRUCTURE.md` is fenced as a proposal describing a layout we do not have.
+- **`tools/docs_check.py`**, in `check.py`: every doc typed, every HTTP path in
+  prose present in the source, every `python -m` and `tools/x.py` runnable,
+  every relative link resolving.
+
+**It found three real stale references immediately** — `WIRING.md` pointed at
+`director/tools/{tracks,dcs,events}.py`, which moved into `src/marshall/feed/`
+during the merge. Nine citations in the deepest reference document, resolving
+nowhere.
+
+**What it deliberately does not check is prose for truth.** "The controller is
+blind" is four correct words about a system that changed underneath them, and no
+checker was ever going to know. The typing rule is the answer instead: a
+document that says what it is and when it was validated can be wrong, but it
+cannot be *mistaken for current*.
+
+**The two-copy rule for issues is now written down** (`START_HERE.md`), since it
+was agreed and nowhere recorded: `ISSUES.md` is the source, GitHub is a
+projection, never edit a body there, `--sync` publishes, and GitHub owns only
+open/closed state.

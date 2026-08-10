@@ -1,9 +1,17 @@
 # Marshall — start here
 
 Procedural + agentic radio ATC, mission generation, and kneeboard charts for DCS
-World. **Before touching anything, read `docs/DESIGN.md`, then `docs/GOTCHAS.md`,
-then `docs/BACKLOG.md`.** They hold the architecture, the hard-won gotchas (trust
-them), and the deferred work.
+World.
+
+**Read `docs/START_HERE.md` first.** Two pages: what runs today, which process
+decides what, where state lives, and — the part that was missing — **which
+document to believe when two disagree**. Then `docs/GOTCHAS.md` (trust it) and
+`docs/RECIPES.md` if you are about to add a field, an approach, a page, a
+handoff rule or a prompt.
+
+Every document under `docs/` now declares its `Type:` — current reference, work
+record, proposal, or historical debrief — because the depth was never the
+problem; telling today from history was. `tools/docs_check.py` enforces it.
 
 `docs/WIRING.md` is the companion to those: DESIGN says what the system is FOR,
 WIRING says what it actually DOES — what talks to what, in what order, and which

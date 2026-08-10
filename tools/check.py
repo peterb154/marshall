@@ -50,6 +50,10 @@ CHECKS = [
     ("approach sweep, pilot not turning", [PY, "tools/asr_sweep.py", "--deaf"],
      "#19 — whether the controller argues with itself when the geometry refuses "
      "to improve, which an obedient aeroplane can never show", False),
+    ("the docs name things that exist", [PY, "tools/docs_check.py"],
+     "#78 -- every document says what it is, and the endpoints, commands and "
+     "links in prose resolve. The README described the INVERSE of the "
+     "architecture for weeks", False),
     ("issues and the card in step", [PY, "tools/issue_sync.py"],
      "#27 — that ISSUES.md, GitHub and the cockpit card still agree. Twenty of "
      "thirty-seven had drifted before anyone looked", False),
