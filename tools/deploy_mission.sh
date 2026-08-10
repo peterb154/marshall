@@ -80,4 +80,18 @@ if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx marshall-kneeboard; th
   docker restart marshall-kneeboard >/dev/null
 fi
 
-echo "now unpause: it boots paused (pause_on_load), and AI tasking is frozen until you do"
+# UNPAUSE, rather than tell somebody to. This line used to read "now unpause:
+# it boots paused (pause_on_load), and AI tasking is frozen until you do" --
+# a correct fact, addressed to a human, with no command beside it. `SetPaused`
+# was in the vendored proto the entire time.
+#
+#     "Joining the server doesn't unpause it. We've experienced this before."
+#
+# It does not. `pause_on_load = true` means the restart above comes up PAUSED
+# and stays that way until something asks otherwise; `pause_without_clients` is
+# false, so a client arriving changes nothing. A paused server is also the
+# quietest possible failure -- it answers GetMissionName, it logs healthy, and
+# every question Marshall asks runs in the mission Lua state, which does not
+# answer at all while paused.
+echo "unpausing (it boots paused -- pause_on_load, and joining does not clear it)"
+uv run python "$(dirname "$0")/sim.py" unpause

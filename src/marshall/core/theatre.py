@@ -104,7 +104,8 @@ def current() -> Theatre:
     return THEATRES.get(want, caucasus)()
 
 
-def verify(theatre: Theatre, eval_lua, timeout: float = 8.0) -> tuple[bool, str]:
+def verify(theatre: Theatre, eval_lua, timeout: float = 8.0,
+           is_paused=None) -> tuple[bool, str]:
     """Is the map the sim has loaded the one we were told to work?
 
         "Should it get that info from the sim?"
@@ -124,45 +125,89 @@ def verify(theatre: Theatre, eval_lua, timeout: float = 8.0) -> tuple[bool, str]
     36.29 N, 107.98 W -- instantly, and about a hundred and fifty degrees from
     where Batumi is.
 
-    TWO THINGS I GOT WRONG FIRST, both worth keeping written down.
+    WHAT I GOT WRONG FIRST, twice, and the second correction is the useful one.
 
     I recorded that `coord.LOtoLL` HANGS on off-map coordinates and built the
     check around treating a timeout as proof of the wrong map. It does not hang;
-    it answers instantly and wrongly, which is far more useful. The hangs were
-    the sim's Eval service being unreachable at all -- `return "hello"` timed out
-    the same way -- because a freshly restarted server has not run its mission
-    scripting environment yet. A conclusion drawn while one component was down,
-    and attributed to the component being measured.
+    it answers instantly and wrongly, which is far more useful.
 
-    So a TIMEOUT IS NOT A FAILURE. It means the sim did not answer, which is a
-    different thing from answering wrongly, and a controller who cannot reach the
-    sim must still come up and work. Only a real answer in the wrong place is a
-    refusal.
+    I then explained the real hangs as "a freshly restarted server has not run
+    its mission scripting environment yet". Also wrong, and vaguer than the
+    truth: THE SIM WAS PAUSED. A dedicated server sets `pause_on_load`, so it
+    boots paused and a client joining does not clear it -- and while it is
+    paused the MISSION Lua state does not run, so `coord` never answers, while
+    the HOOK Lua state answers normally and everything looks healthy. Measured
+    both ways on the live server; see `feed/dcs.py`, which can now say which of
+    the two it is instead of leaving a caller to guess.
+
+    So a TIMEOUT IS NOT A FAILURE and is not evidence about the map at all. It
+    is almost always a paused sim, which has a fix -- `tools/sim.py unpause` --
+    rather than being something to wait out. Only a real answer in the wrong
+    place is a refusal.
+
+    `is_paused` is an optional callable answering the ONE question that explains
+    almost every timeout here. Injected rather than imported, for the same reason
+    `eval_lua` is: this module is `core` and the thing that knows how to ask the
+    sim is `feed`, which is above it.
 
     Returns (ok, what to say). A failure is not raised: a controller who cannot
     reach the sim must still work, and this is the difference between "I cannot
     check" and "I checked and it is wrong".
     """
+    def _why_silent() -> str:
+        """Name the cause when we can, rather than shrug in prose."""
+        if is_paused is None:
+            return "The usual cause is a PAUSED sim."
+        try:
+            if is_paused():
+                return ("The sim is PAUSED -- the mission scripting state does "
+                        "not run while it is, so nothing here can answer. "
+                        "`uv run python tools/sim.py unpause`.")
+            return "The sim is running, so this is not a pause -- look at DCS-gRPC."
+        except Exception:
+            return "The usual cause is a PAUSED sim."
     f = next((x for x in theatre.fields if x.lat or x.lon), None)
     if f is None:
         return True, f"{theatre.name}: no field has a published position to check"
     lua = (f"local la, lo = coord.LOtoLL({{x={f.x}, y=0, z={f.z}}}) "
            f'return string.format("%.4f,%.4f", la, lo)')
-    import concurrent.futures as _cf
-    with _cf.ThreadPoolExecutor(max_workers=1) as pool:
-        fut = pool.submit(eval_lua, lua)
+    # A DAEMON THREAD, DELIBERATELY, AND NOT A ThreadPoolExecutor. The executor
+    # version of this looked identical and did not honour its own timeout: the
+    # `with` block's exit calls `shutdown(wait=True)`, so after `result(timeout=8)`
+    # gave up it BLOCKED until the abandoned call finished anyway -- the full 25 s
+    # gRPC deadline in `_eval_lua`. Against a paused sim that is a 25 s stall on
+    # every bridge start, from a function whose whole contract is to give up at 8.
+    #
+    # Found by the tests in `tests/test_paused.py`, which passed and took two
+    # minutes. A check that is right and slow is still telling you something.
+    import threading
+    box: dict = {}
+
+    def _ask():
         try:
-            got = str(fut.result(timeout=timeout)).strip('"').split(",")
-            lat, lon = float(got[0]), float(got[1])
-        except _cf.TimeoutError:
-            return True, (
-                f"{theatre.name}: the sim did not answer within {timeout:.0f}s "
-                f"-- running on the flag alone. A freshly restarted server has "
-                f"not started its scripting environment, so this is normal "
-                f"right after a deploy and is NOT evidence of the wrong map.")
-        except Exception as e:
-            return True, (f"{theatre.name}: could not check against the sim "
-                          f"({type(e).__name__}) -- running on the flag alone")
+            box["got"] = eval_lua(lua)
+        except BaseException as e:              # reported to the caller below
+            box["err"] = e
+
+    t = threading.Thread(target=_ask, daemon=True, name="theatre-verify")
+    t.start()
+    t.join(timeout)
+    if t.is_alive() or ("got" not in box and "err" not in box):
+        # Abandoned, not awaited. The thread is a daemon so it cannot hold the
+        # process open, and its gRPC call carries its own deadline.
+        return True, (
+            f"{theatre.name}: the sim did not answer within {timeout:.0f}s "
+            f"-- running on the flag alone. {_why_silent()} This is NOT "
+            f"evidence about the map either way.")
+    if "err" in box:
+        return True, (f"{theatre.name}: could not check against the sim "
+                      f"({type(box['err']).__name__}) -- running on the flag alone")
+    try:
+        got = str(box["got"]).strip('"').split(",")
+        lat, lon = float(got[0]), float(got[1])
+    except Exception as e:
+        return True, (f"{theatre.name}: could not read the sim's answer "
+                      f"({type(e).__name__}) -- running on the flag alone")
     off = ((lat - f.lat) ** 2 + (lon - f.lon) ** 2) ** 0.5
     if off < 1.0:
         return True, (f"{theatre.name}: confirmed against the sim — {f.name} "

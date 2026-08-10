@@ -66,6 +66,102 @@ def load_mission(file_name: str) -> str:
         return f"Loading mission: {file_name}"
 
 
+# --- pause, and why it is the first thing to check ------------------------
+#
+#     "Joining the server doesn't unpause it. We've experienced this before."
+#
+# CORRECT, AND NOTHING IN THIS REPO ACTED ON IT. `serverSettings.lua` has
+# `pause_on_load = true`, so the sim comes up PAUSED after every restart -- and
+# `deploy_mission.sh`, which does a restart on purpose, ended by PRINTING "now
+# unpause" to a human and offering no way to do it. The fact was in the notes
+# and in the echo line; the capability was in the proto; nothing joined them.
+#
+# `pause_without_clients` is FALSE here, so it does not pause when empty and a
+# client arriving does not clear anything. Only `SetPaused(false)` does.
+#
+# WHAT A PAUSED SIM LOOKS LIKE, which is the part that wasted real time: it does
+# not look down. There are TWO Eval services and they behave differently.
+#
+#     HookService.Eval     the hook Lua state -- DCS, net, Export
+#                          ANSWERS WHILE PAUSED
+#     CustomService.Eval   the mission scripting state -- coord, timer, world
+#                          HANGS WHILE PAUSED, to the deadline
+#
+# Measured, both ways, on the live server: paused, the hook returned the model
+# time in milliseconds while the mission env hit DEADLINE_EXCEEDED at ten
+# seconds; unpaused, both answered instantly.
+#
+# Everything of ours that asks the sim a question -- `theatre.verify`, the ATIS
+# weather observation -- goes through the MISSION env, so a paused server makes
+# them time out. I read those timeouts as the scripting environment "not having
+# started after a restart". It had started. It was paused, which is a thing with
+# a fix rather than a thing to wait out.
+def is_paused() -> bool:
+    """Is the sim paused? Asked over the HOOK service, which answers either way."""
+    with _channel() as ch:
+        hook = hook_pb2_grpc.HookServiceStub(ch)
+        return bool(hook.GetPaused(hook_pb2.GetPausedRequest(), timeout=_TIMEOUT).paused)
+
+
+def set_paused(paused: bool, settle: float = 10.0) -> bool:
+    """Pause or unpause the sim, and wait for it to actually be so.
+
+    THE CALL RETURNS BEFORE THE STATE CHANGES. `SetPaused` schedules the change
+    and answers immediately; `GetPaused` read back in the next breath still
+    reports the OLD value. The first version of this function did exactly that
+    and reported "sim is now PAUSED" having just successfully unpaused it --
+    caught within a minute by `tools/sim.py`, which is the point of there being
+    a tool rather than a remembered incantation.
+
+    A verify that runs before the thing it verifies is worse than no verify: it
+    reports failure on success, so the next person stops trusting the check
+    instead of the state.
+    """
+    import time
+    with _channel() as ch:
+        hook = hook_pb2_grpc.HookServiceStub(ch)
+        hook.SetPaused(hook_pb2.SetPausedRequest(paused=paused), timeout=_TIMEOUT)
+        deadline = time.monotonic() + settle
+        while True:
+            got = bool(hook.GetPaused(hook_pb2.GetPausedRequest(), timeout=_TIMEOUT).paused)
+            if got == paused or time.monotonic() >= deadline:
+                return got
+            time.sleep(0.5)
+
+
+def mission_lua_ready(timeout: float = 10.0) -> bool:
+    """Is the MISSION scripting state answering -- the thing Marshall needs?
+
+    Not the same question as `is_paused`, and it is the one that matters. The
+    hook state answers while paused, during loading, and while the mission env
+    is still coming up; only this says a controller can ask the sim anything.
+    """
+    from marshall.feed.stubs import bind
+    bind()
+    from dcs.custom.v0 import custom_pb2, custom_pb2_grpc
+    try:
+        with _channel() as ch:
+            custom_pb2_grpc.CustomServiceStub(ch).Eval(
+                custom_pb2.EvalRequest(lua="return timer.getTime()"), timeout=timeout)
+        return True
+    except grpc.RpcError:
+        return False
+
+
+@tool
+def unpause_sim() -> str:
+    """Unpause the DCS server so the mission clock runs. A dedicated server boots
+    PAUSED (pause_on_load), and a client joining does NOT clear it -- while paused
+    the AI is frozen and mission-environment queries hang."""
+    if set_paused(False):
+        return "asked the sim to unpause and it still reports paused"
+    # The flag is only half of it: report the state that decides whether the
+    # controller can see anything.
+    return ("sim is running and the mission scripting environment is answering"
+            if mission_lua_ready() else
+            "sim reports running, but mission Lua is not answering yet")
+
+
 @tool
 def get_player_units() -> str:
     """List the human-piloted aircraft currently on the server, with type,

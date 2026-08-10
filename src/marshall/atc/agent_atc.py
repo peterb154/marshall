@@ -3615,6 +3615,15 @@ def _start_atis(host: str, ear, profile, session_id: str) -> None:
     threading.Thread(target=run, daemon=True).start()
 
 
+def _sim_paused() -> bool:
+    """Is the sim paused? Never raises -- an unreachable sim is not a paused one."""
+    try:
+        from marshall.feed import dcs as _dcs
+        return _dcs.is_paused()
+    except Exception:
+        return False
+
+
 def _eval_lua(lua: str) -> str:
     """Run Lua in the sim. Its own function so `atis` can be handed a callable
     and never import the gRPC stubs."""
@@ -3655,8 +3664,16 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
     # bridge holding the wrong map's frequencies does not fail, it answers
     # confidently for another world -- see `theatre.verify` on why this is a
     # check rather than the source.
-    _ok, _why = _theatre.verify(_th, _eval_lua)
+    # `is_paused` is handed in so a timeout can NAME its cause. A paused sim is
+    # by far the commonest reason the sim goes quiet -- it boots that way -- and
+    # it presents as every mission-Lua query hanging while the server looks
+    # perfectly healthy from the hook side.
+    _ok, _why = _theatre.verify(_th, _eval_lua, is_paused=_sim_paused)
     print(f"  {'' if _ok else '!! '}{_why}", flush=True)
+    if _sim_paused():
+        print("  !! THE SIM IS PAUSED. No radar, no ATIS weather, no AI "
+              "movement -- and joining the server does not clear it. "
+              "`uv run python tools/sim.py unpause`", flush=True)
     profile = load_and_push_plate(_th.approach)       # DB is the source of truth
     radar_on = profile.atc.radar          # a no-radar mission works purely procedural
     # One voice per controller. Changing frequency should sound like meeting a

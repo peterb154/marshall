@@ -71,6 +71,26 @@ def bind() -> None:
         # fail on its own import, with its own error, rather than inventing a
         # package that is not there.
         return
+    # EVICT THE SUBMODULES TOO, not just the parent. Rebinding `dcs` alone
+    # leaves pydcs's ALREADY-IMPORTED children cached under their own keys --
+    # `dcs.coalition`, `dcs.mission`, `dcs.terrain` -- and Python's import
+    # machinery consults `sys.modules['dcs.coalition']` before it ever looks at
+    # the new parent's `__path__`. So `import dcs.coalition.v0` finds pydcs's
+    # coalition MODULE where a package is wanted and raises
+    #
+    #     ModuleNotFoundError: No module named 'dcs.coalition.v0';
+    #     'dcs.coalition' is not a package
+    #
+    # which reads like the stubs are missing and is nothing of the kind.
+    #
+    # This never bit in production because the two are different programs: the
+    # mission builder imports pydcs and never touches gRPC, the bridge is the
+    # reverse. It bites in the TEST SUITE, where both run in one interpreter --
+    # so the first test to cover `feed/dcs.py` at all is the one that found it.
+    # Order-dependent, therefore: passing alone, failing in the full run.
+    for name in [k for k in sys.modules
+                 if k == "dcs" or k.startswith("dcs.")]:
+        del sys.modules[name]
     pkg = types.ModuleType("dcs")
     pkg.__path__ = [str(_ROOT / "dcs")]
     sys.modules["dcs"] = pkg

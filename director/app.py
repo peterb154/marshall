@@ -105,9 +105,14 @@ def build_agent(session_id: str) -> Agent:
         system_prompt=_system_prompt_for(session_id),
         # The APPROACH CONTROLLER's tools only. Radar is injected into every call
         # (no tool round-trip), so it's not here. The mission/ops tools
-        # (load_mission, call_in_traffic, get_player_units, get_current_mission)
-        # belong to a separate mission-director agent, not the controller — keeping
-        # them off this agent trims the prompt and keeps latency down.
+        # (load_mission, call_in_traffic, get_player_units, get_current_mission,
+        # unpause_sim) belong to a separate mission-director agent, not the
+        # controller — keeping them off this agent trims the prompt and keeps
+        # latency down.
+        #
+        # That list is the WHOLE of the deliberately-unregistered set, named so
+        # it stays a decision rather than a drift. A controller has no business
+        # unpausing the sim; whoever sets a sortie up does.
         tools=[
             *identify_tools(session_id),  # correlate a voice callsign to a radar track
             vector,                       # heading + distance to a fix or another aircraft

@@ -3537,3 +3537,76 @@ Nevada plan filed as **Silverstate** (migration 022), cruise 24,000 — chosen
 against the surveyed minima, not for roundness: Tonopah's vectoring cells reach
 10,500 and its stack starts at 12,000, so the Caucasus levels of three to eleven
 thousand would be inside the terrain.
+
+---
+
+## [OPS-4] A paused sim is the quietest failure we have, and nothing could unpause it — #73
+labels: architecture, tooling
+
+**Status:** DONE 10 August. Verified against the live server, paused and running.
+
+    "Joining the server doesn't unpause it. We've experienced this before."
+
+Correct on both counts, and the repo knew and could not act. `deploy_mission.sh`
+ended by PRINTING `now unpause: it boots paused (pause_on_load), and AI tasking
+is frozen until you do` — a true fact, addressed to a human, with no command
+beside it. `SetPaused` had been in the vendored proto the entire time. The same
+shape as every other unwired system here: a correct thing nothing reaches.
+
+**Why joining does not help.** `serverSettings.lua` has `pause_on_load = true`
+and `pause_without_clients = false`. So it boots paused, it does *not* pause
+when empty, and a client arriving clears nothing. Only `SetPaused(false)` does.
+
+**Why it is so hard to see.** There are two Eval services and only one stops:
+
+| service | Lua state | paused |
+|---|---|---|
+| `HookService.Eval` | `DCS`, `net`, `Export` | **answers** |
+| `CustomService.Eval` | `coord`, `timer`, `world` | **hangs to the deadline** |
+
+Measured both ways on the live server. So a paused server answers
+`GetMissionName`, answers `GetPaused`, logs healthy — and silently fails every
+question Marshall actually asks, because `theatre.verify` and the ATIS weather
+observation both run mission Lua.
+
+**I misdiagnosed this twice**, and the second one shipped in #72's commit
+message. First as `coord.LOtoLL` hanging on off-map coordinates. Then as "a
+freshly restarted server has not started its scripting environment yet" — vague,
+unactionable, and wrong. It had started. It was paused, which has a fix.
+
+**What landed**
+
+- `feed/dcs.py` — `is_paused`, `set_paused`, `mission_lua_ready`, `unpause_sim`.
+- `tools/sim.py` — `status` / `unpause` / `pause`. `status` exits non-zero when
+  mission Lua is silent and says *why*, distinguishing paused from unreachable.
+- `deploy_mission.sh` unpauses instead of advising it.
+- `theatre.verify` takes an injected `is_paused` (it is `core`; `feed` is above
+  it) and its timeout message now names the cause and the command.
+- The bridge prints a loud banner if it comes up against a paused sim.
+
+**Two real bugs found while building it, both by the new tests:**
+
+1. **`SetPaused` returns before the state changes.** The first `set_paused` read
+   `GetPaused` in the next breath and reported *"sim is now PAUSED"* having just
+   successfully unpaused the server. A verify that runs before the thing it
+   verifies reports failure on success, which teaches the next reader to
+   distrust the check instead of the state. It polls to a deadline now.
+2. **`theatre.verify` did not honour its own timeout.** It used a
+   `ThreadPoolExecutor` in a `with` block, and the block's exit calls
+   `shutdown(wait=True)` — so having given up at 8 s it then blocked until the
+   abandoned call hit the 25 s gRPC deadline. A 25 s stall on every bridge start
+   against a paused sim. Now a daemon thread that is abandoned, not awaited:
+   8.0 s measured. The test suite caught it by PASSING and taking two minutes.
+
+**And one latent bug in shared machinery.** `feed/stubs.bind()` rebound `dcs`
+to the vendored stubs but left pydcs's already-imported CHILDREN cached, so
+`import dcs.coalition.v0` found a module where a package was wanted. Invisible
+in production — the mission builder and the bridge are different programs — and
+fatal in the test suite, where both run in one interpreter. It surfaced because
+this is the first test to cover `feed/dcs.py` at all: passing alone, failing in
+the full run. `bind()` now evicts the submodules too.
+
+**Regression:** `tests/test_paused.py`, 12 cases, no sim or network. It pins the
+*reasoning* — that a timeout is blamed on a pause when the sim says paused and
+explicitly not on the map — plus the wall clock, which is the only thing that
+catches fault 2.
