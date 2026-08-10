@@ -101,6 +101,13 @@ def commands() -> list[str]:
             if not (got.exists() or pkg.exists()):
                 bad.append(f"{p.relative_to(ROOT)} runs `-m {m}`, which does not exist")
         for m in set(tool.findall(text)):
+            # A PLACEHOLDER IS NOT A BROKEN PATH. Prose says "every `python -m`
+            # and `tools/x.py` runnable" to describe the rule, and a checker that
+            # reads that as a missing file teaches people to ignore it -- which
+            # is the failure mode this whole file exists to avoid. One-letter
+            # stems are stand-ins; nothing here is called `x.py`.
+            if len(Path(m).stem) <= 1:
+                continue
             # TWO `tools/` DIRECTORIES, and the docs mean both. The repo has
             # `tools/` and the director has `director/tools/` -- its agent-side
             # tools -- and prose says "tools/plans.py" for either. Checking only
