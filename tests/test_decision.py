@@ -67,11 +67,26 @@ class TestVerifyingWhatWasActuallySaid(unittest.TestCase):
         self.assertIn("two thousand", lost)
         self.assertIn("one three", lost)
 
-    def test_it_compares_WORDS_not_digits(self):
-        """"two thousand" and "2000" are the same fact. A verifier comparing
-        digits to words fails every single time."""
-        self.assertEqual(D.verify(self.d, "cleared runway 13, maintain 2000"),
-                         ["two thousand", "one three"])
+    def test_digits_count_as_the_fact_now_that_the_check_ENFORCES(self):
+        """CHANGED DELIBERATELY, 10 August, when `verify` stopped being advisory.
+
+        This used to assert that "cleared runway 13, maintain 2000" reported
+        BOTH facts missing -- a reply written in digits was treated as a miss,
+        which was a cheap nudge towards proper phraseology while the check only
+        printed.
+
+        It now REPAIRS the transmission (#79), and that changes the arithmetic.
+        `for_voice` does not spell digits out, so "runway 13" reaches Polly and
+        the pilot hears "thirteen" -- non-standard words, but unmistakably the
+        right runway. Flagging it would append a second, complete take-off
+        clearance to a transmission that already carried one.
+
+        A duplicated clearance on a live frequency is worse than a controller
+        saying "thirteen" instead of "one three". So the same fact in digits is
+        a PASS, and the phraseology question belongs to `for_voice`, where every
+        transmission passes, rather than to the verifier.
+        """
+        self.assertEqual(D.verify(self.d, "cleared runway 13, maintain 2000"), [])
 
     def test_punctuation_and_case_do_not_matter(self):
         said = "SOCKEYE — CLEARED, RUNWAY ONE THREE; MAINTAIN TWO THOUSAND."

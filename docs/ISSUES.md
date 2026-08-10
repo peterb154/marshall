@@ -3934,3 +3934,214 @@ cannot be *mistaken for current*.
 was agreed and nowhere recorded: `ISSUES.md` is the source, GitHub is a
 projection, never edit a body there, `--sync` publishes, and GitHub owns only
 open/closed state.
+
+---
+
+## [SEAM-1] A decided fact that is not spoken must not be silently lost — #79
+labels: bug, architecture
+
+**Status:** OPEN. Highest priority of the split-brain seam work.
+
+`decision.py` already knows the answer and does nothing with it:
+
+> *"It does not (yet) change the transmission; it MEASURES the seam."*
+
+The engine decides an altitude, a heading, a runway, a frequency, a station. The
+agent phrases it. `Decision.verify` compares the two and prints `NOT VOICED` when
+a fact did not survive — and the transmission goes out anyway. **On one sortie
+three of seventeen issued altitudes never reached the air**, which is the
+observation that produced the module.
+
+This is the half-built shape this repo keeps finding: a correct mechanism whose
+output nothing acts on. A referee that watches and never blows the whistle.
+
+`phrasebook.py` is the intended deterministic rendering and is imported by
+`asr.py`, `controller.py` and `decision.py` — but **not by `agent_atc.py`**, so
+it is not on the response path at all.
+
+**Status:** DONE 10 August, offline. Needs a sortie to confirm on the air.
+
+**The evidence was already on disk** — no flight required. `NOT VOICED` has been
+recorded to the flight recorder all along, and every sortie ever flown holds
+exactly five, which split cleanly around the `Controller._me` fix at 19:43:52 on
+9 August:
+
+| when | miss | what it was |
+|---|---|---|
+| 19:31, 19:32, 19:34 | `taxi: one three` | **before** the fix — the ENGINE granting a taxi clearance from *Clearance Delivery's* frequency, because `_owns` returns True when `_me` is unset. The agent correctly refused to voice it. Already fixed |
+| 19:41:54 | `cleared_takeoff: one three` | engine: *"runway one three, cleared for take-off, wind zero nine zero at six"*. Transmitted: **"Sockeye, roger."** |
+| **20:52:33** | `refuse: one three three decimal zero, Kobuleti Tower` | **after** every fix that day. Engine: *"Take-off is Tower's, contact Kobuleti Tower one three three decimal zero."* Transmitted: **"sockeye, Kobuleti Ground, go ahead."** |
+
+An aeroplane cleared for take-off and never told, and a pilot refused a
+clearance and never redirected — #65's failure surviving as an agent-side
+omission. Both from a controller who sounded fine.
+
+**The verifier had to get stricter before it could be trusted to act.** While it
+only printed, a false positive cost a misleading log line; now it costs a second
+sentence on the radio restating what the pilot already has. The canonical
+spelling alone flagged four innocent replies — a hyphen (`one-three`), digits
+(`runway 13`), grouped digits (`2,000`), and a frequency to one decimal
+(`133.0`). Numbers are now compared **by value**, not by string, and a spoken
+match may not run into another number word — `one three` must not be satisfied
+by `one three three decimal zero`, which is a different fact entirely.
+
+**Appended, not substituted, and no retry.** Replacing the reply throws away the
+agent's manner and its read of the conversation, which is the half it is good
+at; a second model call costs a second or more on a frequency somebody is
+waiting on. The missing clause is deterministic and we already have it.
+
+**One thing deliberately NOT done.** A reply written in digits now passes,
+because `for_voice` does not spell digits and the pilot hears "thirteen" —
+non-standard, unmistakably the right runway. Flagging it would append a second
+complete take-off clearance, and a duplicated clearance is worse than odd
+phraseology. Spelling digits belongs in `for_voice`, where every transmission
+passes. Filed as a follow-up.
+
+`spoken_facts` was deleted: `accepted_forms` supersedes it and `unwired.py`
+caught it the moment the last caller moved.
+
+**Acceptance criteria**
+1. A reply missing a required fact is not transmitted as-is. Either the agent is
+   asked again under a constrained prompt, or the deterministic phrasebook
+   rendering is transmitted instead.
+2. The fallback is bounded — one retry, then phrasebook. A controller who goes
+   quiet because a model would not co-operate is worse than one who sounds stiff.
+3. `decision -> rendered text -> what was transmitted` is recorded for every
+   turn, so the seam can be audited after a sortie rather than watched live.
+4. A `refuse` decision is covered: it carries the redirect frequency and station,
+   and losing those strands a pilot.
+5. Offline tests, with a fake agent that omits a fact, prove 1 and 2.
+
+---
+
+## [SEAM-2] `reconcile` arbitrates authority by searching prose for the word "hold" — #80
+labels: bug, architecture
+
+**Status:** OPEN.
+
+    if directive and "hold" in directive.lower():
+
+Twice, in the function whose whole job is deciding which authority owns an
+aeroplane. `reconcile(directive: str, stack: str, vectoring: str)` takes three
+strings that three different authorities have already rendered into English, and
+picks a winner with a substring test.
+
+It works today because `controller.py` writes those sentences and we control the
+wording. It breaks the moment a phrasing changes, a synonym appears, or a
+non-holding directive happens to contain the word — and the failure is silent
+and safety-adjacent: a suppressed holding clearance, or one that should have been
+suppressed and was not.
+
+The reasoning inside `reconcile` is **correct and well argued** — the missed
+approach owns him, the talk-down owns him on final, otherwise the engine owns
+him. This issue is not about the policy. It is about the policy reading tea
+leaves instead of being handed the facts.
+
+**Acceptance criteria**
+1. `reconcile` consumes typed `Decision`s, not rendered prose.
+2. No authority decision in the bridge depends on a substring of another
+   component's English.
+3. Every precedence case — missed, established, holding-plus-vector — has a test
+   that names the wrong answer it prevents.
+4. The rendered strings are produced *after* reconciliation, not before it.
+
+---
+
+## [SEAM-3] Every controller is handed every tool, and prose says who may use them — #81
+labels: architecture
+
+**Status:** OPEN.
+
+`build_agent` gives one tool list to every session, `spawn_ground` included, and
+the Overlord brief is what tells an approach controller not to put armour in a
+valley. **Prose is not a permission system.** It costs tokens on every call to
+describe capabilities the station may not use, and it relies on the model
+obeying an instruction rather than on the capability being absent.
+
+The station is known deterministically — the bridge resolves who is speaking
+from the frequency before the call is made. That is the natural key for a tool
+set.
+
+**Acceptance criteria**
+1. The tool list is constructed from the station's role, not shared.
+2. An approach controller is not *given* `spawn_ground`; it is absent, not
+   forbidden.
+3. The role comes from the trusted side (the bridge), and cannot change within
+   a session — or the session key includes it, so histories cannot cross roles.
+4. A test asserts the tool set for each role.
+
+---
+
+## [SEAM-4] The board is advanced before anything asks whether the call was real — #82
+labels: bug
+
+**Status:** OPEN.
+
+`decide()` — which classifies and can advance the separation board — runs at
+`agent_atc.py` line ~4694. The check for whether the transmission was a **debug
+note to the project rather than a call to the controller** runs ~165 lines later
+and then `continue`s.
+
+**I could not make the board actually move**, and that is the finding rather
+than a reassurance: two unrelated gates catch it first — the callsign must be
+plausible against the transcript, and the action must be reachable in the
+current procedure. Nothing about the debug check is what protects us. It is
+protected by accident, which is precisely the shape of the four faults the
+second aerodrome exposed.
+
+The general rule the audit states is the right one: **a call that will be
+rejected must be rejected before it can mutate state.**
+
+**Acceptance criteria**
+1. Debug notes, and any other transmission the loop will not answer, are
+   recognised before `decide` runs.
+2. A test proves a debug note cannot reach `intents.dispatch`, independent of
+   the callsign and reachability gates — i.e. it still passes if those are
+   disabled.
+3. No other "reject after mutating" ordering remains in the receive loop.
+
+---
+
+## [SEAM-5] Split `rules.md` into briefs, one at a time, and measure — #83
+labels: architecture
+
+**Status:** OPEN. Do **one**, measure, then decide about the rest.
+
+`soul + plate + rules` is 24 KB assembled into the system prompt on **every**
+`/atc` call, of which `rules.md` alone is 21.9 KB — sent whole regardless of
+station, phase or request. `LAYERS.md` describes the state-triggered brief that
+replaces it and it has never been built.
+
+**Deliberately scoped to one migration.** The full design — briefs with
+predicates, priorities, measured token costs, a logged manifest — is the right
+destination and is a large correct system that nothing would use on the day it
+landed. This repo has been bitten by exactly that three times (`phases.guide`,
+`Controller._me`, `stations_at`). Clearance delivery is the candidate: its facts
+are already deterministic and its rules are self-contained.
+
+**Acceptance criteria**
+1. One bounded brief is extracted with a deterministic inclusion predicate.
+2. Prompt size, latency and answer quality are measured before and after, and
+   recorded here — not asserted.
+3. A controller who does not need the brief does not receive it.
+4. The mechanism is general enough for the second brief without a rewrite, and
+   the second brief is NOT built in this issue.
+
+---
+
+## [SEAM-6] Why did this call cost 8,000 tokens, and why did Approach know that? — #84
+labels: architecture
+
+**Status:** OPEN. **Blocked on [SEAM-5]** — do not start until one brief exists.
+
+A per-turn `ContextPlan` that decides what the interaction layer sees: the
+invariant brief, the role brief, the task brief, the live situation, the dialogue
+window, the capabilities, and the retrieval policy for what was left out. Each
+with a predicate, a priority, a measured cost, and a manifest logged with the
+turn.
+
+The manifest is the point. It makes *"why did Approach know that?"* and *"why did
+this call cost 8,000 tokens?"* answerable without asking the model.
+
+Deliberately last. The shape of the plan should be argued by the briefs that
+exist, not designed before any of them do.

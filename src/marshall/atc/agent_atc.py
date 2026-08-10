@@ -3935,17 +3935,45 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         if not reply or reply.lower() in NO_CALL:
             print(f"  ATC[{kind}/{tier}] ({dt:.1f}s): (no call)", flush=True)
             return
-        # DID HE ACTUALLY SAY IT? The engine's decisions carry their numbers,
-        # so this is a mechanical check rather than an opinion -- no model, no
-        # latency. It does not (yet) change the transmission; it MEASURES the
-        # seam, which is the thing nobody could see before.
+        # DID HE ACTUALLY SAY IT -- AND IF NOT, SAY IT. The engine's decisions
+        # carry their numbers, so this is mechanical: no model, no latency, no
+        # second opinion.
+        #
+        # THIS USED TO MEASURE AND NOTHING ELSE. It printed NOT VOICED and let
+        # the transmission go. The flight recorder shows what that cost, twice
+        # on one sortie:
+        #
+        #   engine: Sockeye, runway one three, cleared for take-off, wind ...
+        #   air:    Sockeye, roger.
+        #
+        #   engine: Take-off is Tower's, contact Kobuleti Tower one three three
+        #           decimal zero.
+        #   air:    sockeye, Kobuleti Ground, go ahead.
+        #
+        # An aeroplane cleared for take-off and never told, and a pilot refused
+        # a clearance and never redirected -- the second one AFTER every other
+        # fix we made that day. Both from a controller who sounded fine.
+        #
+        # APPENDED, NOT SUBSTITUTED, and no retry. Replacing the reply throws
+        # away the agent's manner and its read of the room, which is the half it
+        # is actually good at; a second model call costs a second or more on a
+        # frequency somebody is waiting on. The missing clause is deterministic
+        # and we already have it.
         for _d in list(bridge.decided):
             _lost = _decision.verify(_d, reply)
-            if _lost:
-                print(f"  .. NOT VOICED [{_d.kind}] {', '.join(_lost)}",
-                      flush=True)
-                record(session_id, kind="not_voiced", callsign=_d.to,
-                       text=f"{_d.kind}: {', '.join(_lost)}")
+            if not _lost:
+                continue
+            print(f"  .. NOT VOICED [{_d.kind}] {', '.join(_lost)}", flush=True)
+            record(session_id, kind="not_voiced", callsign=_d.to,
+                   text=f"{_d.kind}: {', '.join(_lost)}")
+            _add = _decision.repair(_d)
+            if not _add:
+                # No rendering for this kind. Say nothing rather than invent it.
+                continue
+            reply = f"{reply.strip().rstrip('.')}. {_add[0].upper()}{_add[1:]}."
+            print(f"  .. REPAIRED [{_d.kind}] {_add}", flush=True)
+            record(session_id, kind="repaired", callsign=_d.to,
+                   text=f"{_d.kind}: {_add}")
         bridge.decided[:] = []
         # RENDERED BEFORE THE LOCK. Polly is a network call too, and it is
         # cached -- so this is free on a repeat and must not be a reason to
