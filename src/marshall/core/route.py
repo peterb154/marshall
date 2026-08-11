@@ -45,8 +45,8 @@ from marshall.core import geo as _geo
 from marshall.core.airspace import (  # noqa: F401
     MSA_SECTORS, MVA_CELLS, alt_for, msa_for, mva_for)
 from marshall.core.approach import (  # noqa: F401
-    ApproachProfile, AtcCapability, BATUMI_APPROACH, BATUMI_ASR, KOBULETI_ILS,
-    profile_from_dict, profile_to_dict)
+    ApproachProfile, AtcCapability, BATUMI_APPROACH, BATUMI_ASR, BATUMI_ILS,
+    KOBULETI_ILS, profile_from_dict, profile_to_dict)
 from marshall.core.fields import (  # noqa: F401
     ARRIVAL_FIELD, BATUMI_FIELD, DEPARTURE_FIELD, Field_, FIELDS,
     KOBULETI_FIELD, KOBULETI_MSA, KOBULETI_MVA, field_named)

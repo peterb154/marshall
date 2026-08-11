@@ -60,6 +60,19 @@ POLL_SEC = 10.0
 TICK_SEC = 1.0
 
 
+def _sortie() -> str:
+    """Which loading of the mission this is. Seeds the opening letter.
+
+    Read from the environment rather than passed down, for the same reason
+    `atis.store` reads it there: the bridge computes the key once at start-up
+    and publishes it, so nothing else has to compute a second answer to "which
+    sortie am I in".
+    """
+    import os
+    return (os.environ.get("MARSHALL_MISSION_INSTANCE")
+            or os.environ.get("MARSHALL_MISSION") or "")
+
+
 @dataclass
 class Airwave:
     """One field's current broadcast, as the loop holds it in memory."""
@@ -83,7 +96,8 @@ def rerecord(field, obs, was, now_sec: float, previous_obs=None,
         # tuned it -- see `broadcast.first_letter`, which derives the letter
         # from the aerodrome and the mission's hour so it is stable across a
         # bridge restart and different at each field.
-        return broadcast.first_letter(getattr(obs, "field", ""), zulu_seconds), True
+        return broadcast.first_letter(getattr(obs, "field", ""), zulu_seconds,
+                                      sortie=_sortie()), True
     age = now_sec - was.recorded_at
     if broadcast.due_for_rotation(obs, previous_obs, age):
         return broadcast.next_letter(was.letter), True

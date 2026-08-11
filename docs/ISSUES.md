@@ -6247,3 +6247,60 @@ theatre this project can load**, not of the field somebody remembered to add:
 every field with a terminal controller has a volume, every theatre has an
 unbounded fallback, and neighbours do not overlap. Nevada had the same hole,
 unflown and unnoticed, until that file ran.
+
+---
+
+## [ARCH-18] Three sources, three magnetic variations, and only a pilot can settle it — #125
+
+    "DKS also says batumi rwy course is 119 for rwy 13.. interesting"
+
+Interesting is right. Batumi's runway is **131 true** — measured, and pydcs's
+`heading=310` for the 31-13 strip agrees on the reciprocal. Three sources then
+convert it to magnetic three different ways:
+
+| source | variation | magnetic |
+|---|---|---|
+| DKS field data | **12°E** | **119** |
+| `route.py` (`BATUMI_ASR.magvar_deg`) | **6°E** | **125** |
+| Georgian AIP plate | **7°E** | **124** |
+
+None is a typo. 12°E is roughly Batumi's *historical* variation; it has drifted
+to about 7°E, which is precisely why the AIP renamed the runway 13 → 12 while
+DCS still calls it 13.
+
+**THIS IS THE WORSE HALF OF THE PLATE-VERSUS-SIM PROBLEM, and the reason it has
+gone unnoticed.** A wrong frequency is a discrete failure: you tune it, you get
+silence, you know within seconds. A wrong variation is CONTINUOUS. Every
+absolute heading the controller issues is off by the difference, in the same
+direction, for the whole approach — and from the cockpit that reads as the pilot
+drifting rather than as the controller lying.
+
+If DCS applies 12°E, then "fly heading one two five" flown on the HSI puts his
+true track at 137 — **six degrees right of a localiser he is being vectored
+onto**.
+
+**Two things say this is live rather than theoretical.** `route.py` already
+disagrees with itself — `Field_(Batumi).magvar_deg` is `0.0` while
+`BATUMI_ASR.magvar_deg` is `6.0`. And `talkdown.relative_correction` exists
+specifically because
+
+    "every absolute heading we give is computed in true, converted to magnetic,
+     and then flown against an instrument that is wrong by an unknown amount"
+
+with a note about a DG reading 7° off the compass and the compass 16° off the
+map. That is this fault, worked around rather than fixed — and the workaround
+only covers the talkdown, not the vectors that precede it.
+
+**Only a pilot can answer it**, and it takes ten seconds: line up on Batumi 13
+and read the HSI.
+
+    reads ~131   DCS applies no variation, and our 6° correction ADDS the error
+    reads ~125   we are right and DKS is stale
+    reads ~119   DKS is right and every absolute heading at Batumi is 6° out
+
+Card row **Q9**. Deferred to the next sortie by the pilot, 11 August.
+
+Unlike the navaid discrepancies this is **not** a NOTAM — a NOTAM tells the
+pilot something; this is a number we owe him correctly on every single vector.
+`magvar` becomes the fourth audited quantity, and the audit's answer here is a
+correction rather than a broadcast.

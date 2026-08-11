@@ -19,7 +19,7 @@ Properties recompute from the fields, so only the fields are stored.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import asdict, dataclass, field, replace, fields
 
 from marshall.core.airspace import msa_for, mva_for
 from marshall.core.fields import (ARRIVAL_FIELD, BATUMI_FIELD, KOBULETI_FIELD)
@@ -274,17 +274,31 @@ class ApproachProfile:
     # so a controller that does not know where the glideslope is cannot obey the
     # rule. See `talkdown.is_the_intercept`.
     glidepath_deg: float = 3.0
+    # THE GLIDEPATH DOES NOT REACH THE GROUND AT THE THRESHOLD, and leaving this
+    # out put it 260 ft low at six miles -- checked against the plate's own
+    # descent table, which is the point of having one. "ILS RDH 51'" is printed
+    # on AD 2.UGSB-IAC-12-ILSy in a box of its own: the reference datum height,
+    # where the beam crosses the threshold. Every glidepath has one and they are
+    # all about fifty feet, which is why it looks like a detail and is not.
+    rdh_ft: int = 50
 
     def glidepath_ft_at(self, range_nm: float) -> float:
         """How high the glidepath is, this far out. Feet above sea level.
 
-        Measured from the THRESHOLD, which is not where the ranges are measured
-        from -- `touchdown_offset_nm` is the difference and it is nearly two
-        thirds of a mile at Kobuleti, worth two hundred feet of glidepath.
+        Three corrections, and the plate's descent table checks all three at
+        once -- at ILU D6.0 it publishes 2010 ft (1993 above the threshold), and
+        that is the number to reproduce.
+
+        Measured from the THRESHOLD, which is not where our ranges are measured
+        from: they come off the field's beacon, and `touchdown_offset_nm` is the
+        difference. Referenced to the THRESHOLD's elevation rather than the
+        aerodrome's -- 17 ft here against 37. And offset by the reference datum
+        height, because the beam crosses the threshold fifty-odd feet up rather
+        than at the tarmac.
         """
         import math
         d = max(0.0, range_nm - self.touchdown_offset_nm)
-        return (self.field_thr_elev_ft
+        return (self.field_thr_elev_ft + self.rdh_ft
                 + d * 6076.12 * math.tan(math.radians(self.glidepath_deg)))
     field_thr_elev_ft: int = 0   # runway threshold, which is lower than the ARP
 
@@ -1015,6 +1029,69 @@ BATUMI_ASR = ApproachProfile(
     atc=AtcCapability(radar=True, dme=False, separation="radar", era="ww2"),
 )
 
+
+# THE SAME PLATE, FLOWN THE WAY IT IS DRAWN.
+#
+#     "Lets program the Batumi ILS"
+#
+# `BATUMI_ASR` above is transcribed from AD 2.UGSB-IAC-12-ILSy and then flown as
+# a SURVEILLANCE approach -- the controller reads ranges because the aeroplane
+# it was built for had no localiser. This is the same chart flown as what it
+# actually is, and the two differ in one thing that changes everything: who owns
+# the descent.
+#
+#     ASR    the controller IS the approach aid, all the way to the MAP
+#     ILS    he owns the intercept, clears him, and then STOPS
+#
+# So the geometry is shared -- IF at 11.0, FAP at 6.0, both at 2,000 feet, GP
+# 3.0 coming down to meet them -- and only `kind`, `guidance` and the minima
+# move. Anything that had to be re-typed here would be a second transcription of
+# one chart and would drift; see docs/STATE.md, which is about exactly that.
+#
+# THE RUNWAY IS 13 AND THE PLATE SAYS 12. Magnetic variation drifted from about
+# 12 degrees east to 7, the Georgian AIP renamed the runway, and DCS is frozen
+# on the old designator -- pydcs still calls the strip "31-13". The controller
+# says what is painted and what the ATIS announces, so 13; the plate's title
+# will disagree by one digit and that is correct, because it is the same strip.
+# See #125 for the variation itself, which is a live and separate question.
+BATUMI_ILS = replace(
+    BATUMI_ASR,
+    kind="ils",
+    guidance="intercept",
+    # He has a localiser and a glidepath and is flying both, so the controller
+    # vectors him to intercept and then goes quiet. `may_vector` reads this.
+    #
+    # DA(H) 377 (360 above the threshold), which is the OCA for a FIVE per cent
+    # missed approach climb gradient. The plate publishes both: 687 (670) at the
+    # standard 2.5 per cent, 377 (360) at 5.0. A Viper climbs at five per cent
+    # without noticing; a loaded transport does not, which is why the chart
+    # gives you the choice rather than a single number.
+    #
+    # NOT the ASR's 700. That figure is deliberately high because a surveillance
+    # approach knows where you are only to the width of a radar return and gives
+    # no vertical guidance at all. Here the aeroplane is on a glidepath.
+    min_hat_ft=360,
+    ceiling_ft=400,
+    # The published missed: straight ahead, and at 800 feet turn LEFT onto 330
+    # climbing to 3,000. IAS max 190 kt until the turn is complete, cat C/D.
+    missed_straight_ft=800,
+    missed_turn="LEFT",
+    missed_hdg=330,
+    missed_climb_ft=3000,
+    glidepath_deg=3.0,           # "GP 3.0" on the profile view
+    rdh_ft=51,                   # "ILS RDH 51'", its own box on the plate
+    # DME IS REQUIRED and the plate says so in a box of its own. Every fix on it
+    # is a DME distance -- IF at ILU D11.0, FAP at ILU D6.0 -- so an aeroplane
+    # without it cannot fly this procedure at all.
+    #
+    # ILU, the ILS DME, and NOT BTM. The plate quotes both (D11.0 / D11.9,
+    # D6.0 / D6.9) and they differ by nearly a mile, so it matters which one the
+    # pilot has tuned -- and BTM is the one DCS disagrees about: the chart pairs
+    # it with channel 21X, the sim has it on 16. ILU rides on the localiser at
+    # 110.30 and is correct in both worlds.
+    atc=AtcCapability(radar=True, dme=True, separation="radar", era="modern"),
+    chart_name="AD 2.UGSB-IAC-12-ILSy, AIRAC AMDT 05/25",
+)
 
 # --- serialization: an ApproachProfile <-> a plain dict (for the DB) ----------
 # An approach is static reference data; storing it means round-tripping the

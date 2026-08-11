@@ -96,16 +96,41 @@ class Theatre:
                      if f.name.lower() == (name or "").lower()), None)
 
 
+# WHICH RECOVERY AT BATUMI. Three procedures are published to the same runway
+# and the bridge runs ONE arrival profile at a time, so the choice has to be
+# made somewhere -- and explicit beats baked in, which is the lesson
+# `NEVADA_SORTIES` below already carries.
+#
+#     asr    the surveillance approach. The controller IS the approach aid and
+#            reads a range every mile. Fifty-odd sorties have flown it.
+#     ils    the same AIP plate flown as what it is: vectors to intercept, a
+#            clearance, and then silence. AD 2.UGSB-IAC-12-ILSz.
+#     ndb    the 1944 beacon letdown, for the period flavour.
+#
+# `MARSHALL_APPROACH=batumi-ils`. The ASR stays the default because it is what
+# has actually been flown; a default nobody has heard is not a default.
+CAUCASUS_RECOVERIES = {
+    "batumi-asr": "BATUMI_ASR",
+    "batumi-ils": "BATUMI_ILS",
+    "batumi-ndb": "BATUMI_APPROACH",
+}
+
+
 def caucasus() -> Theatre:
     """The 362nd. Kobuleti to Batumi, radar recovery, 1944 flavour available."""
     from marshall.core import route as R
+    want = os.environ.get("MARSHALL_APPROACH", "batumi-asr").strip().lower()
+    if want not in CAUCASUS_RECOVERIES:
+        want = "batumi-asr"
+    recovery = getattr(R, CAUCASUS_RECOVERIES[want])
     return Theatre(
         name="Caucasus", terrain="Caucasus", fields=tuple(R.FIELDS),
         stations=tuple(R.STATIONS), departure=R.DEPARTURE_FIELD,
-        arrival=R.ARRIVAL_FIELD, approach=R.BATUMI_ASR,
-        approaches=(R.BATUMI_ASR, R.BATUMI_APPROACH, R.KOBULETI_ILS),
+        arrival=R.ARRIVAL_FIELD, approach=recovery,
+        approaches=(R.BATUMI_ASR, R.BATUMI_ILS, R.BATUMI_APPROACH,
+                    R.KOBULETI_ILS),
         wind_from_deg=R.WIND_FROM_DEG, wind_mph=R.WIND_MPH,
-        bootstrap_plan="362nd-kobuleti-batumi", approach_key="batumi-asr",
+        bootstrap_plan="362nd-kobuleti-batumi", approach_key=want,
         # EVERY Fix the module publishes, not just tonight's legs: a ferry up
         # the coast routes via KOBULETI, which no sortie leg touches, and a plan
         # naming a fix the table does not hold is refused at delivery.

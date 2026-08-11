@@ -144,11 +144,21 @@ class TestItGoesOnTheAir(unittest.TestCase):
         letter is derived from the field and the mission's hour -- see
         `broadcast.first_letter`. Not random: a bridge restart must not change
         the letter a pilot already copied.
+
+        AND SEEDED ON THE SORTIE since 11 August -- "it would probably be best
+        if we pick a random atis alpha every time we restart". Random per
+        MISSION, stable within one: `random.choice` would re-roll on every
+        bridge restart, and this bridge was restarted six times during one of
+        the pilot's sorties. So the test asks with the same sortie the loop
+        does, which is the assertion that matters -- the caller and the
+        derivation agree.
         """
         from marshall.atis import broadcast
+        from marshall.atis.serve import _sortie
         rig = Rig()
         rig.run(ticks=2)
-        want = broadcast.first_letter(R.KOBULETI_FIELD.name, 48061.0)
+        want = broadcast.first_letter(R.KOBULETI_FIELD.name, 48061.0,
+                                      sortie=_sortie())
         self.assertIn(f"information {want}", rig.voice.rendered[0])
 
     def test_a_field_that_does_not_broadcast_is_skipped(self):
@@ -171,7 +181,9 @@ class TestTheLetterWalksOn(unittest.TestCase):
         # The LETTER WALKS ON, whatever it started at -- which is the point of
         # this test and was never really about Alpha and Bravo.
         from marshall.atis import broadcast
-        first = broadcast.first_letter(R.KOBULETI_FIELD.name, 48061.0)
+        from marshall.atis.serve import _sortie
+        first = broadcast.first_letter(R.KOBULETI_FIELD.name, 48061.0,
+                                       sortie=_sortie())
         self.assertIn(first, rig.voice.rendered[0])
         self.assertIn(broadcast.next_letter(first), rig.voice.rendered[-1])
         # The runway swings with the wind, and the TRANSCRIPT is plain English
@@ -186,10 +198,17 @@ class TestTheLetterWalksOn(unittest.TestCase):
         self.assertEqual(len(rig.voice.rendered), 1)
 
     def test_the_rotation_decision_is_testable_on_its_own(self):
-        """`rerecord` is split out so the policy needs no radio."""
+        """`rerecord` is split out so the policy needs no radio.
+
+        It used to pin `LETTERS[0]`, which was Alpha and was the bug: a station
+        with nothing on the air gets the letter the FIELD is already on, not the
+        first one in the alphabet. Asserted against the derivation rather than
+        against a constant, so the two cannot drift apart.
+        """
         was = S.Airwave(letter="", recorded_at=0.0)
         letter, changed = S.rerecord(R.KOBULETI_FIELD, None, was, 0.0)
-        self.assertEqual((letter, changed), (B.LETTERS[0], True))
+        self.assertEqual((letter, changed),
+                         (B.first_letter("", 0.0, sortie=S._sortie()), True))
 
     def test_an_hour_advances_it_even_with_identical_weather(self):
         """DCS weather does not move, so this is the only thing that ever

@@ -50,7 +50,8 @@ ATIS_VOICE = "Salli"
 ATIS_ENGINE = "standard"
 
 
-def first_letter(field_name: str, zulu_seconds: float) -> str:
+def first_letter(field_name: str, zulu_seconds: float,
+                 sortie: str = "") -> str:
     """The letter a station is ALREADY on when we start listening.
 
         "the atis information xxx should rotate at least every hour and start
@@ -61,20 +62,33 @@ def first_letter(field_name: str, zulu_seconds: float) -> str:
     is on whatever letter that many hours have taken it to, and two aerodromes
     are never in step -- their letters have nothing to do with each other.
 
-    DERIVED, NOT RANDOM, and the difference matters. `random.choice` would give
-    a new letter on every bridge restart, so a pilot who copied Bravo on the
-    ramp and heard Delta ten minutes later would be right to report it as a bug.
-    This is a function of the FIELD and the mission's own hour, so it is stable
-    across a restart, different at every aerodrome, and advances on its own
-    through the day exactly as the hourly rotation would have taken it.
+    RANDOM PER SORTIE, STABLE WITHIN ONE, and that pair is the whole design:
 
-    A mission at 1321Z is four hundred-odd rotations into the day; the modulo
-    does the rest.
+        "it would probably be best if we pick a random atis alpha every time we
+         restart."
+
+    Right, and `random.choice` is still the wrong tool -- it would re-roll on
+    every BRIDGE restart, so a pilot who copied Bravo on the ramp and heard
+    Delta ten minutes later would be right to report it as a bug. That is not
+    hypothetical: this bridge was restarted six times during one of his
+    sorties.
+
+    So the roll is seeded on the SORTIE -- `mission_instance`, which is the
+    mission's name and the sim's own start time, and therefore changes on every
+    mission load and on nothing else. New mission, new letter. Same mission,
+    same letter, however many times the bridge comes and goes, and even if the
+    table has been wiped underneath it.
+
+    The mission hour still moves it along, so a long session advances through
+    the alphabet the way an hourly rotation would have taken it.
     """
     hours = int(max(0.0, zulu_seconds) // 3600)
-    # A stable per-field offset. `hash()` is salted per process and would move
-    # between restarts, which is the thing this exists to avoid.
-    seed = sum(ord(c) for c in (field_name or "").lower())
+    # A stable roll. `hash()` is salted per process and would move between
+    # restarts, which is the thing this exists to avoid; `random` would move
+    # between calls. This is a hash in the arithmetic sense -- same inputs, same
+    # answer, everywhere, for ever.
+    seed = sum(ord(c) * (i + 1)
+               for i, c in enumerate(f"{sortie}/{(field_name or '').lower()}"))
     return LETTERS[(seed + hours) % len(LETTERS)]
 
 
