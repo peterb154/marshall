@@ -3316,6 +3316,30 @@ def settle(bridge, directive, stack, vectoring, fix, profile, known, ctl,
     # established on final. `reconcile` owns both halves now.
     directive, stack, vectoring, dropped, kept = reconcile(
         directive, stack, vectoring, guide, list(bridge.decided))
+    # A VECTOR IS A DECIDED FACT, and its altitude is the MINIMUM VECTORING
+    # ALTITUDE for where he is. It crossed the seam as prose, so nothing checked
+    # that the number reached the pilot -- and on 11 August it did not:
+    #
+    #     ASR: vectoring, 19 miles. Turn left. Fly heading 225, maintain 8000
+    #     ATC: Sockeye, Batumi Approach, roger, level five thousand five hundred
+    #
+    # The MVA on the 056 radial at nineteen miles is eight thousand feet. He was
+    # left at five thousand five hundred, two and a half thousand feet below it,
+    # and noticed himself:
+    #
+    #     "if I were to continue on heading 232, 5500 ... north east of Batumi,
+    #      I would hit a mountain"
+    #
+    # The geometry was right. The engine surveyed that terrain, cell by cell,
+    # precisely so a controller could not assign an altitude into it -- and the
+    # number was dropped between deciding it and saying it. That is what
+    # `decision.verify` is for, and the vector had no decision to verify.
+    if vectoring and guide is not None:
+        kept = [*kept, _decision.Decision(
+            kind="vector", to=known or "",
+            heading_deg=getattr(guide, "heading", None),
+            altitude_ft=getattr(guide, "descend_to_ft", None)
+            or getattr(guide, "altitude_ft", None))]
     bridge.decided[:] = kept
     return directive, stack, vectoring, guide, dropped
 

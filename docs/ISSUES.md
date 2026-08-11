@@ -4765,3 +4765,44 @@ through the day exactly as the hourly rotation would have taken it:
     midnight   Batumi=Sierra   Kobuleti=Foxtrot   Nellis=Xray
     1300Z      Batumi=Foxtrot  Kobuleti=Sierra    Nellis=Kilo
     1400Z      Batumi=Golf     Kobuleti=Tango     Nellis=Lima
+
+---
+
+## [SEP-9] A vector was assigned below the minimum vectoring altitude — #95
+labels: bug, needs-flight-test
+
+**Status:** VISIBLE 11 August — the fact is verified now, and the underlying
+duplication is [SEP-7]/#92.
+
+    ASR: vectoring, 19 miles. Turn left. Fly heading 225, maintain 8000
+    ATC: Sockeye, Batumi Approach, roger, level five thousand five hundred.
+
+The MVA on the 056 radial at nineteen miles is **8,000 ft**. He was left at
+**5,546**, two and a half thousand feet under it, and worked it out himself:
+
+    "if I were to continue on heading 232, 5500 ... north east of Batumi,
+     I would hit a mountain"
+
+**The geometry was right.** Kobuleti's and Batumi's terrain were surveyed cell
+by cell — every 5°, every half mile — precisely so a controller could not assign
+an altitude into it. The number was correct when it was decided and gone by the
+time it was spoken, because **a vector crossed the seam as prose** and only a
+`Decision` is verified.
+
+It carries one now, so a dropped vectoring altitude appears as `NOT VOICED`
+instead of as a mountain.
+
+**It is verified and deliberately NOT repaired.** The engine transmits vectors
+itself, on its own schedule, from the same phrasebook — appending one to the
+agent's reply would not restore a lost fact, it would say the same thing twice
+from two transmissions. The same pilot reported exactly that on the same sortie:
+*"I'm getting redundant instructions"*, *"he's stepping on me a couple of
+times"*. `SPOKEN_BY_THE_ENGINE` names the exemption rather than hiding it.
+
+**The duplication itself is #92**, and this sortie showed it doing real harm —
+the two paths did not merely repeat each other, they **disagreed**:
+
+    ATC[vec] ... turn right heading two four five, maintain three thousand
+    ASR:     ... Fly heading 245, maintain 5500
+
+Same aircraft, same moment, two altitudes.

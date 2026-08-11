@@ -42,6 +42,11 @@ from dataclasses import dataclass, field
 # words he used. "cleared_approach" survives a change of phraseology, an era, a
 # language and a field; "cleared for the surveillance approach runway one three"
 # does not, and every one of those variations is why the phrasebook grew.
+# The engine transmits these itself, on its own schedule -- see `asr.py` and the
+# monitor. They are verified like everything else and never repaired, because a
+# repair would duplicate a transmission rather than restore a missing one.
+SPOKEN_BY_THE_ENGINE = frozenset({"vector"})
+
 KINDS = (
     "hold",              # enter the stack at a level
     "continue_hold",     # stay where you are, somebody is ahead
@@ -343,6 +348,21 @@ def repair(d: Decision, said: str = "") -> str:
     must never do.
     """
     if said and not verify(d, said):
+        return ""
+    # KINDS THE ENGINE SPEAKS FOR ITSELF ARE NOT REPAIRED HERE.
+    #
+    # The talkdown and the vectors go out on their own transmissions -- ATC[asr]
+    # and ATC[vec] -- rendered from this same phrasebook by the monitor. The
+    # module already says why: "the ASR talkdown ... transmits directly with no
+    # model in the loop ... 'the engine speaks' is correct there rather than a
+    # compromise."
+    #
+    # So appending one to the agent's reply would not restore a lost fact, it
+    # would say the same thing twice from two transmissions -- which a pilot
+    # reported on 11 August as "I'm getting redundant instructions" and "he's
+    # stepping on me". VERIFYING them is still worth everything: it is how the
+    # MVA altitude going missing became visible at all.
+    if d.kind in SPOKEN_BY_THE_ENGINE:
         return ""
     from marshall.atc import phrasebook
     try:

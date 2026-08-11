@@ -298,3 +298,60 @@ class ReconcileReadsTypesNotProse(unittest.TestCase):
             "ASR: eight miles.", self._OnFinal(), [])
         self.assertEqual(out, "")
         self.assertIn("suppressed", dropped)
+
+
+class TheVectorIsVerifiedButNeverRepeated(unittest.TestCase):
+    """The MVA altitude went missing, and nothing could see it.
+
+        ASR: vectoring, 19 miles. Turn left. Fly heading 225, maintain 8000
+        ATC: Sockeye, Batumi Approach, roger, level five thousand five hundred
+
+    The minimum vectoring altitude on that radial at nineteen miles is eight
+    thousand feet. He was left at five thousand five hundred and worked it out
+    himself:
+
+        "if I were to continue on heading 232, 5500 ... north east of Batumi,
+         I would hit a mountain"
+
+    The engine surveyed that terrain cell by cell precisely so a controller
+    could not assign an altitude into it. The number was correct and was
+    dropped between deciding it and saying it, because a vector crossed the seam
+    as PROSE and only a `Decision` is verified.
+
+    IT IS NOT REPAIRED, THOUGH, and that distinction is the point. The engine
+    transmits vectors itself, on its own schedule, rendered from this same
+    phrasebook -- so appending one to the agent's reply would not restore a lost
+    fact, it would say the same thing twice from two transmissions. A pilot
+    reported exactly that on the same sortie: "I'm getting redundant
+    instructions", "he's stepping on me a couple of times".
+    """
+
+    def vector(self):
+        return D.Decision(kind="vector", to="Sockeye 1-1",
+                          heading_deg=225, altitude_ft=8000)
+
+    def test_the_dropped_mva_altitude_is_caught(self):
+        said = "Sockeye, Batumi Approach, roger, level five thousand five hundred."
+        missed = D.verify(self.vector(), said)
+        self.assertIn("eight thousand", missed)
+
+    def test_a_reply_that_voices_it_passes(self):
+        self.assertEqual(
+            D.verify(self.vector(),
+                     "Sockeye, turn left heading two two five, climb and "
+                     "maintain eight thousand."), [])
+
+    def test_it_is_never_appended(self):
+        said = "Sockeye, radar contact."
+        self.assertTrue(D.verify(self.vector(), said), "the premise: it is missing")
+        self.assertEqual(D.repair(self.vector(), said), "",
+                         "a repaired vector is a duplicated transmission, not a "
+                         "restored fact")
+
+    def test_the_exemption_is_a_named_set_not_a_special_case(self):
+        self.assertIn("vector", D.SPOKEN_BY_THE_ENGINE)
+
+    def test_everything_else_is_still_repaired(self):
+        # The exemption must not quietly grow into "nothing is repaired".
+        d = D.Decision(kind="cleared_takeoff", to="Sockeye 1-1", runway="13")
+        self.assertTrue(D.repair(d, "Sockeye, roger."))
