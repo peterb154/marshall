@@ -60,6 +60,28 @@ class TestTheSortieInOrder(unittest.TestCase):
         landed, and calling it one welcomes him and sends him to parking."""
         self.assertNotEqual(P.derive("clearance", on_ground=True), "landed")
 
+    def test_a_fresh_aeroplane_on_the_ramp_starts_at_the_first_rung(self):
+        """Not `taxi`, which is where this used to put him.
+
+        Clearance, taxi and holding short are the same range, the same
+        direction and the same zero knots; radar cannot tell them apart. So a
+        parked aeroplane nobody has spoken to yet is at the START of the
+        ladder, and everything after that is driven by what he says.
+        """
+        self.assertEqual(P.derive("", on_ground=True), "clearance")
+
+    def test_and_that_is_why_a_read_back_could_not_hand_him_to_ground(self):
+        """The consequence, which is what was actually observed.
+
+        Derived as `taxi` from the first word, he was Ground's before he had
+        asked anybody for anything -- so `clearance_read_back` setting `taxi`
+        moved him nowhere, there was no transition, and Delivery kept him.
+        """
+        started = P.derive("", on_ground=True)
+        self.assertNotEqual(started, "taxi")
+        self.assertEqual(P.owner_of(started), "delivery")
+        self.assertEqual(P.owner_of("taxi"), "ground")
+
 
 class TestItRefusesTheImpossible(unittest.TestCase):
 
@@ -269,11 +291,17 @@ class ARefusedTransitionIsNotSilent(unittest.TestCase):
     def test_an_illegal_transition_calls_back(self):
         from marshall.atc import phases
         seen = []
-        # `departure` may lead to enroute or arrival, never to taxi.
-        got = phases.derive("departure", on_ground=True, was_airborne=False,
+        # `enroute` may lead to rtb or arrival, never straight to landed.
+        #
+        # THIS USED TO BE `departure` ON THE GROUND WANTING `taxi`, which was a
+        # refusal of a transition nothing should have proposed: the deriver
+        # invented `taxi` for anything parked, including an aeroplane rolling
+        # for take-off. That is fixed, so it is no longer an illegal transition
+        # -- it is not a transition at all -- and this needs a real one.
+        got = phases.derive("enroute", separation="landed",
                             refused=lambda cur, want: seen.append((cur, want)))
-        self.assertEqual(got, "departure", "an illegal transition must not happen")
-        self.assertEqual(seen, [("departure", "taxi")],
+        self.assertEqual(got, "enroute", "an illegal transition must not happen")
+        self.assertEqual(seen, [("enroute", "landed")],
                          "the refusal that pins the phase left no trace")
 
     def test_a_legal_transition_does_not(self):

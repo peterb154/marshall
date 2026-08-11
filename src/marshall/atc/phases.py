@@ -222,9 +222,11 @@ def guide(phase: str, pos, profile):
 # So this is the missing half: one place that says what is happening, from
 # facts rather than from what anybody said.
 
-# Phases that mean he is on the ground and being worked by the aerodrome. Which
-# one he is in is driven by the CONVERSATION -- a clearance, a taxi request, a
-# report of holding short -- because none of them has geometry to read.
+# Phases that mean he is on the ground and being worked by the aerodrome, in
+# ladder order. Which one he is in is driven by the CONVERSATION -- a clearance,
+# a taxi request, a report of holding short -- because none of them has geometry
+# to read. `_wanted` seeds a fresh aeroplane at the first of them and leaves the
+# rest to what is said.
 ON_THE_GROUND = ("clearance", "taxi", "holding_short", "landed")
 
 
@@ -287,7 +289,24 @@ def _wanted(current: str, on_ground: bool | None, sep: str,
     if on_ground is True:
         if was_airborne or sep == "landed":
             return "landed"
-        return current if current in ON_THE_GROUND else "taxi"
+        # WHICH GROUND RUNG HE IS ON IS NOT A GEOMETRIC FACT, and this line
+        # used to invent one. A parked aeroplane with no phase yet was derived
+        # as `taxi` -- so the sortie began on Ground's rung, the clearance rung
+        # was skipped entirely, and `clearance_read_back` moving him to `taxi`
+        # moved him nowhere. That is why a correct read-back never handed
+        # anybody to Ground: there was no transition to hand over, because he
+        # had been Ground's since the moment he appeared on radar.
+        #
+        # Clearance, taxi and holding short are the same range, the same
+        # direction and the same zero knots -- see `handoff.State`, which says
+        # so about the rules and was right about the deriver too. Radar cannot
+        # tell them apart and must not pretend to. What separates them is what
+        # was SAID, and every one of those transitions has an intent behind it.
+        #
+        # So: seed a fresh aeroplane at the FIRST rung and never overrule the
+        # conversation afterwards. `on_ground is False` above still catches him
+        # leaving the ground, which is the one ground transition radar can see.
+        return current or ON_THE_GROUND[0]
     if sep == "landed":
         return "landed"
     if on_ground is False and current in ("clearance", "taxi", "holding_short"):

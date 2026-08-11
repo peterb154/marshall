@@ -5056,3 +5056,54 @@ viper` fell past the aircraft table, past the ground table, and spawned a
 a tank parked on a runway and nothing said so. Unknown types are now an error
 naming what is known, with `--force` for a raw DCS type name, and the F-16,
 Hornet, Warthog and Eagle are in the table.
+
+## [SEP-12] A parked aeroplane was derived as `taxi`, so the sortie began on Ground's rung — #103
+labels: bug
+
+**Status:** FIXED 11 August. Found by the ladder rehearsal, which is the whole
+argument for having one — it is the third distinct cause of the same symptom and
+the first two were each found by a pilot flying the card.
+
+    return current if current in ON_THE_GROUND else "taxi"
+
+`phases._wanted`, for anything the sim says is stopped on the ground and has not
+flown. So an aeroplane that had spoken to nobody yet, at the first radar sample,
+was **taxiing** — and the clearance rung was skipped before the first word:
+
+    PILOT: Kobuleti Clearance, Sockeye, request clearance.
+      .. phase: (none) -> taxi
+
+Everything downstream is then correct and useless. `handoff.due` reads the phase,
+sees `taxi`, and says Ground owns him — from the moment he appears, while he is
+sitting on Delivery's frequency asking for a clearance he has not got.
+`clearance_read_back` setting `taxi` on a correct read-back moves him nowhere,
+because he has been there since he spawned, so there is no transition and **no
+handoff**:
+
+    PILOT: Cleared to Batumi as filed, maintain five thousand, departure
+           one two three decimal three, squawk six five two one, Sockeye.
+    ATC:   Readback correct.
+
+and nothing else. That is #90's symptom exactly, twice fixed and still failing,
+because the two earlier fixes were both real and neither was this.
+
+It also produced a nonsense refusal on every ground transmission after take-off
+clearance — `departure cannot lead to taxi` — which is the deriver being told
+off for a transition nothing should have proposed.
+
+**Radar cannot see which ground rung he is on.** Clearance, taxi and holding
+short are the same range, the same direction and the same zero knots; two
+aircraft parked side by side, one waiting for a clearance and one waiting for the
+runway, are geometrically identical and belong to different controllers.
+`handoff.State` says so about the rules and was right about the deriver too. What
+separates them is what was SAID, and every one of those transitions has an intent
+behind it.
+
+So a fresh aeroplane is seeded at the FIRST rung and geometry never overrules the
+conversation afterwards. `on_ground is False` still catches him leaving the
+ground, which is the one ground transition radar can genuinely see.
+
+**And the board did not publish the rung**, which is why this survived three
+sorties of looking at logs: `board_rows` carried the separation enum alone, so
+every reader outside the engine saw a parked aeroplane described as ENROUTE and
+had no way to ask what it actually thought he was doing. Published now — see #96.
