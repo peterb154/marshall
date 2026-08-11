@@ -91,8 +91,18 @@ def _ensure_fix_table() -> None:
 def set_fixes(fixes: dict) -> int:
     """Load named fixes pushed from route.py, via the sim's own projection.
 
-    Additive and idempotent: the built-in field entries stay, and a re-push
-    (every bridge restart) overwrites what it knew before.
+    THE PUSHED SET REPLACES THE TABLE. It used to be additive, which is right
+    for two pushes of one map and wrong the moment there are two maps: a Nevada
+    bridge published NELLIS and TONOPAH on top of the Caucasus catalogue left
+    behind by the last run, so KOBULETI went on resolving and a Kobuleti flight
+    plan went on validating -- on Nevada, where no such place exists.
+    "Any old row in the database could conceal that failure" (CODEX_NTTR_AUDIT)
+    is the same observation from the other side: an old row here does not hide a
+    failure, it CAUSES one.
+
+    An empty push is not a replacement. That is a bridge that could not reach
+    the sim -- `push_fixes` is best-effort by design -- and wiping the table on
+    it would take the controller from a stale catalogue to no catalogue at all.
 
     PERSISTED, and that is the point. Held only in memory, the table survives
     exactly as long as this process -- so a director restart with the bridge
@@ -109,11 +119,14 @@ def set_fixes(fixes: dict) -> int:
     if clean:
         _ensure_fix_table()
         with get_pool().connection() as conn:
+            conn.execute("DELETE FROM fixes WHERE name <> ALL(%s)",
+                         (list(clean),))
             for key, (la, lo) in clean.items():
                 conn.execute(
                     "INSERT INTO fixes (name, lat, lon) VALUES (%s, %s, %s) "
                     "ON CONFLICT (name) DO UPDATE SET lat = EXCLUDED.lat, "
                     "lon = EXCLUDED.lon, pushed_at = now()", (key, la, lo))
+        _FIXES.clear()
     _FIXES.update(clean)
     log.info("fix table now holds %d names", len(_FIXES))
     return len(_FIXES)

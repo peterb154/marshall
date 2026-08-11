@@ -59,17 +59,43 @@ _TEMPLATE_COLS = ("name", "label", "origin", "destination",
 
 
 def filed() -> list[dict]:
-    """Every plan on file. They belong to nobody until one is issued.
+    """Every plan on file THAT DEPARTS THIS WORLD. Anonymous, not unfiltered.
 
-    Deliberately unfiltered and deliberately anonymous. Any pilot may request
-    any plan -- taking somebody else's is a normal thing here and an impossible
-    one in the civil world.
+    Deliberately anonymous: any pilot may request any plan, and taking somebody
+    else's is a normal thing here and an impossible one in the civil world.
+
+    IT USED TO BE UNFILTERED TOO, and that stopped being right when a second map
+    arrived. Measured on the first Nevada run, to an aeroplane sitting at Nellis:
+
+        "Sockeye, Clearance, I have three plans on file -- Domino, transit and
+         radar recovery; Redflag, local transit and instrument recovery; ..."
+
+    Domino departs KOBULETI. It is a real plan, correctly filed, three thousand
+    miles away on a map that is not loaded -- and offering it made the pilot
+    choose between his own sortie and one he cannot fly. That is #89 exactly
+    ("a plan that is not from your field is not yours"), one level up: not the
+    wrong field, the wrong WORLD.
+
+    THE PUBLISHED FIX TABLE IS THE WORLD. `push_fixes` writes this theatre's
+    catalogue at every bridge start and now replaces rather than merges, so a
+    plan whose origin is not a published fix is not somewhere this controller
+    can see. No new configuration, no theatre flag in the director, and it
+    cannot drift from what the bridge actually published.
+
+    A plan with no origin is kept. That is a filing gap rather than another
+    map's sortie, and the filing checks already report it.
     """
     with _pool().connection() as c:
         rows = c.execute(
             f"SELECT {', '.join(_TEMPLATE_COLS)} FROM flight_plans "
             f"ORDER BY label NULLS LAST, name").fetchall()
-    return [dict(zip(_TEMPLATE_COLS, r)) for r in rows]
+    plans = [dict(zip(_TEMPLATE_COLS, r)) for r in rows]
+    here = set(_known_fixes())
+    if not here:
+        return plans           # nothing published yet: filter nothing
+    return [p for p in plans
+            if not p.get("origin")
+            or str(p["origin"]).strip().lower() in here]
 
 
 _ASSIGNED_COLS = ("id", "flight_id", "template", "label", "origin",

@@ -191,6 +191,68 @@ def engine_decided(*words: str):
     return check
 
 
+# A sentinel the runner replaces with the clearance actually issued. It cannot
+# be built when the ladder is composed, because it does not exist until the
+# controller has said it.
+_READ_BACK = "\x00read-back\x00"
+
+
+def read_back_of(ev) -> str:
+    """What the controller just cleared him to, said back to him.
+
+    The last clearance in the turn, minus the address. Reading back the words
+    that were heard is what a pilot does and it is the only version that cannot
+    disagree with the clearance -- a composed one has to guess the squawk, which
+    is assigned per flight and is different every sortie.
+    """
+    for e in reversed(ev):
+        if str(e.get("kind", "")).startswith("atc/") and "cleared" in (
+                e.get("text") or "").lower():
+            said = re.sub(r"^\s*\w+[,\s]+", "", e["text"]).strip()
+            return said.rstrip(".") + ", Sockeye."
+    return ""
+
+
+def atis_confirmed(field: str):
+    """Delivery names the information letter -- IF there is one on the air.
+
+    #96 is "he confirms the letter", and the correct behaviour where no ATIS is
+    broadcasting is to say NOTHING rather than invent one. So a field with no
+    letter published cannot fail this row; it cannot answer it either, and the
+    difference is the whole of "skipped is reported, never silent".
+
+    Nevada's fields do broadcast, but the ATIS stands by while nobody is on the
+    server -- which is deliberate, and which made this row fail on a controller
+    doing exactly the right thing.
+
+    ASKS ABOUT THIS FIELD, not about any field. The table outlives a theatre
+    switch, so a Nevada run found Batumi and Kobuleti still listed as on the air
+    from four hours earlier and would have failed Nellis for not naming a letter
+    broadcast on another continent. The row is only ever about the aerodrome it
+    is standing on.
+    """
+    def check(ev):
+        text = " ".join(e.get("text", "") for e in ev
+                        if str(e.get("kind", "")).startswith("atc/")).lower()
+        if "information" in text:
+            return True, ""
+        try:
+            import urllib.request
+            with urllib.request.urlopen("http://localhost:8000/atis",
+                                        timeout=5) as r:
+                got = json.loads(r.read().decode("utf-8", "replace"))
+            on_air = any(a.get("on_the_air")
+                         and (a.get("field") or "").lower() == field.lower()
+                         for a in got.get("atis", []))
+        except Exception:
+            on_air = False
+        if not on_air:
+            return None, ("nothing is broadcasting, so there is no letter to "
+                          "confirm -- saying nothing is correct")
+        return False, "an ATIS is on the air and he never named the letter"
+    return check
+
+
 def nothing_lost():
     """No decided fact went missing on the way to the radio.
 
@@ -233,48 +295,149 @@ def all_of(*checks):
 # words: a role is only unique within an aerodrome, and which button he pressed
 # is what says which aerodrome.
 
-LADDER = [
-    ("Q1", 125.100,
-     "Kobuleti Clearance, Sockeye, request clearance.",
-     named_no_other_field("Kobuleti"),
-     "nothing on this frequency belongs to Batumi"),
+def filed_plan(th) -> dict:
+    """The theatre's bootstrap plan, off the director. One source, not two.
 
-    ("Q1a", 125.100,
-     "Kobuleti Clearance, Sockeye, Domino please.",
-     engine_decided("kobuleti clearance"),
-     "the clearance is issued from the plan on file"),
+    The label a pilot asks for and the level he reads back are properties of the
+    PLAN, and the plan lives in the database -- which is also where the bridge
+    reads it from. Copying them into the harness would be a second copy of a
+    fact that already exists, and the rows would go on passing after the plan
+    changed underneath them.
 
-    ("Q3b", 125.100,
-     "Sockeye, say again the information letter.",
-     said("information"),
-     "#96 -- Clearance confirms the ATIS letter"),
+    Empty when the director is unreachable; the caller then uses generic
+    phrasing, which is honest -- a row that cannot know the number should not
+    pretend to check it.
+    """
+    import urllib.request
+    try:
+        with urllib.request.urlopen("http://localhost:8000/plans", timeout=8) as r:
+            plans = json.loads(r.read().decode("utf-8", "replace"))["plans"]
+    except Exception:
+        return {}
+    return next((p for p in plans if p.get("name") == th.bootstrap_plan), {})
 
-    ("Q3", 125.100,
-     "Cleared to Batumi as filed, maintain five thousand, departure one two "
-     "three decimal three, squawk six five two one, Sockeye.",
-     all_of(handed_to("ground"), phase_is("taxi")),
-     "a correct read-back ends Delivery's business (#90)"),
 
-    ("Q4", 121.800,
-     "Kobuleti Ground, Sockeye, ready to taxi.",
-     engine_decided("taxi to runway", "hold short"),
-     "Ground clears him TO the runway and no further"),
+def ladder_for(th):
+    """The rungs, spoken at THIS theatre's stations.
 
-    ("Q5", 121.800,
-     "Kobuleti Ground, Sockeye, ready for departure.",
-     all_of(engine_decided("tower"), said("one three three")),
-     "Ground REFUSES the runway and names Tower with the frequency (#65)"),
+    ONE SORTIE, TWO MAPS. Every row was written with Kobuleti's frequencies and
+    the word "Kobuleti" in the pilot's mouth, so the harness could only ever
+    rehearse the Caucasus -- on a project whose whole recent argument is that a
+    role is only unique within an aerodrome and a map is data.
 
-    ("Q6", 121.800,
-     "Kobuleti Ground, Sockeye, holding short of runway zero seven.",
-     all_of(phase_is("holding_short"), handed_to("tower")),
-     "holding short hands him to Tower (#88)"),
+    The rungs themselves are not theatre facts. "Ready to taxi" is ready to taxi
+    at Nellis and at Kobuleti; what changes is which button he presses and whose
+    name he says, and both come off the station table. So the sortie is written
+    once and addressed at whichever field the theatre departs from.
 
-    ("Q7", 133.000,
-     "Kobuleti Tower, Sockeye, holding short runway zero seven, ready for departure.",
-     all_of(engine_decided("cleared for take-off"), nothing_lost()),
-     "Tower clears it, with the runway and the wind, and all of it is spoken"),
-]
+    Runway comes from the wind, the same way the ATIS decides it, because a row
+    that names 07 is a Caucasus row wearing a disguise: Nellis with a 210 at 8
+    is using 21.
+    """
+    dep = th.field_named(th.departure)
+    rwy = f"{dep.runway_in_use(th.wind_from_deg):02d}"
+    spoken_rwy = " ".join(_SPELL[c] for c in rwy)
+
+    def st(role):
+        s = next((x for x in th.stations
+                  if x.role == role and x.field == dep.name), None)
+        return s or next((x for x in th.stations if x.role == role), None)
+
+    clr, gnd, twr = st("clearance"), st("ground"), st("tower")
+    plan = filed_plan(th)
+    label = plan.get("label") or "the filed plan"
+    # THE NUMBERS HE MUST READ BACK, from the plan and the station table. These
+    # were "five thousand" and "one two three decimal three" -- Kobuleti's
+    # clearance, hardcoded -- so on Nevada the harness read back a level and a
+    # frequency belonging to another map. The engine would have refused it,
+    # correctly, and the row would have failed for a reason that was the
+    # harness's own.
+    # A field with no separate Clearance is a real configuration -- the 1944
+    # ladder is one man wearing every hat -- so fall back rather than crash.
+    clr = clr or gnd
+    name = dep.name
+
+    return [
+        ("Q1", clr.freq_mhz,
+         f"{clr.name}, Sockeye, request clearance.",
+         named_no_other_field(name),
+         "nothing on this frequency belongs to another field"),
+
+        ("Q1a", clr.freq_mhz,
+         f"{clr.name}, Sockeye, {label} please.",
+         # THE PLAN HE ASKED FOR, proved by its own numbers rather than by the
+         # controller repeating its name. He does not say "Redflag, cleared
+         # to..." any more than he announces his own station, and a check that
+         # demands it teaches him to be unnatural to stay green -- the same
+         # mistake Q1 made and the same fix.
+         all_of(said("cleared to", plan.get("destination", "").lower()),
+                said(_alt_words(plan.get("cruise_ft") or 0))),
+         "the clearance is issued from the plan on file"),
+
+        ("Q3b", clr.freq_mhz,
+         "Sockeye, say again the information letter.",
+         atis_confirmed(name),
+         "#96 -- Clearance confirms the ATIS letter"),
+
+        # THE CLEARANCE HE WAS ACTUALLY ISSUED, not one composed here.
+        #
+        # The squawk was hardcoded `six five two one`. It is assigned per flight
+        # at clearance time and Nevada's came out 0742 -- so the harness read
+        # back a code nobody had given it, the controller said "negative, three
+        # corrections", and the row failed. Correctly. A read-back row that
+        # invents the numbers is testing the harness.
+        #
+        # `_issued` reads them off the recorder after Q1a, which is the only
+        # place they exist, and is also what a pilot does: he reads back what he
+        # heard.
+        ("Q3", clr.freq_mhz, _READ_BACK,
+         all_of(handed_to(gnd.name), phase_is("taxi")),
+         "a correct read-back ends Delivery's business (#90)"),
+
+        ("Q4", gnd.freq_mhz,
+         f"{gnd.name}, Sockeye, ready to taxi.",
+         engine_decided("taxi to runway", "hold short"),
+         "Ground clears him TO the runway and no further"),
+
+        ("Q5", gnd.freq_mhz,
+         f"{gnd.name}, Sockeye, ready for departure.",
+         all_of(engine_decided("tower"), said(_freq_words(twr.freq_mhz))),
+         "Ground REFUSES the runway and names Tower with the frequency (#65)"),
+
+        ("Q6", gnd.freq_mhz,
+         f"{gnd.name}, Sockeye, holding short of runway {spoken_rwy}.",
+         all_of(phase_is("holding_short"), handed_to(twr.name)),
+         "holding short hands him to Tower (#88)"),
+
+        ("Q7", twr.freq_mhz,
+         f"{twr.name}, Sockeye, holding short runway {spoken_rwy}, "
+         f"ready for departure.",
+         all_of(engine_decided("cleared for take-off"), nothing_lost()),
+         "Tower clears it, with the runway and the wind, and all of it is spoken"),
+    ]
+
+
+def _alt_words(ft) -> str:
+    """An altitude as a controller says it. 5000 -> five thousand."""
+    ft = int(ft)
+    if ft % 1000 == 0 and 1000 <= ft < 100000:
+        th = ft // 1000
+        if th < 10:
+            return f"{_SPELL[str(th)]} thousand"
+        return " ".join(_SPELL[c] for c in str(th)) + " thousand"
+    return " ".join(_SPELL[c] for c in str(ft))
+
+
+_SPELL = {"0": "zero", "1": "one", "2": "two", "3": "three", "4": "four",
+          "5": "five", "6": "six", "7": "seven", "8": "eight", "9": "nine"}
+
+
+def _freq_words(mhz: float) -> str:
+    """A frequency as a controller says it, for checking he said it."""
+    whole, frac = f"{mhz:.3f}".split(".")
+    said = " ".join(_SPELL[c] for c in whole)
+    frac = frac.rstrip("0") or "0"
+    return said + " decimal " + " ".join(_SPELL[c] for c in frac)
 
 
 def park_an_aeroplane(name: str, field: str) -> bool:
@@ -448,6 +611,16 @@ def arrived_intact(ev, said_it: str) -> tuple[bool, str]:
     if not want:
         return True, ""
     lost = want - _words(heard)
+    # EVERY NUMBER HAS TO ARRIVE, whatever the word count says. A dropped
+    # adjective is noise; a dropped altitude is the test. Measured: "maintain
+    # two four thousand" came back as "main", so the read-back genuinely was
+    # missing its level -- the controller said "negative, you missed altitude"
+    # and was RIGHT -- and the two lost tokens were under the two-thirds rule,
+    # so the harness judged the transmission intact and scored the row against a
+    # controller doing his job.
+    if any(t.isdigit() for t in lost):
+        return False, (f"a number went missing: "
+                       f"{', '.join(sorted(t for t in lost if t.isdigit()))}")
     if len(lost) * 3 <= len(want):
         return True, ""
     return False, (f"the bridge heard {len(want) - len(lost)} of {len(want)} "
@@ -585,8 +758,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--wait", type=float, default=22.0,
                     help="seconds to allow for a reply before calling it silence")
     ap.add_argument("--only", default="", help="run one row, by id")
-    ap.add_argument("--field", default="KOBULETI",
-                    help="where the fixture aeroplane is parked")
+    ap.add_argument("--field", default="",
+                    help="where the fixture aeroplane is parked "
+                         "(default: the theatre's departure field)")
     ap.add_argument("--no-spawn", action="store_true",
                     help="use whatever is already on the scope")
     ap.add_argument("--no-restart", action="store_true",
@@ -600,13 +774,19 @@ def main(argv: list[str] | None = None) -> int:
     from marshall.radio import tts
     from marshall.radio.client import AM, SRSClient, radio
 
+    from marshall.core import theatre as _theatre
+    th = _theatre.current()
     recorder = config.BUILD_DIR / "logs" / f"flight-{args.session}.jsonl"
-    steps = [s for s in LADDER if not args.only or s[0] == args.only]
+    steps = [s for s in ladder_for(th) if not args.only or s[0] == args.only]
     if not steps:
         print(f"!! no row called {args.only}", file=sys.stderr)
         return 2
 
-    print(f"the ladder, spoken by {args.name} against the live bridge")
+    print(f"the ladder at {th.departure}, spoken by {args.name} "
+          f"against the live bridge")
+    print(f"  {th.name}, runway "
+          f"{th.field_named(th.departure).runway_in_use(th.wind_from_deg):02d} "
+          f"in a {th.wind_from_deg:.0f} at {th.wind_mph:.0f}")
     print(f"  recorder: {recorder}")
     print(f"  {len(steps)} rows\n")
 
@@ -618,8 +798,12 @@ def main(argv: list[str] | None = None) -> int:
         print("  restarting the bridge so the board starts empty")
         a_clean_board()
     if not args.no_spawn:
-        print(f"  parking {unit} at {args.field} so the engine has an aeroplane")
-        parked = park_an_aeroplane(unit, args.field)
+        # THE THEATRE'S OWN DEPARTURE FIELD by default. This was the string
+        # "KOBULETI", so a Nevada run parked its fixture in Georgia -- on a map
+        # that does not contain it -- and every engine-side row skipped.
+        where = args.field or th.departure
+        print(f"  parking {unit} at {where} so the engine has an aeroplane")
+        parked = park_an_aeroplane(unit, where)
         if parked and not wait_for_radar(unit, "http://localhost:8000", args.session):
             print("  !! it never reached the scope; the engine-side rows will skip")
         print()
@@ -632,6 +816,9 @@ def main(argv: list[str] | None = None) -> int:
         # stepped on repeats it; so does this. One retry, because a second
         # mishearing of the same audio is a fact about the pipeline rather than
         # bad luck, and repeating forever would hide it.
+        if line is _READ_BACK:
+            line = read_back_of(events_since(recorder, 0)) or (
+                "Cleared as filed, Sockeye.")
         for attempt in (1, 2):
             ev, intact, gap = say_it(
                 args, mhz, line, recorder, SRSClient, radio, AM, tts,

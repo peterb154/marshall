@@ -317,13 +317,30 @@ class TestThePlateKnowsAboutTheDepartureField(unittest.TestCase):
         self.assertIn("07", txt)
         self.assertIn(str(R.KOBULETI_FIELD.elevation_ft), txt)
 
-    def test_it_says_ground_is_also_the_tower(self):
-        """The one judgement call in the ladder. A controller who does not know
-        he issues take-off clearances sends the pilot to a frequency that does
-        not exist."""
-        txt = " ".join(self.plate()).lower()
-        self.assertIn("tower", txt)
-        self.assertIn("take-off", txt)
+    def test_it_names_every_controller_at_the_field_with_his_frequency(self):
+        """AND IT AGREES WITH THE STATION TABLE, which it did not.
+
+        This block was hand-written prose and asserted that Kobuleti Ground was
+        "on 133.0, who is also its Tower -- he issues taxi AND take-off
+        clearance, there is no separate tower frequency". None of that has been
+        true since Ground stopped wearing the Tower hat: Ground is 121.800 and
+        Kobuleti Tower is a separate controller on 133.000.
+
+        So the plate -- the one document the agent is told to believe -- told
+        him Ground owned the runway, which is the exact thing #65 and #88 exist
+        to prevent, asserted in his own briefing. The test pinned the stale
+        claim rather than catching it, because it was written from the prose.
+
+        Generated from the station table now, so the two cannot drift again.
+        """
+        txt = " ".join(self.plate())
+        for s in R.STATIONS:
+            if s.field != "Kobuleti":
+                continue
+            with self.subTest(station=s.name):
+                self.assertIn(s.name, txt)
+                self.assertIn(f"{s.freq_mhz:.1f}", txt)
+        self.assertNotIn("also its Tower", txt)
 
     def test_it_warns_against_reading_batumis_numbers(self):
         """The failure shape this whole day has been about: a real number

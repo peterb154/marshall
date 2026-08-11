@@ -55,6 +55,16 @@ def _channels(profile: R.ApproachProfile) -> list[str]:
     channel while homing a beacon on another. Each phase's controller therefore
     lives on the beacon flown in that phase.
     """
+    # A 1944 CONSTRAINT, and only a 1944 aeroplane has it. The paragraph below
+    # is about a set whose homing adapter works on the tuned frequency, so the
+    # pilot cannot listen on one channel while homing on another. An F-16 has
+    # two radios and a separate navigation receiver and none of it applies.
+    #
+    # The guard is `arrival_fix`: an approach with no enroute homing fix has
+    # nothing to say here. It also stopped the bridge dead on Nevada --
+    # `profile.arrival_fix.name` on a None -- which is how this was found.
+    if getattr(profile, "arrival_fix", None) is None:
+        return []
     enr_name, enr_freq = profile.station(enroute=True)
     twr_name, twr_freq = profile.station()
     out = []
@@ -174,23 +184,40 @@ def _departure_field() -> list[str]:
     computed here from the wind rather than left to a model that has not been
     told the field exists.
     """
-    f = R.KOBULETI_FIELD
-    rwy = f.runway_in_use()
-    return [
+    # THE LOADED THEATRE'S DEPARTURE FIELD, and its own controllers.
+    #
+    # This was `R.KOBULETI_FIELD` with Kobuleti's three frequencies written into
+    # the prose. On Nevada that put "Kobuleti Clearance 125.1" into the Nellis
+    # controller's own briefing -- a real facility, on another continent, in the
+    # one document he is told to believe. Wrong field, plausible answer: the
+    # same fault as `station_for`, in the prompt rather than in the code.
+    from marshall.core import theatre as _t
+    th = _t.current()
+    f = th.field_named(th.departure)
+    if f is None:
+        return []
+    rwy = f.runway_in_use(th.wind_from_deg)
+    here = [s for s in th.stations if s.field == f.name]
+    who = ", ".join(f"**{s.name} {s.freq_mhz:.1f}**" for s in here) or "nobody"
+    arr = th.field_named(th.arrival)
+    out = [
         f"- **DEPARTURE FIELD — {f.name.upper()}.** Field elevation "
         f"**{f.elevation_ft} ft**. Runways **{f.ends[0]:02d}/{f.ends[1]:02d}**. "
         f"With today's wind the runway in use is **{rwy:02d}** — taxi, "
         f"line-up and departures are all {rwy:02d}, and the reciprocal is "
         f"downwind. Do not offer the other end.",
-        f"- {f.name} is worked by **Kobuleti Clearance 125.1**, **Kobuleti "
-        "Ground 133.0** (who is also its Tower — he issues taxi AND take-off "
-        "clearance, there is no separate tower frequency) and **Kobuleti "
-        "Departure 123.3**. A departure leaves Ground for Departure at about "
-        "**5 miles**.",
-        f"- {f.name} is **40 miles north-east** of Batumi and is a different "
-        "aerodrome with a different runway. Never read Batumi's runway, "
-        "course or minima to somebody standing on it.",
+        f"- {f.name} is worked by {who}. A departure leaves the aerodrome's "
+        "controllers for Departure at about **5 miles**.",
     ]
+    # ONLY WHEN THEY ARE TWO PLACES. A sortie that recovers where it departed
+    # has no other aerodrome to confuse, and warning a controller off a field he
+    # is standing on reads as nonsense.
+    if arr is not None and arr.name != f.name:
+        out.append(
+            f"- {f.name} is a DIFFERENT AERODROME from {arr.name}, with a "
+            f"different runway. Never read {arr.name}'s runway, course or "
+            f"minima to somebody standing on {f.name}.")
+    return out
 
 
 def _mission() -> list[str]:
@@ -249,10 +276,15 @@ def _sortie() -> list[str]:
     a controller who assumes every arrival is flying it will greet a stranger
     by name, which is the over-fitting that got caught once already.
     """
-    if not getattr(R, "SORTIE", None):
+    # THE LOADED THEATRE'S ROUTE. This read `core.route`'s strike sortie
+    # whatever map was up, so a Nellis controller's plate carried FEET WET,
+    # TSUTSNVATI and a leg over the Black Sea.
+    from marshall.core import theatre as _t
+    th = _t.current()
+    if not th.legs or not th.waypoints:
         return []
-    legs = R.solve_route(legs=R.SORTIE_LEGS)
-    line = ", ".join(f"**{n}** {f.name}" for n, f in R.sortie_points())
+    legs = R.solve_route(legs=list(th.legs))
+    line = ", ".join(f"**{n}** {f.name}" for n, f in th.waypoints)
     detail = "; ".join(
         f"{R.steerpoint(l.frm)} to {R.steerpoint(l.to)}, "
         f"{l.heading_mag:03.0f} at {l.distance_nm:.0f} nm" for l in legs)
@@ -279,9 +311,14 @@ def _threats() -> list[str]:
     controller has never heard of Kutaisi's guns and says something reassuring
     and useless.
     """
-    if not getattr(R, "DEFENDED", None):
+    # THEATRE DATA, not a module constant. `R.DEFENDED` exists whatever map is
+    # loaded, so a Nevada plate briefed the Nellis controller on Kutaisi's
+    # anti-aircraft guns -- in the one document he is told to believe.
+    from marshall.core import theatre as _t
+    defended = _t.current().defended
+    if not defended:
         return []
-    fields = "; ".join(f"**{n}** ({r:.0f} nm)" for n, _, _, r in R.DEFENDED)
+    fields = "; ".join(f"**{n}** ({r:.0f} nm)" for n, _, _, r in defended)
     return [
         f"- **Defended enemy fields**: {fields}. Heavy anti-aircraft guns that "
         "reach well above transit altitude. Everything outside Batumi is "
@@ -297,9 +334,82 @@ def _threats() -> list[str]:
 def plate(profile: R.ApproachProfile = R.BATUMI_ASR,
           flight: str = R.FLIGHT_CALLSIGN,
           size: int = R.FLIGHT_SIZE) -> str:
+    """The field-specific facts, as the procedure being flown decides them.
+
+    THREE PROCEDURES, THREE BRIEFINGS, and the difference is WHO NAVIGATES.
+
+        surveillance   the CONTROLLER navigates. Headings, ranges every mile,
+                       no glidepath, and the pilot has no aid of his own.
+        beacon letdown the PILOT navigates, homing a beacon round a published
+                       pattern, and the controller separates him.
+        ILS            the pilot navigates, on his own aid, down a glidepath
+                       the controller cannot see and must never call.
+
+    An ILS used to be given the beacon letdown's briefing, which describes
+    station passage and legs the pilot is not flying -- and on Nevada it also
+    dereferenced an `arrival_fix` that does not exist and killed the bridge on
+    startup.
+    """
     if getattr(profile, "vectored", False):
         return _asr_plate(profile, flight, size)
+    if (getattr(profile, "guidance", "") or "").lower() == "intercept":
+        return _ils_plate(profile, flight, size)
     return _ndb_plate(profile, flight, size)
+
+
+def _ils_plate(profile: R.ApproachProfile, flight: str, size: int) -> str:
+    """The facts for an instrument approach the PILOT flies.
+
+    What the controller owns here is small and it matters that he knows it is
+    small: get the aeroplane onto the localiser at a sensible altitude and
+    range, clear him, and give him to Tower. Everything after that is the
+    pilot's, and the commonest way to get an ILS wrong is to keep talking.
+    """
+    from marshall.core import theatre as _t
+    th = _t.current()
+    rwy = profile.runway or "in use"
+    inbound = profile.final_crs
+    stations = "; ".join(f"**{s.name} {s.freq_mhz:.1f}**" for s in profile.stations)
+    dh = profile.mda_ft - profile.field_elev_ft
+    return "\n".join([
+        "# This mission's plate (the field-specific facts)",
+        "",
+        f"- This is an **ILS** to runway **{rwy}** at **{profile.beacon.name}**. "
+        "**He** navigates. You vector him to intercept, clear him, and hand him "
+        "to Tower — the approach itself is his.",
+        f"- Controllers: {stations}.",
+        f"- Final approach course **{inbound:03d}**. Vector to intercept it by "
+        f"**{profile.final_intercept_nm:.0f} miles**, at or above "
+        f"**{profile.platform_ft}** until established.",
+        f"- **Decision height {profile.mda_ft}** ({dh} ft above the field). "
+        "That is HIS number, not a level you assign — do not read it to him as "
+        "an instruction.",
+        f"- Missed approach: climbing **{profile.missed_turn}** turn to "
+        f"**{profile.missed_ft}**, re-sequence.",
+        "- **There are no mile calls on an ILS.** He has a localiser and a "
+        "glidepath and is flying both; ranges every mile are the surveillance "
+        "approach's job and here they are chatter over a busy man. Say nothing "
+        "between the clearance and his report.",
+        "- **Never call the glidepath.** You cannot see it. \"On glidepath\" "
+        "and \"above glidepath\" are radar-approach phrases and asserting one "
+        "here is inventing an instrument reading.",
+        "- **He reports established**, and that is what hands him to Tower. Ask "
+        "for it once with the clearance and then wait.",
+        f"- **Altimeter {_setting(profile)}** ({profile.altimeter_datum}) — pass "
+        "it when you call radar contact, and to anyone who asks. Every height "
+        "you read him is measured against this datum.",
+        f"- Wind **{int(th.wind_from_deg):03d} at {int(th.wind_mph)}**. It is "
+        "said with the landing clearance, where it tells him what to expect in "
+        "the flare — never as a correction while vectoring.",
+        f"- Assignable altitudes: **{profile.platform_ft}** vectoring, "
+        f"**{profile.missed_ft}** missed, and the holding stack "
+        f"**{profile.stack_ft[0]}** and up. Nothing else.",
+        *_departure_field(),
+        *_mission(),
+        *_sortie(),
+        *_threats(),
+        *_formation(flight, size, profile),
+    ])
 
 
 def _ndb_plate(profile: R.ApproachProfile,

@@ -81,6 +81,14 @@ class Theatre:
     # steerpoints, and inventing them from another map's is how this started.
     fixes: tuple = ()
     waypoints: tuple = ()          # ((1, Fix), (2, Fix), ...)
+    # WHAT SHOOTS, if anything. A 1944 Caucasus sortie transits past defended
+    # aerodromes and the controller has to be able to talk about them; a
+    # peacetime training flight over Nevada does not. Empty is the normal case
+    # and the plate says nothing rather than inventing a war.
+    defended: tuple = ()
+    # THE LEGS, solved, for the plate's route paragraph. Empty where a theatre
+    # has no filed strike route -- which is most of them.
+    legs: tuple = ()
     extra: dict = field(default_factory=dict)
 
     def field_named(self, name: str):
@@ -103,7 +111,8 @@ def caucasus() -> Theatre:
         # naming a fix the table does not hold is refused at delivery.
         fixes=tuple({f.name: f for f in vars(R).values()
                      if isinstance(f, R.Fix)}.values()),
-        waypoints=tuple(R.sortie_points()))
+        waypoints=tuple(R.sortie_points()),
+        defended=tuple(R.DEFENDED), legs=tuple(R.SORTIE_LEGS))
 
 
 # WHICH NEVADA SORTIE. Two are filed and they recover at different fields, so

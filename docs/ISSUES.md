@@ -5550,3 +5550,39 @@ then becomes data rather than a branch in controller code, which is the same
 move that made fields, stations and terrain minima portable.
 
 Start with one Nellis SID, one range route, one Nellis STAR and the existing ILS.
+
+## [SEP-15] "On the ground" was measured from sea level — #114
+labels: bug, needs-flight-test
+
+**Status:** FIXED 11 August, needs the next sortie. Found on the first Nevada
+ladder run.
+
+    GROUND_ALT_FT = 200
+    return bool(pos.alt_ft < GROUND_ALT_FT and pos.speed_kt < GROUND_SPEED_KT)
+
+`pos.alt_ft` is **above sea level**. That works at Batumi, thirty-two feet up,
+and is nonsense anywhere with terrain under it: the **ramp** at Nellis is 1,849
+feet and Tonopah's is 5,550, so every parked aeroplane on the map read as
+airborne.
+
+Everything gated on "is he down" was wrong with it — the ramp guard, the phase
+branch of `handoff.due`, the silence that keeps approach guidance off a taxiing
+aircraft. What it actually produced, to a stationary F-16 that had asked for a
+clearance:
+
+    ATC: "Sockeye, radar shows you a mile out, past my boundary — contact
+          Los Angeles Center, one three three decimal four."
+
+The airspace branch is correctly gated on `not down` and its own comment says
+why — *"a parked jet is not 'leaving my airspace'"*. It was right. The fact
+underneath it was wrong, so Clearance sent a man who had not moved to an enroute
+controller a hundred miles up.
+
+**The height is above the FIELD now**, taking the highest aerodrome in the
+theatre — one number for a test that has no per-aircraft field to consult, and
+generous on purpose: the sim's own land/takeoff event is checked first and is
+authoritative, so this fallback only ever decides for aircraft no event covered.
+
+The Caucasus is unchanged, which is the point — 59 feet against 32 changes
+nothing there, and that is exactly why this survived. A constant that is right
+on one map is invisible until there are two.

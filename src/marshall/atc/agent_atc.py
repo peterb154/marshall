@@ -2315,9 +2315,52 @@ def is_on_the_ground(scope: str, track: str, pos=None) -> bool:
                 return True
     # The fallback, for a session where no event has been seen -- the stream
     # drops when the sim pauses and a director restart begins knowing nothing.
-    return bool(pos is not None
-                and pos.alt_ft < GROUND_ALT_FT
+    #
+    # ABOVE THE FIELD, NOT ABOVE THE SEA, and the difference is the whole
+    # aerodrome half of the sortie on any map with terrain in it. `pos.alt_ft`
+    # is MSL and the threshold was compared to it raw -- which works at Batumi,
+    # 32 feet up, and is nonsense at Nellis, whose RAMP is at 1,849 feet and
+    # Tonopah's at 5,550.
+    #
+    # Measured on the first Nevada run: an F-16 parked at Nellis read
+    # `1,849 ft` and therefore "airborne", so the airspace branch decided he had
+    # left the terminal area and Clearance handed a stationary aeroplane to Los
+    # Angeles Center before he had asked for anything:
+    #
+    #     "Sockeye, radar shows you a mile out, past my boundary -- contact
+    #      Los Angeles Center, one three three decimal four."
+    #
+    # Everything gated on `down` was wrong with it: the ramp guard, the phase
+    # branch of `handoff.due`, the approach-guidance silence. A whole map's
+    # ground ladder rests on this one comparison. [#114]
+    if pos is None:
+        return False
+    elev = _field_elevation_ft()
+    return bool(pos.alt_ft - elev < GROUND_ALT_FT
                 and pos.speed_kt < GROUND_SPEED_KT)
+
+
+def _field_elevation_ft() -> int:
+    """How high the aerodromes are, so "low" can mean low over THEM.
+
+    The highest field in the theatre, deliberately: this is one number for a
+    test that has no per-aircraft field to consult, and being generous about
+    what counts as "on the ground" is the safe direction -- the sim's own
+    land/takeoff event is checked first and is authoritative, so this fallback
+    only decides for aircraft the events have not covered.
+    """
+    global _ELEV
+    if _ELEV is None:
+        try:
+            from marshall.core import theatre as _t
+            _ELEV = max((int(getattr(f, "elevation_ft", 0) or 0)
+                         for f in _t.current().fields), default=0)
+        except Exception:
+            _ELEV = 0
+    return _ELEV
+
+
+_ELEV: int | None = None
 
 
 # The takeoff/landing roll begins somewhere above a taxi and below flying. Only

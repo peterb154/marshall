@@ -56,6 +56,7 @@ from tools.hooks import due_hooks, hook_tools
 from tools.identify import bindings_for, identify_tools
 from marshall.feed.events import start_events
 from marshall.feed.tracks import start_streamer, vector
+from datetime import UTC
 
 # TODO (identity): uncomment when you have per-user profile docs.
 # from strands_pg import PgIdentity
@@ -601,6 +602,49 @@ def clearance_ack_endpoint(flight_id: int) -> dict:
 def set_fixes_endpoint(body: dict) -> dict:
     from marshall.feed.tracks import set_fixes
     return {"fixes": set_fixes(body.get("fixes") or {})}
+
+
+# WHAT IS ON THE AIR, per aerodrome. The `atis` table has been the shared source
+# of the runway in use since controllers stopped recomputing it from the wind --
+# and nothing outside the bridge process could read it back, so "is anybody
+# broadcasting, and on what letter" was unanswerable to the diagnostics page and
+# to the rehearsal harness. A row asking whether Delivery confirmed the letter
+# cannot tell "he forgot" from "there is nothing to confirm" without this.
+@app.get("/atis")
+def atis_endpoint() -> dict:
+    """Read off the TABLE, not off a theatre.
+
+    The first version walked `theatre.current().fields`, and this container has
+    no `MARSHALL_THEATRE` -- so on a Nevada sortie it confidently reported
+    Batumi and Kobuleti. The bridge knows which map is loaded and the director
+    does not, which is the whole shape of the NTTR audit and not a thing to
+    paper over with a second copy of the flag.
+
+    The table needs no such help: a row exists only because something recorded a
+    broadcast, so the rows ARE what is on the air. A field with no row has no
+    ATIS, which is exactly what the schema says.
+    """
+    from datetime import datetime
+
+    from marshall.core import db
+    from marshall.core.schema import Atis
+    out = []
+    try:
+        with db.session() as s:
+            for row in s.query(Atis).order_by(Atis.field).all():
+                age = None
+                if row.recorded_at is not None:
+                    at = row.recorded_at
+                    if at.tzinfo is None:
+                        at = at.replace(tzinfo=UTC)
+                    age = (datetime.now(UTC) - at).total_seconds()
+                out.append({"field": row.field, "letter": row.letter or "",
+                            "runway": row.runway,
+                            "on_the_air": bool(row.letter),
+                            "age_sec": age})
+    except Exception as e:
+        return {"atis": [], "error": f"{type(e).__name__}: {e}"}
+    return {"atis": out}
 
 
 @app.get("/fixes")
