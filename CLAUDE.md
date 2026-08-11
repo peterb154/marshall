@@ -18,6 +18,12 @@ WIRING says what it actually DOES — what talks to what, in what order, and whi
 of the two brains produced a given transmission. Read it when a sortie did
 something inexplicable; it is organised symptom-first at the end.
 
+**`docs/STATE.md` is the one to read before adding anything that REMEMBERS.**
+Where the truth lives, who owns it, and when it dies — the axis every
+foundational bug this month has fallen along. Written 11 August after a sortie
+whose three separate complaints had one cause: the board cannot remember who is
+flying, because `flights` is append-only, scoped to nothing, and cleaned by hand.
+
 `docs/LAYERS.md` says what may depend on what, and is the one to read before
 building something new. One rule — a module may depend only downward — plus the
 stages of a turn, the brief mechanism that keeps procedure out of the system

@@ -109,6 +109,7 @@ When two sources disagree, believe them in this order:
 | `START_HERE.md` | current reference | this. Orientation |
 | `DESIGN.md` | current reference | what the system is *for* |
 | `WIRING.md` | current reference | what it *does*; troubleshooting by symptom |
+| `STATE.md` | current diagnosis (+ target, fenced) | **where the truth lives, who owns it, when it dies** — read before adding anything that remembers |
 | `LAYERS.md` | current reference (+ future design, fenced) | what may depend on what |
 | `GOTCHAS.md` | current reference | traps that cost real time |
 | `ISSUES.md` | work record | the backlog, with acceptance criteria |

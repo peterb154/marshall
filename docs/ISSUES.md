@@ -5862,3 +5862,69 @@ The third is the one that made the first possible, and it is the same
 one-directional blindness as the `DONE`-word gap fixed the same day: a check
 that only looks one way will call two things equal while one of them holds
 something the other has never seen.
+
+## [ARCH-15] The board cannot remember who is flying — #119
+labels: architecture
+
+**Status:** OPEN. **Read `docs/STATE.md` before working this.** It is the
+write-up; this is the ticket.
+
+    "if the whole system requires claude code to keep the database clean, this
+     isnt going to work."
+
+Correct. Nothing ever deletes a flight row. `clear_mission` exists and is called
+by exactly one thing — a human hitting `DELETE /flights`. Every row is
+`mission = 'default'`, so there is no notion of a sortie; `player_leave_unit`
+frees the in-memory board and not the row; a mission load wipes nothing.
+
+`tracks` already does this correctly — every radar sweep deletes whatever the sim
+no longer has, nobody cleans it by hand, and it has never carried a ghost. Same
+kind of fact, opposite treatment.
+
+**What it cost, 11 August.** One sortie, three complaints, one cause. His flight
+produced three rows in thirty seconds, none bound to him, because `bind()`
+matches on `srs_guid`, `track_name` and `callsign` and **not `srs_name`** — so a
+transmission carrying only an SRS name matched nothing and inserted. Every
+`flight_agree` wrote into a row identifying nobody and the next transmission
+abandoned it. Every controller met him for the first time.
+
+And **nothing on the bridge ever writes `intent`.** He said "VFR to Batumi,
+visual 13" on his first call and at every handoff; the field is read in four
+places and written by none.
+
+**Acceptance criteria**
+1. A row belongs to a mission INSTANCE. A row from a previous one is never found.
+2. `player_leave_unit` ends the row, not only the board entry.
+3. A flight with no radar contact and no transmission expires, reconciled the way
+   `tracks` is.
+4. `srs_name` is a binding key.
+5. A pilot's stated intent is written down and inherited at every handoff.
+6. `DELETE /flights` is a debugging convenience, not load-bearing. Fly two
+   sorties back to back without touching it and the second is clean.
+
+---
+
+## [ARCH-16] The board is in memory; the database is the source of truth — #120
+labels: architecture
+
+**Status:** OPEN, and deliberately AFTER #119. **See `docs/STATE.md`.**
+
+    "there really shouldn't be much in memory data structures - we addressed
+     this - database is fast and should be the single source of truth"
+
+`Controller` holds the entire board — phase, altitude, approach, clearance, the
+letdown, the formations. `Bridge` holds sixteen more dictionaries. The same facts
+exist in `flights`, `identities`, `assigned_plans` and `flight_member`, are
+written, and are never read back as authoritative. A restart forgets every one of
+them while the aeroplanes go on flying.
+
+Some of it genuinely belongs in memory — `decided`, `handoff_due`, `last_said`
+live and die inside one transmission. The rest is the controller's MEMORY.
+
+**Not worth starting before #119.** There is no point caching a table that
+cannot be trusted to hold what it is given.
+
+**Acceptance criteria**
+1. `Controller.aircraft` is a cache of the tables, not the original.
+2. A bridge restart mid-sortie loses nothing a pilot can hear.
+3. Per-turn scratch is separated from remembered state, named as such.
