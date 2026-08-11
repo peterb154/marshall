@@ -883,10 +883,48 @@ class Controller:
                        if a.phase == Phase.HOLDING and a.assigned_ft is not None),
                       key=lambda a: (a.assigned_ft, a.callsign))
 
+    def _spoken_for(self) -> set:
+        """Stack levels occupied by somebody who is NOT in the holding stack.
+
+        THE LEVEL IS HIS UNTIL HE IS OUT OF IT. An aircraft cleared for the
+        approach keeps the altitude he was holding at -- it is the altitude he
+        flies the letdown at -- and he does not leave it the instant he is
+        cleared. He is still up there.
+
+        This engine used to hand that level straight to the next arrival,
+        because `_free_slot` counted only aircraft whose phase was HOLDING and
+        a cleared one is not. Three aeroplanes arriving together produced:
+
+            Alpha 1      CLEARED   assigned=5000   <- letdown
+            Bravo 1      HOLDING   assigned=5000
+
+        Two aircraft at one altitude, which on THIS approach means nothing
+        separates them at all. `ApproachProfile.stack_ft` says why, about
+        itself: a beacon letdown holds aircraft over a fix and the fix is what
+        keeps them apart, but "take the beacon away, as a radar approach does,
+        and there is no pattern and nothing to hold over ... the levels still
+        provide the separation". The level IS the separation here. Sharing one
+        is not a tighter margin, it is no margin.
+
+        Costs one holding level while somebody is on the approach, which is not
+        a loss: a level with an aeroplane in it was never free.
+
+        A missed approach and an aircraft under vectors reserve their levels for
+        the same reason -- they are aeroplanes at an altitude, and where they
+        got it does not change what a holder above them needs. Landed and
+        banished aircraft do not: they are gone.
+        """
+        return {a.assigned_ft for a in self.aircraft.values()
+                if a.assigned_ft is not None
+                and a.phase not in (Phase.HOLDING, Phase.LANDED, Phase.BANISHED)}
+
     def _free_slot(self) -> int | None:
-        """Lowest stack level nobody holds -- a new arrival enters here, i.e.
-        on top of the current holders (which always fill from the bottom up)."""
-        taken = {a.assigned_ft for a in self._holders()}
+        """Lowest stack level nobody is at -- a new arrival enters here, i.e.
+        on top of everyone already placed (the stack fills from the bottom up).
+
+        NOBODY IS AT, not nobody holds. See `_spoken_for`.
+        """
+        taken = {a.assigned_ft for a in self._holders()} | self._spoken_for()
         for ft in self.profile.stack_ft:
             if ft not in taken:
                 return ft
@@ -1834,8 +1872,17 @@ class Controller:
         re-separating a flight that had just been told to stay together.
         """
         levels = sorted({a.assigned_ft for a in self._holders()})
+        # DOWN TO THE LEVELS THAT ARE ACTUALLY FREE, which is not the same as
+        # the bottom of the stack. The aircraft this step-down is making room
+        # for is still at the level he was cleared from, so compressing the
+        # holders onto `stack_ft[0..n]` would step the bottom one straight into
+        # him -- the very collision `_spoken_for` exists to prevent, arrived at
+        # from the other direction.
+        free = [ft for ft in self.profile.stack_ft if ft not in self._spoken_for()]
         for i, level in enumerate(levels):
-            want = self.profile.stack_ft[i]
+            if i >= len(free):
+                break                   # nowhere lower to go; leave him be
+            want = free[i]
             if level == want:
                 continue
             movers = [a for a in self._holders() if a.assigned_ft == level]
@@ -1871,6 +1918,13 @@ class Controller:
             addr = self._addr(ac) if ac else callsign.parse(cs).spoken
             self.say(cs, f"{addr}, {self.profile.controller}, no report, "
                          f"say intentions.")
+            # ...AND HIS LEVEL WITH HIM. `_spoken_for` now reserves the
+            # altitude of the aircraft in the letdown, so declaring the letdown
+            # clear while leaving him holding a stack level would take that
+            # level out of circulation for the rest of the sortie -- a slow leak
+            # of exactly the resource this timeout exists to release.
+            if ac is not None:
+                ac.assigned_ft = None
             self._letdown = None                # assume clear; do not deadlock
             self._try_clear()
 

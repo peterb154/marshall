@@ -5331,7 +5331,9 @@ engine actually did, which is why two years of logs looked fine.
 ## [SEP-14] The vacated stack level is reassigned before it is vacated — #108
 labels: bug, needs-flight-test
 
-**Status:** OPEN, and it is a design call rather than a slip. Found on the FIRST
+**Status:** FIXED 11 August, needs the next sortie. **Hold the level empty** was
+the call: on a radar approach the level IS the separation, so the aircraft
+cleared for the approach keeps his until he is out of it. Found on the FIRST
 run of `tools/stack_rehearsal.py`, 11 August — the first time three arrivals have
 ever been sequenced at once.
 
@@ -5386,3 +5388,33 @@ tests disagree with the fix.
    may share one.
 2. `tools/stack_rehearsal.py --ships 3` reports no violation.
 3. Whatever is decided, the board says the same thing the engine believes.
+
+**Decided, and done.**
+
+    "Yes, hold it empty"
+
+`_spoken_for` is the level reservation: any aircraft that is not a holder and is
+not gone -- the letdown, a missed approach, one under vectors -- keeps the
+altitude he is at. `_free_slot` and `_step_down` both read it, because the
+collision arrives from both directions: a new arrival can be put on the cleared
+aircraft's level, and the step-down can walk the bottom holder into it.
+
+It costs one holding level while somebody is on the approach, which is not a
+loss -- a level with an aeroplane in it was never free. Three arrivals now
+produce 5,000 / 6,000 / 7,000 instead of 5,000 / 5,000 / 6,000.
+
+Eight tests asserted the old numbers and were updated with the reason. They were
+all asserting CONSEQUENCES -- "B is at five thousand" -- and the invariant itself
+was never written down, which is why the numbers still matched while two
+aeroplanes shared an altitude. `NoTwoAircraftAtOneAltitude` asserts the rule:
+three arrivals, a full stack, through a landing and a step-down, and after a
+missed approach. Confirmed to fail against the old engine and pass against the
+new one before being left green.
+
+Live, three synthetic arrivals over real SRS:
+
+    Hoover           CLEARED      5000 ft  <- letdown
+    Sockeye          HOLDING      6000 ft
+
+    no aircraft shared a level, one letdown at a time, the stack
+    filled from the bottom, and nobody was forgotten.

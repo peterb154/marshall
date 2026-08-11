@@ -48,11 +48,20 @@ class TestStackEntry(unittest.TestCase):
         self.assertEqual(ac.assigned_ft, self.ctl.profile.hold_base_ft)
 
     def test_arrivals_fill_bottom_up(self):
+        """...ABOVE THE AIRCRAFT ON THE APPROACH, who is still at the base.
+
+        This used to expect B at 4,000 -- the level A had just been cleared
+        from and is still flying. Both numbers were written from the code
+        rather than decided, and the first stack rehearsal ever flown put two
+        aeroplanes at one altitude on its first run. On a radar approach the
+        level IS the separation: there is no beacon, no pattern, and nothing
+        else keeping them apart. See `_spoken_for` and #108.
+        """
         for cs in ("A 1", "B 1", "C 1"):
             self.ctl.report_beacon(cs, 9000)
-        # First is cleared into the letdown; the rest stack from the base up.
-        self.assertEqual(self.ctl.get("B 1").assigned_ft, 4000)
-        self.assertEqual(self.ctl.get("C 1").assigned_ft, 5000)
+        self.assertEqual(self.ctl.get("A 1").assigned_ft, 4000)   # the letdown
+        self.assertEqual(self.ctl.get("B 1").assigned_ft, 5000)
+        self.assertEqual(self.ctl.get("C 1").assigned_ft, 6000)
 
     def test_stack_grows_past_four(self):
         # The stack used to be a fixed four-element list. A formation break-up
@@ -61,7 +70,9 @@ class TestStackEntry(unittest.TestCase):
             self.ctl.report_beacon(f"Ship {i}", 9000)
         levels = sorted(a.assigned_ft for a in self.ctl.aircraft.values()
                         if a.phase is atc.Phase.HOLDING)
-        self.assertEqual(levels, [4000, 5000, 6000, 7000, 8000])
+        # 4,000 belongs to the aircraft in the letdown until he leaves it, so
+        # the holders start one level higher than they used to. [#108]
+        self.assertEqual(levels, [5000, 6000, 7000, 8000, 9000])
 
     def test_stack_is_capped_by_oxygen(self):
         p = profile(hold_base_ft=4000, hold_top_ft=6000)
@@ -92,12 +103,29 @@ class TestOneInTheLetdown(unittest.TestCase):
         self.assertEqual(self.ctl.get("Two 1").phase, atc.Phase.CLEARED)
 
     def test_step_down_on_vacate(self):
+        """Everybody moves down one, onto levels that are actually free.
+
+        Lead holds 4,000 in the letdown; Two holds 5,000; Three holds 6,000.
+        When Lead lands, Two is cleared -- and takes 5,000 with him, because
+        the level he flies the approach at is the one he was holding. So Three
+        steps down to 6,000... which is where he already is.
+
+        The old expectation was that Three dropped to 4,000, onto the level Two
+        was still at. That is the collision from the other direction, and it is
+        why `_step_down` compresses onto the FREE levels rather than onto the
+        bottom of the stack. [#108]
+        """
         self.ctl.report_beacon("Three 1", 6000)
         texts(self.ctl)
-        self.assertEqual(self.ctl.get("Three 1").assigned_ft, 5000)
+        self.assertEqual(self.ctl.get("Three 1").assigned_ft, 6000)
         self.ctl.report_landed("Lead 1")
-        # Two is cleared out of 4000; Three drops into the bottom slot.
-        self.assertEqual(self.ctl.get("Three 1").assigned_ft, 4000)
+        self.assertEqual(self.ctl.get("Two 1").phase, atc.Phase.CLEARED)
+        # Nobody is left at a level anybody else is at.
+        levels = [a.assigned_ft for a in self.ctl.aircraft.values()
+                  if a.assigned_ft is not None
+                  and a.phase is not atc.Phase.LANDED]
+        self.assertEqual(len(levels), len(set(levels)),
+                         "two aircraft ended up at one altitude")
 
 
 class TestMissedApproach(unittest.TestCase):
@@ -160,18 +188,19 @@ class TestTimedMissedApproachPoint(unittest.TestCase):
 class TestAltitudeDeviation(unittest.TestCase):
     def test_a_wrong_level_is_corrected_not_echoed(self):
         ctl = atc.Controller(profile())
-        ctl.report_beacon("Lead 1", 4000)       # cleared
-        ctl.report_beacon("Two 1", 5000)        # holding at 4000
+        ctl.report_beacon("Lead 1", 4000)       # cleared, and keeps 4,000
+        ctl.report_beacon("Two 1", 5000)        # holds ABOVE him, at 5,000
         texts(ctl)
         ctl.report_beacon("Two 1", 7000)        # reports a level he was not given
-        self.assertTrue(said(ctl, "negative", "assigned four thousand"))
+        self.assertTrue(said(ctl, "negative", "assigned five thousand"))
 
     def test_a_matching_level_is_acknowledged(self):
         ctl = atc.Controller(profile())
         ctl.report_beacon("Lead 1", 4000)
         ctl.report_beacon("Two 1", 5000)
         texts(ctl)
-        ctl.report_beacon("Two 1", 4000)
+        # 5,000, not 4,000 -- 4,000 is the letdown aircraft's now. [#108]
+        ctl.report_beacon("Two 1", 5000)
         self.assertFalse(said(ctl, "negative"))
 
 
@@ -1267,3 +1296,72 @@ class TestNobodyIsNumberTwoBehindHimself(unittest.TestCase):
         self._stuck()
         self.ctl._try_clear(requested_by="Sockeye")
         self.assertEqual(self.ctl._letdown, "Sockeye")
+
+
+class NoTwoAircraftAtOneAltitude(unittest.TestCase):
+    """The promise the deterministic half exists to keep, asserted directly.
+
+    Every stack test in this file checks a NUMBER -- B is at five thousand, C is
+    at six -- and each of those is a consequence of the invariant rather than the
+    invariant itself. So when the engine started handing the aircraft cleared for
+    the approach's level to the next arrival, the numbers still matched what had
+    been written down and nothing said two aeroplanes were at one altitude.
+
+    It took `tools/stack_rehearsal.py` -- three synthetic arrivals over real SRS,
+    checking the board rather than a number -- to see it, on its first run, after
+    sixteen turns of two-or-more holding in this project's entire recorded life.
+    That is the argument for asserting the rule and not only its arithmetic.
+
+    On a radar approach the level IS the separation: `ApproachProfile.stack_ft`
+    says so about itself -- no beacon, no pattern, nothing to hold over, "the
+    levels still provide the separation". Sharing one is not a tighter margin.
+    See #108.
+    """
+
+    def _levels(self, ctl):
+        """Everybody who is somewhere, and where. Landed aircraft are gone."""
+        return [(a.callsign, a.assigned_ft) for a in ctl.aircraft.values()
+                if a.assigned_ft is not None and a.phase is not atc.Phase.LANDED]
+
+    def _assert_all_apart(self, ctl, what):
+        got = self._levels(ctl)
+        levels = [ft for _cs, ft in got]
+        dupes = {ft for ft in levels if levels.count(ft) > 1}
+        self.assertFalse(
+            dupes, f"{what}: "
+                   + "; ".join(f"{cs} at {ft:,}" for cs, ft in sorted(got))
+                   + f"  -- {', '.join(f'{d:,}' for d in sorted(dupes))} shared")
+
+    def test_three_arriving_together(self):
+        """The case that found it. One is cleared, two hold, nobody shares."""
+        ctl = atc.Controller(profile())
+        for cs in ("Alpha 1", "Bravo 1", "Charlie 1"):
+            ctl.report_beacon(cs, 9000)
+        self._assert_all_apart(ctl, "three arrivals")
+
+    def test_a_full_stack(self):
+        ctl = atc.Controller(profile())
+        for i in range(5):
+            ctl.report_beacon(f"Ship {i} 1", 9000)
+        self._assert_all_apart(ctl, "a full stack")
+
+    def test_through_a_landing_and_the_step_down(self):
+        """The step-down is the other direction the collision can come from:
+        compressing the holders onto the bottom of the stack walks the lowest
+        one straight into the aircraft who was just cleared from it."""
+        ctl = atc.Controller(profile())
+        for cs in ("Alpha 1", "Bravo 1", "Charlie 1", "Delta 1"):
+            ctl.report_beacon(cs, 9000)
+        texts(ctl)
+        ctl.report_landed("Alpha 1")
+        self._assert_all_apart(ctl, "after the bottom one lands")
+        ctl.report_landed("Bravo 1")
+        self._assert_all_apart(ctl, "and after the next one")
+
+    def test_a_missed_approach_does_not_land_on_a_holder(self):
+        ctl = atc.Controller(profile())
+        for cs in ("Alpha 1", "Bravo 1", "Charlie 1"):
+            ctl.report_beacon(cs, 9000)
+        texts(ctl)
+        ctl.report_missed("Alpha 1")
+        self._assert_all_apart(ctl, "after a missed approach")

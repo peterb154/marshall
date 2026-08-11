@@ -149,14 +149,35 @@ def two_in_the_letdown(board) -> list:
 
 
 def a_hole_in_the_stack(board, stack_ft) -> list:
-    """Somebody above an empty level is being held longer than he need be."""
-    used = sorted(set(levels_of(board).values()))
+    """Somebody above an empty level is being held longer than he need be.
+
+    HOLDERS ONLY, AND ONLY LEVELS THAT ARE IN THE STACK. This asked the question
+    of every assigned altitude, so an aircraft under vectors at twelve thousand
+    -- above the stack top, and not a holding level at all -- read as a hole
+    below him and was reported three times as a separation violation. A check
+    that fires on correct behaviour is one people learn to scroll past.
+
+    The aircraft in the letdown is excluded for the same reason he RESERVES his
+    level (#108): he is leaving, and the hole under a stack that is waiting for
+    him to go is not a hole.
+    """
+    used = sorted({a.get("assigned_ft") for a in board
+                   if a.get("phase") == "HOLDING"
+                   and a.get("assigned_ft") in stack_ft})
     if len(used) < 2:
         return []
-    want = [ft for ft in stack_ft if ft <= used[-1]][:len(used)]
+    below = [ft for ft in stack_ft if ft < used[0]]
+    # Every level below the lowest holder must belong to somebody -- the
+    # letdown, a missed approach -- or it is a rung nobody is standing on.
+    taken = {a.get("assigned_ft") for a in board if a.get("assigned_ft")}
+    empty = [ft for ft in below if ft not in taken]
+    want = [ft for ft in stack_ft if ft >= used[0]][:len(used)]
+    if empty:
+        return [f"holders are at {', '.join(f'{f:,}' for f in used)} with "
+                f"{', '.join(f'{f:,}' for f in empty)} empty beneath them"]
     if used != want:
-        return [f"levels {', '.join(f'{f:,}' for f in used)} are in use but the "
-                f"stack fills from the bottom: {', '.join(f'{f:,}' for f in want)}"]
+        return [f"holders are at {', '.join(f'{f:,}' for f in used)} but the "
+                f"stack has no gaps: {', '.join(f'{f:,}' for f in want)}"]
     return []
 
 

@@ -373,9 +373,9 @@ class TestAfterBreakUp(unittest.TestCase):
 class TestFormationWithOtherTraffic(unittest.TestCase):
     def test_a_single_stacks_above_a_broken_up_flight(self):
         ctl = atc.Controller(imc_profile())
-        four_ship(ctl)                       # 1-1 cleared, 2/3/4 at 4/5/6000
+        four_ship(ctl)                       # 1-1 cleared at 4000; 2/3/4 at 5/6/7000
         ctl.report_beacon("Hawk 1", 9000)
-        self.assertEqual(ctl.get("Hawk 1").assigned_ft, 7000)
+        self.assertEqual(ctl.get("Hawk 1").assigned_ft, 8000)
 
     def test_a_single_is_not_swallowed_by_the_flight(self):
         ctl = atc.Controller(imc_profile())
@@ -383,8 +383,10 @@ class TestFormationWithOtherTraffic(unittest.TestCase):
         ctl.report_beacon("Hawk 1", 9000)
         texts(ctl)
         ctl.report_landed("Pony 1-1")
-        # Everyone steps down, including the unrelated single.
-        self.assertEqual(ctl.get("Hawk 1").assigned_ft, 6000)
+        # Everyone steps down ONE, including the unrelated single -- onto the
+        # levels that are free, which is 8,000 -> 7,000 now that the aircraft
+        # cleared into the letdown keeps the one below. [#108]
+        self.assertEqual(ctl.get("Hawk 1").assigned_ft, 7000)
 
     def test_a_formation_and_a_single_share_the_stack(self):
         """A four-ship that stays together is ONE aeroplane to the stack, so a
@@ -394,7 +396,10 @@ class TestFormationWithOtherTraffic(unittest.TestCase):
         ctl.report_beacon("Pony 1-1", 6000, 4)
         ctl.report_beacon("Hawk 1", 9000)
         self.assertEqual(len(ctl.aircraft), 2)
-        self.assertEqual(ctl.get("Hawk 1").assigned_ft, 4000)
+        # 5,000: the flight is cleared and keeps 4,000 until it leaves it. The
+        # point of the row is that a four-ship costs ONE level, not four, and
+        # that still holds one rung higher. [#108]
+        self.assertEqual(ctl.get("Hawk 1").assigned_ft, 5000)
 
     def test_two_formations(self):
         ctl = atc.Controller(imc_profile())
