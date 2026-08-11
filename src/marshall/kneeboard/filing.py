@@ -42,6 +42,26 @@ STYLE = """
                padding: 8px 11px; margin: 6px 0; }
   .file .warn { background: #f2ecd6; border-left: 4px solid #b8860b;
                 padding: 8px 11px; margin: 6px 0; }
+  .file textarea { width: 100%; height: 84px; font: 12px/1.35 "Courier New",
+    monospace; padding: 6px 7px; border: 1px solid #8a8069; background: #efe7d2;
+    color: #241f18; resize: vertical; word-break: break-all; }
+  .file .cart { border: 1px dashed #8a8069; padding: 12px 14px; margin: 0 0 18px; }
+  .file .cart h2 { font-size: 14px; margin: 0 0 4px; letter-spacing: .09em;
+    text-transform: uppercase; color: #5a5142; }
+  .file .cart button { margin-top: 10px; margin-right: 8px; }
+  .file .wps { font-size: 13px; margin-top: 10px; }
+  .file .wps table { border-collapse: collapse; width: 100%; }
+  .file .wps td, .file .wps th { padding: 2px 8px 2px 0; text-align: left;
+    font-weight: normal; }
+  .file .wps th { color: #5a5142; font-size: 11px; letter-spacing: .07em;
+    text-transform: uppercase; }
+  .file .wps .n { text-align: right; }
+  .file .look { margin-top: 8px; font-size: 13px; background: #efe7d2;
+    border-left: 4px solid #8a8069; padding: 8px 11px; }
+  .file .look dt { color: #5a5142; font-size: 11px; letter-spacing: .07em;
+    text-transform: uppercase; margin-top: 6px; }
+  .file .look dd { margin: 0; }
+  .file .miss { color: #b03024; }
   .file .ok { background: #e2ecd6; border-left: 4px solid #4a7a24;
               padding: 8px 11px; margin: 6px 0; }
   .file .board { margin-top: 22px; border-top: 1px solid #8a8069;
@@ -63,6 +83,24 @@ def build() -> str:
   <div class="sub">Goes on the board the controller reads. A pilot asks for it
     by its <b>label</b>, out loud, so the label is one word and the rules about
     it are the director's — this page only asks.</div>
+
+  <div class="cart">
+    <h2>from a data cartridge</h2>
+    <div class="hint">Paste what DKS put on your clipboard. It fills the form
+      below — it does not file anything, because a cartridge that filed itself
+      would be a second filing path and the two would disagree the first time a
+      rule changed.</div>
+    <textarea id="dtc" spellcheck="false"
+      placeholder="RQsAAB+LCAAAAAAAAAPdVt..."></textarea>
+    <label style="display:inline; text-transform:none; letter-spacing:0">
+      <input type="checkbox" id="sp" style="width:auto"> file his own named
+      steerpoints (FOO, BAR…) as fixes for this sortie</label>
+    <div class="hint">His names are SHARED, not published — he typed them and
+      they are on his HSI. They belong to one aeroplane and die with the sortie:
+      the bridge's catalogue push at start-up takes them off the fix table.</div>
+    <button id="read" type="button">Read cartridge</button>
+    <div id="cartout"></div>
+  </div>
 
   <form id="f" autocomplete="off">
     <div class="two">
@@ -155,14 +193,99 @@ async function board() {{
       + `<span>${{esc(p.task || '')}}</span>`
       + `<span class="rt">${{esc(p.origin)}}&rarr;${{esc(p.destination)}}`
       + ` ${{(p.cruise_ft || 0).toLocaleString()}} ft</span>`
-      + `<button class="drop" data-n="${{esc(p.name)}}">remove</button></div>`)
+      + `<button class="look" data-n="${{esc(p.name)}}">inspect</button>`
+      + `<button class="drop" data-n="${{esc(p.name)}}">remove</button>`
+      + `<div id="look-${{esc(p.name)}}"></div></div>`)
       .join('') || '<div class="hint">nothing filed</div>';
+  document.querySelectorAll('button.look').forEach(
+    b => b.onclick = () => look(b.dataset.n));
   document.querySelectorAll('.drop').forEach(b => b.onclick = async () => {{
     const r = await fetch('/plans/' + encodeURIComponent(b.dataset.n),
                           {{method: 'DELETE'}});
     const res = await r.json();
     if (!res.removed) say(res); else {{ $('#out').innerHTML = ''; board(); }}
   }});
+}}
+
+// READ A CARTRIDGE INTO THE FORM. The server decodes it -- gzip inside base64 --
+// and hands back a draft. Everything after that is the ordinary path.
+$('#read').onclick = async () => {{
+  const v = values();
+  const r = await fetch('/dtc', {{method: 'POST',
+    headers: {{'content-type': 'application/json'}},
+    body: JSON.stringify({{cartridge: $('#dtc').value,
+                          name: v.name, label: v.label,
+                          approach: v.approach,
+                          steerpoints: $('#sp').checked}})}});
+  const res = await r.json();
+  if (res.refused) {{ await say(res); return; }}
+
+  const d = res.draft || {{}};
+  // Only what the cartridge actually knows. A label and a key are a human's to
+  // choose and are left alone if already typed.
+  for (const k of ['origin', 'destination', 'route', 'cruise_ft']) {{
+    if (d[k] != null && d[k] !== '') $(`[name=${{k}}]`).value = d[k];
+  }}
+  if (!$('[name=task]').value) $('[name=task]').value = d.task || '';
+
+  const wps = res.waypoints || [];
+  let h = `<div class="wps"><table><tr><th>#</th><th>name</th>`
+    + `<th class="n">lat</th><th class="n">lon</th><th class="n">alt</th></tr>`
+    + wps.map(w => `<tr><td>${{w.seq}}</td><td>${{esc(w.name || 'STPT')}}</td>`
+        + `<td class="n">${{w.lat.toFixed(4)}}</td>`
+        + `<td class="n">${{w.lon.toFixed(4)}}</td>`
+        + `<td class="n">${{(w.alt_ft || 0).toLocaleString()}} ft</td></tr>`).join('')
+    + `</table>`;
+  const m = res.misc || {{}};
+  if (m.ils_mhz) h += `<div class="hint">cartridge also carries ILS `
+    + `${{esc(m.ils_mhz)}} / course ${{esc(m.ils_course)}}, TACAN `
+    + `${{esc(m.tacan)}}X — those are the jet's, not the plan's.</div>`;
+  if (res.notes) h += `<div class="look"><dt>kneeboard notes</dt>`
+    + `<dd>${{esc(res.notes)}}</dd></div>`;
+  h += `</div>`;
+  $('#cartout').innerHTML = h;
+
+  if ($('#sp').checked) {{
+    const p = await (await fetch('/dtc/steerpoints', {{method: 'POST',
+      headers: {{'content-type': 'application/json'}},
+      body: JSON.stringify({{cartridge: $('#dtc').value}})}})).json();
+    if (p.refused) await say(p);
+    else if ((p.pushed || []).length)
+      $('#cartout').innerHTML += `<div class="ok">his steerpoints, for this `
+        + `sortie: ${{esc(p.pushed.join(', '))}}</div>`;
+  }}
+  check();
+}};
+
+// INSPECT ONE. The board row says label and destination; this says everything
+// the controller will actually read, and marks a route fix the sim does not
+// hold -- which is the failure that reads as "no fix called KOBULETI" at the
+// moment somebody asks for a clearance.
+async function look(name) {{
+  const plans = ((await (await fetch('/plans')).json()).plans || []);
+  const p = plans.find(x => x.name === name);
+  const box = document.getElementById('look-' + name);
+  if (!box) return;
+  if (box.innerHTML) {{ box.innerHTML = ''; return; }}
+  if (!p) {{ box.innerHTML = '<div class="bad">not on the board</div>'; return; }}
+  let known = [];
+  try {{ known = ((await (await fetch('/plans/fixes')).json()).fixes || [])
+                  .map(s => s.toUpperCase()); }} catch (e) {{}}
+  const legs = String(p.route || '').split(',').map(s => s.trim())
+    .filter(Boolean)
+    .map(f => known.length && !known.includes(f.toUpperCase())
+      ? `<span class="miss">${{esc(f)}} ?</span>` : esc(f));
+  box.innerHTML = `<div class="look">`
+    + `<dt>key</dt><dd>${{esc(p.name)}}</dd>`
+    + `<dt>said on the radio</dt><dd>${{esc(p.label || '(none)')}}</dd>`
+    + `<dt>task</dt><dd>${{esc(p.task || '(none)')}}</dd>`
+    + `<dt>route</dt><dd>${{legs.join(' &rarr; ') || '(none)'}}</dd>`
+    + `<dt>cruise</dt><dd>${{(p.cruise_ft || 0).toLocaleString()}} ft</dd>`
+    + `<dt>recovery</dt><dd>${{esc(p.approach || '(none)')}}</dd>`
+    + (legs.some(l => l.includes('miss'))
+        ? `<div class="bad">a fix in red is not on the sim's table — a `
+          + `clearance naming it would be refused</div>` : '')
+    + `</div>`;
 }}
 
 // The route box offers what the DIRECTOR holds, so a typo is a thing you

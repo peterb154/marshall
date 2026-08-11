@@ -289,6 +289,109 @@ async def plans_read():
     return await _director("GET", "/plans")
 
 
+# READ A DATA CARTRIDGE, and decide nothing about it.
+#
+#     "take the DTC data im sharing with you and paste it into a text box for
+#      uploading/updating a plan"
+#
+# It comes back as a DRAFT that fills the form. The page then files it through
+# exactly the path a typed plan takes -- `/plans/check` while you look at it,
+# `/plans` when you press the button -- so the director's rules are asked once
+# and are asked the same way whether a human or a jet composed the route. A
+# cartridge that could file itself would be a second filing path, and the two
+# would disagree the first time a rule changed.
+#
+# Server-side because it is gzip inside base64, and because `core.dtc` is where
+# the format lives -- see its docstring on why not in the tool.
+@app.post("/dtc")
+async def read_cartridge(request: Request):
+    from marshall.core import dtc as _dtc
+    raw = (await request.body()).decode("utf-8", "replace")
+    try:
+        body = json.loads(raw or "{}")
+    except ValueError:
+        body = {}
+    text = (body.get("cartridge") or "").strip()
+    if not text:
+        return JSONResponse({"refused": ["paste a cartridge first"]},
+                            status_code=400, headers=NO_CACHE)
+    try:
+        d = _dtc.decode(text)
+    except Exception as e:
+        # NAME WHAT WENT WRONG. A cartridge that has been through a chat window
+        # loses its tail more often than not, and "invalid" sends somebody
+        # hunting the wrong thing -- one arrived tonight whose base64 was
+        # perfect and whose gzip stream was nine bytes short.
+        return JSONResponse(
+            {"refused": [f"that is not a cartridge: {e}"]},
+            status_code=400, headers=NO_CACHE)
+    try:
+        wps = _dtc.waypoints(d)
+        draft = _dtc.plan_from(
+            d, (body.get("name") or "").strip() or "untitled",
+            approach=(body.get("approach") or "").strip(),
+            label=(body.get("label") or "").strip(),
+            steerpoints=bool(body.get("steerpoints")))
+    except Exception as e:
+        return JSONResponse({"refused": [f"cannot read the route: {e}"]},
+                            status_code=400, headers=NO_CACHE)
+    misc = d.get("Misc") or {}
+    return JSONResponse(
+        {"draft": draft,
+         "aircraft": d.get("Aircraft") or "",
+         "notes": d.get("KneeboardNotes") or "",
+         "waypoints": wps,
+         "steerpoints": sorted(_dtc.named_steerpoints(wps)),
+         "misc": {"ils_mhz": misc.get("ILSFrequency"),
+                  "ils_course": misc.get("ILSCourse"),
+                  "tacan": misc.get("TACANChannel"),
+                  "bingo": misc.get("Bingo")},
+         "radios": [{"radio": k,
+                     "presets": [{"n": p.get("Number"),
+                                  "name": p.get("Name"),
+                                  "mhz": p.get("Frequency")}
+                                 for p in (v.get("Presets") or [])]}
+                    for k, v in (d.get("Radios") or {}).items()]},
+        headers=NO_CACHE)
+
+
+# HIS OWN TURNING POINTS, onto the fix table for this sortie only. Separate from
+# reading the cartridge because it MUTATES, and because a draft is something you
+# look at before deciding.
+@app.post("/dtc/steerpoints")
+async def push_steerpoints(request: Request):
+    from marshall.core import dtc as _dtc
+    body = json.loads((await request.body()) or b"{}")
+    try:
+        wps = _dtc.waypoints(_dtc.decode((body.get("cartridge") or "").strip()))
+    except Exception as e:
+        return JSONResponse({"refused": [str(e)]}, status_code=400,
+                            headers=NO_CACHE)
+    sp = _dtc.named_steerpoints(wps)
+    if not sp:
+        return JSONResponse({"pushed": [], "why": "nothing he named"},
+                            headers=NO_CACHE)
+    # MERGED, NOT REPLACED. `set_fixes` says in its own docstring that the
+    # pushed set REPLACES the table -- right for the bridge, whose push is the
+    # whole theatre, and fatal here, where it is three steerpoints. It wiped all
+    # twenty-one once and the next filing was refused with "no fix called
+    # KOBULETI".
+    have = {}
+    got = await _director("GET", "/fixes")
+    try:
+        have = json.loads(bytes(got.body)).get("fixes") or {}
+    except Exception:
+        have = {}
+    if not have:
+        return JSONResponse(
+            {"refused": ["the fix table is empty — start the bridge first, it "
+                         "pushes the theatre's catalogue"]},
+            status_code=409, headers=NO_CACHE)
+    await _director("PUT", "/fixes",
+                    json.dumps({"fixes": {**have, **sp}}).encode())
+    return JSONResponse({"pushed": sorted(sp)}, headers=NO_CACHE)
+
+
 @app.get("/plans/fixes")
 async def plans_fixes():
     return await _director("GET", "/plans/fixes")
