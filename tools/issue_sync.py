@@ -93,7 +93,31 @@ ROW = re.compile(r"^\|\s*(~~)?\**([A-Z]\d+[a-z]?)\**~?~?\s*\|.*?\[(R)?#(\d+)\]",
                  re.M)
 
 # Statuses that mean "this is finished". Everything else is live work.
-DONE = {"VALIDATED", "CLOSED", "DONE"}
+# Statuses that mean the work is finished. Read off what the file ACTUALLY says
+# rather than what it ought to: `FIXED` is the commonest completion word in
+# ISSUES.md by a distance, `SHIPPED` and `BUILT` are next, and none of the three
+# was in this set -- so sixteen finished issues were never compared against
+# GitHub at all and the check reported "statuses match".
+#
+# The comparison was written and correct in both directions. It just could not
+# recognise the word, which is the quietest way for a check to do nothing.
+# NOT `BUILT`. In this file that word means "the code exists and nothing has
+# proven it" -- both issues using it say so in the next breath ("BUILT, needs a
+# pilot", "BUILT 30 July, unflown. Five of six acceptance criteria met").
+# Treating it as finished would have closed two issues that are not.
+DONE = {"VALIDATED", "CLOSED", "DONE", "FIXED", "SHIPPED"}
+
+
+def gh_labels() -> dict[int, set]:
+    """Every issue's labels on GitHub, open and closed."""
+    gh = shutil.which("gh") or str(Path.home() / ".local" / "bin" / "gh")
+    out = subprocess.run(
+        [gh, "issue", "list", "--state", "all", "--limit", "200",
+         "--json", "number,labels"], capture_output=True, text=True)
+    if out.returncode != 0:
+        return {}
+    return {i["number"]: {x["name"] for x in i.get("labels", [])}
+            for i in json.loads(out.stdout or "[]")}
 
 
 def gh_flight_test() -> dict[int, list[str]]:
@@ -184,7 +208,17 @@ def main() -> int:
     if state is None:
         return 2                      # SKIP, not FAIL -- see gh_states
     flight_test = gh_flight_test()
+    have_labels = gh_labels()
     items = entries(text)
+    declared_labels = {}
+    for _i in items:
+        if not _i["num"]:
+            continue
+        _seg = text[_i["span"][0]:_i["span"][1]]
+        _lm = re.search(r"^labels:\s*(.+)$", _seg, re.M)
+        if _lm:
+            declared_labels[int(_i["num"])] = {
+                x.strip() for x in _lm.group(1).split(",") if x.strip()}
 
     # TWO ISSUES WITH ONE NAME, which is how [OPS-4] came to mean both "the card
     # check was blind" and "a paused sim". I did that three times in two days --
@@ -244,8 +278,35 @@ def main() -> int:
             drift.append((e, None, "not on GitHub"))
         elif gs == "CLOSED" and e["status"] not in DONE:
             drift.append((e, n, f"closed on GitHub, reads {e['status'] or '?'}"))
-        elif gs == "OPEN" and e["status"] in DONE:
+        elif gs == "OPEN" and e["status"] in DONE and n not in flight_test:
+            # NOT FOR A `needs-flight-test` ISSUE, and that is the project's own
+            # rule rather than a special case: "a needs-flight-test issue is
+            # closed by a PILOT flying the card, never by a green test suite".
+            # Such an issue reading FIXED and sitting open is exactly right --
+            # the work is done and the evidence is not in yet.
             drift.append((e, n, f"open on GitHub, reads {e['status']}"))
+
+    # LABELS DRIFT TOO, and one label decides who owns an issue. `#3` reads
+    # `needs-flight-test` in ISSUES.md and carries `p2` on GitHub -- and
+    # `gh_flight_test` asks GITHUB, so the coverage check quietly stopped
+    # counting an issue only a pilot can close. Nothing anywhere said so: the
+    # markdown looked right, the check looked green, and the row it should have
+    # demanded on the card was never demanded.
+    #
+    # Only the labels ISSUES.md declares are compared. GitHub carries priority
+    # labels (`p1`, `p2`) that are set there and belong there; the file is not
+    # the authority on those and must not report them as missing.
+    label_drift = []
+    for i in items:
+        if not i["num"]:
+            continue
+        n = int(i["num"])
+        if n not in have_labels:
+            continue
+        want = declared_labels.get(n, set())
+        missing = want - have_labels[n]
+        if missing:
+            label_drift.append((i["slug"], n, sorted(missing)))
 
     for struck, rid, regression, num in ROW.findall(card):
         # A STRUCK ROW IS ALREADY RETIRED. The regex captured the marker and
@@ -294,6 +355,11 @@ def main() -> int:
         print("NEEDS A PILOT, BUT IS NOT ON THE CARD")
         for n in sorted(unflown):
             print(f"  #{n} is labelled needs-flight-test and no row cites it")
+    if label_drift:
+        print("LABELS ON GITHUB ARE MISSING WHAT ISSUES.md DECLARES")
+        for slug, n, missing in label_drift:
+            print(f"  {slug:10} #{n}  missing {', '.join(missing)}")
+        print("  Run: uv run python tools/file_issues.py --sync")
     if body_drift:
         print("GITHUB IS SHOWING OLDER TEXT THAN ISSUES.md")
         for slug, n in body_drift[:12]:

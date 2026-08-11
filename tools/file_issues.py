@@ -130,7 +130,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--sync", action="store_true",
-                    help="also push bodies that have drifted from ISSUES.md")
+                    help="also push bodies, titles and labels that have drifted")
     args = ap.parse_args()
 
     if not (os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")):
@@ -207,8 +207,9 @@ def sync_bodies(gh, issues, dry_run: bool = False) -> int:
         if not i["number"]:
             continue
         n = int(i["number"])
-        r = subprocess.run([gh, "issue", "view", str(n), "--json", "body,title"],
-                           capture_output=True, text=True)
+        r = subprocess.run(
+            [gh, "issue", "view", str(n), "--json", "body,title,labels"],
+            capture_output=True, text=True)
         if r.returncode != 0:
             continue
         import json as _json
@@ -216,17 +217,36 @@ def sync_bodies(gh, issues, dry_run: bool = False) -> int:
         want_title = f"[{i['slug']}] {i['title']}"
         same_body = (got.get("body") or "").strip() == i["body"].strip()
         same_title = (got.get("title") or "").strip() == want_title
-        if same_body and same_title:
+        # LABELS DRIFT AND NOBODY WAS PUSHING THEM. This sweep has always
+        # written the body and the title and never the labels, so a label added
+        # in ISSUES.md simply never reached GitHub -- and one of them decides
+        # who owns an issue. Thirteen entries declared `needs-flight-test` and
+        # carried no such label on GitHub, where `issue_sync.gh_flight_test`
+        # looks, so the check that demands a card row for every issue only a
+        # pilot can close was blind to all thirteen.
+        #
+        # ADDITIVE ONLY. GitHub carries priority labels (`p1`, `p2`) set there
+        # and belonging there; ISSUES.md is not the authority on those and
+        # removing what it does not mention would throw them away.
+        have_labs = {x["name"] for x in got.get("labels", [])}
+        add_labs = sorted(set(i["labels"]) - have_labs)
+        if same_body and same_title and not add_labs:
             continue
-        what = ("body" if not same_body else "") + \
-               ("+title" if not same_title else "")
+        what = ", ".join(filter(None, [
+            "" if same_body else "body",
+            "" if same_title else "title",
+            f"labels ({', '.join(add_labs)})" if add_labs else ""]))
         print(f"  #{n:<5} [{i['slug']}] {what} drifted")
         changed += 1
         if dry_run:
             continue
+        if add_labs:
+            ensure_labels(gh, set(add_labs))
         cmd = [gh, "issue", "edit", str(n), "--body", i["body"]]
         if not same_title:
             cmd += ["--title", want_title]
+        for lab in add_labs:
+            cmd += ["--add-label", lab]
         e = subprocess.run(cmd, capture_output=True, text=True)
         if e.returncode != 0:
             print(f"     !! failed: {e.stderr.strip()}", file=sys.stderr)

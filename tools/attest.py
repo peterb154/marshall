@@ -32,6 +32,13 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "src"))
+
+# IMPORTED FOR ITS SIDE EFFECT: `marshall.config` reads the gitignored `.env`
+# into the environment, which is where `GH_TOKEN` lives. Third tool in this
+# directory to have needed it -- `gh` is not the thing that knows where the
+# token is, and none of these should have to.
+from marshall import config as _config       # noqa: F401  (imported for .env)
 
 
 def _git(*args: str) -> str:

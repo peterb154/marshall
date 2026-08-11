@@ -4834,7 +4834,8 @@ Same aircraft, same moment, two altitudes.
 ## [ATIS-3] Clearance never asks whether you have the information — #96
 labels: bug
 
-**Status:** OPEN. Reported live, 11 August.
+**Status:** FIXED 11 August, confirmed live by `tools/ladder_rehearsal.py`
+row Q3b. Reported live the same day.
 
     "Clearance ... never did ask that I had information [alpha]"
 
@@ -5022,7 +5023,9 @@ man ends up talking to nobody at the end of a flight.
 ## [OPS-11] The ladder is rehearsed by a synthetic pilot, and checked — #101
 labels: tooling
 
-**Status:** BUILT 11 August. Runs unattended; needs an aeroplane to judge the
+**Status:** SHIPPED 11 August. Runs unattended, spawns its own fixture, and
+goes six of eight against the live bridge; the two that fail are #105 and fail
+for that reason. Originally BUILT, needing an aeroplane to judge the
 engine-side rows.
 
     "Can you test some of this using ai aircraft. It's getting tedious to test
@@ -5246,7 +5249,7 @@ supposed to complete had nothing left to complete.
 ---
 
 ## [SEP-13] "Holding short" on Ground does not move the phase — #106
-labels: bug, closed
+labels: bug
 
 **Status:** CLOSED 11 August. NOT A BUG in the engine -- **the record was stale**. Closed by #107,
 11 August, and the diagnosis below was wrong.
