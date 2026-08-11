@@ -473,7 +473,7 @@ class TestTheBlindEngineIsToldWhatRadarSees(unittest.TestCase):
 
     def test_he_owns_the_letdown_rather_than_queueing_for_it(self):
         self.c.seen_on_final("Pony 1-1")
-        self.assertEqual(self.c._letdown, "Pony 1-1")
+        self.assertEqual(self.c._in_letdown(), "Pony 1-1")
 
     def test_checking_in_afterwards_does_not_stack_him(self):
         self.c.seen_on_final("Pony 1-1")
@@ -1172,7 +1172,7 @@ class TestACheckInDoesNotUndoAClearance(unittest.TestCase):
         self.ctl.note_radar_contact(cs)
         ac = self.ctl.aircraft[self.ctl._resolve(cs)]
         ac.phase = atc.Phase.CLEARED
-        self.ctl._letdown = cs
+        self.ctl._set_letdown(None, cs)
         self.ctl.out.clear()
         return ac
 
@@ -1244,7 +1244,7 @@ class TestNobodyIsNumberTwoBehindHimself(unittest.TestCase):
         self.ctl.note_radar_contact(cs)
         ac = self.ctl.aircraft[self.ctl._resolve(cs)]
         ac.phase, ac.assigned_ft = atc.Phase.HOLDING, 5000
-        self.ctl._letdown = cs
+        self.ctl._set_letdown(None, cs)
         self.ctl.out.clear()
         return ac
 
@@ -1283,7 +1283,7 @@ class TestNobodyIsNumberTwoBehindHimself(unittest.TestCase):
         self.ctl.note_radar_contact("Sockeye")
         self.ctl.get("Hoover")
         self.ctl.note_radar_contact("Hoover")
-        self.ctl._letdown = "Sockeye"
+        self.ctl._set_letdown(None, "Sockeye")
         self.ctl.out.clear()
         self.ctl._try_clear(requested_by="Hoover")
         said = " | ".join(t.text for t in self.ctl.out).lower()
@@ -1295,7 +1295,7 @@ class TestNobodyIsNumberTwoBehindHimself(unittest.TestCase):
         thing the block exists to prevent."""
         self._stuck()
         self.ctl._try_clear(requested_by="Sockeye")
-        self.assertEqual(self.ctl._letdown, "Sockeye")
+        self.assertEqual(self.ctl._in_letdown(), "Sockeye")
 
 
 class NoTwoAircraftAtOneAltitude(unittest.TestCase):

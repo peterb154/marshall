@@ -147,6 +147,22 @@ class Aircraft:
     # the engine's with no rule about which governed. See `governing_ft`.
     assigned_ft: int | None = None
     cleared_ft: int | None = None
+    # WHICH APPROACH HE IS FLYING. His, not the bridge's.
+    #
+    #     "One approach profile per flight, not per bridge -- THIS IS THE WALL
+    #      IN FRONT OF MULTIPLE AIRPORTS."                      -- #2, day one
+    #
+    # `Controller` holds one `profile` and every arrival fact was read off it:
+    # the beacon, the stack levels, the runway, the minima, the missed
+    # approach, the name of the controller. That is correct for one aerodrome
+    # and wrong for two, and it is not a subtle wrongness -- it is one
+    # aeroplane being given another airport's runway and minima, and every
+    # number is real, so nothing looks wrong until somebody flies it.
+    #
+    # None means "the bridge's", which is what everything did before and is
+    # right for an aircraft nobody has assigned a recovery to. See
+    # `Controller._pro`.
+    profile: object | None = None
     last_report_t: float = 0.0
     approaches: int = 0
     map_t: float | None = None       # computed station-passage (missed approach point) time
@@ -293,8 +309,17 @@ class Controller:
     aircraft: dict[str, Aircraft] = field(default_factory=dict)
     out: list[Tx] = field(default_factory=list)
     t: float = 0.0
-    _letdown: str | None = None         # callsign currently in the letdown
-    _letdown_since: float = 0.0
+    # WHO IS IN THE LETDOWN, PER APPROACH. One string was one letdown for the
+    # whole bridge -- correct while there was one aerodrome, and the moment
+    # there are two it means an aeroplane on the Nellis ILS blocks the approach
+    # at Tonopah, a hundred and twenty miles away, for no reason anybody could
+    # explain on the radio.
+    #
+    # Keyed on the procedure's BEACON, which is what a letdown is single-
+    # occupancy ABOUT: the fix everybody flies over. Two aircraft on one
+    # approach contend; two aircraft on two approaches do not. See `_key`.
+    _letdown_by: dict = field(default_factory=dict)
+    _letdown_since_by: dict = field(default_factory=dict)
     # STATES THAT SHOULD BE IMPOSSIBLE, recorded when they happen anyway.
     #
     # The separation engine has invariants -- one aircraft in the letdown, a
@@ -399,11 +424,11 @@ class Controller:
         key = self._resolve(callsign)
         if key not in self.aircraft:
             return False
-        if self._letdown == key:
+        ac = self.aircraft[key]
+        if self._in_letdown(ac) == key:
             # He owned the approach. Free it or the next arrival waits behind
             # somebody who has gone home.
-            self._letdown = None
-            self._letdown_since = self.t
+            self._set_letdown(ac, None)
         self.aircraft.pop(key, None)
         return True
 
@@ -417,6 +442,36 @@ class Controller:
         ac = self.aircraft.get(self._resolve(callsign))
         if ac is not None:
             ac.radar_identified = bool(seen)
+
+    def _pro(self, ac):
+        """THE APPROACH THIS AEROPLANE IS FLYING, not the one the bridge loaded.
+
+        Every arrival fact comes through here: the beacon he homes, the levels
+        in his stack, the runway he is cleared to, his minima, his missed
+        approach, and the name of the controller working him. They are
+        properties of a PROCEDURE, and two aircraft recovering to two fields
+        have two of them.
+
+        The facility's station table is deliberately NOT here. `station_for`
+        answers "who works ground at Kobuleti" and that is a property of the
+        theatre, shared by every profile in it -- routing it through an
+        aircraft would imply it could differ per flight, which it cannot.
+
+        Falls back to the bridge's profile, which is what every caller did
+        before and is right for an aeroplane nobody has assigned a recovery to.
+        """
+        return getattr(ac, "profile", None) or self.profile
+
+    def assign_approach(self, callsign: str, profile) -> None:
+        """This aeroplane is recovering on THIS procedure. Told, not deduced.
+
+        Set from his filed plan, which names its approach -- so a flight going
+        home to Nellis carries the Nellis ILS whatever the bridge happens to
+        have loaded, and the outbound aircraft beside him can carry Tonopah's.
+        """
+        ac = self.aircraft.get(self._resolve(callsign))
+        if ac is not None and profile is not None:
+            ac.profile = profile
 
     def note_cleared_level(self, callsign: str, ft: int | None) -> None:
         """The cruise level his IFR clearance carries. Told, not decided.
@@ -509,7 +564,7 @@ class Controller:
                  "track": ac.track,
                  "owner": ac.owner,
                  "intent": ac.intent,
-                 "in_letdown": cs == self._letdown}
+                 "in_letdown": cs == self._in_letdown(ac)}
                 for cs, ac in sorted(self.aircraft.items())]
 
     def bind(self, cs: str, track: str = "", owner: str = "") -> Aircraft:
@@ -662,7 +717,7 @@ class Controller:
                 f"{spell_hdg((out + 180) % 360)} inbound {leg}, "
                 f"expect vectors for the approach, I will call you")
 
-    def _report_phrase(self) -> str:
+    def _report_phrase(self, ac=None) -> str:
         """What he should call next. Never a trigger he cannot detect.
 
         This used to say "never a fix he cannot navigate to", which is the same
@@ -677,11 +732,12 @@ class Controller:
         approach the controller reads him the course every mile, and the only
         thing the pilot reports is what he can see out of the window.
         """
+        pro = self._pro(ac)
         if self._vectored:
-            if getattr(self.profile, "guidance", "") == "talkdown":
+            if getattr(pro, "guidance", "") == "talkdown":
                 return "report the field in sight"
             return "report established on the final approach course"
-        return f"report {self.profile.beacon.name} inbound"
+        return f"report {pro.beacon.name} inbound"
 
     def _no_acknowledgement_phrase(self) -> str:
         """Said ONCE, with the approach clearance, on a talkdown. Then never.
@@ -911,14 +967,54 @@ class Controller:
         c = callsign.parse(ac.callsign)
         return c.spoken_flight if ac.is_flight else c.spoken
 
-    def _holders(self) -> list[Aircraft]:
+    def _key(self, ac=None) -> str:
+        """Which letdown/stack this aeroplane belongs to. The beacon's name.
+
+        Empty for a controller with no profile at all, which is the unit-test
+        and dry-run case -- one unnamed letdown, exactly as before.
+        """
+        return getattr(getattr(self._pro(ac), "beacon", None), "name", "") or ""
+
+    def _in_letdown(self, ac=None) -> str | None:
+        return self._letdown_by.get(self._key(ac))
+
+    def _set_letdown(self, ac, who: str | None) -> None:
+        k = self._key(ac)
+        if who is None:
+            self._letdown_by.pop(k, None)
+            self._letdown_since_by.pop(k, None)
+        else:
+            self._letdown_by[k] = who
+            self._letdown_since_by[k] = self.t
+
+    def _same_stack(self, a, ref) -> bool:
+        """Are these two aircraft holding over the same place?
+
+        Two aerodromes are two stacks. A hold over Nellis and a hold over
+        Tonopah are a hundred and twenty miles apart and share no airspace, so
+        an aeroplane waiting for one is not in the other's way -- and must not
+        be able to reserve a level in it.
+
+        Compared by the procedure's BEACON, which is the fix the pattern is
+        flown over, rather than by profile identity: two aircraft recovering to
+        one field on one approach are the same stack whether or not they were
+        handed the same object.
+        """
+        if ref is None:
+            return True
+        mine = getattr(getattr(self._pro(ref), "beacon", None), "name", "")
+        his = getattr(getattr(self._pro(a), "beacon", None), "name", "")
+        return (not mine) or (not his) or mine == his
+
+    def _holders(self, ref=None) -> list[Aircraft]:
         # Callsign breaks ties so a flight sharing one level under visual
         # separation still sequences lead first (Pony 1-1 before Pony 1-2).
         return sorted((a for a in self.aircraft.values()
-                       if a.phase == Phase.HOLDING and a.assigned_ft is not None),
+                       if a.phase == Phase.HOLDING and a.assigned_ft is not None
+                       and self._same_stack(a, ref)),
                       key=lambda a: (a.assigned_ft, a.callsign))
 
-    def _spoken_for(self) -> set:
+    def _spoken_for(self, ref=None) -> set:
         """Stack levels occupied by somebody who is NOT in the holding stack.
 
         THE LEVEL IS HIS UNTIL HE IS OUT OF IT. An aircraft cleared for the
@@ -951,16 +1047,26 @@ class Controller:
         """
         return {a.assigned_ft for a in self.aircraft.values()
                 if a.assigned_ft is not None
-                and a.phase not in (Phase.HOLDING, Phase.LANDED, Phase.BANISHED)}
+                and a.phase not in (Phase.HOLDING, Phase.LANDED, Phase.BANISHED)
+                and self._same_stack(a, ref)}
 
-    def _free_slot(self) -> int | None:
-        """Lowest stack level nobody is at -- a new arrival enters here, i.e.
+    def _free_slot(self, ac=None) -> int | None:
+        """Lowest level nobody is at IN HIS STACK -- a new arrival enters here,
         on top of everyone already placed (the stack fills from the bottom up).
 
         NOBODY IS AT, not nobody holds. See `_spoken_for`.
+
+        HIS STACK, and that is not pedantry once there are two aerodromes. A
+        hold over Nellis and a hold over Tonopah are a hundred and twenty miles
+        apart; they share no airspace, and an aeroplane waiting for one is not
+        in the other's way. Counting them together would hand the second arrival
+        a level for no reason -- and, worse, would let an aircraft on ANOTHER
+        field's approach reserve a level here.
         """
-        taken = {a.assigned_ft for a in self._holders()} | self._spoken_for()
-        for ft in self.profile.stack_ft:
+        stack = list(getattr(self._pro(ac), "stack_ft", ()) or ())
+        taken = ({a.assigned_ft for a in self._holders(ac)}
+                 | self._spoken_for(ac))
+        for ft in stack:
             if ft not in taken:
                 return ft
         return None                     # stack full
@@ -998,13 +1104,13 @@ class Controller:
         queue does not know about geometry, so this is what joins them: the
         vectoring asks who owns the approach and works only him.
         """
-        return self._letdown
+        return self._in_letdown()
 
     def waiting(self) -> list[str]:
         """Everyone who is not the one being worked. They hold; they are not
         vectored, because a vector is an invitation to start the approach."""
         return [cs for cs, ac in self.aircraft.items()
-                if cs != self._letdown
+                if cs != self._in_letdown()
                 and ac.phase.name not in ("LANDED", "UNKNOWN")]
 
     def seen_on_final(self, cs: str, size: int = 1) -> bool:
@@ -1044,7 +1150,7 @@ class Controller:
         ac = self._enter(cs, size)
         ac.phase, ac.last_report_t = Phase.CLEARED, self.t
         ac.assigned_ft = None                  # he is not in the stack
-        self._letdown, self._letdown_since = ac.callsign, self.t
+        self._set_letdown(ac, ac.callsign)
         return True
 
     def _arriving(self, ac) -> bool:
@@ -1139,7 +1245,7 @@ class Controller:
         else:
             here, here_freq = self.profile.station(enroute=True)
         tower, tower_freq = self.profile.station()
-        fix = self.profile.arrival_fix
+        fix = self._pro(ac).arrival_fix
         if fix is not None and tower_freq and tower_freq != here_freq:
             # Report the fix he is CURRENTLY homing, and change channel when he
             # gets there. Telling him to contact Tower now would take him off
@@ -1150,7 +1256,7 @@ class Controller:
             call = (f"{self._addr(ac)}, {here}, radar not available, "
                     f"report {fix.name}. At {fix.name} contact {tower} "
                     f"{spell_freq(tower_freq)} -- you will be homing "
-                    f"{self.profile.beacon.name} from there.")
+                    f"{self._pro(ac).beacon.name} from there.")
         elif self._arriving(ac) and (self._owns("approach")
                                      or self._owns("center")):
             call = (f"{self._addr(ac)}, {here}, "
@@ -1303,8 +1409,8 @@ class Controller:
         # a name no longer on the board, so all four members sat holding and
         # nobody was ever cleared. Silent, and it would have read as the
         # controller simply forgetting about them.
-        if self._letdown == ac.callsign:
-            self._letdown = None
+        if self._in_letdown(ac) == ac.callsign:
+            self._set_letdown(ac, None)
         self._broken_up[ac.callsign] = members
         self.say(ac.callsign, ref=ac, text=
                  f"{self._addr(ac)}, break up for individual approaches."
@@ -1343,7 +1449,7 @@ class Controller:
             # lead's decision and nobody else's, and if he wants to bring four
             # aeroplanes down as one, that is a formation approach and it is
             # perfectly ordinary.
-            slot = self._free_slot()
+            slot = self._free_slot(ac)
             if slot is None:
                 # NOT a `hold` decision: there is no hold to give. Naming it one
                 # would have `reconcile` suppress a vector to protect a holding
@@ -1371,10 +1477,10 @@ class Controller:
             # Established inbound on the beam: start the station-passage clock.
             # The pilot flies the MAP on a watch; ATC times the same number and
             # calls it as backup (aural station passage does not read in the sim).
-            ac.map_t = self.t + self.profile.final_approach_sec
+            ac.map_t = self.t + self._pro(ac).final_approach_sec
             self.say(ac.callsign,
                      f"{self._addr(ac)}, roger, station passage "
-                     f"{spell_dur(self.profile.final_approach_sec)}, "
+                     f"{spell_dur(self._pro(ac).final_approach_sec)}, "
                      f"report field in sight or missed approach.")
         elif (altitude_ft and ac.governing_ft
               and altitude_ft != ac.governing_ft):
@@ -1414,12 +1520,12 @@ class Controller:
         ac.approaches += 1
         ac.last_report_t = self.t
         ac.map_t = None
-        if self._letdown == ac.callsign:
-            self._letdown = None
+        if self._in_letdown(ac) == ac.callsign:
+            self._set_letdown(ac, None)
         if ac.approaches >= MAX_APPROACHES:
-            ac.phase, ac.assigned_ft = Phase.BANISHED, self.profile.top_ft
+            ac.phase, ac.assigned_ft = Phase.BANISHED, self._pro(ac).top_ft
             return True
-        ac.phase, ac.assigned_ft = Phase.MISSED, self.profile.missed_ft
+        ac.phase, ac.assigned_ft = Phase.MISSED, self._pro(ac).missed_ft
         return False
 
     def _missed_instruction(self, banished: bool) -> str:
@@ -1454,8 +1560,8 @@ class Controller:
         ac = self.get(cs)
         ac.phase, ac.last_report_t = Phase.LANDED, self.t
         ac.map_t = None
-        if self._letdown == ac.callsign:
-            self._letdown = None
+        if self._in_letdown(ac) == ac.callsign:
+            self._set_letdown(ac, None)
         # THE RUNWAY IS TOWER'S. Anybody else who has the field in sight gets
         # sent to the man who can actually give him the runway, rather than a
         # clearance the speaker had no authority to issue. A pilot cannot tell
@@ -1513,8 +1619,8 @@ class Controller:
         # phase the approach left him in and the ground ladder never resumed.
         ac.sortie_phase = "landed"
         ac.map_t = None
-        if self._letdown == ac.callsign:
-            self._letdown = None
+        if self._in_letdown(ac) == ac.callsign:
+            self._set_letdown(ac, None)
         # HIS field. This welcomed a pilot who had just landed at Batumi as
         # "Kobuleti Tower" -- the last thing said on the whole sortie.
         twr = (self.profile.station_for(
@@ -1553,9 +1659,9 @@ class Controller:
         # A flight may fly a visual as a flight -- see `report_beacon`. It is
         # one entity, it gets one clearance, and the lead flies it.
         ac = self.get(cs)
-        runway = self.profile.runway or "in use"
-        if not self._letdown or self._letdown == ac.callsign:
-            self._letdown = ac.callsign
+        runway = self._pro(ac).runway or "in use"
+        if not self._in_letdown(ac) or self._in_letdown(ac) == ac.callsign:
+            self._set_letdown(ac, ac.callsign)
             ac.phase, ac.on_visual, ac.last_report_t = Phase.CLEARED, True, self.t
             if field_in_sight:
                 self.say(ac.callsign,
@@ -1571,8 +1677,8 @@ class Controller:
         # owns once the pilot is flying his own approach.
         ac.phase = Phase.HOLDING
         if ac.assigned_ft is None:
-            ac.assigned_ft = self._free_slot() or self.profile.bottom_ft
-        place = len(self._holders())
+            ac.assigned_ft = self._free_slot(ac) or self._pro(ac).bottom_ft
+        place = len(self._holders(ac))
         words = ["", "one", "two", "three", "four", "five", "six"]
         self.say(ac.callsign,
                  f"{self._addr(ac)}, {self._hold_phrase(ac.assigned_ft, ac.kit)}. "
@@ -1827,7 +1933,7 @@ class Controller:
             # letdown for him) -- re-affirm, don't send him back to the hold.
             self.say(ac.callsign,
                      f"{self._addr(ac)}, cleared {self._approach_name()} runway "
-                     f"{self.profile.runway or 'in use'}, continue.")
+                     f"{self._pro(ac).runway or 'in use'}, continue.")
             return
         if not self.may_be_sequenced(ac):
             # NOT RADAR IDENTIFIED. He does not get a level, he does not get a
@@ -1858,7 +1964,7 @@ class Controller:
         # which of two instructions to obey.
         held_at = None
         if ac.phase in (Phase.UNKNOWN, Phase.ENROUTE):
-            slot = self._free_slot()
+            slot = self._free_slot(ac)
             if slot is not None:
                 ac.phase, ac.assigned_ft, ac.last_report_t = Phase.HOLDING, slot, self.t
                 held_at = slot
@@ -1870,29 +1976,59 @@ class Controller:
         # It also lands the two in the right order for free -- the pattern, and
         # then "continue holding, number two", which is a sequence number that
         # has to follow the instructions it refers to.
-        if held_at is not None and not (self._letdown is None
-                                        and self._next_up() is ac):
+        if held_at is not None and not (self._in_letdown(ac) is None
+                                        and self._next_up(ac) is ac):
             self.say(ac.callsign,
-                     f"{self._addr(ac)}, {self.profile.controller}, "
+                     f"{self._addr(ac)}, {self._pro(ac).controller}, "
                      f"{self._hold_phrase(held_at, ac.kit)}.",
                      decided=D.Decision(kind="hold", to=ac.callsign,
                                         altitude_ft=held_at,
-                                        station=self.profile.controller))
+                                        station=self._pro(ac).controller))
         self._try_clear(requested_by=ac.callsign)
 
     # -- the sequencing core ----------------------------------------------
-    def _next_up(self) -> Aircraft | None:
-        """Who gets the next approach: a go-around at the front of the line
-        first, otherwise the bottom of the stack."""
-        missed = [a for a in self.aircraft.values() if a.phase == Phase.MISSED]
+    def _next_up(self, ref=None) -> Aircraft | None:
+        """Who gets the next approach AT THIS FIELD: a go-around at the front of
+        the line first, otherwise the bottom of that field's stack."""
+        missed = [a for a in self.aircraft.values()
+                  if a.phase == Phase.MISSED and self._same_stack(a, ref)]
         if missed:
             return min(missed, key=lambda a: a.approaches)
-        holders = self._holders()
+        holders = self._holders(ref)
         return holders[0] if holders else None
 
-    def _try_clear(self, requested_by: str | None = None) -> None:
-        """Clear the next aircraft for approach, if the letdown block is free."""
-        if self._letdown is not None:
+    def _try_clear(self, requested_by: str | None = None, ref=None) -> None:
+        """Clear the next aircraft for approach, if HIS letdown block is free.
+
+        `ref` names which letdown -- an aeroplane on the Nellis ILS does not
+        wait for the approach at Tonopah to clear.
+
+        WITH NO REFERENCE IT TRIES EVERY STACK, one at a time, and that is not a
+        convenience. Defaulting to the BRIDGE's procedure looked right and was
+        the bug: the free-letdown check ran against Tonopah's key while
+        `_next_up` picked an aeroplane from Nellis's stack and cleared him, so
+        both arrivals at Nellis were cleared for the same approach at once. The
+        question "is the letdown free" cannot be asked without saying WHICH.
+        """
+        ref = ref if ref is not None else (
+            self.aircraft.get(self._resolve(requested_by)) if requested_by else None)
+        if ref is None and not requested_by:
+            seen = set()
+            for a in list(self.aircraft.values()):
+                k = self._key(a)
+                if k in seen:
+                    continue
+                seen.add(k)
+                self._try_clear(ref=a)
+            if not seen:                    # nobody on the board at all
+                self._try_clear_one(None, None)
+            return
+        self._try_clear_one(requested_by, ref)
+
+    def _try_clear_one(self, requested_by: str | None, ref) -> None:
+        """One stack's worth of the above. Split out so the loop cannot recurse
+        into itself and so every early return below still means one thing."""
+        if self._in_letdown(ref) is not None:
             # NOBODY IS NUMBER TWO BEHIND HIMSELF, and this deadlocked a live
             # sortie until the pilot declared an emergency to get out of it.
             #
@@ -1912,7 +2048,7 @@ class Controller:
             # So: the man in the letdown is not held behind it. He is told to
             # continue, which is the truth -- he is already cleared -- and the
             # stack is left exactly as it is for everybody else.
-            if requested_by and requested_by == self._letdown:
+            if requested_by and requested_by == self._in_letdown(ref):
                 ac = self.aircraft.get(self._resolve(requested_by))
                 if ac is not None and ac.phase == Phase.HOLDING:
                     # THIS STATE IS NOW IMPOSSIBLE, and reaching it is a bug
@@ -1942,26 +2078,27 @@ class Controller:
                              kind="continue_hold", to=requested_by,
                              altitude_ft=getattr(ac2, "assigned_ft", None)))
             return
-        ac = self._next_up()
+        ac = self._next_up(ref)
         if ac is None:
             return
 
         was_bottom_holder = ac.phase == Phase.HOLDING
         ac.phase = Phase.CLEARED
         ac.last_report_t = self.t
-        self._letdown, self._letdown_since = ac.callsign, self.t
+        self._set_letdown(ac, ac.callsign)
         self.say(ac.callsign,
                  f"{self._addr(ac)}, cleared {self._approach_name()} runway "
-                 f"{self.profile.runway or 'in use'}, {self._report_phrase()}. "
+                 f"{self._pro(ac).runway or 'in use'}, "
+                 f"{self._report_phrase(ac)}. "
                  f"Report missed approach or landing."
                  f"{self._no_acknowledgement_phrase()}",
                  decided=D.Decision(kind="cleared_approach", to=ac.callsign,
-                                    runway=self.profile.runway or "",
+                                    runway=self._pro(ac).runway or "",
                                     note=self._approach_name()))
         if was_bottom_holder:
-            self._step_down()
+            self._step_down(ac)
 
-    def _step_down(self) -> None:
+    def _step_down(self, ref=None) -> None:
         """The bottom slot just emptied; drop the stack down to close the gap.
 
         Steps LEVELS, not aircraft. Under visual separation a whole flight shares
@@ -1969,21 +2106,22 @@ class Controller:
         4,000 / 5,000 / 6,000 -- silently undoing the visual break-up and
         re-separating a flight that had just been told to stay together.
         """
-        levels = sorted({a.assigned_ft for a in self._holders()})
+        levels = sorted({a.assigned_ft for a in self._holders(ref)})
         # DOWN TO THE LEVELS THAT ARE ACTUALLY FREE, which is not the same as
         # the bottom of the stack. The aircraft this step-down is making room
         # for is still at the level he was cleared from, so compressing the
         # holders onto `stack_ft[0..n]` would step the bottom one straight into
         # him -- the very collision `_spoken_for` exists to prevent, arrived at
         # from the other direction.
-        free = [ft for ft in self.profile.stack_ft if ft not in self._spoken_for()]
+        free = [ft for ft in getattr(self._pro(ref), "stack_ft", ()) or ()
+                if ft not in self._spoken_for(ref)]
         for i, level in enumerate(levels):
             if i >= len(free):
                 break                   # nowhere lower to go; leave him be
             want = free[i]
             if level == want:
                 continue
-            movers = [a for a in self._holders() if a.assigned_ft == level]
+            movers = [a for a in self._holders(ref) if a.assigned_ft == level]
             for ac in movers:
                 ac.assigned_ft = want
             # One call for a flight moving together, one per aircraft otherwise.
@@ -2005,16 +2143,21 @@ class Controller:
         # Missed approach point, timed. The pilot flies this on a watch; ATC
         # backs it up -- when the beam clock runs out with the aircraft still in
         # the letdown and no landing reported, the controller calls the missed.
-        if self._letdown:
-            ac = self.aircraft.get(self._letdown)
+        # EVERY LETDOWN, not "the" letdown. Two aerodromes have two, and a
+        # missed-approach clock that only ever watched one would let an
+        # aeroplane fly past the missed approach point at the other field with
+        # nobody calling it.
+        for cs in list(self._letdown_by.values()):
+            ac = self.aircraft.get(cs)
             if ac and ac.map_t is not None and self.t >= ac.map_t:
                 self._station_passage(ac)
 
-        if self._letdown and self.t - self._letdown_since > CLEARANCE_TIMEOUT_SEC:
-            cs = self._letdown
+        for key, cs in list(self._letdown_by.items()):
+            if self.t - self._letdown_since_by.get(key, 0.0) <= CLEARANCE_TIMEOUT_SEC:
+                continue
             ac = self.aircraft.get(cs)
             addr = self._addr(ac) if ac else callsign.parse(cs).spoken
-            self.say(cs, f"{addr}, {self.profile.controller}, no report, "
+            self.say(cs, f"{addr}, {self._pro(ac).controller}, no report, "
                          f"say intentions.")
             # ...AND HIS LEVEL WITH HIM. `_spoken_for` now reserves the
             # altitude of the aircraft in the letdown, so declaring the letdown
@@ -2023,8 +2166,10 @@ class Controller:
             # of exactly the resource this timeout exists to release.
             if ac is not None:
                 ac.assigned_ft = None
-            self._letdown = None                # assume clear; do not deadlock
-            self._try_clear()
+            # assume clear; do not deadlock -- and only THIS field's letdown.
+            self._letdown_by.pop(key, None)
+            self._letdown_since_by.pop(key, None)
+            self._try_clear(ref=ac)
 
         # Prompt at most one quiet holder per tick, so a lull does not produce a
         # burst of simultaneous calls stepping on each other.

@@ -1788,8 +1788,32 @@ def _cleared_plan_now(known: str) -> dict:
             return {}
         return {"cruise_ft": row.get("cruise_ft"),
                 "squawk": row.get("squawk") or "",
+                # WHICH PROCEDURE HE IS RECOVERING ON. See migration 025 -- the
+                # column has existed since the plans table and the view did not
+                # carry it, so the bridge gave every aeroplane the one profile
+                # it happened to be started with.
+                "approach": row.get("cleared_approach") or "",
                 "departure_mhz": None}
     return {}
+
+
+def _approach_named(key: str):
+    """The theatre's procedure with this key, or None.
+
+    Matched on the name the flight plan uses -- `nellis-ils`, `batumi-asr` --
+    against the theatre's own catalogue, so a plan naming a procedure this map
+    does not have gets nothing rather than somebody else's. The bridge's own
+    profile then stands, which is what happened before this existed.
+    """
+    if not key:
+        return None
+    th = _theatre.current()
+    for p in getattr(th, "approaches", ()) or ():
+        name = (getattr(getattr(p, "beacon", None), "name", "") or "").lower()
+        kind = (getattr(p, "kind", "") or "").lower()
+        if key in (f"{name}-{kind}", name, kind) or key.startswith(f"{name}-"):
+            return p
+    return None
 
 
 def _read_back_correct(bridge, known: str,
@@ -1936,9 +1960,21 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
         # it -- a cruise level written there would become a holding slot. See
         # `Aircraft.governing_ft` for the order between them.
         if known:
-            _cl = _cleared_plan_now(known).get("cruise_ft")
+            _plan = _cleared_plan_now(known)
+            _cl = _plan.get("cruise_ft")
             if _cl:
                 ctl.note_cleared_level(known, int(_cl))
+            # ...AND WHICH APPROACH HIS CLEARANCE NAMES. #2, and it is the
+            # oldest thing on the list: `Controller` held ONE profile and every
+            # arrival fact came off it -- the beacon, the stack, the runway, the
+            # minima, the missed approach -- so a flight recovering at Nellis
+            # was given Tonopah's numbers whenever the bridge had been started
+            # with Tonopah's. Real numbers, real runway, wrong airport.
+            _ap = (_plan.get("approach") or "").strip().lower()
+            if _ap:
+                _pro = _approach_named(_ap)
+                if _pro is not None:
+                    ctl.assign_approach(known, _pro)
 
         # ONE RADIO IS ONE AEROPLANE. Whose call this is comes from the GUID
         # that keyed the mic, never from what Whisper made of the words.

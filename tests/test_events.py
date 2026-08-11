@@ -204,9 +204,9 @@ class TestLeavingTheAeroplaneClearsTheBoard(unittest.TestCase):
     def test_the_letdown_is_freed_if_he_owned_it(self):
         """Otherwise the next arrival queues behind somebody who went home."""
         c = self._ctl()
-        c._letdown = "Falcon 1-1"
+        c._set_letdown(None, "Falcon 1-1")
         c.release("Falcon 1-1")
-        self.assertIsNone(c._letdown)
+        self.assertIsNone(c._in_letdown())
 
     def test_one_aeroplane_left_means_the_engine_stays_out(self):
         """The whole point. Engagement is `len(aircraft) >= 2`, so removing the

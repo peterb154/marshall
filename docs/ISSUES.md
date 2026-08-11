@@ -166,8 +166,37 @@ Code: `director/tools/approaches.py`, `director/migrations/`, `flights` table
 ## [ARCH-1] One approach profile per flight, not per bridge — #2
 labels: architecture
 
-**Status:** TODO — blocked on nothing, but large. **THIS IS THE
-WALL IN FRONT OF MULTIPLE AIRPORTS.** Everything else on this list makes one
+**Status:** FIXED 11 August, needs the next sortie. Criteria 1, 3 and 4 met;
+criterion 2 (`asr_sweep.py` against a named profile) still open and is now a
+tooling change rather than an architectural one.
+
+**THREE things were per-bridge, not one**, and fixing only the first would have
+looked right and behaved worse:
+
+* **The numbers.** `Aircraft.profile` and `Controller._pro(ac)` — the beacon he
+  homes, his stack levels, his runway, his minima, his missed approach, the name
+  of the controller working him. The facility's station table deliberately stays
+  on the Controller: `station_for` answers "who works ground at Kobuleti", which
+  is a property of the theatre and cannot differ per flight.
+* **The stack.** Two aerodromes are two stacks. A hold over Nellis and one over
+  Tonopah are 120 nm apart and share no airspace, so an aeroplane waiting for one
+  was reserving a level in the other. Scoped by the procedure's beacon.
+* **The letdown.** One string meant an aircraft on the Nellis ILS blocked the
+  approach at Tonopah for a reason nobody could explain on the radio.
+
+**The bug the test found**, and it is the one worth remembering: `_try_clear()`
+with no reference checked the BRIDGE's letdown while `_next_up` picked an
+aeroplane out of a different stack and cleared him — so both arrivals at Nellis
+were cleared for the same approach at once. "Is the letdown free" cannot be
+asked without saying which.
+
+**Migration 025** exposes `assigned_plans.approach` on `flight_state`. The column
+has existed since the plans table and the view did not carry it, so the bridge —
+which joins the view and nothing else — could not find out which procedure an
+aeroplane was recovering on. Exactly the gap migration 023 closed for the squawk,
+one column along, eleven days later.
+
+Originally: **THIS IS THE WALL IN FRONT OF MULTIPLE AIRPORTS.** Everything else on this list makes one
 field work better; nothing else lets there be a second one. It has sat
 unprioritised since the beginning while three days went on ghosts
 
