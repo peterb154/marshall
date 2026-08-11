@@ -409,7 +409,20 @@ def dispatch(ctl: atc.Controller, intent: Intent,
             ctl.clearance_read_back(cs, correct=intent.correct,
                                     missed=tuple(intent.missed or ()))
         case IntentKind.REQUEST_TAXI:
-            ctl.request_taxi(cs)
+            # WHICH WAY ACROSS THE TARMAC. "Ready to taxi" before the flight and
+            # "taxi to parking" after it are the same request in the classifier's
+            # taxonomy and opposite journeys on the aerodrome -- one leads to a
+            # runway, the other to a stand, and the second is the last thing that
+            # happens on a sortie.
+            #
+            # The words do not distinguish them and need not: the ENGINE knows
+            # which rung he is on. A taxi request from an aeroplane that has
+            # landed is a taxi IN. [#100]
+            _ac = ctl.aircraft.get(ctl._resolve(cs))
+            if (getattr(_ac, "sortie_phase", "") or "") in ("landed", "taxi_in"):
+                ctl.taxi_in(cs)
+            else:
+                ctl.request_taxi(cs)
         case IntentKind.REPORT_HOLDING_SHORT:
             ctl.report_holding_short(cs)
         case IntentKind.REQUEST_TAKEOFF:

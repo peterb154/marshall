@@ -5037,7 +5037,30 @@ The engine already knows the moment: `cleared_approach` on a vectored profile.
 ## [HO-5] After landing, Ground sends him back to Tower and disowns parking — #100
 labels: bug, needs-flight-test
 
-**Status:** OPEN. Reported live, 11 August — the last exchange of the sortie.
+**Status:** FIXED 11 August, needs the next sortie.
+
+**Two faults, and they compound.** `landed` is TOWER's phase — correctly, the
+roll is over and he is still on the strip — and **nothing moved him off it**. So
+Ground looked at a landed aeroplane, read Tower's phase, and handed him back to a
+controller who had finished with him. And parking was owned by nobody: Tower
+stopped saying it (correctly — the taxiways are not his, see #88) and Ground
+never started, so the last instruction of the sortie fell down the gap between
+two seats.
+
+**`taxi_in` is Ground's, and nothing follows it.** `taxi` could not be reused: it
+means "to the holding point AND NO FURTHER", it leads to a runway, and
+`holding_short` follows it. Two journeys across the same tarmac in opposite
+directions, and giving them one name is what made the ladder circular.
+
+The classifier needs no new intent. "Ready to taxi" and "taxi to parking" are the
+same request in its taxonomy and opposite journeys on the aerodrome — and the
+ENGINE knows which rung he is on, so a taxi request from an aeroplane that has
+landed is a taxi IN.
+
+The ladder now closes: Tower keeps him while he is on the runway, the taxi
+request is what gives him to Ground, and Ground parks him with nobody after.
+
+Reported live, 11 August — the last exchange of the sortie.
 
     PILOT: Taxi to parking my discretion, sockeye.
     ATC:   Sockeye, contact Batumi Tower one one eight decimal six.

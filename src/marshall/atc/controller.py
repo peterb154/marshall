@@ -1674,6 +1674,50 @@ class Controller:
                      decided=D.Decision(kind="say_again", to=ac.callsign,
                                         note=what))
 
+    def taxi_in(self, cs: str) -> None:
+        """He is off the runway and wants a stand. GROUND'S, and the last of it.
+
+            PILOT: Taxi to parking my discretion, sockeye.
+            ATC:   Sockeye, contact Batumi Tower one one eight decimal six.
+            PILOT: Batumi Ground, don't you own parking instructions?
+
+        He does. Two things were wrong and they compound.
+
+        `landed` is TOWER's phase, correctly -- the roll is over and he is still
+        on the strip. Nothing moved him off it, so Ground looked at a landed
+        aeroplane, read Tower's phase, and handed him BACK. A rung that hands
+        backwards puts a pilot on a frequency whose controller has finished with
+        him, which is how a man ends up talking to nobody at the end of a flight.
+
+        And parking was owned by nobody. Tower stopped saying it (correctly --
+        the taxiways are not his) and Ground never started, so the last
+        instruction of the sortie fell down the gap between two seats.
+
+        `taxi_in` is Ground's and NOTHING follows it. He is the end of the
+        ladder. [#100]
+        """
+        ac = self.get(cs)
+        ac.sortie_phase, ac.last_report_t = "taxi_in", self.t
+        if not self._owns("ground"):
+            # Not his to give. Same shape as Ground refusing a take-off: name
+            # the man who owns it rather than answering for him.
+            gnd = (self.profile.station_for(
+                       "ground", field=getattr(getattr(self, "_me", None),
+                                               "field", ""))
+                   if hasattr(self.profile, "station_for") else None)
+            if gnd is not None:
+                self.say(ac.callsign,
+                         f"{self._addr(ac)}, parking is Ground's, contact "
+                         f"{gnd.name} {spell_freq(gnd.freq_mhz)}.",
+                         decided=D.Decision(kind="refuse", to=ac.callsign,
+                                            role="ground", station=gnd.name,
+                                            frequency_mhz=gnd.freq_mhz))
+            return
+        self.say(ac.callsign,
+                 f"{self._addr(ac)}, taxi to parking, your discretion.",
+                 decided=D.Decision(kind="taxi", to=ac.callsign,
+                                    note="parking"))
+
     def request_taxi(self, cs: str) -> None:
         """Ready to move. Ground's, and Ground clears him TO the runway only.
 

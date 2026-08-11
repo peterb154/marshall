@@ -147,8 +147,31 @@ PHASES: dict[str, Phase] = {p.name: p for p in (
                "and vectoring instead flew an aeroplane into the Caucasus.",
           handler="marshall.atc.asr:guide"),
 
-    Phase("landed", owner="tower", aims_at="none", follows=("taxi",),
-          note="Down. Off the frequency and out of the sequence."),
+    Phase("landed", owner="tower", aims_at="none", follows=("taxi_in",),
+          note="Down and still on the runway, which is Tower's. The roll is "
+               "over; he has not left the strip yet."),
+
+    # TAXIING IN, AND IT IS NOT THE SAME PHASE AS TAXIING OUT.
+    #
+    #     PILOT: Taxi to parking my discretion, sockeye.
+    #     ATC:   Sockeye, contact Batumi Tower one one eight decimal six.
+    #     PILOT: Batumi Ground, don't you own parking instructions?
+    #
+    # `landed` is TOWER's, correctly -- he is on the runway. Nothing moved him
+    # off it, so Ground looked at a landed aeroplane, read Tower's phase, and
+    # handed him BACK. A rung that hands backwards puts a pilot on a frequency
+    # whose controller has already finished with him, which is how a man ends up
+    # talking to nobody at the end of a flight.
+    #
+    # `taxi` could not be reused: it means "to the holding point AND NO FURTHER",
+    # it leads to a runway, and `holding_short` follows it. This one leads to a
+    # stand and NOTHING follows it. Two journeys across the same tarmac in
+    # opposite directions, and giving them one name is what made the ladder
+    # circular. [#100]
+    Phase("taxi_in", owner="ground", aims_at="none", follows=(),
+          note="Off the runway, to a stand. THE END OF THE LADDER -- Ground is "
+               "the last controller of the sortie and parking is his. There is "
+               "nothing after him and nobody to hand back to."),
 )}
 
 # The states the approach half of the system can currently fly. Everything else
@@ -227,7 +250,8 @@ def guide(phase: str, pos, profile):
 # a taxi request, a report of holding short -- because none of them has geometry
 # to read. `_wanted` seeds a fresh aeroplane at the first of them and leaves the
 # rest to what is said.
-ON_THE_GROUND = ("clearance", "taxi", "holding_short", "landed")
+ON_THE_GROUND = ("clearance", "taxi", "holding_short", "landed",
+                 "taxi_in")
 
 
 def derive(current: str, *, on_ground: bool | None = None,

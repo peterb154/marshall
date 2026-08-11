@@ -753,3 +753,93 @@ class OnlyOneThingJudgesTheReadBack(unittest.TestCase):
                  / "atc" / "agent" / "prompts" / "rules.md").read_text()
         self.assertIn("You do not judge the read-back", rules)
         self.assertNotIn("clearance_read_back(callsign, correct)", rules)
+
+
+class GroundIsTheEndOfTheLadder(GroundCase):
+    """A rung that hands BACKWARDS. [#100]
+
+        PILOT: Taxi to parking my discretion, sockeye.
+        ATC:   Sockeye, contact Batumi Tower one one eight decimal six.
+        PILOT: Batumi Ground, don't you own parking instructions?
+
+    He does. Two faults, and they compound.
+
+    `landed` is TOWER's phase, correctly -- the roll is over and he is still on
+    the strip. Nothing moved him off it, so Ground looked at a landed aeroplane,
+    read Tower's phase, and handed him back to a controller who had finished with
+    him. And parking was owned by nobody: Tower stopped saying it, correctly,
+    because the taxiways are not his, and Ground never started -- so the last
+    instruction of the sortie fell down the gap between two seats.
+
+    `taxi_in` is Ground's and nothing follows it. `taxi` could not be reused: it
+    means "to the holding point AND NO FURTHER", it leads to a runway, and
+    `holding_short` follows it. Two journeys across the same tarmac in opposite
+    directions, and one name for them is what made the ladder circular.
+    """
+
+    def _landed(self, station_name):
+        me = station(station_name)
+        self.ctl._me = me
+        self.ctl.report_down("Sockeye")
+        self.ctl.out.clear()
+        return me
+
+    def test_ground_gives_the_parking_instruction(self):
+        self._landed("Kobuleti Ground")
+        I.dispatch(self.ctl, I.Intent(kind=I.IntentKind.REQUEST_TAXI,
+                                      callsign="Sockeye"))
+        said = " | ".join(t.text for t in self.ctl.out).lower()
+        self.assertIn("parking", said)
+        self.assertNotIn("contact", said)
+
+    def test_and_nothing_hands_him_anywhere_after_it(self):
+        """The whole point. `taxi_in` has no successor and Ground owns it."""
+        me = self._landed("Kobuleti Ground")
+        I.dispatch(self.ctl, I.Intent(kind=I.IntentKind.REQUEST_TAXI,
+                                      callsign="Sockeye"))
+        ac = self.ctl.aircraft[self.ctl._resolve("Sockeye")]
+        self.assertEqual(ac.sortie_phase, "taxi_in")
+        self.assertEqual(PH.get("taxi_in").follows, ())
+        self.assertIsNone(H.due(P, me, H.State(True, 0.2, False,
+                                               phase=ac.sortie_phase)))
+
+    def test_tower_does_not_answer_for_parking(self):
+        """Symmetric with Ground refusing a take-off: a seat answers for what it
+        owns and names the man who owns the rest."""
+        self._landed("Kobuleti Tower")
+        I.dispatch(self.ctl, I.Intent(kind=I.IntentKind.REQUEST_TAXI,
+                                      callsign="Sockeye"))
+        said = " | ".join(t.text for t in self.ctl.out).lower()
+        self.assertIn("ground", said)
+        self.assertNotIn("taxi to parking, your discretion", said)
+
+    def test_a_landed_aeroplane_is_still_towers_until_he_asks_to_move(self):
+        """He is stopped on the runway, which is Tower's, and Tower keeps him.
+
+        THE HANDOFF IS THE TAXI REQUEST, not the touchdown. `landed` is Tower's
+        by design -- the aeroplane is on his strip and "exit the runway when
+        able" is his to say -- and the rung that belongs to Ground is `taxi_in`,
+        which the pilot enters by asking for a stand. That is #77's criterion
+        reached through the ladder rather than as a special case.
+        """
+        me = station("Kobuleti Tower")
+        self.ctl._me = me
+        self.ctl.report_down("Sockeye")
+        ac = self.ctl.aircraft[self.ctl._resolve("Sockeye")]
+        self.assertEqual(ac.sortie_phase, "landed")
+        self.assertIsNone(H.due(P, me, H.State(True, 0.2, False,
+                                               phase=ac.sortie_phase)),
+                          "handed off the runway before he had left it")
+        # ...and asking for a stand is what gives him to Ground.
+        self.ctl.out.clear()
+        I.dispatch(self.ctl, I.Intent(kind=I.IntentKind.REQUEST_TAXI,
+                                      callsign="Sockeye"))
+        v = H.due(P, me, H.State(True, 0.2, False, phase=ac.sortie_phase))
+        self.assertEqual(v.station.name, "Kobuleti Ground")
+
+    def test_taxiing_OUT_is_untouched(self):
+        """The same words, the other direction, from a man who has not flown."""
+        phase, _nxt, said = self.turn("Kobuleti Ground",
+                                      I.IntentKind.REQUEST_TAXI)
+        self.assertEqual(phase, "taxi")
+        self.assertIn("hold short", said.lower())
