@@ -60,7 +60,6 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from marshall.atc import asr
 from marshall.atc import geometry as G
-from marshall.core import route as R
 
 STEP_SEC = 5.0
 TURN_RATE_DEG = 3.0            # standard rate, and all a heavy fighter will give
@@ -308,6 +307,17 @@ def sweep(profile, sloppy: bool = False,
 #
 # So the trade is taken with the reason recorded: the two sweeps that describe
 # aeroplanes actually flying an approach both held or improved.
+# A BASELINE IS PER PROCEDURE. Comparing an ILS at Nellis -- a mile and a half
+# up, in the Spring Mountains -- against a surveillance approach at Batumi on the
+# coast measures nothing except that they are different approaches. The figures
+# below are Batumi's ASR, which is what every recorded run has meant.
+#
+# An approach with no baseline REPORTS and does not judge. That is the honest
+# state for one nobody has swept before: the numbers are on the screen, and
+# calling them a regression against another procedure's would be noise, which is
+# how a check stops being read. Record one here when it is worth defending.
+BASELINE_FOR = {"batumi-asr": "the recorded Batumi figures"}
+
 BASELINE = {
     "clean":  {"arrived": 1296, "dither": 0, "turns": 576},
     "sloppy": {"arrived": 1294, "dither": 35, "turns": 1535},
@@ -341,6 +351,31 @@ BASELINE = {
 TURN_SLACK = 0.05
 
 
+def _known_profiles() -> list[str]:
+    """Every approach the loaded theatre publishes, by the name a plan uses."""
+    from marshall.core import theatre as _t
+    out = []
+    for p in getattr(_t.current(), "approaches", ()) or ():
+        beacon = (getattr(getattr(p, "beacon", None), "name", "") or "").lower()
+        kind = (getattr(p, "kind", "") or "").lower()
+        if beacon and kind:
+            out.append(f"{beacon}-{kind}")
+    return out
+
+
+def _profile_named(key: str):
+    """The theatre's procedure with this key. Same resolution the bridge uses,
+    so the sweep and the controller cannot disagree about what `nellis-ils` is."""
+    from marshall.core import theatre as _t
+    key = (key or "").strip().lower()
+    for p in getattr(_t.current(), "approaches", ()) or ():
+        beacon = (getattr(getattr(p, "beacon", None), "name", "") or "").lower()
+        kind = (getattr(p, "kind", "") or "").lower()
+        if key in (f"{beacon}-{kind}", beacon, kind):
+            return p
+    return None
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--sloppy", action="store_true",
@@ -350,9 +385,31 @@ def main() -> int:
                          "down, busy, or talking to somebody else")
     ap.add_argument("--verbose", action="store_true",
                     help="list every start that never arrived")
+    # WHICH APPROACH IS BEING SWEPT, and it used to be one hardcoded name.
+    #
+    # #2 criterion 2: this sweep is the only instrument that measures the
+    # GEOMETRY -- where an aeroplane establishes, how many turns it takes, how
+    # often the guidance dithers -- and it could only ever measure Batumi's.
+    # Every other approach in the system was therefore unmeasured, including
+    # both Nevada ILSes, on a map whose terrain is a mile and a half up.
+    #
+    # The baseline stays Batumi's, because a baseline is per-procedure by
+    # definition and comparing an ILS at Nellis against an ASR at Batumi would
+    # be meaningless. Named runs report their figures and do not move it.
+    ap.add_argument("--profile", default="batumi-asr",
+                    help="which approach to fly (default: batumi-asr). "
+                         "Names are the theatre's, e.g. nellis-ils")
     args = ap.parse_args()
 
-    profile = R.BATUMI_ASR
+    profile = _profile_named(args.profile)
+    if profile is None:
+        print(f"!! no approach called {args.profile!r}. Known here: "
+              f"{', '.join(_known_profiles()) or '(none)'}", file=sys.stderr)
+        return 2
+    if args.profile not in BASELINE_FOR:
+        print(f"flying {args.profile}, which has no recorded baseline -- the "
+              f"figures are reported and nothing is judged against another "
+              f"procedure's.\n")
     results, total = sweep(profile, sloppy=args.sloppy, deaf=args.deaf)
     arrived = [r for r in results if r["arrived"]]
     est = [r["established"] for r in arrived if r["established"]]
@@ -380,7 +437,10 @@ def main() -> int:
                   f"{rad:03d} radial, heading {hdg:03d}")
 
     mode = "deaf" if args.deaf else ("sloppy" if args.sloppy else "clean")
-    base = BASELINE.get(mode)
+    base = BASELINE.get(mode) if args.profile in BASELINE_FOR else None
+    if base is None:
+        print(f"  baseline      none recorded for {args.profile} — figures "
+              f"reported, nothing judged")
     regressed = []
     if base:
         # Arrivals are not a measure of a pilot who does not turn.

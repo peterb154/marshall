@@ -150,6 +150,14 @@ Closing wants an attestation (`tools/attest.py`): who tested it, what was
 exercised, at which commit. Everything merges straight to `main`; there are no
 PRs. A change that fits no issue means the issue is missing.
 
+**A synthetic pilot counts for the structural half.** The rehearsal harnesses
+speak over real SRS and judge the recorder, so "did the handoff fire", "did the
+phase move", "was the number spoken" and "did two aircraft share a level" are
+theirs to close, with the run named in the attestation. Whether it SOUNDS like
+one person, whether a seam is audible, whether the guidance was any USE — those
+stay a pilot's, and card row S11 is the standing reminder that no machine will
+ever answer them. See CLAUDE.md for the full line.
+
 ## Known limits, so you do not rediscover them
 
 - **One approach per bridge.** `load_and_push_plate` takes a single profile, so

@@ -185,6 +185,25 @@ Closing also wants an **attestation**: who tested it, what was exercised, and th
 commit it was tested at (`tools/attest.py`). An issue closed with "works now" is
 one you cannot revisit.
 
+**A synthetic pilot may fly the STRUCTURAL half.** `tools/ladder_rehearsal.py`
+and `tools/stack_rehearsal.py` speak over real SRS through real Whisper and judge
+the flight recorder, and what they check is structure: did the handoff fire, did
+the phase move, was the number spoken, did two aircraft share a level. That is a
+pilot flying the card for those rows, and an attestation naming the run closes
+them.
+
+What a machine still cannot answer stays a human's, and the line is not fuzzy:
+
+    a machine can    a handoff fired · a phase moved · a number reached the air ·
+                     no two aircraft at one level · the right field's frequency
+    only a pilot     whether it SOUNDS like one person · whether a seam is
+                     audible · whether the guidance was USEFUL · whether a
+                     transmission arrived at a moment that made sense
+
+Card row S11 is the standing example — "listen for a transmission with a seam in
+it" — and no rehearsal will ever score it. When the harness closes a row, the
+attestation says which run, so the evidence is as revisitable as a pilot's.
+
 Everything merges straight to `main`; there are no PRs. The issue reference IS
 the correlation — GitHub threads the commit onto the issue, so "what changed for
 this, and why" is one click rather than an archaeology exercise. A change worth

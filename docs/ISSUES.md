@@ -166,9 +166,13 @@ Code: `director/tools/approaches.py`, `director/migrations/`, `flights` table
 ## [ARCH-1] One approach profile per flight, not per bridge — #2
 labels: architecture
 
-**Status:** FIXED 11 August, needs the next sortie. Criteria 1, 3 and 4 met;
-criterion 2 (`asr_sweep.py` against a named profile) still open and is now a
-tooling change rather than an architectural one.
+**Status:** FIXED 11 August. All four criteria met.
+
+Criterion 2 landed with the rest: `asr_sweep.py --profile nellis-ils`. Batumi's
+figures are byte-identical (1296/1296, 0 flips, 576 turns), and pointing it at an
+approach it had never swept found a real defect in the same minute — see #116.
+A baseline is now per procedure, because judging an ILS in the Spring Mountains
+against a surveillance approach on the Georgian coast measures nothing.
 
 **THREE things were per-bridge, not one**, and fixing only the first would have
 looked right and behaved worse:
@@ -5780,3 +5784,43 @@ aeroplane.
 2. The engine's directive is dropped rather than the handoff, and the drop is
    logged the way `reconcile` logs the others.
 3. `tools/stack_rehearsal.py` sees no transmission containing both.
+
+## [ASR-6] The Nellis ILS dithers, and three approaches never arrive — #116
+labels: bug, needs-flight-test
+
+**Status:** OPEN. Found the first time `asr_sweep.py` was ever pointed at an
+approach other than Batumi's — which is #2 criterion 2, and the finding arrived
+in the same minute the capability did.
+
+    nellis-ils    1293/1296 arrived     103 flips on 22 approaches   745 turns
+    tonopah-ils   1291/1296 arrived
+    batumi-asr    1296/1296 arrived       0 flips                    576 turns
+
+**103 rapid direction reversals.** Batumi's ASR has none, and #19 is the issue
+that got it to none — so this is not a new class of fault, it is the old one on
+terrain nobody had measured. A flip is a heading ordered one way and reversed on
+the next call, and from the cockpit it reads as a controller who cannot make up
+his mind.
+
+**And eight starts never reach the missed approach point at all**, all of them
+from 30 nm and all on radials that put the aeroplane behind the field:
+
+    nellis-ils    180/150, 180/180, 260/270
+    tonopah-ils   120/090, 120/120, 180/210, 200/180, 200/210
+
+Both fields sit in high terrain — Nellis's minimum vectoring altitudes reach
+10,500 ft and Tonopah's start at 6,500 — so the likeliest cause is the geometry
+turning an aeroplane into a cell it may not descend through and then re-turning
+it. That is a guess and is marked as one; the sweep prints every failing start,
+which is where to begin.
+
+**No baseline is recorded for either.** A baseline is per procedure — judging an
+ILS in the Spring Mountains against a surveillance approach on the Georgian coast
+measures nothing except that they are different approaches. Both report figures
+and judge nothing until these are fixed and a defensible baseline exists.
+
+**Acceptance criteria**
+1. Zero dithering flips on `nellis-ils` and `tonopah-ils`, clean sweep.
+2. Every start arrives, or the ones that cannot are explained by terrain and
+   excluded deliberately rather than silently.
+3. A recorded baseline for each, in `BASELINE_FOR`.
