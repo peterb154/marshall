@@ -2709,7 +2709,21 @@ the four real mishearings (Sakai, Sucka, Sucker, "Write 2-5-5"). It uses
 ## [APP-5] The NDB letdown profile claims radar — #53
 labels: bug
 
-**Status:** OPEN. Found 2 August while making the ILS a vectored procedure.
+**Status:** FIXED 11 August — and the flag was not the fault.
+
+`radar=True` on the beacon letdown is **deliberate**: "Radar ON (you wanted
+eyes)". The controller reads ranges off his own scope while the pilot, with no
+DME, flies the published pattern himself. What was wrong is that ONE FLAG WAS
+ANSWERING TWO QUESTIONS — seeing an aeroplane and steering it are different
+capabilities, and keying "does he vector?" on `radar` would have given a period
+letdown radar phraseology.
+
+`AtcCapability.vectors` separates them. `None` means "ask the procedure", which
+is what `_vectored` did all along by naming the procedure KINDS — the workaround
+this issue was filed to record. `BATUMI_APPROACH` now says `vectors=False` out
+loud instead of relying on its name.
+
+Originally found 2 August while making the ILS a vectored procedure.
 
 `BATUMI_APPROACH` — the 1944 beacon letdown, whose entire purpose is the
 non-radar handicap — carries `AtcCapability(radar=True)`.
@@ -4995,7 +5009,12 @@ Verified against the recorded transmission:
 ## [PHR-6] An ASR approach should say once that no read-back is wanted — #99
 labels: enhancement
 
-**Status:** OPEN. Suggested from the cockpit, 11 August.
+**Status:** FIXED 11 August. Attached to the approach clearance, once, and only
+on a TALKDOWN — not on an ILS, where the controller says almost nothing after the
+clearance and the pilot does report established. Telling him not to acknowledge
+there would suppress the one call the procedure needs.
+
+Suggested from the cockpit, 11 August.
 
     "on an ASR approach, you should tell me at the beginning of the approach
      not to read back"

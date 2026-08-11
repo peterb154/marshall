@@ -42,10 +42,28 @@ class AtcCapability:
     it a radar picture at all, so "handicap the ATC for this mission" is data here,
     not a prompt rewrite.
     """
-    radar: bool = True          # sees aircraft positions -> can give range/vectors
+    radar: bool = True          # sees aircraft positions -> can read range off a scope
     dme: bool = False           # the PILOT's aircraft carries DME (the P-51 doesn't)
     separation: str = "radar"   # "radar" | "procedural" (blind assigned-altitude stack)
     era: str = "modern"         # phraseology flavour: "modern" | "ww2"
+    # WHETHER HE MAY VECTOR, which is NOT the same question as whether he has a
+    # scope, and one flag was answering both.
+    #
+    # `BATUMI_APPROACH` is the 1944 beacon letdown and carries `radar=True` on
+    # purpose -- "Radar ON (you wanted eyes)" -- because the controller reads
+    # ranges off his own scope while the pilot, with no DME, flies the published
+    # pattern himself. Seeing him and steering him are different things.
+    #
+    # Keying "does he vector?" on `radar` would therefore give a period letdown
+    # radar phraseology: turning an aeroplane round a procedure the pilot is
+    # flying on a beacon. `Controller._vectored` avoided it by naming the
+    # PROCEDURE KINDS instead -- a workaround with a comment explaining itself,
+    # which is how it survived since 2 August. [#53]
+    #
+    # None means "ask the procedure", which is the honest default: an ASR or an
+    # ILS is vectored by construction and a beacon letdown is not. A profile
+    # that wants to say otherwise now can.
+    vectors: bool | None = None
 
 
 def _round_up(value: int, step: int) -> int:
@@ -739,7 +757,11 @@ BATUMI_APPROACH = ApproachProfile(
     # beacon letdown -- so the controller reads range off his own scope, separates
     # procedurally on the single beacon, and talks period. Flip radar off here and
     # it becomes the fully-blind classic.
-    atc=AtcCapability(radar=True, dme=False, separation="procedural", era="ww2"),
+    # `vectors=False` SAID OUT LOUD rather than inferred from the procedure's
+    # name. He has eyes and does not steer: the pilot is flying a published
+    # letdown on a beacon and a heading would take him off it. See #53.
+    atc=AtcCapability(radar=True, dme=False, separation="procedural", era="ww2",
+                      vectors=False),
 )
 
 

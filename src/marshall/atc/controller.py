@@ -359,6 +359,21 @@ class Controller:
 
     @property
     def _vectored(self) -> bool:
+        """Does this controller steer him, or does the pilot fly the procedure?
+
+        ASKED OF THE CAPABILITY, and it used to be asked of the procedure's
+        NAME. The obvious key -- `atc.radar` -- is wrong, and #53 exists because
+        it looks right: the 1944 beacon letdown carries `radar=True` deliberately
+        so the controller can read ranges off his scope, while the pilot has no
+        DME and flies the published pattern himself. Seeing an aeroplane and
+        steering it are different capabilities, and one flag was answering both.
+        `AtcCapability.vectors` separates them; `None` means ask the procedure,
+        which is what this did all along.
+        """
+        cap = getattr(self.profile, "atc", None)
+        want = getattr(cap, "vectors", None) if cap is not None else None
+        if want is not None:
+            return bool(want)
         return bool(getattr(self.profile, "vectored", False)
                     or getattr(self.profile, "kind", "") in self.VECTORED_KINDS)
 
@@ -667,6 +682,26 @@ class Controller:
                 return "report the field in sight"
             return "report established on the final approach course"
         return f"report {self.profile.beacon.name} inbound"
+
+    def _no_acknowledgement_phrase(self) -> str:
+        """Said ONCE, with the approach clearance, on a talkdown. Then never.
+
+            "on an ASR approach, you should tell me at the beginning of the
+             approach not to read back"
+
+        Real procedure rather than a nicety. On a surveillance approach the
+        controller talks continuously -- a course and a range every mile -- and a
+        read-back of each one puts the pilot on the air over the next
+        instruction. The phrase exists so he knows the silence is expected.
+
+        ONLY WHERE HE WOULD OTHERWISE ACKNOWLEDGE, which is the talkdown. On an
+        ILS the controller says almost nothing after the clearance and the pilot
+        DOES report established -- telling him not to acknowledge would be
+        telling him not to make the one call the procedure needs. [#99]
+        """
+        if self._vectored and getattr(self.profile, "guidance", "") == "talkdown":
+            return " Do not acknowledge further transmissions."
+        return ""
 
     def _atis_phrase(self, ac) -> str:
         """Confirm the information, then ask what he wants. Never refuse.
@@ -1874,7 +1909,11 @@ class Controller:
         self.say(ac.callsign,
                  f"{self._addr(ac)}, cleared {self._approach_name()} runway "
                  f"{self.profile.runway or 'in use'}, {self._report_phrase()}. "
-                 f"Report missed approach or landing.")
+                 f"Report missed approach or landing."
+                 f"{self._no_acknowledgement_phrase()}",
+                 decided=D.Decision(kind="cleared_approach", to=ac.callsign,
+                                    runway=self.profile.runway or "",
+                                    note=self._approach_name()))
         if was_bottom_holder:
             self._step_down()
 

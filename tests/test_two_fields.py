@@ -666,3 +666,88 @@ class TestTheCheckInReplyDependsOnWhichWayHeIsGoing(unittest.TestCase):
         arriving is untidy; NOT being asked when you are is a controller who has
         not understood what you want."""
         self.assertIn("field in sight", self.greeting(R.APPROACH, ""))
+
+
+class SeeingHimAndSteeringHimAreTwoCapabilities(unittest.TestCase):
+    """`AtcCapability.radar` was answering two questions. [#53]
+
+    The 1944 Batumi letdown carries `radar=True` ON PURPOSE -- "Radar ON (you
+    wanted eyes)" -- because the controller reads ranges off his own scope while
+    the pilot, with no DME, flies the published pattern himself.
+
+    So the obvious key for "does he vector?" is `atc.radar`, and it is wrong. It
+    would give a period letdown radar phraseology: turning an aeroplane round a
+    procedure the pilot is flying on a beacon. `_vectored` dodged that by naming
+    the procedure KINDS instead -- a workaround with a comment explaining itself,
+    which is why it survived since 2 August.
+    """
+
+    def _ctl(self, profile):
+        from marshall.atc import controller as atc
+        return atc.Controller(profile)
+
+    def test_the_beacon_letdown_has_eyes_and_does_not_steer(self):
+        self.assertTrue(R.BATUMI_APPROACH.atc.radar, "he can see him")
+        self.assertFalse(self._ctl(R.BATUMI_APPROACH)._vectored,
+                         "and must not vector him round his own letdown")
+
+    def test_and_says_so_rather_than_leaving_it_to_be_inferred(self):
+        self.assertIs(R.BATUMI_APPROACH.atc.vectors, False)
+
+    def test_the_surveillance_approach_still_vectors(self):
+        self.assertTrue(self._ctl(R.BATUMI_ASR)._vectored)
+
+    def test_a_profile_that_says_nothing_is_asked_of_its_procedure(self):
+        """`None` means "ask the procedure", which is what this did all along --
+        an ASR or an ILS is vectored by construction."""
+        self.assertIsNone(R.BATUMI_ASR.atc.vectors)
+        self.assertTrue(self._ctl(R.BATUMI_ASR)._vectored)
+
+    def test_the_name_of_the_approach_follows_from_it(self):
+        self.assertEqual(self._ctl(R.BATUMI_APPROACH)._approach_name(),
+                         "beacon approach")
+        self.assertEqual(self._ctl(R.BATUMI_ASR)._approach_name(),
+                         "radar approach")
+
+
+class TheTalkdownSaysOnceThatSilenceIsExpected(unittest.TestCase):
+    """#99, from the cockpit.
+
+        "on an ASR approach, you should tell me at the beginning of the
+         approach not to read back"
+
+    Real procedure. On a surveillance approach the controller reads a course and
+    a range every mile, and acknowledging each one puts the pilot on the air over
+    the next instruction. The phrase belongs ONCE, with the clearance.
+
+    NOT ON AN ILS, which is the distinction worth having. There the controller
+    says almost nothing after the clearance and the pilot DOES report
+    established -- telling him not to acknowledge would suppress the one call the
+    procedure needs.
+    """
+
+    def _said(self, profile):
+        from marshall.atc import controller as atc
+        return atc.Controller(profile)._no_acknowledgement_phrase()
+
+    def test_the_surveillance_approach_says_it(self):
+        self.assertIn("do not acknowledge", self._said(R.BATUMI_ASR).lower())
+
+    def test_the_ils_does_not(self):
+        self.assertEqual(self._said(R.KOBULETI_ILS), "")
+
+    def test_and_neither_does_the_beacon_letdown(self):
+        """He is not being talked down -- he flies the pattern and reports the
+        beacon, which is an acknowledgement the procedure wants."""
+        self.assertEqual(self._said(R.BATUMI_APPROACH), "")
+
+    def test_it_is_attached_to_the_clearance_and_nowhere_else(self):
+        """Once, with the approach clearance. A phrase repeated every mile is
+        the chatter it exists to prevent."""
+        import inspect
+        from marshall.atc import controller as atc
+        src = inspect.getsource(atc.Controller)
+        # The empty parens match the CALL, not the `def`.
+        self.assertEqual(src.count("self._no_acknowledgement_phrase()"), 1,
+                         "said more than once, which is the chatter it exists "
+                         "to prevent")
