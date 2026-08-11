@@ -150,9 +150,12 @@ class TestWhatMayBeFiled(unittest.TestCase):
     def test_asked_for_they_are(self):
         # ...and he may choose to SHARE them, which is a different question from
         # whether they are published.
-        self.assertEqual(dtc.plan_from(self.d, "x", label="D",
-                                       steerpoints=True)["route"],
-                         "KOBULETI, FOO, BAR, SPAM, BATUMI")
+        # The ENROUTE portion only -- the endpoints live in their own columns
+        # and repeating them was the duplication #127 removed.
+        got = dtc.plan_from(self.d, "x", label="D", steerpoints=True)
+        self.assertEqual(got["route"], "FOO, BAR, SPAM")
+        self.assertEqual((got["origin"], got["destination"]),
+                         ("Kobuleti", "Batumi"))
 
     def test_both_ends_come_from_the_comms_ladder(self):
         # "is the origin (Nellis) not in the DTC anywhere?" -- it is, and this
@@ -180,7 +183,11 @@ class TestWhatMayBeFiled(unittest.TestCase):
             w["Name"] = "STPT"
         got = dtc.plan_from(dtc.decode(_cartridge(bare)), "x", label="D",
                             steerpoints=True)
-        self.assertEqual(got["route"], "KOBULETI, BATUMI")
+        # Nothing he named, so nothing enroute -- which is "direct", and legal
+        # since #127. The endpoints are still known, from the ladder.
+        self.assertEqual(got["route"], "")
+        self.assertEqual((got["origin"], got["destination"]),
+                         ("Kobuleti", "Batumi"))
 
     def test_aerodromes_are_never_pushed_as_steerpoints(self):
         # Batumi is published, with a surveyed position and a beacon. A

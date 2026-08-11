@@ -145,16 +145,40 @@ def check(plan: dict, *, fixes: set[str], approaches: set[str],
         if not (plan.get(who) or "").strip():
             bad.append(f"{who} is required — it is what a controller reads back")
 
+    # THE ROUTE IS THE ENROUTE PORTION, AND EMPTY IS LEGAL.
+    #
+    #     "So ORIGIN and DESTINATION - should these be on the flightplan as
+    #      fixes?"
+    #
+    # No. ICAO keeps them apart -- field 13 departure, field 15 the enroute
+    # portion, field 16 destination -- and this table has all three columns.
+    # Repeating the aerodromes inside `route` was duplication, and the rule
+    # underneath quietly came to depend on it: "at least two fixes" only ever
+    # passed BECAUSE the endpoints were padding the list. A genuine direct
+    # flight -- Kobuleti to Batumi with nothing published in between, which is
+    # most of what gets flown here -- has zero enroute fixes and could not be
+    # filed at all without writing its endpoints in twice.
+    #
+    # The rule this file actually wants is the one its own docstring states:
+    # every fix NAMED is one the sim holds. That is unchanged and is the whole
+    # point; what is gone is a length test standing in for it. See #127.
     legs = route_fixes(plan.get("route", ""))
-    if len(legs) < 2:
-        bad.append("a route needs at least two fixes, comma separated")
-    else:
-        # THE WHOLE REASON THIS FILE EXISTS. Named one at a time so a typo in a
-        # six-fix route says which of the six, rather than "invalid route".
-        for fx in legs:
-            if fx.lower() not in fixes:
-                bad.append(f"no fix called {fx} — the controller would have to "
-                           f"say a place that is not on any chart")
+    # THE WHOLE REASON THIS FILE EXISTS. Named one at a time so a typo in a
+    # six-fix route says which of the six, rather than "invalid route".
+    for fx in legs:
+        if fx.lower() not in fixes:
+            bad.append(f"no fix called {fx} — the controller would have to "
+                       f"say a place that is not on any chart")
+    # A route that names its own endpoints is not refused -- every row filed
+    # before this change does -- but it is worth saying, because it is the
+    # difference between "via" and "direct" and a controller reads it out.
+    ends = {(plan.get("origin") or "").strip().lower(),
+            (plan.get("destination") or "").strip().lower()}
+    dupes = [f for f in legs if f.lower() in ends and f.strip()]
+    if dupes:
+        warn.append(f"{', '.join(dupes)} is already the origin or destination — "
+                    f"the route is the ENROUTE portion, and repeating an "
+                    f"aerodrome in it says he overflies his own field")
 
     alt = plan.get("cruise_ft")
     try:

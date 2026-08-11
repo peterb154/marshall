@@ -41,8 +41,10 @@ class TestTheMissionReachesTheTools(unittest.TestCase):
         self.clr = (ROOT / "director" / "tools" / "clearance.py").read_text()
 
     def test_the_tools_are_bound_to_a_mission(self):
-        # The bug in one line: `clearance_tools()` with no argument.
-        self.assertIn("clearance_tools(mission)", self.app)
+        # The bug in one line: `clearance_tools()` with no argument. It takes
+        # the SEAT as well since #127 -- the station is what makes the origin a
+        # fact rather than a guess.
+        self.assertIn("clearance_tools(mission, station)", self.app)
         self.assertNotIn("clearance_tools()", self.app)
 
     def test_the_endpoint_reads_it_off_the_request(self):

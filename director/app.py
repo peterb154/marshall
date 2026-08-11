@@ -196,7 +196,9 @@ def build_agent(session_id: str, role: str = "", also=(),
             #
             # Invisible because this factory takes a mission WITH A DEFAULT
             # while every other one takes the session and would have raised.
-            *(clearance_tools(mission) if "clearance" in may else []),
+            # ...AND THE SEAT, which is what makes the ORIGIN a fact. A pilot
+            # calling Kobuleti Clearance is on Kobuleti's ramp; see #127.
+            *(clearance_tools(mission, station) if "clearance" in may else []),
             # ANY FREQUENCY ON THE MAP, on demand. His OWN field's are in the
             # brief -- a controller works one aerodrome and knows it cold -- and
             # everywhere else is unbounded: thirty fields at four to eight seats

@@ -32,8 +32,11 @@ FIXES = {"batumi", "kobuleti", "initial", "feet wet", "ingress", "tsutsnvati",
 APPROACHES = {"batumi-asr", "batumi-ndb"}
 TAKEN = {"domino": "362nd-kobuleti-batumi", "marlin": "362nd-coast-patrol"}
 
+# THE ROUTE IS THE ENROUTE PORTION. It used to read "BATUMI, FEET WET, BATUMI"
+# -- the aerodrome written in twice beside the origin and destination columns
+# that already hold it. See #127 and `filing.check`.
 GOOD = {"name": "362nd-night-run", "label": "Kestrel", "origin": "Batumi",
-        "destination": "Batumi", "route": "BATUMI, FEET WET, BATUMI",
+        "destination": "Batumi", "route": "FEET WET",
         "cruise_ft": 3000, "task": "Night patrol of the coastline",
         "approach": "batumi-asr"}
 
@@ -55,14 +58,14 @@ class TestWhatIsRefused(unittest.TestCase):
     def test_a_fix_nobody_holds(self):
         """The typo that motivated the whole module. INTIAL for INITIAL is one
         transposed letter and it reads perfectly well on screen."""
-        bad, _ = check(route="KOBULETI, INTIAL, BATUMI")
+        bad, _ = check(route="INTIAL")
         self.assertTrue(bad)
         self.assertIn("INTIAL", bad[0])
 
     def test_it_names_WHICH_fix(self):
         """Not "invalid route". A six-fix route with one typo must say which of
         the six, or the person filing it reads all six again and picks wrong."""
-        bad, _ = check(route="BATUMI, FEET WET, NOWHERE, EGRESS, BATUMI")
+        bad, _ = check(route="FEET WET, NOWHERE, EGRESS")
         self.assertEqual(len(bad), 1)
         self.assertIn("NOWHERE", bad[0])
         self.assertNotIn("EGRESS", bad[0])
@@ -70,12 +73,32 @@ class TestWhatIsRefused(unittest.TestCase):
     def test_a_route_is_case_and_space_insensitive(self):
         """The fix table is lowercase; routes are written in caps. Neither is
         wrong and the filer must not care."""
-        bad, _ = check(route="  batumi ,Feet Wet,  BATUMI ")
+        bad, _ = check(route="  ingress ,Feet Wet,  EGRESS ")
         self.assertEqual(bad, [])
 
-    def test_one_fix_is_not_a_route(self):
-        bad, _ = check(route="BATUMI")
-        self.assertTrue(any("at least two" in b for b in bad))
+    def test_one_fix_is_a_perfectly_good_route(self):
+        """CHANGED 11 August: it used to demand at least two.
+
+        That rule only ever passed BECAUSE the endpoints were padding the list,
+        and a genuine direct flight -- zero enroute fixes, which is most of what
+        gets flown here -- could not be filed without writing them in twice.
+        What the module actually cares about is unchanged: every fix NAMED is
+        one the sim holds. See #127.
+        """
+        bad, _ = check(route="FEET WET")
+        self.assertEqual(bad, [])
+
+    def test_an_empty_route_is_direct(self):
+        bad, _ = check(route="")
+        self.assertEqual(bad, [])
+
+    def test_repeating_an_aerodrome_is_warned_about_not_refused(self):
+        # Every row filed before #127 does this, so it cannot be a refusal --
+        # but it is the difference between "via" and "direct" and a controller
+        # reads it out.
+        bad, warn = check(route="BATUMI, FEET WET, BATUMI")
+        self.assertEqual(bad, [])
+        self.assertTrue(any("ENROUTE portion" in w for w in warn), warn)
 
     def test_a_label_already_on_the_board(self):
         bad, _ = check(label="Domino")

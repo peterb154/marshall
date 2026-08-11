@@ -301,8 +301,35 @@ def not_on_the_board(callsign: str, board: list[str]) -> str:
             f"do have, and ask him to say his callsign again.")
 
 
-def clearance_tools(mission: str = "default") -> list:
-    """The clearance-delivery tools, bound to a mission."""
+def field_of(station: str) -> str:
+    """"Kobuleti Clearance" -> "Kobuleti". The aerodrome this seat works.
+
+    The last word is the SEAT and the rest is the field, which is how every
+    station in this system is named. Deliberately not a table lookup: the
+    director has no theatre (see the `/atis` endpoint on why), and the one fact
+    needed here is already in the string the bridge sent.
+    """
+    words = (station or "").split()
+    return " ".join(words[:-1]).strip() if len(words) > 1 else ""
+
+
+def clearance_tools(mission: str = "default", station: str = "") -> list:
+    """The clearance-delivery tools, bound to a mission and to a SEAT.
+
+    `station` is where this controller sits, and it is what makes the origin a
+    fact rather than a guess.
+
+        "I think the destination will typically be in the steerpoints but the
+         departure airfield will not. Maybe that's determined from whatever
+         clearance opens the plan?"
+
+    A DTC has no origin -- steerpoint one is already airborne -- so every
+    attempt to derive one has been an inference: a per-theatre constant, then
+    nearest-aerodrome, then the comms ladder. A pilot calling Kobuleti Clearance
+    is on Kobuleti's ramp; he cannot be anywhere else and be talking to this
+    seat. See #127.
+    """
+    here = field_of(station)
 
     def _flight(callsign: str) -> dict | None:
         from tools import flights as F
@@ -358,7 +385,13 @@ def clearance_tools(mission: str = "default") -> list:
                     f"fix anybody here holds. Do not clear him on it -- tell him "
                     f"the routing is unavailable and ask him to amend.")
 
-        got = assign(f["id"], plan, mission=mission)
+        # THE ORIGIN IS ESTABLISHED HERE, not copied from the template. A filed
+        # plan is a route anybody may request; a clearance is issued to ONE
+        # aeroplane departing ONE field, and `assigned_plans` has its own origin
+        # column for exactly that. Two aircraft may fly the same plan out of
+        # different fields on one night.
+        got = assign(f["id"], {**plan, "origin": here or plan.get("origin")},
+                     mission=mission)
         words = P.clearance(plan, flight_id=f["id"],
                             departure_freq=departure_freq(),
                             initial_ft=plan.get("cruise_ft") or 0)

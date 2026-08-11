@@ -239,12 +239,12 @@ def plan_from(d: dict, name: str, approach: str = "", label: str = "",
     controller must not be surprised by. Filing the first leg's five thousand
     while the pilot climbs to ten is the disagreement this exists to end.
 
-    THE ROUTE IS THE ENROUTE PORTION. Origin and destination have columns of
-    their own -- ICAO keeps field 13, field 15 and field 16 apart -- and
-    repeating the aerodromes in the route is duplication that `check_live`'s
-    "at least two fixes" rule then depends on. They are still emitted at both
-    ends because that rule exists TODAY and refusing a plan is worse than
-    repeating a name; see #127, which is the change to make it honest.
+    THE ROUTE IS THE ENROUTE PORTION, and empty is legal -- which is what
+    "direct" means. Origin and destination have columns of their own; ICAO keeps
+    field 13, field 15 and field 16 apart, and repeating the aerodromes inside
+    the route was duplication that `check_live`'s "at least two fixes" rule had
+    come to depend on. Both are fixed together, because either alone breaks the
+    other: see #127.
     """
     wps = waypoints(d)
     if not wps:
@@ -265,10 +265,9 @@ def plan_from(d: dict, name: str, approach: str = "", label: str = "",
     via = ([w["name"].strip().upper() for w in enroute
             if (w["name"] or "").strip().upper() not in ("", "STPT", "WP")]
            if steerpoints else route_through(enroute, catalogue or {}))
-    route = [(start or dest).upper(), *via, (dest or start).upper()]
     return {"name": name, "label": label,
             "origin": (start or dest).title(),
             "destination": (dest or start).title(),
-            "route": ", ".join(route), "cruise_ft": int(cruise),
+            "route": ", ".join(via), "cruise_ft": int(cruise),
             "task": "training", "approach": approach,
             "enroute": via, "ladder": seats}
