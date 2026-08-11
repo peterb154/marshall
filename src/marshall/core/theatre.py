@@ -64,6 +64,23 @@ class Theatre:
     bootstrap_plan: str = ""
     # The key the approach is stored under in the director's `approaches` table.
     approach_key: str = ""
+    # EVERY FIX THIS MAP PUBLISHES, and the numbered route down it.
+    #
+    # The bridge used to build this by reading `core.route`'s module globals --
+    # `{f.name: f for f in vars(R).values() if isinstance(f, R.Fix)}` -- which is
+    # the Caucasus catalogue whatever map is loaded. So on Nevada it published
+    # KOBULETI, BATUMI, INGRESS and the rest, and did NOT publish NELLIS. The
+    # filed Nevada plan is `NELLIS, TONOPAH` and clearance delivery resolves
+    # every route name against the published table, so a clean Nevada start
+    # rejects the plan for a fix that exists in the source and never reached the
+    # sim. An old row in the database would hide it, which is exactly the
+    # accidental success a second theatre is meant to expose.
+    #
+    # `waypoints` are the NUMBERED ones -- "distance to waypoint three" is how a
+    # pilot asks. Empty is honest: a theatre with no strike route has no
+    # steerpoints, and inventing them from another map's is how this started.
+    fixes: tuple = ()
+    waypoints: tuple = ()          # ((1, Fix), (2, Fix), ...)
     extra: dict = field(default_factory=dict)
 
     def field_named(self, name: str):
@@ -80,7 +97,13 @@ def caucasus() -> Theatre:
         arrival=R.ARRIVAL_FIELD, approach=R.BATUMI_ASR,
         approaches=(R.BATUMI_ASR, R.BATUMI_APPROACH, R.KOBULETI_ILS),
         wind_from_deg=R.WIND_FROM_DEG, wind_mph=R.WIND_MPH,
-        bootstrap_plan="362nd-kobuleti-batumi", approach_key="batumi-asr")
+        bootstrap_plan="362nd-kobuleti-batumi", approach_key="batumi-asr",
+        # EVERY Fix the module publishes, not just tonight's legs: a ferry up
+        # the coast routes via KOBULETI, which no sortie leg touches, and a plan
+        # naming a fix the table does not hold is refused at delivery.
+        fixes=tuple({f.name: f for f in vars(R).values()
+                     if isinstance(f, R.Fix)}.values()),
+        waypoints=tuple(R.sortie_points()))
 
 
 def nevada() -> Theatre:
@@ -92,7 +115,10 @@ def nevada() -> Theatre:
         arrival="Tonopah", approach=N.TONOPAH_ILS,
         approaches=(N.TONOPAH_ILS, N.NELLIS_ILS),
         wind_from_deg=210.0, wind_mph=9.2,
-        bootstrap_plan="nevada-nellis-tonopah", approach_key="tonopah-ils")
+        bootstrap_plan="nevada-nellis-tonopah", approach_key="tonopah-ils",
+        # NEVADA_FIXES has existed since the map was added and nothing read it.
+        fixes=tuple(N.NEVADA_FIXES),
+        waypoints=tuple(enumerate(N.NEVADA_ROUTE, start=1)))
 
 
 THEATRES = {"caucasus": caucasus, "nevada": nevada}

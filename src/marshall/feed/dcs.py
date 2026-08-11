@@ -193,14 +193,58 @@ def get_player_units() -> str:
 # Raw lat/lon means nothing on a radio. A controller thinks in bearing and range
 # off a fix -- here the Batumi beacon / field (UGSB) -- plus altitude and the
 # direction the aircraft is actually pointing.
-BATUMI_LAT, BATUMI_LON = 41.6103, 41.5997     # UGSB ARP, co-located with the OS beacon
 _NM = 3440.065                                 # earth radius in nautical miles
 _M_TO_FT = 3.28084
 
 
+def home_field() -> tuple[float, float, float]:
+    """(lat, lon, magnetic variation) of the field a controller reads ranges from.
+
+    THE ARRIVAL FIELD OF THE LOADED THEATRE, asked once and remembered.
+
+    This was `BATUMI_LAT, BATUMI_LON = 41.6103, 41.5997` and a `_MAGVAR = 6.0`
+    in `tracks.py` -- a Caucasus origin and a Caucasus variation compiled into
+    every path that renders a picture for a controller. On Nevada that is not a
+    small error: bearings and ranges would be measured from a point in Georgia,
+    and the variation is 12 degrees East at Nellis and 16 at Tonopah against a
+    hardcoded 6.
+
+    "A fallback must be conservatively unavailable, not confidently wrong on
+    another map" -- CODEX_NTTR_AUDIT.md, which is right, and the honest version
+    of that is still ahead: several callers here render unconditionally and
+    would need to learn to say nothing. This removes the WRONG answer; #109
+    carries the missing one.
+
+    The variation comes off the field table, where it is surveyed per aerodrome
+    -- which is the same lesson the two-aerodrome work produced about terrain:
+    it cannot be a theatre-wide constant.
+    """
+    global _HOME
+    if _HOME is None:
+        from marshall.core import theatre as _t
+        th = _t.current()
+        f = th.field_named(th.arrival) or (th.fields[0] if th.fields else None)
+        if f is None:
+            raise RuntimeError("the loaded theatre publishes no field to "
+                               "measure from")
+        # `variation()`, NOT the raw attribute. Zero on a Field_ means "use the
+        # theatre default" -- Batumi carries 0.0 and flies with 6 degrees East
+        # -- so reading the field directly would have swapped one wrong constant
+        # for a different wrong constant, and quietly lost the Caucasus
+        # correction while fixing Nevada's. The accessor was written for exactly
+        # this and had one caller.
+        _HOME = (float(f.lat), float(f.lon), float(f.variation()))
+        log.info("radar picture measured from %s (%.4f, %.4f), variation %.0f",
+                 f.name, *_HOME)
+    return _HOME
+
+
+_HOME: tuple | None = None
+
+
 def _bearing_range(lat: float, lon: float) -> tuple[float, float]:
     """Bearing (deg TRUE -- the radial the aircraft sits on) and range in nm
-    from the Batumi beacon to a point.
+    from the loaded theatre's home field to a point.
 
     THE SEVENTH IMPLEMENTATION OF THIS IS GONE. It was a haversine with its own
     earth-radius constant (3440.065 nm, against `core.geo`'s 6371008.8 m -- the
@@ -213,7 +257,8 @@ def _bearing_range(lat: float, lon: float) -> tuple[float, float]:
     one's callers want it the other way round. One transposition here beats a
     second function everywhere.
     """
-    nm, brg = _geo.range_bearing_true((BATUMI_LAT, BATUMI_LON), lat, lon)
+    _la, _lo, _ = home_field()
+    nm, brg = _geo.range_bearing_true((_la, _lo), lat, lon)
     return brg, nm
 
 

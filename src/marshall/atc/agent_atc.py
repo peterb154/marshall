@@ -2670,13 +2670,15 @@ def whisper_vocabulary(bridge, profile, roster=None) -> str:
     word, it invents an aeroplane and gives it a place in the holding stack.
     """
     from marshall.atc import callsign as C
-    from marshall.core import route as R
     from marshall.radio import stt
 
     # Seed with who COULD be flying before anyone has spoken, plus anybody
     # named on the command line -- a visiting pilot or a test callsign. Without
     # this the very first transmission, which is the one that binds a radio to a
     # name, is the only one with no priming behind it.
+    # THE SQUADRON'S OWN NAMES. Theatre-neutral -- the 362nd fly whichever map
+    # is loaded -- so this one genuinely does belong to `core.route`.
+    from marshall.core import route as R
     spoken = list(getattr(R, "SQUADRON_CALLSIGNS", ()))
     spoken += [c for c in os.environ.get("MARSHALL_CALLSIGNS", "").split(",")
                if c.strip()]
@@ -2710,8 +2712,19 @@ def whisper_vocabulary(bridge, profile, roster=None) -> str:
             except Exception:
                 spoken.append(cs)
     stations = [s.name for s in (getattr(profile, "stations", None) or [])]
-    fixes = [f.name for _, f in R.sortie_points()]
-    field = getattr(getattr(profile, "beacon", None), "name", "Batumi")
+    # THE LOADED THEATRE'S FIXES. This primed Whisper with `core.route`'s --
+    # the Caucasus strike route -- whatever map was up, so on Nevada the
+    # recogniser was told to expect INGRESS and TSUTSNVATI and never NELLIS or
+    # TONOPAH. Priming with another map's names is worse than not priming: it
+    # biases the transcript towards words that cannot occur.
+    _th = _theatre.current()
+    fixes = [f.name for f in _th.fixes]
+    # NO CAUCASUS DEFAULT. "Batumi" as the fallback field name is a Caucasus
+    # fact leaking into a theatre-neutral path; the theatre knows its own
+    # arrival field and an empty string primes nothing rather than the wrong
+    # thing.
+    field = (getattr(getattr(profile, "beacon", None), "name", "")
+             or _th.arrival or "")
     return stt.domain_prompt(stations, fixes, spoken, field, plan_labels())
 
 
@@ -2825,8 +2838,6 @@ def push_fixes(base: str, profile) -> int:
     table keeps only the field, `vector` answers "no fix for that", and the
     approach -- which needs none of this -- carries on unaffected.
     """
-    from marshall.core import route as R
-
     # THE FIFTH COPY OF THIS DANCE, and the one place the real reason
     # survived in a comment: "pydcs also claims the name `dcs`". Ruff's
     # per-file ignores said it was about import ORDER, which was false. One
@@ -2834,13 +2845,20 @@ def push_fixes(base: str, profile) -> int:
     from marshall.feed.stubs import bind as _bind_dcs_stubs
     _bind_dcs_stubs()
 
-    # EVERY fix route.py publishes, not only the ones on tonight's sortie. A
-    # filed flight plan may route via any of them -- a ferry up the coast goes to
-    # KOBULETI, which no sortie leg touches -- and a plan naming a fix the table
-    # does not hold is refused at clearance delivery. The rule is the simple one:
-    # if route.py publishes it as a Fix, the controller can compute against it.
-    fixes = {f.name: f for f in vars(R).values() if isinstance(f, R.Fix)}
-    fixes.update({f.name: f for _, f in R.sortie_points()})
+    # EVERY fix THE LOADED THEATRE publishes, not only tonight's legs. A filed
+    # plan may route via any of them -- a ferry up the coast goes to KOBULETI,
+    # which no sortie leg touches -- and a plan naming a fix the table does not
+    # hold is refused at clearance delivery.
+    #
+    # THE THEATRE'S, NOT `core.route`'S. This read `vars(R)` for anything that
+    # was a `Fix`, which is the CAUCASUS catalogue whatever map is loaded. On
+    # Nevada it published KOBULETI, BATUMI and INGRESS -- and not NELLIS, whose
+    # own filed plan is `NELLIS, TONOPAH`. A clean Nevada start would refuse its
+    # own bootstrap plan for a fix that exists in the source and never reached
+    # the sim, and a stale row in the database would hide it. [CODEX_NTTR_AUDIT]
+    _th = _theatre.current()
+    fixes = {f.name: f for f in _th.fixes}
+    fixes.update({f.name: f for _, f in _th.waypoints})
     for attr in ("beacon", "outer_hold", "arrival_fix"):
         f = getattr(profile, attr, None)
         if f is not None and getattr(f, "name", None):
@@ -2867,7 +2885,7 @@ def push_fixes(base: str, profile) -> int:
             out[name] = [float(la), float(lo)]
             # Steerpoint NUMBERS too -- "distance to waypoint three" is how a
             # pilot asks, and the name is what the chart shows.
-    for n, f in R.sortie_points():
+    for n, f in _th.waypoints:
         if f.name in out:
             out[f"waypoint {n}"] = out[f.name]
             out[f"steerpoint {n}"] = out[f.name]
@@ -4074,7 +4092,6 @@ def _eval_lua(lua: str) -> str:
 def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
              session_id: str | None = None, url: str = AGENT_URL) -> None:
     from marshall.atc import asr, controller
-    from marshall.core import route as R
     from marshall.radio import stt, tts
     from marshall.radio.client import AM, SRSClient, radio
     from marshall.radio import pool
@@ -4546,7 +4563,11 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             # The ARRIVAL field's, explicitly. This is the frequency the
             # talkdown goes out on, so a first-role-match answer would put the
             # mile calls on another aerodrome's channel.
-            _fld = R.ARRIVAL_FIELD
+            # THE LOADED THEATRE'S arrival field, not `core.route`'s. This was
+            # the Caucasus constant, so on Nevada it asked for a station at
+            # "Batumi", got None, and the talkdown fell back to whatever channel
+            # this thread happened to transmit on. [CODEX_NTTR_AUDIT]
+            _fld = _theatre.current().arrival
             _final = (profile.station_for("approach", field=_fld)
                       if getattr(profile, "guidance", "") == "talkdown"
                       else profile.station_for("tower", field=_fld))

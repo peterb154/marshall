@@ -288,6 +288,17 @@ LSV = Fix("NELLIS", "LSV", -398195, -17233, 0.0,
           note="Nellis TACAN 12X. Field reference for the ILS to 21L.")
 NEVADA_FIXES = [LSV, TPH]
 
+# THE ROUTE, NUMBERED, because "distance to waypoint two" is how a pilot asks
+# and the name is what the chart shows. Nellis out to the VORTAC and back --
+# which is the sortie this map exists to fly, and the shape a range mission
+# takes even before the range itself is modelled.
+#
+# NOT A SID OR A STAR, and it must not be described as one. There is one ILS end
+# at each field and no published departure, arrival or transition; this is a
+# fix-to-fix route and the controller vectors the rest. See CODEX_NTTR_AUDIT.md,
+# which is right that a typed procedure graph is the real answer.
+NEVADA_ROUTE = [LSV, TPH, LSV]
+
 NELLIS_STATIONS = [NELLIS_CLEARANCE, NELLIS_GROUND, NELLIS_TOWER,
                    NELLIS_DEPARTURE, NELLIS_APPROACH]
 NEVADA_STATIONS = NELLIS_STATIONS + TONOPAH_STATIONS

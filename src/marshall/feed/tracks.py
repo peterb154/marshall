@@ -30,10 +30,25 @@ except ImportError:
         return fn
 
 from marshall.core.db import pool as get_pool
-from marshall.feed.dcs import BATUMI_LAT, BATUMI_LON, DCS_GRPC_ADDR, _M_TO_FT
+from marshall.feed.dcs import DCS_GRPC_ADDR, _M_TO_FT, home_field
 
 _MS_TO_KT = 1.94384
-_MAGVAR = 6.0   # Caucasus magnetic variation (E); pilots fly magnetic headings
+
+
+def _magvar() -> float:
+    """The home field's magnetic variation. Pilots fly magnetic headings.
+
+    Was `_MAGVAR = 6.0`, described as "Caucasus magnetic variation" -- a
+    theatre-wide constant for a quantity that is surveyed per aerodrome. It is
+    12 degrees East at Nellis and 16 at Tonopah, so on Nevada every vector this
+    module rendered was six to ten degrees out. See `dcs.home_field`.
+    """
+    return home_field()[2]
+
+
+def _home() -> tuple[float, float]:
+    la, lo, _ = home_field()
+    return la, lo
 # Named fixes we can vector to, as lat/lon.
 #
 # Batumi is built in because it is the field. Everything else -- the sortie
@@ -50,8 +65,19 @@ _MAGVAR = 6.0   # Caucasus magnetic variation (E); pilots fly magnetic headings
 # rather than guessing -- which is the correct failure. A pilot asking for the
 # range to his ingress point got "negative DME to ingress, you'll have to call
 # it off your own nav", and that was honest.
-_FIXES = {"batumi": (BATUMI_LAT, BATUMI_LON), "the field": (BATUMI_LAT, BATUMI_LON),
-          "the beacon": (BATUMI_LAT, BATUMI_LON), "home": (BATUMI_LAT, BATUMI_LON)}
+# THE FIELD, BY THE NAMES A PILOT USES FOR IT. Built lazily from the loaded
+# theatre rather than from a Caucasus constant -- "the field" means Nellis on
+# Nevada, and answering with Batumi's position is worse than answering nothing.
+def _field_aliases() -> dict:
+    la, lo = _home()
+    from marshall.core import theatre as _t
+    th = _t.current()
+    out = {"the field": (la, lo), "the beacon": (la, lo), "home": (la, lo)}
+    out[(th.arrival or "").lower()] = (la, lo)
+    return out
+
+
+_FIXES: dict = {}
 
 
 def _ensure_fix_table() -> None:
@@ -553,6 +579,13 @@ def _resolve(name: str) -> tuple[float, float] | None:
     _load_fixes()
     if key in _FIXES:
         return _FIXES[key]
+    # ...and the field, by the names a pilot calls it. Resolved here rather
+    # than seeded into `_FIXES` at import, because at import time nothing knows
+    # which map is loaded -- which is how a Caucasus origin came to be compiled
+    # into every answer this module gives.
+    alias = _field_aliases().get(key)
+    if alias is not None:
+        return alias
     try:
         with get_pool().connection() as conn:
             r = conn.execute(
@@ -587,7 +620,7 @@ def vector(from_contact: str, to: str) -> str:
             "  ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography,"
             "  ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography) / 1852.0",
             (a[1], a[0], b[1], b[0], a[1], a[0], b[1], b[0])).fetchone()
-    return f"{to}: heading {(brg - _MAGVAR) % 360:03.0f}, {nm:.0f} miles"
+    return f"{to}: heading {(brg - _magvar()) % 360:03.0f}, {nm:.0f} miles"
 
 
 def radar_cached(bindings: dict | None = None) -> list[str] | None:
@@ -613,7 +646,7 @@ def radar_cached(bindings: dict | None = None) -> list[str] | None:
                 FROM tracks t, bcn
                 ORDER BY nm
                 """,
-                (BATUMI_LON, BATUMI_LAT)).fetchall()
+                (_home()[1], _home()[0])).fetchall()
     except Exception as e:
         log.warning("radar_cached failed: %s", e)
         return None
@@ -661,7 +694,7 @@ def contacts(bindings: dict | None = None) -> list[dict] | None:
                        t.in_air
                 FROM tracks t, bcn
                 ORDER BY nm
-                """, (BATUMI_LON, BATUMI_LAT)).fetchall()
+                """, (_home()[1], _home()[0])).fetchall()
     except Exception as e:
         log.warning("contacts failed: %s", e)
         return None
@@ -864,7 +897,7 @@ def in_formation(label: str) -> bool:
                        degrees(ST_Azimuth(bcn.g, t.geog)),
                        COALESCE(t.player, '')
                 FROM tracks t, bcn
-                """, (BATUMI_LON, BATUMI_LAT)).fetchall()
+                """, (_home()[1], _home()[0])).fetchall()
         # THE SAME COLUMNS, IN THE SAME ORDER, AS THE PICTURE QUERY. They had
         # drifted apart -- this one had no groundspeed -- so the two callers
         # handed _clusters rows of different widths and whichever convention it
