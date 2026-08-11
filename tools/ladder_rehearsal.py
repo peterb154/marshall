@@ -296,16 +296,37 @@ def park_an_aeroplane(name: str, field: str) -> bool:
     "no such airfield" and "spawned" in consecutive lines, and a rehearsal built
     on that reports bugs against innocent code.
     """
+    return _spawn(name, "--ground", field, "--heading", "070")
+
+
+def fly_an_aeroplane(name: str, bearing: float, range_nm: float,
+                     alt_ft: int, at: str = "BATUMI") -> bool:
+    """Put a jet in the air, inbound, so there is an ARRIVAL to sequence.
+
+    The ground fixture cannot exercise separation: an aeroplane on the ramp is
+    never in the stack, never in the letdown, and never in anybody's way. The
+    holding stack is the reason the deterministic engine exists and it has run
+    about sixteen times in this project's life, every one of them synthetic --
+    so this is the fixture that makes the invariant testable at all.
+
+    Heading is set INBOUND from the spawn bearing, because an arrival flying
+    away from the field is not an arrival and `handoff.due` reads the direction.
+    """
+    return _spawn(name, "--at", at, "--bearing", f"{bearing:.0f}",
+                  "--range", f"{range_nm:.0f}", "--alt", str(int(alt_ft)),
+                  "--heading", f"{int((bearing + 180) % 360):d}")
+
+
+def _spawn(name: str, *where: str) -> bool:
     r = subprocess.run(
         [sys.executable, str(ROOT / "tools" / "spawn.py"),
-         "--name", name, "--type", "viper", "--ground", field,
-         "--side", "blue", "--heading", "070"],
+         "--name", name, "--type", "viper", "--side", "blue", *where],
         check=False, capture_output=True, text=True,
         env={**os.environ, "PYTHONPATH": str(ROOT / "src")})
     out = (r.stdout or "") + (r.stderr or "")
     if r.returncode != 0 or "FAILED" in out:
         last = out.strip().splitlines()[-1] if out.strip() else str(r.returncode)
-        print(f"  !! could not park {name} at {field}: {last}")
+        print(f"  !! could not put {name} on the scope: {last}")
         return False
     return True
 

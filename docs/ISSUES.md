@@ -5327,3 +5327,62 @@ Both are the same shape as #103: not a wrong answer, a **right answer recorded
 at the wrong moment or not at all**, believed by everything downstream. The
 harness is the first reader that ever compared the record against what the
 engine actually did, which is why two years of logs looked fine.
+
+## [SEP-14] The vacated stack level is reassigned before it is vacated — #108
+labels: bug, needs-flight-test
+
+**Status:** OPEN, and it is a design call rather than a slip. Found on the FIRST
+run of `tools/stack_rehearsal.py`, 11 August — the first time three arrivals have
+ever been sequenced at once.
+
+Three lines, no radio, no sim, no model:
+
+    ctl = Controller(profile)                 # stack_ft [5000, 6000, ...]
+    for cs in ("Alpha 1", "Bravo 1", "Charlie 1"):
+        ctl.report_beacon(cs, 9000)
+
+    Alpha 1      CLEARED   assigned=5000   <- letdown
+    Bravo 1      HOLDING   assigned=5000
+    Charlie 1    HOLDING   assigned=6000
+
+**Alpha is flying the letdown at five thousand and Bravo is holding at five
+thousand over the same beacon.** Not laterally separated — the hold is over the
+beacon and so is the start of the procedure. This is the accident the entire
+deterministic half of the system exists to make impossible, and it is the
+default outcome of three aeroplanes arriving together.
+
+**How it happens.** `_try_clear` promotes the bottom holder to `CLEARED` and
+leaves `assigned_ft` alone, which is right — that IS the altitude he flies the
+letdown at. `_free_slot` then counts only `_holders()`, and he is no longer one,
+so his level reads as free and the next arrival is put on it. Each half is
+defensible; together they hand out an occupied altitude.
+
+**Why nothing caught it.** Both existing tests ASSERT this behaviour —
+`test_arrivals_fill_bottom_up` expects B at the base while A is cleared at the
+base — so the suite encodes it as intended. Whether it was ever decided or
+merely observed and written down is not recoverable from the history. It has
+never been flown: sixteen turns of two-or-more holding in this project's whole
+recorded life, all synthetic, none of them three-deep.
+
+**The design call, which is the reason this is filed rather than fixed.**
+
+*If the level is his until he leaves it* — the real-procedure answer, and mine —
+then `_free_slot` must reserve the letdown aircraft's level, and `_step_down`
+must not move a holder into it. That costs one stack level while somebody is on
+the approach, which is correct rather than a loss: a level with an aeroplane
+descending through it is not free.
+
+*If lateral separation on the procedure is deemed enough*, the engine is right
+and what needs fixing is the BOARD, which currently reports two aircraft at one
+altitude to every reader outside the engine — and the rehearsal, reasonably,
+called it a violation.
+
+The first attempt at fixing it broke seven tests, which is how the second reading
+surfaced. Recorded here so the next person does not have to rediscover that the
+tests disagree with the fix.
+
+**Acceptance criteria**
+1. Three arrivals produce three distinct altitudes, or a stated reason why two
+   may share one.
+2. `tools/stack_rehearsal.py --ships 3` reports no violation.
+3. Whatever is decided, the board says the same thing the engine believes.
