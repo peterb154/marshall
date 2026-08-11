@@ -22,7 +22,22 @@ from __future__ import annotations
 
 STYLE = """
   .file { font: 15px/1.5 "Courier New", monospace; color: #241f18;
-          background: #d9cfb4; padding: 20px 22px; max-width: 760px; }
+          background: #d9cfb4; padding: 20px 22px; max-width: 1500px;
+          display: grid; gap: 8px 30px;
+          grid-template-columns: minmax(430px, 560px) 1fr;
+          grid-template-areas: "head head" "left right"; align-items: start; }
+  .file > h1, .file > .sub { grid-area: head; }
+  .file .col-l { grid-area: left; min-width: 0; }
+  .file .col-r { grid-area: right; min-width: 0; position: sticky; top: 20px; }
+  /* One column under a narrow window -- this is a desk page, but a laptop is
+     a desk and 1500px of it is not guaranteed. */
+  @media (max-width: 1080px) {
+    .file { grid-template-columns: 1fr;
+            grid-template-areas: "head" "left" "right"; }
+    .file .col-r { position: static; }
+  }
+  .file .col-r .empty { border: 1px dashed #8a8069; padding: 26px 18px;
+    text-align: center; color: #5a5142; font-size: 13px; }
   .file h1 { font-size: 21px; margin: 0 0 2px; letter-spacing: 1.5px; }
   .file .sub { font-size: 13px; color: #5a5142; margin-bottom: 16px; }
   .file label { display: block; margin: 10px 0 2px; font-size: 12px;
@@ -49,6 +64,13 @@ STYLE = """
   .file .cart h2 { font-size: 14px; margin: 0 0 4px; letter-spacing: .09em;
     text-transform: uppercase; color: #5a5142; }
   .file .cart button { margin-top: 10px; margin-right: 8px; }
+  /* What the cartridge supplied. Marked so it is visibly not something you
+     were asked to know -- and still editable, because a derived answer you
+     cannot correct is worse than one you were asked for. */
+  .file .from-dtc { border-left: 3px solid #8a8069; padding-left: 11px;
+    margin: 12px 0; }
+  .file .from-dtc label i { font-style: normal; text-transform: none;
+    letter-spacing: 0; color: #8a8069; }
   .file .wps { font-size: 13px; margin-top: 10px; }
   .file .wps table { border-collapse: collapse; width: 100%; }
   .file .wps td, .file .wps th { padding: 2px 8px 2px 0; text-align: left;
@@ -56,16 +78,31 @@ STYLE = """
   .file .wps th { color: #5a5142; font-size: 11px; letter-spacing: .07em;
     text-transform: uppercase; }
   .file .wps .n { text-align: right; }
-  .file .look { margin-top: 8px; font-size: 13px; background: #efe7d2;
+  /* A SIBLING OF THE ROW, NOT A CHILD. `.board .row` is flex, so the detail
+     box was squeezed into it as another column and never appeared -- "just
+     tried to open a flightplan.. was unable". */
+  .file .detail { margin: 0 0 14px; font-size: 13px; background: #efe7d2;
     border-left: 4px solid #8a8069; padding: 8px 11px; }
-  .file .look dt { color: #5a5142; font-size: 11px; letter-spacing: .07em;
+  .file .detail dt { color: #5a5142; font-size: 11px; letter-spacing: .07em;
     text-transform: uppercase; margin-top: 6px; }
-  .file .look dd { margin: 0; }
+  .file .detail dd { margin: 0; }
+  /* The inspect button is a link, like remove -- not another beige box. It
+     shared a class name with the box and inherited its styling. */
+  .file .board .peek { margin: 0; font-size: 12px; background: none;
+    border: 0; text-decoration: underline; padding: 0 4px; cursor: pointer;
+    color: #241f18; }
+  .file .map { position: relative; overflow: hidden; margin: 10px 0 2px;
+    border: 1px solid #8a8069; background: #cfd9c4; height: 520px; }
+  .file .map img { position: absolute; width: 256px; height: 256px; }
+  .file .map svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .file .map .attrib { position: absolute; right: 3px; bottom: 2px;
+    font-size: 10px; background: rgba(239,231,210,.8); padding: 0 4px; }
   .file .miss { color: #b03024; }
   .file .ok { background: #e2ecd6; border-left: 4px solid #4a7a24;
               padding: 8px 11px; margin: 6px 0; }
   .file .board { margin-top: 22px; border-top: 1px solid #8a8069;
                  padding-top: 10px; font-size: 14px; }
+  .file .board .row.on { background: #efe7d2; outline: 2px solid #8a8069; }
   .file .board .row { display: flex; gap: 10px; align-items: baseline;
                       padding: 4px 0; }
   .file .board b { font-size: 17px; }
@@ -84,6 +121,7 @@ def build() -> str:
     by its <b>label</b>, out loud, so the label is one word and the rules about
     it are the director's — this page only asks.</div>
 
+  <div class="col-l">
   <div class="cart">
     <h2>from a data cartridge</h2>
     <div class="hint">Paste what DKS put on your clipboard. It fills the form
@@ -103,39 +141,57 @@ def build() -> str:
   </div>
 
   <form id="f" autocomplete="off">
+    <div class="hint" style="margin-bottom:8px">Below: what a cartridge cannot
+      know. A DTC has no spoken name, no key and no task &mdash; those are
+      yours. Everything under them is read from it.</div>
     <div class="two">
       <div><label>label — what a pilot says</label>
         <input name="label" placeholder="Domino" required>
         <div class="hint">One word, no digits. "Samovar One" is how the wrong
           sortie gets cleared.</div></div>
       <div><label>name — the key</label>
-        <input name="name" placeholder="362nd-kobuleti-batumi" required>
+        <input name="name" placeholder="squadron-origin-destination" required>
         <div class="hint">lowercase, hyphens. Goes in URLs and migrations.</div></div>
     </div>
     <label>task — what he is DOING</label>
-    <input name="task" placeholder="Transit and radar recovery" required>
+    <input name="task" placeholder="Transit and recovery" required>
     <div class="hint">Not where he is going: origin and destination have their
       own boxes and are read from them. Repeating a place name here makes this
       plan outrank the board on any request that mentions it.</div>
-    <div class="two">
-      <div><label>origin</label><input name="origin" placeholder="Kobuleti" required></div>
-      <div><label>destination</label><input name="destination" placeholder="Batumi" required></div>
+    <!-- READ FROM THE CARTRIDGE, and left editable rather than hidden.
+         "the import is asking for informtion at that is already embedded in
+         the data cartrige" -- it was, and worse, it demanded it before the
+         Read button would do anything. A form that asks twice teaches you to
+         distrust the answer it already has. -->
+    <div class="from-dtc" id="derived">
+      <div class="two">
+        <div><label>origin <i>from the route</i></label>
+          <input name="origin" required></div>
+        <div><label>destination <i>from the route</i></label>
+          <input name="destination" required></div>
+      </div>
+      <label>route <i>from the route</i></label>
+      <input name="route" list="fixes" required>
+      <datalist id="fixes"></datalist>
+      <div class="hint" id="fixhint">the places the sim actually holds</div>
+      <label>cruise altitude, feet <i>highest leg in the cartridge</i></label>
+      <input name="cruise_ft" type="number" step="100" required>
     </div>
-    <label>route — fixes, comma separated</label>
-    <input name="route" list="fixes" placeholder="KOBULETI, INITIAL, BATUMI" required>
-    <datalist id="fixes"></datalist>
-    <div class="hint" id="fixhint">the places the sim actually holds</div>
-    <div class="two">
-      <div><label>cruise altitude, feet</label>
-        <input name="cruise_ft" type="number" step="100" placeholder="5000" required></div>
-      <div><label>approach on arrival</label>
-        <select name="approach"><option value="">(none)</option></select></div>
-    </div>
+    <label>approach on arrival</label>
+    <select name="approach"><option value="">(none)</option></select>
+    <div class="hint">not in the cartridge: ATC assigns the approach, and it is
+      the one thing here a pilot does not bring with him.</div>
     <button id="go" type="submit">File it</button>
   </form>
 
   <div class="out" id="out"></div>
   <div class="board" id="board"></div>
+  </div>
+
+  <div class="col-r">
+    <div id="pane"><div class="empty">Pick <b>inspect</b> on a filed plan and
+      it appears here &mdash; what the controller reads, and where it goes.</div></div>
+  </div>
 </div>
 
 <script>
@@ -193,11 +249,10 @@ async function board() {{
       + `<span>${{esc(p.task || '')}}</span>`
       + `<span class="rt">${{esc(p.origin)}}&rarr;${{esc(p.destination)}}`
       + ` ${{(p.cruise_ft || 0).toLocaleString()}} ft</span>`
-      + `<button class="look" data-n="${{esc(p.name)}}">inspect</button>`
-      + `<button class="drop" data-n="${{esc(p.name)}}">remove</button>`
-      + `<div id="look-${{esc(p.name)}}"></div></div>`)
+      + `<button class="peek" data-n="${{esc(p.name)}}">inspect</button>`
+      + `<button class="drop" data-n="${{esc(p.name)}}">remove</button></div>`)
       .join('') || '<div class="hint">nothing filed</div>';
-  document.querySelectorAll('button.look').forEach(
+  document.querySelectorAll('button.peek').forEach(
     b => b.onclick = () => look(b.dataset.n));
   document.querySelectorAll('.drop').forEach(b => b.onclick = async () => {{
     const r = await fetch('/plans/' + encodeURIComponent(b.dataset.n),
@@ -240,7 +295,7 @@ $('#read').onclick = async () => {{
   if (m.ils_mhz) h += `<div class="hint">cartridge also carries ILS `
     + `${{esc(m.ils_mhz)}} / course ${{esc(m.ils_course)}}, TACAN `
     + `${{esc(m.tacan)}}X — those are the jet's, not the plan's.</div>`;
-  if (res.notes) h += `<div class="look"><dt>kneeboard notes</dt>`
+  if (res.notes) h += `<div class="detail"><dt>kneeboard notes</dt>`
     + `<dd>${{esc(res.notes)}}</dd></div>`;
   h += `</div>`;
   $('#cartout').innerHTML = h;
@@ -257,25 +312,105 @@ $('#read').onclick = async () => {{
   check();
 }};
 
+// A PICTURE OF THE ROUTE, from OpenStreetMap tiles laid out by hand.
+//
+//     "Maybe an open maps picture of the route?"
+//
+// NO MAP LIBRARY. Leaflet would be four lines here and a vendored megabyte
+// there, and this needs no panning, no zooming and no interaction -- it needs
+// one still picture of four points and the legs between them. Web Mercator is
+// twenty lines, and the tiles come straight from OSM.
+//
+// The projection is the standard slippy-map one: longitude scales linearly,
+// latitude through the Mercator log. Everything below is in TILE units at the
+// chosen zoom, so a pixel is `t * 256` and the arithmetic stays in one frame --
+// which is the whole trick to not getting this wrong.
+const TILE = 256;
+function proj(lat, lon, z) {{
+  const n = Math.pow(2, z), r = lat * Math.PI / 180;
+  return {{x: (lon + 180) / 360 * n,
+          y: (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * n}};
+}}
+
+function drawMap(el, pts) {{
+  if (pts.length < 2) {{ el.innerHTML =
+    '<div class="hint" style="padding:8px">no positions for these fixes</div>';
+    return; }}
+  const W = el.clientWidth || 700, H = el.clientHeight || 300;
+  // ZOOM TO FIT, then step back one. Choosing the largest zoom whose span still
+  // fits leaves the outermost fixes on the very edge, where a marker is half a
+  // marker; one level out is the difference between a route on a map and a
+  // route in a box.
+  let z = 11;
+  for (let t = 12; t >= 3; t--) {{
+    const ps = pts.map(p => proj(p.lat, p.lon, t));
+    const dx = (Math.max(...ps.map(p => p.x)) - Math.min(...ps.map(p => p.x))) * TILE;
+    const dy = (Math.max(...ps.map(p => p.y)) - Math.min(...ps.map(p => p.y))) * TILE;
+    if (dx < W * 0.82 && dy < H * 0.82) {{ z = t; break; }}
+  }}
+  const ps = pts.map(p => proj(p.lat, p.lon, z));
+  const cx = (Math.max(...ps.map(p => p.x)) + Math.min(...ps.map(p => p.x))) / 2;
+  const cy = (Math.max(...ps.map(p => p.y)) + Math.min(...ps.map(p => p.y))) / 2;
+  // Where tile (0,0) of the world sits, in page pixels.
+  const ox = W / 2 - cx * TILE, oy = H / 2 - cy * TILE;
+
+  let h = '';
+  const x0 = Math.floor(-ox / TILE), x1 = Math.floor((W - ox) / TILE);
+  const y0 = Math.floor(-oy / TILE), y1 = Math.floor((H - oy) / TILE);
+  const n = Math.pow(2, z);
+  for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) {{
+    if (y < 0 || y >= n) continue;
+    const wx = ((x % n) + n) % n;
+    h += `<img loading="lazy" src="https://tile.openstreetmap.org/${{z}}/${{wx}}`
+      + `/${{y}}.png" style="left:${{ox + x * TILE}}px;top:${{oy + y * TILE}}px">`;
+  }}
+  const sx = p => ox + p.x * TILE, sy = p => oy + p.y * TILE;
+  const line = ps.map(p => `${{sx(p)}},${{sy(p)}}`).join(' ');
+  h += `<svg viewBox="0 0 ${{W}} ${{H}}" preserveAspectRatio="none">`
+    + `<polyline points="${{line}}" fill="none" stroke="#b03024"`
+    + ` stroke-width="2.5" stroke-linejoin="round"/>`
+    + ps.map((p, i) => `<circle cx="${{sx(p)}}" cy="${{sy(p)}}" r="5"`
+        + ` fill="#efe7d2" stroke="#241f18" stroke-width="2"/>`
+        + `<text x="${{sx(p) + 9}}" y="${{sy(p) + 4}}" font="12px monospace"`
+        + ` font-family="Courier New, monospace" font-size="12"`
+        + ` stroke="#efe7d2" stroke-width="3" paint-order="stroke"`
+        + ` fill="#241f18">${{esc(pts[i].name)}}</text>`).join('')
+    + `</svg>`
+    + `<div class="attrib">&copy; OpenStreetMap contributors</div>`;
+  el.innerHTML = h;
+}}
+
 // INSPECT ONE. The board row says label and destination; this says everything
 // the controller will actually read, and marks a route fix the sim does not
 // hold -- which is the failure that reads as "no fix called KOBULETI" at the
 // moment somebody asks for a clearance.
+let showing = '';
 async function look(name) {{
   const plans = ((await (await fetch('/plans')).json()).plans || []);
   const p = plans.find(x => x.name === name);
-  const box = document.getElementById('look-' + name);
-  if (!box) return;
-  if (box.innerHTML) {{ box.innerHTML = ''; return; }}
+  const box = $('#pane');
+  document.querySelectorAll('.board .row').forEach(r => r.classList.remove('on'));
+  if (showing === name) {{
+    showing = '';
+    box.innerHTML = '<div class="empty">Pick <b>inspect</b> on a filed plan '
+      + 'and it appears here.</div>';
+    return;
+  }}
+  showing = name;
+  const btn = document.querySelector(`.peek[data-n="${{CSS.escape(name)}}"]`);
+  if (btn) btn.closest('.row').classList.add('on');
   if (!p) {{ box.innerHTML = '<div class="bad">not on the board</div>'; return; }}
-  let known = [];
-  try {{ known = ((await (await fetch('/plans/fixes')).json()).fixes || [])
-                  .map(s => s.toUpperCase()); }} catch (e) {{}}
+  // WHERE the fixes are, not just what they are called -- the route has to be
+  // drawable, and a name cannot be plotted.
+  let where = {{}};
+  try {{ where = (await (await fetch('/fixes')).json()).fixes || {{}}; }}
+  catch (e) {{}}
+  const known = Object.keys(where).map(s => s.toUpperCase());
   const legs = String(p.route || '').split(',').map(s => s.trim())
     .filter(Boolean)
     .map(f => known.length && !known.includes(f.toUpperCase())
       ? `<span class="miss">${{esc(f)}} ?</span>` : esc(f));
-  box.innerHTML = `<div class="look">`
+  box.innerHTML = `<div class="detail">`
     + `<dt>key</dt><dd>${{esc(p.name)}}</dd>`
     + `<dt>said on the radio</dt><dd>${{esc(p.label || '(none)')}}</dd>`
     + `<dt>task</dt><dd>${{esc(p.task || '(none)')}}</dd>`
@@ -285,7 +420,20 @@ async function look(name) {{
     + (legs.some(l => l.includes('miss'))
         ? `<div class="bad">a fix in red is not on the sim's table — a `
           + `clearance naming it would be refused</div>` : '')
-    + `</div>`;
+    + `</div>`
+    + `<div class="map" id="map-${{esc(name)}}"></div>`;
+
+  // Drawn AFTER the box is in the document, because the tile grid is sized
+  // from the element's real width and an element nobody has laid out yet has
+  // none. Only the fixes we have a position for -- a route naming one we do
+  // not is exactly the case the red marking above is for, and half a line is
+  // more honest than a straight one through a place we cannot find.
+  const pts = String(p.route || '').split(',').map(s => s.trim())
+    .filter(Boolean)
+    .map(f => ({{name: f, ll: where[f.toLowerCase()]}}))
+    .filter(o => Array.isArray(o.ll) && o.ll.length === 2)
+    .map(o => ({{name: o.name, lat: o.ll[0], lon: o.ll[1]}}));
+  drawMap(document.getElementById('map-' + name), pts);
 }}
 
 // The route box offers what the DIRECTOR holds, so a typo is a thing you

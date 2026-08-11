@@ -392,6 +392,13 @@ async def push_steerpoints(request: Request):
     return JSONResponse({"pushed": sorted(sp)}, headers=NO_CACHE)
 
 
+# WHERE THE FIXES ARE, not merely what they are called. `/plans/fixes` returns
+# names, which is right for a datalist and useless for drawing a route.
+@app.get("/fixes")
+async def fixes_read():
+    return await _director("GET", "/fixes")
+
+
 @app.get("/plans/fixes")
 async def plans_fixes():
     return await _director("GET", "/plans/fixes")

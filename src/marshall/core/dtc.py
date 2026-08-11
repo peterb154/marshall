@@ -148,6 +148,32 @@ def named_steerpoints(wps: list[dict]) -> dict:
     return out
 
 
+def nearest_field(lat: float, lon: float, within_nm: float = 25.0) -> str:
+    """The aerodrome this position belongs to, or "".
+
+    A CARTRIDGE HAS NO ORIGIN. The jet's route starts at steerpoint one, which
+    is already airborne and some miles out -- so where he took off from is not
+    in the file, and the first version simply used the theatre's `departure`.
+    That is a hard-coded string per theatre, correct for the sortie somebody had
+    in mind when they wrote it and wrong for any other.
+
+    Geometry does not need telling. Steerpoint one sits seven miles off
+    Kobuleti; the last waypoint IS Batumi. Both ends fall out of where the route
+    actually is, so a cartridge flown out of Kutaisi files Kutaisi without
+    anybody editing a default.
+    """
+    from marshall.core import geo
+    from marshall.core import theatre as _t
+    best, best_nm = "", within_nm
+    for f in _t.current().fields:
+        if f.lat is None or f.lon is None:
+            continue
+        d, _ = geo.range_bearing_true((lat, lon), f.lat, f.lon)
+        if d < best_nm:
+            best, best_nm = f.name, d
+    return best
+
+
 def plan_from(d: dict, name: str, approach: str = "", label: str = "",
               origin: str = "", steerpoints: bool = False) -> dict:
     """The cartridge as a filed plan: where he is going, and how high.
@@ -156,32 +182,36 @@ def plan_from(d: dict, name: str, approach: str = "", label: str = "",
     one altitude and the cartridge holds one per waypoint, so something has to
     give -- and the number that matters is the one a controller must not be
     surprised by. Filing the first leg's five thousand while the pilot climbs to
-    ten is precisely the disagreement this tool exists to end.
+    ten is precisely the disagreement this exists to end.
+
+    Both ENDS are derived from the route rather than from the theatre's
+    defaults -- see `nearest_field`. `origin` is still an argument because a
+    ferry that starts somewhere the route does not pass over is a real thing and
+    the caller may know better; it is an override, not a default.
     """
     wps = waypoints(d)
     if not wps:
         raise ValueError("no waypoints in the cartridge")
     from marshall.core import theatre as _t
-    th = _t.current()
-    fields = {f.name.upper() for f in th.fields}
-    start = (origin or th.departure or "").upper()
-    # The destination is the last waypoint that is an aerodrome. A cartridge
-    # ending nowhere in particular recovers where it started, which is what a
-    # local sortie is.
-    dest = next((w["name"].upper() for w in reversed(wps)
-                 if w["name"].upper() in fields), start)
-    enroute = [w for w in wps if w["name"].upper() not in fields]
+    fields = {f.name.upper() for f in _t.current().fields}
+    first, last = wps[0], wps[-1]
+    # The destination is the last waypoint that IS an aerodrome; failing that,
+    # the aerodrome the last waypoint is nearest to -- a route that ends on a
+    # downwind still ends at that field.
+    dest = next((w["name"] for w in reversed(wps)
+                 if w["name"].upper() in fields), "") \
+        or nearest_field(last["lat"], last["lon"])
+    start = origin or nearest_field(first["lat"], first["lon"]) or dest
+    enroute = [w for w in wps if w["name"].upper() not in fields
+               and w["name"].upper() != (dest or "").upper()]
     cruise = max([w["alt_ft"] for w in enroute] or [w["alt_ft"] for w in wps])
-    # HIS NAMES, or only the published ones. See `named_steerpoints` on why
-    # both are defensible and why they are not the same kind of thing.
+    # HIS NAMES, or only the published ones. See `named_steerpoints` on why both
+    # are defensible and why they are not the same kind of thing.
     via = ([w["name"].strip().upper() for w in enroute
             if (w["name"] or "").strip().upper() not in ("", "STPT", "WP")]
            if steerpoints else route_through(enroute))
-    route = [start, *via, dest]
-    return {"name": name,
-            "label": label,
-            "origin": start.title(), "destination": dest.title(),
+    route = [start.upper(), *via, (dest or start).upper()]
+    return {"name": name, "label": label,
+            "origin": start.title(), "destination": (dest or start).title(),
             "route": ", ".join(route), "cruise_ft": int(cruise),
-            "task": "training", "approach": approach or th.approach_key}
-
-
+            "task": "training", "approach": approach}
