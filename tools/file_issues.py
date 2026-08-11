@@ -4,7 +4,7 @@ The list has to be readable with no network and no token -- that is the whole
 point of keeping it in the repo -- so this script treats the markdown as the
 source and GitHub as a copy. Run it whenever the file gains an issue.
 
-    export GH_TOKEN=<a PAT with repo scope>
+    GH_TOKEN=<a PAT with repo scope>      in the repo root .env
     uv run python tools/file_issues.py --dry-run     # see what it would do
     uv run python tools/file_issues.py
 
@@ -50,7 +50,21 @@ import subprocess
 import sys
 from pathlib import Path
 
-ISSUES = Path(__file__).resolve().parent.parent / "docs" / "ISSUES.md"
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "src"))
+
+# IMPORTED FOR ITS SIDE EFFECT, and that is the whole point: `marshall.config`
+# reads the git-ignored `.env` at the repo root into the environment. `gh` then
+# finds `GH_TOKEN` there, exactly as it would have found it exported by hand.
+#
+# It used to live in `~/.bashrc`, behind the non-interactive early-return every
+# shell profile has -- so it was invisible to anything this repo ran and had to
+# be sourced by line number, which is not a thing anybody should be doing with
+# a credential. One file holds this machine's secrets now, it is the file
+# `SRS_HOST` is already in, and it is the one `config` reads.
+from marshall import config as _config       # noqa: F401  (imported for .env)
+
+ISSUES = ROOT / "docs" / "ISSUES.md"
 
 # "## [SLUG] Title" with an optional "— #12" already appended.
 HEAD = re.compile(r"^## \[([A-Z]+-\d+)\]\s+(.*?)(?:\s+—\s+#(\d+))?\s*$")
