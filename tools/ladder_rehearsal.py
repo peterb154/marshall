@@ -42,6 +42,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -66,6 +67,38 @@ def said(*words: str):
                         if str(e.get("kind", "")).startswith("atc/")).lower()
         missing = [w for w in words if w.lower() not in text]
         return (not missing), f"missing from the reply: {', '.join(missing)}"
+    return check
+
+
+def named_no_other_field(mine: str):
+    """He named a station, a runway or a frequency belonging to another field.
+
+    THE FAULT THIS ROW EXISTS FOR is a controller claiming the wrong aerodrome
+    -- a role is only unique within one, and the wrong answer is always
+    plausible. It used to be written as `said("kobuleti clearance")`, which
+    demanded he announce his own name in a reply to a pilot who had just used
+    it. He does not, a human would not, and a harness that insists on it is
+    teaching the controller to be unnatural to stay green.
+
+    So: check for the WRONG field rather than for the right one. Silence about
+    which aerodrome you are is correct on a frequency only one of them uses.
+    """
+    others = ("batumi", "senaki", "kutaisi", "sukhumi", "nellis", "tonopah")
+    others = tuple(o for o in others if o != mine.lower())
+
+    def check(ev):
+        for e in ev:
+            if not str(e.get("kind", "")).startswith("atc/"):
+                continue
+            text = (e.get("text") or "").lower()
+            # A DESTINATION IS NOT A CLAIM. "Cleared to Batumi as filed" names
+            # the other field correctly; "Batumi Ground, go ahead" does not.
+            for o in others:
+                for suffix in ("ground", "tower", "approach", "clearance",
+                               "delivery", "departure", "atis"):
+                    if f"{o} {suffix}" in text:
+                        return False, f"he answered as {o.title()} {suffix.title()}"
+        return True, ""
     return check
 
 
@@ -159,10 +192,28 @@ def engine_decided(*words: str):
 
 
 def nothing_lost():
-    """No decided fact went missing on the way to the radio."""
+    """No decided fact went missing on the way to the radio.
+
+    A REPAIR IS NOT A LOSS. `not_voiced` says the agent's draft dropped a fact
+    the engine decided; `repaired` says the bridge put it back before the words
+    went out. Both are recorded, and only the pair without a repair is a fact
+    the pilot never heard:
+
+        not_voiced  cleared_takeoff: zero seven
+        repaired    cleared_takeoff: runway zero seven, cleared for take-off
+        ATC         "...Runway zero seven, cleared for take-off."
+
+    which is the mechanism working exactly as designed, reported as a failure
+    of the row it was protecting. Matched by KIND -- the two records describe
+    the same decision and their texts differ by construction, since one is what
+    went missing and the other is what replaced it.
+    """
     def check(ev):
-        lost = [e.get("text", "") for e in ev if e.get("kind") == "not_voiced"]
-        return (not lost), f"NOT VOICED: {'; '.join(lost)}"
+        def kinds(k):
+            return {str(e.get("text", "")).split(":")[0].strip()
+                    for e in ev if e.get("kind") == k}
+        lost = kinds("not_voiced") - kinds("repaired")
+        return (not lost), f"NOT VOICED and not repaired: {', '.join(sorted(lost))}"
     return check
 
 
@@ -185,8 +236,8 @@ def all_of(*checks):
 LADDER = [
     ("Q1", 125.100,
      "Kobuleti Clearance, Sockeye, request clearance.",
-     said("kobuleti clearance"),
-     "he answers as Kobuleti Clearance, not Batumi anything"),
+     named_no_other_field("Kobuleti"),
+     "nothing on this frequency belongs to Batumi"),
 
     ("Q1a", 125.100,
      "Kobuleti Clearance, Sockeye, Domino please.",
@@ -296,6 +347,189 @@ def wait_for_radar(name: str, base: str, session: str, seconds: float = 90.0) ->
     return False
 
 
+# Spoken digits, as a radio says them and as Whisper writes them down. It does
+# not drop them -- it NORMALISES them, and the difference matters:
+#
+#     said     "holding short of runway zero seven"
+#     heard    "Holding Short of Runways 07"
+#     said     "maintain five thousand, departure one two three decimal three"
+#     heard    "maintained 5,000, Departure 123 Decimal Tree"
+#
+# Every number arrived. A word-by-word comparison called seven of them missing
+# and reported the rows as unjudgeable, which is the harness lying in the
+# conservative direction -- better than the other one, and still a lie.
+_DIGITS = {"zero": "0", "oh": "0", "one": "1", "two": "2", "three": "3",
+           "tree": "3", "four": "4", "fower": "4", "five": "5", "fife": "5",
+           "six": "6", "seven": "7", "eight": "8", "nine": "9", "niner": "9"}
+_SCALE = {"thousand": "000", "hundred": "00"}
+
+
+def _words(s: str) -> set:
+    """The content of a transmission, for comparing two transcripts.
+
+    Numbers are reduced to their digits and run together, so "zero seven" and
+    "07" are the same fact however either end chose to write it. Words shorter
+    than three letters go, because "to"/"two" and "for"/"four" are noise at this
+    resolution and nothing here turns on them.
+    """
+    out, run = set(), []
+    for w in re.findall(r"[a-z0-9]+", s.lower().replace(",", "")):
+        d = _DIGITS.get(w) or _SCALE.get(w) or (w if w.isdigit() else None)
+        if d is not None:
+            run.append(d)
+            continue
+        if run:
+            out.add("".join(run))
+            run = []
+        if len(w) > 2:
+            # "runway"/"runways", "maintain"/"maintained". Whisper hears the
+            # word and writes a different inflection of it; nothing on this
+            # radio turns on the ending.
+            out.add(re.sub(r"(ed|es|s)$", "", w))
+    if run:
+        out.add("".join(run))
+    return out
+
+
+def arrived_intact(ev, said_it: str) -> tuple[bool, str]:
+    """Did the BRIDGE hear what the pilot actually transmitted?
+
+    THE ROW BEING JUDGED IS THE CONTROLLER'S, and a controller answering a
+    mangled transmission correctly must not be marked wrong for it. Measured on
+    one run, three of five failures were this:
+
+        said     "Cleared to Batumi as filed, maintain five thousand,
+                  departure one two three decimal three, squawk six five two
+                  one, Sockeye."
+        heard    "Cleared to bow to me as filed, maintain, sockeye."
+
+    against which "that read-back was incomplete" is the RIGHT answer, and the
+    harness called it a failure of #90.
+
+    This is the Polly-against-Whisper limit the module docstring has always
+    named, and naming it is not enough once the harness is a gate. A row whose
+    question did not arrive cannot answer anything, so it reports MISHEARD --
+    which is a skip, not a pass, and says which words went missing.
+
+    Two thirds, by content word. Whisper drops a word or hears a name oddly on
+    most transmissions and the controller copes with that exactly as a human
+    would; the failure worth catching is the half-sentence.
+    """
+    # `transcript`, not `text`. A pilot record carries what Whisper made of the
+    # audio under its own key -- `text` is what a CONTROLLER said -- and reading
+    # the wrong one made every row report "nothing reached the bridge" while the
+    # controller was visibly answering it.
+    heard = " ".join(e.get("transcript", "") for e in ev
+                     if e.get("kind") == "pilot")
+    if not heard:
+        return False, "nothing reached the bridge at all"
+    want = _words(said_it)
+    if not want:
+        return True, ""
+    lost = want - _words(heard)
+    if len(lost) * 3 <= len(want):
+        return True, ""
+    return False, (f"the bridge heard {len(want) - len(lost)} of {len(want)} "
+                   f"words -- missing {', '.join(sorted(lost))}")
+
+
+def say_it(args, mhz, line, recorder, SRSClient, radio, AM, tts, first=True):
+    """Transmit one line and collect the turn. Returns (events, intact, why).
+
+    A FRESH CLIENT PER ROW, because each row is on a different frequency and the
+    ladder is the point. `first` only decides whether the line is printed, so a
+    repeat does not read like a second row.
+    """
+    mark = size(recorder)
+    if first:
+        print(f"   PILOT: {line}")
+    client = SRSClient(args.srs, name=args.name,
+                       eam_password=config.SRS_EAM_PASSWORD).connect(
+        [radio(mhz * 1e6, AM)])
+    try:
+        client.transmit(tts.Voice(voice_id=args.voice).frames(line),
+                        mhz * 1e6, AM)
+        # WAIT FOR THE CONTROLLER, NOT FOR THE FILE.
+        #
+        # This watched the recorder for four seconds of quiet after any growth
+        # -- and the pilot's own transmission and the board are written
+        # IMMEDIATELY, while the reply is a model call six seconds behind them.
+        # So every step ended before the controller spoke and reported him
+        # silent. The harness was measuring itself.
+        #
+        # The step is over when the controller has answered and then gone quiet,
+        # which is the same thing a pilot waits for.
+        deadline = time.monotonic() + args.wait
+        spoke_at = None
+        while time.monotonic() < deadline:
+            time.sleep(1.0)
+            got = events_since(recorder, mark)
+            if any(str(e.get("kind", "")).startswith("atc/") for e in got):
+                spoke_at = spoke_at or time.monotonic()
+                # A turn can be two transmissions -- a reply and a handoff.
+                # Give the second one room rather than cutting it off.
+                if time.monotonic() - spoke_at >= 4.0:
+                    break
+    finally:
+        client.close()
+    ev = events_since(recorder, mark)
+    intact, why = arrived_intact(ev, line)
+    return ev, intact, why
+
+
+def a_clean_board() -> bool:
+    """Restart the bridge, so the ladder starts where a sortie starts.
+
+    THE CONTROLLER REMEMBERS, and that is the design -- the engine holds the
+    phase, the assigned level, the approaches flown and whether the clearance
+    was read back, because that is a controller's memory and it matters with one
+    aeroplane as much as with four.
+
+    It also means the second run of this harness is not the first. Measured:
+
+        PILOT: Kobuleti Clearance, Sockeye, request clearance.
+        ATC:   Sockeye, you are already cleared as filed, that clearance was
+               read back correct.
+
+    which is a CORRECT answer to a pilot who has already been cleared, and makes
+    the row asking whether a clearance gets issued unrepeatable. A gate that
+    passes only on a fresh process and fails on the second run is worse than no
+    gate: it teaches people that red means "run it again".
+
+    IT TAKES BOTH HALVES, and the first attempt only did one. Restarting the
+    bridge empties the in-memory board -- and the CLEARANCE is not there. It is
+    a row in the director's `assigned_plans`, which is the point of it being a
+    row, so a fresh process read it straight back:
+
+        ATC: Sockeye, Kobuleti Clearance. You're already cleared as filed and
+             your read-back was correct.
+
+    `DELETE /flights` is the director's own "forget the last sortie", written
+    for exactly this and reachable over the API the bridge already uses.
+
+    `--no-restart` keeps a live session, for watching one row against a sortie
+    already in progress.
+    """
+    import urllib.request
+    ok = True
+    try:
+        req = urllib.request.Request("http://localhost:8000/flights", method="DELETE")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            print(f"  the director forgot the last sortie: "
+                  f"{resp.read().decode('utf-8', 'replace')[:60]}")
+    except Exception as e:
+        ok = False
+        print(f"  !! could not clear the director's flights ({type(e).__name__}); "
+              "a clearance already on file makes the early rows unrepeatable")
+    r = subprocess.run([sys.executable, str(ROOT / "tools" / "bridge.py"), "restart"],
+                       check=False, capture_output=True, text=True, timeout=180)
+    if r.returncode != 0:
+        ok = False
+        print("  !! could not restart the bridge; the board carries over from "
+              "the last run and the early rows may be unrepeatable")
+    return ok
+
+
 def events_since(path: Path, mark: int) -> list:
     """Everything the recorder has written since the byte offset `mark`."""
     if not path.exists():
@@ -334,6 +568,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="where the fixture aeroplane is parked")
     ap.add_argument("--no-spawn", action="store_true",
                     help="use whatever is already on the scope")
+    ap.add_argument("--no-restart", action="store_true",
+                    help="keep the running bridge, and its memory of this "
+                         "callsign, instead of starting from a clean board")
     args = ap.parse_args(argv)
     if not args.srs:
         print("!! --srs is required (or SRS_HOST)", file=sys.stderr)
@@ -354,6 +591,11 @@ def main(argv: list[str] | None = None) -> int:
 
     unit = f"362nd_{args.name}"
     parked = False
+    # BEFORE THE AEROPLANE, because the restart is what clears the controller's
+    # memory of the last run and the aeroplane is what he forms a new one about.
+    if not args.no_restart:
+        print("  restarting the bridge so the board starts empty")
+        a_clean_board()
     if not args.no_spawn:
         print(f"  parking {unit} at {args.field} so the engine has an aeroplane")
         parked = park_an_aeroplane(unit, args.field)
@@ -363,45 +605,25 @@ def main(argv: list[str] | None = None) -> int:
 
     results, skipped = [], []
     for rid, mhz, line, check, why in steps:
-        mark = size(recorder)
-        client = SRSClient(args.srs, name=args.name,
-                           eam_password=config.SRS_EAM_PASSWORD).connect(
-            [radio(mhz * 1e6, AM)])
-        try:
-            print(f"── {rid}  on {mhz:.3f}")
-            print(f"   {why}")
-            print(f"   PILOT: {line}")
-            client.transmit(tts.Voice(voice_id=args.voice).frames(line),
-                            mhz * 1e6, AM)
-            # WAIT FOR THE CONTROLLER, NOT FOR THE FILE.
-            #
-            # This watched the recorder for four seconds of quiet after any
-            # growth -- and the pilot's own transmission and the board are
-            # written IMMEDIATELY, while the reply is a model call six seconds
-            # behind them. So every step ended before the controller spoke and
-            # reported him silent. The harness was measuring itself.
-            #
-            # The step is over when the controller has answered and then gone
-            # quiet, which is the same thing a pilot waits for.
-            deadline = time.monotonic() + args.wait
-            spoke_at = None
-            while time.monotonic() < deadline:
-                time.sleep(1.0)
-                got = events_since(recorder, mark)
-                if any(str(e.get("kind", "")).startswith("atc/") for e in got):
-                    spoke_at = spoke_at or time.monotonic()
-                    # A turn can be two transmissions -- a reply and a handoff.
-                    # Give the second one room rather than cutting it off.
-                    if time.monotonic() - spoke_at >= 4.0:
-                        break
-        finally:
-            client.close()
-
-        ev = events_since(recorder, mark)
+        print(f"── {rid}  on {mhz:.3f}")
+        print(f"   {why}")
+        # SAY IT AGAIN IF IT DID NOT ARRIVE. A pilot whose transmission was
+        # stepped on repeats it; so does this. One retry, because a second
+        # mishearing of the same audio is a fact about the pipeline rather than
+        # bad luck, and repeating forever would hide it.
+        for attempt in (1, 2):
+            ev, intact, gap = say_it(
+                args, mhz, line, recorder, SRSClient, radio, AM, tts,
+                first=(attempt == 1))
+            if intact or attempt == 2:
+                break
+            print(f"   MISHEARD ({gap}) -- saying it again")
         for e in ev:
             if str(e.get("kind", "")).startswith("atc/") and e.get("text"):
                 print(f"   ATC:   {e['text'][:120]}")
-        ok, detail = check(ev)
+        ok, detail = check(ev) if intact else (None, gap)
+        if not intact:
+            print("   MISHEARD")
         if ok is None:
             skipped.append((rid, detail))
             print(f"   SKIP   {detail}\n")
