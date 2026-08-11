@@ -69,8 +69,8 @@ STYLE = """
      cannot correct is worse than one you were asked for. */
   .file .from-dtc { border-left: 3px solid #8a8069; padding-left: 11px;
     margin: 12px 0; }
-  .file .from-dtc label i { font-style: normal; text-transform: none;
-    letter-spacing: 0; color: #8a8069; }
+  .file .from-dtc label i, .file label i { font-style: normal;
+    text-transform: none; letter-spacing: 0; color: #8a8069; }
   .file .wps { font-size: 13px; margin-top: 10px; }
   .file .wps table { border-collapse: collapse; width: 100%; }
   .file .wps td, .file .wps th { padding: 2px 8px 2px 0; text-align: left;
@@ -174,13 +174,20 @@ def build() -> str:
       <input name="route" list="fixes" required>
       <datalist id="fixes"></datalist>
       <div class="hint" id="fixhint">the places the sim actually holds</div>
-      <label>cruise altitude, feet <i>highest leg in the cartridge</i></label>
+      <label>cruise altitude, feet <i>the highest enroute leg</i></label>
       <input name="cruise_ft" type="number" step="100" required>
+      <div class="hint">Read off the cartridge, not asked for. It is what
+        Clearance reads back to you &mdash; file five thousand while you climb
+        to ten and the climb is a level bust.</div>
     </div>
-    <label>approach on arrival</label>
+    <label>recovery the bridge flies <i>not a flight-plan field</i></label>
     <select name="approach"><option value="">(none)</option></select>
-    <div class="hint">not in the cartridge: ATC assigns the approach, and it is
-      the one thing here a pilot does not bring with him.</div>
+    <div class="hint"><b>This is not something you file.</b> A real plan names a
+      destination and ATC assigns the approach when you get there. It is here
+      because the bridge reads it off the ACTIVE plan at start-up to decide
+      which procedure it is running &mdash; a selector wearing a flight-plan
+      field's clothes. Leave it alone unless you are changing what the
+      controller flies.</div>
     <button id="go" type="submit">File it</button>
   </form>
 

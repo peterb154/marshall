@@ -123,7 +123,13 @@ class TheDirectorActuallyHonoursIt(unittest.TestCase):
         # the cache.
         # THE STATION, not just the role: two aerodromes have a Ground and a
         # Tower each, and a role is only unique WITHIN an aerodrome.
-        self.assertIn("_key = (session_id, station, role, also)", self.src)
+        #
+        # AND THE MISSION since 11 August. It decides which board the clearance
+        # tools read, so a cached agent built under the previous sortie would go
+        # on reading the previous sortie's flights -- the same leak the station
+        # and the role were added here to close, one key along.
+        self.assertRegex(self.src, r"_key = \(session_id, station, role, also,"
+                                   r"\s*mission\)")
         self.assertIn("_atc_agents[_key] = agent", self.src)
 
     def test_the_role_comes_from_the_request_not_the_transcript(self):

@@ -6304,3 +6304,52 @@ Unlike the navaid discrepancies this is **not** a NOTAM — a NOTAM tells the
 pilot something; this is a number we owe him correctly on every single vector.
 `magvar` becomes the fourth audited quantity, and the audit's answer here is a
 correction rather than a broadcast.
+
+---
+
+## [SEAM-12] Clearance delivery searched an empty board, and said so three times — #126
+
+    "clearly he doesn't know how to find my flight plan"
+
+    PILOT: Kobuleti Clearance, sockeye, IFR to Batumi with information delta.
+    ATC:   Sockeye, I have no flight of that name on the board.
+    PILOT: Call sign is Sakai requesting instruments to Batumi.
+    ATC:   Sockeye, I have no flight on the board under either Sockeye or Sakai.
+    PILOT: Kobuleti Clearance, sockeye, requesting Domino Flight plan.
+    ATC:   Sockeye, negative, I have no flight on the board under that callsign.
+
+`Domino` was on the board the whole time and resolves from the plainest request
+there is — `pick()` matches it on the destination alone, and on "the only one on
+file" with no destination at all.
+
+**THE TOOL NEVER REACHED THE PLAN.** `request_clearance` opens by finding the
+AEROPLANE — `_flight(callsign)` — and answers `not_on_the_board` when it cannot.
+`flights.find` filters on `mission`; `clearance_tools` takes one as an argument
+DEFAULTING to `"default"`; and `app.py` called `clearance_tools()` with none. The
+bridge writes every row under the instance key, so the lookup searched an empty
+bucket and refused before it ever looked at what was filed.
+
+**It was correct until #119**, which gave rows a real mission instance earlier
+the same evening. The shape this project keeps finding, and the fifth time this
+month: *while every row was `mission='default'`, a hard-coded "default" could not
+be wrong.* I changed what a mission key MEANS and did not follow it into the
+director's tools.
+
+**Invisible because this is the one tool factory whose argument has a default.**
+`identify_tools(session_id)` and `hook_tools(session_id)` take the session and
+would have raised a `TypeError` the first time they were called wrongly. This one
+quietly took `"default"`.
+
+The mission now travels on the `/atc` body from the bridge — the trusted side,
+the same reason `role` and `station` do — and the agent cache is keyed on it,
+because a cached agent built under the previous sortie would go on reading the
+previous sortie's flights.
+
+**AND THE SENTENCE IS WRONG EVEN WHEN THE LOOKUP IS RIGHT.** `flight_plans` is
+what somebody filed; `flights` is who is airborne. "I have no flight on the
+board" is a true statement about the second that says nothing about the first —
+and a pilot hears it as his flight plan having gone missing, which is exactly
+what happened. Clearance delivery is the one seat where the pilot has NOT yet
+been bound to a track, so it is the seat where that confusion is guaranteed.
+Open: the refusal should say which board it means, and should look at what is
+filed before it decides it cannot help.

@@ -224,6 +224,13 @@ def ask_agent(session_id: str, message: str, tier: str = "sonnet",
     """
     body = json.dumps({"session_id": session_id, "message": message,
                        "tier": tier, "role": role, "station": station,
+                       # WHICH SORTIE'S BOARD the director's tools should read.
+                       # Sent for the same reason `role` is: this is the trusted
+                       # side and it already knows. Without it `clearance_tools`
+                       # searched `mission='default'` while every row carried the
+                       # instance key, so clearance delivery could never find
+                       # anybody -- see director/app.py.
+                       "mission": MISSION,
                        "also": list(also or ())}).encode()
     req = urllib.request.Request(url, data=body,
                                  headers={"content-type": "application/json"})

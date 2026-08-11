@@ -144,7 +144,7 @@ def store_id(session_id: str, role: str = "", station: str = "") -> str:
 
 
 def build_agent(session_id: str, role: str = "", also=(),
-                station: str = "") -> Agent:
+                station: str = "", mission: str = "default") -> Agent:
     """One controller's agent. `role` decides which tools he is GIVEN.
 
     THE SEAT IS THE KEY, not a paragraph of prose. `spawn_ground` used to be in
@@ -180,7 +180,23 @@ def build_agent(session_id: str, role: str = "", also=(),
             # numbers in a clearance — route, altitude, frequency, squawk — are
             # facts about what was filed, and a controller who improvises them
             # has cleared somebody to an altitude nobody wrote down.
-            *(clearance_tools() if "clearance" in may else []),
+            # WHICH SORTIE'S BOARD. Bound here, from the bridge's own instance
+            # key, and it used to default to "default" while the bridge wrote
+            # rows under `362nd-Blind-Flying-1444@1786459564` -- so `_flight`
+            # looked in an empty bucket and every clearance request was answered
+            # "I have no flight on the board under that callsign", BEFORE the
+            # tool ever looked at the plan on file. Live, three times in a row,
+            # with the plan sitting there resolvable by destination:
+            #
+            #     "clearly he doesn't know how to find my flight plan"
+            #
+            # It was correct until #119 gave rows a real instance key, which is
+            # the shape this project keeps finding: while every row was
+            # `mission='default'` a hard-coded "default" could not be wrong.
+            #
+            # Invisible because this factory takes a mission WITH A DEFAULT
+            # while every other one takes the session and would have raised.
+            *(clearance_tools(mission) if "clearance" in may else []),
             # ANY FREQUENCY ON THE MAP, on demand. His OWN field's are in the
             # brief -- a controller works one aerodrome and knows it cold -- and
             # everywhere else is unbounded: thirty fields at four to eight seats
@@ -283,6 +299,11 @@ def atc_endpoint(body: dict) -> dict:
     # `tools/capability.py`.
     role = (body.get("role") or "").strip().lower()
     also = tuple(body.get("also") or ())
+    # WHICH SORTIE. The bridge computes the instance key at start-up and every
+    # row it writes carries it, so the tools that read those rows must be given
+    # the same one. An older bridge sends nothing and gets "default", which is
+    # what it always had.
+    mission = (body.get("mission") or "").strip() or "default"
     # WHICH SEAT, by name. Two aerodromes have a Ground and a Tower each; the
     # role alone cannot tell them apart, and their conversations are not one.
     station = (body.get("station") or "").strip()
@@ -303,7 +324,10 @@ def atc_endpoint(body: dict) -> dict:
         # Approach whatever tool set Sentry was built with, which is exactly the
         # leak this is closing. The session is still the session, so the
         # conversation on a shared channel is unchanged.
-        _key = (session_id, station, role, also)
+        # ...AND THE MISSION, because it decides which board the clearance
+        # tools read. A cached agent built under the previous sortie would go on
+        # reading the previous sortie's flights.
+        _key = (session_id, station, role, also, mission)
         agent = _atc_agents.get(_key)
         # THE PLATE CAN CHANGE UNDER A CACHED AGENT. The bridge pushes a fresh
         # plate to /prompts at startup, built from route.py for the mission it
@@ -322,7 +346,7 @@ def atc_endpoint(body: dict) -> dict:
                      session_id)
             agent = None
         if agent is None:
-            agent = build_agent(session_id, role, also, station)
+            agent = build_agent(session_id, role, also, station, mission)
             # A restart restores the transcript from Postgres exactly as it was
             # written, situation blocks and all. `apply_management` would clean
             # it up -- but only AFTER the first call had already paid for it, so
