@@ -65,6 +65,14 @@ AIR_TYPES = {
     "mustang": "P-51D-30-NA",
     "spitfire": "SpitfireLFMkIX",
     "jug": "P-47D-30",
+    # MODERN, and their absence was not harmless. An unknown name falls through
+    # to the GROUND table and then to the raw string, so `--type viper` did not
+    # fail -- it quietly spawned a Leopard-2 and called it an aeroplane. A
+    # rehearsal that needs a jet on the scope got a tank, and nothing said so.
+    "viper": "F-16C_50",
+    "hornet": "FA-18C_hornet",
+    "warthog": "A-10C_2",
+    "eagle": "F-15C",
 }
 
 # DCS country names, as the mission scripting API spells them. Air goes through
@@ -74,7 +82,22 @@ LUA_COUNTRY = {"red": "RUSSIA", "blue": "USA"}
 
 # Batumi's aerodrome reference point, so a bearing and range can be resolved
 # against something. Any fix in route.py works too.
-_ANCHORS = {"BATUMI": (41.6103, 41.5997), "KOBULETI": (41.9297, 41.8697)}
+def _anchors() -> dict:
+    """Every aerodrome the loaded theatre has, by name.
+
+    READ FROM THE FIELD TABLE rather than typed here. This was two hardcoded
+    Caucasus pairs, so a spawn on Nevada resolved a Nellis request to a Georgian
+    coastline -- and `core/fields.py` has carried the published position of every
+    field since `theatre.verify` needed one to check the map against the sim.
+    Two tables of the same fact is how they come to disagree; there is one.
+    """
+    from marshall.core import theatre as _theatre
+    got = {f.name.upper(): (f.lat, f.lon)
+           for f in _theatre.current().fields if f.lat or f.lon}
+    return got or {"BATUMI": (41.6103, 41.5997)}
+
+
+_ANCHORS = _anchors()
 
 
 def _at(name: str) -> tuple[float, float]:
@@ -306,7 +329,14 @@ def main() -> int:
         # The airfield IS the position, and the sim picks the parking spot --
         # asking a caller for a latitude to park at would be asking him to
         # guess at something DCS knows exactly.
-        lat, lon = _at("BATUMI")
+        #
+        # ...THE AIRFIELD HE ASKED FOR, though. This read `_at("BATUMI")`
+        # whatever was passed, so `--ground KOBULETI` parked an aeroplane forty
+        # miles away at Batumi and announced "at KOBULETI -> 41.61030, 41.59970"
+        # in the same breath. Correct by accident while there was one aerodrome;
+        # wrong the moment there were two, and it prints the answer beside the
+        # question it ignored.
+        lat, lon = _at(args.ground)
         where = args.ground
     else:
         raise SystemExit("give either --lat/--lon or --bearing/--range")
@@ -315,8 +345,15 @@ def main() -> int:
     country = args.country or COUNTRY[args.side]
     parked = bool(args.ground) and args.type in AIR_TYPES
     airborne = (args.type in AIR_TYPES or args.alt > 0) and not parked
-    unit_type = (AIR_TYPES if (airborne or parked) else TYPES).get(
-        args.type, args.type)
+    # AN UNKNOWN TYPE IS A MISTAKE, not a DCS type name to pass through. The
+    # fall-through spawned a Leopard-2 for `--type viper` and reported success;
+    # a harness then tested a controller against a tank parked on a runway.
+    table = AIR_TYPES if (airborne or parked) else TYPES
+    if args.type not in table and not args.force:
+        raise SystemExit(
+            f"unknown type {args.type!r}. Known {'aircraft' if table is AIR_TYPES else 'ground'}"
+            f": {', '.join(sorted(table))}. Use --force to pass a raw DCS type.")
+    unit_type = table.get(args.type, args.type)
     name = args.name or f"{args.type}-{int(abs(lat * 1000)) % 1000}"
     alt_ft = args.alt or (8000 if airborne else 0)
     print(f"spawning {args.count} x {unit_type} as '{name}' ({args.side}"

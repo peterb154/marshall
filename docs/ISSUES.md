@@ -5021,3 +5021,38 @@ identity chain cannot tell a spawned unit from a human.
 **And it will never cover the ears.** Whether a repaired transmission sounds
 like one controller finishing his sentence is card row S11, and no machine
 answers it.
+
+---
+
+## [OPS-12] `--ground KOBULETI` parked the aeroplane at Batumi — #102
+labels: bug
+
+**Status:** FIXED 11 August. Found while wiring an aeroplane into the ladder
+rehearsal.
+
+    lat, lon = _at("BATUMI")
+    where = args.ground
+
+`spawn.py --ground KOBULETI` resolved to **Batumi**, forty miles away, and
+printed the answer beside the question it had ignored:
+
+    at KOBULETI  ->  41.61030, 41.59970
+
+Correct by accident while the theatre had one aerodrome; wrong the moment it had
+two. The same fault as `station_for`, `channels_for`, `"ABCD"[i]` and
+`field_origin` — **a question with one possible answer cannot be answered
+wrongly**, so nothing found it until a second field existed.
+
+**Two more in the same file.**
+
+The anchor table was two hardcoded Caucasus pairs, so a Nellis spawn would have
+resolved to a Georgian coastline. It reads `core/fields.py` through the loaded
+theatre now — the published positions have been there since `theatre.verify`
+needed them, and two tables of one fact is how they come to disagree.
+
+And **an unknown type was passed through to DCS rather than refused**: `--type
+viper` fell past the aircraft table, past the ground table, and spawned a
+**Leopard-2** — reported as success. A harness asking for a jet on the scope got
+a tank parked on a runway and nothing said so. Unknown types are now an error
+naming what is known, with `--force` for a raw DCS type name, and the F-16,
+Hornet, Warthog and Eagle are in the table.
