@@ -121,11 +121,29 @@ class TheDirectorActuallyHonoursIt(unittest.TestCase):
         # a session, so caching on the session alone would hand Batumi Approach
         # whatever tool set Sentry was built with -- reopening the leak through
         # the cache.
-        self.assertIn("_key = (session_id, role, also)", self.src)
+        # THE STATION, not just the role: two aerodromes have a Ground and a
+        # Tower each, and a role is only unique WITHIN an aerodrome.
+        self.assertIn("_key = (session_id, station, role, also)", self.src)
         self.assertIn("_atc_agents[_key] = agent", self.src)
 
     def test_the_role_comes_from_the_request_not_the_transcript(self):
         self.assertIn('body.get("role")', self.src)
+        self.assertIn('body.get("station")', self.src)
+
+    def test_two_grounds_do_not_share_a_conversation(self):
+        """Keyed on the role, Kobuleti Ground and Batumi Ground were one store.
+
+        Two controllers writing one conversation compute the same next
+        message_id, and one loses:
+
+            UniqueViolation: Key (session_id, agent_id, message_id)
+                             =(hooks:ground, default, 28) already exists
+        """
+        # Read the behaviour off the source: importing app.py would need the
+        # whole director stack stood up for one string comparison.
+        src = self.src
+        self.assertIn("key = (station or role or \"\")", src)
+        self.assertNotIn('return f"{session_id}:{role}" if role else session_id', src)
 
 
 class TheBridgeSendsTheSeat(unittest.TestCase):

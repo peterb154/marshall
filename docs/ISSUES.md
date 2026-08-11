@@ -4971,3 +4971,53 @@ man ends up talking to nobody at the end of a flight.
 1. After landing, Ground does not hand him to Tower, or anywhere.
 2. Ground gives a parking instruction rather than declining to own one.
 3. `taxi` is a terminal phase at the arrival field — nothing follows it.
+
+---
+
+## [OPS-11] The ladder is rehearsed by a synthetic pilot, and checked — #101
+labels: tooling
+
+**Status:** BUILT 11 August. Runs unattended; needs an aeroplane to judge the
+engine-side rows.
+
+    "Can you test some of this using ai aircraft. It's getting tedious to test
+     the same things over and over."
+
+It is, and a pilot is the wrong instrument for the parts that do not need ears.
+Seven of the last eight sorties re-flew the same eight rungs to find out whether
+a handoff fired — which is a structural fact, recorded, and checkable.
+
+`tools/ladder_rehearsal.py` speaks the ladder over real SRS with a Polly voice
+and **asserts** on the flight recorder. `flight_rehearsal.py` already spoke;
+what it did not do was judge. Every step names its card row and a predicate over
+the recorded events — the engine's directive, the authorised handoff, the board
+with each aircraft's phase and owner, `not_voiced` when a decided fact went
+missing — so the answer is PASS/FAIL and the exit code means something.
+
+**It found two things on its first run**, which is the argument for it:
+
+* **A session collision, live** — `UniqueViolation ... (hooks:ground, default,
+  28)`. My own per-seat fix keyed the conversation store on the ROLE, so
+  *Kobuleti* Ground and *Batumi* Ground both wrote to `hooks:ground`: two
+  controllers, one conversation, the same next message id, and one losing. The
+  same lesson as everything else here — **a role is only unique within an
+  aerodrome** — and I still keyed on the role. It is the station now.
+* **The harness measuring itself** — it waited for the recorder to go quiet, and
+  the pilot's own transmission lands immediately while the reply is a model call
+  six seconds behind. Every step ended before the controller spoke and reported
+  him silent. It waits for the controller now.
+
+**What it cannot do yet.** The engine hears from RADIOS, and a radio is bound to
+an aircraft by RADAR — so a synthetic pilot with nothing on the scope is a voice
+the engine correctly declines to act on. Those rows **SKIP**, naming why, rather
+than going red against a controller behaving perfectly. The first run reported
+six red rows for exactly that reason, which is how a harness teaches people to
+ignore it.
+
+Spawning an aeroplane at Kobuleti under a matching name is the missing half —
+`flight_rehearsal.py` already does this for the formation scenario and the
+identity chain cannot tell a spawned unit from a human.
+
+**And it will never cover the ears.** Whether a repaired transmission sounds
+like one controller finishing his sentence is card row S11, and no machine
+answers it.

@@ -100,7 +100,7 @@ def _bedrock(model_id: str) -> BedrockModel:
                         additional_request_fields={"thinking": {"type": "disabled"}})
 
 
-def store_id(session_id: str, role: str = "") -> str:
+def store_id(session_id: str, role: str = "", station: str = "") -> str:
     """The key this controller's CONVERSATION is stored under.
 
     ONE AGENT PER SEAT MEANS ONE SESSION PER SEAT, and missing that cost a
@@ -124,10 +124,26 @@ def store_id(session_id: str, role: str = "") -> str:
     CHANNEL rather than to a pilot -- this makes that true, where before every
     seat in the theatre shared one transcript.
     """
-    return f"{session_id}:{role}" if role else session_id
+    # THE STATION, NOT THE ROLE, and getting that wrong is what put the crash
+    # back. Keyed on the role, "Kobuleti Ground" and "Batumi Ground" are both
+    # `ground` -- two different controllers at two aerodromes writing one
+    # conversation, computing the same next message_id, and one losing:
+    #
+    #     UniqueViolation: Key (session_id, agent_id, message_id)
+    #                      =(hooks:ground, default, 28) already exists
+    #
+    # Which is the same fault as the original, one layer in: a role is only
+    # unique WITHIN an aerodrome. It is the lesson this project has learned more
+    # times than any other, and I still keyed on the role.
+    #
+    # Falls back to the role, then to the bare session, so an older bridge that
+    # sends neither behaves as it always did.
+    key = (station or role or "").strip().lower().replace(" ", "-")
+    return f"{session_id}:{key}" if key else session_id
 
 
-def build_agent(session_id: str, role: str = "", also=()) -> Agent:
+def build_agent(session_id: str, role: str = "", also=(),
+                station: str = "") -> Agent:
     """One controller's agent. `role` decides which tools he is GIVEN.
 
     THE SEAT IS THE KEY, not a paragraph of prose. `spawn_ground` used to be in
@@ -140,7 +156,7 @@ def build_agent(session_id: str, role: str = "", also=()) -> Agent:
     exactly as before.
     """
     may = capabilities(role, also)
-    store = store_id(session_id, role)
+    store = store_id(session_id, role, station)
     log.info("agent for %s [%s]", store, describe(role, also))
     return Agent(
         model=_bedrock(MODEL_ID),
@@ -266,6 +282,9 @@ def atc_endpoint(body: dict) -> dict:
     # `tools/capability.py`.
     role = (body.get("role") or "").strip().lower()
     also = tuple(body.get("also") or ())
+    # WHICH SEAT, by name. Two aerodromes have a Ground and a Tower each; the
+    # role alone cannot tell them apart, and their conversations are not one.
+    station = (body.get("station") or "").strip()
     lock = _atc_busy.setdefault(session_id, threading.Lock())
     # Non-blocking on purpose. QUEUEING would be worse on a radio than dropping:
     # the caller has already given up and moved on, so a queued answer arrives
@@ -283,7 +302,7 @@ def atc_endpoint(body: dict) -> dict:
         # Approach whatever tool set Sentry was built with, which is exactly the
         # leak this is closing. The session is still the session, so the
         # conversation on a shared channel is unchanged.
-        _key = (session_id, role, also)
+        _key = (session_id, station, role, also)
         agent = _atc_agents.get(_key)
         # THE PLATE CAN CHANGE UNDER A CACHED AGENT. The bridge pushes a fresh
         # plate to /prompts at startup, built from route.py for the mission it
@@ -302,7 +321,7 @@ def atc_endpoint(body: dict) -> dict:
                      session_id)
             agent = None
         if agent is None:
-            agent = build_agent(session_id, role, also)
+            agent = build_agent(session_id, role, also, station)
             # A restart restores the transcript from Postgres exactly as it was
             # written, situation blocks and all. `apply_management` would clean
             # it up -- but only AFTER the first call had already paid for it, so

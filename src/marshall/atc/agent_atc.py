@@ -193,7 +193,7 @@ def fetch_radar(session_id: str = "", url: str = RADAR_URL,
 
 def ask_agent(session_id: str, message: str, tier: str = "sonnet",
               url: str = AGENT_URL, timeout: float = 30.0,
-              role: str = "", also=()) -> str:
+              role: str = "", also=(), station: str = "") -> str:
     """POST one transcript to the routed ATC endpoint; `tier` picks the model.
 
     `role` IS SENT FROM HERE BECAUSE HERE IS THE TRUSTED SIDE. The bridge knows
@@ -203,7 +203,7 @@ def ask_agent(session_id: str, message: str, tier: str = "sonnet",
     asking it not to use them.
     """
     body = json.dumps({"session_id": session_id, "message": message,
-                       "tier": tier, "role": role,
+                       "tier": tier, "role": role, "station": station,
                        "also": list(also or ())}).encode()
     req = urllib.request.Request(url, data=body,
                                  headers={"content-type": "application/json"})
@@ -4092,7 +4092,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         """The voice of whoever owns this channel, falling back to the default."""
         return voices.get(round((hz or freq_hz) / 1_000_000, 3), voice)
 
-    def seat_on(hz: float | None) -> tuple[str, tuple]:
+    def seat_on(hz: float | None) -> tuple[str, tuple, str]:
         """Which seat owns this channel, as (role, also).
 
         Resolved from the FREQUENCY, which is the one fact about a transmission
@@ -4107,8 +4107,10 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         """
         st = profile.station_on(round((hz or freq_hz) / 1_000_000, 3))
         if st is None:
-            return "", ()
-        return getattr(st, "role", "") or "", tuple(getattr(st, "also", ()) or ())
+            return "", (), ""
+        return (getattr(st, "role", "") or "",
+                tuple(getattr(st, "also", ()) or ()),
+                getattr(st, "name", "") or "")
     def channels_of(hz: float | None):
         """Every frequency the facility on this channel is heard on.
 
@@ -4306,9 +4308,9 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         _authorised = bridge.handoff_due[0] or (bridge.refuse_due or None)
         t0 = time.monotonic()
         try:
-            _role, _also = seat_on(on_hz)
+            _role, _also, _station = seat_on(on_hz)
             reply = ask_agent(session_id, message, tier, url,
-                              role=_role, also=_also)
+                              role=_role, also=_also, station=_station)
         except (urllib.error.URLError, TimeoutError, OSError) as e:
             print(f"  !! agent error: {e}", flush=True)
             reply = "Standby."
