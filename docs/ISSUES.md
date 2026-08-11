@@ -5148,3 +5148,82 @@ private copies.
 convenient default at a time: no committed RFC1918 address, and nothing but
 `config.py` may supply a default for a host variable. Both halves were proved
 to go red before being left green.
+
+## [SEAM-8] A plan on file is reported as a clearance already issued and read back — #105
+labels: bug, needs-flight-test
+
+**Status:** OPEN, found by `tools/ladder_rehearsal.py` on a deliberately clean
+board, 11 August.
+
+The director's flights were cleared and the bridge restarted, so nothing had
+been said to anybody. The first transmission of the sortie:
+
+    PILOT: Kobuleti Clearance, Sockeye, request clearance.
+      .. phase: (none) -> clearance
+    ATC:   Sockeye, Kobuleti Clearance, you are already cleared as filed and
+           your read-back was correct — cleared to Batumi, as filed, maintain
+           five thousand, departure frequency one two three decimal three,
+           squawk six five two one.
+
+Nobody had cleared him. Nobody had read anything back. He had said six words.
+
+**A FILED PLAN IS NOT AN ISSUED CLEARANCE**, and this is the `flight_strip`
+fault seen from the other side: that one had the plan, the route and the cruise
+level assigned and stored while the strip read none of them, so every controller
+asked a cleared pilot what he wanted. This is the same seam failing the other
+way — the plan on file is read as a clearance the pilot has already accepted.
+
+Three things are being conflated where there are three distinct states, and the
+schema already distinguishes them:
+
+    FILED       a plan exists for this callsign          `flight_plans`
+    ISSUED      a controller has read it to him          `assigned_plans`
+    ACKNOWLEDGED  he has read it back correctly          the read-back verdict
+
+Claiming the third is the worst of the three. "Your read-back was correct" is
+the phrase that ENDS Delivery's business (#90) and hands him to Ground, so
+asserting it unprompted skips the rung it exists to close — and tells a pilot he
+has an altitude and a squawk he has never heard.
+
+It also explains why the read-back row could not pass: by the time the real
+read-back arrived, the agent had already said the words, so the exchange it was
+supposed to complete had nothing left to complete.
+
+**Acceptance criteria**
+1. On a clean board, the first `request clearance` gets a clearance ISSUED, not
+   a claim that one already was.
+2. "Read-back correct" is only ever said in response to a read-back.
+3. The three states are distinguishable in what the agent is handed — a brief
+   that says "filed" must not read as "issued".
+4. `tools/ladder_rehearsal.py` Q1/Q1a/Q3 pass on two consecutive runs, which is
+   what makes it a gate rather than a first-run demo.
+
+---
+
+## [SEP-13] "Holding short" on Ground does not move the phase — #106
+labels: bug, needs-flight-test
+
+**Status:** OPEN, found by `tools/ladder_rehearsal.py`, 11 August.
+
+    PILOT: Kobuleti Ground, Sockeye, Holding Short of Runways 07.
+    ATC:   Sockeye, contact Kobuleti Tower one three three decimal zero, good day.
+    board: sortie_phase = taxi
+
+The right words, and the rung did not move. The engine's `report_holding_short`
+did not run, so the transmission that MEANS "Ground is finished with me" left him
+in `taxi` — and the handoff that followed came from the agent rather than from
+the ladder.
+
+It is the same shape as #103 one rung further on: the ground half of the sortie
+is driven entirely by what is said, so an intent that fails to classify is a rung
+that cannot be climbed. Note what did work in the same run — `request_taxi` and
+`request_takeoff` both fired, and `request_takeoff` fired on the very similar
+"Holding Short Runway 07, ready for departure" — which points at the classifier
+rather than at the engine.
+
+**Acceptance criteria**
+1. "Holding short of runway zero seven" on Ground sets `sortie_phase` to
+   `holding_short`, whether or not "ready for departure" follows.
+2. The Tower handoff that follows is the ladder's, recorded as `atc/handoff`.
+3. Whisper's "Runways 07" for "runway zero seven" does not change the answer —
+   the transcript is what it is and the classifier reads transcripts.
