@@ -181,12 +181,26 @@ def fetch_radar(session_id: str = "", url: str = RADAR_URL,
     # distance from it, so a controller anywhere else read somebody else's
     # ranges in somebody else's order.
     #
-    # The director's `picture` is kept as the fallback for exactly the case that
-    # justifies one: no contacts, or no projected field of our own, where
-    # drawing from a stale constant beats drawing nothing. Byte-identical for a
-    # shared origin -- `tests/test_picture.py` proves it against prose captured
-    # from the running director.
-    drawn = _picture.picture(contacts, origin) if (contacts and origin) else ""
+    # AND WHEN WE HAVE NO ORIGIN, WE DRAW NO RANGES.
+    #
+    # The director's `picture` used to be the fallback here, justified as
+    # "drawing from a stale constant beats drawing nothing". It does not: that
+    # prose is measured from the director's own origin, which this container
+    # does not choose and cannot see, and a Nevada controller reading distances
+    # from Georgia gets plausible numbers that are wrong in every one.
+    #
+    #     "A fallback must be conservatively unavailable, not confidently wrong
+    #      on another map."                        -- CODEX_NTTR_AUDIT.md [#109]
+    #
+    # `picture` renders what needs no origin instead -- who, what, how high,
+    # which way -- and says plainly that ranges are unavailable, which is enough
+    # to answer "do you have me" and to correlate a radio with an aeroplane. The
+    # director's prose is used only when we have no CONTACTS of our own, which
+    # is a different failure: not "I cannot measure", but "I cannot see".
+    drawn = _picture.picture(contacts, origin) if contacts else ""
+    if contacts and not origin:
+        print("  !! no projected origin for this controller -- the picture "
+              "carries no ranges", flush=True)
     return Scope(drawn or got.get("picture", "").strip(),
                  contacts=contacts, origin=origin,
                  bullseye=got.get("bullseye"))

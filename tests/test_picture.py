@@ -69,10 +69,34 @@ class TestThePortIsFaithful(unittest.TestCase):
     def test_an_empty_scope_says_so(self):
         self.assertEqual(picture.picture([], OUR_BEACON), "no contacts")
 
-    def test_no_origin_draws_nothing_rather_than_guessing(self):
+    def test_no_origin_quotes_no_ranges(self):
         """A controller with no projected field must not quote ranges from
-        somebody else's beacon, which is the bug this whole change is about."""
-        self.assertEqual(picture.picture([LIVE_CONTACT], None), "no contacts")
+        somebody else's beacon, which is the bug this whole change is about.
+
+        BUT "no contacts" IS ALSO A LIE, and that is what this used to say.
+        There ARE contacts; we cannot MEASURE them, and those are different
+        failures with different answers. Reporting the second as the first is
+        how a controller comes to tell a pilot he is not on the scope when he is
+        four miles out in front of him.
+
+        So what survives is everything that needs no origin -- who, what, how
+        high, which way -- with the missing half named. [#109]
+        """
+        said = picture.picture([LIVE_CONTACT], None)
+        self.assertNotEqual(said, "no contacts")
+        self.assertIn("NO RANGES", said)
+        # THE LABEL, which is what the ranged renderer names too -- the golden
+        # prose above is "362nd_sockeye", not "Viper 1-4". A picture that named
+        # contacts differently depending on whether it could measure them would
+        # break every correlation downstream.
+        self.assertIn(LIVE_CONTACT["label"], said)
+        # ...and not one number that needs an origin.
+        self.assertNotIn(" nm", said)
+        self.assertNotIn("radial", said)
+
+    def test_and_an_empty_scope_with_no_origin_still_says_no_contacts(self):
+        """The other failure, kept distinct."""
+        self.assertEqual(picture.picture([], None), "no contacts")
 
 
 class TestTheOriginIsTheOnlyThingThatMoves(unittest.TestCase):

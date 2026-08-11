@@ -176,11 +176,34 @@ metronome and the plate all read it. Two aircraft recovering to different fields
 need a profile each. This is the wall in front of [FP-1] point 8 and in front of
 the Kobuleti test [TEST-1].
 
+**What Nevada added, 11 August.** Filed again as [ARCH-13]/#111 before anybody
+noticed this had described it since the beginning — which is its own evidence
+that the backlog needs reading, not just adding to. That entry is retired into
+this one.
+
+    "a flight that departs Nellis, works the range, and returns to Nellis needs
+     that profile and its arrival state during the same sortie. It cannot be
+     selected concurrently with the Tonopah recovery."
+                                               -- CODEX_NTTR_AUDIT.md
+
+`Theatre.nevada()` selects ONE approach and `load_and_push_plate` pushes ONE
+`plate` prompt at startup. A Nevada bridge loaded the Tonopah ILS, so a pilot
+going home to Nellis would have been worked against a profile for a field 124
+miles away. `MARSHALL_SORTIE` now picks which — **a knob, not a fix**, and it is
+stated as one.
+
+It is the two-aerodrome lesson one level up: **a procedure is only unique within
+a flight**, and the wrong answer is always plausible because it is a real
+approach to a real runway.
+
 **Acceptance criteria**
 1. Two aircraft, two fields, two approaches flown concurrently without either
    controller using the other's numbers.
 2. `asr_sweep.py` runs against a named profile and still reports the same
    figures for Batumi.
+3. `MARSHALL_SORTIE` disappears — the flight's assigned plan chooses its
+   procedure.
+4. The plate the agent is given is the plate for the aircraft being spoken to.
 
 ---
 
@@ -5453,7 +5476,7 @@ Live, three synthetic arrivals over real SRS:
 ## [ARCH-12] A radar picture with no origin should say nothing, not guess — #109
 labels: architecture
 
-**Status:** OPEN. Half done — the wrong answer is gone, the missing one is not.
+**Status:** FIXED 11 August.
 
     "A fallback must be conservatively unavailable, not confidently wrong on
      another map."                                  -- CODEX_NTTR_AUDIT.md
@@ -5478,6 +5501,28 @@ which was the correct failure and is the model for this one.
 1. With no usable origin, radar answers with contacts and no bearing/range.
 2. Range-dependent guidance is suppressed rather than computed from a default.
 3. Nothing anywhere carries a map's coordinates as a module constant.
+
+**Done.** `fetch_radar` fell back to the DIRECTOR's prose whenever it had no
+projected origin of its own, and the comment justified it: *"drawing from a stale
+constant beats drawing nothing"*. It does not. That prose is measured from the
+director's origin, which the bridge does not choose and cannot see, and a Nevada
+controller reading distances from Georgia gets plausible numbers that are wrong
+in every one.
+
+`picture.unranged` renders what needs no origin — who, what, how high, which way
+— and says plainly that bearing and distance are unavailable. That is enough to
+answer "do you have me", to correlate a radio with an aeroplane, and to see that
+four contacts exist; `vector` already models the right failure for the rest.
+
+**And "no contacts" was itself a lie.** The old no-origin path returned exactly
+that, to a controller with four aeroplanes in front of him. Not seeing and not
+being able to measure are different failures with different answers, and
+reporting the second as the first is how a pilot four miles out gets told he is
+not on the scope. They are distinct now.
+
+The director's prose is still used for the case that genuinely justifies a
+fallback: no contacts of our own — "I cannot see", rather than "I cannot
+measure".
 
 ---
 
@@ -5511,30 +5556,17 @@ plausible-wrong-answer failure the two-aerodrome work was about.
 ## [ARCH-13] One arrival profile per bridge, and a sortie has two ends — #111
 labels: architecture
 
-**Status:** OPEN. This is the audit's deepest finding and the one not fixed.
+**Status:** CLOSED as a duplicate of [ARCH-1]/#2, which has described this since
+the beginning: "One approach profile per flight, not per bridge -- THIS IS THE
+WALL IN FRONT OF MULTIPLE AIRPORTS."
 
-    "a flight that departs Nellis, works the range, and returns to Nellis needs
-     that profile and its arrival state during the same sortie. It cannot be
-     selected concurrently with the Tonopah recovery."   -- CODEX_NTTR_AUDIT.md
+Filed on 11 August by somebody (me) who had read the Nevada audit and not the
+backlog. The evidence it carried -- a Nevada bridge loading the Tonopah recovery
+for a flight going home to Nellis -- is folded into #2, where the acceptance
+criteria now include it.
 
-`load_and_push_plate` sets one plan active and pushes one `plate` prompt at
-startup. The bridge is explicitly built to work one arrival at a time, which was
-true and sufficient while a theatre had one recovery.
-
-It stops being sufficient the moment two aircraft want different ones — an
-outbound diverting to Tonopah while an inbound recovers at Nellis is two
-procedures, live, at once. It is the same shape as the two-aerodrome lesson one
-level up: **a procedure is only unique within a flight**, and the wrong answer
-is always plausible because it is a real approach to a real runway.
-
-**Worked around, not solved.** `MARSHALL_SORTIE` picks which Nevada recovery the
-bridge loads, so the choice is explicit and the default is the sortie a pilot
-actually flies. That is a knob, not a fix.
-
-**Acceptance criteria**
-1. Two aircraft on different approaches are worked simultaneously, correctly.
-2. The plate the agent is given is the plate for the aircraft being spoken to.
-3. `MARSHALL_SORTIE` disappears — the flight's plan chooses its procedure.
+Worth leaving rather than deleting: a 115-issue backlog that grows a duplicate of
+its oldest architectural entry is telling you something about itself.
 
 ---
 

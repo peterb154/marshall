@@ -168,4 +168,46 @@ def render(contacts: list, origin) -> list[str]:
 def picture(contacts: list, origin) -> str:
     """The whole scope as the controller's prompt wants it."""
     lines = render(contacts, origin)
-    return " | ".join(lines) if lines else "no contacts"
+    if lines:
+        return " | ".join(lines)
+    if contacts and not origin:
+        return unranged(contacts)
+    return "no contacts"
+
+
+def unranged(contacts: list) -> str:
+    """The contacts, with no bearing and no range, because we cannot measure.
+
+    A CONTROLLER WHO CANNOT MEASURE SAYS SO. Without a projected origin of his
+    own this used to fall back to the DIRECTOR's prose -- ranges and radials
+    from an origin he does not own, sorted by distance from it -- and the
+    comment justifying it said "drawing from a stale constant beats drawing
+    nothing".
+
+    It does not. That is how a Nevada controller reads distances measured from
+    Georgia, and every one of them is a plausible number, so nothing looks
+    wrong until a pilot flies it:
+
+        "A fallback must be conservatively unavailable, not confidently wrong
+         on another map."                          -- CODEX_NTTR_AUDIT.md
+
+    What survives is what does not need an origin -- who, what, how high, which
+    way -- and that is genuinely useful: it is enough to answer "do you have
+    me", to correlate a radio with an aeroplane, and to see that four contacts
+    exist. `vector` already models the right failure for the rest: "negative DME
+    to ingress, you'll have to call it off your own nav."
+    """
+    out = []
+    for c in sorted(contacts, key=lambda x: str(x.get("name") or "")):
+        who = c.get("label") or c.get("name") or "unknown"
+        bits = [f"{who}"]
+        if c.get("type"):
+            bits.append(f"({c['type']})")
+        if c.get("alt_ft") is not None:
+            bits.append(f"{float(c['alt_ft']):,.0f} ft")
+        if c.get("heading") is not None:
+            bits.append(f"heading {float(c['heading']):03.0f}")
+        out.append(" ".join(bits))
+    return ("NO RANGES -- this controller has no projected origin, so bearing "
+            "and distance are unavailable and must not be stated: "
+            + "; ".join(out))
