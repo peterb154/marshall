@@ -238,6 +238,54 @@ class ApproachProfile:
     # orbiting, and vectored out to sea on three separate sorties.
     iaf: Fix | None = None
     iaf_alt_ft: int = 2000
+    # WHAT THE PLATE CALLS THE FINAL APPROACH FIX, because the controller must
+    # say the words the pilot is reading.
+    #
+    #     "Lets not invent fix names that are not on the plate. That will be
+    #      confusing... We need the plate the pilot is looking at to match what
+    #      the controller says"
+    #
+    # The FAA clearance quotes position FROM A FIX -- the 'P' of PTAC, one of
+    # the two elements a vectored approach clearance may never omit -- and the
+    # obvious way to supply one is to make a name up. That is precisely wrong:
+    # a pilot hearing a fix that is not on his chart has been given a reference
+    # he cannot check, which is worse than being given none.
+    #
+    # THE REAL PLATES IN THIS THEATRE DO NOT NAME THEIRS. Batumi's AIP ILS
+    # (AD 2.UGSB-IAC-12-ILSy, kneeboard/plates/ugsb-ils-12.png) labels its
+    # fixes by FUNCTION and identifies them by DME:
+    #
+    #     IF    ILU D11.0 / BTM D11.9   2000'
+    #     FAP   ILU D6.0  / BTM D6.9    2000'
+    #
+    # which is where `final_intercept_nm`, `fap_nm` and `platform_ft` came from
+    # in the first place. So the fix has always existed and has always had a
+    # name -- "the final approach point" -- and it is ICAO's word rather than
+    # the FAA's "final approach fix", because it is a Georgian chart.
+    #
+    # A profile transcribed from a plate that DOES name its fixes should say so
+    # here, and then the controller says that instead. One field, read by the
+    # chart and by the controller, so they cannot disagree.
+    faf_label: str = "the final approach point"
+    # The glidepath, in degrees. Off the plate: Batumi's AIP ILS prints "GP 3.0"
+    # in the profile view, which is the standard everywhere and is written down
+    # rather than assumed because the clearance depends on it -- an aircraft may
+    # only be cleared for the approach at an altitude NOT ABOVE the glideslope,
+    # so a controller that does not know where the glideslope is cannot obey the
+    # rule. See `talkdown.is_the_intercept`.
+    glidepath_deg: float = 3.0
+
+    def glidepath_ft_at(self, range_nm: float) -> float:
+        """How high the glidepath is, this far out. Feet above sea level.
+
+        Measured from the THRESHOLD, which is not where the ranges are measured
+        from -- `touchdown_offset_nm` is the difference and it is nearly two
+        thirds of a mile at Kobuleti, worth two hundred feet of glidepath.
+        """
+        import math
+        d = max(0.0, range_nm - self.touchdown_offset_nm)
+        return (self.field_thr_elev_ft
+                + d * 6076.12 * math.tan(math.radians(self.glidepath_deg)))
     field_thr_elev_ft: int = 0   # runway threshold, which is lower than the ARP
 
     # The real published chart this profile is transcribed from, if we have it.

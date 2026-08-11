@@ -67,7 +67,7 @@ from marshall.atc.talkdown import (  # noqa: F401
     SPEED_REPEAT_SEC, SPEED_TOLERANCE_KT, _DIGIT_RUN, _TALKDOWN_WORDS,
     _callsign_numbers, _spoken_numbers, altitude_instruction,
     approach_clearance, asr_call, hush_a_second_talkdown, is_the_intercept,
-    note_issued, reads_back_what_we_said,
+    note_issued, position_from_the_fix, reads_back_what_we_said,
     relative_correction, speed_instruction, spoken_deviation, vector_call)
 from marshall.core.approach import may_vector
 from marshall.atc.assembly import (  # noqa: F401
@@ -5631,12 +5631,17 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                         # Once, per approach. `cleared_ils` is cleared when he
                         # goes around, because a second approach needs a second
                         # clearance.
-                        _clr = ""
+                        _clr = _where = ""
                         if (_intercept and cs not in cleared_ils
-                                and is_the_intercept(g, _pro)):
+                                and is_the_intercept(g, _pro, pos)):
+                            # P and C of PTAC, the two a vectored approach
+                            # clearance may never omit. The T and A are the
+                            # vector call's own.
+                            _where = position_from_the_fix(g, _pro)
                             _clr = approach_clearance(g, _pro)
                             cleared_ils.add(cs)
-                        text = for_voice(vector_call(bridge, cs, g, pos, _clr))
+                        text = for_voice(vector_call(bridge, cs, g, pos, _clr,
+                                                     position=_where))
                         note_issued(bridge, cs, text)
                         with radio_lock:
                             print(f"  ATC[vec] {text}", flush=True)

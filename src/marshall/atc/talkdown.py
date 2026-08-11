@@ -25,6 +25,18 @@ from __future__ import annotations
 import re
 import time
 
+from marshall.atc.geometry import TURN_IN_NM
+
+# FAA 7110.65 5-9-1: aeroplanes are vectored to intercept the final approach
+# course at no more than THIRTY degrees. Forty-five is helicopters only, and the
+# forty-five this module's repositioning legs use is a different manoeuvre --
+# cutting across to reach the course, not joining it.
+MAX_INTERCEPT_DEG = 30.0
+# ...and "at least 2 miles outside the approach gate", which is where the gate
+# sits relative to the final approach fix. Clearing him inside it is clearing
+# him onto a course he has no room to capture.
+GATE_NM = 2.0
+
 def spoken_deviation(g) -> str:
     """How far off, not just which side.
 
@@ -421,51 +433,142 @@ def asr_call(bridge, cs: str, g, pos=None, profile=None) -> str:
             f"{alt}.")
 
 
-def is_the_intercept(g, profile) -> bool:
-    """Is this the turn that puts him on the localiser?
+def is_the_intercept(g, profile, pos=None) -> bool:
+    """Is this the turn that puts him on the localiser, AND may he be cleared?
 
     THE LAST VECTOR ON AN ILS IS A DIFFERENT TRANSMISSION FROM THE ONES BEFORE
     IT. The turns up to it are repositioning; this one hands the approach to the
-    pilot, so it carries the clearance and the altitude he holds until the
-    localiser comes alive. Getting it wrong in either direction is a real fault:
-    clear him too early and he descends on a heading that is not yet the
-    centreline, too late and he flies through it.
+    pilot, so it carries the clearance. Getting it wrong in either direction is
+    a real fault: clear him too early and he descends on a heading that is not
+    yet the centreline, too late and he flies through it.
 
-    Two conditions, both geometric, neither a guess. He is being turned to
-    within the intercept angle of the final approach course -- so this heading
-    converges on it rather than repositioning across it -- and he is close
-    enough that the localiser is usable. `final_intercept_nm` is where the
-    procedure's own final segment begins; the margin outside it is the room the
-    turn itself takes.
+    Three conditions, all geometric, none a guess.
+
+    **He is turning onto the course.** Within the intercept angle of the final
+    approach course, so this heading converges on it rather than crossing it.
+    FAA 7110.65 5-9-1 caps the interception at THIRTY degrees for aeroplanes
+    (forty-five is helicopters only), which is tighter than the forty-five this
+    module's own repositioning legs are flown at -- so the last vector is
+    checked against the rule it is issued under, not against the geometry that
+    got him there.
+
+    **He is close enough for the localiser to be usable**, and outside the
+    approach gate: 5-9-1 requires intercepting "at least 2 miles outside the
+    approach gate".
+
+    **AND HE IS AT AN ALTITUDE HE MAY BE CLEARED FROM.** This is the one that
+    was missing, and it is not a nicety -- it is the rule, and it is about his
+    ACTUAL altitude rather than the one he was assigned: "at an altitude not
+    above the glideslope or below the minimum glideslope intercept altitude".
+
+    Both halves bite, in opposite directions. Clear him while he is still high
+    and "maintain four thousand eight hundred until established" freezes him
+    above the glidepath, which he can then never join from underneath -- traced
+    doing exactly that. Clear him below the platform and he is under the minimum
+    intercept altitude, which is the one number on the plate protecting him from
+    the ground.
+
+    So the window is: at or above `platform_ft`, at or below the glidepath. The
+    Batumi AIP plate draws it plainly -- IF and FAP both at 2000 feet with
+    GP 3.0 coming down to meet them -- and level flight between the two is the
+    aeroplane sitting in exactly this window waiting for the needle.
     """
     from marshall.atc import asr
-    from marshall.atc.geometry import INTERCEPT_ANGLE, TURN_IN_NM
     crs = getattr(profile, "final_crs_true", None)
     if crs is None:
         return False
-    closing = abs(asr.angle_diff(g.heading_true or g.heading, crs)) <= INTERCEPT_ANGLE + 5
+    hdg = g.heading_true or g.heading
+    closing = abs(asr.angle_diff(hdg, crs)) <= MAX_INTERCEPT_DEG
     reach = getattr(profile, "final_intercept_nm", 0) + TURN_IN_NM + 4.0
-    return closing and 0 < g.range_nm <= reach
+    gate = getattr(profile, "fap_nm", 0) + GATE_NM
+    if not (closing and gate < g.range_nm <= reach):
+        return False
+    # HIS ALTITUDE, NOT THE PROFILE'S IDEA OF IT, where radar can see him. The
+    # rule says "actual", and `g.altitude_ft` is where the descent table thinks
+    # he should be -- which is the assigned altitude by another name and is the
+    # thing the rule explicitly excludes.
+    now = getattr(pos, "alt_ft", None) if pos is not None else None
+    if now is None:
+        now = g.altitude_ft
+    plat = getattr(profile, "platform_ft", None)
+    if plat is not None and (now or 0) < plat:
+        return False
+    if hasattr(profile, "glidepath_ft_at"):
+        return (now or 0) <= profile.glidepath_ft_at(g.range_nm)
+    return True
 
 
-def approach_clearance(g, profile) -> str:
-    """"...maintain three thousand until established, cleared ILS runway zero
-    seven approach."
+def approach_clearance(g, profile, cs: str = "") -> str:
+    """The FAA vectored approach clearance, in the order it is actually said.
 
-    "Until established" is an ILS instruction and only an ILS instruction -- the
-    talk-down module says so at the top of this file, because a pilot on a
-    surveillance approach has no localiser and cannot detect the trigger. Here
-    he has both needles and it is the standard clearance, word for word.
+        "N123SX, six miles from JETSA, turn right heading two two zero, maintain
+         two thousand five hundred until established on the localizer, cleared
+         I-L-S runway two four right approach."
+
+    It has a NAME and a required shape -- **PTAC**: Position, Turn, Altitude,
+    Clearance -- and "all vectored approach clearances must include at least the
+    P and the C". The first version of this function had T, A and C and no P at
+    all, which is the one element besides the clearance itself that may never be
+    left out.
+
+    **Position is measured FROM THE FIX, not from the field.** "Six miles from
+    the final approach point" is a different number from six miles out, and it
+    is the one a pilot can check against his own DME and his own plate.
+
+    **"Until established ON THE LOCALIZER."** The object is not decoration: it
+    says which of the two needles he is waiting for, and it is the phrase that
+    makes the altitude a floor rather than an assignment. This module's own
+    header says the instruction belongs to the ILS and nowhere else, because a
+    pilot on a surveillance approach has no localiser and cannot detect the
+    trigger.
+
+    The turn is the caller's -- `vector_call` composes it -- so this returns
+    everything from the altitude onwards and the P separately; putting the whole
+    sentence here would mean two functions computing one heading.
     """
     from marshall.core import say
     kind = (getattr(profile, "kind", "") or "approach").upper()
-    alt = (f"maintain {say.spell_alt(g.altitude_ft)} until established, "
-           if g.altitude_ft else "")
+    alt = (f"maintain {say.spell_alt(g.altitude_ft)} until established on the "
+           f"localizer, " if g.altitude_ft else "")
     return (f"{alt}cleared {kind} runway {say.spell_rwy(profile.runway)} "
             f"approach")
 
 
-def vector_call(bridge, cs: str, g, pos=None, clearance: str = "") -> str:
+def position_from_the_fix(g, profile) -> str:
+    """"six miles from the final approach point" -- the P of PTAC.
+
+    FROM THE FIX AND NOT FROM THE FIELD, and the difference is the whole point:
+    the controller is telling him how far he is from the place the approach
+    begins, which is what he sets his DME to and what is printed on his plate.
+    Range to the aerodrome is a different number that means nothing on final.
+
+    AND IT IS CALLED WHAT THE PLATE CALLS IT.
+
+        "Lets not invent fix names that are not on the plate. That will be
+         confusing... We need the plate the pilot is looking at to match what
+         the controller says"
+
+    The real Batumi AIP ILS names neither of its fixes -- `IF ILU D11.0` and
+    `FAP ILU D6.0`, labelled by function and found by DME -- which is exactly
+    where `final_intercept_nm` and `fap_nm` came from. So the name is on the
+    profile (`faf_label`) rather than in this sentence, and the plate renders
+    the same field: one fact, two readers, no way for them to disagree.
+
+    Rounded to whole miles because that is how it is said, and silent inside the
+    fix -- he is past it and the phrase does not apply.
+    """
+    from marshall.atc import asr
+    to_go = g.range_nm - (getattr(profile, "fap_nm", 0.0) or 0.0)
+    label = getattr(profile, "faf_label", "") or ""
+    if not label or to_go < 0.5:
+        return ""
+    miles = asr.spoken_range(to_go)
+    unit = "mile" if miles.strip() == "one" else "miles"
+    return f"{miles} {unit} from {label}"
+
+
+def vector_call(bridge, cs: str, g, pos=None, clearance: str = "",
+                position: str = "") -> str:
     """An unprompted turn, issued because he has reached the point -- not
     because he said something.
 
@@ -477,6 +580,8 @@ def vector_call(bridge, cs: str, g, pos=None, clearance: str = "") -> str:
     """
     from marshall.atc import callsign as C, controller as ctl
     who = C.parse(cs).spoken
+    # P, T, A, C -- in that order, which is the order it is said in.
+    where = f"{position}, " if position else ""
     turn = f"turn {g.turn} " if g.turn else "fly "
     # THE CLEARANCE CARRIES THE ALTITUDE, and it must not be said twice. "Turn
     # right zero one zero, maintain three thousand, maintain three thousand
@@ -493,7 +598,7 @@ def vector_call(bridge, cs: str, g, pos=None, clearance: str = "") -> str:
     # than "one two eight" -- which is also how it is issued for real.
     hdg = int(round(g.heading / 5.0)) * 5 % 360
     tail = f", {clearance}" if clearance else ""
-    return f"{who}, {turn}heading {ctl.spell_hdg(hdg)}{alt}{tail}."
+    return f"{who}, {where}{turn}heading {ctl.spell_hdg(hdg)}{alt}{tail}."
 
 
 # What "he is on the ground" looks like on radar. Generous on altitude because
