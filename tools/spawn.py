@@ -261,8 +261,16 @@ def spawn_parked(ch, name: str, unit_type: str, airfield: str = "Batumi",
                      ["chaff"]=0, ["gun"]=100}},
     }}''' for i in range(count))
 
+    # THE SIM'S OWN SPELLING. `Airbase.getByName` is case-sensitive and DCS
+    # writes "Kobuleti", not "KOBULETI" -- and the anchor table is keyed upper,
+    # so the name arrived shouting and the lookup failed. Try the caller's
+    # spelling, then title case, before giving up: a fixture that cannot be
+    # placed is the difference between "the rule is broken" and "there was
+    # nothing to test".
     lua = f'''
     local ab = Airbase.getByName("{airfield}")
+        or Airbase.getByName("{str(airfield).title()}")
+        or Airbase.getByName("{str(airfield).capitalize()}")
     if ab == nil then return "no such airfield: {airfield}" end
     local p = ab:getPoint()
     local g = {{
@@ -370,6 +378,16 @@ def main() -> int:
                 print(f"  {r.json}")
             except grpc.RpcError as e:
                 print(f"  FAILED: {e.details()}")
+                return 1
+            # THE LUA'S ANSWER IS THE RESULT, not the fact that the call
+            # returned. This printed "spawned -- cold on the ramp" immediately
+            # after printing `no such airfield: KOBULETI`, in the same breath:
+            # the RPC succeeded and the spawn did not. A tool that reports
+            # success it did not have sends the next person looking for a bug in
+            # the thing that was never tested.
+            answer = str(getattr(r, "json", "")).strip('"')
+            if "no such" in answer or "error" in answer.lower():
+                print(f"  FAILED: {answer}")
                 return 1
             print("  spawned — cold on the ramp, uncontrolled")
             return 0

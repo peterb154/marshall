@@ -42,6 +42,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -90,13 +91,20 @@ def handed_to(who: str):
 
 
 def phase_is(want: str):
-    """The board says he is in this phase. The engine's own answer."""
+    """The board says he is on this rung of the ladder. The engine's own answer.
+
+    `sortie_phase`, NOT `phase`. The board carries both and they answer
+    different questions: `phase` is the separation enum -- where he sits in the
+    arrival queue -- and a parked aeroplane is ENROUTE in it, forever, which is
+    correct and useless here. `sortie_phase` is the rung, and it is what
+    `handoff.py` reads to decide who has him next.
+    """
     def check(ev):
         for e in reversed(ev):
             if e.get("kind") != "board":
                 continue
             for ac in e.get("board") or []:
-                got = (ac.get("phase") or "").lower()
+                got = (ac.get("sortie_phase") or "").lower()
                 if got == want.lower():
                     return True, ""
                 return False, f"the board says {got or '(none)'}"
@@ -218,6 +226,76 @@ LADDER = [
 ]
 
 
+def park_an_aeroplane(name: str, field: str) -> bool:
+    """Put a jet on the ramp so the engine has something to work.
+
+    THE ENGINE HEARS FROM RADIOS, AND A RADIO IS BOUND BY RADAR. Without a
+    contact the separation engine correctly declines to act on a voice, so the
+    first version of this harness could only judge the language-only rows and
+    honestly skipped the rest.
+
+    The identity chain cannot tell this from a human: it matches the SRS client
+    name against the name radar prints, and both ends are ours to choose --
+    `362nd_Sockeye-1` derives to the handle `Sockeye`, which is exactly what the
+    synthetic pilot calls himself.
+
+    A FAILURE HERE IS NOT A TEST FAILURE and must not read like one. A fixture
+    that could not be placed means there was nothing to test, which is a
+    different thing from the controller being wrong -- `spawn.py` used to print
+    "no such airfield" and "spawned" in consecutive lines, and a rehearsal built
+    on that reports bugs against innocent code.
+    """
+    r = subprocess.run(
+        [sys.executable, str(ROOT / "tools" / "spawn.py"),
+         "--name", name, "--type", "viper", "--ground", field,
+         "--side", "blue", "--heading", "070"],
+        check=False, capture_output=True, text=True,
+        env={**os.environ, "PYTHONPATH": str(ROOT / "src")})
+    out = (r.stdout or "") + (r.stderr or "")
+    if r.returncode != 0 or "FAILED" in out:
+        last = out.strip().splitlines()[-1] if out.strip() else str(r.returncode)
+        print(f"  !! could not park {name} at {field}: {last}")
+        return False
+    return True
+
+
+def take_it_away(name: str) -> None:
+    """Leave the scope as we found it. A fixture left behind is traffic in
+    somebody else's sortie."""
+    from marshall.feed.stubs import bind
+    bind()
+    import grpc
+    from dcs.custom.v0 import custom_pb2, custom_pb2_grpc
+    addr = os.environ.get("DCS_GRPC_ADDR", "127.0.0.1:50051")
+    lua = (f"local g=Group.getByName('{name}') "
+           f"if g then g:destroy() return 'ok' end return 'gone'")
+    try:
+        with grpc.insecure_channel(addr) as ch:
+            custom_pb2_grpc.CustomServiceStub(ch).Eval(
+                custom_pb2.EvalRequest(lua=lua), timeout=20)
+    except Exception as e:
+        print(f"  !! could not remove {name}: {type(e).__name__}")
+
+
+def wait_for_radar(name: str, base: str, session: str, seconds: float = 90.0) -> bool:
+    """Wait for the sweep to pick him up. He is not there until radar says so."""
+    import urllib.parse
+    import urllib.request
+    url = (f"{base}/radar?"
+           + urllib.parse.urlencode({"session_id": session}))
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=8) as resp:
+                if name.split("_")[-1].lower() in resp.read().decode(
+                        "utf-8", "replace").lower():
+                    return True
+        except Exception:
+            pass
+        time.sleep(5.0)
+    return False
+
+
 def events_since(path: Path, mark: int) -> list:
     """Everything the recorder has written since the byte offset `mark`."""
     if not path.exists():
@@ -252,6 +330,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--wait", type=float, default=22.0,
                     help="seconds to allow for a reply before calling it silence")
     ap.add_argument("--only", default="", help="run one row, by id")
+    ap.add_argument("--field", default="KOBULETI",
+                    help="where the fixture aeroplane is parked")
+    ap.add_argument("--no-spawn", action="store_true",
+                    help="use whatever is already on the scope")
     args = ap.parse_args(argv)
     if not args.srs:
         print("!! --srs is required (or SRS_HOST)", file=sys.stderr)
@@ -269,6 +351,15 @@ def main(argv: list[str] | None = None) -> int:
     print(f"the ladder, spoken by {args.name} against the live bridge")
     print(f"  recorder: {recorder}")
     print(f"  {len(steps)} rows\n")
+
+    unit = f"362nd_{args.name}"
+    parked = False
+    if not args.no_spawn:
+        print(f"  parking {unit} at {args.field} so the engine has an aeroplane")
+        parked = park_an_aeroplane(unit, args.field)
+        if parked and not wait_for_radar(unit, "http://localhost:8000", args.session):
+            print("  !! it never reached the scope; the engine-side rows will skip")
+        print()
 
     results, skipped = [], []
     for rid, mhz, line, check, why in steps:
@@ -326,6 +417,9 @@ def main(argv: list[str] | None = None) -> int:
     if skipped:
         print("\n  Skipped is not passed. A row that could not be judged is a row\n"
               "  nothing is watching.")
+    if parked:
+        take_it_away(unit)
+        print(f"\n  {unit} removed from the scope.")
     print("\n  NOT COVERED HERE, whatever the result above: anything gated on\n"
           "  radar (there is no aeroplane unless one is spawned -- see\n"
           "  tools/ai_traffic.py), and whether a human voice survives Whisper.\n"

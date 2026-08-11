@@ -619,3 +619,56 @@ class ReadingBackTheTaxiClearanceIsNotArrivingAtTheHold(unittest.TestCase):
         ac = self.ctl.aircraft.get(self.ctl._resolve("sockeye"))
         self.assertEqual(getattr(ac, "sortie_phase", ""), "holding_short",
                          "a genuine hold-short report must still hand him over")
+
+
+class DeliveryAsksAboutTheWeatherToo(unittest.TestCase):
+    """The one seat that never confirmed the pilot had the information.
+
+        "Clearance ... never did ask that I had information [alpha]"
+
+    Every other controller asked, because `check_in` composes the advisory and
+    they are the seats a pilot checks in with. He does not check in with
+    Delivery -- he asks for a clearance -- and `request_clearance` moved the
+    phase and said nothing at all.
+
+    Which is backwards: delivery is where it matters most. The letter says which
+    runway and which approach to expect, and it is the transmission immediately
+    before the numbers he writes down.
+    """
+
+    def clearance_with(self, letter, on_air=True):
+        import unittest.mock as mock
+        from marshall.atc import controller as atc
+        from marshall.atis import store
+        from marshall.core import route as R
+        c = atc.Controller(R.BATUMI_ASR)
+        with mock.patch.object(store, "current",
+                               return_value=mock.Mock(on_the_air=on_air,
+                                                      letter=letter)):
+            c.request_clearance("Sockeye 1-1")
+        return c.take_out()
+
+    def test_he_asks(self):
+        out = self.clearance_with("Bravo")
+        self.assertTrue(out, "Clearance said nothing at all")
+        self.assertIn("information Bravo", " ".join(t.text for t in out))
+
+    def test_it_carries_a_decision_so_a_dropped_letter_is_caught(self):
+        # Prose alone can be dropped by the agent and nothing notices -- which
+        # is exactly what happened to the check-in advisory before #90.
+        kinds = [t.decision.kind for t in self.clearance_with("Bravo") if t.decision]
+        self.assertIn("advise_atis", kinds)
+
+    def test_a_field_with_no_broadcast_is_not_asked_about(self):
+        # Asking a pilot to confirm an ATIS that does not exist is how you get a
+        # confused read-back -- the rule `_atis_phrase` already states.
+        self.assertEqual(self.clearance_with("", on_air=False), [])
+
+    def test_the_words_come_from_the_one_place(self):
+        # `_atis_phrase` has four shapes -- current, superseded, not yet
+        # advised, no broadcast. Writing them twice is how two controllers come
+        # to describe one letter differently.
+        import inspect
+        from marshall.atc import controller as atc
+        self.assertIn("self._atis_phrase(ac)",
+                      inspect.getsource(atc.Controller.request_clearance))

@@ -405,6 +405,18 @@ class Controller:
         a handful of dicts, once per push-to-talk.
         """
         return [{"callsign": cs, "phase": ac.phase.name,
+                 # WHERE HE IS ON THE LADDER, which is a different question from
+                 # where he is in the arrival queue and the one that decides who
+                 # has him next -- `handoff.py` reads `sortie_phase`, and a
+                 # ground transition IS the handoff (a phase with no geometry is
+                 # owned outright by the controller `phases.py` names).
+                 #
+                 # The board carried the separation enum alone, so everything
+                 # downstream of the engine -- the recorder, the diagnostics
+                 # page, the ladder rehearsal -- could see that a parked
+                 # aeroplane was ENROUTE and could not see that he was holding
+                 # short. The engine has always known. Nothing could ask.
+                 "sortie_phase": getattr(ac, "sortie_phase", "") or "",
                  "assigned_ft": ac.assigned_ft, "identified": ac.radar_identified,
                  "members": list(ac.members), "approaches": ac.approaches,
                  # WHICH PROCEDURE, not just which phase. CLEARED means he is in
@@ -1449,9 +1461,34 @@ class Controller:
     # phase and no code at all.
 
     def request_clearance(self, cs: str) -> None:
-        """On the ramp, asking for his IFR clearance."""
+        """On the ramp, asking for his IFR clearance.
+
+        AND THE ATIS, because delivery is where it belongs. This moved the phase
+        and said nothing, so the first controller of the sortie -- the one whose
+        whole job is handing over the numbers a pilot writes down -- was the one
+        seat that never confirmed he had the weather:
+
+            "Clearance ... never did ask that I had information [alpha]"
+
+        Every later seat asked, because `check_in` composes it and they are the
+        ones a pilot checks in with. He does not check in with Delivery; he asks
+        for a clearance. Real delivery asks on the first call, before the
+        numbers, because the letter says which runway and which approach to
+        expect.
+
+        The words are `_atis_phrase`'s, so the four shapes -- current,
+        superseded, not yet advised, no broadcast at all -- stay in one place
+        rather than being written twice.
+        """
         ac = self.get(cs)
         ac.sortie_phase, ac.last_report_t = "clearance", self.t
+        extra = self._atis_phrase(ac)
+        letter = _atis_letter_in(extra)
+        if not letter:
+            return                      # no broadcast here; nothing to confirm
+        self.say(ac.callsign, f"{self._addr(ac)}, {extra}",
+                 decided=D.Decision(kind="advise_atis", to=ac.callsign,
+                                    atis_letter=letter))
 
     def clearance_read_back(self, cs: str, correct: bool | None = True) -> None:
         """The read-back, and the one place 'readback correct' belongs.
