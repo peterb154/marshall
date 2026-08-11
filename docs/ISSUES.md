@@ -3842,7 +3842,7 @@ is not always red.
 ---
 
 ## [HO-3] Nothing hands a landed aircraft to Batumi Ground — #77
-labels: bug
+labels: bug, needs-flight-test
 
 **Status:** FIXED 10 August with [SEP-5] / #88, needs the next sortie. It was
 one of three symptoms of the same unreachable branch, not a gap of its own.
