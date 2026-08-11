@@ -6357,6 +6357,19 @@ filed before it decides it cannot help.
 ---
 
 ## [ARCH-19] The filed route repeats the aerodromes, and the "two fixes" rule depends on it — #127
+labels: architecture
+
+**Status:** CLOSED 11 August. Attested by claude at 28947f8. `clearance_tools`
+takes the seat and `field_of` establishes the origin at issue into
+`assigned_plans`; `check_live`'s two-fix rule is replaced by "every fix named
+exists" with a warning on a repeated aerodrome; migration 029 normalised all
+three filed rows. Live: an empty route is accepted, a repeated aerodrome is
+warned about, and the DTC refiles Domino as `FOO, BAR, SPAM`.
+
+Not `needs-flight-test`: every claim is structural — a validator verdict, a
+column written, three rows rewritten — and a machine answers all of them. What a
+pilot would add is whether the CLEARANCE still reads correctly aloud, which is
+card row Q2 and unchanged by this.
 
     "So ORIGIN and DESTINATION - should these be on the flightplan as fixes?"
 
