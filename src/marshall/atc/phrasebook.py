@@ -171,6 +171,13 @@ def render(d, last: LastSaid | None = None, amended: bool = False) -> str:
         return ""
     if d.kind == "advise_atis":
         return f"advise you have information {d.atis_letter}"
+    if d.kind == "level":
+        # THE ALTITUDE HE IS HELD TO, restated. Not a new instruction -- he is
+        # already at it or being put back onto it -- so the repair is the bare
+        # number, which is what a controller says when a pilot reports a level:
+        # "roger, five thousand". Anything longer would turn a repair into a
+        # second instruction.
+        return say.spell_alt(d.altitude_ft) if d.altitude_ft else ""
     if d.kind == "ack":
         return "roger"
     return d.note or ""

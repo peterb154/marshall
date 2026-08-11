@@ -1773,6 +1773,34 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
             intent = dataclasses.replace(
                 intent, correct=_read_back_correct(bridge, known, transcript))
 
+        # THE LEVEL HE WAS CLEARED TO, onto the engine, every turn.
+        #
+        # The engine never issued the IFR clearance -- the director's tool
+        # composes it -- so it held no altitude for a pilot in the cruise, and
+        # the strip carried the plan's number beside the engine's with nothing
+        # saying which governed. En route, where the engine has assigned
+        # nothing, the answer is the clearance and there was no field to put it
+        # in:
+        #
+        #     PILOT: Georgia Center, sockeye level 5000.
+        #     ATC:   Assigned altitude is five thousand five hundred, not five
+        #            thousand -- climb...
+        #     PILOT: "I was clearly assigned to 5,000."
+        #
+        # Read off the BOARD, which is where the clearance actually lives, and
+        # written every turn rather than only on the read-back: a pilot who
+        # joins mid-flight was cleared just the same, and one writer beats a
+        # moment that has to be caught.
+        #
+        # It does not touch `assigned_ft`. That field is the separation
+        # engine's, `None` means "not in the stack", and `_free_slot` depends on
+        # it -- a cruise level written there would become a holding slot. See
+        # `Aircraft.governing_ft` for the order between them.
+        if known:
+            _cl = _cleared_plan_now(known).get("cruise_ft")
+            if _cl:
+                ctl.note_cleared_level(known, int(_cl))
+
         # ONE RADIO IS ONE AEROPLANE. Whose call this is comes from the GUID
         # that keyed the mic, never from what Whisper made of the words.
         #

@@ -123,7 +123,30 @@ class Aircraft:
     # which gets a different answer on the radio from claiming the wrong one:
     # the first is a prompt, the second is a correction.
     atis_letter: str = ""
+    # THE TWO ALTITUDES, and they are two because they have two owners.
+    #
+    #   `assigned_ft`  THE SEPARATION ENGINE'S. A stack slot, the vectoring
+    #                  altitude, the missed-approach level -- a number this
+    #                  engine chose in order to keep aeroplanes apart. `None`
+    #                  means it has not put him anywhere, which is what
+    #                  `_free_slot` and `seen_on_final` both depend on.
+    #
+    #   `cleared_ft`   THE CLEARANCE'S. The cruise level Delivery read to him
+    #                  and he read back. Nobody was separated by it and this
+    #                  engine did not pick it, but he is FLYING it, and being
+    #                  told he is at the wrong altitude while level at the one
+    #                  he was cleared to is the complaint that started this:
+    #
+    #                      "I was clearly assigned to 5,000. Don't know why
+    #                       you said that"
+    #
+    # They were one field, which meant the clearance either overwrote the stack
+    # slot or was not recorded at all. It was the second: `clearance_read_back`
+    # moved the phase and touched no altitude, so en route there was nothing
+    # authoritative to point at and the strip carried the plan's number beside
+    # the engine's with no rule about which governed. See `governing_ft`.
     assigned_ft: int | None = None
+    cleared_ft: int | None = None
     last_report_t: float = 0.0
     approaches: int = 0
     map_t: float | None = None       # computed station-passage (missed approach point) time
@@ -215,6 +238,25 @@ class Aircraft:
     @property
     def size(self) -> int:
         return max(self.ships, len(self.members), 1)
+
+    @property
+    def governing_ft(self) -> int | None:
+        """THE ALTITUDE HE IS HELD TO. One door, over the two that own one.
+
+        The engine's assignment outranks the clearance, and the order is the
+        whole content of this property: a stack slot, a vectoring altitude or a
+        missed-approach level was issued to keep him away from another
+        aeroplane, and it supersedes a cruise level agreed on the ramp. When the
+        engine has issued nothing, the clearance stands -- which is the en-route
+        case, and the one where there used to be no answer at all.
+
+        Everything that ASSERTS an altitude reads this: the strip, the
+        correction in `report_level`, and the verifier that checks the agent did
+        not invent one. Reading either field directly is how they came to
+        disagree, and a controller telling a pilot he is at the wrong altitude
+        is the one place in this system where being wrong is unarguable.
+        """
+        return self.assigned_ft if self.assigned_ft is not None else self.cleared_ft
 
 
 @dataclass
@@ -360,6 +402,24 @@ class Controller:
         ac = self.aircraft.get(self._resolve(callsign))
         if ac is not None:
             ac.radar_identified = bool(seen)
+
+    def note_cleared_level(self, callsign: str, ft: int | None) -> None:
+        """The cruise level his IFR clearance carries. Told, not decided.
+
+        The clearance is composed by the director's tool and recorded on the
+        board, so this engine did not issue it and could not have known it --
+        which is why a pilot level at his cleared altitude could be told he was
+        at the wrong one. It has a field for it now, kept apart from the one
+        this engine assigns, and the bridge sets it from the board every turn.
+
+        Deliberately not a decision and deliberately not `assigned_ft`: nothing
+        was separated by this number, and writing it where the stack lives would
+        make a cruise level into a holding slot the first time somebody entered
+        the pattern.
+        """
+        ac = self.aircraft.get(self._resolve(callsign))
+        if ac is not None and ft:
+            ac.cleared_ft = int(ft)
 
     def may_be_sequenced(self, ac) -> bool:
         """Can this aircraft take a place in the stack?
@@ -1243,20 +1303,38 @@ class Controller:
                      f"{self._addr(ac)}, roger, station passage "
                      f"{spell_dur(self.profile.final_approach_sec)}, "
                      f"report field in sight or missed approach.")
-        elif (altitude_ft and ac.assigned_ft
-              and altitude_ft != ac.assigned_ft):
+        elif (altitude_ft and ac.governing_ft
+              and altitude_ft != ac.governing_ft):
             # He is not where he was put. Reading his own number back to him is
             # how two aeroplanes end up at the same level in cloud -- especially
             # just after a break-up, when three wingmen have all just been given
             # a new altitude and one of them heard someone else's.
-            verb = "descend and maintain" if altitude_ft > ac.assigned_ft else "climb and maintain"
+            #
+            # `governing_ft`, NOT `assigned_ft`. This gate used to be blind to
+            # the clearance: en route the engine has assigned nothing, so a
+            # pilot level at his cleared altitude fell through to the `roger`
+            # below and nothing in the engine had an opinion about his level at
+            # all -- which is what left the agent free to assert one. It also
+            # means the CORRECTION now carries the clearance's number when that
+            # is the number he is held to, instead of having none to carry.
+            want = ac.governing_ft
+            verb = "descend and maintain" if altitude_ft > want else "climb and maintain"
             self.say(ac.callsign,
                      f"{self._addr(ac)}, negative, you are assigned "
-                     f"{spell_alt(ac.assigned_ft)}, {verb} "
-                     f"{spell_alt(ac.assigned_ft)}.")
+                     f"{spell_alt(want)}, {verb} {spell_alt(want)}.",
+                     decided=D.Decision(kind="level", to=ac.callsign,
+                                        altitude_ft=want))
         else:
-            self.say(ac.callsign, f"{self._addr(ac)} roger, "
-                                  f"{spell_alt(altitude_ft or ac.assigned_ft or 0)}.")
+            # HE IS WHERE HE SHOULD BE. The number still goes out as a decision:
+            # "roger, five thousand" is an assertion about his altitude and the
+            # verifier has to be able to check it, which is the whole of #98's
+            # third criterion -- a pilot level at his cleared altitude is never
+            # corrected onto another.
+            _lvl = altitude_ft or ac.governing_ft or 0
+            self.say(ac.callsign,
+                     f"{self._addr(ac)} roger, {spell_alt(_lvl)}.",
+                     decided=(D.Decision(kind="level", to=ac.callsign,
+                                         altitude_ft=_lvl) if _lvl else None))
 
     def _do_missed(self, ac: Aircraft) -> bool:
         """Missed-approach state transition. Returns True if banished (2nd miss)."""

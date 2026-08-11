@@ -35,6 +35,7 @@ a compromise -- see `asr.py`.
 
 from __future__ import annotations
 
+import re as _re
 from dataclasses import dataclass, field
 
 
@@ -65,6 +66,23 @@ KINDS = (
     "ack",               # roger, and nothing else
     "refuse",            # not mine to give -- see `owner`
     "advise_atis",       # tell me you have the current information
+    # THE ALTITUDE HE IS HELD TO, asserted rather than issued. `climb` changes
+    # a level; this one STATES the one already in force -- "roger, five
+    # thousand", or the correction back onto it.
+    #
+    # It is here because asserting an altitude is the one thing in this system
+    # a pilot cannot argue with, and the agent has twice asserted a number that
+    # was in no table anywhere:
+    #
+    #     engine   maintain 8000                agent   five thousand five hundred  [#95]
+    #     cleared  5000, read back              agent   five thousand five hundred  [#98]
+    #
+    # Two incidents, two different correct answers, the same invented figure.
+    # Fixing where the number COMES from would not have caught either, because
+    # in both cases the engine's number was right and the agent said something
+    # else. That is what `verify` is for, and this is the kind that lets it run
+    # on the one assertion that matters most.
+    "level",
 )
 
 
@@ -315,7 +333,64 @@ def verify(d: Decision, said: str) -> list[str]:
             ok = _said_number(hay, value)
         if not ok:
             missed.append(canonical)
+    # AND FOR AN ALTITUDE, THE OTHER QUESTION: was a DIFFERENT one also said?
+    #
+    # "Was the fact spoken" is the whole of the check above, and it is not
+    # enough for the one assertion a pilot cannot argue with. The transmission
+    # that filed #98 contains the right number:
+    #
+    #     "Assigned altitude is five thousand five hundred, not five
+    #      thousand -- climb and maintain five thousand five hundred."
+    #
+    # so presence passes and the pilot is still being corrected off the level he
+    # was cleared to. A second altitude in a sentence about his altitude is not
+    # a richer way of saying the first; it contradicts it, and the contradiction
+    # is the fault.
+    #
+    # ONLY FOR `level`, deliberately. Several kinds legitimately carry two
+    # altitudes -- an approach clearance mentions the vectoring altitude and the
+    # MDA, a missed approach names a climb -- and this must not fire on them.
+    # `level` exists precisely because it asserts ONE number and nothing else.
+    if d.kind == "level" and d.altitude_ft:
+        want = float(str(d.altitude_ft).replace(",", ""))
+        for other in _altitudes_in(hay):
+            if abs(other - want) >= 1.0:
+                missed.append(f"{say_alt_(want)} (he said {say_alt_(other)})")
+                break
     return missed
+
+
+def say_alt_(ft: float) -> str:
+    from marshall.core import say
+    return say.spell_alt(int(ft))
+
+
+# Altitudes as a controller says them: "five thousand", "five thousand five
+# hundred", "two thousand", "seven hundred". Deliberately narrow -- it must find
+# a LEVEL, not every number in the sentence, or a frequency and a squawk would
+# each look like a contradicting altitude.
+_ALT_SPOKEN = _re.compile(
+    r"\b(?:(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+"
+    r"thousand(?:\s+(one|two|three|four|five|six|seven|eight|nine)\s+hundred)?"
+    r"|(one|two|three|four|five|six|seven|eight|nine)\s+hundred)\b")
+_ALT_DIGITS = _re.compile(r"\b(\d{1,2}),?(\d00)\b")
+_WORD_N = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+           "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11,
+           "twelve": 12}
+
+
+def _altitudes_in(hay: str) -> list[float]:
+    """Every altitude asserted in a normalised transmission, in feet."""
+    out = []
+    for m in _ALT_SPOKEN.finditer(hay):
+        th, hu, bare = m.group(1), m.group(2), m.group(3)
+        if th:
+            out.append(_WORD_N[th] * 1000 + (_WORD_N[hu] * 100 if hu else 0))
+        elif bare:
+            out.append(_WORD_N[bare] * 100)
+    for m in _ALT_DIGITS.finditer(hay):
+        out.append(float(m.group(1) + m.group(2)))
+    return out
 
 
 def repair(d: Decision, said: str = "") -> str:

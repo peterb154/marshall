@@ -4896,7 +4896,8 @@ being mangled may be costing it its rhythm.
 ## [SEP-11] Cleared to five thousand, told to climb to five thousand five hundred — #98
 labels: bug, needs-flight-test
 
-**Status:** OPEN. Reported live, 11 August.
+**Status:** FIXED 11 August, needs the next sortie. Both halves -- the missing
+field and the invented number -- because either alone leaves it open.
 
     PILOT:  Georgia Center, sockeye level 5000.
     ATC:    Sockeye, Georgia Center. Assigned altitude is five thousand five
@@ -4920,6 +4921,50 @@ argue: he read the number back, and was told he had it wrong.
 2. If the engine has a different level it is because it ISSUED one, and the
    issuing is what changes the strip.
 3. A pilot level at his cleared altitude is never corrected onto another.
+
+
+**What was actually wrong, and it was two things.**
+
+**The engine had nowhere to put the clearance.** `assigned_ft` is the separation
+engine's -- a stack slot, a vectoring altitude, a missed-approach level -- and
+`clearance_read_back` moved the phase and touched no altitude, so en route there
+was nothing authoritative to point at. The strip carried `cruise 5,000 ft` from
+the plan beside `assigned N ft` from the engine with no rule about which
+governed, and the correction in `report_beacon` was gated on `assigned_ft`
+alone: a pilot reporting his level in the cruise fell through to a bare `roger`
+and nothing in the engine had an opinion about his altitude at all.
+
+Collapsing the two fields was not available. `_free_slot` reads `assigned_ft`
+and `None` genuinely means "not in the stack", so a cruise level written there
+becomes a holding slot the first time somebody enters the pattern -- a
+separation bug, which is the one class an LLM must never be near. So:
+`cleared_ft` beside it, and one `Aircraft.governing_ft` that everything
+asserting an altitude reads. The engine's assignment outranks the clearance
+because it was issued to keep him away from somebody; the clearance stands when
+the engine has issued nothing.
+
+**And 5,500 is in no table anywhere.** Not in the plan (5,000), not in the plate
+(*"Assignable altitudes: 2000 vectoring, 732 MDA, 3000 missed. Nothing else."*),
+not in the rules. It is the same figure the agent produced in #95, where the
+engine had said **8,000**. Two incidents, two different correct answers, one
+invented number -- so fixing where the number comes from would not have caught
+either, because the engine was right both times and the agent said something
+else.
+
+That is what `decision.verify` is for, and altitudes were the one assertion it
+could not police, because presence is not enough for them. The transmission
+above CONTAINS "five thousand", inside "not five thousand", so a
+did-he-say-it check passes while the pilot is corrected off his cleared level.
+A `level` decision therefore also fails on a CONTRADICTING altitude: a second
+level in a sentence about his level is not a richer way of saying the first.
+Narrow to `level` on purpose -- an approach clearance legitimately carries the
+vectoring altitude and the MDA together.
+
+Verified against the recorded transmission:
+
+    bad  -> ['five thousand (he said five thousand five hundred)']
+    good -> []
+    repair: five thousand
 
 ---
 
@@ -5201,9 +5246,9 @@ supposed to complete had nothing left to complete.
 ---
 
 ## [SEP-13] "Holding short" on Ground does not move the phase — #106
-labels: bug, needs-flight-test
+labels: bug, closed
 
-**Status:** NOT A BUG in the engine -- **the record was stale**. Closed by #107,
+**Status:** CLOSED 11 August. NOT A BUG in the engine -- **the record was stale**. Closed by #107,
 11 August, and the diagnosis below was wrong.
 
 `report_holding_short` did run, and the phase did move. The board was RECORDED
