@@ -444,8 +444,27 @@ class TestAsrContext(unittest.TestCase):
 
     def test_far_out_is_vectoring(self):
         out = agent_atc.asr_context(self.asr, self.scope(14, 300), "Pony 1-1")
-        self.assertIn("vectoring", out)
-        self.assertIn(str(self.asr.platform_ft), out)
+        self.assertIn("vectored", out)
+
+    def test_the_agent_is_not_handed_the_turn_to_say(self):
+        """CHANGED 11 August: it used to assert the ALTITUDE was in the block.
+
+        The monitor issues the turns itself, on its own schedule, and this
+        handed the same turn to the agent to say as well -- two transmissions of
+        one instruction, and two separate computations of it. The monitor's came
+        from its radar poll and this one from the fix on the transmission,
+        seconds and a few hundred yards apart; the altitude is range-dependent,
+        so it stepped between them:
+
+            ATC[vec] ... turn right heading two four five, maintain three thousand
+            ASR:     ... Fly heading 245, maintain 5500
+
+        Neither was wrong about its own instant. Asking the question twice was.
+        """
+        out = agent_atc.asr_context(self.asr, self.scope(14, 300), "Pony 1-1")
+        self.assertIn("do NOT issue a heading", out)
+        self.assertNotIn(str(self.asr.platform_ft), out,
+                         "the agent was handed an altitude to read out")
 
     def test_on_final_the_agent_is_told_to_stop_repeating(self):
         # The mile calls already go out automatically; the agent reporting range

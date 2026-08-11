@@ -556,3 +556,66 @@ class TheClearanceIsReadFromTheBoardNotACacheATurnBehind(unittest.TestCase):
         src = (_P(__file__).resolve().parent.parent / "src" / "marshall" /
                "atc" / "intents.py").read_text()
         self.assertIn("read_back: REPEATING something he was just given", src)
+
+
+class ReadingBackTheTaxiClearanceIsNotArrivingAtTheHold(unittest.TestCase):
+    """Ground handed him to Tower twice, while he was still moving.
+
+        "Kobuleti Ground is transferring me to tower again while I'm still
+         taxiing"
+
+    "Taxi to zero seven, holding short of zero seven" is a READ-BACK of the
+    clearance he was just given. "Holding short of runway zero seven" from a man
+    who has arrived there is a REPORT. The words are identical and the
+    classifier cannot tell them apart -- reasonably, because nothing in them
+    differs. It called both `report_holding_short`, the phase moved, and Tower
+    got him mid-taxi.
+
+    THE SIM CAN TELL. Reporting himself stopped at the runway edge while radar
+    shows twenty-four knots in the middle of the taxiway is a claim the scope
+    contradicts -- exactly like a beacon report from eight miles out, which this
+    engine has refused to believe since the guard beside it was written. No new
+    mechanism, the same rule applied to the same kind of claim.
+    """
+
+    def setUp(self):
+        from marshall.atc import agent_atc as A, bedrock_intent, controller as atc, intents
+        from marshall.core import route as R
+        self.A, self.intents, self.bedrock = A, intents, bedrock_intent
+        self.ctl = atc.Controller(R.BATUMI_ASR)
+        self.ctl._me = R.BATUMI_ASR.station_on(121.800)     # Kobuleti Ground
+        self._real = bedrock_intent.classify
+
+    def tearDown(self):
+        self.bedrock.classify = self._real
+
+    def scope_at(self, speed_kt):
+        return self.A.Scope("", contacts=[{
+            "name": "362nd_sockeye", "label": "362nd_sockeye",
+            "callsign": "sockeye", "type": "F-16C_50",
+            "lat": 41.93, "lon": 41.87, "alt_ft": 65, "heading": 339.0,
+            "speed_kt": speed_kt, "manned": True, "on_ground": True}],
+            origin=(41.609594, 41.600234),
+            bullseye={"blue": {"lat": 42.18, "lon": 41.67}})
+
+    def call(self, speed_kt):
+        self.bedrock.classify = lambda _t: self.intents.Intent(
+            self.intents.IntentKind.REPORT_HOLDING_SHORT, "sockeye")
+        return self.A.separation_context(
+            self.A.Bridge(), self.ctl, "taxi to zero seven, holding short of "
+            "zero seven, sockeye", self.scope_at(speed_kt),
+            known="sockeye", track="362nd_sockeye")
+
+    def test_still_rolling_is_a_read_back_not_a_report(self):
+        directive, _stack = self.call(24.0)
+        self.assertIn("POSITION REJECTED", directive)
+        ac = self.ctl.aircraft.get(self.ctl._resolve("sockeye"))
+        self.assertNotEqual(getattr(ac, "sortie_phase", ""), "holding_short",
+                            "Tower got him while he was still taxiing")
+
+    def test_stopped_at_the_edge_is_believed(self):
+        directive, _stack = self.call(0.0)
+        self.assertNotIn("POSITION REJECTED", directive)
+        ac = self.ctl.aircraft.get(self.ctl._resolve("sockeye"))
+        self.assertEqual(getattr(ac, "sortie_phase", ""), "holding_short",
+                         "a genuine hold-short report must still hand him over")

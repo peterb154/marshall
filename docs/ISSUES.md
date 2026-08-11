@@ -4634,7 +4634,29 @@ move, and that difference is the whole diagnosis.
 ## [SEP-7] A third path to the approach geometry, ungated — #92
 labels: bug
 
-**Status:** OPEN. Found while diagnosing [SEP-6].
+**Status:** CLOSED 11 August.
+
+**They did not merely repeat each other — they disagreed.** Same aircraft, same
+moment, two altitudes:
+
+    ATC[vec] ... turn right heading two four five, maintain three thousand
+    ASR:     ... Fly heading 245, maintain 5500
+
+Neither computation was wrong about its own instant. The monitor's came from its
+radar poll and `asr_context`'s from the fix on the transmission, seconds and a
+few hundred yards apart — and the vectoring altitude is range-dependent, so it
+steps between them. **Asking the question twice was the fault**, not either
+answer.
+
+The engine owns the vector now, for the same reason it already owns the mile
+calls: it can see, it is on a metronome, and it does not paraphrase. The agent
+is told what is being transmitted rather than handed the turn to say —
+the identical rule the `final` branch has stated since it was written, applied
+one branch up.
+
+Reported from the cockpit as *"I'm getting redundant instructions"*, *"he's
+stepping on me a couple of times"* and *"we're in the 180 degree flipping
+again"*.
 
 #86 gated the ASR geometry on the phase in `settle`, because `asr_context`
 reached `asr.guide` with no phase check and flew a departure on approach

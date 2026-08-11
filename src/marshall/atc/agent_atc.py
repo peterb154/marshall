@@ -1302,7 +1302,8 @@ def asr_context(profile, scope: str, cs: str, track: str = "") -> str:
         return ("ASR: he is over the missed approach point. Runway in sight, "
                 "land; if not, missed approach now.")
     turn = "" if not g.off_course else f", {spoken_deviation(g)}"
-    swing = f" Turn {g.turn}." if g.turn else ""
+    # `swing` is gone with the vector the agent used to be handed: which WAY he
+    # turns is part of the instruction, and the instruction is the engine's now.
     if g.phase == "final":
         # The mile calls are already going out automatically, every mile. If the
         # agent ALSO reports range and heading on each transmission the pilot
@@ -1335,9 +1336,31 @@ def asr_context(profile, scope: str, cs: str, track: str = "") -> str:
     # It is the same rule `_report_phrase` states and did not apply: never give
     # him a trigger he cannot see. Here the CONTROLLER owns the descent and
     # calls it off the table, so the altitude stands until he says otherwise.
-    return (f"ASR: vectoring, {rng} miles{turn}.{swing} Fly heading "
-            f"{g.heading:03d}, maintain {g.altitude_ft}. You will call his "
-            f"descent; do not ask him to report established.")
+    # ONE TRANSMITTER FOR THE VECTOR, which is the rule the `final` branch above
+    # already states and this one did not.
+    #
+    # The monitor issues the turns itself, on its own schedule -- `ATC[vec]`,
+    # rendered from the phrasebook -- and this handed the SAME turn to the agent
+    # to say as well. Two transmissions of one instruction, and worse, TWO
+    # COMPUTATIONS: the monitor's from its radar poll, this one from the fix on
+    # the transmission, seconds and a few hundred yards apart. The altitude is
+    # range-dependent, so it steps between them and they disagree:
+    #
+    #     ATC[vec] ... turn right heading two four five, maintain three thousand
+    #     ASR:     ... Fly heading 245, maintain 5500
+    #
+    # Same aeroplane, same moment, two altitudes. Reported from the cockpit as
+    # "I'm getting redundant instructions", "he's stepping on me a couple of
+    # times" and "we're in the 180 degree flipping again".
+    #
+    # Neither computation was wrong about its own instant. Asking the question
+    # twice was. The engine owns the vector for the same reason it owns the mile
+    # calls -- it can see, it is on a metronome, and it does not paraphrase --
+    # so the agent is told what is being said rather than asked to say it.
+    return (f"ASR: he is being vectored, {rng} miles{turn}. The turns and "
+            f"altitudes are transmitted automatically — do NOT issue a heading "
+            f"or an altitude yourself, and do NOT repeat the one he was just "
+            f"given. Acknowledge what he said in a few words and stop.")
 
 
 def radar_range_for(scope: str, cs: str) -> float | None:
@@ -1881,6 +1904,34 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
         _at = radar_fix_by_track(scope, track) if track else None
         nm = _at.range_nm if _at is not None else radar_range_for(
             scope, intent.callsign)
+        # HOLDING SHORT IS A POSITION REPORT TOO, and the same rule applies.
+        #
+        # "Taxi to zero seven, holding short of zero seven" is a READ-BACK of the
+        # clearance he was just given; "holding short of runway zero seven" from
+        # a man who has arrived there is a REPORT. The words are the same and the
+        # classifier cannot tell them apart -- reasonably, because nothing in
+        # them differs.
+        #
+        # The sim can. Reporting himself stopped at the runway edge while radar
+        # shows him doing twenty-four knots in the middle of the taxiway is a
+        # claim the scope contradicts, exactly like a beacon report from eight
+        # miles out -- and it cost the same thing twice:
+        #
+        #     "Kobuleti Ground is transferring me to tower again while I'm still
+        #      taxiing"
+        #
+        # Rejecting it leaves the phase where it is, so Ground keeps him until
+        # he has actually stopped. No new mechanism: the engine already declines
+        # to believe a position radar disagrees with.
+        if (intent.kind is intents.IntentKind.REPORT_HOLDING_SHORT
+                and _at is not None and _at.speed_kt > TAXI_SPEED_KT / 2):
+            print(f"  !! rejected: reports holding short, radar shows "
+                  f"{_at.speed_kt:.0f} knots", flush=True)
+            return (f"POSITION REJECTED: he reports holding short but radar "
+                    f"shows him still moving at {_at.speed_kt:.0f} knots. He is "
+                    f"reading the taxi clearance back, not reporting the hold. "
+                    f"Acknowledge the read-back; he is still yours.", "")
+
         beacon_flown = not getattr(ctl.profile, "vectored", False)
         if (beacon_flown and intent.kind is intents.IntentKind.REPORT_BEACON
                 and nm is not None and nm > OVERHEAD_NM):
