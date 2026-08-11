@@ -79,6 +79,11 @@ def classify(transcript: str) -> intents.Intent:
         # a size would otherwise fabricate wingmen the controller then separates.
         flight_size=max(1, min(4, int(data.get("flight_size") or 1))),
         visual=data.get("visual"),
+        # WHAT HE SAYS HE WANTS, verbatim, so it can be written down and the
+        # next controller inherits it instead of asking again. See
+        # docs/STATE.md -- this is the field a pilot filled on every call and
+        # nothing recorded.
+        wants=(data.get("wants") or "").strip()[:120],
     )
 
 

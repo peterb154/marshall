@@ -102,6 +102,9 @@ class Intent:
     # did not mention one -- which gets a different answer from claiming the
     # wrong one: the first is a prompt, the second is a correction.
     atis_letter: str = ""
+    # HIS STATED INTENTION, verbatim. Carried to the board so the next
+    # controller inherits it -- see `flights.intent` and docs/STATE.md.
+    wants: str = ""
     # DID HE GET THE CLEARANCE RIGHT? None means nobody has judged it, which is
     # the honest default and is not the same as False.
     #
@@ -196,6 +199,25 @@ INTENT_SCHEMA = {
                         "Empty when he does not mention one -- never guess, "
                         "because saying nothing and saying the wrong letter "
                         "get different answers from the controller."},
+        # WHAT HE SAYS HE WANTS. Not a phase, not a clearance -- his stated
+        # intention, in his own words, which every controller after this one
+        # needs and none of them could see.
+        #
+        # A pilot says "VFR to Batumi, visual one three" on his first call and
+        # at every handoff, and nothing wrote it down: `flights.intent` is READ
+        # in four places and was written by nothing. So each controller
+        # reconstructed his intentions from his last sentence, which is why
+        # Approach said "remain with me" and Tower never cleared him to land.
+        # See docs/STATE.md.
+        "wants": {"type": "string",
+                  "description": (
+                      "What he says he intends, if he says it: a destination, "
+                      "an approach he wants, a runway, VFR or IFR. Verbatim "
+                      "and short -- 'VFR to Batumi, visual 13', 'ILS 21 left', "
+                      "'RTB Kobuleti'. EMPTY unless he actually states it; "
+                      "never guess it from where he is or what he asked for "
+                      "last, because a controller who assumes an intention "
+                      "greets a stranger by name.")},
         "flight_size": {"type": "integer",
                         "description": "how many aircraft are in this flight, if "
                         "the pilot says so: 'flight of four' -> 4, 'Pony one "
@@ -359,6 +381,22 @@ def dispatch(ctl: atc.Controller, intent: Intent,
     cs = intent.callsign
     if not cs or intent.kind is IntentKind.UNKNOWN:
         return False
+    # HIS STATED INTENTION, BEFORE ANY GATE. A pilot says what he wants while
+    # checking in, while reporting a position, while asking for an approach --
+    # it is not an intent KIND of its own and must not need one.
+    #
+    # ABOVE the reachability gate deliberately. An action this procedure does
+    # not contain is a reason not to ACT on the transmission; it is not a reason
+    # to forget what the man said he wanted. Placed below it, "report the beacon
+    # on a radar approach" -- which stands the engine down -- would have thrown
+    # his intention away with the action.
+    #
+    # Never cleared by a transmission that does not carry one: he says it once
+    # and every controller after that inherits it. See docs/STATE.md.
+    if getattr(intent, "wants", ""):
+        _ac = ctl.aircraft.get(ctl._resolve(cs))
+        if _ac is not None:
+            _ac.wants = intent.wants
     # NOT AN ERROR, AND NOT A "SAY AGAIN". An unreachable action means the
     # engine has nothing to do with this transmission -- the ordinary case for
     # a read-back, which the agent answers with "roger" perfectly well. True,

@@ -497,6 +497,37 @@ def flights_due_handoff_endpoint(mission: str = "default") -> dict:
     return {"due": F.due_handoff(mission)}
 
 
+@app.delete("/flights/{flight_id}")
+def flight_forget_endpoint(flight_id: int) -> dict:
+    """He is out of the aeroplane. One row, gone.
+
+    `player_leave_unit` frees the in-memory board through `Controller.release`,
+    and until now nothing freed the ROW -- so a callsign and a track name stayed
+    claimed for ever by somebody who had gone home. See docs/STATE.md.
+    """
+    from tools import flights as F
+    return {"deleted": F.forget(flight_id)}
+
+
+@app.post("/flights/expire")
+def flights_expire_endpoint(mission: str = "default",
+                            older_than_sec: float = 900.0) -> dict:
+    """Reconcile the board against the world, the way `tracks` already does.
+
+    A flight nobody has heard from and radar cannot see is not on the aerodrome.
+    This is the belt to `player_leave_unit`'s braces: a client that vanishes
+    without an event -- a crash, an alt-F4, a dropped connection -- leaves no
+    event to act on and would otherwise sit on the board indefinitely.
+
+    Deliberately generous. Fifteen minutes of total silence, not two: a pilot
+    holding at a quiet moment of a long sortie is still flying, and taking him
+    off the board mid-hold would be a far worse failure than leaving a stale row
+    for a quarter of an hour.
+    """
+    from tools import flights as F
+    return {"expired": F.expire(mission, older_than_sec)}
+
+
 @app.delete("/flights")
 def flights_clear_endpoint(mission: str = "default") -> dict:
     """Forget the last sortie. Stale aircraft are worse than none."""

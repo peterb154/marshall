@@ -245,6 +245,12 @@ def _post_json(url: str, obj: dict, timeout: float = 6.0) -> dict:
         return json.load(resp)
 
 
+def _delete_json(url: str, timeout: float = 6.0) -> dict:
+    req = urllib.request.Request(url, method="DELETE")
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.load(resp)
+
+
 # ---- the one aircraft state -------------------------------------------------
 #
 # Every write here is something a controller and a pilot AGREED. Nothing in this
@@ -256,7 +262,57 @@ def _post_json(url: str, obj: dict, timeout: float = 6.0) -> dict:
 # that Postgres is unreachable, and a bridge that raises here would stop talking
 # at the worst possible moment.
 
+# WHICH SORTIE, and it is not which `.miz` -- it is which LOADING of it.
+#
+# Every flight row was `mission = 'default'`, so yesterday's flights, today's and
+# a test fixture's occupied one bucket for ever and the only way out was a human
+# calling `DELETE /flights`. See docs/STATE.md.
+#
+# The key is the mission's name and THE WALL-CLOCK INSTANT IT STARTED, which is
+# `now - model_time`: the sim's model clock resets to zero on every load, so that
+# difference is constant within one instance and different across two. Any
+# process can compute it without coordinating with any other, and a bridge
+# restarted mid-sortie computes the SAME key and keeps the board -- which a
+# random id per process would not.
+#
+# Nothing is deleted to make this work. A row from a previous instance is not
+# stale data to be cleaned up, it is a different world, and it is simply never
+# found. That is the `tracks` bargain: reconcile by construction rather than by
+# remembering to tidy.
 MISSION = os.environ.get("MARSHALL_MISSION", "default")
+
+
+def mission_instance(default: str = "default") -> str:
+    """The current mission instance key, from the sim. Best effort.
+
+    `MARSHALL_MISSION` wins when it is set -- the dry runs and the unit tests
+    want a fixed bucket. Falls back to `default` when the sim cannot be reached,
+    which is degraded but no worse than what came before, and says so.
+    """
+    got = os.environ.get("MARSHALL_MISSION")
+    if got:
+        return got
+    try:
+        import time as _time
+
+        import grpc
+        from marshall.feed.stubs import bind as _bind
+        _bind()
+        from dcs.custom.v0 import custom_pb2, custom_pb2_grpc
+        from dcs.hook.v0 import hook_pb2, hook_pb2_grpc
+        with grpc.insecure_channel(_config.DCS_GRPC_ADDR) as ch:
+            name = hook_pb2_grpc.HookServiceStub(ch).GetMissionName(
+                hook_pb2.GetMissionNameRequest(), timeout=8).name
+            raw = str(custom_pb2_grpc.CustomServiceStub(ch).Eval(
+                custom_pb2.EvalRequest(lua="return timer.getTime()"),
+                timeout=10).json).strip('"')
+        started = int(_time.time() - float(raw))
+        return f"{name}@{started}"
+    except Exception as e:
+        print(f"  !! could not identify the mission instance ({type(e).__name__}); "
+              f"flights will share the '{default}' bucket with previous sorties",
+              flush=True)
+        return default
 APPROACH_NAME = ""              # set when the active flight plan is loaded
 
 # What a mission commander is, as opposed to an air traffic controller. Handed
@@ -548,8 +604,52 @@ def release_stale(bridge, ctl, scope: str = "", now: float | None = None) -> lis
                                           if not u.category)})
             del bridge.releases[:-RELEASES_KEPT]
             bridge.seen_at.pop(cs, None)
+            # ...AND THE ROW, not only the board entry.
+            #
+            # `Controller.release` has always explained why a leftover is
+            # dangerous -- "he flew as Falcon 1-1, came back an hour later as
+            # Pony 1-1, and was assigned ten thousand, held at five, and
+            # banished" -- and that reasoning was applied to the in-memory board
+            # and never to the table underneath it. So the aeroplane left the
+            # board and its row stayed for ever, holding a callsign and a track
+            # that the next pilot to use them would collide with.
+            #
+            # Same event, same meaning, both consequences. See docs/STATE.md.
+            forget_flight(cs)
             freed.append(cs)
     return freed
+
+
+def expire_flights(base: str = BASE_URL) -> int:
+    """Reconcile the flight table against the world. Best effort, quiet.
+
+    The counterpart to `release_stale`, which does the same for the in-memory
+    board. Both ask the same question -- has anything accounted for him -- and
+    until now only one of them acted on the answer.
+    """
+    try:
+        got = _post_json(
+            f"{base}/flights/expire?mission={urllib.parse.quote(MISSION)}", {})
+        return int((got or {}).get("expired") or 0)
+    except Exception:
+        return 0
+
+
+def forget_flight(callsign: str, base: str = BASE_URL) -> None:
+    """He is out of the aeroplane. Take his row off the board.
+
+    Best effort and deliberately quiet: a director that cannot be reached must
+    not stop the in-memory release, which is the half that keeps the CURRENT
+    sortie honest. The row it leaves behind is scoped to this mission instance
+    and dies with it.
+    """
+    try:
+        fid = _flight_id_of(callsign, base)
+        if fid:
+            _delete_json(f"{base}/flights/{fid}")
+    except Exception as e:
+        print(f"  !! could not forget {callsign}'s row: {type(e).__name__}",
+              flush=True)
 
 
 def fetch_due(session_id: str, url: str = HOOKS_URL, timeout: float = 5.0) -> list:
@@ -4329,6 +4429,12 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
     # one frequency the two maps happen to share.
     _th = _theatre.current()
     print(f"  theatre: {_th.name} — {_th.departure} to {_th.arrival}", flush=True)
+    # WHICH SORTIE. Asked once, at the top, so every write this process makes
+    # lands in the bucket for THIS loading of the mission -- see
+    # `mission_instance` and docs/STATE.md.
+    global MISSION
+    MISSION = mission_instance()
+    print(f"  sortie: {MISSION}", flush=True)
     # ...AND CHECKED AGAINST THE SIM. The flag chooses; the sim confirms. A
     # bridge holding the wrong map's frequencies does not fail, it answers
     # confidently for another world -- see `theatre.verify` on why this is a
@@ -4697,6 +4803,18 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 print(f"  .. {gone} — nothing has accounted for him in "
                       f"{STALE_BOARD_SEC // 60} minutes, off the board", flush=True)
                 record(session_id, kind="released", callsign=gone)
+            # AND THE SAME RECONCILE ON THE TABLE, which is the half that was
+            # missing. `release_stale` has always tidied the in-memory board and
+            # the rows underneath it accumulated for ever -- see docs/STATE.md.
+            #
+            # Rides this tick for the same reason the release does: it is
+            # already here, it costs one request, and it usually returns
+            # nothing. An endpoint nothing calls is the shape this project keeps
+            # finding, so it is wired at the moment it is written.
+            _expired = expire_flights()
+            if _expired:
+                print(f"  .. {_expired} flight row(s) expired — silent and not "
+                      f"on radar", flush=True)
             # AND PUBLISH, ON THE PICTURE THIS TICK ALREADY FETCHED.
             #
             #     "F16 on the ground at Batumi. Looking at diag. I would expect
@@ -5526,6 +5644,12 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         if _fid:
             _ac = ctl.get(known) if known else None
             _agreed = {}
+            # WHAT HE SAID HE WANTS, written down the first time he says it
+            # and never overwritten by silence. `intent` is read by the strip,
+            # the diag page and `handoff.py`, and was written by nothing -- so
+            # every controller met him for the first time. See docs/STATE.md.
+            if getattr(_ac, "wants", ""):
+                _agreed["intent"] = _ac.wants
             if _ac is not None:
                 _agreed["cleared"] = _PHASE_OF.get(_ac.phase.name, "unknown")
                 if _ac.assigned_ft:

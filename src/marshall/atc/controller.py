@@ -123,6 +123,14 @@ class Aircraft:
     # which gets a different answer on the radio from claiming the wrong one:
     # the first is a prompt, the second is a correction.
     atis_letter: str = ""
+    # WHAT HE SAID HE WANTS, verbatim and in his own words.
+    #
+    # Carried here for one turn on its way to `flights.intent`, exactly as
+    # `atis_letter` is -- the board is not where it lives, it is how it crosses
+    # the seam. See docs/STATE.md: this is the fact a pilot stated on his first
+    # call and at every handoff and that nothing ever wrote down, so each
+    # controller reconstructed his intentions from his last sentence.
+    wants: str = ""
     # THE TWO ALTITUDES, and they are two because they have two owners.
     #
     #   `assigned_ft`  THE SEPARATION ENGINE'S. A stack slot, the vectoring

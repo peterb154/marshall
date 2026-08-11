@@ -53,17 +53,20 @@ def _row(r, cols) -> dict:
 
 
 def find(mission: str = "default", *, callsign: str | None = None,
-         srs_guid: str | None = None, track_name: str | None = None) -> dict | None:
+         srs_guid: str | None = None, track_name: str | None = None,
+         srs_name: str | None = None) -> dict | None:
     """The row for this aeroplane, by whichever name we happen to have.
 
     Tried in order of how much the name is worth. The GUID is the anchor: it
     arrives free on every transmission and survives Whisper turning "Pony one
     one" into "Tony one one". The track is next -- one sim unit is one
-    aeroplane. The callsign is last and is the least reliable of the three,
-    which is exactly why it must not be the key.
+    aeroplane. The callsign is next and is unreliable, which is exactly why it
+    must not be the anchor. The SRS NAME is last and weakest -- and is still far
+    better than not matching at all, which used to mean minting a new row for
+    every transmission from a pilot we had not yet tied to a track.
     """
     for col, val in (("srs_guid", srs_guid), ("track_name", track_name),
-                     ("callsign", callsign)):
+                     ("callsign", callsign), ("srs_name", srs_name)):
         if not val:
             continue
         with get_pool().connection() as c:
@@ -126,7 +129,19 @@ def bind(mission: str = "default", **names) -> dict:
 def _all_matching(mission: str, known: dict) -> list[dict]:
     """Every row that any of these names points at, oldest first."""
     seen, out = set(), []
-    for col in ("srs_guid", "track_name", "callsign"):
+    # `srs_name` IS A KEY, and leaving it out minted a row per transmission.
+    #
+    # One SRS client is one person, exactly as one track is one aeroplane. It is
+    # weaker than a GUID -- a name can be changed, two people can pick the same
+    # one -- and it is enormously stronger than the alternative, which was to
+    # find nothing and INSERT. A pilot whose first calls carry only an SRS name
+    # got a fresh row every time he spoke, so every `agree` wrote into a row
+    # that identified nobody and the next transmission abandoned it. Three rows
+    # in thirty seconds, on the sortie that produced docs/STATE.md.
+    #
+    # Last, after the three that are stronger, so a GUID or a track still wins
+    # when we have one.
+    for col in ("srs_guid", "track_name", "callsign", "srs_name"):
         val = known.get(col)
         if not val:
             continue
@@ -321,6 +336,35 @@ def callsigns(mission: str = "default") -> list[str]:
             "WHERE mission = %s AND callsign IS NOT NULL AND callsign <> '' "
             "ORDER BY callsign", (mission,)).fetchall()
     return [r[0] for r in rows]
+
+
+def forget(flight_id: int) -> int:
+    """One row, gone, with whatever hangs off it."""
+    with get_pool().connection() as c:
+        c.execute("DELETE FROM flight_member WHERE flight_id = %s", (flight_id,))
+        c.execute("DELETE FROM assigned_plans WHERE flight_id = %s", (flight_id,))
+        cur = c.execute("DELETE FROM flights WHERE id = %s", (flight_id,))
+        return cur.rowcount
+
+
+def expire(mission: str = "default", older_than_sec: float = 900.0) -> int:
+    """Rows nobody has heard from and radar cannot see. The `tracks` bargain.
+
+    A flight is alive if it has been UPDATED recently -- every transmission
+    touches `updated_at` -- or if a radar track still carries its name. Neither
+    is a guess: one is a fact about the radio, the other about the sim.
+
+    This is what makes `DELETE /flights` a debugging convenience rather than
+    load-bearing. Nothing should ever have to be cleaned by hand.
+    """
+    with get_pool().connection() as c:
+        cur = c.execute(
+            "DELETE FROM flights f WHERE f.mission = %s "
+            "  AND f.updated_at < now() - (%s || ' seconds')::interval "
+            "  AND NOT EXISTS (SELECT 1 FROM tracks t "
+            "                  WHERE t.name = f.track_name)",
+            (mission, str(int(older_than_sec))))
+        return cur.rowcount
 
 
 def clear_mission(mission: str = "default") -> int:

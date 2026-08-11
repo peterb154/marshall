@@ -5864,10 +5864,39 @@ that only looks one way will call two things equal while one of them holds
 something the other has never seen.
 
 ## [ARCH-15] The board cannot remember who is flying — #119
-labels: architecture
+labels: architecture, needs-flight-test
 
-**Status:** OPEN. **Read `docs/STATE.md` before working this.** It is the
-write-up; this is the ticket.
+**Status:** FIXED 11 August, needs the next sortie. All six criteria met and
+proved against the live director:
+
+    1. three binds on srs_name alone -> 1 row
+    2. intent recorded -> 'VFR to Batumi, visual 13'
+    3. another instance sees 0 rows
+    4. after leaving the slot -> 0 rows
+    5. expiry removed 1, 0 left
+
+**The sortie key is `name@started`**, where `started` is `now - model_time` —
+the sim's model clock resets on every load, so that difference is constant
+within one instance and different across two. Any process computes it without
+coordinating, and a bridge restarted mid-sortie computes the SAME key and keeps
+the board, which a random id per process would not. **Nothing is deleted to make
+this work**: a row from a previous instance is not stale data to be cleaned up,
+it is a different world, and it is never found.
+
+**`srs_name` is now the weakest binding key**, after guid and track. A name can
+be changed and two people can pick the same one — and it is enormously better
+than the alternative, which was to match nothing and INSERT.
+
+**`player_leave_unit` ends the row**, in the same breath as the board entry, and
+takes `assigned_plans` and `flight_member` with it. **Silence expires it** on the
+tick that already reconciles the board — wired at the moment it was written,
+because an endpoint nothing calls is the shape this project keeps finding.
+
+**Intent is captured above the reachability gate.** An action the procedure does
+not contain is a reason not to act on a transmission; it is not a reason to
+forget what the man said he wanted.
+
+Originally: **read `docs/STATE.md` before working this.**
 
     "if the whole system requires claude code to keep the database clean, this
      isnt going to work."
