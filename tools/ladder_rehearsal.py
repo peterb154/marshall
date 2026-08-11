@@ -281,6 +281,53 @@ def only_once_he_has_landed(*checks):
     return check
 
 
+def intent_recorded():
+    """What he SAID HE WANTS reached the board.
+
+    Not a phrase in a reply -- a row. `flights.intent` is read by the strip, the
+    diag page and `handoff.py`, and until 11 August was written by nothing, so a
+    pilot restated his intentions to every controller in turn and none of them
+    could see what he had told the last one.
+    """
+    def check(ev):
+        import urllib.parse
+        import urllib.request
+        try:
+            q = urllib.parse.urlencode({"mission": _mission_key()})
+            with urllib.request.urlopen(
+                    f"http://localhost:8000/flights?{q}", timeout=8) as r:
+                rows = json.loads(r.read().decode("utf-8", "replace"))["flights"]
+        except Exception as e:
+            return None, f"could not read the board ({type(e).__name__})"
+        mine = [f for f in rows if (f.get("srs_name") or "").lower() == "sockeye"
+                or (f.get("callsign") or "").lower() == "sockeye"]
+        if not mine:
+            return None, "no row for him yet -- nothing to have written it on"
+        got = [f.get("intent") for f in mine if f.get("intent")]
+        if got:
+            return True, ""
+        return False, ("he said what he wanted and the board did not write it "
+                       "down")
+    return check
+
+
+def _mission_key() -> str:
+    """The sortie the BRIDGE is working, read off its log.
+
+    The harness must ask about the same instance the bridge is writing to, and
+    the key is computed from the sim rather than configured -- so it is read
+    back rather than recomputed, which is the same rule as everything else here.
+    """
+    import re
+    try:
+        with open("/tmp/marshall-bridge-live.log", errors="replace") as fh:
+            txt = fh.read()
+    except OSError:
+        return "default"
+    hits = re.findall(r"^\s*sortie: (\S+)", txt, re.M)
+    return hits[-1] if hits else "default"
+
+
 def nobody_after():
     """No handoff was authorised. Ground is the end of the ladder.
 
@@ -401,10 +448,17 @@ def ladder_for(th):
     name = dep.name
 
     return [
+        # HE STATES WHAT HE WANTS, because a real pilot does and because the
+        # board is supposed to write it down. On 11 August a pilot said "VFR to
+        # Batumi, visual 13" on his first call and at every handoff and nothing
+        # recorded it -- so every controller met him for the first time. [#119]
         ("Q1", clr.freq_mhz,
-         f"{clr.name}, Sockeye, request clearance.",
-         named_no_other_field(name),
-         "nothing on this frequency belongs to another field"),
+         f"{clr.name}, Sockeye, request clearance, "
+         f"{'VFR' if th.name == 'Caucasus' else 'IFR'} to {th.arrival}, "
+         f"visual runway {spoken_rwy}.",
+         all_of(named_no_other_field(name), intent_recorded()),
+         "nothing on this frequency belongs to another field, and what he "
+         "wants is written down (#119)"),
 
         ("Q1a", clr.freq_mhz,
          f"{clr.name}, Sockeye, {label} please.",
