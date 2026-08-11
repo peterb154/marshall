@@ -18,6 +18,14 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+def _lines(path: Path) -> list[str]:
+    """The stripped lines of a KEY=VALUE file, or none if it is not there."""
+    try:
+        return [ln.strip() for ln in path.read_text(encoding="utf-8").splitlines()]
+    except OSError:
+        return []
+
+
 def _load_dotenv(path: Path) -> None:
     """Read KEY=VALUE lines from .env into the environment, without a dependency.
 
@@ -26,12 +34,7 @@ def _load_dotenv(path: Path) -> None:
     if the file is absent, which is the normal case in a container where the
     values are injected directly.
     """
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return
-    for line in text.splitlines():
-        line = line.strip()
+    for line in _lines(path):
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, _, value = line.partition("=")
@@ -82,6 +85,36 @@ KNEEBOARD_PORT = int(os.environ.get("KNEEBOARD_PORT", "8362"))
 # they live in the environment and the defaults reach nobody's server but your own.
 SRS_HOST = os.environ.get("SRS_HOST", "127.0.0.1")
 SRS_EAM_PASSWORD = os.environ.get("SRS_EAM_PASSWORD", "")
+
+# WHERE THE SIM IS. Same kind of fact as SRS_HOST, and it belongs here for the
+# same reason -- except that it also lives in `director/.env`, which compose
+# reads for the container and no shell reads for a tool run by hand.
+#
+# So fourteen files rolled their own `os.environ.get("DCS_GRPC_ADDR", ...)` and
+# they did not agree: most defaulted to localhost, three hardcoded a LAN address
+# into a PUBLIC repo, and `tools/sim.py` alone read `director/.env` -- in a
+# private helper, behind a comment naming this exact failure. The ladder
+# rehearsal asked `sim.py` where the sim was, got the truth, then asked
+# `spawn.py` to park an aeroplane there and got `Connection refused` from
+# localhost, two lines under a healthy status report.
+#
+# One door. `director/.env` is consulted because it is the file that already
+# holds this, and the value is written back into the environment so a
+# subprocess, a later import or a library gets the same answer.
+def _grpc_addr() -> str:
+    got = os.environ.get("DCS_GRPC_ADDR")
+    if not got:
+        for line in _lines(REPO_ROOT / "director" / ".env"):
+            if line.startswith("DCS_GRPC_ADDR="):
+                got = line.split("=", 1)[1].strip()
+                break
+    # A sim on this machine is the only default that can be written down in
+    # public, and it is right for anybody running DCS beside the bridge.
+    os.environ["DCS_GRPC_ADDR"] = got = got or "127.0.0.1:50051"
+    return got
+
+
+DCS_GRPC_ADDR = _grpc_addr()
 
 
 def ensure_dirs() -> None:

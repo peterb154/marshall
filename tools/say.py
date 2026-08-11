@@ -25,7 +25,6 @@ three of them were once heard talking at once.
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 from pathlib import Path
 
@@ -33,6 +32,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "director"))
 
+from marshall import config as _config
 from marshall.feed.stubs import bind as _bind_dcs_stubs
 
 _bind_dcs_stubs()
@@ -40,7 +40,7 @@ _bind_dcs_stubs()
 from marshall import config
 from marshall.core import route as R
 
-SRS_HOST = os.environ.get("SRS_HOST", "192.168.0.35")
+SRS_HOST = _config.SRS_HOST
 
 
 def scope(group: str = "") -> str:
@@ -52,7 +52,7 @@ def scope(group: str = "") -> str:
     sys.path.insert(0, str(ROOT / "tools"))
     from asr_autopilot import lead_of, position_of
 
-    addr = os.environ.get("DCS_GRPC_ADDR", "127.0.0.1:50051")
+    addr = _config.DCS_GRPC_ADDR
     profile = R.BATUMI_ASR
     out = []
     with grpc.insecure_channel(addr) as ch:

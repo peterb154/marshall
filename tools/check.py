@@ -30,6 +30,13 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+
+# HOSTS AND PORTS COME FROM `marshall.config`, which reads the .env files
+# the rest of the system reads. This is a public repo: a LAN address
+# written down here is both a leak and a second opinion.
+sys.path.insert(0, str(ROOT / "src"))
+from marshall import config as _config
+
 PY = sys.executable
 
 # (name, argv, what it guards, needs the sim/SRS)
@@ -77,11 +84,11 @@ CHECKS = [
      "#10 C1/C2/C3 — granted without argument, mile calls stop, and 'field in "
      "sight' is a report", True),
     ("break-up identity", [PY, "-m", "marshall.radio.rehearsal", "--srs",
-                           os.environ.get("SRS_HOST", "192.168.0.35"), "124.0",
+                           _config.SRS_HOST, "124.0",
                            "breakup"],
      "#12 — two radios through a formation split", True),
     ("go-around", [PY, "-m", "marshall.radio.rehearsal", "--srs",
-                   os.environ.get("SRS_HOST", "192.168.0.35"), "124.0",
+                   _config.SRS_HOST, "124.0",
                    "goaround"],
      "#11 B8 — no vector back towards the field while climbing out", True),
 ]
@@ -90,10 +97,10 @@ CHECKS = [
 def sim_is_up() -> bool:
     """Cheap liveness for the things a LIVE check needs."""
     import socket
-    addr = os.environ.get("DCS_GRPC_ADDR", "127.0.0.1:50051")
+    addr = _config.DCS_GRPC_ADDR
     host, _, port = addr.partition(":")
     for h, p in ((host, int(port or 50051)),
-                 (os.environ.get("SRS_HOST", "192.168.0.35"), 5002)):
+                 (_config.SRS_HOST, 5002)):
         try:
             with socket.create_connection((h, p), timeout=3):
                 pass

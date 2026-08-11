@@ -35,6 +35,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
+# HOSTS AND PORTS COME FROM `marshall.config`, which reads the .env files
+# the rest of the system reads. This is a public repo: a LAN address
+# written down here is both a leak and a second opinion.
+sys.path.insert(0, str(ROOT / "src"))
+from marshall import config as _config
+
+
 
 def config_build() -> Path:
     """build/, the same directory config.BUILD_DIR resolves to."""
@@ -45,7 +52,7 @@ MODULE = "marshall.atc.agent_atc"
 # The live configuration. Read from the director's .env so there is ONE place
 # that says where the sim is -- the bridge defaulting to localhost while the
 # director had the real address is how every start logged a fix-push failure.
-DEFAULT_ARGS = ["--srs", os.environ.get("SRS_HOST", "192.168.0.35"),
+DEFAULT_ARGS = ["--srs", _config.SRS_HOST,
                 os.environ.get("MARSHALL_FREQ_MHZ", "124.0"),
                 os.environ.get("MARSHALL_VOICE", "Matthew"),
                 os.environ.get("MARSHALL_SESSION", "hooks"),
@@ -73,10 +80,11 @@ def _env() -> dict:
     """
     env = dict(os.environ)
     env.setdefault("PYTHONPATH", str(ROOT / "src"))
-    if "DCS_GRPC_ADDR" not in env:
-        for line in (ROOT / "director" / ".env").read_text().splitlines():
-            if line.startswith("DCS_GRPC_ADDR="):
-                env["DCS_GRPC_ADDR"] = line.split("=", 1)[1].strip()
+    # Resolved by `marshall.config` on import, which also writes it back into
+    # this process's environment -- so the child inherits the same answer as
+    # every tool run by hand. This used to be its own read of `director/.env`,
+    # one of fourteen.
+    env["DCS_GRPC_ADDR"] = _config.DCS_GRPC_ADDR
     # READ OFF THE COMPOSE FILE, not written out here. The credentials and the
     # published port are declared there; copying them into a second file is how
     # they come to disagree, and this repo is public so they may not be pasted

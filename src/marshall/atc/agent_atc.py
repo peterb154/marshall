@@ -31,6 +31,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from marshall import config as _config
 from marshall import config
 from marshall.core import names as _names
 from marshall.core import geo as _geo
@@ -2826,7 +2827,7 @@ def push_fixes(base: str, profile) -> int:
 
     from dcs.custom.v0 import custom_pb2, custom_pb2_grpc
     import grpc
-    addr = os.environ.get("DCS_GRPC_ADDR", "127.0.0.1:50051")
+    addr = _config.DCS_GRPC_ADDR
     with grpc.insecure_channel(addr) as ch:
         raw = str(custom_pb2_grpc.CustomServiceStub(ch).Eval(
             custom_pb2.EvalRequest(lua=lua), timeout=30).json).strip('"')

@@ -33,13 +33,13 @@ leave things in unless somebody is deliberately testing separation.
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+from marshall import config as _config
 from marshall.feed.stubs import bind as _bind_dcs_stubs
 
 _bind_dcs_stubs()
@@ -100,7 +100,7 @@ def main() -> int:
     from dcs.custom.v0 import custom_pb2, custom_pb2_grpc
 
     spawned: list[str] = []
-    addr = os.environ.get("DCS_GRPC_ADDR", "192.168.0.35:50051")
+    addr = _config.DCS_GRPC_ADDR
     with grpc.insecure_channel(addr) as ch:
         stub = custom_pb2_grpc.CustomServiceStub(ch)
         # DOWN must be able to remove everything UP can create, including the

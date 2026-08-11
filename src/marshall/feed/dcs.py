@@ -11,9 +11,9 @@ The gRPC stubs are generated from the DCS-gRPC protos and vendored under `_grpc/
 from __future__ import annotations
 
 
+from marshall import config as _config
 from marshall.core import geo as _geo
 import logging
-import os
 
 import grpc
 
@@ -36,7 +36,12 @@ from dcs.hook.v0 import hook_pb2, hook_pb2_grpc
 # so the address belongs in the environment (see director/.env), not here.
 log = logging.getLogger(__name__)
 
-DCS_GRPC_ADDR = os.environ.get("DCS_GRPC_ADDR", "127.0.0.1:50051")
+
+# WHERE THE SIM IS -- from `marshall.config`, which is where every
+# machine-specific fact lives and the only place that consults `director/.env`.
+# Re-exported under the name every caller in this package already imports.
+DCS_GRPC_ADDR = _config.DCS_GRPC_ADDR
+
 _TIMEOUT = 8.0
 
 

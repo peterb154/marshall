@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import time
 
+from marshall import config as _config
 from marshall import config
 
 # A full letdown, the way a pilot actually talks (sloppy, out of order, asking for
@@ -75,13 +76,12 @@ def live_script(group: str, profile=None) -> list[str]:
     sys.path.insert(0, str(root / "tools"))
     from asr_autopilot import lead_of, position_of      # the same radar we vector on
     import grpc
-    import os
 
     from marshall.atc import asr
     from marshall.core import route as R
     profile = profile or R.BATUMI_ASR
 
-    addr = os.environ.get("DCS_GRPC_ADDR", "127.0.0.1:50051")
+    addr = _config.DCS_GRPC_ADDR
     with grpc.insecure_channel(addr) as ch:
         unit = lead_of(ch, group)
         if unit is None:

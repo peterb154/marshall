@@ -32,7 +32,6 @@ It had come up. It was paused, and `status` below now says which.
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
@@ -40,30 +39,15 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 
-def _addr() -> str:
-    """Where the sim is -- from the environment, else the director's .env.
-
-    The same lesson as `tools/bridge.py`: `DCS_GRPC_ADDR` lives in one file that
-    compose reads for the container and nothing reads for a shell, so anything
-    run by hand quietly defaults to localhost and fails against a sim on another
-    machine.
-    """
-    got = os.environ.get("DCS_GRPC_ADDR")
-    if got:
-        return got
-    try:
-        for line in (ROOT / "director" / ".env").read_text().splitlines():
-            if line.startswith("DCS_GRPC_ADDR="):
-                os.environ["DCS_GRPC_ADDR"] = line.split("=", 1)[1].strip()
-                return os.environ["DCS_GRPC_ADDR"]
-    except OSError:
-        pass
-    return "127.0.0.1:50051"
+# WHERE THE SIM IS. This file used to resolve it privately -- env, else
+# `director/.env` -- behind a comment naming exactly the failure that comment
+# describes, while thirteen other callers defaulted to localhost or hardcoded a
+# LAN address. It lives in `marshall.config` now, with the rest of the
+# machine-specific facts, and this is a caller like any other.
 
 
 def status() -> int:
     """Everything needed to tell a paused sim from an unreachable one."""
-    _addr()
     from marshall.feed import dcs as D
     from marshall.feed.stubs import bind
     bind()
@@ -100,7 +84,6 @@ def status() -> int:
 
 
 def _set(paused: bool) -> int:
-    _addr()
     from marshall.feed import dcs as D
     import grpc
     try:

@@ -5107,3 +5107,44 @@ ground, which is the one ground transition radar can genuinely see.
 sorties of looking at logs: `board_rows` carried the separation enum alone, so
 every reader outside the engine saw a parked aeroplane described as ENROUTE and
 had no way to ask what it actually thought he was doing. Published now — see #96.
+
+## [OPS-13] Fourteen files each decided where the sim was, and three leaked a LAN address — #104
+labels: bug, tooling
+
+**Status:** FIXED 11 August.
+
+`DCS_GRPC_ADDR` lives in `director/.env`, which compose reads for the container
+and **no shell reads** for a tool run by hand. So every tool rolled its own:
+
+    tools/spawn.py, defend, draw, asr_autopilot, survey_terrain,
+    say, check, ladder_rehearsal, radio/pilot.py, atc/agent_atc.py
+                                   127.0.0.1:50051
+    tools/ai_traffic.py, flight_rehearsal.py, whats_out_there.py
+                                   a private LAN address, hardcoded
+    tools/sim.py                   reads director/.env -- correctly, privately
+
+Fourteen implementations of one fact, three answers, and the correct one was a
+module-private helper behind a comment naming this exact failure: *"anything run
+by hand quietly defaults to localhost and fails against a sim on another
+machine."*
+
+**What it cost.** The ladder rehearsal asked `sim.py` where the sim was, got the
+truth, then asked `spawn.py` to park its fixture aeroplane there and got
+`Connection refused` from **localhost** — two lines under a healthy status
+report. Every row needing an aeroplane reported SKIP: honest, and useless. It
+is the `asr.guide` shape again — two paths to one fact, one of them gated —
+except here it was fourteen.
+
+**And it is a leak.** This repo is PUBLIC. Seven files carried a private LAN
+address, `SRS_HOST` in four more of them, all in `tools/`, where nobody looks.
+
+`marshall/config.py` resolves both, once — environment, else `director/.env`,
+else loopback — and writes the answer back into the environment so a subprocess
+cannot get a second opinion. `feed/dcs.py` re-exports `DCS_GRPC_ADDR` under the
+name its callers already import; `tools/sim.py` and `tools/bridge.py` lost their
+private copies.
+
+`tests/test_one_place_says_where.py` is what stops the fourteen growing back one
+convenient default at a time: no committed RFC1918 address, and nothing but
+`config.py` may supply a default for a host variable. Both halves were proved
+to go red before being left green.

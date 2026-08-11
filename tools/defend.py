@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import argparse
 import math
-import os
 import sys
 from pathlib import Path
 
@@ -31,11 +30,16 @@ sys.path.insert(0, str(ROOT / "src"))
 
 import grpc
 
+from marshall import config as _config
 from marshall.feed.stubs import bind as _bind
 
 _bind()
 
-ADDR = os.environ.get("DCS_GRPC_ADDR", "127.0.0.1:50051")
+# WHERE THE SIM IS, from the one place that knows -- env, else
+# `director/.env`, which is the file compose reads and no shell does.
+# Rolling a local default here is how this tool ended up talking to
+# localhost while the sim ran on another machine. See `dcs.grpc_addr`.
+ADDR = _config.DCS_GRPC_ADDR
 
 # The red fields that sit on the transit route. Defending these three is what
 # makes the Batumi -- Kutaisi leg a route rather than a straight line: they are

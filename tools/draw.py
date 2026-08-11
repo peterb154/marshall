@@ -21,7 +21,6 @@ otherwise the map silently accumulates every version of the plan.
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 import time
 from pathlib import Path
@@ -32,13 +31,18 @@ sys.path.insert(0, str(ROOT / "src"))
 
 import grpc
 
+from marshall import config as _config
 from marshall.feed.stubs import bind as _bind
 
 _bind()
 
 from marshall.core import route as R
 
-ADDR = os.environ.get("DCS_GRPC_ADDR", "127.0.0.1:50051")
+# WHERE THE SIM IS, from the one place that knows -- env, else
+# `director/.env`, which is the file compose reads and no shell does.
+# Rolling a local default here is how this tool ended up talking to
+# localhost while the sim ran on another machine. See `dcs.grpc_addr`.
+ADDR = _config.DCS_GRPC_ADDR
 
 # Mark ids, and the rule that governs them: DCS NEVER LETS ONE BE REUSED.
 #

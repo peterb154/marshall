@@ -24,7 +24,6 @@ debug notes do not already carry.
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 import time
 from pathlib import Path
@@ -33,10 +32,11 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 
+from marshall import config as _config
 from marshall import config
 
 SPOOL = Path("/tmp/marshall-say")
-SRS_HOST = os.environ.get("SRS_HOST", "192.168.0.35")
+SRS_HOST = _config.SRS_HOST
 
 # How long to let SRS settle before the first transmission. The whole reason
 # this file exists: two seconds was not enough and the audio went nowhere.

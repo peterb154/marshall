@@ -26,6 +26,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
+from marshall import config as _config
 from marshall.feed.stubs import bind as _bind_dcs_stubs
 
 _bind_dcs_stubs()
@@ -57,12 +58,11 @@ return table.concat(out, ";")
 
 
 def main() -> int:
-    import os
 
     import grpc
     from dcs.custom.v0 import custom_pb2, custom_pb2_grpc
 
-    addr = os.environ.get("DCS_GRPC_ADDR", "192.168.0.35:50051")
+    addr = _config.DCS_GRPC_ADDR
     with grpc.insecure_channel(addr) as ch:
         raw = str(custom_pb2_grpc.CustomServiceStub(ch).Eval(
             custom_pb2.EvalRequest(lua=LUA), timeout=30).json).strip('"')

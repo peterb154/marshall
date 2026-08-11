@@ -41,6 +41,13 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+
+# HOSTS AND PORTS COME FROM `marshall.config`, which reads the .env files
+# the rest of the system reads. This is a public repo: a LAN address
+# written down here is both a leak and a second opinion.
+sys.path.insert(0, str(ROOT / "src"))
+from marshall import config as _config
+
 sys.path.insert(0, str(ROOT / "src"))
 
 
@@ -89,9 +96,9 @@ def main() -> int:
     time.sleep(12)
 
     voice = tts.Voice(voice_id="Joey")
-    lead = SRSClient("192.168.0.35", name="Hoover",
+    lead = SRSClient(_config.SRS_HOST, name="Hoover",
                      eam_password=config.SRS_EAM_PASSWORD).connect([radio(HZ, AM)])
-    wing = SRSClient("192.168.0.35", name="Shooter",
+    wing = SRSClient(_config.SRS_HOST, name="Shooter",
                      eam_password=config.SRS_EAM_PASSWORD).connect([radio(HZ, AM)])
     time.sleep(7)
 

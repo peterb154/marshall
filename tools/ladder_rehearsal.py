@@ -266,7 +266,7 @@ def take_it_away(name: str) -> None:
     bind()
     import grpc
     from dcs.custom.v0 import custom_pb2, custom_pb2_grpc
-    addr = os.environ.get("DCS_GRPC_ADDR", "127.0.0.1:50051")
+    addr = config.DCS_GRPC_ADDR
     lua = (f"local g=Group.getByName('{name}') "
            f"if g then g:destroy() return 'ok' end return 'gone'")
     try:
@@ -321,7 +321,7 @@ def size(path: Path) -> int:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--srs", default=os.environ.get("SRS_HOST", ""),
+    ap.add_argument("--srs", default=config.SRS_HOST,
                     help="the SRS server the bridge is on")
     ap.add_argument("--session", default=os.environ.get("MARSHALL_SESSION", "hooks"),
                     help="the bridge's session id -- names the recorder file")
