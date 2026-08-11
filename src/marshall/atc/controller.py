@@ -423,12 +423,8 @@ class Controller:
         `AtcCapability.vectors` separates them; `None` means ask the procedure,
         which is what this did all along.
         """
-        cap = getattr(self.profile, "atc", None)
-        want = getattr(cap, "vectors", None) if cap is not None else None
-        if want is not None:
-            return bool(want)
-        return bool(getattr(self.profile, "vectored", False)
-                    or getattr(self.profile, "kind", "") in self.VECTORED_KINDS)
+        from marshall.core.approach import may_vector
+        return may_vector(self.profile)
 
     def _approach_name(self) -> str:
         return "radar approach" if self._vectored else "beacon approach"

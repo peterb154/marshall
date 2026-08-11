@@ -6045,3 +6045,95 @@ identity, before the classifier, before anything.
 rung. A clean call to Tower already gets *"cleared to land runway one three, wind
 zero nine zero at six."* The landing clearance never arrived because the phase
 had been corrupted by a debug note, not because nothing could issue it.
+
+---
+
+## [SEAM-11] The proactive thread decides nothing and does not say so — #122
+
+    "had to end that flight early. left several debug logs. Never got handed to
+     center.."
+
+Kobuleti to Batumi, 11 August. He checked in with Kobuleti Departure at four
+miles and then flew to thirty with nothing on the radio at all:
+
+    DEBUG NOTE  on 15 miles away from the airport, still no transition to center
+    DEBUG NOTE  I'm passing 20 nautical miles from the airport, still no transition
+    DEBUG NOTE  I met 30 miles outside the airport, I have to stop flying
+
+`Rule("departure", "center", "outbound_beyond", 25)` exists and is correct —
+asked directly with his exact state it returns Georgia Center. So the rule was
+never asked, and **the record cannot say why, because the monitor writes a line
+when it acts and nothing when it does not.** Three minutes of a pilot leaving
+the terminal area produced zero lines and no exception. A thread that goes
+silent when it decides nothing is indistinguishable from one that has died —
+which is the same complaint a pilot makes about a controller who stops talking.
+
+Two fixes, and only the second is about a rule:
+
+  * **It kept no record of deciding nothing.** `watching_him` returns
+    `(station, why)`, and the monitor prints the reason when it CHANGES —
+    which controller is holding him, his phase, his range, and whether he is
+    inbound or outbound. Recorded as `handoff/none`, so it is on the
+    diagnostics page too.
+  * **It asked the wrong question.** `next_controller` is the one function that
+    owns "who has him next" — the sim's events, then the ladder, then the
+    airspace volumes, in that order — and this thread asked only the middle
+    one. Its own docstring warns about exactly that and names the sortie it
+    cost (#51). It is a caller now, so the volume branch gets a vote as well:
+    a jet that has left the terminal area is caught even if the ladder is
+    somehow starved.
+
+**And it became testable by being a function at all.** The departure → Center
+rung has never had a check: `ladder_rehearsal.py` cannot cover it, because a
+synthetic pilot has no aeroplane on radar and this rung is pure geometry. See
+`tests/test_the_monitor_says_why.py`.
+
+The underlying cause of the silence is still open until a sortie prints the new
+line. The suspicion is the monitor's radar picture rather than the rule — it
+fetches with no `field`, so it measures every aeroplane from the profile's own
+beacon while the receive path passes the speaking controller's field. That is
+the same shape as `field_origin` before it took one, and it is now the first
+thing the log will say.
+
+---
+
+## [ASR-7] An ILS is not a talkdown, and nothing had ever flown one — #123
+
+    "ive never flown an ILS with marshall yet - just the ASR and Visual"
+
+Which is why this was never seen. `profile.vectored` is False for an ILS —
+correctly, because it asks who owns navigation ALL THE WAY DOWN and on an ILS
+that is the pilot — and both the guidance context and the whole radar monitor
+were gated on it. An ILS recovery got no vectors, no descent, no clearance and
+no geometry whatever; the controller had to improvise the entire arrival, which
+is precisely what `asr_context` exists to prevent.
+
+The same gate killed the monitor outright on the 1944 beacon letdown, handoffs
+and all, because that profile is not vectored either. Two procedures, opposite
+reasons, one flag answering for both.
+
+**`may_vector` is the question actually being asked** — may this controller
+issue a heading at all — and it is now asked in one place by both callers. The
+capability wins where it is stated (#53 added it for the letdown, whose homing
+adapter points the nose at the beacon), and the procedure decides where it is
+not.
+
+**The two procedures divide the work in opposite places**, and that is the whole
+of the new behaviour:
+
+    ASR    the controller IS the approach aid. A range every mile, a heading
+           and an altitude, all the way to the missed approach point.
+    ILS    the controller owns the INTERCEPT only. He vectors, he clears, and
+           at established he STOPS — the pilot has a localiser and a glidepath
+           and is flying both. Reading him ranges is chatter over a busy man,
+           and reading him a descent table beside his own glideslope is two
+           instruments disagreeing once a mile all the way down.
+
+The approach clearance rides on the last vector rather than waiting to be
+prompted, for the same reason `vector_call` exists: the agent only speaks when
+the pilot does, and an aeroplane being turned onto the localiser has no reason
+to transmit. A clearance that waits arrives after he has flown through the
+centreline, or never.
+
+Still to fly: the Kobuleti ILS 07 recovery end to end. See
+`tests/test_the_ils_is_not_a_talkdown.py`.

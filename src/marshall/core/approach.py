@@ -66,6 +66,33 @@ class AtcCapability:
     vectors: bool | None = None
 
 
+def may_vector(profile) -> bool:
+    """May this controller give headings at all?
+
+    ONE QUESTION, ONE ANSWER, and it was being asked three different ways --
+    `profile.vectored`, `profile.guidance`, and `AtcCapability.vectors` -- which
+    disagreed. The beacon letdown carries `guidance="talkdown"` AND
+    `vectored=False`, because the pilot is talked down a procedure he flies on
+    his own homing adapter: a heading destroys his only reference, since the
+    adapter points the nose at the beacon.
+
+    The capability wins where it is stated (#53 added it for exactly this), and
+    where it is not the procedure decides: a surveillance approach or an ILS is
+    vectored by construction, a beacon letdown is not.
+
+    Used by `Controller._vectored` and by the bridge's `asr_context`, because
+    two implementations of this question is how an ILS came to receive no
+    guidance at all while a beacon letdown nearly received headings.
+    """
+    cap = getattr(profile, "atc", None)
+    want = getattr(cap, "vectors", None) if cap is not None else None
+    if want is not None:
+        return bool(want)
+    if getattr(profile, "vectored", False):
+        return True
+    return (getattr(profile, "guidance", "") or "").lower() == "intercept"
+
+
 def _round_up(value: int, step: int) -> int:
     return -(-int(value) // int(step)) * int(step)
 

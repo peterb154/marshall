@@ -65,9 +65,11 @@ from marshall.atc.voice import (  # noqa: F401
     simple_response, strip_unauthorised_handoff)
 from marshall.atc.talkdown import (  # noqa: F401
     SPEED_REPEAT_SEC, SPEED_TOLERANCE_KT, _DIGIT_RUN, _TALKDOWN_WORDS,
-    _callsign_numbers, _spoken_numbers, altitude_instruction, asr_call,
-    hush_a_second_talkdown, note_issued, reads_back_what_we_said,
+    _callsign_numbers, _spoken_numbers, altitude_instruction,
+    approach_clearance, asr_call, hush_a_second_talkdown, is_the_intercept,
+    note_issued, reads_back_what_we_said,
     relative_correction, speed_instruction, spoken_deviation, vector_call)
+from marshall.core.approach import may_vector
 from marshall.atc.assembly import (  # noqa: F401
     OVERLORD_BRIEF, compose_message, flight_strip, handoff_phrase)
 from marshall.atc.addressing import (  # noqa: F401
@@ -1451,7 +1453,20 @@ def asr_context(profile, scope: str, cs: str, track: str = "") -> str:
     approach.
     """
     from marshall.atc import asr
-    if not getattr(profile, "vectored", False):
+    # DOES THIS PROCEDURE GET VECTORS AT ALL -- which is not the same question
+    # as whether he is TALKED DOWN, and one flag was answering both.
+    #
+    # `vectored` is true for the surveillance approach and false for an ILS, so
+    # this returned nothing at all for an ILS: no vectors, no descent, no
+    # geometry. The controller had to improvise the entire arrival, which is
+    # precisely the "improvised approach" this function's own docstring says it
+    # exists to prevent. Invisible because nobody had ever flown an ILS.
+    #
+    # An ILS controller absolutely vectors. He vectors to intercept, clears him,
+    # and then STOPS -- see the `established` branch below. Same fault as #53
+    # one layer up, and the same fix: ask the question you mean.
+    _how = (getattr(profile, "guidance", "") or "").lower()
+    if not may_vector(profile):
         return ""
     # Track first: this is the guidance a pilot actually hears, and it was
     # silently unavailable for a whole approach because the label had gone
@@ -1493,6 +1508,23 @@ def asr_context(profile, scope: str, cs: str, track: str = "") -> str:
 
     g = asr.guide(pos, profile)
     rng = asr.spoken_range(g.range_nm)
+    # ON AN ILS, ESTABLISHED IS WHERE THE CONTROLLER STOPS.
+    #
+    # He has a localiser and a glidepath and is flying both. Ranges every mile
+    # are the surveillance approach's job; here they are chatter over a busy
+    # man, and a glidepath call would be inventing an instrument reading we
+    # cannot see. What the controller owes him from this point is silence and a
+    # handoff to Tower.
+    #
+    # The pilot's report of "established" is what triggers that, and unlike the
+    # ASR he genuinely knows -- which is the whole difference between the two
+    # procedures and the reason `_report_phrase` asks for it here and not there.
+    if _how == "intercept" and g.established:
+        return ("ILS: he is established on the localiser and is flying the "
+                "approach himself. SAY NOTHING about his range, his heading, "
+                "his altitude or the glidepath — you cannot see a glidepath and "
+                "he does not need the rest. If he has reported established, "
+                "hand him to Tower and stop talking.")
     if g.phase == "map":
         return ("ASR: he is over the missed approach point. Runway in sight, "
                 "land; if not, missed approach now.")
@@ -1552,6 +1584,17 @@ def asr_context(profile, scope: str, cs: str, track: str = "") -> str:
     # twice was. The engine owns the vector for the same reason it owns the mile
     # calls -- it can see, it is on a metronome, and it does not paraphrase --
     # so the agent is told what is being said rather than asked to say it.
+    if _how == "intercept":
+        # VECTORING TO INTERCEPT, which is the half of an ILS the controller
+        # owns. Same geometry as the ASR's repositioning legs -- headings and a
+        # descent onto the centreline -- and it ends at the clearance rather
+        # than continuing to the runway.
+        return (f"ILS: he is being vectored to intercept, {rng} miles{turn}. "
+                f"The turns and altitudes are transmitted automatically — do "
+                f"NOT issue a heading or an altitude yourself. Clear him for "
+                f"the approach when he is closing on the centreline, ask him "
+                f"ONCE to report established, and then say nothing until he "
+                f"does.")
     return (f"ASR: he is being vectored, {rng} miles{turn}. The turns and "
             f"altitudes are transmitted automatically — do NOT issue a heading "
             f"or an altitude yourself, and do NOT repeat the one he was just "
@@ -2854,6 +2897,70 @@ def next_controller(scope, track: str, me, profile, fix, *, known: str = "",
                                   fix, under_our_vectors=bool(vectoring),
                                   **({"mission": mission} if mission else {}))
     return nxt
+
+
+def watching_him(bridge, ctl, profile, cs, pos, scope, fallback_hz=0.0,
+                 session_id: str = ""):
+    """Who should have this aeroplane, and -- when nobody -- WHY NOT.
+
+    THE MONITOR KEPT NO RECORD OF DECIDING NOTHING, which is how a pilot flew
+    from four to thirty miles out of Kobuleti with no handoff to Center and
+    three minutes of completely silent log:
+
+        DEBUG NOTE  on 15 miles away from the airport, still no transition to center
+        DEBUG NOTE  I'm passing 20 nautical miles from the airport, still no transition
+        DEBUG NOTE  I met 30 miles outside the airport, I have to stop flying
+
+    Every input to that decision existed and not one was written down, so the
+    fault is not diagnosable from the record at all -- only guessable at, from
+    reading. A thread that transmits when it acts and says nothing when it does
+    not is indistinguishable from a thread that has died, which is the same
+    complaint a pilot makes about a controller who goes quiet.
+
+    AND IT ASKED THE WRONG QUESTION. `next_controller` is the ONE function that
+    decides who has him next -- the sim's events, then the ladder, then the
+    airspace volumes, in that order -- and this thread asked only the middle
+    one. Its own docstring says so and names the sortie it cost (#51). Two
+    mechanisms for one question is the shape this project keeps rediscovering,
+    so there is now one, and the proactive thread is a CALLER of it rather than
+    a second opinion.
+
+    Returns (station, why). `station` is None when nothing is due; `why` is a
+    short phrase naming the state that produced it, for the log.
+    """
+    key = ctl._resolve(cs)
+    who = ctl.aircraft.get(key)
+    track = getattr(who, "track", "") or cs
+    # WHICH CONTROLLER HE IS TALKING TO, not which frequency this thread
+    # transmits on. `fallback_hz` is the monitor's own channel -- Approach -- so
+    # asking it who "I" am made the answer Approach for everybody, and the rule
+    # that hands an airborne aircraft from TOWER to Approach could never fire.
+    # Measured: a departure sat at six thousand feet under Tower and was never
+    # offered anything. `heard_on` is where he actually checked in, which is the
+    # only thing that says whose aeroplane he is.
+    hz = bridge.heard_on.get(key) or fallback_hz
+    me = (profile.station_on(hz / 1_000_000)
+          if hasattr(profile, "station_on") else None)
+    phase = getattr(who, "sortie_phase", "") or ""
+    if me is None:
+        return None, f"nobody owns him -- {hz / 1_000_000:.3f} is not a station"
+    nxt = next_controller(scope, track, me, profile, pos, known=key,
+                          session_id=session_id, phase=phase,
+                          vectoring=getattr(who, "assigned_hdg", None))
+    if nxt is None:
+        st = _handoff_state(scope, track, pos, phase)
+        way = "on the ground" if st.on_ground else (
+            "inbound" if st.inbound else "outbound")
+        rng = "?" if st.range_nm is None else f"{st.range_nm:.0f}"
+        return None, (f"{me.name} keeps him -- {phase or 'no phase'}, "
+                      f"{rng} nm, {way}")
+    # SAME MAN, DIFFERENT NAME. Approach and Departure are one controller on one
+    # frequency, so there is nobody to contact -- he simply answers as Departure
+    # while you are going out. Telling a pilot to call the person he is already
+    # talking to is nonsense on the radio.
+    if getattr(nxt, "name", None) == getattr(me, "name", None):
+        return None, f"{nxt.name} already has him under another name"
+    return nxt, ""
 
 
 def _handoff_state(scope, track: str, pos, phase: str = "") -> object:
@@ -5056,9 +5163,24 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # Handed over already, so the offer is made ONCE. Cleared when the
         # handoff stops being due -- he changed frequency, or turned back.
         handed_off: set[str] = set()
+        # Cleared for the ILS, so it goes out once. Dropped on the ground and on
+        # a missed approach: a second approach is a second clearance.
+        cleared_ils: set[str] = set()
+        # The last reason nobody was handed over, per aircraft, so the line is
+        # printed on the CHANGE rather than every poll.
+        _watch: dict[str, str] = {}
         while True:
             time.sleep(ASR_POLL_SEC)
-            if not (radar_on and getattr(profile, "vectored", False)):
+            # RADAR IS THE ONLY GLOBAL CONDITION HERE.
+            #
+            # This used to also demand `profile.vectored`, and that flag is
+            # false for a beacon letdown AND for an ILS -- so on the 1944
+            # Batumi profile this entire thread was dead, handoffs and all, and
+            # on the Kobuleti ILS it never issued a vector. Neither is what the
+            # gate meant. Whether an aeroplane gets turned is a question about
+            # HIS approach, asked per aircraft below (`may_vector(_pro)`), and
+            # the handoff half above it is not about vectoring at all.
+            if not radar_on:
                 continue
             try:
                 scope = fetch_radar(session_id, profile=profile)
@@ -5171,6 +5293,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                         called.pop(cs, None)
                         vectored.pop(cs, None)
                         pending.pop(cs, None)
+                        cleared_ils.discard(cs)
                         if bye:
                             with radio_lock:
                                 print(f"  ATC[down] {bye}", flush=True)
@@ -5199,32 +5322,22 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     # loop keeps its copy: a handoff that becomes due mid-
                     # transmission should not wait for the next poll.
                     _who = ctl.aircraft.get(ctl._resolve(cs))
-                    _tk = getattr(_who, "track", "") or cs
-                    # WHICH CONTROLLER HE IS TALKING TO, not which frequency
-                    # this thread transmits on. `final_hz` is the monitor's own
-                    # channel -- Approach -- so asking it who "I" am made the
-                    # answer Approach for everybody, and the rule that hands an
-                    # airborne aircraft from TOWER to Approach could never fire.
-                    # Measured: a departure sat at six thousand feet under Tower
-                    # and was never offered anything.
-                    #
-                    # `heard_on` is where he actually checked in, which is the
-                    # only thing that says whose aeroplane he is.
                     _hz = bridge.heard_on.get(ctl._resolve(cs)) or final_hz
-                    _me = (profile.station_on(_hz / 1_000_000)
-                           if hasattr(profile, "station_on") else None)
-                    # Same evidence the receive path uses. Without the phase
-                    # the monitor can watch a ramp all day and never move
-                    # anybody off Clearance or Ground.
-                    _v = _handoff.due(profile, _me, _handoff_state(
-                        scope, _tk, pos,
-                        getattr(_who, "sortie_phase", "") or ""))
-                    # SAME MAN, DIFFERENT NAME. Approach and Departure are one
-                    # controller on one frequency, so there is nobody to contact
-                    # -- he simply answers as Departure while you are going out.
-                    # Telling a pilot to call the person he is already talking
-                    # to is nonsense on the radio.
-                    _nxt = None if (_v is None or _v.same_station) else _v.station
+                    _nxt, _why = watching_him(bridge, ctl, profile, cs, pos,
+                                              scope, fallback_hz=final_hz,
+                                              session_id=session_id)
+                    # SAY WHAT WAS DECIDED, INCLUDING NOTHING. Only when the
+                    # answer CHANGES, so a quiet cruise does not fill the log --
+                    # but a controller keeping an aeroplane is a decision, and
+                    # three minutes of a pilot leaving the terminal area with no
+                    # line in the record is what made the last one undiagnosable.
+                    if _why and _watch.get(cs) != _why:
+                        _watch[cs] = _why
+                        print(f"  .. {cs}: {_why}", flush=True)
+                        record(session_id, kind="handoff/none", callsign=cs,
+                               text=_why)
+                    elif _nxt is not None:
+                        _watch.pop(cs, None)
                     if _nxt is not None and cs not in handed_off:
                         free, why = channel_is_free(on_hz=_hz)
                         if free:
@@ -5245,13 +5358,44 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     elif _nxt is None:
                         handed_off.discard(cs)
 
+                    # HIS APPROACH, NOT THE BRIDGE'S -- the other half of #2.
+                    # The engine has held a per-flight profile since #2 and this
+                    # thread, which is what actually issues the turns and the
+                    # mile calls, went on flying every aeroplane down the one
+                    # the bridge was started with. Two arrivals to two fields
+                    # got one field's geometry, and every number in it is real,
+                    # which is why it would not look wrong.
+                    _pro = ctl._pro(_who) if _who is not None else profile
+                    if not may_vector(_pro):
+                        continue                # a letdown he flies himself
                     if not may_be_vectored(bridge, ctl, cs, traffic=traffic,
                                            freq_hz=final_hz):
                         continue                # holding, or nobody's turn yet
-                    g = asr.guide(pos, profile,
-                                  on_missed=flying_the_missed(bridge, cs, pos, profile,
+                    g = asr.guide(pos, _pro,
+                                  on_missed=flying_the_missed(bridge, cs, pos, _pro,
                                                               ctl))
                     note_missed(bridge, cs, g.phase, ctl)
+                    if g.phase == "missed":
+                        cleared_ils.discard(cs)
+                    # ON AN ILS THE CONTROLLER STOPS AT ESTABLISHED.
+                    #
+                    # He has a localiser and a glidepath and is flying both. The
+                    # mile calls below are the SURVEILLANCE approach -- they
+                    # exist because on an ASR the controller IS the approach aid
+                    # -- and reading them to a man on the needles is chatter
+                    # over somebody busy at the worst moment of the sortie.
+                    # Worse, `altitude_instruction` would be reading him a
+                    # descent profile off a table while his glideslope tells him
+                    # something a few tens of feet different, every mile, all
+                    # the way down.
+                    #
+                    # What he is owed from here is the handoff to Tower, which
+                    # the block above already issues, and then silence.
+                    _intercept = (getattr(_pro, "guidance", "") or "") == "intercept"
+                    if _intercept and g.established:
+                        called.pop(cs, None)
+                        vectored.pop(cs, None)
+                        continue
 
                     # Being VECTORED. The controller has to turn him when he
                     # reaches the point, not when he next happens to transmit --
@@ -5286,7 +5430,25 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                             continue
                         pending.pop(cs, None)
                         vectored[cs], vec_at[cs] = want, time.time()
-                        text = for_voice(vector_call(bridge, cs, g, pos))
+                        # THE LAST VECTOR ON AN ILS CARRIES THE CLEARANCE.
+                        #
+                        # Nothing else can issue it. The agent only speaks when
+                        # the pilot does, and an aeroplane being turned onto the
+                        # localiser has no reason to transmit -- so an ILS
+                        # clearance that waits to be prompted arrives after he
+                        # has flown through the centreline, or never. Same
+                        # argument as `vector_call` existing at all: the
+                        # controller acts when the aeroplane reaches the point.
+                        #
+                        # Once, per approach. `cleared_ils` is cleared when he
+                        # goes around, because a second approach needs a second
+                        # clearance.
+                        _clr = ""
+                        if (_intercept and cs not in cleared_ils
+                                and is_the_intercept(g, _pro)):
+                            _clr = approach_clearance(g, _pro)
+                            cleared_ils.add(cs)
+                        text = for_voice(vector_call(bridge, cs, g, pos, _clr))
                         note_issued(bridge, cs, text)
                         with radio_lock:
                             print(f"  ATC[vec] {text}", flush=True)

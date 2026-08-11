@@ -421,13 +421,68 @@ def asr_call(bridge, cs: str, g, pos=None, profile=None) -> str:
             f"{alt}.")
 
 
-def vector_call(bridge, cs: str, g, pos=None) -> str:
+def is_the_intercept(g, profile) -> bool:
+    """Is this the turn that puts him on the localiser?
+
+    THE LAST VECTOR ON AN ILS IS A DIFFERENT TRANSMISSION FROM THE ONES BEFORE
+    IT. The turns up to it are repositioning; this one hands the approach to the
+    pilot, so it carries the clearance and the altitude he holds until the
+    localiser comes alive. Getting it wrong in either direction is a real fault:
+    clear him too early and he descends on a heading that is not yet the
+    centreline, too late and he flies through it.
+
+    Two conditions, both geometric, neither a guess. He is being turned to
+    within the intercept angle of the final approach course -- so this heading
+    converges on it rather than repositioning across it -- and he is close
+    enough that the localiser is usable. `final_intercept_nm` is where the
+    procedure's own final segment begins; the margin outside it is the room the
+    turn itself takes.
+    """
+    from marshall.atc import asr
+    from marshall.atc.geometry import INTERCEPT_ANGLE, TURN_IN_NM
+    crs = getattr(profile, "final_crs_true", None)
+    if crs is None:
+        return False
+    closing = abs(asr.angle_diff(g.heading_true or g.heading, crs)) <= INTERCEPT_ANGLE + 5
+    reach = getattr(profile, "final_intercept_nm", 0) + TURN_IN_NM + 4.0
+    return closing and 0 < g.range_nm <= reach
+
+
+def approach_clearance(g, profile) -> str:
+    """"...maintain three thousand until established, cleared ILS runway zero
+    seven approach."
+
+    "Until established" is an ILS instruction and only an ILS instruction -- the
+    talk-down module says so at the top of this file, because a pilot on a
+    surveillance approach has no localiser and cannot detect the trigger. Here
+    he has both needles and it is the standard clearance, word for word.
+    """
+    from marshall.core import say
+    kind = (getattr(profile, "kind", "") or "approach").upper()
+    alt = (f"maintain {say.spell_alt(g.altitude_ft)} until established, "
+           if g.altitude_ft else "")
+    return (f"{alt}cleared {kind} runway {say.spell_rwy(profile.runway)} "
+            f"approach")
+
+
+def vector_call(bridge, cs: str, g, pos=None, clearance: str = "") -> str:
     """An unprompted turn, issued because he has reached the point -- not
-    because he said something."""
+    because he said something.
+
+    `clearance` rides along on the ILS intercept for the reason every other
+    instruction in this file is issued by one transmitter: the turn and the
+    clearance are one instruction, and splitting them across two transmissions
+    seconds apart is how a pilot ends up reading back a heading he has already
+    been turned off.
+    """
     from marshall.atc import callsign as C, controller as ctl
     who = C.parse(cs).spoken
     turn = f"turn {g.turn} " if g.turn else "fly "
-    alt = f", maintain {ctl.spell_alt(g.altitude_ft)}" if g.altitude_ft else ""
+    # THE CLEARANCE CARRIES THE ALTITUDE, and it must not be said twice. "Turn
+    # right zero one zero, maintain three thousand, maintain three thousand
+    # until established" is what the obvious version transmits.
+    alt = "" if clearance else (
+        f", maintain {ctl.spell_alt(g.altitude_ft)}" if g.altitude_ft else "")
     # The turn onto base is where speed matters most: it is the leg the
     # overshoot happens on, and a man told to slow down BEFORE the turn can
     # make it. Told during it, he cannot.
@@ -437,7 +492,8 @@ def vector_call(bridge, cs: str, g, pos=None) -> str:
     # a gyro and read it back, and "one three zero" is easier to do both with
     # than "one two eight" -- which is also how it is issued for real.
     hdg = int(round(g.heading / 5.0)) * 5 % 360
-    return f"{who}, {turn}heading {ctl.spell_hdg(hdg)}{alt}."
+    tail = f", {clearance}" if clearance else ""
+    return f"{who}, {turn}heading {ctl.spell_hdg(hdg)}{alt}{tail}."
 
 
 # What "he is on the ground" looks like on radar. Generous on altitude because
