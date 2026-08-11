@@ -1049,3 +1049,68 @@ def _render(rows: list, bindings: dict) -> list[str]:
                 f"{label}{tag} ({typ}{manned}): {nm:.1f} nm on the {radial:03.0f} radial, "
                 f"{alt_ft:,.0f} ft, heading {heading:03.0f}{spd}")
     return lines
+
+
+def set_sectors(rows: list) -> int:
+    """Load the controllers' volumes, derived from the theatre and pushed here.
+
+    THE PUSHED SET REPLACES THE TABLE, for the reason `set_fixes` gives one
+    screen up and which cost a Nevada sortie: a table that is added to rather
+    than reconciled keeps the last map's answers, and an old row here does not
+    hide a failure, it causes one. Batumi Approach left behind on a Nevada run
+    is a controller with a real name and a real volume over the wrong desert.
+
+    It is the `tracks` bargain, which is the only part of this system nobody has
+    ever had to clean by hand: whatever the push no longer has, the table no
+    longer has.
+
+    An empty push is not a replacement. That is a bridge that could not build
+    the list, and wiping on it would take the director from stale airspace to no
+    airspace -- and with no volumes at all, `flight_airspace` COALESCEs every
+    aeroplane onto the unbounded sector and every controller in the theatre
+    hands his traffic to the Center. Failing safe here means failing SILENT, so
+    it does not.
+    """
+    from marshall.core import db
+    clean = [r for r in (rows or []) if r.get("name") and r.get("label")]
+    if not clean:
+        return 0
+    with db.pool().connection() as c:
+        for r in clean:
+            lat, lon, nm = r.get("lat"), r.get("lon"), r.get("radius_nm")
+            # NULL volume means "everywhere not claimed by anyone else", which
+            # is what a Center is -- see migration 008.
+            vol = None if (lat is None or lon is None or not nm) else (lat, lon, nm)
+            c.execute(
+                "INSERT INTO sectors (name, label, role, field, freq_mhz, rank,"
+                "                     floor_ft, ceiling_ft, volume) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, "
+                "        CASE WHEN %s::boolean THEN "
+                "          ST_Buffer(ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography,"
+                "                    %s)::geography(Polygon,4326) "
+                "        ELSE NULL END) "
+                "ON CONFLICT (name) DO UPDATE SET "
+                "  label = EXCLUDED.label, role = EXCLUDED.role, "
+                "  field = EXCLUDED.field, freq_mhz = EXCLUDED.freq_mhz, "
+                "  rank = EXCLUDED.rank, floor_ft = EXCLUDED.floor_ft, "
+                "  ceiling_ft = EXCLUDED.ceiling_ft, volume = EXCLUDED.volume",
+                (r["name"], r["label"], r.get("role", ""), r.get("field") or "",
+                 r.get("freq_mhz"), r.get("rank", 0), r.get("floor_ft"),
+                 r.get("ceiling_ft"), vol is not None,
+                 vol[1] if vol else 0.0, vol[0] if vol else 0.0,
+                 (vol[2] * 1852.0) if vol else 0.0))
+        c.execute("DELETE FROM sectors WHERE NOT (name = ANY(%s))",
+                  ([r["name"] for r in clean],))
+    return len(clean)
+
+
+def known_sectors() -> list[dict]:
+    """What the table holds, for the diagnostics page and the checks."""
+    from marshall.core import db
+    with db.pool().connection() as c:
+        rows = c.execute(
+            "SELECT name, label, role, field, rank, ceiling_ft, "
+            "       volume IS NULL AS unbounded FROM sectors ORDER BY rank, name"
+        ).fetchall()
+    return [{"name": r[0], "label": r[1], "role": r[2], "field": r[3],
+             "rank": r[4], "ceiling_ft": r[5], "unbounded": r[6]} for r in rows]

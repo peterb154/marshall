@@ -63,6 +63,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from marshall.atc import phases as _phases
+from marshall.core import airspace as _airspace
 
 # How far out he must be before Tower is finished with him, and how close before
 # Approach gives him back. Defaults, in nautical miles.
@@ -79,7 +80,14 @@ ARRIVAL_NM = 5.0
 #
 # It lived on the profile as `approach_hands_over_nm` and was read by a SECOND
 # handoff mechanism -- see the module docstring on why there is only one now.
-CENTER_NM = 25.0
+#
+# AND IT IS THE SAME NUMBER AS THE EDGE OF APPROACH'S VOLUME, so it is imported
+# rather than restated. They are two statements of one boundary -- this one in
+# procedure, that one in geography -- and holding them separately is one edit
+# away from a ladder that hands a man over at twenty-five miles into airspace
+# that stops at twenty. Procedure may read geography; the reverse would put a
+# rule table underneath a map. See LAYERS.md and `core.airspace.TERMINAL_NM`.
+CENTER_NM = _airspace.TERMINAL_NM
 
 
 @dataclass(frozen=True)

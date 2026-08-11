@@ -684,6 +684,22 @@ def get_fixes_endpoint() -> dict:
     return {"fixes": known_fixes()}
 
 
+# THE CONTROLLERS' VOLUMES, pushed by the bridge for the same reason the fixes
+# are: this container has no `MARSHALL_THEATRE` and cannot know which map is
+# loaded. They used to be three rows in a migration, so a second aerodrome
+# arrived with no airspace at all and its traffic fell through to the Center.
+@app.put("/sectors")
+def set_sectors_endpoint(body: dict) -> dict:
+    from marshall.feed.tracks import set_sectors
+    return {"sectors": set_sectors(body.get("sectors") or [])}
+
+
+@app.get("/sectors")
+def get_sectors_endpoint() -> dict:
+    from marshall.feed.tracks import known_sectors
+    return {"sectors": known_sectors()}
+
+
 # Which sector actually contains him, versus which controller is working him.
 # The disagreement IS the handoff trigger -- see migrations/005 and 008. Whether
 # to act on it is the controller's judgement, which is why this reports and does

@@ -6174,3 +6174,67 @@ centreline, or never.
 
 Still to fly: the Kobuleti ILS 07 recovery end to end. See
 `tests/test_the_ils_is_not_a_talkdown.py`.
+
+---
+
+## [ARCH-17] Airspace was hand-written, and the next map has forty aerodromes — #124
+
+    "So how do we prevent missing airspace bug going forward. We're going to add
+     dozens of airfields"
+
+You cannot, by hand, and the reason is not effort.
+
+`sectors` held three rows written into migration 005 — batumi-approach,
+batumi-tower, georgia-center — and 005's own comment named the day it would
+break: *"the moment a second aerodrome exists, and a second aerodrome is the
+next test."* It arrived without one. 008 COALESCEs onto the unbounded sector, so
+an aeroplane inside no described volume is the Center's, and a jet three miles
+off Kobuleti's runway at two thousand feet was handed to Georgia Center while
+still in the circuit.
+
+**The row was not wrong. It was ABSENT, and absence read as an answer.** That is
+the failure mode a hand-maintained table has and a derived one cannot have:
+`sectors` was a SECOND COPY of a fact the theatre already holds — where the
+aerodromes are and who works them — maintained independently of its source. It
+drifts, and the drift is invisible until somebody flies it. docs/STATE.md, one
+table further along.
+
+**So the volumes are derived and pushed**, exactly as the fix catalogue is and
+for the identical reason the `/atis` endpoint gives: the bridge knows which map
+is loaded and the director does not.
+
+    core.airspace.sectors_for   what a volume is, from fields + stations
+    push_sectors                at startup, beside push_fixes
+    feed.tracks.set_sectors     the pushed set REPLACES the table
+
+An aerodrome now gets airspace **by existing**. Give it a lat/lon and a Tower and
+it has a volume; give it neither and it has none, which is honest. Forty of them
+cost nothing.
+
+**Where the boundary goes, with nobody drawing a polygon:** half way to the
+nearest neighbour, capped at the terminal range. Kobuleti and Batumi are
+twenty-two miles apart so they meet at eleven and neither swallows the other —
+which is what went wrong on the first attempt, when both were given twenty-five
+and an aeroplane on Kobuleti's ramp resolved to Batumi Approach. It is also how
+it is actually done: a boundary between two terminal areas twenty miles apart is
+not at either field's twenty-five mile ring.
+
+**Three smaller faults fell out of it:**
+
+  * The sector is named for the VOLUME's role, not the station's. Kobuleti's
+    terminal controller answers as Departure, and `leaving_my_airspace` reads the
+    role off the end of the sector name — so `kobuleti-departure` would have
+    silently switched airspace off for that field.
+  * `departure` was missing from that function's ladder-order map, so it
+    defaulted to 9, BELOW everything, and "never hand him UP the ladder" could
+    not fire for a departing aircraft at all. An outbound jet was eligible to be
+    handed to Tower, the one direction the guard exists to forbid.
+  * `handoff.CENTER_NM` and the edge of Approach's volume are two statements of
+    one boundary and were two numbers. `CENTER_NM` is imported from
+    `airspace.TERMINAL_NM` now — procedure may read geography, not the reverse.
+
+`tests/test_every_aerodrome_has_sky.py` asks the general question of **every
+theatre this project can load**, not of the field somebody remembered to add:
+every field with a terminal controller has a volume, every theatre has an
+unbounded fallback, and neighbours do not overlap. Nevada had the same hole,
+unflown and unnoticed, until that file ran.

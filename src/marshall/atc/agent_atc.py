@@ -465,6 +465,21 @@ def load_and_push_plate(profile, base: str = BASE_URL):
         print(f"  !! fix push failed, controller has the field only: {e}",
               flush=True)
 
+    # AND THE AIRSPACE, from the same source and for the same reason. It used to
+    # be three rows in a migration, hand-written -- so the second aerodrome
+    # arrived with no volume, its traffic fell through to the unbounded fallback
+    # and a jet three miles off Kobuleti's runway was offered Georgia Center in
+    # the circuit. Derived from the theatre, an aerodrome gets airspace by
+    # existing, and forty of them cost nothing to add.
+    try:
+        n = push_sectors(base, profile)
+        print(f"  pushed {n} controller volumes (derived from the theatre)",
+              flush=True)
+    except Exception as e:
+        print(f"  !! sector push failed — AIRSPACE MAY BE STALE OR ABSENT, and "
+              f"with no volumes every controller hands his traffic to the "
+              f"Center: {e}", flush=True)
+
     try:
         _put_json(f"{base}/prompts/plate", {"body": briefing.plate(profile)})
         print(f"  pushed plate for {profile.controller} to the director", flush=True)
@@ -3181,7 +3196,13 @@ def leaving_my_airspace(base: str, session_id: str, callsign: str, me,
            if hasattr(profile, "station_for") else None)
     # Outbound only: hand him DOWN the ladder (approach -> center), never up.
     # Climbing the ladder is an arrival, and arrivals belong to route.py.
-    order = {"center": 0, "approach": 1, "tower": 2}
+    # DEPARTURE SITS WITH APPROACH, because it is the same man -- see
+    # `Station.also`, where Kobuleti Departure also answers as approach. Missing
+    # from this map it defaulted to 9, BELOW everything, so "never hand him UP
+    # the ladder" could not fire for a departing aircraft at all: an outbound
+    # jet was eligible to be handed to TOWER, which is the one direction this
+    # guard exists to forbid.
+    order = {"center": 0, "approach": 1, "departure": 1, "tower": 2}
     if (nxt is None
             or order.get(role, 9) >= order.get(getattr(me, "role", ""), 9)):
         return None
@@ -3428,6 +3449,29 @@ class Scope(str):
             if _key_name(c.get("name", "")) == want:
                 return c
         return None
+
+
+def push_sectors(base: str, profile) -> int:
+    """Publish the controllers' volumes, derived from the loaded theatre.
+
+    THE BRIDGE KNOWS WHICH MAP IS LOADED AND THE DIRECTOR DOES NOT, which is the
+    whole reason this is a push and not a query -- the same argument `push_fixes`
+    makes above and the `/atis` endpoint makes from the other side, where a
+    first version walked `theatre.current().fields` inside a container with no
+    `MARSHALL_THEATRE` and confidently reported Batumi on a Nevada sortie.
+
+    See `core.airspace.sectors_for` for what a volume is derived FROM, and
+    `feed.tracks.set_sectors` for why the push replaces the table rather than
+    adding to it.
+    """
+    from marshall.core import airspace as _air
+    from marshall.core import theatre as _th
+    rows = _air.sectors_for(_th.current().fields,
+                            getattr(profile, "stations", []) or [])
+    if not rows:
+        return 0
+    _put_json(f"{base}/sectors", {"sectors": rows})
+    return len(rows)
 
 
 def push_fixes(base: str, profile) -> int:

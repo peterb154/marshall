@@ -149,3 +149,137 @@ def mva_for(bearing_deg: float, range_nm: float | None = None, cells=None) -> in
     if best is None:
         return max(a for *_, a in cells)
     return best if isinstance(best, int) else best[1]
+
+
+# --- who owns which piece of sky -------------------------------------------
+#
+# WHERE THE TERMINAL AREA ENDS, once, for everybody. `handoff.CENTER_NM` is the
+# range at which Center gives an arrival up and takes a departure back, and it
+# is the SAME NUMBER as the edge of Approach's volume -- they are two statements
+# of one boundary, and a system holding them separately is one edit away from a
+# ladder that hands a man over at twenty-five miles into airspace that stops at
+# twenty. It lives here because a volume is a fact about the ground and the
+# ladder is a fact about procedure; procedure may read geography, not the
+# reverse. See LAYERS.md.
+TERMINAL_NM = 25.0
+# Tower's, and the reason it is small is the reason it is a separate volume: he
+# owns the runway and its circuit, not the arrival.
+CIRCUIT_NM = 5.0
+# Ceilings. Approach works the letdown and the departure climb; above that it is
+# the Center's whatever the plan view says.
+TERMINAL_CEILING_FT = 15_000
+CIRCUIT_CEILING_FT = 4_000
+# Descending and closing, he ends with Tower -- so the innermost volume must win
+# where they overlap, which is what `flight_airspace` orders by.
+RANK_CENTER, RANK_TERMINAL, RANK_CIRCUIT = 10, 20, 30
+
+# A departure controller IS the terminal controller wearing the outbound hat --
+# see `Station.also`. Kobuleti publishes `departure` and Batumi `approach`, and
+# a rule that only knew one of those words would give one of the two fields no
+# airspace at all, which is precisely the bug this function exists to end.
+TERMINAL_ROLES = ("approach", "departure")
+
+
+def _nm_between(a, b) -> float:
+    """Great-circle miles between two fields."""
+    from marshall.core import geo
+    nm, _ = geo.range_bearing_true((a.lat, a.lon), b.lat, b.lon)
+    return nm
+
+
+def sectors_for(fields, stations) -> list[dict]:
+    """Every controller's volume, DERIVED from the theatre rather than declared.
+
+        "So how do we prevent missing airspace bug going forward. We're going to
+         add dozens of airfields"
+
+    You cannot, by hand. `sectors` was three rows written into a migration --
+    batumi-approach, batumi-tower, georgia-center -- and a second aerodrome
+    arrived without one, so a jet three miles off Kobuleti's runway fell through
+    to the unbounded fallback and was offered Georgia Center in the circuit. The
+    row was not wrong; it was ABSENT, and absence read as an answer.
+
+    Hand-authoring does not scale to a second field, never mind a fortieth, and
+    the reason is not effort. It is that `sectors` was a SECOND COPY of a fact
+    the theatre already holds -- where the aerodromes are and who works them --
+    maintained independently, which is the shape docs/STATE.md is about. So it
+    stops being an authority and becomes a projection of one, pushed at startup
+    exactly as the fix catalogue is, and for the identical reason: the bridge
+    knows which map is loaded and the director does not.
+
+    A NEW AERODROME NOW GETS AIRSPACE BY EXISTING. Give it a lat/lon and a
+    Tower and it has a volume; give it neither and it has none, which is honest.
+
+    WHERE THE BOUNDARY GOES, with no polygon drawn by anybody: half way to the
+    nearest neighbour, capped at the terminal range. Kobuleti and Batumi are
+    twenty-two miles apart, so they meet at eleven and neither swallows the
+    other -- which is what went wrong when the first attempt gave both of them
+    twenty-five and an aeroplane on Kobuleti's ramp resolved to Batumi Approach.
+    It is also how it is actually done: a boundary between two terminal areas
+    twenty miles apart is not at either field's twenty-five mile ring.
+
+    Circles, not polygons, because a terminal area IS a radius from the field --
+    every rule in `handoff.py` is a distance -- and a polygon is only a circle
+    somebody had to type.
+    """
+    by_name = {f.name: f for f in fields}
+    # Which fields actually have a terminal controller. A field with no
+    # approach and no departure has no terminal area to describe, and inventing
+    # one would put a volume where nobody is listening.
+    worked = sorted({s.field for s in stations
+                     if s.role in TERMINAL_ROLES and s.field in by_name})
+    out: list[dict] = []
+
+    # THE CENTER IS UNBOUNDED, and that is not laziness -- it is what a Center
+    # is. Drawing a polygon round the whole map to say "everywhere else" would
+    # be a lie in the shape of precision, which is 005's phrase and still right.
+    for s in stations:
+        if s.role == "center":
+            out.append({"name": _slug(s.name), "label": s.name, "role": "center",
+                        "field": "", "freq_mhz": s.freq_mhz,
+                        "rank": RANK_CENTER, "floor_ft": None,
+                        "ceiling_ft": None, "lat": None, "lon": None,
+                        "radius_nm": None})
+
+    for name in worked:
+        f = by_name[name]
+        others = [by_name[o] for o in worked if o != name]
+        nearest = min((_nm_between(f, o) for o in others), default=None)
+        reach = TERMINAL_NM if nearest is None else min(TERMINAL_NM, nearest / 2.0)
+        term = next((s for s in stations
+                     if s.field == name and s.role in TERMINAL_ROLES), None)
+        twr = next((s for s in stations
+                    if s.field == name and s.role == "tower"), None)
+        # NAMED FOR THE VOLUME'S ROLE, NOT THE STATION'S. Kobuleti's terminal
+        # controller answers as Departure, and `leaving_my_airspace` reads the
+        # role off the END of the sector name -- so `kobuleti-departure` would
+        # have told it the volume was a departure's, which is not a rung of any
+        # ladder and would have silently switched airspace off for that field.
+        # The AREA is an approach area whoever is speaking on it.
+        if term is not None:
+            out.append({"name": f"{name.lower()}-approach", "label": term.name,
+                        "role": "approach", "field": name,
+                        "freq_mhz": term.freq_mhz, "rank": RANK_TERMINAL,
+                        "floor_ft": None, "ceiling_ft": TERMINAL_CEILING_FT,
+                        "lat": f.lat, "lon": f.lon, "radius_nm": reach})
+        if twr is not None:
+            out.append({"name": f"{name.lower()}-tower", "label": twr.name,
+                        "role": "tower", "field": name,
+                        "freq_mhz": twr.freq_mhz, "rank": RANK_CIRCUIT,
+                        "floor_ft": None, "ceiling_ft": CIRCUIT_CEILING_FT,
+                        "lat": f.lat, "lon": f.lon,
+                        # Never larger than the terminal area that contains it.
+                        # Two fields six miles apart would otherwise give each
+                        # Tower a circuit reaching over the other's runway.
+                        "radius_nm": min(CIRCUIT_NM, reach)})
+    return out
+
+
+def _slug(name: str) -> str:
+    """'Kobuleti Approach' -> 'kobuleti-approach'.
+
+    The sector name is read back by `leaving_my_airspace`, which splits the last
+    hyphenated word off to get a ROLE -- so the shape matters and is not
+    cosmetic.
+    """
+    return "-".join(str(name).lower().split())
