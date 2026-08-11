@@ -202,7 +202,7 @@ def sync_bodies(gh, issues, dry_run: bool = False) -> int:
     to reach the mirror or the two documents disagree about what a thing is
     called, which is how [OPS-4] came to mean two issues.
     """
-    changed = 0
+    changed, refused = 0, 0
     for i in issues:
         if not i["number"]:
             continue
@@ -215,6 +215,32 @@ def sync_bodies(gh, issues, dry_run: bool = False) -> int:
         import json as _json
         got = _json.loads(r.stdout or "{}")
         want_title = f"[{i['slug']}] {i['title']}"
+        # IS THIS EVEN THE RIGHT ISSUE? Everything below edits by NUMBER, and
+        # the number comes out of ISSUES.md -- so an entry claiming a number
+        # that belongs to something else silently overwrites it.
+        #
+        # It happened. `[ASR-6]` was appended with a hand-written `— #116`
+        # chosen as "the next one", and #116 was already "investigate DCS-SMS",
+        # opened twenty-five minutes earlier by the repo owner. This sweep
+        # renamed it, replaced its body, and the original body is not
+        # recoverable: GitHub's edit history keeps the replacement, not what was
+        # there before.
+        #
+        # A title that does not carry this entry's slug means the two disagree
+        # about what issue this is, and the only safe answer is to touch
+        # nothing. Refuse loudly and let a human decide which of them is wrong
+        # -- a destructive edit is not a thing to guess at.
+        got_title = (got.get("title") or "").strip()
+        if got_title and not got_title.startswith(f"[{i['slug']}]"):
+            print(f"  !! #{n} is {got_title!r}, not [{i['slug']}]. REFUSING to "
+                  f"overwrite it.\n"
+                  f"     Either ISSUES.md is claiming a number that belongs to "
+                  f"something else\n"
+                  f"     (drop the number and let this tool file it), or the "
+                  f"issue was renamed on\n"
+                  f"     GitHub and ISSUES.md should follow.", file=sys.stderr)
+            refused += 1
+            continue
         same_body = (got.get("body") or "").strip() == i["body"].strip()
         same_title = (got.get("title") or "").strip() == want_title
         # LABELS DRIFT AND NOBODY WAS PUSHING THEM. This sweep has always
@@ -252,6 +278,10 @@ def sync_bodies(gh, issues, dry_run: bool = False) -> int:
             print(f"     !! failed: {e.stderr.strip()}", file=sys.stderr)
     print(f"{changed} issue(s) {'would be ' if dry_run else ''}brought in step"
           if changed else "every body on GitHub matches ISSUES.md")
+    if refused:
+        print(f"!! {refused} REFUSED -- see above. Nothing was written to "
+              f"them.", file=sys.stderr)
+        return 1
     return 0
 
 

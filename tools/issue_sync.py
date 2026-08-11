@@ -108,6 +108,19 @@ ROW = re.compile(r"^\|\s*(~~)?\**([A-Z]\d+[a-z]?)\**~?~?\s*\|.*?\[(R)?#(\d+)\]",
 DONE = {"VALIDATED", "CLOSED", "DONE", "FIXED", "SHIPPED"}
 
 
+def gh_titles() -> dict[int, str]:
+    """Every issue's title on GitHub, so an orphan can be named rather than
+    merely counted."""
+    gh = shutil.which("gh") or str(Path.home() / ".local" / "bin" / "gh")
+    out = subprocess.run(
+        [gh, "issue", "list", "--state", "all", "--limit", "200",
+         "--json", "number,title"], capture_output=True, text=True)
+    if out.returncode != 0:
+        return {}
+    return {i["number"]: i.get("title") or ""
+            for i in json.loads(out.stdout or "[]")}
+
+
 def gh_labels() -> dict[int, set]:
     """Every issue's labels on GitHub, open and closed."""
     gh = shutil.which("gh") or str(Path.home() / ".local" / "bin" / "gh")
@@ -209,6 +222,7 @@ def main() -> int:
         return 2                      # SKIP, not FAIL -- see gh_states
     flight_test = gh_flight_test()
     have_labels = gh_labels()
+    titles = gh_titles()
     items = entries(text)
     declared_labels = {}
     for _i in items:
@@ -286,6 +300,27 @@ def main() -> int:
             # the work is done and the evidence is not in yet.
             drift.append((e, n, f"open on GitHub, reads {e['status']}"))
 
+    # ISSUES GITHUB HAS AND ISSUES.md HAS NEVER HEARD OF.
+    #
+    #     "I have a feeling you let issues.md get out of sync with gh issues"
+    #
+    # Correct, and this check said "in step" while it was true. It compared
+    # every entry in the file against GitHub and never the other way, so an
+    # issue opened directly on GitHub -- which is a perfectly normal thing to do
+    # -- was invisible here.
+    #
+    # It is not merely untidy. Numbers are what this whole workflow keys on, and
+    # a number the file cannot see is a number somebody will reuse: `[ASR-6]`
+    # was appended with a hand-written `— #116` chosen as "the next one", and
+    # #116 was already "investigate DCS-SMS". The sync overwrote it, and the
+    # original body is gone. `file_issues.py` refuses that edit now; this is the
+    # other half, which is seeing the collision coming.
+    #
+    # REPORTED, NOT FAILED. Filing straight on GitHub is legitimate and this
+    # tool does not get to forbid it. What it must not do is call the two "in
+    # step" when one holds things the other has never seen.
+    orphans = sorted(n for n in state if n not in
+                     {int(e["num"]) for e in items if e["num"]})
     # LABELS DRIFT TOO, and one label decides who owns an issue. `#3` reads
     # `needs-flight-test` in ISSUES.md and carries `p2` on GitHub -- and
     # `gh_flight_test` asks GITHUB, so the coverage check quietly stopped
@@ -355,6 +390,13 @@ def main() -> int:
         print("NEEDS A PILOT, BUT IS NOT ON THE CARD")
         for n in sorted(unflown):
             print(f"  #{n} is labelled needs-flight-test and no row cites it")
+    if orphans:
+        print("ON GITHUB, NOT IN ISSUES.md")
+        for n in orphans:
+            print(f"  #{n}  {titles.get(n, '')[:60]}")
+        print("  Fine if deliberate -- but their NUMBERS are taken, and this "
+              "file must not\n  claim one. Never hand-write a number: append "
+              "the entry without one and let\n  tools/file_issues.py assign it.")
     if label_drift:
         print("LABELS ON GITHUB ARE MISSING WHAT ISSUES.md DECLARES")
         for slug, n, missing in label_drift:

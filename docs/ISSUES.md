@@ -5785,7 +5785,7 @@ aeroplane.
    logged the way `reconcile` logs the others.
 3. `tools/stack_rehearsal.py` sees no transmission containing both.
 
-## [ASR-6] The Nellis ILS dithers, and three approaches never arrive — #116
+## [ASR-6] The Nellis ILS dithers, and three approaches never arrive — #117
 labels: bug, needs-flight-test
 
 **Status:** OPEN. Found the first time `asr_sweep.py` was ever pointed at an
@@ -5824,3 +5824,41 @@ and judge nothing until these are fixed and a defensible baseline exists.
 2. Every start arrives, or the ones that cannot are explained by terrain and
    excluded deliberately rather than silently.
 3. A recorded baseline for each, in `BASELINE_FOR`.
+
+## [OPS-17] `--sync` overwrote an issue it had no business touching — #118
+labels: bug, tooling
+
+**Status:** FIXED 11 August. Caused by me, on somebody else's issue.
+
+    renamed  "investigate DCS-SMS"
+          -> "[ASR-6] The Nellis ILS dithers, and three approaches never arrive"
+
+`[ASR-6]` was appended to `ISSUES.md` with a **hand-written** `— #116`, chosen as
+"the next number". #116 was already **"investigate DCS-SMS"**, opened by the repo
+owner twenty-five minutes earlier and deliberately closed. `file_issues.py
+--sync` edits by NUMBER, took the claim at face value, renamed the issue and
+replaced its body.
+
+**The body is not recoverable.** GitHub's `userContentEdits` keeps the
+replacement, not what was there before. The title and the closed state are
+restored and the investigation comment survived — which is the substance — but
+the original text is gone. Recorded here rather than quietly patched.
+
+**Three faults, and only the first is mine alone.**
+
+1. A number was hand-written instead of being assigned. Every other entry this
+   week was appended without one and renumbered by the tool, which is the
+   mechanism that makes collisions impossible.
+2. `--sync` had no idea what it was editing. It matched on number and never
+   asked whether the issue on the other end was the one the entry describes. It
+   now **refuses** any edit where the existing title does not carry the entry's
+   slug, and exits non-zero.
+3. `issue_sync.py` reported "in step" while GitHub held an issue `ISSUES.md` has
+   never heard of. It compared every entry against GitHub and never the other
+   way, so an issue filed straight on GitHub — legitimate, and normal — was
+   invisible, and its number looked free. It lists them now.
+
+The third is the one that made the first possible, and it is the same
+one-directional blindness as the `DONE`-word gap fixed the same day: a check
+that only looks one way will call two things equal while one of them holds
+something the other has never seen.
