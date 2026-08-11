@@ -4525,6 +4525,21 @@ labels: bug, needs-flight-test
 
 **Status:** FIXED 10 August, needs the next sortie.
 
+**One more turn of the crank, 11 August.** Every piece worked in isolation --
+the classifier returned `read_back`, the squawk was on the board, the verifier
+judged the real wrong read-back correctly -- and the handoff still did not
+happen, because they were **one turn out of step**. The clearance facts were
+cached from the flight row *after* `decide` had run, and the clearance is
+assigned by the agent's tool later still; so on the turn the clearance goes out
+the row has no level and no squawk yet, the cache stays empty, and the read-back
+on the very next transmission found nothing, returned `None`, and left the phase
+alone.
+
+    "after getting clearance, I did not get switched over to ground"
+
+It reads the board directly now. One read on a path that already does several,
+and the only version that cannot be a turn behind.
+
 Two findings from one clearance-delivery exchange, and they are the same fault
 seen from both ends of the seam.
 

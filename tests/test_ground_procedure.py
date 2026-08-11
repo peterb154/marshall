@@ -519,3 +519,40 @@ class TheAtisLetterCrossesTheSeam(unittest.TestCase):
                                                       letter="")):
             c.check_in("Sockeye 1-1")
         self.assertEqual([t.decision for t in c.take_out() if t.decision], [])
+
+
+class TheClearanceIsReadFromTheBoardNotACacheATurnBehind(unittest.TestCase):
+    """The read-back had nothing to be judged against on the turn it happened.
+
+        "after getting clearance, I did not get switched over to ground"
+
+    The clearance facts were cached from the flight row AFTER `decide` had run,
+    and the clearance itself is assigned by the agent's tool LATER STILL. So on
+    the turn the clearance goes out, the row has no level and no squawk yet and
+    the cache stays empty -- and the read-back on the very NEXT transmission
+    found nothing, returned None, and left the phase alone. Clearance could
+    never let go.
+
+    Every piece worked in isolation: the intent classified as READ_BACK, the
+    squawk was on the board, the verifier judged correctly. They were one turn
+    out of step.
+    """
+
+    def test_the_lookup_does_not_depend_on_the_cache(self):
+        import inspect
+        from marshall.atc import agent_atc
+        src = inspect.getsource(agent_atc._read_back_correct)
+        self.assertIn("_cleared_plan_now(known)", src,
+                      "it still trusts a cache that is filled a turn late")
+
+    def test_a_missing_board_is_no_judgement_rather_than_a_wrong_one(self):
+        from marshall.atc import agent_atc
+        self.assertEqual(agent_atc._cleared_plan_now(""), {})
+
+    def test_the_classifier_knows_the_kind(self):
+        # Belt and braces on the taxonomy: a kind the schema does not describe
+        # is a kind the model cannot return, and this one was missing entirely.
+        from pathlib import Path as _P
+        src = (_P(__file__).resolve().parent.parent / "src" / "marshall" /
+               "atc" / "intents.py").read_text()
+        self.assertIn("read_back: REPEATING something he was just given", src)

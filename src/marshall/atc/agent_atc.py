@@ -1634,6 +1634,29 @@ def may_be_vectored(bridge, ctl, cs: str, traffic: bool = False,
 _UNASKED = object()
 
 
+def _cleared_plan_now(known: str) -> dict:
+    """The clearance this aircraft actually holds, off the board, right now.
+
+    `flight_state` carries the level, the route and -- since migration 023 --
+    the squawk, which is the element a read-back most often gets wrong.
+    """
+    if not known:
+        return {}
+    try:
+        rows = _get_json(f"{BASE_URL}/flights?mission={urllib.parse.quote(MISSION)}")
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+        return {}
+    for row in (rows.get("flights") if isinstance(rows, dict) else rows) or []:
+        if (row.get("callsign") or "").lower() != known.lower():
+            continue
+        if not (row.get("cruise_ft") or row.get("squawk")):
+            return {}
+        return {"cruise_ft": row.get("cruise_ft"),
+                "squawk": row.get("squawk") or "",
+                "departure_mhz": None}
+    return {}
+
+
 def _read_back_correct(bridge, known: str, transcript: str) -> bool | None:
     """Did he repeat the clearance he was given? None when we cannot tell.
 
@@ -1656,7 +1679,21 @@ def _read_back_correct(bridge, known: str, transcript: str) -> bool | None:
     """
     plan = getattr(bridge, "cleared_plan", {}).get((known or "").lower())
     if not plan:
-        return None
+        # READ IT NOW RATHER THAN TRUST A CACHE FILLED A TURN LATE. The cache is
+        # written from the flight row AFTER `decide` has run, and the clearance
+        # is assigned by the agent's tool LATER STILL -- so on the turn the
+        # clearance goes out the row has no squawk and no level yet, the cache
+        # stays empty, and the read-back on the very next transmission has
+        # nothing to be judged against. It came back None, the phase never moved
+        # to `taxi`, and Clearance could not let go:
+        #
+        #     "after getting clearance, I did not get switched over to ground"
+        #
+        # One board read on a path that already does several, and it is the only
+        # version that cannot be a turn behind.
+        plan = _cleared_plan_now(known)
+        if not plan:
+            return None
     d = _decision.Decision(
         kind="clearance", to=known,
         altitude_ft=plan.get("cruise_ft") or None,
