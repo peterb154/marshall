@@ -325,12 +325,22 @@ async def read_cartridge(request: Request):
         return JSONResponse(
             {"refused": [f"that is not a cartridge: {e}"]},
             status_code=400, headers=NO_CACHE)
+    # THE PUBLISHED CATALOGUE, so a route can name the fixes it passes. Read
+    # from the director, which is what validates the route afterwards -- one
+    # table, so a route this proposes cannot be refused by the thing checking it.
+    catalogue = {}
+    try:
+        got = await _director("GET", "/fixes")
+        catalogue = json.loads(bytes(got.body)).get("fixes") or {}
+    except Exception:
+        catalogue = {}
     try:
         wps = _dtc.waypoints(d)
         draft = _dtc.plan_from(
             d, (body.get("name") or "").strip() or "untitled",
             approach=(body.get("approach") or "").strip(),
             label=(body.get("label") or "").strip(),
+            catalogue=catalogue,
             steerpoints=bool(body.get("steerpoints")))
     except Exception as e:
         return JSONResponse({"refused": [f"cannot read the route: {e}"]},
@@ -341,7 +351,10 @@ async def read_cartridge(request: Request):
          "aircraft": d.get("Aircraft") or "",
          "notes": d.get("KneeboardNotes") or "",
          "waypoints": wps,
-         "steerpoints": sorted(_dtc.named_steerpoints(wps)),
+         "ladder": draft.get("ladder") or [],
+         "all_waypoints": _dtc.waypoints(d, route_only=False),
+         "steerpoints": sorted(
+             _dtc.named_steerpoints(wps, tuple(draft.get("ladder") or ()))),
          "misc": {"ils_mhz": misc.get("ILSFrequency"),
                   "ils_course": misc.get("ILSCourse"),
                   "tacan": misc.get("TACANChannel"),
@@ -367,7 +380,8 @@ async def push_steerpoints(request: Request):
     except Exception as e:
         return JSONResponse({"refused": [str(e)]}, status_code=400,
                             headers=NO_CACHE)
-    sp = _dtc.named_steerpoints(wps)
+    sp = _dtc.named_steerpoints(wps, tuple(_dtc.ladder(
+        _dtc.decode((body.get("cartridge") or "").strip()))))
     if not sp:
         return JSONResponse({"pushed": [], "why": "nothing he named"},
                             headers=NO_CACHE)

@@ -6353,3 +6353,32 @@ what happened. Clearance delivery is the one seat where the pilot has NOT yet
 been bound to a track, so it is the seat where that confusion is guaranteed.
 Open: the refusal should say which board it means, and should look at what is
 filed before it decides it cannot help.
+
+---
+
+## [ARCH-19] The filed route repeats the aerodromes, and the "two fixes" rule depends on it — #127
+
+    "So ORIGIN and DESTINATION - should these be on the flightplan as fixes?"
+
+No. ICAO keeps them apart on purpose — **field 13** departure, **field 15** the
+enroute portion, **field 16** destination — and `flight_plans` already has all
+three columns. Repeating the aerodromes inside `route` is duplication, and it
+has quietly become load-bearing: `filing.check_live` refuses anything with
+**fewer than two fixes**, and that rule only passes because the aerodromes are
+padding the list.
+
+So a genuine direct flight — Kobuleti to Batumi with nothing published in
+between, which is most of what gets flown here — has **zero** enroute fixes and
+cannot be filed at all without writing its endpoints in twice.
+
+`dtc.plan_from` now returns `enroute` beside `route` so the honest list already
+exists; the route keeps its endpoints only because the rule exists TODAY and
+refusing a plan is worse than repeating a name.
+
+**The change:** `route` becomes the enroute portion, empty is legal, and
+`check_live` checks what it actually cares about — that every fix NAMED is one
+the sim holds. Callers that read `route` to know where a flight is going should
+read `origin`/`destination`, which is what they meant.
+
+Not urgent, and not to be done while somebody is flying: it touches the
+validator, every filed row, and the clearance the controller reads aloud.

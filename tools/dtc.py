@@ -135,7 +135,18 @@ def main(argv: list[str] | None = None) -> int:
     if args.show or not args.file:
         return 0
 
-    plan = plan_from(d, args.file, approach=args.approach,
+    # THE PUBLISHED CATALOGUE, from the director. `route_through` matches
+    # against it rather than the theatre's own fixes, which hold DCS grid metres
+    # and no lat/lon -- so the comparison could never match and the route came
+    # out "direct" every time.
+    catalogue = {}
+    try:
+        with urllib.request.urlopen(f"{args.base}/fixes", timeout=10) as r:
+            catalogue = json.loads(r.read()).get("fixes") or {}
+    except Exception:
+        print("  .. could not reach the fix catalogue; the route will be "
+              "origin to destination direct", file=sys.stderr)
+    plan = plan_from(d, args.file, approach=args.approach, catalogue=catalogue,
                      label=args.label or existing_label(args.file, args.base),
                      steerpoints=args.steerpoints)
     if not plan["label"]:
@@ -157,7 +168,7 @@ def main(argv: list[str] | None = None) -> int:
         # where it is three steerpoints. It wiped all twenty-one and the very
         # next filing was refused with "no fix called KOBULETI". Read the
         # catalogue, add to it, push the union.
-        sp = named_steerpoints(wps)
+        sp = named_steerpoints(wps, tuple(plan.get('ladder') or ()))
         if sp:
             have = {}
             try:

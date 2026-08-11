@@ -66,8 +66,29 @@ def latlon(s: str) -> float:
     return -v if hemi in ("S", "W") else v
 
 
-def waypoints(d: dict) -> list[dict]:
-    """Sequence, name, position and altitude, in the order he will fly them."""
+def waypoints(d: dict, route_only: bool = True) -> list[dict]:
+    """Sequence, name, position and altitude, in the order he will fly them.
+
+    THE ROUTE STOPS AT THE FIRST GAP, and everything past it is not navigation.
+
+        "DTC cartridges have a bunch of steerpoints used for targeting and
+         drawing boxes that are not navigation. I would start from steerpoint 1
+         and ignore anything after a break."
+
+    A Viper's cartridge carries far more than a route: target points, mark
+    points, the corners of a threat box, lines drawn on the HSD. They live at
+    higher steerpoint numbers with a gap in front of them -- 1..5 then 81..89 --
+    and the gap is the whole signal.
+
+    A live one proved the point better than targeting data would have: 81 to 89
+    were ARCOE, RONKY, WISTO, OLNIE, KRYSS, SHEET, ROTSE, JELIR, CADOS,
+    descending fifteen thousand to nothing. A published STAR, every fix real and
+    on the chart -- and still not this flight's route. Filed, it would have had
+    a controller expecting him to fly an arrival he had merely loaded.
+
+    `route_only=False` returns the lot, for anybody who wants to LOOK at a
+    cartridge rather than fly it.
+    """
     out = []
     for w in ((d.get("Waypoints") or {}).get("Waypoints") or []):
         out.append({"seq": int(w.get("Sequence") or 0),
@@ -75,143 +96,179 @@ def waypoints(d: dict) -> list[dict]:
                     "lat": latlon(w.get("Latitude", "")),
                     "lon": latlon(w.get("Longitude", "")),
                     "alt_ft": int(w.get("Elevation") or 0)})
-    return sorted(out, key=lambda w: w["seq"])
+    out.sort(key=lambda w: w["seq"])
+    if not route_only:
+        return out
+    route, want = [], 1
+    for w in out:
+        if w["seq"] < want:          # a duplicate or a zero -- not the route
+            continue
+        if w["seq"] != want:         # the gap. Everything past it is not the route.
+            break
+        route.append(w)
+        want += 1
+    return route
 
 
-def route_through(wps: list[dict], nm: float = 5.0) -> list[str]:
+def ladder(d: dict) -> list[str]:
+    """The aerodromes this sortie touches, in the order he will call them.
+
+        "is the origin (Nellis) not in the DTC anywhere?"
+
+    It is, and better than in the waypoints: the RADIO PRESETS name it. A comms
+    ladder always opens at the departure field -- you cannot taxi anywhere else
+    -- and closes at the arrival field's Tower or Ground:
+
+        Kobuleti Clearance, Kobuleti Ground, Kobuleti Tower, Kobuleti Departure,
+        Georgia Center, Batumi Approach, Batumi Tower, Batumi Ground
+
+    Kobuleti to Batumi, said in order, with no geometry and no theatre. Nellis's
+    ladder never leaves Nellis, which is exactly what a there-and-back is.
+
+    Preferred over `nearest_field` because it needs neither `MARSHALL_THEATRE`
+    nor a field table -- a Nevada cartridge read by a process that believes it is
+    on the Caucasus resolved to nothing at all, origin and destination empty and
+    a route of ", ".
+
+    The station word is dropped and the rest is the field. Anything with no
+    station word (a Center, a bullseye, a tanker) is not an aerodrome and is
+    skipped, which is what keeps GEORGIA CENTER out of the middle of the route.
+    """
+    seats = ("clearance", "clnc", "delivery", "ground", "gnd", "tower", "twr",
+             "departure", "dep", "approach", "app", "arrival", "atis",
+             "director", "radar")
+    out: list[str] = []
+    for r in (d.get("Radios") or {}).values():
+        for p in (r.get("Presets") or []):
+            words = (p.get("Name") or "").replace("/", " ").split()
+            if len(words) < 2:
+                continue
+            if words[-1].lower() not in seats:
+                continue
+            # A CENTER IS NOT AN AERODROME, and the SEAT word already says so:
+            # "Georgia Center" and "Nellis Control" end in words no aerodrome
+            # seat uses, so neither reaches here. Excluding them by FIELD name
+            # instead -- which the first version did, to keep Georgia out of the
+            # middle of a route -- also excluded Nellis, whose ladder is
+            # entirely Nellis, leaving that cartridge with no ends at all.
+            field = " ".join(words[:-1]).strip().title()
+            if field and (not out or out[-1] != field):
+                out.append(field)
+    # Runs of one field collapse; the ORDER is what carries the meaning.
+    seen: list[str] = []
+    for f in out:
+        if f not in seen:
+            seen.append(f)
+    return seen
+
+
+def route_through(wps: list[dict], catalogue: dict, nm: float = 5.0) -> list[str]:
     """The PUBLISHED fixes this route actually passes near, and nothing else.
 
         "in civil avation, we dont make up our own random fixes in a flight
          plan though.. That's probably a difference here."
 
-    Right, and it is the second time this project reached for a made-up name --
-    CHAKVI on the plate, then STPT1/2/3 here. The defence the second time was
-    that the pilot can see his own steerpoints in the cockpit, and it does not
-    hold: a filed route is a SHARED PUBLISHED reference and his cartridge is
-    published to nobody. Filing a fix only one party can resolve is worse than
-    filing none, because it reads as agreement.
+    A filed route is a SHARED PUBLISHED reference. Filing a name only one party
+    can resolve is worse than filing none, because it reads as agreement.
 
-    What a radar controller needs is the destination, the altitude, and a return
-    on the scope; the turning points between are the pilot's business. That is
-    the military model and it is what this is. So the route names the published
-    fixes it genuinely passes through and says nothing about the rest.
+    THE CATALOGUE IS PASSED IN, and the first version read the theatre's own
+    fixes instead. Those hold DCS grid metres -- `x` and `z` -- and no lat/lon at
+    all, so the comparison could never match and this silently returned nothing,
+    every time. A Kobuleti-Batumi cartridge came out "direct" and that read as
+    "no published fix nearby" when it meant "the question could not be asked".
+
+    `/fixes` on the director holds name -> lat/lon, projected by the sim itself
+    and pushed by the bridge, and it is what `filing.check_live` validates a
+    route against. One table read by both, so a route this proposes cannot be
+    refused by the thing that checks it.
     """
     from marshall.core import geo
-    from marshall.core import theatre as _t
-    th = _t.current()
-    fields = {f.name.upper() for f in th.fields}
     out: list[str] = []
     for w in wps:
         best, best_nm = "", nm
-        for f in getattr(th, "fixes", ()) or ():
-            name = (getattr(f, "name", "") or "").upper()
-            lat, lon = getattr(f, "lat", None), getattr(f, "lon", None)
-            if not name or lat is None or lon is None:
+        for name, ll in (catalogue or {}).items():
+            if not isinstance(ll, (list, tuple)) or len(ll) != 2:
                 continue
-            d, _ = geo.range_bearing_true((w["lat"], w["lon"]), lat, lon)
+            d, _ = geo.range_bearing_true((w["lat"], w["lon"]), ll[0], ll[1])
             if d < best_nm:
-                best, best_nm = name, d
-        if best and best not in out and best not in fields:
+                best, best_nm = name.upper(), d
+        if best and best not in out:
             out.append(best)
     return out
 
 
-def named_steerpoints(wps: list[dict]) -> dict:
+def named_steerpoints(wps: list[dict], fields: tuple = ()) -> dict:
     """His own turning points, by the names HE gave them -- name -> (lat, lon).
 
         "I have the ability give a description to every steerpoint. What if ATC
          uses this to reference in space that I pick."
 
-    The distinction that took two mistakes to find is SHARED versus PUBLISHED,
-    not published versus invented. DIOMI is published: it is on every pilot's
-    plate, for ever. FOO is not published and is still perfectly shared -- he
-    typed it, it is on his HSI, and the cartridge carried it here. A controller
-    saying "report passing BAR" names a place they can both resolve, which is
-    the entire job a fix name does.
+    SHARED is not PUBLISHED. DIOMI is published: on every pilot's plate, for
+    ever. FOO is not published and is perfectly shared -- he typed it, it is on
+    his HSI, and the cartridge carried it here. "Report passing BAR" names a
+    place they can both resolve, which is the entire job of a fix name.
 
-    What it is NOT is durable, and it belongs to ONE aeroplane: his steerpoint
-    two and a wingman's are different places. So these die with the sortie --
-    the bridge's own catalogue push at start-up replaces the fix table and takes
-    them off it, which is the lifecycle working rather than a bug.
+    Not durable, and belonging to ONE aeroplane: his steerpoint two and a
+    wingman's are different places. These die with the sortie.
 
-    Anything DKS left unnamed stays out. "STPT" is not a name he chose, it is
-    the absence of one, and filing it would be back to inventing.
+    Anything DKS left unnamed stays out -- "STPT" is the absence of a name, not a
+    name, and filing it would be back to inventing.
     """
-    from marshall.core import theatre as _t
-    fields = {f.name.upper() for f in _t.current().fields}
+    skip = {f.upper() for f in fields}
     out = {}
     for w in wps:
         n = (w["name"] or "").strip().upper()
-        if not n or n in ("STPT", "WP") or n in fields:
+        if not n or n in ("STPT", "WP") or n in skip:
             continue
         out[n] = [w["lat"], w["lon"]]
     return out
 
 
-def nearest_field(lat: float, lon: float, within_nm: float = 25.0) -> str:
-    """The aerodrome this position belongs to, or "".
-
-    A CARTRIDGE HAS NO ORIGIN. The jet's route starts at steerpoint one, which
-    is already airborne and some miles out -- so where he took off from is not
-    in the file, and the first version simply used the theatre's `departure`.
-    That is a hard-coded string per theatre, correct for the sortie somebody had
-    in mind when they wrote it and wrong for any other.
-
-    Geometry does not need telling. Steerpoint one sits seven miles off
-    Kobuleti; the last waypoint IS Batumi. Both ends fall out of where the route
-    actually is, so a cartridge flown out of Kutaisi files Kutaisi without
-    anybody editing a default.
-    """
-    from marshall.core import geo
-    from marshall.core import theatre as _t
-    best, best_nm = "", within_nm
-    for f in _t.current().fields:
-        if f.lat is None or f.lon is None:
-            continue
-        d, _ = geo.range_bearing_true((lat, lon), f.lat, f.lon)
-        if d < best_nm:
-            best, best_nm = f.name, d
-    return best
-
-
 def plan_from(d: dict, name: str, approach: str = "", label: str = "",
-              origin: str = "", steerpoints: bool = False) -> dict:
+              origin: str = "", catalogue: dict | None = None,
+              steerpoints: bool = False) -> dict:
     """The cartridge as a filed plan: where he is going, and how high.
 
-    THE CRUISE IS THE HIGHEST ENROUTE LEG, not the first. `flight_plans` holds
-    one altitude and the cartridge holds one per waypoint, so something has to
-    give -- and the number that matters is the one a controller must not be
-    surprised by. Filing the first leg's five thousand while the pilot climbs to
-    ten is precisely the disagreement this exists to end.
+    BOTH ENDS COME FROM THE COMMS LADDER (`ladder`), which names them in order
+    and needs no theatre. Falling back to the waypoint that IS an aerodrome, and
+    then to the origin -- a sortie that ends nowhere in particular recovers where
+    it started, which is what a local sortie is.
 
-    Both ENDS are derived from the route rather than from the theatre's
-    defaults -- see `nearest_field`. `origin` is still an argument because a
-    ferry that starts somewhere the route does not pass over is a real thing and
-    the caller may know better; it is an override, not a default.
+    THE CRUISE IS THE HIGHEST ENROUTE LEG. `flight_plans` holds one altitude and
+    the cartridge holds one per waypoint; the number that matters is the one a
+    controller must not be surprised by. Filing the first leg's five thousand
+    while the pilot climbs to ten is the disagreement this exists to end.
+
+    THE ROUTE IS THE ENROUTE PORTION. Origin and destination have columns of
+    their own -- ICAO keeps field 13, field 15 and field 16 apart -- and
+    repeating the aerodromes in the route is duplication that `check_live`'s
+    "at least two fixes" rule then depends on. They are still emitted at both
+    ends because that rule exists TODAY and refusing a plan is worse than
+    repeating a name; see #127, which is the change to make it honest.
     """
     wps = waypoints(d)
     if not wps:
         raise ValueError("no waypoints in the cartridge")
-    from marshall.core import theatre as _t
-    fields = {f.name.upper() for f in _t.current().fields}
-    first, last = wps[0], wps[-1]
-    # The destination is the last waypoint that IS an aerodrome; failing that,
-    # the aerodrome the last waypoint is nearest to -- a route that ends on a
-    # downwind still ends at that field.
-    dest = next((w["name"] for w in reversed(wps)
-                 if w["name"].upper() in fields), "") \
-        or nearest_field(last["lat"], last["lon"])
-    start = origin or nearest_field(first["lat"], first["lon"]) or dest
-    enroute = [w for w in wps if w["name"].upper() not in fields
-               and w["name"].upper() != (dest or "").upper()]
+    seats = ladder(d)
+    start = origin or (seats[0] if seats else "")
+    dest = (seats[-1] if seats else "") or start
+    if not start or not dest:
+        # No usable ladder. Fall back to a waypoint that names an aerodrome --
+        # DKS writes the field's own name on it -- and then to the other end.
+        fields = [w["name"] for w in wps if w["name"] and w["name"] != "STPT"
+                  and w["name"].upper() == w["name"].title().upper()]
+        dest = dest or (fields[-1] if fields else "")
+        start = start or dest
+    ends = {(start or "").upper(), (dest or "").upper()}
+    enroute = [w for w in wps if w["name"].upper() not in ends]
     cruise = max([w["alt_ft"] for w in enroute] or [w["alt_ft"] for w in wps])
-    # HIS NAMES, or only the published ones. See `named_steerpoints` on why both
-    # are defensible and why they are not the same kind of thing.
     via = ([w["name"].strip().upper() for w in enroute
             if (w["name"] or "").strip().upper() not in ("", "STPT", "WP")]
-           if steerpoints else route_through(enroute))
-    route = [start.upper(), *via, (dest or start).upper()]
+           if steerpoints else route_through(enroute, catalogue or {}))
+    route = [(start or dest).upper(), *via, (dest or start).upper()]
     return {"name": name, "label": label,
-            "origin": start.title(), "destination": (dest or start).title(),
+            "origin": (start or dest).title(),
+            "destination": (dest or start).title(),
             "route": ", ".join(route), "cruise_ft": int(cruise),
-            "task": "training", "approach": approach}
+            "task": "training", "approach": approach,
+            "enroute": via, "ladder": seats}

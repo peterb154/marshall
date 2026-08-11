@@ -40,13 +40,31 @@ def _pos(hemi: str, deg: int, minutes: str) -> str:
     return f"{hemi} {deg:02d}{DEG}{minutes}{MARK}"
 
 
-def _wp(seq, name, lat, lon, alt):
-    return {"Sequence": seq, "Name": name, "Latitude": lat,
-            "Longitude": lon, "Elevation": alt}
+def _wp(seq, name, lat=None, lon=None, alt=5000):
+    """One waypoint. The position defaults because most tests are about which
+    waypoints are the ROUTE, not about where they are."""
+    return {"Sequence": seq, "Name": name,
+            "Latitude": lat or _pos("N", 41, "57.496"),
+            "Longitude": lon or _pos("E", 42, "01.395"), "Elevation": alt}
 
+
+def _preset(n, name, mhz="120.00"):
+    return {"Number": n, "Name": name, "Frequency": mhz}
+
+
+# THE LADDER IS THE FIXTURE NOW, because it is where both ends come from. A
+# comms ladder opens at the departure field's Clearance or Ground -- you cannot
+# taxi anywhere else -- and closes at the arrival field's Tower or Ground.
+LADDER = {"Radio2": {"Presets": [
+    _preset(1, "Kobuleti Clearance"), _preset(2, "Kobuleti Ground"),
+    _preset(3, "Kobuleti Tower"), _preset(4, "Kobuleti Departure"),
+    _preset(5, "Georgia Center"), _preset(6, "Batumi Approach"),
+    _preset(7, "Batumi Tower"), _preset(8, "Batumi Ground"),
+]}}
 
 ROUTE = {
     "Aircraft": "F16C",
+    "Radios": LADDER,
     "Waypoints": {"Waypoints": [
         _wp(1, "FOO", _pos("N", 41, "57.496"), _pos("E", 42, "01.395"), 5000),
         _wp(2, "BAR", _pos("N", 42, "03.307"), _pos("E", 41, "59.573"), 10000),
@@ -55,6 +73,23 @@ ROUTE = {
     ]},
     "Misc": {"ILSFrequency": 109.1, "ILSCourse": 209, "TACANChannel": 16},
 }
+
+
+class TestTheRouteStopsAtTheGap(unittest.TestCase):
+    """Targeting points and box corners live past a break and are not the route."""
+
+    def test_a_published_star_in_the_high_block_is_not_the_route(self):
+        # A LIVE ONE PROVED IT BETTER THAN TARGETING DATA WOULD HAVE. Steerpoints
+        # 81-89 of a Nellis cartridge were ARCOE, RONKY, WISTO, OLNIE, KRYSS,
+        # SHEET, ROTSE, JELIR, CADOS, descending fifteen thousand to nothing --
+        # a published STAR, every fix real, and still not this flight's route.
+        # Filed, a controller would expect him to fly an arrival he had loaded.
+        wps = [_wp(i, n) for i, n in enumerate(["FOO", "BAR", "SPAM"], 1)]
+        wps += [_wp(81, "ARCOE"), _wp(82, "RONKY"), _wp(89, "CADOS")]
+        d = dtc.decode(_cartridge({**ROUTE, "Waypoints": {"Waypoints": wps}}))
+        self.assertEqual([w["name"] for w in dtc.waypoints(d)],
+                         ["FOO", "BAR", "SPAM"])
+        self.assertEqual(len(dtc.waypoints(d, route_only=False)), 6)
 
 
 class TestReadingOne(unittest.TestCase):
@@ -119,6 +154,24 @@ class TestWhatMayBeFiled(unittest.TestCase):
                                        steerpoints=True)["route"],
                          "KOBULETI, FOO, BAR, SPAM, BATUMI")
 
+    def test_both_ends_come_from_the_comms_ladder(self):
+        # "is the origin (Nellis) not in the DTC anywhere?" -- it is, and this
+        # is where. No geometry, no theatre: the ladder names them in order.
+        self.assertEqual(dtc.ladder(self.d), ["Kobuleti", "Batumi"])
+
+    def test_a_centre_is_not_an_aerodrome(self):
+        # Georgia Center wears a seat word and works a piece of sky. Left in, it
+        # lands in the middle of a route.
+        self.assertNotIn("Georgia", dtc.ladder(self.d))
+
+    def test_a_there_and_back_has_one_field_at_both_ends(self):
+        # A ladder that never leaves Nellis is exactly what a range sortie is.
+        d = dtc.decode(_cartridge({**ROUTE, "Radios": {"R": {"Presets": [
+            _preset(1, "Nellis CLNC"), _preset(2, "Nellis GND"),
+            _preset(3, "NELLIS CONTROL"), _preset(4, "Nellis APP")]}}}))
+        p = dtc.plan_from(d, "x", label="D")
+        self.assertEqual((p["origin"], p["destination"]), ("Nellis", "Nellis"))
+
     def test_an_unnamed_steerpoint_is_never_filed(self):
         # "STPT" is not a name he chose, it is the absence of one. Filing it
         # would be back to inventing, which is what STPT1/2/3 was.
@@ -133,8 +186,9 @@ class TestWhatMayBeFiled(unittest.TestCase):
         # Batumi is published, with a surveyed position and a beacon. A
         # cartridge's rounded one must not quietly replace it.
         wps = dtc.waypoints(self.d)
-        self.assertEqual(sorted(dtc.named_steerpoints(wps)),
-                         ["BAR", "FOO", "SPAM"])
+        self.assertEqual(
+            sorted(dtc.named_steerpoints(wps, ("Kobuleti", "Batumi"))),
+            ["BAR", "FOO", "SPAM"])
 
 
 if __name__ == "__main__":
