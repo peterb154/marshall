@@ -64,3 +64,41 @@ class TestTheMissIsAboutTheManNotThePlan(unittest.TestCase):
     def test_the_refused_callsign_is_quoted_back(self):
         said = not_on_the_board("Falcon 1-1", ["Pony 1-1"])
         self.assertGreaterEqual(said.count("Falcon 1-1"), 2)
+
+
+class TheRecordedBoardIsTheOneTheTransmissionProduced(unittest.TestCase):
+    """`board()` exists so a ghost is timestamped beside the words that minted
+    it -- and the record was written BEFORE the engine heard the transmission,
+    so a ghost minted by one call turned up attached to the next one.
+
+    Measured on the ladder rehearsal: a pilot reported holding short, the engine
+    moved him to `holding_short` correctly, and the recorded board said `taxi` --
+    the rung he had been on when he keyed the microphone. The check written to
+    catch that transition failing believed it.
+
+    Source order, like `test_the_phase_is_derived_before_anything_acts`. There
+    is no seam to inject here and the fault IS the order, so the order is what
+    is asserted.
+    """
+
+    def _receive_source(self):
+        import inspect
+        from marshall.atc import agent_atc
+        return inspect.getsource(agent_atc)
+
+    def test_the_board_is_recorded_after_the_engine_has_acted(self):
+        src = self._receive_source()
+        i_decide = src.index("directive, stack, vectoring = decide(")
+        i_board = src.index('record(session_id, kind="board"')
+        self.assertLess(i_decide, i_board,
+                        "the recorded board is a turn stale -- it is written "
+                        "before decide() lets the engine hear him")
+
+    def test_the_live_publish_still_runs_before_the_model_call(self):
+        """The map must not wait on Bedrock. That snapshot is for a human
+        watching, not the record anything is judged against, and moving it
+        would put a several-second hole in the dashboard."""
+        src = self._receive_source()
+        i_publish = src.index("publish_state(bridge, ctl, scope, session_id")
+        i_decide = src.index("directive, stack, vectoring = decide(")
+        self.assertLess(i_publish, i_decide)

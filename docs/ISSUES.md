@@ -5227,3 +5227,43 @@ rather than at the engine.
 2. The Tower handoff that follows is the ladder's, recorded as `atc/handoff`.
 3. Whisper's "Runways 07" for "runway zero seven" does not change the answer —
    the transcript is what it is and the classifier reads transcripts.
+
+## [OPS-14] The flight recorder was a turn stale, and half the handoffs left no trace — #107
+labels: bug, tooling
+
+**Status:** FIXED 11 August. Both halves found by `tools/ladder_rehearsal.py`
+reporting failures against a controller that was behaving correctly.
+
+**The board was written before the engine heard him.** `record(kind="board")`
+ran at the top of the turn and `decide()` — which is where the engine acts on
+the transmission — ran sixty lines later. So the recorded board is the state as
+of the moment the pilot keyed the microphone, not the state his words produced.
+
+`Controller.board()` says in its own docstring that the point is that "a ghost
+is created by a transmission, so the transmission and the board have to be
+adjacent in the record or the pairing is guesswork after the fact". A ghost
+minted by one transmission appeared attached to the *next* one.
+
+Measured: a pilot reported holding short, the engine moved him to
+`holding_short` correctly, and the record said `taxi` — the rung he had been on
+when he started speaking. The check written to catch that transition failing
+believed the record and reported the engine broken. It was not.
+
+The live `publish_state` stays where it is: the map must not wait on a model
+call, and it is a snapshot for a human watching rather than the record anything
+is judged against.
+
+**And `atc/handoff` was only ever written by the proactive monitor.** A handoff
+the ladder decided and the AGENT then voiced — which is most of them, and all of
+the ground ones — left no trace. The bridge authorised it, which is why
+`strip_unauthorised_handoff` let it through, and then forgot.
+
+So "which handoffs actually happened" was unanswerable from the record for the
+entire receive path. That is the exact question the two mechanisms in #51
+disagreed about for a fortnight, and a voiced handoff and an authorised one are
+different events whose difference is the bug worth catching.
+
+Both are the same shape as #103: not a wrong answer, a **right answer recorded
+at the wrong moment or not at all**, believed by everything downstream. The
+harness is the first reader that ever compared the record against what the
+engine actually did, which is why two years of logs looked fine.

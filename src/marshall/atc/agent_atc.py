@@ -4335,6 +4335,25 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         if sent:
             print(f"  .. refused an unauthorised handoff: {sent}",
                   flush=True)
+        # AND RECORD THE ONE THAT WAS AUTHORISED. `atc/handoff` was written only
+        # by the proactive monitor, so a handoff the LADDER decided and the
+        # agent then voiced -- which is most of them, and all of the ground ones
+        # -- left no trace at all. The bridge authorised it (that is why it was
+        # not stripped a line above) and then forgot.
+        #
+        # "Which handoffs actually happened" was therefore unanswerable from the
+        # record for the entire receive path, and the two mechanisms it exists
+        # to keep honest are exactly the two that disagreed for a fortnight in
+        # #51. A voiced handoff and an authorised one are different events and
+        # the difference is the bug worth catching; without this record they are
+        # indistinguishable after the fact.
+        if _authorised is not None and to_callsign:
+            _st = getattr(_authorised, "station", None)
+            _nm = getattr(_st, "name", "") or getattr(_authorised, "name", "")
+            if _nm and _nm.lower() in reply.lower():
+                record(session_id, kind="atc/handoff", callsign=to_callsign,
+                       text=reply, to=getattr(_authorised, "role", "")
+                       or getattr(_st, "role", ""))
         if not reply or reply.lower() in NO_CALL:
             print(f"  ATC[{kind}/{tier}] ({dt:.1f}s): (no call)", flush=True)
             return
@@ -5056,12 +5075,6 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                radial=_fix.radial_deg if _fix else None,
                alt_ft=_fix.alt_ft if _fix else None,
                heading=_fix.heading_deg if _fix else None, scope=scope)
-        # ...and what the ENGINE thinks is out there, at this instant. Recorded
-        # beside the words that produced it: a ghost is created by a
-        # transmission, so the transmission and the board have to be adjacent in
-        # the record or the pairing is guesswork after the fact.
-        record(session_id, kind="board", callsign=known or srs,
-               board=ctl.board())
         # ...and publish it, so the dashboard renders what this bridge believes
         # instead of reconstructing it from the log. See publish_state.
         publish_state(bridge, ctl, scope, session_id, plans=filed_plan_rows(),
@@ -5124,6 +5137,28 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
 
         directive, stack, vectoring = decide(
             bridge, ctl, transcript, scope, known, _ident.track, engaged, profile)
+
+        # WHAT THE ENGINE THINKS IS OUT THERE, AFTER IT HAS HEARD HIM.
+        #
+        # This was recorded before `decide`, which is the wrong instant by one
+        # whole turn. `board()` says its purpose is that "a ghost is created by
+        # a transmission, so the transmission and the board have to be adjacent
+        # in the record" -- and a ghost minted by THIS transmission was not in
+        # THIS transmission's board. It turned up one row later, attached to the
+        # next pilot's words, which is precisely the guesswork-after-the-fact
+        # the record exists to remove.
+        #
+        # Measured on the ladder rehearsal: a pilot reported holding short, the
+        # engine moved him to `holding_short` correctly, and the recorded board
+        # said `taxi` -- the rung he had been on when he keyed the microphone.
+        # Every reader downstream believed it, including the check written to
+        # catch exactly that transition failing.
+        #
+        # The live `publish_state` above stays where it is: the map should not
+        # wait on a model call. It is a snapshot for a human watching, not the
+        # record anything is judged against.
+        record(session_id, kind="board", callsign=known or srs,
+               board=ctl.board())
 
         # The one aircraft state. Bind whatever names we have -- the radio GUID
         # always, the callsign once he says it, the track once radar ties them
