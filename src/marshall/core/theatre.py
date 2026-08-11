@@ -106,16 +106,41 @@ def caucasus() -> Theatre:
         waypoints=tuple(R.sortie_points()))
 
 
+# WHICH NEVADA SORTIE. Two are filed and they recover at different fields, so
+# they cannot both be the bridge's active approach -- it runs one arrival profile
+# at a time (see `load_and_push_plate`).
+#
+#     "a flight that departs Nellis, works the range, and returns to Nellis
+#      needs that profile and its arrival state during the same sortie. It
+#      cannot be selected concurrently with the Tonopah recovery."
+#                                                -- CODEX_NTTR_AUDIT.md
+#
+# Right, and per-flight selection is the real answer (#111). Until then the
+# choice is at least EXPLICIT and steerable rather than baked in: a Nellis
+# there-and-back is what a range sortie actually is, so it is the default, and
+# the one-way transit to Tonopah is a flag away.
+#
+# The default CHANGED with this. A bridge started on Nevada used to load the
+# Tonopah recovery, which is the wrong end of the flight for a pilot going home.
+NEVADA_SORTIES = {
+    "nellis": ("nevada-nellis-nellis", "nellis-ils", "Nellis"),
+    "tonopah": ("nevada-nellis-tonopah", "tonopah-ils", "Tonopah"),
+}
+
+
 def nevada() -> Theatre:
-    """Nellis to Tonopah, ILS at both ends, a mile and a half of terrain."""
+    """Out of Nellis and home to Nellis, or one-way to Tonopah. ILS either end."""
     from marshall.core import nevada as N
+    want = os.environ.get("MARSHALL_SORTIE", "nellis").strip().lower()
+    plan, key, arrival = NEVADA_SORTIES.get(want, NEVADA_SORTIES["nellis"])
+    profile = N.NELLIS_ILS if arrival == "Nellis" else N.TONOPAH_ILS
     return Theatre(
         name="Nevada", terrain="Nevada", fields=tuple(N.NEVADA_FIELDS),
         stations=tuple(N.NEVADA_STATIONS), departure="Nellis",
-        arrival="Tonopah", approach=N.TONOPAH_ILS,
-        approaches=(N.TONOPAH_ILS, N.NELLIS_ILS),
+        arrival=arrival, approach=profile,
+        approaches=(N.NELLIS_ILS, N.TONOPAH_ILS),
         wind_from_deg=210.0, wind_mph=9.2,
-        bootstrap_plan="nevada-nellis-tonopah", approach_key="tonopah-ils",
+        bootstrap_plan=plan, approach_key=key,
         # NEVADA_FIXES has existed since the map was added and nothing read it.
         fixes=tuple(N.NEVADA_FIXES),
         waypoints=tuple(enumerate(N.NEVADA_ROUTE, start=1)))

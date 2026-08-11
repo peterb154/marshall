@@ -299,9 +299,39 @@ NEVADA_FIXES = [LSV, TPH]
 # which is right that a typed procedure graph is the real answer.
 NEVADA_ROUTE = [LSV, TPH, LSV]
 
+# THE REGION, which is not an aerodrome's controller.
+#
+#     "`handoff.RULES` routes an outbound Departure aircraft to `center` at
+#      25 nm. `NEVADA_STATIONS` contains Nellis and Tonopah stations only: no
+#      Center/range controller is available. `handoff.due()` then gets no
+#      station for `center` and silently returns no handoff."
+#                                                 -- CODEX_NTTR_AUDIT.md
+#
+# Exactly right, and the symptom is the worst kind: a departure works cleanly
+# through Clearance, Ground, Tower and Departure and then simply stays with
+# Departure for the rest of the sortie. Nothing fails; a rung is missing and the
+# ladder quietly stops. It is the same shape as #51 on the Caucasus, where a
+# pilot found the gap at 44 nm by declaring an emergency.
+#
+# LOS ANGELES CENTER (ZLA) owns the enroute airspace over southern Nevada, and a
+# transit between two airfields is enroute work. 133.400 is one of its sector
+# frequencies; like Georgia Center's number it is CHOSEN rather than surveyed,
+# and it is written down here so nobody later mistakes it for a plate value.
+#
+# NOT THE RANGE. Real NTTR range work is Nellis Control -- "Blackjack" -- which
+# is a different service with different phraseology and its own airspace, and
+# none of it is modelled. A range mission is not a transit, and calling this one
+# the other would be the kind of plausible wrong answer the two-aerodrome work
+# was all about.
+NEVADA_CENTER = Station(
+    "Los Angeles Center", 133.400, "center", voice="Brian",
+    manner="Unhurried and a long way off, working in whole minutes and "
+           "hundreds of miles. A high-desert sector with very little in it, so "
+           "he is never rushed and never chatty. Formal without being stiff.")
+
 NELLIS_STATIONS = [NELLIS_CLEARANCE, NELLIS_GROUND, NELLIS_TOWER,
                    NELLIS_DEPARTURE, NELLIS_APPROACH]
-NEVADA_STATIONS = NELLIS_STATIONS + TONOPAH_STATIONS
+NEVADA_STATIONS = NELLIS_STATIONS + TONOPAH_STATIONS + [NEVADA_CENTER]
 NEVADA_FIELDS = (NELLIS_FIELD, TONOPAH_FIELD)
 
 

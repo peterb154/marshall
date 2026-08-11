@@ -108,15 +108,50 @@ class NevadaMeasuresFromNevada(_OnTheMap):
     def test_the_variation_is_the_field_s_own(self):
         """12 East at Nellis, 16 at Tonopah -- surveyed per aerodrome, exactly
         like the terrain minima. A theatre-wide constant is six to ten degrees
-        out here, and a vector is the one place that shows."""
+        out here, and a vector is the one place that shows.
+
+        Nellis, because the default Nevada sortie recovers at Nellis: a range
+        flight goes out and comes HOME, and the recovery field is the one a
+        controller measures from.
+        """
         from marshall.feed import dcs as D
-        self.assertAlmostEqual(D.home_field()[2], 16.0, places=1)
+        self.assertAlmostEqual(D.home_field()[2], 12.0, places=1)
 
     def test_the_field_by_the_names_a_pilot_uses(self):
         from marshall.feed import tracks as TR
         got = TR._field_aliases()
-        self.assertIn("tonopah", got)
+        self.assertIn("nellis", got)
         self.assertNotIn("batumi", got)
+
+
+class EitherNevadaSortieCanBeSelected(_OnTheMap):
+    """One arrival profile at a time is the bridge's real limit (#111). The
+    CHOICE at least being explicit is what stops a pilot flying home to Nellis
+    while the bridge has Tonopah's ILS loaded."""
+    theatre = "nevada"
+
+    def test_the_default_is_out_of_nellis_and_home_again(self):
+        self.assertEqual(self.th.arrival, "Nellis")
+        self.assertEqual(self.th.approach_key, "nellis-ils")
+        self.assertEqual(self.th.bootstrap_plan, "nevada-nellis-nellis")
+
+    def test_the_one_way_transit_is_a_flag_away(self):
+        was = os.environ.get("MARSHALL_SORTIE")
+        os.environ["MARSHALL_SORTIE"] = "tonopah"
+        try:
+            th = self._theatre()
+            self.assertEqual(th.arrival, "Tonopah")
+            self.assertEqual(th.approach_key, "tonopah-ils")
+        finally:
+            if was is None:
+                os.environ.pop("MARSHALL_SORTIE", None)
+            else:
+                os.environ["MARSHALL_SORTIE"] = was
+
+    def test_both_profiles_are_published_either_way(self):
+        """A Nellis-recovery bridge still has to know Tonopah exists -- the
+        route turns over it and the pilot may divert."""
+        self.assertEqual(len(self.th.approaches), 2)
 
 
 if __name__ == "__main__":

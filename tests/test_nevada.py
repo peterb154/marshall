@@ -96,11 +96,22 @@ class TestTheLadderTransports(unittest.TestCase):
         card = [hz for _, hz in channels_for(R.BATUMI_ASR)]
         self.assertEqual(card[:4], [125.1, 121.8, 133.0, 123.3])
 
-    def test_every_station_knows_which_field_it_is_at(self):
+    def test_every_aerodrome_station_knows_which_field_it_is_at(self):
         """The lesson the second aerodrome taught, on a second map: a role is
-        only unique within an aerodrome."""
+        only unique within an aerodrome.
+
+        CENTER IS THE EXCEPTION AND IT IS NOT A LOOPHOLE. Approach and Tower
+        belong to an aerodrome; a Center owns a REGION and hands you between
+        aerodromes, so there is one for the theatre and it has no field. Giving
+        it one would make `station_for("center", field=...)` answer for a
+        controller who does not belong to that airport -- which is the exact
+        failure the field argument was added to prevent, arrived at backwards.
+        """
         for s in N.NEVADA_STATIONS:
             with self.subTest(station=s.name):
+                if s.role == "center":
+                    self.assertEqual(s.field, "", "a Center owns a region")
+                    continue
                 self.assertIn(s.field, ("Nellis", "Tonopah"))
 
     def test_a_role_resolves_to_its_own_field(self):
@@ -219,7 +230,10 @@ class TestTheKneeboardTakesACardNotATheatre(unittest.TestCase):
         frequencies at all."""
         import re
         rows = re.findall(r"<td class='ch'>(\d+)</td>", self.comms("nevada"))
-        self.assertEqual(len(rows), 8)
+        # NINE. Eight aerodrome positions plus Los Angeles Center, which a pilot
+        # leaving Nellis for the range needs a button for -- without it the
+        # ladder simply stopped at Departure and he stayed there. [#110]
+        self.assertEqual(len(rows), 9)
 
     def test_the_arrival_fields_approach_comes_before_its_tower(self):
         """The order the buttons are pressed coming home. Written tower-first,
