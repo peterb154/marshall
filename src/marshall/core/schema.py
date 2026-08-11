@@ -139,6 +139,15 @@ class Atis(Base):
 
     __tablename__ = "atis"
 
+    # WHICH SORTIE'S BROADCAST. A letter is a fact about a session, not about a
+    # place -- and keyed on the field alone, Batumi's row survived a mission
+    # load, a theatre change and a week of flying. It survived so completely
+    # that both fields sat on Alpha for months while the derivation that was
+    # supposed to seed them could never run, because it only runs when the
+    # stored letter is empty and a stored letter is never empty twice. See
+    # migration 028 and docs/STATE.md.
+    mission: Mapped[str] = mapped_column(Text, primary_key=True,
+                                         default="default")
     # The aerodrome's name, as `Field_.name` and `Station.field` spell it. That
     # string is already the join between a controller and his airport; making
     # it the key here means no fourth spelling of "Kobuleti".

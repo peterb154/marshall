@@ -108,11 +108,19 @@ def due_for_rotation(obs, previous, recorded_age_sec: float | None) -> bool:
     which is the first recording rather than a rotation -- the caller wants
     Alpha, not Bravo.
     """
-    if previous is None or recorded_age_sec is None:
-        return False                    # nothing to rotate FROM
-    if not obs.same_as(previous):
+    if recorded_age_sec is None:
+        return False                    # nothing on the air to rotate FROM
+    # AGE DOES NOT NEED A PREVIOUS OBSERVATION, and requiring one was half of
+    # why the letter never moved. `previous_obs` is the loop's memory of the
+    # last weather it saw, so it is None on the first tick after every bridge
+    # restart -- and this bridge restarts far more often than hourly, so the
+    # hourly rotation could never be reached. An hour has passed whether or not
+    # this process was running for it; the recording says so itself.
+    if recorded_age_sec >= ROTATE_AFTER_SEC:
         return True
-    return recorded_age_sec >= ROTATE_AFTER_SEC
+    if previous is None:
+        return False                    # no weather to compare against
+    return not obs.same_as(previous)
 
 
 def spoken(obs, letter: str, zulu: str) -> str:

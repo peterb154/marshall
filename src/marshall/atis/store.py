@@ -56,10 +56,18 @@ class Current:
         return self.letter or ""
 
 
+def _mission() -> str:
+    """Which sortie this broadcast belongs to. One reader, so one spelling."""
+    import os
+    return os.environ.get("MARSHALL_MISSION_INSTANCE") or \
+        os.environ.get("MARSHALL_MISSION") or "default"
+
+
 def publish(obs, letter: str, text: str) -> None:
     """Record this observation as the current broadcast."""
     with db.session() as s:
-        row = s.get(Atis, obs.field) or Atis(field=obs.field)
+        key = (_mission(), obs.field)
+        row = s.get(Atis, key) or Atis(mission=key[0], field=obs.field)
         row.letter = letter
         row.runway = int(obs.runway)
         row.text = text
@@ -91,7 +99,7 @@ def current(field, fallback_wind_deg: float | None = None) -> Current:
     """
     try:
         with db.session() as s:
-            row = s.get(Atis, field.name)
+            row = s.get(Atis, (_mission(), field.name))
             if row is not None:
                 _age = None
                 if row.recorded_at is not None:

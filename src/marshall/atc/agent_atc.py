@@ -4770,6 +4770,12 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
     # `mission_instance` and docs/STATE.md.
     global MISSION
     MISSION = mission_instance()
+    # ...AND PUBLISHED TO THE PROCESS, so the ATIS store scopes its rows to the
+    # same sortie without importing the bridge. One writer, here; every reader
+    # asks the environment. Two ways of computing "which sortie" is how the
+    # board and the broadcast would come to disagree about which world they are
+    # in, which is the fault this whole key exists to close.
+    os.environ["MARSHALL_MISSION_INSTANCE"] = MISSION
     print(f"  sortie: {MISSION}", flush=True)
     # ...AND CHECKED AGAINST THE SIM. The flag chooses; the sim confirms. A
     # bridge holding the wrong map's frequencies does not fail, it answers
