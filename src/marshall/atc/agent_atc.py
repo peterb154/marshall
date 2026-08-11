@@ -1892,6 +1892,13 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
         fix = radar_fix_by_track(scope, track, ctl.profile) if track else None
         if fix is None:
             fix = radar_fix(scope, intent.callsign, ctl.profile)
+        # WHERE HE IS IN THE SORTIE, worked out before anything acts on it.
+        # `settle` used to derive this, and `settle` runs after this function --
+        # so the half of the turn that mutates the engine ran first. See
+        # `phase_now`.
+        _down = (is_on_the_ground(scope, track or intent.callsign, fix)
+                 if (scope or fix is not None) else None)
+        _phase = phase_now(ctl, intent.callsign, _down, fix)
         if intent.callsign:
             ctl.note_radar_contact(intent.callsign, fix is not None)
 
@@ -1913,7 +1920,33 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
         # Seed the blind engine from the scope BEFORE it decides anything. An
         # aircraft radar shows established on the approach must not be filed as
         # a new arrival and stacked -- see Controller.seen_on_final.
-        if fix is not None:
+        #
+        # ...BUT ONLY IF HE IS ON AN APPROACH AT ALL, and this is the fourth
+        # caller of `asr.guide` to need that said out loud. It is also the only
+        # one that MUTATES: `seen_on_final` sets Phase.CLEARED and hands him the
+        # letdown.
+        #
+        # Ungated, it fired six seconds after take-off -- 0.6 nm, 472 feet,
+        # climbing off Kobuleti, and the geometry for BATUMI's final obligingly
+        # reported him established. The engine marked him cleared for an
+        # approach he had not started, `derive` then wanted `approach`,
+        # `departure` cannot lead there, and the refused transition welded the
+        # phase to `departure` for the rest of the flight. Everything after it
+        # -- the suppressed guidance, the vectors that reversed 140 degrees --
+        # was downstream of that one seeding.
+        #
+        # Validate before you mutate: the phase is derived above, before
+        # anything acts on it.
+        # NOT KNOWING IS NOT THE SAME AS KNOWING HE IS DEPARTING. An empty phase
+        # is the case this seed was BUILT for -- a flight established on the
+        # final at ten miles that the engine has never heard of -- so blocking
+        # on it would fix today's bug by reopening the original one. The gate
+        # refuses only a phase we positively know does not fly the approach.
+        #
+        # Same rule `derive` states for itself: waiting on missing information
+        # beats inventing an answer, in either direction.
+        _seedable = (not _phase) or _phases.flies_geometry(_phase)
+        if fix is not None and _seedable:
             from marshall.atc import asr as _asr
             g = _asr.guide(fix, ctl.profile,
                            on_missed=flying_the_missed(bridge, intent.callsign, fix,
@@ -1928,8 +1961,6 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
             # ON THE GROUND OR NOT, from the same one function everything else
             # asks -- the sim's own flag when there is one, altitude and speed
             # when there is not. None when nothing knows, which never blocks.
-            _down = (is_on_the_ground(scope, track or intent.callsign, fix)
-                     if (scope or fix is not None) else None)
             intents.dispatch(ctl, intent, on_ground=_down)
         # DRAINED WHETHER OR NOT THE INTENT WAS HANDLED. This used to run only
         # when `dispatch` returned True, so a turn it did not handle left the
@@ -3093,6 +3124,51 @@ def decide(bridge, ctl, transcript, scope, known, track, engaged, profile):
     return directive, stack, vectoring
 
 
+def phase_now(ctl, known: str, down: bool | None, fix) -> str:
+    """Where he is in the sortie, derived once and written down.
+
+    ONE FUNCTION SO THE CALLERS CANNOT DRIFT -- the same rule as
+    `is_on_the_ground`, and for the same reason. This lived inside `settle`,
+    which runs AFTER `separation_context`, so the half of the turn that MUTATES
+    the engine ran before anything had worked out what the aeroplane was doing.
+
+    That is not a tidiness argument. On 10 August, six seconds after take-off:
+
+        .. sockeye is already on final per radar; not stacking him
+        .. phase REFUSED: departure cannot lead to approach — he stays in
+           departure
+
+    `separation_context` asked the APPROACH geometry about an aeroplane at
+    0.6 nm and 472 feet climbing off Kobuleti, was told he was established, and
+    called `seen_on_final` -- which sets `Phase.CLEARED` and hands him the
+    letdown. `derive` then wanted `approach`, `departure` cannot lead there, the
+    transition was refused, and the phase stayed welded to `departure` for the
+    rest of the sortie. Every later suppression, and the vector reversals that
+    came with them, followed from that one seeding.
+
+    Derived here, before anything acts, and persisted onto the aircraft so
+    `settle` reads the same answer rather than recomputing it.
+    """
+    _ac = (ctl.aircraft.get(ctl._resolve(known))
+           if (ctl is not None and known) else None)
+    worked_by = getattr(getattr(ctl, "_me", None), "role", "") if ctl else ""
+    phase = _phases.derive(
+        getattr(_ac, "sortie_phase", "") or "",
+        on_ground=down if fix is not None else None,
+        separation=(getattr(getattr(_ac, "phase", None), "name", "") or "").lower(),
+        was_airborne=bool(getattr(_ac, "approaches", 0)),
+        worked_by=worked_by,
+        refused=lambda cur, want: print(
+            f"  .. phase REFUSED: {cur} cannot lead to {want} "
+            f"(worked by {worked_by or 'nobody'}, "
+            f"{'down' if down else 'airborne'}) — he stays in {cur}",
+            flush=True))
+    if _ac is not None and phase and phase != _ac.sortie_phase:
+        print(f"  .. phase: {_ac.sortie_phase or '(none)'} -> {phase}", flush=True)
+        _ac.sortie_phase = phase
+    return phase
+
+
 def settle(bridge, directive, stack, vectoring, fix, profile, known, ctl,
            scope: str = "", track: str = ""):
     """One aeroplane, one instruction. Which authority owns him this turn.
@@ -3153,23 +3229,8 @@ def settle(bridge, directive, stack, vectoring, fix, profile, known, ctl,
     # `ctl` is None in the dry run and in the tests that drive `settle`
     # directly, and a controller the bridge has not been given is the ordinary
     # blind case rather than an error -- see `Controller._owns`.
-    _ac = (ctl.aircraft.get(ctl._resolve(known))
-           if (ctl is not None and known) else None)
+    phase = phase_now(ctl, known, down, fix)
     _worked_by = getattr(getattr(ctl, "_me", None), "role", "") if ctl else ""
-    phase = _phases.derive(
-        getattr(_ac, "sortie_phase", "") or "",
-        on_ground=down if fix is not None else None,
-        separation=(getattr(getattr(_ac, "phase", None), "name", "") or "").lower(),
-        was_airborne=bool(getattr(_ac, "approaches", 0)),
-        worked_by=_worked_by,
-        refused=lambda cur, want: print(
-            f"  .. phase REFUSED: {cur} cannot lead to {want} "
-            f"(worked by {_worked_by or 'nobody'}, "
-            f"{'down' if down else 'airborne'}) — he stays in {cur}",
-            flush=True))
-    if _ac is not None and phase and phase != _ac.sortie_phase:
-        print(f"  .. phase: {_ac.sortie_phase or '(none)'} -> {phase}", flush=True)
-        _ac.sortie_phase = phase
 
     flies = _phases.flies_geometry(phase)
     guide = (_phases.guide(phase, fix, profile)
@@ -3815,11 +3876,35 @@ def _start_atis(host: str, ear, profile, session_id: str) -> None:
         _serve.serve(fields, transmit,
                      _tts.Voice(voice_id=_serve.broadcast.ATIS_VOICE,
                                 engine=_serve.broadcast.ATIS_ENGINE),
-                     _eval_lua, mission_clock=None,
+                     _eval_lua, mission_clock=_mission_zulu_seconds,
                      anybody_flying=anybody_flying,
                      log=lambda m: print(m, flush=True))
 
     threading.Thread(target=run, daemon=True).start()
+
+
+def _mission_zulu_seconds() -> float:
+    """Seconds since midnight in the MISSION's own day, for the ATIS time.
+
+    A real ATIS opens with the hour it was recorded, and this said "time zero
+    zero zero zero Zulu" on every broadcast because the bridge passed
+    `mission_clock=None` -- the one caller of a parameter written for exactly
+    this. A pilot heard it through Whisper and reported the ATIS as saying
+    "0, 0, 0, 0, 0, julium", which is "zero zero zero zero Zulu" and a fair
+    transcription.
+
+    `timer.getAbsTime` is the mission Lua state's own clock -- seconds since
+    midnight of the mission date -- so it is the sim's answer rather than this
+    machine's, which matters for a mission set at dawn on a server running at
+    teatime.
+
+    Zero on any failure, which is what it did before, so a sim that will not
+    answer costs the timestamp and not the broadcast.
+    """
+    try:
+        return float(str(_eval_lua("return timer.getAbsTime()")).strip('"'))
+    except Exception:
+        return 0.0
 
 
 def _sim_paused() -> bool:

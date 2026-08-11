@@ -366,6 +366,7 @@ name in one sortie.
 | **H21** | The same, listening for a **second altitude** anywhere in the transmission | One altitude per transmission. The talk-down and a holding level together is the regression | [#80] | **P1** |
 | **H23** | **Take off and climb out normally.** Listen all the way to the hand-off to Center | **No approach vectors on the departure.** He must not turn you, must not descend you, and must not tell you you have gone around. On 10 August a departure off Kobuleti was flown on Batumi's approach geometry — six headings and a descent to two thousand while climbing out to five, thirty miles from either field | [#86] | **P1** |
 | **H24** | **Inbound, once Batumi Approach has you.** Watch that the vectors settle | No **reversal** — a heading that swings back the other way by a hundred degrees or more between calls. On 10 August the phase never left `departure`, so the pilot-path guidance was switched off while the proactive monitor went on vectoring, and the two disagreed. If it happens, say so on the radio: the log now prints `phase REFUSED` and the inputs that caused it, and that line is the diagnosis | [#91] [#92] | **P1** |
+| **H25** | **Immediately after take-off**, listen for two calls | You are **not** told you are established, cleared, or on final. On 11 August the approach geometry was asked about an aeroplane at 0.6 nm and 472 feet climbing off Kobuleti, said yes, and the engine cleared him for an approach he had not started — which wedged the phase for the rest of the flight | [#93] | **P1** |
 
 **What each one is actually checking**
 
@@ -744,6 +745,7 @@ the transmitter is the last piece — so these rows are about what the
 | **R5** | Check in with **Tower** on short final | He says nothing about the ATIS. Quizzing a man at two miles is noise at the worst moment | [R#17] | P3 |
 | **R6** | Ask Ground for taxi, note the runway; then ask Tower for take-off | **The same runway**, both times. It comes from the broadcast, not from each controller's own reading of the wind — that is the whole reason it lives in the database | [R#17] | **P1** |
 | **R7** | With a wrong letter, immediately ask for the visual | **Granted.** Nothing about the ATIS gates an approach; you may call the field in sight and take the visual at any point | [R#10] | **P1** |
+| **R8** | Tune the ATIS and listen to the **time** | A real one — *"time one three two one Zulu"*, the mission's hour. It said *"time zero zero zero zero Zulu"* on every broadcast until 11 August, which came back through Whisper as *"0, 0, 0, 0, 0, julium"* | [#94] | P2 |
 
 **What it is actually checking.** R2 and R7 are the section: the letter is a
 cross-check, never a condition. R6 is the architectural one — two controllers

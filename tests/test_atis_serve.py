@@ -42,6 +42,11 @@ class Rig:
         """How many times the sim was asked for the weather."""
         return self.reads
 
+    def observation(self):
+        """One field's weather, as `observe_fields` would return it."""
+        from marshall.atis import weather
+        return weather.observe_fields(self.fields, self.eval_lua)[self.fields[0].name]
+
     def eval_lua(self, _lua):
         self.reads.append(round(self.now, 1))
         return ";".join(
@@ -102,6 +107,7 @@ class Rig:
                     self.voice,
                     lambda lua: self.eval_lua(lua),
                     clock=lambda: self.now, stop=stop, sleep=sleep,
+                    mission_clock=lambda: 48061.0,
                     repeat_sec=repeat, poll_sec=poll,
                     anybody_flying=who, log=self.logs.append)
 
@@ -130,10 +136,20 @@ class TestItGoesOnTheAir(unittest.TestCase):
                          {R.KOBULETI_FIELD.atis_mhz, R.BATUMI_FIELD.atis_mhz})
         self.assertEqual(len(rig.voice.rendered), 2, "one recording per field")
 
-    def test_the_first_letter_is_alpha(self):
+    def test_the_first_letter_is_the_one_the_field_is_already_on(self):
+        """CHANGED 11 August: it used to assert Alpha.
+
+        Alpha says the aerodrome switched its transmitter on the moment the
+        mission loaded. A real one has been broadcasting all day, so the first
+        letter is derived from the field and the mission's hour -- see
+        `broadcast.first_letter`. Not random: a bridge restart must not change
+        the letter a pilot already copied.
+        """
+        from marshall.atis import broadcast
         rig = Rig()
         rig.run(ticks=2)
-        self.assertIn("information Alpha", rig.voice.rendered[0])
+        want = broadcast.first_letter(R.KOBULETI_FIELD.name, 48061.0)
+        self.assertIn(f"information {want}", rig.voice.rendered[0])
 
     def test_a_field_that_does_not_broadcast_is_skipped(self):
         import dataclasses
@@ -152,8 +168,12 @@ class TestTheLetterWalksOn(unittest.TestCase):
         rig = Rig(wind=90)
         rig.run(ticks=8, at={4: swing})
         self.assertGreater(len(rig.voice.rendered), 1, "never re-recorded")
-        self.assertIn("Alpha", rig.voice.rendered[0])
-        self.assertIn("Bravo", rig.voice.rendered[-1])
+        # The LETTER WALKS ON, whatever it started at -- which is the point of
+        # this test and was never really about Alpha and Bravo.
+        from marshall.atis import broadcast
+        first = broadcast.first_letter(R.KOBULETI_FIELD.name, 48061.0)
+        self.assertIn(first, rig.voice.rendered[0])
+        self.assertIn(broadcast.next_letter(first), rig.voice.rendered[-1])
         # The runway swings with the wind, and the TRANSCRIPT is plain English
         # -- "two five", not "two fife". The ICAO words are applied at the
         # radio, so this is the right layer to see "five" on.
@@ -379,3 +399,97 @@ class TheRadioIsNotQuietForLong(unittest.TestCase):
         rig.run(ticks=6)
         self.assertLessEqual(len(rig.rendered_reads()), 8,
                              "the weather is being read on the loop's clock")
+
+
+class TheBroadcastKnowsWhatTimeItIs(unittest.TestCase):
+    """A real ATIS opens with the hour it was recorded.
+
+        "ATIS always says 0,0,0,0,0 julium, and is always on alpha"
+
+    Which is "time zero zero zero zero Zulu" through Whisper, and a fair
+    transcription. The bridge passed `mission_clock=None` -- the one caller of a
+    parameter written for exactly this -- so every recording was stamped
+    midnight.
+
+    The sim's own clock is the right source, not this machine's: a mission set
+    at dawn on a server running at teatime is the case that makes the difference
+    visible, and `timer.getAbsTime` answers in the mission's day.
+    """
+
+    def test_a_clock_reaches_the_words(self):
+        rig = Rig()
+        rig.run(ticks=4)
+        said = rig.voice.rendered
+        self.assertTrue(said, "nothing was recorded")
+        self.assertNotIn("Time zero zero zero zero Zulu", said[0],
+                         "the recording is stamped midnight")
+        self.assertIn("Time one three two one Zulu", said[0])
+
+    def test_zero_still_produces_a_broadcast(self):
+        # A sim that will not answer costs the timestamp, never the broadcast.
+        from marshall.atis import weather
+        self.assertEqual(weather.zulu(0), "0000")
+
+    def test_the_bridge_passes_one(self):
+        import inspect
+        from marshall.atc import agent_atc
+        src = inspect.getsource(agent_atc)
+        self.assertIn("mission_clock=_mission_zulu_seconds", src)
+        self.assertIn("timer.getAbsTime", src)
+
+
+class TheLetterSurvivesARestart(unittest.TestCase):
+    """It was only ever Alpha, and rotation was not the reason.
+
+        "its only ever been alpha and the mission has run for MANY hours. so
+         rotation isnt working."
+
+    Rotation worked. An HOUR OF AGE never accumulated, because the bridge kept
+    being restarted and every restart built a fresh `Airwave` -- no letter, no
+    recorded-at -- so the loop took the first letter again and reset its own
+    clock.
+
+    The durable half was in Postgres the whole time. The `atis` table has
+    carried `letter` and `recorded_at` since the ATIS was built -- controllers
+    read them so a taxi clearance and the broadcast cannot name different
+    runways -- and the writer never read them back. The same shape as every
+    other unwired system here, in the one place where the state is explicitly
+    persisted.
+    """
+
+    def test_a_letter_with_no_audio_is_re_recorded_not_rotated(self):
+        # The restart case: the letter came off the table, the frames did not,
+        # because Polly renders those and nothing stores them. A pilot who
+        # copied it two minutes ago has not been overtaken by an hour.
+        was = S.Airwave(letter="Foxtrot", frames=[], recorded_at=0.0)
+        obs = Rig().observation()
+        letter, changed = S.rerecord(None, obs, was, now_sec=10.0,
+                                     previous_obs=obs)
+        self.assertEqual(letter, "Foxtrot")
+        self.assertTrue(changed, "it would have gone silent after a restart")
+
+    def test_an_hour_still_rotates(self):
+        was = S.Airwave(letter="Foxtrot", frames=["x"], recorded_at=0.0)
+        obs = Rig().observation()
+        letter, changed = S.rerecord(None, obs, was,
+                                     now_sec=S.broadcast.ROTATE_AFTER_SEC + 1,
+                                     previous_obs=obs)
+        self.assertEqual(letter, "Golf")
+        self.assertTrue(changed)
+
+    def test_a_fresh_letter_does_not_rotate_early(self):
+        was = S.Airwave(letter="Foxtrot", frames=["x"], recorded_at=0.0)
+        obs = Rig().observation()
+        letter, changed = S.rerecord(None, obs, was, now_sec=60.0,
+                                     previous_obs=obs)
+        self.assertEqual(letter, "Foxtrot")
+        self.assertFalse(changed)
+
+    def test_the_loop_reads_the_table_on_the_way_in(self):
+        import inspect
+        self.assertIn("store.current(f)", inspect.getsource(S.serve))
+        self.assertIn("was.recorded_at = clock() -", inspect.getsource(S.serve))
+
+    def test_the_store_reports_how_old_the_letter_is(self):
+        from marshall.atis import store
+        self.assertIn("age_sec", store.Current.__dataclass_fields__)

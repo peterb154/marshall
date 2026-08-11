@@ -296,6 +296,93 @@ class ARefusedTransitionIsNotSilent(unittest.TestCase):
         # facts that decide it.
         import inspect
         from marshall.atc import agent_atc
-        src = inspect.getsource(agent_atc.settle)
+        # `phase_now`, not `settle`: the derivation moved so that the half of
+        # the turn which MUTATES the engine could ask before it acts.
+        src = inspect.getsource(agent_atc.phase_now)
         self.assertIn("phase REFUSED", src)
         self.assertIn("worked by", src)
+
+
+class TakingOffIsNotBeingEstablishedOnFinal(unittest.TestCase):
+    """Six seconds after take-off, the engine cleared him for an approach.
+
+        .. sockeye is already on final per radar; not stacking him
+        .. phase REFUSED: departure cannot lead to approach — he stays in
+           departure
+
+    `separation_context` asked the APPROACH geometry about an aeroplane at
+    0.6 nm and 472 feet climbing off Kobuleti. The geometry answered about the
+    numbers it was given, obligingly, and `seen_on_final` -- which sets
+    `Phase.CLEARED` and hands him the letdown -- did the rest. `derive` then
+    wanted `approach`; `departure` cannot lead there; the transition was refused
+    and the phase welded to `departure` for the whole flight.
+
+    THE FOURTH CALLER OF `asr.guide`, and the only one that mutates. #86 gated
+    two of them. This is the one that changes the engine, so it is the one where
+    an ungated question costs most.
+    """
+
+    def setUp(self):
+        from marshall.atc import agent_atc as A, controller as atc
+        from marshall.core import route as R
+        self.A, self.R = A, R
+        self.p = R.BATUMI_ASR
+        self.ctl = atc.Controller(self.p)
+
+    def climbing_off_kobuleti(self):
+        """The radar line from the recorder, as data."""
+        return {"name": "362nd_sockeye", "label": "362nd_sockeye",
+                "callsign": "sockeye", "type": "F-16C_50",
+                "lat": 41.94, "lon": 41.90, "alt_ft": 472,
+                "heading": 71.0, "speed_kt": 341.0, "manned": True,
+                "on_ground": False}
+
+    def test_the_seed_is_refused_for_a_departing_aircraft(self):
+        from marshall.atc import intents
+        self.ctl._me = self.p.station_on(133.000)      # Kobuleti Tower
+        self.ctl.check_in("sockeye")
+        ac = self.ctl.get("sockeye")
+        ac.sortie_phase = "departure"
+        before = ac.phase
+        self.ctl.out.clear()
+        scope = self.A.Scope("", contacts=[self.climbing_off_kobuleti()],
+                             origin=(41.609594, 41.600234),
+                             bullseye={"blue": {"lat": 42.18, "lon": 41.67}})
+        self.A.separation_context(
+            self.A.Bridge(), self.ctl, "sockeye airborne", scope,
+            known="sockeye", track="362nd_sockeye",
+            intent=intents.Intent(intents.IntentKind.CHECK_IN, "sockeye"))
+        self.assertEqual(ac.phase, before,
+                         "he was cleared for an approach he had not started")
+        self.assertEqual(ac.sortie_phase, "departure")
+
+    def test_an_unknown_aircraft_is_still_seeded(self):
+        """The case the seed was BUILT for must keep working.
+
+        A flight established on the final at ten miles that the engine has never
+        heard of: blocking on "no phase" would fix today's bug by reopening the
+        original one.
+        """
+        from marshall.atc import phases
+        self.assertFalse(phases.flies_geometry(""),
+                         "an empty phase flies nothing, which is why the gate "
+                         "has to treat it as UNKNOWN rather than as a refusal")
+
+    def test_the_phase_is_derived_before_anything_acts(self):
+        import inspect
+        from marshall.atc import agent_atc
+        src = inspect.getsource(agent_atc.separation_context)
+        i_phase = src.index("_phase = phase_now(")
+        i_seed = src.index("ctl.seen_on_final(")
+        self.assertLess(i_phase, i_seed,
+                        "the engine is mutated before the phase is known")
+
+    def test_one_function_answers_the_phase_question(self):
+        # `settle` used to derive it separately, after this. Two derivations of
+        # one fact is how the three disagreeing ideas of "what is happening"
+        # got loose to begin with.
+        import inspect
+        from marshall.atc import agent_atc
+        self.assertIn("phase_now(", inspect.getsource(agent_atc.settle))
+        self.assertEqual(
+            inspect.getsource(agent_atc.settle).count("_phases.derive("), 0)

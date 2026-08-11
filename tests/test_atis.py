@@ -305,3 +305,57 @@ class TestApproachConfirmsAndAsks(unittest.TestCase):
         """"Report BATUMI inbound" from Clearance, to a man who has not started
         his engine, is a radar controller's line out of the wrong mouth."""
         self.assertNotIn("report", self.said(R.KOB_CLEARANCE, "").lower())
+
+
+class TheLetterIsNotAlwaysAlpha(unittest.TestCase):
+    """A field has been broadcasting all day before anybody tuned it.
+
+        "the atis information xxx should rotate at least every hour and start
+         randomly - so that it's not always alpha"
+
+    Hourly rotation already worked (`ROTATE_AFTER_SEC`). The FIRST letter was
+    always Alpha, which says the aerodrome switched its transmitter on the
+    moment the mission loaded.
+
+    DERIVED, NOT RANDOM, and that is the interesting part. `random.choice`
+    would hand out a new letter on every bridge restart -- so a pilot who
+    copied Bravo on the ramp and heard Delta ten minutes later would be right
+    to report it. This is a function of the FIELD and the mission's hour: not
+    Alpha, different at every aerodrome, stable across a restart, and it
+    advances through the day on its own exactly as the hourly rotation would
+    have taken it.
+    """
+
+    def first(self, field, hours):
+        from marshall.atis import broadcast
+        return broadcast.first_letter(field, hours * 3600)
+
+    def test_it_is_not_always_alpha(self):
+        letters = {self.first(f, 0) for f in ("Batumi", "Kobuleti", "Nellis")}
+        self.assertNotEqual(letters, {"Alpha"})
+
+    def test_two_fields_are_not_in_step(self):
+        # Real aerodromes' letters have nothing to do with each other.
+        self.assertNotEqual(self.first("Batumi", 13), self.first("Kobuleti", 13))
+
+    def test_it_advances_an_hour_at_a_time(self):
+        from marshall.atis import broadcast
+        for h in (0, 5, 13, 23):
+            self.assertEqual(self.first("Batumi", h + 1),
+                             broadcast.next_letter(self.first("Batumi", h)))
+
+    def test_it_is_stable_across_a_restart(self):
+        # THE REASON IT IS NOT RANDOM. Same field, same mission hour, same
+        # letter -- a bridge restart mid-sortie must not change what a pilot
+        # already copied.
+        self.assertEqual(self.first("Batumi", 13), self.first("Batumi", 13))
+
+    def test_it_wraps(self):
+        from marshall.atis import broadcast
+        self.assertIn(self.first("Batumi", 200), broadcast.LETTERS)
+
+    def test_a_zero_clock_still_gives_a_letter(self):
+        # A sim that will not answer costs the timestamp, never the broadcast.
+        from marshall.atis import broadcast
+        self.assertIn(broadcast.first_letter("Batumi", 0.0), broadcast.LETTERS)
+        self.assertIn(broadcast.first_letter("", -5.0), broadcast.LETTERS)

@@ -71,17 +71,28 @@ class Airwave:
     last_played: float = 0.0
 
 
-def rerecord(field, obs, was, now_sec: float, previous_obs=None) -> tuple[str, bool]:
+def rerecord(field, obs, was, now_sec: float, previous_obs=None,
+             zulu_seconds: float = 0.0) -> tuple[str, bool]:
     """(letter, did it change). The rotation decision, and nothing else.
 
     Split out so the policy can be tested without a radio: given what is on the
     air and what the weather is, does this get a new letter?
     """
     if not was.letter:
-        return broadcast.LETTERS[0], True          # first recording is Alpha
+        # NOT ALPHA. A field has been broadcasting all day before anybody
+        # tuned it -- see `broadcast.first_letter`, which derives the letter
+        # from the aerodrome and the mission's hour so it is stable across a
+        # bridge restart and different at each field.
+        return broadcast.first_letter(getattr(obs, "field", ""), zulu_seconds), True
     age = now_sec - was.recorded_at
     if broadcast.due_for_rotation(obs, previous_obs, age):
         return broadcast.next_letter(was.letter), True
+    # A LETTER WITH NO AUDIO IS A RESTART, not a broadcast. The letter came off
+    # the table on the way in; the frames did not, because Polly renders them
+    # and nothing stores them. Re-record the SAME letter rather than rotating:
+    # a pilot who copied it two minutes ago has not been overtaken by an hour.
+    if not was.frames:
+        return was.letter, True
     return was.letter, False
 
 
@@ -120,8 +131,38 @@ def serve(fields, transmit, voice, eval_lua, clock=time.monotonic,
     one packet, both bands. See `atis_freqs`. `voice.frames(text)` renders
     it. Neither is imported here -- see the module docstring.
     """
-    on_air = {f.name: Airwave() for f in fields if getattr(f, "atis_mhz", 0)}
     live = [f for f in fields if getattr(f, "atis_mhz", 0)]
+    # WHAT IS ALREADY ON THE AIR, read back from the table this loop writes.
+    #
+    # The letter and the hour it was recorded have been published since the ATIS
+    # was built -- controllers read them so a taxi clearance and the broadcast
+    # cannot name different runways -- and NOTHING READ THEM BACK. So every
+    # bridge restart began a fresh `Airwave`, took the first letter again, and
+    # reset the rotation clock:
+    #
+    #     "its only ever been alpha and the mission has run for MANY hours"
+    #
+    # Correct, and not because rotation was broken. An hour of age never
+    # accumulated inside one process, because the process kept being restarted
+    # and the durable half of its own state was sitting in Postgres unread.
+    #
+    # The age comes back in WALL-CLOCK seconds and is converted into this loop's
+    # injected clock frame, so the rotation still measures elapsed time and
+    # stays testable with a clock you turn by hand.
+    on_air = {}
+    for f in live:
+        was = Airwave()
+        try:
+            got = store.current(f)
+            if got.on_the_air and got.letter:
+                was.letter = got.letter
+                was.recorded_at = clock() - (got.age_sec or 0.0)
+                log(f"  atis: {f.name} was on information {got.letter}"
+                    + (f", {got.age_sec / 60:.0f} min ago" if got.age_sec else ""))
+        except Exception as e:                  # a dead table is not a dead ATIS
+            log(f"  !! atis: could not read {f.name}'s last broadcast: "
+                f"{type(e).__name__}")
+        on_air[f.name] = was
     # When the weather was last read. A list so the loop below can write it.
     last_read = [None]
 
@@ -200,13 +241,19 @@ def serve(fields, transmit, voice, eval_lua, clock=time.monotonic,
                 f"recording: {type(e).__name__}: {e}")
             observed = {}
 
+        # THE MISSION'S OWN HOUR, read once per observation rather than per
+        # field: it stamps the recording and it decides which letter a station
+        # that has been broadcasting all day is already on.
+        _zulu_sec = mission_clock() if mission_clock else 0.0
+
         for f in live:
             obs = observed.get(f.name)
             was = on_air[f.name]
             if obs is not None:
-                letter, changed = rerecord(f, obs, was, now, seen.get(f.name))
+                letter, changed = rerecord(f, obs, was, now, seen.get(f.name),
+                                           zulu_seconds=_zulu_sec)
                 if changed:
-                    zulu = weather.zulu(mission_clock() if mission_clock else 0)
+                    zulu = weather.zulu(_zulu_sec)
                     text = broadcast.spoken(obs, letter, zulu)
                     try:
                         frames = voice.frames(text)

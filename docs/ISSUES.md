@@ -4645,3 +4645,108 @@ is worse. The phase has to be trustworthy first.
 
 `asr.guide` now has three callers and two of them have a phase gate. That is the
 shape [ARCH-11]/#76 exists to find, three times over.
+
+---
+
+## [SEP-8] Cleared for an approach six seconds after take-off — #93
+labels: bug, needs-flight-test
+
+**Status:** FIXED 11 August. This is the cause of [SEP-6]; the diagnostic added
+there found it on the first flight.
+
+    .. sockeye is already on final per radar; not stacking him
+    .. phase REFUSED: departure cannot lead to approach — he stays in departure
+
+`separation_context` asked the **approach** geometry about an aeroplane at
+**0.6 nm and 472 feet climbing off Kobuleti**. It answered about the numbers it
+was handed, obligingly, and `seen_on_final` did the rest — that sets
+`Phase.CLEARED` and hands him the letdown. `derive` then wanted `approach`;
+`departure` cannot lead there; the transition was refused; and the phase stayed
+welded to `departure` for the whole flight.
+
+Everything the pilot reported downstream came from that one seeding: the
+guidance suppressed on every transmission, and the vectors that reversed 140°
+because only the ungated monitor was still talking ([SEP-7]).
+
+**The fourth caller of `asr.guide`, and the only one that MUTATES.** #86 gated
+two. This is the one that changes the engine, so an ungated question costs most
+here.
+
+**The real fault was ordering.** The phase was derived in `settle`, which runs
+*after* `separation_context` — so the half of the turn that mutates ran before
+anything had worked out what the aeroplane was doing. `phase_now` derives it
+once, before anything acts, and `settle` reads the same answer instead of
+recomputing it. One function, one answer, the same rule as `is_on_the_ground`.
+
+**Not knowing is not the same as knowing he is departing.** An empty phase is
+the case this seed was *built* for — a flight established on the final at ten
+miles the engine has never heard of — so the gate refuses only a phase we
+positively know does not fly the approach. Blocking on "no phase" would have
+fixed this by reopening the original.
+
+---
+
+## [ATIS-2] The broadcast was stamped midnight, every time — #94
+labels: bug
+
+**Status:** FIXED 11 August.
+
+    "ATIS always says 0,0,0,0,0 julium, and is always on alpha"
+
+Which is *"time zero zero zero zero Zulu"* heard through Whisper, and a fair
+transcription. The bridge passed `mission_clock=None` — it is **the only caller**
+of a parameter written for exactly this — so `zulu(0)` stamped every recording
+midnight.
+
+The sim's own clock is the right source rather than this machine's: a mission
+set at dawn on a server running at teatime is what makes the difference visible.
+`timer.getAbsTime` answers in the mission's day. Zero on any failure, so a sim
+that will not answer costs the timestamp and never the broadcast.
+
+**Rotation was not broken; the letter never got old enough.**
+
+    "its only ever been alpha and the mission has run for MANY hours. so
+     rotation isnt working."
+
+I had written that "always on alpha is correct, a static mission gives no
+reason to turn" — **wrong**, and the pilot was right to push back. An hour of
+age never accumulated because the BRIDGE kept being restarted, and every
+restart built a fresh in-memory `Airwave`: no letter, no recorded-at, first
+letter again, clock back to zero.
+
+The durable half was in Postgres the whole time. The `atis` table has carried
+`letter` and `recorded_at` since the ATIS was built — controllers read them so a
+taxi clearance and the broadcast cannot name different runways — and **the
+writer never read them back.** The same shape as every other unwired system
+here, in the one place where the state is deliberately persisted.
+
+`serve` seeds from the table on the way in now, converting the stored wall-clock
+age into its injected clock frame so the rotation still measures elapsed time
+and stays testable with a clock you turn by hand:
+
+    atis: Batumi was on information Alpha, 25 min ago
+
+A letter with no audio is a **restart, not a rotation** — the letter comes off
+the table, the frames do not, because Polly renders those and nothing stores
+them. It re-records the same letter rather than advancing: a pilot who copied it
+two minutes ago has not been overtaken by an hour.
+
+**And the letter no longer starts at Alpha.**
+
+    "the atis information xxx should rotate at least every hour and start
+     randomly - so that it's not always alpha"
+
+Hourly rotation already worked (`ROTATE_AFTER_SEC`); the FIRST letter was the
+problem, because Alpha says the aerodrome switched its transmitter on the moment
+the mission loaded. `broadcast.first_letter` derives it from the field and the
+mission's hour instead.
+
+**Derived, not random, and the difference is the point.** `random.choice` would
+hand out a new letter on every bridge restart — a pilot who copied Bravo on the
+ramp and heard Delta ten minutes later would be right to report it. This is not
+Alpha, is different at every aerodrome, is stable across a restart, and advances
+through the day exactly as the hourly rotation would have taken it:
+
+    midnight   Batumi=Sierra   Kobuleti=Foxtrot   Nellis=Xray
+    1300Z      Batumi=Foxtrot  Kobuleti=Sierra    Nellis=Kilo
+    1400Z      Batumi=Golf     Kobuleti=Tango     Nellis=Lima

@@ -38,6 +38,11 @@ class Current:
     letter: str | None
     runway: int
     text: str = ""
+    # HOW LONG THIS LETTER HAS BEEN UP, in seconds, or None when nobody is
+    # broadcasting. The table has always recorded WHEN; nothing read it back,
+    # so a bridge restart began the alphabet again and a mission that ran all
+    # day never left the first letter.
+    age_sec: float | None = None
     wind_from_deg: int | None = None
     wind_kt: int | None = None
     # FALSE MEANS NOBODY IS BROADCASTING and the runway was computed rather
@@ -88,7 +93,14 @@ def current(field, fallback_wind_deg: float | None = None) -> Current:
         with db.session() as s:
             row = s.get(Atis, field.name)
             if row is not None:
+                _age = None
+                if row.recorded_at is not None:
+                    _at = row.recorded_at
+                    if _at.tzinfo is None:
+                        _at = _at.replace(tzinfo=UTC)
+                    _age = (datetime.now(UTC) - _at).total_seconds()
                 return Current(field=field.name, letter=row.letter,
+                               age_sec=_age,
                                runway=int(row.runway), text=row.text or "",
                                wind_from_deg=row.wind_from_deg,
                                wind_kt=row.wind_kt, on_the_air=True)
