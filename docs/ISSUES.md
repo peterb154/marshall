@@ -6375,10 +6375,52 @@ cannot be filed at all without writing its endpoints in twice.
 exists; the route keeps its endpoints only because the rule exists TODAY and
 refusing a plan is worse than repeating a name.
 
-**The change:** `route` becomes the enroute portion, empty is legal, and
-`check_live` checks what it actually cares about — that every fix NAMED is one
-the sim holds. Callers that read `route` to know where a flight is going should
-read `origin`/`destination`, which is what they meant.
+## The shape, decided 11 August
 
-Not urgent, and not to be done while somebody is flying: it touches the
-validator, every filed row, and the clearance the controller reads aloud.
+    "I think the destination will typically be in the steerpoints but the
+     departure airfield will not. Maybe that's determined from whatever
+     clearance opens the plan?"
+
+Right on both halves, and the second is the better idea. Three facts, three
+authorities — which is the same split #105 drew between FILED and ISSUED, one
+field along.
+
+| | authority | when it is known |
+|---|---|---|
+| **destination** | the cartridge | at filing. It is a steerpoint: DKS writes the field's own name on it |
+| **route** | the cartridge | at filing. The ENROUTE portion, and empty is legal |
+| **origin** | the seat that opens the clearance | at ISSUE, not at filing |
+
+**Why the origin is not filed.** A DTC has none — steerpoint one is already
+airborne and some miles out, so where he took off from is genuinely not in the
+file. Every attempt to derive it has been a guess dressed as a fact:
+`theatre.departure` was a per-theatre constant; nearest-aerodrome-to-steerpoint-
+one needed a field table; the comms ladder is a good heuristic and is still a
+heuristic.
+
+The clearance frequency is not a heuristic. A pilot calling **Kobuleti
+Clearance** is on Kobuleti's ramp — he cannot be anywhere else and be talking to
+that seat. `bridge.heard_on` already resolves the frequency to a station and
+`his_field()` already turns a station into an aerodrome, so the fact is in hand
+at the moment it matters and needs no inference at all.
+
+And it belongs on the per-flight copy rather than the template: `assigned_plans`
+already has its own `origin` column. A filed plan is a route anybody may
+request; a clearance is issued to one aeroplane departing one field. Two
+aeroplanes may fly `Domino` out of different fields on the same night, and
+today's schema says they have the same origin.
+
+## The order
+
+1. **Establish the origin at issue.** `clearance_tools` learns its own field
+   from the station the agent was built with, and `assign` writes it to
+   `assigned_plans.origin`. Additive: nothing that reads the template changes.
+2. **Let the route be enroute-only.** `check_live` stops demanding "at least two
+   fixes" — the rule it actually wants is *every fix named is one the sim
+   holds*, which is what its own docstring says it is for. Empty becomes legal,
+   which is what "direct" means.
+3. **Normalise the filed rows**, once 2 is in: strip the endpoints from `route`
+   on the plans already on the board.
+
+Not to be done while somebody is flying: 2 touches the validator, every filed
+row, and the clearance a controller reads aloud.
