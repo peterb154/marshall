@@ -5200,7 +5200,35 @@ to go red before being left green.
 ## [SEAM-8] A plan on file is reported as a clearance already issued and read back — #105
 labels: bug, needs-flight-test
 
-**Status:** OPEN, found by `tools/ladder_rehearsal.py` on a deliberately clean
+**Status:** FIXED 11 August, needs the next sortie.
+
+**Two judges of one question, and the wrong one was writing it down.** The bridge
+verifies a read-back against the clearance on the board — `decision.verify`, the
+same function that checks the controller said what the engine decided — and the
+director's tool ALSO took `correct: bool = True` from the model and stamped
+`clearance_ack` from it. So the one durable fact distinguishing "we read him a
+clearance" from "he has it" came from a guess that defaults to yes, and the
+`rules.md` prompt explicitly told the agent to form that guess.
+
+The verifier decides, the bridge records, the agent phrases:
+
+* `_read_back_correct` returns the verdict **and the elements he missed** —
+  `verify` had always returned that list and the bridge discarded it, so the only
+  thing that knew WHAT was wrong was the agent, inventing it. It once said
+  "negative, you missed altitude" to a pilot who had read the altitude back
+  perfectly and dropped the squawk.
+* The engine names them: *"negative — say again four six two zero."*
+* The bridge POSTs `/flights/{id}/clearance-ack`, which existed and which nothing
+  had ever called.
+* `clearance_read_back(callsign, correct)` is **gone** from the agent's tools.
+  `clearance_state(callsign)` replaces it and can only REPORT: `NOT ISSUED`,
+  `ISSUED, NOT ACKNOWLEDGED`, or `ACKNOWLEDGED`.
+
+Verified live: `clearance_ack` moves from `None` to a timestamp when the bridge
+records it, and the controller now answers a mangled read-back with *"altitude is
+two four thousand, not four thousand"* — the element, named, from the verifier.
+
+Originally found by `tools/ladder_rehearsal.py` on a deliberately clean
 board, 11 August.
 
 The director's flights were cleared and the bridge restarted, so nothing had

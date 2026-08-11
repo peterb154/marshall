@@ -367,28 +367,46 @@ def clearance_tools(mission: str = "default") -> list:
                 f"(matched on {why}; plan {got.get('label') or plan.get('name')}. "
                 f"Every element above is read out -- the departure frequency is "
                 f"not optional.\n"
-                f"HIS NEXT TRANSMISSION WILL BE THE READ-BACK. Answer it: call "
-                f"clearance_read_back and say \"readback correct\" if he got it, "
-                f"or name the element he got wrong and ask for that one again. "
-                f"Silence is not an answer here -- he is on the ground with a "
+                f"HIS NEXT TRANSMISSION WILL BE THE READ-BACK, and you do not "
+                f"judge it. The bridge verifies it against this clearance, "
+                f"element by element, and hands you the verdict -- say "
+                f"\"readback correct\" when it says so, and when it names an "
+                f"element he missed, ask for THAT one again and nothing else. "
+                f"Silence is not an answer here: he is on the ground with a "
                 f"pencil and no way to tell whether you heard him.)")
 
     @tool
-    def clearance_read_back(callsign: str, correct: bool = True) -> str:
-        """Record that a pilot has read his clearance back. Call it with
-        correct=true when he got it right, and correct=false when he did not --
-        an unacknowledged clearance stays unacknowledged, which is what lets
-        anybody afterwards see that he was cleared but never agreed."""
+    def clearance_state(callsign: str) -> str:
+        """Where this flight stands with its clearance: FILED, ISSUED or
+        ACKNOWLEDGED. Ask before you tell a pilot anything about his clearance.
+
+        These are three different things and saying the wrong one is not a
+        wording slip. A plan on FILE is a route somebody typed; a clearance
+        ISSUED is one you read to him; ACKNOWLEDGED is one he read back
+        correctly. "Your read-back was correct" is the sentence that ends
+        clearance delivery's business and hands him to Ground, so it may only
+        be said when this tool says ACKNOWLEDGED.
+        """
         f = _flight(callsign)
         if not f:
             return _not_on_the_board(callsign)
-        if not assigned(f["id"]):
-            return f"{callsign} has not been given a clearance to read back."
-        if not correct:
-            return ("Not recorded. Read him the parts he got wrong and take the "
-                    "read-back again.")
-        ack(f["id"])
-        return f"Read-back correct, {callsign} is cleared as filed."
+        got = assigned(f["id"])
+        if not got:
+            n = len(filed())
+            return (f"NOT ISSUED. {callsign} has no clearance. There "
+                    f"{'is' if n == 1 else 'are'} {n} plan(s) on file he could "
+                    f"ask for, and a plan on file is not a clearance -- he has "
+                    f"not been read anything and has agreed to nothing. Do not "
+                    f"tell him he is cleared.")
+        if not got.get("acked_at"):
+            return (f"ISSUED, NOT ACKNOWLEDGED. {callsign} was read a clearance "
+                    f"({got.get('label') or 'as filed'}) and has not read it "
+                    f"back correctly yet. Do not say his read-back was correct. "
+                    f"If he has just read it back, the bridge has already "
+                    f"judged it and told you the verdict -- use that.")
+        return (f"ACKNOWLEDGED. {callsign} was cleared on "
+                f"{got.get('label') or 'the filed plan'} and read it back "
+                f"correctly. He is finished with clearance delivery.")
 
     @tool
     def flight_plan_help(callsign: str) -> str:
@@ -415,7 +433,7 @@ def clearance_tools(mission: str = "default") -> list:
             out.append(f"Unresolved on his route: {', '.join(missing)}.")
         return "\n".join(out)
 
-    return [request_clearance, clearance_read_back, flight_plan_help]
+    return [request_clearance, clearance_state, flight_plan_help]
 
 
 def _known_fixes() -> dict:

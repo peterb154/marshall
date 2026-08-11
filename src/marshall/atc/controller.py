@@ -1606,7 +1606,8 @@ class Controller:
                  decided=D.Decision(kind="advise_atis", to=ac.callsign,
                                     atis_letter=letter))
 
-    def clearance_read_back(self, cs: str, correct: bool | None = True) -> None:
+    def clearance_read_back(self, cs: str, correct: bool | None = True,
+                            missed: tuple = ()) -> None:
         """The read-back, and the one place 'readback correct' belongs.
 
         A CORRECT read-back is what ends Delivery's business and hands him to
@@ -1623,6 +1624,20 @@ class Controller:
         # treating it as wrong would strand a man who read it back perfectly.
         if correct is True:
             ac.sortie_phase = "taxi"
+            return
+        if correct is False and missed:
+            # NAME WHAT HE MISSED, from the verifier that found it. The agent
+            # used to compose this sentence itself, which meant guessing which
+            # element was wrong -- and it guessed "altitude" at a pilot who had
+            # read the altitude back perfectly and dropped the squawk.
+            #
+            # A read-back that is wrong is not a rebuke; it is a request for one
+            # element again. Saying which one is the whole value of the reply.
+            what = ", ".join(str(m) for m in missed)
+            self.say(ac.callsign,
+                     f"{self._addr(ac)}, negative — say again {what}.",
+                     decided=D.Decision(kind="say_again", to=ac.callsign,
+                                        note=what))
 
     def request_taxi(self, cs: str) -> None:
         """Ready to move. Ground's, and Ground clears him TO the runway only.

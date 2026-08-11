@@ -114,6 +114,11 @@ class Intent:
     # either way, and the answer decides whether an aircraft is handed to
     # another controller. That is not a language judgement.
     correct: bool | None = None
+    # ...AND WHICH ELEMENTS HE MISSED. `decision.verify` returns them and the
+    # bridge used to discard the list, so the only thing that knew WHAT was
+    # wrong was the agent -- inventing it. "Negative, you missed altitude" has
+    # to be a fact the engine hands over, like every other number here.
+    missed: tuple = ()
 
 
 # JSON schema for a structured-output parser (Haiku today, Nova Sonic later).
@@ -401,7 +406,8 @@ def dispatch(ctl: atc.Controller, intent: Intent,
             # phase alone -- a transition on an unjudged read-back would hand a
             # pilot to Ground in the same breath as being told his squawk is
             # wrong. See `Controller.clearance_read_back`.
-            ctl.clearance_read_back(cs, correct=intent.correct)
+            ctl.clearance_read_back(cs, correct=intent.correct,
+                                    missed=tuple(intent.missed or ()))
         case IntentKind.REQUEST_TAXI:
             ctl.request_taxi(cs)
         case IntentKind.REPORT_HOLDING_SHORT:

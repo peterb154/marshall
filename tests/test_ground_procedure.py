@@ -465,9 +465,15 @@ class TheReadBackIsJudgedAgainstTheClearance(unittest.TestCase):
         self.assertEqual(say.spell_squawk(6521), "six five two one")
 
     def test_no_clearance_on_the_board_means_no_judgement(self):
+        """None, and no missed elements -- a man who has not been cleared has
+        nothing to have got wrong. `verify` returns WHICH facts went missing and
+        that list now travels with the verdict, so the engine can name them
+        instead of the agent guessing which element was fumbled."""
         from marshall.atc import agent_atc
         b = agent_atc.Bridge()
-        self.assertIsNone(agent_atc._read_back_correct(b, "Sockeye 1-1", "anything"))
+        ok, missed = agent_atc._read_back_correct(b, "Sockeye 1-1", "anything")
+        self.assertIsNone(ok)
+        self.assertEqual(missed, [])
 
 
 class TheAtisLetterCrossesTheSeam(unittest.TestCase):
@@ -672,3 +678,78 @@ class DeliveryAsksAboutTheWeatherToo(unittest.TestCase):
         from marshall.atc import controller as atc
         self.assertIn("self._atis_phrase(ac)",
                       inspect.getsource(atc.Controller.request_clearance))
+
+
+class OnlyOneThingJudgesTheReadBack(unittest.TestCase):
+    """FILED, ISSUED and ACKNOWLEDGED are three states, and a model decided one.
+
+        PILOT: Nellis Clearance, Sockeye, request clearance.
+        ATC:   Sockeye, you are already cleared as filed and your read-back was
+               correct.
+
+    On a board that had just been emptied, to a man who had said six words. He
+    had been read nothing and had agreed to nothing.
+
+    The cause was two judges of one question. The bridge verifies the read-back
+    against the clearance on the board -- `decision.verify`, the same function
+    that checks the controller said what the engine decided -- and the director's
+    tool ALSO took `correct: bool = True` from the model and wrote `clearance_ack`
+    from it. The durable record of the one thing that distinguishes "we read him
+    a clearance" from "he has it" came from the guess, defaulting to yes.
+
+    So: the verifier decides, the bridge records, the agent phrases. Which is
+    the rule everywhere else here and had been skipped in the one place where
+    being wrong is unarguable -- "readback correct" is what ends clearance
+    delivery's business and hands him to Ground. [#105]
+    """
+
+    def test_the_verdict_carries_what_he_missed(self):
+        """`verify` has always returned WHICH facts went missing and the bridge
+        threw the list away, so the only thing that knew what was wrong was the
+        agent, inventing it. It guessed "altitude" at a pilot who had read the
+        altitude back perfectly."""
+        from marshall.atc import decision as D
+        d = D.Decision(kind="clearance", to="Sockeye", altitude_ft=24000,
+                       frequency_mhz=135.1, squawk="4620")
+        missed = D.verify(d, "cleared as filed, maintain two four thousand, "
+                             "departure one three five decimal one, sockeye")
+        self.assertTrue(missed, "the squawk was never said")
+        self.assertTrue(any("four six two zero" in m for m in missed))
+
+    def test_the_engine_names_the_missed_element(self):
+        ctl = atc.Controller(P)
+        ctl.request_clearance("Sockeye")
+        ctl.out.clear()
+        ctl.clearance_read_back("Sockeye", correct=False,
+                                missed=("four six two zero",))
+        said = " | ".join(t.text for t in ctl.out).lower()
+        self.assertIn("say again", said)
+        self.assertIn("four six two zero", said)
+
+    def test_a_wrong_read_back_still_moves_nobody(self):
+        ctl = atc.Controller(P)
+        ctl.request_clearance("Sockeye")
+        ctl.clearance_read_back("Sockeye", correct=False, missed=("squawk",))
+        ac = ctl.aircraft[ctl._resolve("Sockeye")]
+        self.assertEqual(ac.sortie_phase, "clearance")
+
+    def test_the_agent_has_no_way_to_declare_it_correct(self):
+        """The tool that took the verdict from the model is gone. What replaces
+        it REPORTS the state and cannot set it."""
+        import inspect
+
+        import sys
+        sys.path.insert(0, "director")
+        from tools import clearance as C
+        src = inspect.getsource(C.clearance_tools)
+        self.assertNotIn("def clearance_read_back", src)
+        self.assertIn("def clearance_state", src)
+        # ...and nothing in the tool list can stamp the acknowledgement.
+        self.assertNotIn("ack(f[\"id\"])", src)
+
+    def test_the_rules_no_longer_ask_the_agent_to_judge_it(self):
+        from pathlib import Path
+        rules = (Path(__file__).resolve().parent.parent / "src" / "marshall"
+                 / "atc" / "agent" / "prompts" / "rules.md").read_text()
+        self.assertIn("You do not judge the read-back", rules)
+        self.assertNotIn("clearance_read_back(callsign, correct)", rules)

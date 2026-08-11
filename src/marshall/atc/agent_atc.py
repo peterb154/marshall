@@ -276,6 +276,42 @@ def flight_agree(flight_id: int, base: str = BASE_URL, **fields) -> dict:
         return {}
 
 
+def _ack_the_clearance(bridge, known: str, base: str = BASE_URL) -> dict:
+    """He read it back and the VERIFIER agreed. Record the agreement.
+
+    CLEARED AND AGREED ARE NOT THE SAME THING, which is why `clearance_ack`
+    exists -- and it was being stamped by the agent, from a `correct: bool =
+    True` argument on a tool the model calls. So the one durable difference
+    between "we read him a clearance" and "he has it" was a model's opinion,
+    defaulting to yes.
+
+    Written from the bridge now, on the deterministic verdict, which is the same
+    rule as everywhere else here: the engine decides, the agent phrases.
+    """
+    fid = _flight_id_of(known)
+    if not fid:
+        return {}
+    try:
+        return _post_json(f"{base}/flights/{fid}/clearance-ack", {})
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
+        print(f"  !! could not record the read-back: {e}", flush=True)
+        return {}
+
+
+def _flight_id_of(known: str, base: str = BASE_URL) -> int:
+    """His row on the board, by callsign."""
+    if not known:
+        return 0
+    try:
+        got = _get_json(f"{base}/flights")
+    except Exception:
+        return 0
+    for row in (got or {}).get("flights", []) or []:
+        if (row.get("callsign") or "").lower() == known.lower():
+            return int(row.get("id") or 0)
+    return 0
+
+
 def flight_handoff(flight_id: int, to: str, base: str = BASE_URL) -> dict:
     """Give him to the next controller, with everything we know attached."""
     if not flight_id:
@@ -1681,8 +1717,25 @@ def _cleared_plan_now(known: str) -> dict:
     return {}
 
 
-def _read_back_correct(bridge, known: str, transcript: str) -> bool | None:
-    """Did he repeat the clearance he was given? None when we cannot tell.
+def _read_back_correct(bridge, known: str,
+                       transcript: str) -> tuple[bool | None, list[str]]:
+    """Did he repeat the clearance he was given, and WHICH parts did he miss?
+
+    ONE JUDGE, AND IT IS THIS ONE. `decision.verify` already returned the list
+    of facts that did not survive being spoken and this function threw it away,
+    returning a bare yes/no -- so the only thing that knew WHAT he got wrong was
+    the agent, guessing, and the agent is not allowed to judge this. It decides
+    whether an aircraft is handed to another controller.
+
+    Worse, the durable record came from the guess: the director's
+    `clearance_read_back` tool took `correct: bool = True` FROM THE MODEL and
+    wrote `clearance_ack` from it. Two judges of one question, and the one whose
+    answer was written down was the one told not to answer it. That is how a
+    pilot who had said six words was told his read-back was correct.
+
+    The missed elements come back so the ENGINE can name them, which is the
+    whole two-brain rule applied to the one place it had been skipped: the
+    engine decides, the agent phrases.
 
     The clearance is composed by the director's tool, so the ENGINE never issued
     it and cannot judge it from memory -- but the board records what was
@@ -1717,15 +1770,19 @@ def _read_back_correct(bridge, known: str, transcript: str) -> bool | None:
         # version that cannot be a turn behind.
         plan = _cleared_plan_now(known)
         if not plan:
-            return None
+            # NOT CLEARED, so there is nothing to read back. This is also the
+            # answer to "was his read-back correct?" asked of a man who has not
+            # been given a clearance: not "yes".
+            return None, []
     d = _decision.Decision(
         kind="clearance", to=known,
         altitude_ft=plan.get("cruise_ft") or None,
         frequency_mhz=plan.get("departure_mhz") or None,
         squawk=plan.get("squawk") or "")
     if not _decision.accepted_forms(d):
-        return None                     # nothing to check him against
-    return not _decision.verify(d, transcript)
+        return None, []                 # nothing to check him against
+    missed = _decision.verify(d, transcript)
+    return (not missed), missed
 
 
 def separation_context(bridge, ctl, transcript: str, scope: str = "",
@@ -1770,8 +1827,15 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
         # correct?" answers confidently either way, and the answer decides
         # whether an aircraft is handed to another controller.
         if intent.kind is intents.IntentKind.READ_BACK:
-            intent = dataclasses.replace(
-                intent, correct=_read_back_correct(bridge, known, transcript))
+            _ok, _missed = _read_back_correct(bridge, known, transcript)
+            intent = dataclasses.replace(intent, correct=_ok, missed=_missed)
+            # ...AND WRITE IT DOWN, from here. `clearance_ack` is the durable
+            # record that a clearance was AGREED and not merely issued, and it
+            # was being written by the agent's own `correct=` argument -- which
+            # defaults to True. The verdict and the record are one thing now,
+            # and it is the deterministic verdict.
+            if _ok is True:
+                _ack_the_clearance(bridge, known)
 
         # THE LEVEL HE WAS CLEARED TO, onto the engine, every turn.
         #
