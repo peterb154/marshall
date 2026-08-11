@@ -811,6 +811,32 @@ have numbers and no chart. That is criterion 3 of #3 and it is open.
 
 ---
 
+## U — Nevada: out of Nellis and home again
+
+**A different map, and the point of it is portability.** Everything in this
+section is `core/nevada.py` and the theatre selection working, or not — no
+Nevada-specific controller code exists and if any is needed the claim that this
+is data-driven should stop being made.
+
+**Start the bridge with `MARSHALL_THEATRE=nevada`.** The default sortie is
+`nevada-nellis-nellis`: out of Nellis, over the Tonopah VORTAC, home to Nellis
+on the ILS to 21L. `MARSHALL_SORTIE=tonopah` flies the one-way transit instead.
+
+**What is NOT modelled, so do not report it:** SIDs, STARs, transitions, and the
+ranges themselves. There is one ILS end at each field and the controller vectors
+everything between the fixes. [#113]
+
+| id | do this | expected | issue | pri |
+|---|---|---|---|---|
+| **U1** | Preset 1, *"Nellis Clearance, request clearance"* | He answers as **Nellis Clearance** and issues **Redflag** — Nellis to Nellis via Tonopah, cruise **24,000**. Not Silverstate, which is the one-way transit, and not anything Georgian | [#110] | **P1** |
+| **U2** | Work the ladder to take-off: Ground 121.800, Tower 132.550 | The same rungs as the Caucasus, at Nevada frequencies. Nellis Ground is on 121.800, which is *also* Kobuleti Ground's number — a coincidence, written down in `core/nevada.py` precisely because it is the sort that makes a wrong answer look right | [#110] | **P1** |
+| **U3** | **Airborne, climbing out, say nothing** | At about 5 nm **Nellis Departure, 135.100**, unprompted. Then at 25 nm **Los Angeles Center, 133.400** — and this is the rung that did not exist. Nevada had no Center at all, so a departure worked cleanly through four controllers and then stayed with Departure for the whole flight, silently. If Center never comes, that is the finding | [#110] | **P1** |
+| **U4** | Ask Center for a range or bearing to **Tonopah** | A real number. The fix catalogue used to be read off `core.route`, so a Nevada bridge published **Kobuleti and Batumi** and never Nellis — and a plan naming a fix the table does not hold is refused at delivery. Ask for **Nellis** too | [#110] | **P1** |
+| **U5** | **Any vector, anywhere.** Compare it against the chart | The variation is **12 East at Nellis, 16 at Tonopah** — surveyed per aerodrome. A fixed 6 degrees was compiled in for every map until 11 August, so every Nevada vector would have been six to ten degrees out. A vector is the one place that shows | [#109] | **P1** |
+| **U6** | Turn inbound and recover at **Nellis, ILS 21L** | Vectored to intercept and cleared for the ILS at **Nellis** — not Tonopah. The bridge used to load Tonopah's recovery on this map, so a pilot going home would have been worked against a profile for a field 124 miles away | [#111] | **P1** |
+| **U7** | Being vectored, check every altitude against the chart minima | Never below them. Nellis and Tonopah carry their own 48-cell surveys, and the terrain here is a mile and a half up — a Caucasus-shaped assumption is not a small error over the Spring Mountains | [#110] | **P1** |
+| **U8** | After landing, the taxi in | Ground has you and nothing hands you back to Tower. Same rung as F6 on the Caucasus, on a map where none of it has ever been flown | [#100] | P2 |
+
 ## E — known broken. Do not report these as new
 
 Open bugs with repros. Seeing one means the world is as expected — they are on

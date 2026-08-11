@@ -5421,3 +5421,132 @@ Live, three synthetic arrivals over real SRS:
 
     no aircraft shared a level, one letdown at a time, the stack
     filled from the bottom, and nobody was forgotten.
+
+## [ARCH-12] A radar picture with no origin should say nothing, not guess — #109
+labels: architecture
+
+**Status:** OPEN. Half done — the wrong answer is gone, the missing one is not.
+
+    "A fallback must be conservatively unavailable, not confidently wrong on
+     another map."                                  -- CODEX_NTTR_AUDIT.md
+
+`feed/dcs.py` and `feed/tracks.py` measured every bearing and range from a
+hardcoded Batumi, with a `_MAGVAR = 6.0` described as "Caucasus magnetic
+variation". Both are now derived from the loaded theatre's home field, so a
+Nevada picture is measured from Nevada and uses the field's own surveyed
+variation (12 East at Nellis, 16 at Tonopah).
+
+**What is still wrong is the shape of the failure.** `home_field()` raises if
+the theatre publishes no field, and every caller renders unconditionally — so
+there is no path that returns structured contacts *without* a
+controller-relative rendering. A controller who cannot measure should say he
+cannot, exactly as `vector` already does for an unpublished fix:
+
+    "negative DME to ingress, you'll have to call it off your own nav"
+
+which was the correct failure and is the model for this one.
+
+**Acceptance criteria**
+1. With no usable origin, radar answers with contacts and no bearing/range.
+2. Range-dependent guidance is suppressed rather than computed from a default.
+3. Nothing anywhere carries a map's coordinates as a module constant.
+
+---
+
+## [OPS-15] Nevada has no Center, so the ladder stops at Departure — #110
+labels: bug, needs-flight-test
+
+**Status:** FIXED 11 August, needs the next sortie.
+
+`handoff.RULES` routes an outbound Departure aircraft to `center` at 25 nm.
+`NEVADA_STATIONS` held Nellis and Tonopah positions only, so
+`station_for("center")` returned nothing, `handoff.due()` produced no verdict,
+and a Nellis departure worked cleanly through Clearance, Ground, Tower and
+Departure and then **stayed with Departure for the rest of the flight**.
+
+Nothing fails in that sequence. A rung is missing and the ladder quietly stops,
+which is #51 on the Caucasus — the one a pilot found at 44 nm by declaring an
+emergency.
+
+Los Angeles Center (ZLA) owns the enroute airspace over southern Nevada, and a
+transit between two airfields is enroute work. 133.400 is one of its sector
+frequencies; like Georgia Center's it is **chosen rather than surveyed** and is
+marked as such.
+
+**Not the range.** Real NTTR range control is Nellis Control — "Blackjack" — a
+different service with its own airspace and phraseology, and none of it is
+modelled. Naming a there-and-back transit a range mission would be exactly the
+plausible-wrong-answer failure the two-aerodrome work was about.
+
+---
+
+## [ARCH-13] One arrival profile per bridge, and a sortie has two ends — #111
+labels: architecture
+
+**Status:** OPEN. This is the audit's deepest finding and the one not fixed.
+
+    "a flight that departs Nellis, works the range, and returns to Nellis needs
+     that profile and its arrival state during the same sortie. It cannot be
+     selected concurrently with the Tonopah recovery."   -- CODEX_NTTR_AUDIT.md
+
+`load_and_push_plate` sets one plan active and pushes one `plate` prompt at
+startup. The bridge is explicitly built to work one arrival at a time, which was
+true and sufficient while a theatre had one recovery.
+
+It stops being sufficient the moment two aircraft want different ones — an
+outbound diverting to Tonopah while an inbound recovers at Nellis is two
+procedures, live, at once. It is the same shape as the two-aerodrome lesson one
+level up: **a procedure is only unique within a flight**, and the wrong answer
+is always plausible because it is a real approach to a real runway.
+
+**Worked around, not solved.** `MARSHALL_SORTIE` picks which Nevada recovery the
+bridge loads, so the choice is explicit and the default is the sortie a pilot
+actually flies. That is a knob, not a fix.
+
+**Acceptance criteria**
+1. Two aircraft on different approaches are worked simultaneously, correctly.
+2. The plate the agent is given is the plate for the aircraft being spoken to.
+3. `MARSHALL_SORTIE` disappears — the flight's plan chooses its procedure.
+
+---
+
+## [OPS-16] Mission validation only knows the 1944 Caucasus sortie — #112
+labels: bug, tooling
+
+**Status:** OPEN.
+
+`mission/validate.py` always opens `362nd-Blind-Flying.miz`, requires theatre
+`Caucasus`, expects P-51/SCR-522 constraints and validates `route.FIXES`. It
+cannot validate the Nevada mission at all, so the normal quality gate does not
+prove that the mission a pilot is about to fly is structurally sound — on the
+one map where the data is newest and least exercised.
+
+**Acceptance criteria**
+1. Validation takes a mission/theatre specification rather than a filename.
+2. `tools/check.py` validates every mission the repo can build.
+3. The Nevada mission has a build-and-validate test, not only data tests.
+
+---
+
+## [ARCH-14] There is no procedure model: no SIDs, no STARs, no transitions — #113
+labels: architecture
+
+**Status:** OPEN, and honestly stated in `core/nevada.py` already.
+
+One ILS end is modelled at each Nevada field. There is no published departure,
+arrival, or transition anywhere in the system — a flight plan carries a
+comma-separated fix string and one approach key, and the controller vectors
+everything in between.
+
+That is a fair description of what Marshall does today and it should not be
+described as anything else. It can provide vectors and one selected ILS
+recovery. It cannot claim a Nellis SID, a range transit, a STAR, or coverage of
+every procedure on a map.
+
+**The shape of the answer**, from the audit and worth keeping: a procedure model
+with typed legs and transitions — SID, enroute/range route, STAR, approach,
+missed — with the flight plan choosing INSTANCES of those. Every later procedure
+then becomes data rather than a branch in controller code, which is the same
+move that made fields, stations and terrain minima portable.
+
+Start with one Nellis SID, one range route, one Nellis STAR and the existing ILS.

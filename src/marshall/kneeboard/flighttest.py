@@ -22,6 +22,8 @@ expectation in the pilot's own words wherever the card has them.
 
 from __future__ import annotations
 
+import uuid
+
 import re
 from pathlib import Path
 
@@ -69,7 +71,25 @@ GUIDS = {
     "R": "{51e91239-722a-59e1-83e0-b5c61ccb1589}",
     "S": "{911a0a23-a5b8-58ca-91f0-a4ba16a94a9f}",
     "T": "{f70ee367-2201-53fa-85b7-c0f74a483eef}",
+    "U": "{b5a2d5b8-0933-5b38-88ff-358d9bdcfb5c}",
 }
+
+# THE RECIPE, WRITTEN DOWN. The comment above says these are "derived from a
+# fixed namespace and the section letter (uuid5)" and the namespace itself was
+# never recorded anywhere -- so the next person to add a section (me, adding U)
+# could not reproduce one, and tried eight candidate seeds before giving up. A
+# derivation nobody can perform is a table of magic numbers with a story
+# attached to it.
+#
+# The letters above predate this and KEEP their identifiers: OpenKneeboard
+# remembers which page a pilot was on, and reissuing one would drop him
+# somewhere he did not choose. From U onwards this function is the source.
+_NS = uuid.uuid5(uuid.NAMESPACE_DNS, "flighttest.marshall.invalid")
+
+
+def guid_for(section: str) -> str:
+    """The stable tab identifier for a card section."""
+    return "{" + str(uuid.uuid5(_NS, section)) + "}"
 
 # Tab labels. OpenKneeboard's tab strip is narrow and the pilot is reading it
 # at a glance, so these are hand-short rather than a truncated heading.
@@ -78,6 +98,7 @@ GUIDS = {
 # remembers the page a pilot was on, and handing an old identifier to a new
 # document would drop him somewhere he did not choose.
 SHORT = {"A": "PREFLT", "E": "KNOWN", "G": "CLNC", "H": "APPROACH",
+         "U": "NEVADA",
          "J": "WHO", "D": "FLIGHTS", "F": "LAND", "K": "MEMORY", "L": "CHANNEL",
          "M": "SPEED", "N": "NAMES", "P": "TRACKED", "Q": "LADDER",
          "R": "ATIS", "S": "SOUND", "T": "ILS"}
@@ -339,15 +360,22 @@ def pages() -> list[tuple[str, str, str, object]]:
     # ramp, clearance, approach, then the known-broken reference. Sorting them
     # alphabetically put the approach before the clearance that precedes it.
     for letter, _title, _rows in sections():
-        guid = GUIDS.get(letter)
-        if not guid:
-            # LOUD, not silent. A section with no GUID simply does not appear on
-            # the kneeboard, and a page that is missing looks exactly like a page
-            # the pilot has not scrolled to -- he flies the sortie without ever
-            # knowing there were tests on it.
-            print(f"!! flight test section {letter} has no GUID and will NOT "
-                  f"appear on the kneeboard -- add one to GUIDS", flush=True)
-            continue
+        # DERIVED WHERE IT IS NOT LISTED. A section with no GUID used to be
+        # dropped with a warning, and a page that is missing looks exactly like
+        # a page the pilot has not scrolled to -- he flies the sortie without
+        # ever knowing there were tests on it. That is a loud failure for a
+        # problem with a correct answer: the identifier only has to be STABLE,
+        # and `guid_for` derives a stable one from the letter.
+        #
+        # The listed letters still win, because they were issued before the
+        # recipe was written down and OpenKneeboard remembers which page a pilot
+        # was on. Reissuing one would drop him somewhere he did not choose.
+        guid = GUIDS.get(letter) or guid_for(letter)
+        if letter not in SHORT:
+            # The tab LABEL still has to be written by a person -- the strip is
+            # narrow and a truncated heading is not a name.
+            print(f"!! flight test section {letter} has no tab label; it will "
+                  f"appear as bare '{letter}'. Add one to SHORT.", flush=True)
         out.append((guid, f"{letter} {SHORT.get(letter, '')}",
                     f"ft-{letter.lower()}",
                     (lambda l: (lambda: build_section(l)))(letter)))
