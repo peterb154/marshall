@@ -246,6 +246,80 @@ def note_issued(bridge, cs: str, said: str) -> None:
     got = _spoken_numbers(said) - _callsign_numbers(cs)
     if got:
         bridge.issued[cs] = got
+    # AND THE WORDS, AND WHEN. The numbers alone cannot tell a read-back from a
+    # report, because a genuine report shares them: "hold short of runway zero
+    # seven" is what we SAID and also what he does when he gets there. See
+    # `is_read_back`, which needs both.
+    import time as _t
+    bridge.said_to[cs] = (said, _t.monotonic())
+
+
+# A read-back follows its instruction. Twenty seconds is one exchange on a
+# radio -- long enough for a slow pilot and a slow transcription, far short of
+# the time it takes to taxi anywhere.
+READ_BACK_WINDOW_SEC = 20.0
+_NUMWORD = {"zero": "0", "oh": "0", "one": "1", "two": "2", "three": "3",
+            "tree": "3", "four": "4", "five": "5", "six": "6", "seven": "7",
+            "eight": "8", "niner": "9", "nine": "9"}
+
+
+def _content(text: str) -> set:
+    """The content of a transmission, with numbers folded to their digits.
+
+    "runway zero seven" and "runway 07" are the same instruction spoken two
+    ways, and Whisper picks whichever it likes.
+    """
+    out, run = set(), []
+    for w in re.findall(r"[a-z0-9]+", (text or "").lower()):
+        d = _NUMWORD.get(w) or (w if w.isdigit() else None)
+        if d is not None:
+            run.append(d)
+            continue
+        if run:
+            out.add("".join(run))
+            run = []
+        if len(w) > 2:
+            out.add(re.sub(r"(ing|ed|es|s)$", "", w))
+    if run:
+        out.add("".join(run))
+    return out
+
+
+def is_read_back(bridge, cs: str, transcript: str) -> bool:
+    """Is he repeating what we just told him, rather than reporting a new fact?
+
+        PILOT: Kobuleti Ground, sockeye, taxi to runway 07, holding short of
+               runway 07.
+        ATC:   Sockeye, contact Kobuleti Tower one three three decimal zero.
+
+    He read the taxi clearance back and it was heard as "I am holding short",
+    so the phase moved and the ladder handed him to Tower before he had moved
+    an inch. The same fault one rung on gave a pilot at three miles asking "am I
+    clear to land?" the meaning "I have landed".
+
+    TIME IS THE DISCRIMINATOR and the echo is the guard. A read-back FOLLOWS its
+    instruction, within one exchange; the report of having complied with it
+    comes minutes later, after he has taxied there. Word overlap alone cannot
+    separate them -- a genuine "holding short of runway zero seven" is a SUBSET
+    of "taxi to runway zero seven, hold short of runway zero seven", which is
+    why counting shared words fails on exactly the case that matters.
+
+    The echo is still required, so an unrelated transmission that happens to
+    arrive in the window is not swallowed.
+    """
+    import time as _t
+    said, when = (getattr(bridge, "said_to", {}) or {}).get(cs, ("", 0.0))
+    if not said or not transcript:
+        return False
+    if _t.monotonic() - when > READ_BACK_WINDOW_SEC:
+        return False
+    ours = _content(said) - _content(cs)
+    if not ours:
+        return False
+    mine = _content(transcript)
+    # Two thirds of what we said, echoed back. A pilot drops the courtesies and
+    # Whisper drops a word; he does not drop the instruction.
+    return len(ours & mine) * 3 >= len(ours) * 2
 
 
 def reads_back_what_we_said(bridge, cs: str, transcript: str) -> bool:

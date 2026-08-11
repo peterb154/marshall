@@ -209,7 +209,7 @@ def read_back_of(ev) -> str:
         if str(e.get("kind", "")).startswith("atc/") and "cleared" in (
                 e.get("text") or "").lower():
             said = re.sub(r"^\s*\w+[,\s]+", "", e["text"]).strip()
-            return said.rstrip(".") + ", Sockeye."
+            return said.rstrip(".") + ", {who}."
     return ""
 
 
@@ -281,6 +281,9 @@ def only_once_he_has_landed(*checks):
     return check
 
 
+_WHO = ["Sockeye"]        # set per run; the harness's own identity
+
+
 def intent_recorded():
     """What he SAID HE WANTS reached the board.
 
@@ -300,7 +303,7 @@ def intent_recorded():
         except Exception as e:
             return None, f"could not read the board ({type(e).__name__})"
         mine = [f for f in rows if (f.get("srs_name") or "").lower() == "sockeye"
-                or (f.get("callsign") or "").lower() == "sockeye"]
+                or (f.get("callsign") or "").lower() == _WHO[0].lower()]
         if not mine:
             return None, "no row for him yet -- nothing to have written it on"
         got = [f.get("intent") for f in mine if f.get("intent")]
@@ -407,7 +410,7 @@ def filed_plan(th) -> dict:
     return next((p for p in plans if p.get("name") == th.bootstrap_plan), {})
 
 
-def ladder_for(th):
+def ladder_for(th, who: str = "Sockeye"):
     """The rungs, spoken at THIS theatre's stations.
 
     ONE SORTIE, TWO MAPS. Every row was written with Kobuleti's frequencies and
@@ -424,6 +427,11 @@ def ladder_for(th):
     that names 07 is a Caucasus row wearing a disguise: Nellis with a 210 at 8
     is using 21.
     """
+    # HIS NAME, THREADED THROUGH. The rows had "Sockeye" written into every
+    # line, so a harness given a fresh identity still introduced itself as the
+    # squadron -- the radio saying one thing and the roster another, which is
+    # the identity confusion this exercise is supposed to be testing rather
+    # than causing.
     dep = th.field_named(th.departure)
     rwy = f"{dep.runway_in_use(th.wind_from_deg):02d}"
     spoken_rwy = " ".join(_SPELL[c] for c in rwy)
@@ -453,7 +461,7 @@ def ladder_for(th):
         # Batumi, visual 13" on his first call and at every handoff and nothing
         # recorded it -- so every controller met him for the first time. [#119]
         ("Q1", clr.freq_mhz,
-         f"{clr.name}, Sockeye, request clearance, "
+         f"{clr.name}, {who}, request clearance, "
          f"{'VFR' if th.name == 'Caucasus' else 'IFR'} to {th.arrival}, "
          f"visual runway {spoken_rwy}.",
          all_of(named_no_other_field(name), intent_recorded()),
@@ -461,7 +469,7 @@ def ladder_for(th):
          "wants is written down (#119)"),
 
         ("Q1a", clr.freq_mhz,
-         f"{clr.name}, Sockeye, {label} please.",
+         f"{clr.name}, {who}, {label} please.",
          # THE PLAN HE ASKED FOR, proved by its own numbers rather than by the
          # controller repeating its name. He does not say "Redflag, cleared
          # to..." any more than he announces his own station, and a check that
@@ -472,7 +480,7 @@ def ladder_for(th):
          "the clearance is issued from the plan on file"),
 
         ("Q3b", clr.freq_mhz,
-         "Sockeye, say again the information letter.",
+         f"{who}, say again the information letter.",
          atis_confirmed(name),
          "#96 -- Clearance confirms the ATIS letter"),
 
@@ -492,22 +500,22 @@ def ladder_for(th):
          "a correct read-back ends Delivery's business (#90)"),
 
         ("Q4", gnd.freq_mhz,
-         f"{gnd.name}, Sockeye, ready to taxi.",
+         f"{gnd.name}, {who}, ready to taxi.",
          engine_decided("taxi to runway", "hold short"),
          "Ground clears him TO the runway and no further"),
 
         ("Q5", gnd.freq_mhz,
-         f"{gnd.name}, Sockeye, ready for departure.",
+         f"{gnd.name}, {who}, ready for departure.",
          all_of(engine_decided("tower"), said(_freq_words(twr.freq_mhz))),
          "Ground REFUSES the runway and names Tower with the frequency (#65)"),
 
         ("Q6", gnd.freq_mhz,
-         f"{gnd.name}, Sockeye, holding short of runway {spoken_rwy}.",
+         f"{gnd.name}, {who}, holding short of runway {spoken_rwy}.",
          all_of(phase_is("holding_short"), handed_to(twr.name)),
          "holding short hands him to Tower (#88)"),
 
         ("Q7", twr.freq_mhz,
-         f"{twr.name}, Sockeye, holding short runway {spoken_rwy}, "
+         f"{twr.name}, {who}, holding short runway {spoken_rwy}, "
          f"ready for departure.",
          all_of(engine_decided("cleared for take-off"), nothing_lost()),
          "Tower clears it, with the runway and the wind, and all of it is spoken"),
@@ -521,17 +529,17 @@ def ladder_for(th):
         # rather than standing alone: the fixture has to have flown for the
         # engine to believe it landed.
         ("F5", twr.freq_mhz,
-         f"{twr.name}, Sockeye, on the ground, runway {spoken_rwy}.",
+         f"{twr.name}, {who}, on the ground, runway {spoken_rwy}.",
          only_once_he_has_landed(said("runway")),
          "Tower owns the runway and says to get off it"),
 
         ("F5b", twr.freq_mhz,
-         "Sockeye, request taxi to parking.",
+         f"{who}, request taxi to parking.",
          all_of(said(gnd.name), handed_to(gnd.name)),
          "parking is not Tower's; he names Ground and hands him over (#100)"),
 
         ("F6", gnd.freq_mhz,
-         "Sockeye, request taxi to parking.",
+         f"{who}, request taxi to parking.",
          only_once_he_has_landed(said("parking"), phase_is("taxi_in"),
                                  nobody_after()),
          "Ground parks him, and nothing hands him anywhere (#100)"),
@@ -800,6 +808,40 @@ def say_it(args, mhz, line, recorder, SRSClient, radio, AM, tts, first=True):
     return ev, intact, why
 
 
+# Plausible on a radio and none of them the squadron's. Two words joined so a
+# collision with a real pilot is vanishingly unlikely, and both halves are
+# ordinary English, because a callsign Whisper cannot hear is a test of Whisper
+# rather than of the ladder.
+_FIRST = ("Anvil", "Bishop", "Cobalt", "Dagger", "Ember", "Falcon", "Granite",
+          "Harrier", "Ironside", "Jackal", "Kestrel", "Lancer", "Maverick",
+          "Nomad", "Osprey", "Panther", "Quiver", "Rampart", "Saber", "Talon")
+
+
+def _a_name_nobody_has_flown() -> str:
+    """A fresh identity for this run. See `--name`."""
+    import random
+    return f"{random.choice(_FIRST)}{random.randint(10, 99)}"
+
+
+def _forget_the_fixture(name: str) -> None:
+    """Take the rehearsal's own row off the board. It made it; it clears it."""
+    import urllib.parse
+    import urllib.request
+    try:
+        q = urllib.parse.urlencode({"mission": _mission_key()})
+        with urllib.request.urlopen(
+                f"http://localhost:8000/flights?{q}", timeout=8) as r:
+            rows = json.loads(r.read().decode("utf-8", "replace"))["flights"]
+        for f in rows:
+            if (f.get("srs_name") or "").lower() == name.lower():
+                req = urllib.request.Request(
+                    f"http://localhost:8000/flights/{f['id']}", method="DELETE")
+                urllib.request.urlopen(req, timeout=8).read()
+                print(f"  and off the board (row {f['id']}).")
+    except Exception as e:
+        print(f"  !! could not clear the fixture's row: {type(e).__name__}")
+
+
 def a_clean_board() -> bool:
     """Restart the bridge, so the ladder starts where a sortie starts.
 
@@ -883,7 +925,27 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--session", default=os.environ.get("MARSHALL_SESSION", "hooks"),
                     help="the bridge's session id -- names the recorder file")
     ap.add_argument("--voice", default="Joey", help="the synthetic pilot's voice")
-    ap.add_argument("--name", default="Sockeye", help="his SRS client name")
+    # A DIFFERENT CALLSIGN EVERY RUN, and the reason is not safety.
+    #
+    #     "you should be able to use my callsign for rehersal if we've done it
+    #      right. BUt i worry that if you do use my callsign, we'd be
+    #      over-fitting. probably better to use a random one every test"
+    #
+    # Exactly right, and both halves matter. A correct system SHOULD survive a
+    # rehearsal wearing the squadron's own callsign -- and on 11 August it did
+    # not, because a fixture minutes before a real sortie left a row holding the
+    # pilot's callsign and his track name and then despawned the aeroplane that
+    # row pointed at. That is now fixed (#119) and using "Sockeye" again would
+    # be a fair test of the fix.
+    #
+    # It would also be a bad test of everything else. A harness that always
+    # flies one name proves the ladder works FOR THAT NAME: the identity chain,
+    # the callsign parser, the board key and the roster all get the same input
+    # every time, and anything that over-fits to it is invisible. A fresh name
+    # each run is a new pilot the system has never seen, which is what a real
+    # one is.
+    ap.add_argument("--name", default="", help="his SRS client name "
+                                               "(default: a fresh one each run)")
     ap.add_argument("--wait", type=float, default=22.0,
                     help="seconds to allow for a reply before calling it silence")
     ap.add_argument("--only", default="", help="run one row, by id")
@@ -896,6 +958,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="keep the running bridge, and its memory of this "
                          "callsign, instead of starting from a clean board")
     args = ap.parse_args(argv)
+    if not args.name:
+        args.name = _a_name_nobody_has_flown()
+    _WHO[0] = args.name
     if not args.srs:
         print("!! --srs is required (or SRS_HOST)", file=sys.stderr)
         return 2
@@ -906,13 +971,14 @@ def main(argv: list[str] | None = None) -> int:
     from marshall.core import theatre as _theatre
     th = _theatre.current()
     recorder = config.BUILD_DIR / "logs" / f"flight-{args.session}.jsonl"
-    steps = [s for s in ladder_for(th) if not args.only or s[0] == args.only]
+    steps = [s for s in ladder_for(th, args.name) if not args.only or s[0] == args.only]
     if not steps:
         print(f"!! no row called {args.only}", file=sys.stderr)
         return 2
 
     print(f"the ladder at {th.departure}, spoken by {args.name} "
           f"against the live bridge")
+    print("  a name nobody has flown, so nothing can over-fit to it")
     print(f"  {th.name}, runway "
           f"{th.field_named(th.departure).runway_in_use(th.wind_from_deg):02d} "
           f"in a {th.wind_from_deg:.0f} at {th.wind_mph:.0f}")
@@ -947,7 +1013,7 @@ def main(argv: list[str] | None = None) -> int:
         # bad luck, and repeating forever would hide it.
         if line is _READ_BACK:
             line = read_back_of(events_since(recorder, 0)) or (
-                "Cleared as filed, Sockeye.")
+                f"Cleared as filed, {args.name}.")
         for attempt in (1, 2):
             ev, intact, gap = say_it(
                 args, mhz, line, recorder, SRSClient, radio, AM, tts,
@@ -979,6 +1045,11 @@ def main(argv: list[str] | None = None) -> int:
     if parked:
         take_it_away(unit)
         print(f"\n  {unit} removed from the scope.")
+        # AND OFF THE BOARD. Removing the aeroplane leaves the flight row, which
+        # then holds a callsign and a track for somebody who no longer exists --
+        # the other half of the same contamination. Cleaned up by the thing that
+        # made it, rather than by whoever flies next.
+        _forget_the_fixture(args.name)
     print("\n  NOT COVERED HERE, whatever the result above: the RECOVERY rungs\n"
           "  need an aeroplane that has actually flown -- a parked fixture that\n"
           "  departs in words has not landed, and the engine is right to say so.\n"

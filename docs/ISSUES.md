@@ -5997,3 +5997,51 @@ cannot be trusted to hold what it is given.
 1. `Controller.aircraft` is a cache of the tables, not the original.
 2. A bridge restart mid-sortie loses nothing a pilot can hear.
 3. Per-turn scratch is separated from remembered state, named as such.
+
+## [SEAM-10] A read-back is heard as a report, and a debug note moves the board — #121
+labels: bug, needs-flight-test
+
+**Status:** FIXED 11 August, needs the next sortie. Unit-proven against the exact
+transmissions; NOT yet proved live, because reproducing it needs a spawned
+fixture and a two-turn sequence the harness does not yet script.
+
+    PILOT: Kobuleti Ground, sockeye, taxi to runway 07, holding short of
+           runway 07.
+    ATC:   Sockeye, contact Kobuleti Tower one three three decimal zero.
+
+He read the taxi clearance back and it was heard as "I am holding short", so the
+phase moved and the ladder handed him to Tower before he had moved an inch. His
+own note:
+
+    "clearly, Kobuleti Ground thinks that I'm telling her that I'm holding short
+     of runway 07 when actually I'm just doing a read back"
+
+**TIME IS THE DISCRIMINATOR, the echo is the guard.** Word overlap cannot
+separate them and that is the whole difficulty: a genuine *"holding short of
+runway zero seven"* is a SUBSET of *"taxi to runway zero seven, hold short of
+runway zero seven"*. A read-back FOLLOWS its instruction inside one exchange; the
+report of complying comes minutes later, after he has taxied there. The echo is
+still required so an unrelated transmission in the window is not swallowed.
+
+`reads_back_what_we_said` has existed for weeks and only ever decorated the
+AGENT's prompt — it could tell a model not to say "negative" and could not stop
+the engine acting. The check is in the dispatch now, where it can.
+
+**AND THE DEBUG NOTE.** #82 said "I could not make the board actually move" and
+was left alone. It moves:
+
+    PILOT: Debug log, that's not correct. You should be sending me to tower now
+           on a visual approach.
+      .. phase: approach -> landed
+      .. ASR guidance suppressed: phase landed does not fly the approach
+
+A note to the project, at 1,900 ft on final, classified as "I have landed" — so
+the engine believed he was down, suppressed the approach for the rest of the
+sortie, and the controller improvised from there. The gate ran two hundred and
+forty lines AFTER `decide`. It is the first thing in the turn now, before
+identity, before the classifier, before anything.
+
+**What was NOT wrong**, and I said it was: there is no missing `REQUEST_LANDING`
+rung. A clean call to Tower already gets *"cleared to land runway one three, wind
+zero nine zero at six."* The landing clearance never arrived because the phase
+had been corrupted by a debug note, not because nothing could issue it.

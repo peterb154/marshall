@@ -36,6 +36,8 @@ from marshall import config
 from marshall.core import names as _names
 from marshall.core import geo as _geo
 from marshall.atc import controller as _controller
+from marshall.atc import intents as _intents
+from marshall.atc import talkdown as _talkdown
 from marshall.core import theatre as _theatre
 from marshall.atc import handoff as _handoff
 from marshall.atc import decision as _decision
@@ -325,6 +327,17 @@ APPROACH_NAME = ""              # set when the active flight plan is loaded
 # moment the board could be rebuilt from the table, and two copies of a
 # translation is how the two come to disagree about what "approach" means.
 _PHASE_OF = _controller.PHASE_WORD
+
+# THE KINDS THAT ASSERT A NEW FACT ABOUT THE AEROPLANE, and which a read-back
+# must therefore never be mistaken for. Each of them moves the board: a phase, a
+# level, a place in the queue. `request_*` kinds are deliberately absent -- a
+# pilot asking for something is never a read-back of what he was told.
+_REPORTS = frozenset({
+    _intents.IntentKind.REPORT_HOLDING_SHORT,
+    _intents.IntentKind.REPORT_LANDED,
+    _intents.IntentKind.REPORT_BEACON,
+    _intents.IntentKind.REPORT_MISSED,
+})
 
 
 def flight_bind(base: str = BASE_URL, **names) -> dict:
@@ -758,6 +771,11 @@ class Bridge:
         self.last_heard: dict[str, float] = {}     # per RADIO, not per callsign
         self.heard_on: dict[str, float] = {}       # which channel he was on
         self.awaiting_readback: dict[str, float] = {}
+        # WHAT WE LAST SAID TO EACH AIRCRAFT, and when. `issued` keeps only the
+        # NUMBERS, which cannot tell a read-back from a report -- a genuine
+        # "holding short of runway zero seven" shares every number with the
+        # instruction that sent him there. See `talkdown.is_read_back`.
+        self.said_to: dict[str, tuple] = {}
         # (GUID, wrong name) already corrected. A callsign nobody answers to is
         # worth telling him about ONCE; saying it again on every transmission
         # would fill the frequency with the correction instead of the approach,
@@ -2079,6 +2097,28 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
         # Not the classifier's job and not the agent's. A model asked "was that
         # correct?" answers confidently either way, and the answer decides
         # whether an aircraft is handed to another controller.
+        # A READ-BACK IS NOT A REPORT, and the engine must not act on it.
+        #
+        #     PILOT: Kobuleti Ground, sockeye, taxi to runway 07, holding short
+        #            of runway 07.
+        #     ATC:   Sockeye, contact Kobuleti Tower one three three decimal zero.
+        #
+        # He repeated the taxi clearance and it was heard as "I am holding
+        # short", so the phase moved and the ladder handed him to Tower before
+        # he had moved an inch. `reads_back_what_we_said` has existed for weeks
+        # and only ever decorated the AGENT's prompt -- it could tell the model
+        # not to say "negative" and could not stop the engine acting.
+        #
+        # Downgraded to READ_BACK with no verdict, which leaves the phase
+        # exactly where it is: there is nothing to judge him against here (this
+        # is not the IFR clearance) and nothing for him to have moved into.
+        if (intent.kind in _REPORTS
+                and _talkdown.is_read_back(bridge, known, transcript)):
+            print(f"  .. read-back, not a report: {intent.kind.value} "
+                  f"suppressed — he is repeating what he was just told",
+                  flush=True)
+            intent = dataclasses.replace(intent, kind=intents.IntentKind.READ_BACK,
+                                         correct=None, missed=())
         if intent.kind is intents.IntentKind.READ_BACK:
             _ok, _missed = _read_back_correct(bridge, known, transcript)
             intent = dataclasses.replace(intent, correct=_ok, missed=_missed)
@@ -5344,6 +5384,40 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             continue
         transcript, srs, heard_hz = heard
 
+        # A DEBUG NOTE IS NOT A CALL, AND NOTHING MAY ACT ON IT.
+        #
+        # This ran two hundred and forty lines further down, AFTER `decide` had
+        # classified the words and let the engine act on them -- and #82 was
+        # filed saying "I could not make the board actually move", protected
+        # only by two unrelated gates. It moves.
+        #
+        #     PILOT: Debug log, that's not correct. You should be sending me to
+        #            tower now on a visual approach.
+        #       .. phase: approach -> landed
+        #       .. ASR guidance suppressed: phase landed does not fly the approach
+        #
+        # A note to the project, at nineteen hundred feet on final, classified
+        # as "I have landed". The engine believed he was down, suppressed the
+        # approach guidance for the rest of the sortie, and the controller
+        # improvised from there.
+        #
+        # First thing in the turn now, before identity, before the classifier,
+        # before anything. He is talking to us and not to the controller, and
+        # the only correct response is to write it down and stay off the air.
+        note = debug_note(transcript)
+        if note is not None:
+            stamp = time.strftime("%H:%M:%S")
+            print(f"  DEBUG NOTE [{stamp}] {note}", flush=True)
+            record(session_id, kind="debug", text=note)
+            try:
+                config.BUILD_DIR.mkdir(parents=True, exist_ok=True)
+                with open(config.BUILD_DIR / "debug-notes.md", "a",
+                          encoding="utf-8") as fh:
+                    fh.write(f"- `{stamp}` {note}\n")
+            except OSError as e:
+                print(f"  !! could not write the note: {e}", flush=True)
+            continue
+
         # Never answer another controller. A second bridge left running on the
         # same frequency -- trivially easy, since killing the launcher does not
         # kill the python child -- hears this one, treats the transmission as a
@@ -5835,21 +5909,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # one stage and it can go with a clear conscience rather than in the
         # middle of a behaviour change.
 
-        # A debug note: record it and stay off the air entirely. The pilot is
-        # talking to the project, not to the controller.
-        note = debug_note(transcript)
-        if note is not None:
-            stamp = time.strftime("%H:%M:%S")
-            print(f"  DEBUG NOTE [{stamp}] {note}", flush=True)
-            record(session_id, kind="debug", text=note)
-            try:
-                config.BUILD_DIR.mkdir(parents=True, exist_ok=True)
-                with open(config.BUILD_DIR / "debug-notes.md", "a",
-                          encoding="utf-8") as fh:
-                    fh.write(f"- `{stamp}` {note}\n")
-            except OSError as e:
-                print(f"  !! could not write the note: {e}", flush=True)
-            continue
+        # (The debug-note gate used to be here, after the board had already
+        # moved. It is the first thing in the turn now -- see the top.)
 
         # Which controller answered. The bridge monitors every channel at once,
         # which is an implementation convenience the pilot must never be able to
