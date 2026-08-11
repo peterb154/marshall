@@ -1437,11 +1437,47 @@ def radar_range_for(scope: str, cs: str) -> float | None:
 HOLDING_KINDS = ("hold", "continue_hold")
 
 
+# INSTRUCTIONS THAT BIND HIM TO THIS CONTROLLER. Everything a pilot has to
+# comply with and report against -- as opposed to a REFUSAL, which is not an
+# instruction at all but the reason he is being sent somewhere else.
+BINDING_KINDS = frozenset({
+    "hold", "continue_hold", "climb", "vector", "level",
+    "cleared_approach", "cleared_visual", "cleared_land", "cleared_takeoff",
+    "taxi", "hold_short",
+})
+
+
 def reconcile(directive: str, stack: str, vectoring: str, g=None,
-              decisions=()) -> tuple[str, str, str, str, list]:
+              decisions=(), handoff=None) -> tuple[str, str, str, str, list]:
     """Decide which authority owns this aeroplane, and silence the others.
 
-    Three things have an opinion about what happens next. The separation engine
+    FOUR things have an opinion about what happens next, and the fourth was not
+    in this decision at all. A HANDOFF is decided by `next_controller` and was
+    merged into the reply afterwards, so a turn that produced both produced
+    both:
+
+        "Bandit, contact Los Angeles Center one three three decimal four.
+         Good day. Hold at present position, maintain one zero thousand..."
+
+    Sent away and given an order by the man who sent him, and he cannot obey
+    both. Each half was defensible on its own -- the arrivals were outside
+    Approach's twenty-five miles so Center did own them, and an aircraft third
+    in the queue does get a level -- and that is exactly the shape this function
+    exists for. It was arbitrating three authorities out of four.
+
+    A HANDOFF WINS, and it is the strongest answer there is to "who owns this
+    aeroplane": somebody else does. Once he has been given away, an instruction
+    from this controller is not ours to give -- the same rule as #65 and #88 one
+    level up, where a controller answers for what he owns and points at the man
+    who owns the rest.
+
+    A REFUSAL SURVIVES IT, because a refusal is not an instruction. "Take-off is
+    Tower's, contact Kobuleti Tower one three three decimal zero" IS the
+    handoff, with its reason attached, and dropping it would leave a pilot sent
+    away with no idea why. See `BINDING_KINDS`, which is the list of things he
+    would have to comply with.
+
+    The other three: The separation engine
     owns the queue and cannot see. The vectoring owns the geometry and cannot
     remember. The agent owns the words. Until now all three were appended to the
     agent's context side by side, each labelled authoritative, and the agent was
@@ -1513,6 +1549,31 @@ def reconcile(directive: str, stack: str, vectoring: str, g=None,
     def without_holds() -> list:
         return [d for d in kept if getattr(d, "kind", "") not in HOLDING_KINDS]
 
+    if handoff is not None:
+        # HE IS SOMEBODY ELSE'S NOW. Drop everything he would have had to fly,
+        # and keep the refusal that explains why he is going.
+        #
+        # ARBITRATED ON THE DECISION, NOT ON THE PROSE. Reading the directive
+        # for a keyword is what this function was rewritten to stop doing -- it
+        # made a rephrasing in `controller.py` silently change a separation
+        # decision two modules away. So a directive whose engine attached no
+        # decision cannot be arbitrated here and is kept, which is the safe
+        # answer: a refusal is by far the commonest thing said on a handoff turn
+        # and dropping it would send a pilot away with no reason.
+        #
+        # That gap closes when every `say` carries its decision (#80 criterion
+        # 4). Until then it is visible rather than guessed at.
+        binding = [d for d in kept if getattr(d, "kind", "") in BINDING_KINDS]
+        if binding:
+            return "", stack, "", (
+                "instruction suppressed: he has been handed to "
+                f"{getattr(handoff, 'name', 'another controller')}, and an "
+                "order from us is no longer ours to give"), [
+                    d for d in kept if getattr(d, "kind", "") not in BINDING_KINDS]
+        # No instruction to suppress. The VECTOR still goes, because a heading
+        # is an instruction whether or not it arrived as a decision.
+        return directive, stack, "", ("vector suppressed: he has been handed on"
+                                      if vectoring else ""), kept
     if g is None:
         return directive, stack, vectoring, "", kept
     if g.phase == "missed":
@@ -3412,7 +3473,7 @@ def phase_now(ctl, known: str, down: bool | None, fix) -> str:
 
 
 def settle(bridge, directive, stack, vectoring, fix, profile, known, ctl,
-           scope: str = "", track: str = ""):
+           scope: str = "", track: str = "", handoff=None):
     """One aeroplane, one instruction. Which authority owns him this turn.
 
     EXTRACTED VERBATIM, 30 July. `reconcile` exists because a pilot was once
@@ -3520,7 +3581,8 @@ def settle(bridge, directive, stack, vectoring, fix, profile, known, ctl,
     # straight back on the air -- a holding clearance to an aeroplane radar shows
     # established on final. `reconcile` owns both halves now.
     directive, stack, vectoring, dropped, kept = reconcile(
-        directive, stack, vectoring, guide, list(bridge.decided))
+        directive, stack, vectoring, guide, list(bridge.decided),
+        handoff=handoff)
     # A VECTOR IS A DECIDED FACT, and its altitude is the MINIMUM VECTORING
     # ALTITUDE for where he is. It crossed the seam as prose, so nothing checked
     # that the number reached the pilot -- and on 11 August it did not:
@@ -5370,9 +5432,33 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     "freq_mhz", None),
             }
 
+        # WHO HAS HIM NEXT, decided BEFORE the instructions are settled.
+        #
+        # This used to run two hundred lines further down, after `reconcile` had
+        # already chosen between the engine, the geometry and the agent -- so
+        # the strongest authority of the four was not in the arbitration at all
+        # and was merged into the reply afterwards. A turn that produced a
+        # handoff and a hold produced both, and the pilot was sent away and
+        # given an order by the man who sent him. [#115]
+        #
+        # Everything it needs exists here: `ctl._me` was set at the top of the
+        # turn, `_fix` is the track-first radar fix, and the sortie phase came
+        # off the board in `decide`. The only input that changes by moving it is
+        # `vectoring`, and the pre-settle value is the more correct one -- the
+        # question is whether he is being vectored at all, not what this
+        # particular transmission ended up saying.
+        _ac = ctl.aircraft.get(ctl._resolve(known)) if known else None
+        nxt = next_controller(scope, _ident.track, ctl._me, profile, _fix,
+                              known=known, session_id=session_id,
+                              vectoring=vectoring,
+                              phase=getattr(_ac, "sortie_phase", "") or "")
+        # SETTLED. This is the handoff the bridge authorises for this turn, and
+        # the transmit path refuses any other -- see `strip_unauthorised_handoff`.
+        bridge.handoff_due[0] = nxt
+
         directive, stack, vectoring, _g, dropped = settle(bridge,
             directive, stack, vectoring, _fix, profile, known, ctl,
-            scope=scope, track=_ident.track or "")
+            scope=scope, track=_ident.track or "", handoff=nxt)
         if dropped:
             print(f"  .. {dropped}", flush=True)
 
@@ -5553,18 +5639,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # question the same way -- the monitor asked only the ladder and the
         # live check only the volumes, and between them they reported healthy
         # while Center could not hand anybody over at all. [#51]
-        _down = is_on_the_ground(scope, _ident.track, fix)
-        # WHAT HE IS DOING comes off the board. It is the only evidence that
-        # can hand over the ground half of a sortie -- a parked aeroplane has
-        # no range and no direction to argue from.
-        _ac = ctl.aircraft.get(ctl._resolve(known)) if known else None
-        nxt = next_controller(scope, _ident.track, me, profile, fix,
-                              known=known, session_id=session_id,
-                              vectoring=vectoring,
-                              phase=getattr(_ac, "sortie_phase", "") or "")
-        # SETTLED. This is the handoff the bridge authorises for this turn, and
-        # the transmit path refuses any other -- see `strip_unauthorised_handoff`.
-        bridge.handoff_due[0] = nxt
+        # THE HANDOFF WAS DECIDED ABOVE, before the instructions were settled,
+        # so that `reconcile` could arbitrate it against them. See #115.
         if directive:
             print(f"  CONTROLLER: {directive}", flush=True)
         if stack:

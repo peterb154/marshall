@@ -211,6 +211,30 @@ def forgotten(board) -> list:
     return bad
 
 
+_SENT_AWAY = ("contact ", "good day")
+_ORDERED = ("hold at", "maintain ", "turn left", "turn right", "descend",
+            "climb and", "cleared for the", "cleared radar", "expect the")
+
+
+def sent_away_and_ordered(ev) -> list:
+    """One transmission that both hands him over and tells him what to do.
+
+    #115's third criterion. He cannot obey both: he has been given to somebody
+    else and instructed by the man who gave him away. `reconcile` arbitrates it
+    now, and this is the check that says so from the outside -- reading the
+    words that actually went out rather than the decision that produced them.
+    """
+    bad = []
+    for e in ev:
+        if not str(e.get("kind", "")).startswith("atc/"):
+            continue
+        said = (e.get("text") or "").lower()
+        if any(x in said for x in _SENT_AWAY) and any(x in said for x in _ORDERED):
+            bad.append(f"handed over AND instructed in one breath: "
+                       f"{(e.get('text') or '')[:110]}")
+    return bad
+
+
 def show(board) -> str:
     if not board:
         return "      (nobody on the board)"
@@ -303,7 +327,8 @@ def main(argv: list[str] | None = None) -> int:
                 turns += 1
                 judged += 1 if board else 0
                 bad = (two_at_one_level(board) + two_in_the_letdown(board)
-                       + a_hole_in_the_stack(board, stack_ft) + forgotten(board))
+                       + a_hole_in_the_stack(board, stack_ft) + forgotten(board)
+                       + sent_away_and_ordered(ev))
                 if bad:
                     for b in bad:
                         print(f"      !! {b}")

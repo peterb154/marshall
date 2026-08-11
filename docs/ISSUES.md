@@ -5618,7 +5618,36 @@ on one map is invisible until there are two.
 ## [SEAM-9] Handed to Center and told to hold, in one transmission — #115
 labels: bug, needs-flight-test
 
-**Status:** OPEN. Seen on the first Nevada stack run, 11 August.
+**Status:** FIXED 11 August, needs the next sortie.
+
+**`reconcile` was arbitrating three authorities out of four.** Its whole job is
+deciding which one owns an aeroplane, and the handoff — the strongest answer
+there is, because it says somebody else does — was decided two hundred lines
+further down and merged into the reply afterwards. So a turn that produced both
+produced both.
+
+`next_controller` now runs BEFORE `settle`, and `reconcile` takes it as its
+first branch: a binding instruction is dropped along with its decision, because
+suppressing only the words leaves #79's repair to put it straight back on the
+air. A **refusal survives** — "take-off is Tower's, contact Kobuleti Tower one
+three three decimal zero" IS the handoff with its reason attached, and card row
+Q5 turns on it.
+
+Arbitrated on the DECISION, never on the prose: reading a directive for a
+keyword is what this function was rewritten to stop doing. A directive whose
+engine attached no decision cannot be arbitrated and is kept, which is the safe
+answer and makes #80's criterion 4 visible rather than guessed at.
+
+Live, the same exchange that filed this:
+
+    "Bandit, you're outside my airspace, contact Los Angeles Center,
+     one three three decimal four. Good day."
+
+and nothing after it. `tools/stack_rehearsal.py` checks every transmission for
+the pair from the outside, reading what went on the air rather than what
+produced it.
+
+Originally seen on the first Nevada stack run, 11 August.
 
     ATC: "Bandit, contact Los Angeles Center, one three three decimal four.
           Good day. Hold at present position, maintain one zero thousand..."
