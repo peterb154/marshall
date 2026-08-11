@@ -254,6 +254,14 @@ class Aircraft:
     # intends, and what the engine has decided about him are three facts with
     # three different authorities and they must not be collapsed into one word.
     intent: str = ""
+    # WHICH PROCEDURE HIS CLEARANCE NAMES -- `batumi-asr`, `kobuleti-ils`.
+    #
+    # The key, not the profile: `profile` beside it is the geometry and has no
+    # name, and a board that had to reverse-match a profile back to a key would
+    # be re-deriving a fact it was handed. Blank means nobody has assigned him
+    # one, which is different from "he is flying the bridge's default" and is
+    # exactly the distinction a pilot cannot see any other way.
+    approach: str = ""
 
     @property
     def is_flight(self) -> bool:
@@ -513,6 +521,7 @@ class Controller:
             if row.get("cruise_ft"):
                 ac.cleared_ft = int(row["cruise_ft"])
             if approach_named and row.get("cleared_approach"):
+                ac.approach = row["cleared_approach"]
                 got = approach_named(row["cleared_approach"])
                 if got is not None:
                     ac.profile = got
@@ -549,16 +558,31 @@ class Controller:
         """
         return getattr(ac, "profile", None) or self.profile
 
-    def assign_approach(self, callsign: str, profile) -> None:
+    def assign_approach(self, callsign: str, profile, named: str = "") -> None:
         """This aeroplane is recovering on THIS procedure. Told, not deduced.
 
         Set from his filed plan, which names its approach -- so a flight going
         home to Nellis carries the Nellis ILS whatever the bridge happens to
         have loaded, and the outbound aircraft beside him can carry Tonopah's.
+
+        `named` IS SO THE BOARD CAN SAY IT.
+
+            "for the cleared_approach - shouldnt that be on the board i am
+             looking at? Isnt it in the database?"
+
+        It is, in `assigned_plans.approach`, and migration 025 put it on the
+        strip. It was read on every transmission, used to look up the profile,
+        and then dropped on the floor -- so the one fact answering "which
+        approach am I flying" existed at every layer except the one a human
+        looks at. An `ApproachProfile` has no name of its own (it is geometry),
+        so the KEY is what gets carried; without it the board would have to
+        reverse a lookup it was already handed the answer to.
         """
         ac = self.aircraft.get(self._resolve(callsign))
         if ac is not None and profile is not None:
             ac.profile = profile
+            if named:
+                ac.approach = named
 
     def note_cleared_level(self, callsign: str, ft: int | None) -> None:
         """The cruise level his IFR clearance carries. Told, not decided.
@@ -651,6 +675,11 @@ class Controller:
                  "track": ac.track,
                  "owner": ac.owner,
                  "intent": ac.intent,
+                 # WHICH APPROACH HE IS CLEARED FOR. In the database since the
+                 # plans table, on the strip since migration 025, read on every
+                 # transmission -- and never shown to anybody. See
+                 # `assign_approach`.
+                 "cleared_approach": getattr(ac, "approach", "") or "",
                  "in_letdown": cs == self._in_letdown(ac)}
                 for cs, ac in sorted(self.aircraft.items())]
 

@@ -539,7 +539,8 @@ function board(d) {
     // `intent` is what the pilot asked for, `doing` is where the separation
     // engine has got to. Position follows, because it is context rather than
     // the answer.
-    + '<tr><th>who</th><th>state</th><th>intent</th><th>doing</th>'
+    + '<tr><th>who</th><th>state</th><th>intent</th><th>cleared for</th>'
+    + '<th>doing</th>'
     + '<th>owner</th><th>type</th><th>freq</th><th>hdg</th><th>alt</th>'
     + '<th>gs</th><th>range</th><th>known by</th></tr>'
     + b.map(r => {
@@ -560,6 +561,24 @@ function board(d) {
         + `<td class="${lvl('state', r.state)}">${esc(r.state) || '&mdash;'}</td>`
         + `<td class="${lvl('intent', r.intent)}">${esc(r.intent)
              || '<i class="dim">not established</i>'}</td>`
+        // WHICH APPROACH HIS CLEARANCE NAMES, beside what he ASKED for --
+        // which is the pair that matters and the reason this is its own column
+        // rather than a note on `intent`.
+        //
+        //     "for the cleared_approach - shouldnt that be on the board i am
+        //      looking at? Isnt it in the database?"
+        //
+        // It is, in `assigned_plans.approach`, and on the strip since migration
+        // 025. It was read on every transmission to pick the profile and then
+        // dropped, so the one fact answering "which approach am I flying"
+        // existed at every layer except the one a human looks at.
+        //
+        // The interesting reading is the DISAGREEMENT: he asked for the ILS and
+        // is cleared for the surveillance approach, or he is cleared for
+        // nothing at all while being vectored. Neither is visible if only one
+        // of the two is printed.
+        + `<td class="${r.cleared_approach ? '' : 'dim'}">`
+        + `${esc(r.cleared_approach) || '&mdash;'}</td>`
         + `<td>${phase(r)}</td>`
         + `<td class="${lvl('owner', r.owner)}">${esc(r.owner) || '&mdash;'}</td>`
         + `<td class="dim">${esc(r.type)}</td>`

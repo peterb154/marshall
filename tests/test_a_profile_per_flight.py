@@ -31,6 +31,7 @@ import unittest
 
 from marshall.atc import controller as atc
 from marshall.core import nevada as N
+from marshall.core import route as RT
 
 
 class TwoFieldsAtOnce(unittest.TestCase):
@@ -139,3 +140,51 @@ class TheBoardSaysWhichLetdownHeIsIn(TwoFieldsAtOnce):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTheBoardSaysWhichApproach(unittest.TestCase):
+    """The one fact answering "which approach am I flying", where a human is.
+
+        "for the cleared_approach - shouldnt that be on the board i am looking
+         at? Isnt it in the database?"
+
+    It is. `assigned_plans.approach` has named it since the plans table existed,
+    migration 025 put it on the strip, and the bridge read it on EVERY
+    transmission -- to look up the profile, and then dropped it. So it existed
+    in the database, in the view, in the HTTP response and in a local variable,
+    at every layer except the one anybody looks at.
+
+    That is the shape this project keeps finding, one layer further out each
+    time: 023 said it about the squawk, 025 rediscovered it about the approach,
+    026 about the sortie phase. The lesson each of them wrote down is the same
+    -- a fact that stops before the surface is a fact nothing can reach -- and
+    this is the fourth time, which is why the assertion is here and not in a
+    comment.
+    """
+
+    def setUp(self):
+        self.ctl = atc.Controller(RT.BATUMI_ASR)
+        self.ctl.request_approach("Sockeye")
+
+    def test_assigning_it_puts_it_on_the_board(self):
+        self.ctl.assign_approach("Sockeye", RT.KOBULETI_ILS, named="kobuleti-ils")
+        row, = [r for r in self.ctl.board() if r["callsign"] == "Sockeye"]
+        self.assertEqual(row["cleared_approach"], "kobuleti-ils")
+
+    def test_blank_until_somebody_assigns_one(self):
+        # Different from "he is flying the bridge's default", which is what an
+        # aeroplane with no assignment actually gets -- and the distinction is
+        # invisible from the cockpit any other way.
+        row, = [r for r in self.ctl.board() if r["callsign"] == "Sockeye"]
+        self.assertEqual(row["cleared_approach"], "")
+
+    def test_it_survives_a_restart(self):
+        # The board is a cache of the table (#120), so the name has to come back
+        # off the row -- otherwise a bridge restarted mid-approach shows a blank
+        # beside an aeroplane it is actively vectoring down an ILS.
+        self.ctl.hydrate(
+            [{"callsign": "Sockeye", "track_name": "362nd_sockeye",
+              "cleared_approach": "kobuleti-ils"}],
+            approach_named=lambda k: RT.KOBULETI_ILS if k == "kobuleti-ils" else None)
+        row, = [r for r in self.ctl.board() if r["callsign"] == "Sockeye"]
+        self.assertEqual(row["cleared_approach"], "kobuleti-ils")

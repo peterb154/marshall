@@ -2239,7 +2239,7 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
             if _ap:
                 _pro = _approach_named(_ap)
                 if _pro is not None:
-                    ctl.assign_approach(known, _pro)
+                    ctl.assign_approach(known, _pro, named=_ap)
 
         # ONE RADIO IS ONE AEROPLANE. Whose call this is comes from the GUID
         # that keyed the mic, never from what Whisper made of the words.
