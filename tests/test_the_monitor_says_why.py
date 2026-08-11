@@ -58,9 +58,14 @@ class TestWhoIsWatchingHim(unittest.TestCase):
         self.bridge.heard_on["Sockeye"] = KOBULETI_DEPARTURE_HZ
 
     def ask(self, pos):
-        return agent_atc.watching_him(
+        """(station, spoken reason). The second half of `why` is a coarse SHAPE
+        the monitor de-duplicates its logging on -- see `watching_him` -- and is
+        deliberately not asserted here: it exists to keep a cruise from printing
+        one line a mile, and pinning its wording would make that a contract."""
+        nxt, why = agent_atc.watching_him(
             self.bridge, self.ctl, self.profile, "Sockeye", pos,
             agent_atc.Scope(""), fallback_hz=124_000_000.0)
+        return nxt, why[0]
 
     def test_center_takes_him_at_the_edge_of_the_area(self):
         # THE SORTIE THAT PRODUCED THIS FILE. Thirty miles out, climbing away
@@ -108,6 +113,51 @@ class TestWhoIsWatchingHim(unittest.TestCase):
             self.assertTrue(why)
         else:
             self.assertNotEqual(nxt.name, "Kobuleti Tower")
+
+
+class TestOneHandoffDoesNotEndTheSortie(unittest.TestCase):
+    """A handoff is said to a man ABOUT a controller, not a state he enters.
+
+    THE ACTUAL CAUSE OF 11 AUGUST, found by `tools/ghost_flight.py` only after
+    the wrong-origin fault above it was cleared. The monitor remembered WHO it
+    had already handed over as a set of callsigns:
+
+        if _nxt is not None and cs not in handed_off:
+
+    That cannot tell "already sent to Departure" from "already sent to Center".
+    Tower gave him to Kobuleti Departure at half a mile; from that moment the
+    thread believed it had finished with him, and the entry is only cleared on a
+    poll where NOTHING is due -- which never comes, because from wheels-up
+    onwards something always is. So every later rung of the ladder was silently
+    suppressed by the first one, for the rest of the flight.
+
+    This is the difference between a set and a dictionary and it cost a sortie,
+    which is why it is pinned rather than left to the shape of the code.
+    """
+
+    def setUp(self):
+        self.profile = R.BATUMI_ASR
+        self.departure = self.profile.station_for("departure", field="Kobuleti")
+        self.center = self.profile.station_for("center", field="Kobuleti")
+        self.said: dict[str, str] = {}
+
+    def test_the_first_offer_is_made(self):
+        self.assertTrue(agent_atc.a_fresh_offer(self.said, "Sockeye",
+                                                self.departure))
+
+    def test_the_same_offer_is_not_repeated(self):
+        # The suppression the original set existed for, and it is kept: without
+        # this a handoff goes out every four seconds until he changes channel.
+        self.said["Sockeye"] = self.departure.name
+        self.assertFalse(agent_atc.a_fresh_offer(self.said, "Sockeye",
+                                                 self.departure))
+
+    def test_the_next_rung_is_a_new_offer(self):
+        # THE SORTIE. Having been given to Kobuleti Departure must not mean he
+        # can never be given to Georgia Center.
+        self.said["Sockeye"] = self.departure.name
+        self.assertTrue(agent_atc.a_fresh_offer(self.said, "Sockeye",
+                                                self.center))
 
 
 if __name__ == "__main__":

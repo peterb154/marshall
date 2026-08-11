@@ -1387,7 +1387,8 @@ VECTOR_CHANGE_DEG = 12
 VECTOR_MIN_SEC = 20.0
 
 
-def radar_fixes(scope: str, profile=None, ctl=None) -> list[tuple[str, object]]:
+def radar_fixes(scope: str, profile=None, ctl=None, picture=None
+                ) -> list[tuple[str, object]]:
     """Every aircraft we can talk down, as (callsign, Position).
 
     THE BOARD, NOT A BRACKET IN THE PROSE. This used to match `[Sockeye]` in the
@@ -1419,9 +1420,20 @@ def radar_fixes(scope: str, profile=None, ctl=None) -> list[tuple[str, object]]:
             cs, track = row.get("callsign", ""), row.get("track", "")
             if not (cs and track):
                 continue
-            fix = radar_fix_by_track(scope, track, profile)
+            # HIS AERODROME'S PICTURE. A range is measured FROM somewhere, and
+            # with two fields on the route there are two somewheres -- so a
+            # caller working more than one may hand in a `picture(callsign)`
+            # that draws each aeroplane's own. The proactive monitor does; the
+            # single-scope callers pass nothing and get exactly what they did
+            # before.
+            #
+            # Not optional politeness: measured from the wrong field, a jet
+            # three miles off Kobuleti reads as twenty-five miles out, and
+            # `departure -> center` fired while he was still in the circuit.
+            his = picture(cs) if picture is not None else scope
+            fix = radar_fix_by_track(his, track, profile)
             if fix is not None:
-                out.append((cs, fix))
+                out.append((cs, fix, his))
         return out
     # NO BOARD TO ASK -- the dry-run tools and the older tests. The prose path
     # stays for them and dies with the last caller that cannot supply one.
@@ -1432,7 +1444,8 @@ def radar_fixes(scope: str, profile=None, ctl=None) -> list[tuple[str, object]]:
         out.append((tag, asr.Position(float(nm), float(radial),
                                       int(alt.replace(",", "")),
                                       true_heading(h, profile) if profile else h,
-                                      speed_kt=float(kt) if kt else 0.0)))
+                                      speed_kt=float(kt) if kt else 0.0),
+                    scope))
     return out
 
 
@@ -2899,6 +2912,44 @@ def next_controller(scope, track: str, me, profile, fix, *, known: str = "",
     return nxt
 
 
+def a_fresh_offer(handed_off: dict, cs: str, station) -> bool:
+    """Is telling him to contact this station something he has not been told?
+
+    THIS ONE PREDICATE COST A SORTIE. The monitor remembered who it had already
+    handed over as a SET of callsigns -- `cs not in handed_off` -- which cannot
+    tell "already sent to Departure" from "already sent to Center". Tower gave
+    him to Kobuleti Departure at half a mile; from that moment the thread
+    believed it had finished with him, and the entry is only cleared on a poll
+    where NOTHING is due, which never comes once an aeroplane is airborne. Every
+    later rung of the ladder was suppressed by the first one:
+
+        "I met 30 miles outside the airport, still no transition to center, I
+         have to stop flying"
+
+    A handoff is not a state an aeroplane is in. It is a thing said to a
+    particular man about a particular controller, so the record has to name the
+    controller -- and the suppression the set was there for, not repeating one
+    offer every four seconds, is kept exactly.
+    """
+    name = getattr(station, "name", "") or str(station)
+    return bool(name) and handed_off.get(cs) != name
+
+
+def his_field(bridge, ctl, profile, cs: str, fallback_hz: float = 0.0) -> str:
+    """Which AERODROME is working this aeroplane.
+
+    Off the frequency he checked in on, which is the only thing that says whose
+    he is -- the same source `watching_him` uses to find the controller, asked
+    one level up. A role is unique within an aerodrome and not across one, and
+    so is a beacon.
+    """
+    hz = bridge.heard_on.get(ctl._resolve(cs)) or fallback_hz
+    if not hz or not hasattr(profile, "station_on"):
+        return ""
+    st = profile.station_on(hz / 1_000_000)
+    return getattr(st, "field", "") if st is not None else ""
+
+
 def watching_him(bridge, ctl, profile, cs, pos, scope, fallback_hz=0.0,
                  session_id: str = ""):
     """Who should have this aeroplane, and -- when nobody -- WHY NOT.
@@ -2943,24 +2994,44 @@ def watching_him(bridge, ctl, profile, cs, pos, scope, fallback_hz=0.0,
           if hasattr(profile, "station_on") else None)
     phase = getattr(who, "sortie_phase", "") or ""
     if me is None:
-        return None, f"nobody owns him -- {hz / 1_000_000:.3f} is not a station"
+        _no = f"nobody owns him -- {hz / 1_000_000:.3f} is not a station"
+        return None, (_no, _no)
     nxt = next_controller(scope, track, me, profile, pos, known=key,
                           session_id=session_id, phase=phase,
                           vectoring=getattr(who, "assigned_hdg", None))
+    # A HANDOFF THAT FIRES NEEDS THE SAME ACCOUNT AS ONE THAT DOES NOT, and
+    # leaving it out cost an hour. The first ghost flight handed a jet to Center
+    # at three miles and the log said only that it had -- so which of the three
+    # branches decided, whose aeroplane the thread thought it was, and what
+    # range it was reasoning about were all invisible, exactly as they had been
+    # when nothing fired at all. Same fault, opposite symptom.
+    if nxt is not None:
+        _st = _handoff_state(scope, track, pos, phase)
+        _r = "?" if _st.range_nm is None else f"{_st.range_nm:.0f}"
+        print(f"  .. {cs}: {me.name} -> {nxt.name}, {phase or 'no phase'}, "
+              f"{_r} nm, {'inbound' if _st.inbound else 'outbound'}",
+              flush=True)
     if nxt is None:
         st = _handoff_state(scope, track, pos, phase)
         way = "on the ground" if st.on_ground else (
             "inbound" if st.inbound else "outbound")
         rng = "?" if st.range_nm is None else f"{st.range_nm:.0f}"
+        # KEYED ON THE SHAPE, PRINTED WITH THE NUMBER. The caller logs on a
+        # change and the range changes every mile, so returning it as part of
+        # the reason would fill the log with one line per mile of a cruise. Five
+        # miles is coarse enough to be quiet and fine enough that a threshold at
+        # twenty-five is never crossed silently.
+        step = "?" if st.range_nm is None else f"{int(st.range_nm // 5) * 5}"
         return None, (f"{me.name} keeps him -- {phase or 'no phase'}, "
-                      f"{rng} nm, {way}")
+                      f"{rng} nm, {way}", f"{me.name}/{phase}/{way}/{step}")
     # SAME MAN, DIFFERENT NAME. Approach and Departure are one controller on one
     # frequency, so there is nobody to contact -- he simply answers as Departure
     # while you are going out. Telling a pilot to call the person he is already
     # talking to is nonsense on the radio.
     if getattr(nxt, "name", None) == getattr(me, "name", None):
-        return None, f"{nxt.name} already has him under another name"
-    return nxt, ""
+        _same = f"{nxt.name} already has him under another name"
+        return None, (_same, _same)
+    return nxt, ("", "")
 
 
 def _handoff_state(scope, track: str, pos, phase: str = "") -> object:
@@ -3067,6 +3138,26 @@ def leaving_my_airspace(base: str, session_id: str, callsign: str, me,
             and getattr(profile, "guidance", "") == "talkdown"
             and fix is not None
             and fix.range_nm <= profile.final_intercept_nm):
+        return None
+    # INSIDE THE TERMINAL AREA THE LADDER OWNS HIM, and the volumes do not get a
+    # vote. This function's own docstring says what airspace is FOR -- "the case
+    # range cannot express at all" -- and a departure at three miles is not that
+    # case: it is the most ordinary distance there is, and `handoff.py` has a
+    # rule for it.
+    #
+    # Without this, a gap in the map reads as an answer. `flight_airspace`
+    # COALESCEs onto the unbounded sector, so an aeroplane inside NO described
+    # volume becomes the Center's -- and Kobuleti had no volume at all, so a jet
+    # three miles off its runway at two thousand feet was offered Georgia Center
+    # while still in the circuit. Migration 027 gives it one; this makes the
+    # next theatre safe before anybody flies it, because Nevada has the same
+    # hole today and "no sector defined" must never mean "he is enroute".
+    #
+    # CENTER_NM is the right threshold because it is the ladder's OWN answer to
+    # the same question: it is where `departure -> center` fires, so inside it
+    # the rules have already said he is not Center's yet.
+    if fix is not None and getattr(fix, "range_nm", None) is not None \
+            and fix.range_nm < _handoff.CENTER_NM:
         return None
     try:
         row = _get_json(f"{base}/flights/airspace?"
@@ -5162,7 +5253,24 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         flown: set[str] = set()
         # Handed over already, so the offer is made ONCE. Cleared when the
         # handoff stops being due -- he changed frequency, or turned back.
-        handed_off: set[str] = set()
+        # WHO he was offered to, not merely THAT he was offered. A set of
+        # callsigns cannot tell "already sent to Departure" from "already sent
+        # to Center", so the second offer of a sortie was suppressed by the
+        # first -- for ever, since the entry is only cleared on a poll where
+        # NOTHING is due, and from wheels-up onwards something always is.
+        #
+        # THIS IS WHAT COST THE 11 AUGUST SORTIE. Tower handed him to Kobuleti
+        # Departure at half a mile; from that moment the thread believed it had
+        # finished with him, and he flew from four miles to thirty with no
+        # transition to Center and no line in the log:
+        #
+        #     "I met 30 miles outside the airport, still no transition to
+        #      center, I have to stop flying"
+        #
+        # A handoff is not a state an aeroplane is in. It is a thing said to a
+        # particular man about a particular controller, and the record has to
+        # name him.
+        handed_off: dict[str, str] = {}
         # Cleared for the ILS, so it goes out once. Dropped on the ground and on
         # a missed approach: a second approach is a second clearance.
         cleared_ils: set[str] = set()
@@ -5183,7 +5291,32 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             if not radar_on:
                 continue
             try:
-                scope = fetch_radar(session_id, profile=profile)
+                # ONE PICTURE PER AERODROME, and this was one for the whole
+                # board. `fetch_radar` takes the SPEAKING CONTROLLER'S field --
+                # the receive path has passed it since #109 -- and this thread
+                # passed nothing, so every range it reasoned about was measured
+                # from the profile's own beacon, which is Batumi's.
+                #
+                # It is not a rounding error. A jet three miles off Kobuleti's
+                # runway is twenty-five from Batumi, so the ladder's
+                # `departure -> center` fired on the first poll and a departure
+                # was handed to Georgia Center still in the circuit:
+                #
+                #     .. Quiver 7-1: Kobuleti Departure -> Georgia Center,
+                #        no phase, 25 nm, outbound
+                #
+                # The rule was right and the input was wrong, which is why
+                # nothing looked broken: every number is real and belongs to
+                # another airport. Found by `tools/ghost_flight.py`; the same
+                # shape as `station_for`, `channels_for` and `field_origin`
+                # before each of them took a field.
+                # A FRESH DICT EVERY POLL. A picture is a snapshot, so a cache
+                # that outlived the tick would hand this thread a stale fix and
+                # be worse than no cache at all; it exists only so two aircraft
+                # at one aerodrome cost one fetch rather than two.
+                _seen: dict[str, Scope] = {}
+                _seen[""] = fetch_radar(session_id, profile=profile)
+                scope = _seen[""]
                 # Sequencing: with a queue, only the aircraft that owns the
                 # approach is vectored. Everyone else is holding, and a vector
                 # is an invitation to start -- issue two and two aeroplanes fly
@@ -5210,10 +5343,20 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 # it does.
 
 
-                fixes = radar_fixes(scope, profile, ctl)
+                # `_seen` bound at definition, because it is rebuilt every poll
+                # and a closure over the loop variable would hand this tick's
+                # fixes to the next tick's picture.
+                def _his_picture(cs: str, _seen=_seen) -> Scope:
+                    fld = his_field(bridge, ctl, profile, cs, final_hz)
+                    if fld not in _seen:
+                        _seen[fld] = fetch_radar(session_id, profile=profile,
+                                                 field=fld)
+                    return _seen[fld]
+
+                fixes = radar_fixes(scope, profile, ctl, picture=_his_picture)
                 # Two contacts is traffic, and traffic means one at a time.
                 traffic = len(fixes) >= 2
-                for cs, pos in fixes:
+                for cs, pos, scope in fixes:
                     # He is on the ground. Stop flying him.
                     #
                     # The approach ends when the aeroplane is on the runway, and
@@ -5331,17 +5474,18 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     # but a controller keeping an aeroplane is a decision, and
                     # three minutes of a pilot leaving the terminal area with no
                     # line in the record is what made the last one undiagnosable.
-                    if _why and _watch.get(cs) != _why:
-                        _watch[cs] = _why
-                        print(f"  .. {cs}: {_why}", flush=True)
+                    _say_it, _shape = _why
+                    if _say_it and _watch.get(cs) != _shape:
+                        _watch[cs] = _shape
+                        print(f"  .. {cs}: {_say_it}", flush=True)
                         record(session_id, kind="handoff/none", callsign=cs,
-                               text=_why)
+                               text=_say_it)
                     elif _nxt is not None:
                         _watch.pop(cs, None)
-                    if _nxt is not None and cs not in handed_off:
+                    if _nxt is not None and a_fresh_offer(handed_off, cs, _nxt):
                         free, why = channel_is_free(on_hz=_hz)
                         if free:
-                            handed_off.add(cs)
+                            handed_off[cs] = _nxt.name
                             _say = for_voice(
                                 f"{cs}, contact {_nxt.name} "
                                 f"{controller.spell_freq(_nxt.freq_mhz)}.")
@@ -5356,7 +5500,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                                 _pool.transmit(
                                     voice_for(_hz).frames(_say), channels_of(_hz), AM)
                     elif _nxt is None:
-                        handed_off.discard(cs)
+                        handed_off.pop(cs, None)
 
                     # HIS APPROACH, NOT THE BRIDGE'S -- the other half of #2.
                     # The engine has held a per-flight profile since #2 and this

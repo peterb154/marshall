@@ -83,10 +83,10 @@ class TestItFindsHimWithNoTagInThePicture(unittest.TestCase):
 
     def test_and_he_is_found_anyway(self):
         got = A.radar_fixes(self.scope, R.BATUMI_ASR, self.ctl)
-        self.assertEqual([cs for cs, _ in got], ["Sockeye"])
+        self.assertEqual([cs for cs, _, _ in got], ["Sockeye"])
 
     def test_the_position_is_his_own(self):
-        (_, pos), = A.radar_fixes(self.scope, R.BATUMI_ASR, self.ctl)
+        (_, pos, _sc), = A.radar_fixes(self.scope, R.BATUMI_ASR, self.ctl)
         self.assertLess(pos.range_nm, 12.0)
         self.assertIsNotNone(pos.alt_ft)
 

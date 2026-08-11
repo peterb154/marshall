@@ -6088,21 +6088,49 @@ rung has never had a check: `ladder_rehearsal.py` cannot cover it, because a
 synthetic pilot has no aeroplane on radar and this rung is pure geometry. See
 `tests/test_the_monitor_says_why.py`.
 
-**The underlying cause of the silence is still open**, honestly, until a sortie
-prints the new line — and saying so is better than a guess dressed as a finding.
-What is ruled out: the rule (asked directly, it fires), an exception (the monitor
-prints one and none appeared), and the origin below (`scope.contacts` uses the
-origin for clustering, not for filtering, so a contact cannot be hidden by it).
+## THE CAUSE, found by `tools/ghost_flight.py`
 
-A SEPARATE AND REAL FAULT found while looking: the monitor fetches its picture
-with no `field`, so it measures every aeroplane from the profile's own beacon —
-Batumi's — while the receive path passes the speaking controller's field. A jet
-four miles off Kobuleti is eighteen from Batumi, so every range this thread
-reasons about on a two-field sortie is a real number belonging to the wrong
-airport. It is the same shape as `field_origin` before it took a field, and it
-does not hide anybody; it just answers the distance question wrongly. Not fixed
-here: the thread fetches ONE picture for the whole board, so the fix is to fetch
-per FIELD and not per aircraft.
+Not guessed at. `tracks` is the radar picture and everything downstream of it is
+ours, so a row written by hand and marched along a heading flies the whole chain
+— radar, board, decision, radio — with no sim at all. That tool is new and this
+is what its first three runs turned up. **Three faults, in the order they
+surfaced, each hiding the next.**
+
+**1. Kobuleti had no airspace.** `sectors` held three rows — batumi-approach,
+batumi-tower, georgia-center — and 005's own comment predicted it: *"the moment a
+second aerodrome exists, and a second aerodrome is the next test."* 008 COALESCEs
+onto the unbounded sector, so an aeroplane inside no described volume becomes the
+Center's, and a jet 3 nm off Kobuleti's runway at 2,000 ft was offered Georgia
+Center while still in the circuit. Absence read as an answer. Migration 027 gives
+both fields circular volumes that meet near the midpoint; `leaving_my_airspace`
+now also abstains inside the ladder's own terminal distance, because the next
+theatre has the identical hole and Nevada is next.
+
+**2. The monitor measured every range from Batumi.** `fetch_radar` takes the
+speaking controller's field and the receive path has passed it since #109; this
+thread passed nothing. So a jet three miles off Kobuleti read as twenty-five
+miles out and `departure → center` fired on the first poll — the rule right, the
+input wrong, every number real and belonging to another airport. It draws one
+picture per aerodrome now, through `radar_fixes(picture=...)`.
+
+**3. And underneath both, the actual cause of the sortie.** The thread remembered
+who it had already handed over as a SET OF CALLSIGNS:
+
+    if _nxt is not None and cs not in handed_off:
+
+which cannot tell *already sent to Departure* from *already sent to Center*.
+Tower gave him to Kobuleti Departure at half a mile; from that moment the monitor
+believed it had finished with him, and the entry is only cleared on a poll where
+NOTHING is due — which never comes once an aeroplane is airborne. **Every later
+rung of the ladder was suppressed by the first one, for the rest of the flight.**
+A handoff is not a state an aeroplane is in; it is a thing said to a particular
+man about a particular controller, so the record has to name the controller. See
+`a_fresh_offer`.
+
+It took a ghost that checks in with TOWER first to reproduce — `--from-tower` —
+because a flight that starts on Departure never has a first handoff to be
+suppressed by. The rung now passes end to end: Tower → Departure → Center at
+exactly twenty-five miles, with the monitor accounting for itself every five.
 
 ---
 

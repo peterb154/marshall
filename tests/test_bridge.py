@@ -571,7 +571,10 @@ class TestRadarFixes(unittest.TestCase):
                  "E12 [Hawk one] (P-51D): 9.0 nm on the 300 radial, 2,000 ft, "
                  "heading 130")
         got = agent_atc.radar_fixes(scope)
-        self.assertEqual([cs for cs, _ in got], ["Pony one one", "Hawk one"])
+        # Three values now: the picture he was fixed AGAINST rides along, so a
+        # caller working two aerodromes knows which field's ranges it is
+        # holding. See `radar_fixes(picture=...)`.
+        self.assertEqual([cs for cs, _, _ in got], ["Pony one one", "Hawk one"])
 
     def test_empty_scope(self):
         self.assertEqual(agent_atc.radar_fixes(""), [])
