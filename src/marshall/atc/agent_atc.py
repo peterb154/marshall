@@ -35,6 +35,7 @@ from marshall import config as _config
 from marshall import config
 from marshall.core import names as _names
 from marshall.core import geo as _geo
+from marshall.atc import controller as _controller
 from marshall.core import theatre as _theatre
 from marshall.atc import handoff as _handoff
 from marshall.atc import decision as _decision
@@ -319,11 +320,11 @@ APPROACH_NAME = ""              # set when the active flight plan is loaded
 # to the agent only when it answers on the overlord's frequency, because the two
 # jobs share a voice pipeline and nothing else: one owns separation and the
 # runway, the other owns the war.
-_PHASE_OF = {
-    "UNKNOWN": "unknown", "ENROUTE": "enroute", "HOLDING": "holding",
-    "CLEARED": "approach", "MISSED": "missed", "BANISHED": "holding",
-    "LANDED": "landed",
-}
+# ONE MAPPING, and it lives next to the enum it describes -- see
+# `controller.PHASE_WORD`. It was defined here and needed in both directions the
+# moment the board could be rebuilt from the table, and two copies of a
+# translation is how the two come to disagree about what "approach" means.
+_PHASE_OF = _controller.PHASE_WORD
 
 
 def flight_bind(base: str = BASE_URL, **names) -> dict:
@@ -706,6 +707,30 @@ class Bridge:
     """
 
     def __init__(self):
+        # ---- WHAT IS DURABLE, AND WHAT IS SCRATCH ----------------------------
+        #
+        # Everything below falls in one of two groups and the difference is the
+        # whole of docs/STATE.md. Anything ADDED here belongs in one of them and
+        # the choice should be made out loud, because sixteen dictionaries grew
+        # in this constructor without anybody ever making it.
+        #
+        #   REMEMBERED   a fact about a sortie that must survive this process.
+        #                It lives in a TABLE and anything here is a cache of it.
+        #                The board itself is the example: `Controller.aircraft`
+        #                is hydrated from `flights` at startup and written
+        #                through on every turn.
+        #
+        #   SCRATCH      per-turn or per-radio working state that MEANS nothing
+        #                after this process ends. A voting tally for a callsign,
+        #                the last thing said, which handoff this turn
+        #                authorised. Losing it costs a controller nothing a
+        #                pilot can hear.
+        #
+        # The test is simple: if a bridge restarted mid-sortie would say
+        # something WRONG without it, it is remembered and needs a column. If it
+        # would merely recompute it, it is scratch and belongs here.
+        #
+        # ---- REMEMBERED (caches of tables) ----------------------------------
         self.identity = identity.Registry()
         self.flights = fl.Roster()
         # When each board entry was last accounted for. See release_stale.
@@ -723,6 +748,7 @@ class Bridge:
         # is the entire bug on one line. No judgement is applied here -- the
         # matcher that would judge it is the thing under suspicion.
         self.releases: list[dict] = []
+        # ---- SCRATCH (per-radio, per-turn; nothing here needs a column) -----
         # WHAT THIS RADIO HAS BEEN DOING. All per-frequency, all previously
         # module globals -- which meant two bridges in one process would have
         # shared one pilot's conversation window, one readback queue and one
@@ -1678,16 +1704,44 @@ def reconcile(directive: str, stack: str, vectoring: str, g=None,
         # That gap closes when every `say` carries its decision (#80 criterion
         # 4). Until then it is visible rather than guessed at.
         binding = [d for d in kept if getattr(d, "kind", "") in BINDING_KINDS]
+        # THE TALKDOWN IS NOT AN ORDER, IT IS THE PROCEDURE HE IS FLYING, and
+        # the first version of this dropped it along with everything else.
+        #
+        # `vectoring` is the ASR metronome -- a course and a range every mile,
+        # transmitted by the engine on its own schedule and gated by the
+        # geometry. It goes only when there is a HEADING among the suppressed
+        # instructions: telling a man you have just given away to turn left is
+        # the contradiction this branch exists for, and going silent on final
+        # because a handoff happened to be due is a far worse failure than the
+        # one being prevented.
+        #
+        # Caught by test_loop's `the_radar_guidance_is_computed_and_handed_over`
+        # -- at ten miles the engine issues a holding or approach clearance AND
+        # a handoff is due, and the blanket version killed the talkdown.
+        _turned = any(getattr(d, "kind", "") == "vector" for d in binding)
         if binding:
-            return "", stack, "", (
+            return "", stack, ("" if _turned else vectoring), (
                 "instruction suppressed: he has been handed to "
                 f"{getattr(handoff, 'name', 'another controller')}, and an "
                 "order from us is no longer ours to give"), [
                     d for d in kept if getattr(d, "kind", "") not in BINDING_KINDS]
-        # No instruction to suppress. The VECTOR still goes, because a heading
-        # is an instruction whether or not it arrived as a decision.
-        return directive, stack, "", ("vector suppressed: he has been handed on"
-                                      if vectoring else ""), kept
+        # THE TALKDOWN IS NOT SUPPRESSED, and that was overreach.
+        #
+        # A heading IS an instruction, so the first version of this dropped the
+        # vectoring too -- which kills the surveillance approach, because the
+        # ASR talkdown is not an order we may no longer give, it is the
+        # PROCEDURE THE CONTROLLER IS FLYING. It is transmitted by the engine on
+        # its own metronome and gated by the geometry (`asr_context` returns
+        # nothing for a non-vectored profile, and `reconcile` above already
+        # silences it for a missed approach or a hold).
+        #
+        # If a handoff is due WHILE a talkdown is running, the handoff is the
+        # thing that is wrong -- `next_controller` already knows that ("a
+        # talkdown in progress outranks any question of geography") -- and
+        # answering it by going silent on final would be the far worse failure.
+        # Caught by test_loop's `the_radar_guidance_is_computed_and_handed_over`
+        # before it flew.
+        return directive, stack, vectoring, "", kept
     if g is None:
         return directive, stack, vectoring, "", kept
     if g.phase == "missed":
@@ -4551,6 +4605,26 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
     client.ignore_guids |= _pool.guids
     print(f"  transmitting on {config.RADIO_POOL_SIZE} clients", flush=True)
     ctl = controller.Controller(profile)  # deterministic separation, seeded from the approach
+    # ...AND REBUILT FROM THE TABLE, which is where the board actually lives.
+    #
+    # Started empty, a bridge restarted mid-sortie met everybody for the first
+    # time: every rung climbed, every level assigned, every approach flown,
+    # forgotten -- while the aeroplanes went on flying. Worse than forgetful,
+    # it was dangerous: with an empty letdown it would clear a second aircraft
+    # onto an approach the first was already flying.
+    #
+    # The board is a write-through cache now (see `Controller.hydrate`,
+    # migration 026, docs/STATE.md). Restarting the bridge should be invisible
+    # to a pilot, and this is the line that makes it so. [#120]
+    try:
+        _rows = _get_json(
+            f"{BASE_URL}/flights?mission={urllib.parse.quote(MISSION)}")
+        _n = ctl.hydrate((_rows or {}).get("flights") or [], _approach_named)
+        if _n:
+            print(f"  board: {_n} aircraft restored from the table", flush=True)
+    except Exception as e:
+        print(f"  !! could not restore the board ({type(e).__name__}); starting "
+              f"empty, which forgets anybody already flying", flush=True)
     # PUBLISH BEFORE THE FIRST TRANSMISSION. Otherwise a restarted bridge shows
     # the PREVIOUS one's beliefs until somebody keys a mic -- a board with
     # aircraft on it, from an engine that has just been emptied. The age field
@@ -5652,6 +5726,17 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 _agreed["intent"] = _ac.wants
             if _ac is not None:
                 _agreed["cleared"] = _PHASE_OF.get(_ac.phase.name, "unknown")
+                # EVERYTHING THE BOARD REMEMBERS, written through. These lived
+                # only inside this process, so a bridge restarted mid-sortie
+                # forgot which rung a pilot was on, whether he was flying it
+                # himself, how many approaches he had flown and which
+                # information he had -- while the aeroplane went on flying.
+                # See migration 026 and docs/STATE.md. [#120]
+                _agreed["sortie_phase"] = _ac.sortie_phase or ""
+                _agreed["on_visual"] = bool(_ac.on_visual)
+                _agreed["approaches_flown"] = int(_ac.approaches or 0)
+                if _ac.atis_letter:
+                    _agreed["atis_letter"] = _ac.atis_letter
                 if _ac.assigned_ft:
                     _agreed["assigned_ft"] = int(_ac.assigned_ft)
                 if getattr(_ac, "size", 1) > 1:

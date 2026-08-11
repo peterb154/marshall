@@ -311,6 +311,26 @@ class Tx:
                 f"{self.to}: {self.text}")
 
 
+# THE SEPARATION PHASE AS THE BOARD SPELLS IT, and back again.
+#
+# One mapping, here, next to the enum it describes. It lived in `agent_atc` and
+# was needed in both directions the moment the board could be rebuilt from the
+# table -- and two copies of a translation is how the two come to disagree about
+# what "approach" means. `agent_atc` imports it.
+PHASE_WORD = {
+    "UNKNOWN": "unknown", "ENROUTE": "enroute", "HOLDING": "holding",
+    "CLEARED": "approach", "MISSED": "missed", "BANISHED": "holding",
+    "LANDED": "landed",
+}
+# Not a strict inverse: BANISHED and HOLDING share a word, so a rebuilt board
+# reads "holding" as HOLDING. That is the safe direction -- a banished aircraft
+# restored as a holder is one the controller will sequence rather than one he
+# has forgotten about.
+PHASE_FROM_WORD = {"unknown": "UNKNOWN", "enroute": "ENROUTE",
+                   "holding": "HOLDING", "approach": "CLEARED",
+                   "missed": "MISSED", "landed": "LANDED"}
+
+
 @dataclass
 class Controller:
     profile: R.ApproachProfile
@@ -450,6 +470,69 @@ class Controller:
         ac = self.aircraft.get(self._resolve(callsign))
         if ac is not None:
             ac.radar_identified = bool(seen)
+
+    def hydrate(self, rows, approach_named=None) -> int:
+        """Rebuild the board from the table. THE TABLE IS THE SOURCE OF TRUTH.
+
+            "there really shouldn't be much in memory data structures - we
+             addressed this - database is fast and should be the single source
+             of truth"
+
+        This board was built only by transmissions, so a bridge restarted
+        mid-sortie began knowing nothing: every rung a pilot had climbed, every
+        level assigned, every approach flown, forgotten, while the aeroplanes
+        went on flying. The controller then met everybody for the first time --
+        and, worse, would happily clear a second aircraft for an approach the
+        first was already on, because the letdown was empty too.
+
+        The board is a WRITE-THROUGH CACHE now, not the original. Every fact
+        here is written to `flights` as it changes (see `flight_agree`) and
+        rebuilt from it here, so a restart is invisible and the durable copy is
+        the one that counts.
+
+        `approach_named` resolves a plan's approach key to a profile -- passed
+        in rather than imported, because the theatre catalogue lives above this
+        module and reaching up for it is what `LAYERS.md` forbids.
+
+        NOT POSITION. Nothing here restores where anybody is: that is radar's,
+        it is in `tracks`, and it is reconciled every sweep. A board that
+        remembered a position across a restart would be asserting where an
+        aeroplane was several minutes ago.
+        """
+        n = 0
+        for row in rows or []:
+            cs = (row.get("callsign") or "").strip()
+            if not cs:
+                continue
+            ac = self._enter(cs, int(row.get("claimed_size") or 1))
+            ac.sortie_phase = row.get("sortie_phase") or ""
+            ac.on_visual = bool(row.get("on_visual"))
+            ac.approaches = int(row.get("approaches_flown") or 0)
+            ac.atis_letter = row.get("atis_letter") or ""
+            ac.wants = row.get("intent") or ""
+            ac.track = row.get("track_name") or ""
+            ac.radar_identified = bool(row.get("radar_identified"))
+            if row.get("assigned_ft"):
+                ac.assigned_ft = int(row["assigned_ft"])
+            if row.get("cruise_ft"):
+                ac.cleared_ft = int(row["cruise_ft"])
+            if approach_named and row.get("cleared_approach"):
+                got = approach_named(row["cleared_approach"])
+                if got is not None:
+                    ac.profile = got
+            # THE SEPARATION PHASE, and with it the letdown. `cleared` is the
+            # enum's own word for where he sits in the arrival queue, and an
+            # aircraft restored as CLEARED must be restored as the man on the
+            # approach too -- otherwise the next arrival is cleared straight
+            # into him, which is the accident the whole engine exists to
+            # prevent, caused by the recovery from a restart.
+            want = PHASE_FROM_WORD.get((row.get("cleared") or "").lower())
+            if want:
+                ac.phase = Phase[want]
+            if ac.phase is Phase.CLEARED:
+                self._set_letdown(ac, ac.callsign)
+            n += 1
+        return n
 
     def _pro(self, ac):
         """THE APPROACH THIS AEROPLANE IS FLYING, not the one the bridge loaded.

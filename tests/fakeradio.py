@@ -168,6 +168,19 @@ class Sortie:
     """
 
     def __init__(self, profile=None, session="test", freq_mhz=124.0):
+        import os
+
+        # A TEST GETS ITS OWN SORTIE. The bridge rebuilds its board from
+        # `flights` at startup (#120), and without this a unit test asks the
+        # SIM which mission is loaded, gets the live key, and inherits whatever
+        # is on the real board -- a rehearsal fixture on a taxiway turned up
+        # inside `test_loop` and suppressed the talkdown, because a parked
+        # aeroplane does not fly an approach.
+        #
+        # That is the mission instance doing its job in the other direction:
+        # a test is a different world from a live server and must never share a
+        # bucket with one. See docs/STATE.md.
+        os.environ.setdefault("MARSHALL_MISSION", "unit-test")
         from marshall.core import route as R
         self.profile = profile if profile is not None else R.BATUMI_ASR
         self.session, self.freq_mhz = session, freq_mhz

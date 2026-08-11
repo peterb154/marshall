@@ -35,7 +35,8 @@ PHASES = ("filed", "clearance", "taxi", "departure", "enroute", "tasked",
           "on_station", "rtb", "arrival", "holding", "approach", "missed",
           "landed", "unknown")
 
-_FIELDS = ("callsign", "track_name", "srs_guid", "srs_name", "intent",
+_FIELDS = ("sortie_phase", "on_visual", "approaches_flown", "atis_letter",
+           "callsign", "track_name", "srs_guid", "srs_name", "intent",
            "destination", "claimed_size", "controller", "procedure", "runway",
            "cleared", "assigned_ft", "assigned_hdg", "sequence_no",
            "missed_count", "promised", "promised_at", "lead_of", "flight_plan",

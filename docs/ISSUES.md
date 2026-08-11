@@ -5934,9 +5934,49 @@ places and written by none.
 ---
 
 ## [ARCH-16] The board is in memory; the database is the source of truth — #120
-labels: architecture
+labels: architecture, needs-flight-test
 
-**Status:** OPEN, and deliberately AFTER #119. **See `docs/STATE.md`.**
+**Status:** FIXED 11 August, needs the next sortie. **See `docs/STATE.md`.**
+
+**The board is a write-through cache now**, hydrated from `flight_state` at
+bridge start and written through on every turn. Live: `board: 1 aircraft restored
+from the table`, and the ladder continued from the restored rung — Q6 needs the
+phase to have been `taxi` before it, which only the table knew.
+
+**Migration 026** gave four facts a column. `sortie_phase` is the important one:
+`flights.cleared` already carried the SEPARATION enum and `sortie_phase` answers
+a different question — what he is DOING — and is what `handoff.due` reads to
+decide who owns him. Losing it on a restart lost the entire ground half of a
+sortie. The others are `on_visual`, `approaches_flown` and `atis_letter`.
+
+**No position is restored.** That is radar's, it lives in `tracks`, and it is
+reconciled every sweep; a board that remembered a position across a restart would
+assert where an aeroplane was minutes ago.
+
+**The letdown comes back with him.** An aircraft restored as `CLEARED` is
+restored as the man ON the approach — otherwise the next arrival is cleared
+straight into him, which is the accident the engine exists to prevent, caused by
+the recovery from a restart.
+
+**And the scratch is named.** `Bridge.__init__` grew sixteen dictionaries without
+anybody deciding which were durable. They are now in two labelled groups with the
+test written down: *if a bridge restarted mid-sortie would say something WRONG
+without it, it is remembered and needs a column; if it would merely recompute it,
+it is scratch.*
+
+**Two faults found on the way**, both mine and both caught by existing tests:
+
+* The #115 handoff branch dropped the ASR talkdown along with the instruction. A
+  talkdown is not an order we may no longer give, it is the procedure the
+  controller is flying, and going silent on final because a handoff was due is a
+  far worse failure than the one being prevented. It now goes only when a
+  **heading** is among the suppressed instructions.
+* A unit test inherited the LIVE board, because startup hydration asked the sim
+  which mission was loaded and got the real key. A test is a different world from
+  a live server and must never share a bucket with one — the mission instance
+  doing its job in the other direction.
+
+Originally: OPEN, and deliberately after #119.
 
     "there really shouldn't be much in memory data structures - we addressed
      this - database is fast and should be the single source of truth"
