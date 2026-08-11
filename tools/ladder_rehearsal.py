@@ -253,6 +253,49 @@ def atis_confirmed(field: str):
     return check
 
 
+def only_once_he_has_landed(*checks):
+    """The recovery rungs, which cannot be judged against a fixture that flew.
+
+    THE ENGINE IS RIGHT TO REFUSE IT. `phases.derive` will not take an aeroplane
+    from `departure` to `landed`: you do not land from a take-off roll without
+    flying an approach in between, and the refusal is printed. The fixture here
+    is parked on a ramp and departs only in words, so it genuinely has not
+    landed and the whole recovery half is unreachable from it.
+
+    Saying SKIP is the honest answer. Failing would be scoring the controller
+    for refusing to believe a fiction, and passing would be worse. What actually
+    covers this ground is `tests/test_ground_procedure.py`, which walks the
+    phases directly, plus row F5b -- which needs no landing, because refusing to
+    park somebody is Tower's answer whatever rung he is on.
+    """
+    def check(ev):
+        for e in reversed(ev):
+            if e.get("kind") != "board":
+                continue
+            for ac in e.get("board") or []:
+                if (ac.get("sortie_phase") or "") in ("landed", "taxi_in"):
+                    return all_of(*checks)(ev)
+            break
+        return None, ("the fixture never flew, so the engine correctly refuses "
+                      "to believe it landed -- see tests/test_ground_procedure.py")
+    return check
+
+
+def nobody_after():
+    """No handoff was authorised. Ground is the end of the ladder.
+
+    The FAILURE this catches is a rung that hands backwards -- on 11 August
+    Ground sent a taxiing pilot to Batumi Tower, a controller who had already
+    finished with him. There is nothing after Ground and nobody to hand back to.
+    """
+    def check(ev):
+        for e in ev:
+            if e.get("kind") == "atc/handoff":
+                return False, f"handed on after parking: {e.get('text', '')[:70]}"
+        return True, ""
+    return check
+
+
 def nothing_lost():
     """No decided fact went missing on the way to the radio.
 
@@ -414,6 +457,30 @@ def ladder_for(th):
          f"ready for departure.",
          all_of(engine_decided("cleared for take-off"), nothing_lost()),
          "Tower clears it, with the runway and the wind, and all of it is spoken"),
+
+        # THE OTHER END OF THE SORTIE. The ladder was only ever rehearsed
+        # outbound, which is why every fault in the recovery half -- Ground
+        # handing back to Tower, parking owned by nobody -- was found by a pilot
+        # at the end of a flight rather than here in four minutes. [#100]
+        #
+        # These rows work an aeroplane that is DOWN, so they follow the take-off
+        # rather than standing alone: the fixture has to have flown for the
+        # engine to believe it landed.
+        ("F5", twr.freq_mhz,
+         f"{twr.name}, Sockeye, on the ground, runway {spoken_rwy}.",
+         only_once_he_has_landed(said("runway")),
+         "Tower owns the runway and says to get off it"),
+
+        ("F5b", twr.freq_mhz,
+         "Sockeye, request taxi to parking.",
+         all_of(said(gnd.name), handed_to(gnd.name)),
+         "parking is not Tower's; he names Ground and hands him over (#100)"),
+
+        ("F6", gnd.freq_mhz,
+         "Sockeye, request taxi to parking.",
+         only_once_he_has_landed(said("parking"), phase_is("taxi_in"),
+                                 nobody_after()),
+         "Ground parks him, and nothing hands him anywhere (#100)"),
     ]
 
 
@@ -858,7 +925,10 @@ def main(argv: list[str] | None = None) -> int:
     if parked:
         take_it_away(unit)
         print(f"\n  {unit} removed from the scope.")
-    print("\n  NOT COVERED HERE, whatever the result above: anything gated on\n"
+    print("\n  NOT COVERED HERE, whatever the result above: the RECOVERY rungs\n"
+          "  need an aeroplane that has actually flown -- a parked fixture that\n"
+          "  departs in words has not landed, and the engine is right to say so.\n"
+          "  Also anything gated on\n"
           "  radar (there is no aeroplane unless one is spawned -- see\n"
           "  tools/ai_traffic.py), and whether a human voice survives Whisper.\n"
           "  This is our Polly against our Whisper.")
