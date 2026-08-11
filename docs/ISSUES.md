@@ -5586,3 +5586,37 @@ authoritative, so this fallback only ever decides for aircraft no event covered.
 The Caucasus is unchanged, which is the point — 59 feet against 32 changes
 nothing there, and that is exactly why this survived. A constant that is right
 on one map is invisible until there are two.
+
+## [SEAM-9] Handed to Center and told to hold, in one transmission — #115
+labels: bug, needs-flight-test
+
+**Status:** OPEN. Seen on the first Nevada stack run, 11 August.
+
+    ATC: "Bandit, contact Los Angeles Center, one three three decimal four.
+          Good day. Hold at present position, maintain one zero thousand..."
+
+Two authorities in one breath, which is the exact thing `reconcile` exists to
+prevent — and the pilot cannot obey both: he has been sent away and given an
+instruction by the man who sent him.
+
+Each half is defensible on its own. The arrivals were spawned 32 to 50 nm out,
+outside Approach's twenty-five miles, so the ladder is right that Center owns
+them; and the separation engine is right that an aircraft asking for the
+approach with two ahead of him gets a level. The fault is that both reached the
+radio.
+
+`reconcile` already decides between the engine's directive and the agent's
+proposal. A HANDOFF is a third authority and it is not in that decision: it is
+authorised separately, by `next_controller`, and merged into the reply
+afterwards. So a turn that produces both produces both.
+
+**A handoff should win.** Once he is somebody else's, an instruction from this
+controller is not ours to give — the same rule as #65 and #88 one level up: a
+controller answers for what he owns, and he has just said he does not own this
+aeroplane.
+
+**Acceptance criteria**
+1. A turn that authorises a handoff issues no separation instruction with it.
+2. The engine's directive is dropped rather than the handoff, and the drop is
+   logged the way `reconcile` logs the others.
+3. `tools/stack_rehearsal.py` sees no transmission containing both.

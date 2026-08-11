@@ -68,12 +68,30 @@ from ladder_rehearsal import (
 # that appears inside the handoff range has skipped the half of the sortie this
 # is meant to sequence. Altitudes deliberately NOT the stack levels: what they
 # are flying when they call is not what they should be assigned.
+# RADIALS AND RANGES, not altitudes: the level each one is flying when he calls
+# is derived from the theatre's stack so it is NOT one of the levels he should
+# be assigned, on a map where the stack starts at nine thousand as readily as at
+# five. Different radials so the scope can tell them apart, and far enough out
+# that they are Center's before they are Approach's.
 ARRIVALS = [
-    ("Sockeye", "Joey",     "Pony one one",   285.0, 32.0, 11000),
-    ("Bandit",  "Justin",   "Pony one two",   310.0, 38.0, 12000),
-    ("Hoover",  "Matthew",  "Pony one three", 255.0, 44.0, 13000),
-    ("Shooter", "Stephen",  "Pony one four",  330.0, 50.0, 14000),
+    ("Sockeye", "Joey",     "Pony one one",   285.0, 32.0),
+    ("Bandit",  "Justin",   "Pony one two",   310.0, 38.0),
+    ("Hoover",  "Matthew",  "Pony one three", 255.0, 44.0),
+    ("Shooter", "Stephen",  "Pony one four",  330.0, 50.0),
 ]
+
+
+def arrivals_for(th, n):
+    """The fixture flights, at levels this theatre would not assign them.
+
+    Above the stack, spaced, so what they are FLYING when they call cannot be
+    mistaken for what they were GIVEN -- which is the whole thing the invariants
+    below are looking at. Written as fixed altitudes once, and 11,000 is inside
+    Nellis's stack.
+    """
+    top = th.approach.stack_ft[-1]
+    return [(srs, voice, cs, brg, rng, top + 1000 * (i + 1))
+            for i, (srs, voice, cs, brg, rng) in enumerate(ARRIVALS[:n])]
 
 # What each of them says, in order. Every ship checks in, then every ship
 # reports the beacon, then every ship asks for the approach -- interleaved, so
@@ -211,14 +229,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--session", default="hooks")
     ap.add_argument("--ships", type=int, default=3,
                     help="how many arrivals (2-4). One is not a stack")
-    ap.add_argument("--mhz", type=float, default=124.425,
-                    help="the frequency they all work -- Batumi Approach")
+    ap.add_argument("--mhz", type=float, default=0.0,
+                    help="the frequency they all work "
+                         "(default: the arrival field's Approach)")
     ap.add_argument("--wait", type=float, default=25.0)
     ap.add_argument("--no-spawn", action="store_true")
     ap.add_argument("--no-restart", action="store_true")
     args = ap.parse_args(argv)
 
-    ships = ARRIVALS[:max(2, min(args.ships, len(ARRIVALS)))]
+    n_ships = max(2, min(args.ships, len(ARRIVALS)))
     recorder = config.BUILD_DIR / "logs" / f"flight-{args.session}.jsonl"
 
     from marshall.atc import agent_atc as _aa
@@ -226,10 +245,21 @@ def main(argv: list[str] | None = None) -> int:
     from marshall.radio import tts
     from marshall.radio.client import AM, SRSClient, radio
 
-    profile = _aa.load_and_push_plate(_th.current().approach)
+    th = _th.current()
+    ships = arrivals_for(th, n_ships)
+    profile = _aa.load_and_push_plate(th.approach)
     stack_ft = list(profile.stack_ft)
 
-    print(f"the holding stack, flown by {len(ships)} synthetic arrivals")
+    if not args.mhz:
+        # THE ARRIVAL FIELD'S APPROACH, not a Caucasus number. 124.425 is Batumi
+        # and there is no such frequency on Nevada, so every transmission went
+        # to a channel nobody was listening on and the whole run reported an
+        # unresponsive controller.
+        _app = next((s for s in th.stations
+                     if s.role == "approach" and s.field == th.arrival), None)
+        args.mhz = _app.freq_mhz if _app else 124.425
+    print(f"the holding stack at {th.arrival}, flown by "
+          f"{len(ships)} synthetic arrivals")
     print(f"  on {args.mhz:.3f}, stack levels "
           f"{', '.join(f'{f:,}' for f in stack_ft)}")
     print(f"  recorder: {recorder}\n")
@@ -254,7 +284,7 @@ def main(argv: list[str] | None = None) -> int:
         time.sleep(20.0)
         print()
 
-    violations, turns = [], 0
+    violations, turns, judged = [], 0, 0
     try:
         for line, why in ROUNDS:
             print(f"── {why}")
@@ -271,6 +301,7 @@ def main(argv: list[str] | None = None) -> int:
                         print(f"      ATC: {e['text'][:110]}")
                 board = last_board(ev)
                 turns += 1
+                judged += 1 if board else 0
                 bad = (two_at_one_level(board) + two_in_the_letdown(board)
                        + a_hole_in_the_stack(board, stack_ft) + forgotten(board))
                 if bad:
@@ -289,13 +320,30 @@ def main(argv: list[str] | None = None) -> int:
 
     print("=" * 62)
     print(f"  {turns} transmissions, {len(ships)} arrivals")
+    # A VACUOUS PASS IS NOT A PASS. Every invariant here is satisfied by an
+    # empty board: nobody shares a level when nobody has one. The first Nevada
+    # run reported "no aircraft shared a level, one letdown at a time, the stack
+    # filled from the bottom, and nobody was forgotten" having spawned nothing
+    # at all -- which is the harness lying green, and worse than failing.
+    #
+    # The rules cannot fire without traffic, so the run says what it saw and
+    # refuses to call it a pass. Same bargain as `check.py`: skipped is
+    # reported, never silent.
+    if not judged:
+        print("  NOTHING WAS JUDGED. No aircraft ever reached the board, so "
+              "every rule above")
+        print("  passed by being unreachable. That is not a green run.")
+        return 2
     if violations:
         print(f"  {len(violations)} SEPARATION VIOLATION(S):")
         for v in violations:
             print(f"    {v}")
     else:
-        print("  no aircraft shared a level, one letdown at a time, the stack")
-        print("  filled from the bottom, and nobody was forgotten.")
+        print(f"  {judged} of {turns} turns had somebody on the board, and in "
+              f"none of them")
+        print("  did two aircraft share a level. One letdown at a time, the "
+              "stack filled")
+        print("  from the bottom, and nobody was forgotten.")
     print("\n  NOT PROVEN: that the aeroplanes fly the pattern -- they are")
     print("  spawned inbound and hold their course. This tests the engine,")
     print("  not the sim's autopilot. And it is our Polly against our Whisper.")

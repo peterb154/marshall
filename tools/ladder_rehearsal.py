@@ -463,7 +463,7 @@ def park_an_aeroplane(name: str, field: str) -> bool:
 
 
 def fly_an_aeroplane(name: str, bearing: float, range_nm: float,
-                     alt_ft: int, at: str = "BATUMI") -> bool:
+                     alt_ft: int, at: str = "") -> bool:
     """Put a jet in the air, inbound, so there is an ARRIVAL to sequence.
 
     The ground fixture cannot exercise separation: an aeroplane on the ramp is
@@ -475,6 +475,14 @@ def fly_an_aeroplane(name: str, bearing: float, range_nm: float,
     Heading is set INBOUND from the spawn bearing, because an arrival flying
     away from the field is not an arrival and `handoff.due` reads the direction.
     """
+    # THE THEATRE'S ARRIVAL FIELD by default. This said "BATUMI", so a Nevada
+    # run asked the sim to place an arrival against a place that map does not
+    # contain -- `unknown place 'BATUMI'; known: NELLIS, TONOPAH` -- and every
+    # fixture failed to spawn.
+    if not at:
+        from marshall.core import theatre as _t
+        _th = _t.current()
+        at = (_th.arrival or _th.departure or "").upper()
     return _spawn(name, "--at", at, "--bearing", f"{bearing:.0f}",
                   "--range", f"{range_nm:.0f}", "--alt", str(int(alt_ft)),
                   "--heading", f"{int((bearing + 180) % 360):d}")
