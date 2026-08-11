@@ -6088,12 +6088,21 @@ rung has never had a check: `ladder_rehearsal.py` cannot cover it, because a
 synthetic pilot has no aeroplane on radar and this rung is pure geometry. See
 `tests/test_the_monitor_says_why.py`.
 
-The underlying cause of the silence is still open until a sortie prints the new
-line. The suspicion is the monitor's radar picture rather than the rule — it
-fetches with no `field`, so it measures every aeroplane from the profile's own
-beacon while the receive path passes the speaking controller's field. That is
-the same shape as `field_origin` before it took one, and it is now the first
-thing the log will say.
+**The underlying cause of the silence is still open**, honestly, until a sortie
+prints the new line — and saying so is better than a guess dressed as a finding.
+What is ruled out: the rule (asked directly, it fires), an exception (the monitor
+prints one and none appeared), and the origin below (`scope.contacts` uses the
+origin for clustering, not for filtering, so a contact cannot be hidden by it).
+
+A SEPARATE AND REAL FAULT found while looking: the monitor fetches its picture
+with no `field`, so it measures every aeroplane from the profile's own beacon —
+Batumi's — while the receive path passes the speaking controller's field. A jet
+four miles off Kobuleti is eighteen from Batumi, so every range this thread
+reasons about on a two-field sortie is a real number belonging to the wrong
+airport. It is the same shape as `field_origin` before it took a field, and it
+does not hide anybody; it just answers the distance question wrongly. Not fixed
+here: the thread fetches ONE picture for the whole board, so the fix is to fetch
+per FIELD and not per aircraft.
 
 ---
 
