@@ -6178,6 +6178,15 @@ Still to fly: the Kobuleti ILS 07 recovery end to end. See
 ---
 
 ## [ARCH-17] Airspace was hand-written, and the next map has forty aerodromes — #124
+labels: architecture
+
+**Status:** CLOSED 11 August. Attested by claude at 4c88b7c —
+`tools/ghost_flight.py --from-tower` against the live bridge: five derived
+volumes pushed at startup, Kobuleti Departure → Georgia Center at exactly 25 nm
+measured from Kobuleti; `tests/test_every_aerodrome_has_sky.py` asks every
+loadable theatre for gaps. Not `needs-flight-test`: every claim here is
+structural — a volume exists, a boundary falls between two fields, a handoff
+fires at a range — and a machine can answer all of them.
 
     "So how do we prevent missing airspace bug going forward. We're going to add
      dozens of airfields"
