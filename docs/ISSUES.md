@@ -4828,3 +4828,146 @@ the two paths did not merely repeat each other, they **disagreed**:
     ASR:     ... Fly heading 245, maintain 5500
 
 Same aircraft, same moment, two altitudes.
+
+---
+
+## [ATIS-3] Clearance never asks whether you have the information — #96
+labels: bug
+
+**Status:** OPEN. Reported live, 11 August.
+
+    "Clearance ... never did ask that I had information [alpha]"
+
+Correct. The ATIS advisory is attached in `Controller.check_in`, which is the
+only path that composes it — and `request_clearance` says nothing at all:
+
+    def request_clearance(self, cs):
+        ac.sortie_phase, ac.last_report_t = "clearance", self.t
+
+So the first controller of the sortie, the one whose entire job is handing over
+the numbers a pilot writes down, is the one seat that never confirms he has the
+weather. Every later seat does.
+
+Real delivery asks on the first call, before the clearance, because the letter
+tells him which runway and which approach to expect. It should be part of the
+clearance exchange rather than of the check-in that never happens on the ramp.
+
+**Acceptance criteria**
+1. Asking Clearance for an IFR clearance draws *"advise you have information X"*
+   (or the correction, if the letter he named is stale).
+2. It carries an `advise_atis` decision, like the check-in does, so a dropped
+   letter is caught by the verifier rather than by a pilot.
+3. A field with no broadcast is not asked about — the existing rule.
+
+---
+
+## [PHR-5] "Kobuleti" is clunky, and one voice ignores the pronunciation table — #97
+labels: bug
+
+**Status:** OPEN. Reported live, 11 August. Two symptoms, possibly one cause.
+
+    "Clearance says Kobuleti pretty clunkly, really slow"
+
+    "for some reason, Batumi Tower says my name incorrectly ... I think Batumi
+     Tower is not using the pronunciation table. Is that possible?"
+
+It is possible and worth checking properly. `radio/tts.py` has `SAY_AS` — plain
+respelling rather than SSML, deliberately — and it already carries
+`"Sockeye": "sock eye"` for exactly this. It is applied in `frames`, which every
+transmission passes.
+
+So either the substitution is not reaching that path, or **a respelling tuned on
+one Polly voice does not survive another**. Every controller has his own voice;
+that would make the table correct for Matthew and wrong for whoever Batumi Tower
+is, which is the sort of thing that looks like a bug in one seat only.
+
+"Kobuleti" being slow and clunky is the same family: the spelling that stops it
+being mangled may be costing it its rhythm.
+
+**Acceptance criteria**
+1. The callsign is pronounced the same by every controller voice.
+2. Aerodrome names read at a normal pace.
+3. Whatever is found is written down per VOICE if that is what it turns out to
+   be — a table that is right for one speaker and silently wrong for eight is
+   worse than no table.
+
+---
+
+## [SEP-11] Cleared to five thousand, told to climb to five thousand five hundred — #98
+labels: bug, needs-flight-test
+
+**Status:** OPEN. Reported live, 11 August.
+
+    PILOT:  Georgia Center, sockeye level 5000.
+    ATC:    Sockeye, Georgia Center. Assigned altitude is five thousand five
+            hundred, not five thousand — climb...
+    PILOT:  "I was clearly assigned to 5,000. Don't know why you said that"
+
+He was. The clearance he read back, from the plan on file, is `cruise_ft = 5000`
+— and something else believes his assigned altitude is 5,500 and corrected him
+onto it.
+
+**Two ideas of one number.** The IFR clearance's cruise level comes from the
+flight plan; `Aircraft.assigned_ft` is the separation engine's, set when it
+issues a level. They are different fields with different owners and nothing
+reconciles them, so whichever is nearer to hand wins the sentence.
+
+This is the shape the project keeps meeting, in the one place a pilot cannot
+argue: he read the number back, and was told he had it wrong.
+
+**Acceptance criteria**
+1. En route, the altitude a controller asserts is the one on the strip.
+2. If the engine has a different level it is because it ISSUED one, and the
+   issuing is what changes the strip.
+3. A pilot level at his cleared altitude is never corrected onto another.
+
+---
+
+## [PHR-6] An ASR approach should say once that no read-back is wanted — #99
+labels: enhancement
+
+**Status:** OPEN. Suggested from the cockpit, 11 August.
+
+    "on an ASR approach, you should tell me at the beginning of the approach
+     not to read back"
+
+Right, and it is real procedure rather than a nicety: on a surveillance approach
+the controller talks continuously and a read-back of every mile call would put
+the pilot on the air over the next instruction. The phrase belongs once, with
+the approach clearance — *"do not acknowledge further transmissions"* — and then
+never again.
+
+The engine already knows the moment: `cleared_approach` on a vectored profile.
+
+**Acceptance criteria**
+1. The approach clearance on a vectored profile carries it, once.
+2. It is not repeated on later transmissions.
+3. A beacon approach, where he DOES report, is unaffected.
+
+---
+
+## [HO-5] After landing, Ground sends him back to Tower and disowns parking — #100
+labels: bug, needs-flight-test
+
+**Status:** OPEN. Reported live, 11 August — the last exchange of the sortie.
+
+    PILOT: Taxi to parking my discretion, sockeye.
+    ATC:   Sockeye, contact Batumi Tower one one eight decimal six.
+    PILOT: Batumi Ground, don't you own parking instructions?
+    ATC:   Sockeye, negative, taxi to parking your discretion is all I've got,
+           contact Batumi Tower one one eight decimal six.
+    PILOT: "obviously he doesn't know his responsibilities"
+
+Two faults in one transmission. **Ground is the end of the ladder** — after
+landing he is the last controller, and there is nothing to hand back to Tower
+for; the sortie ends with him. And **parking is Ground's**, which is the whole
+reason #88 stopped Tower from issuing it.
+
+The handoff is the more serious half: a rung that hands BACKWARDS puts a pilot
+on a frequency whose controller has already finished with him, which is how a
+man ends up talking to nobody at the end of a flight.
+
+**Acceptance criteria**
+1. After landing, Ground does not hand him to Tower, or anywhere.
+2. Ground gives a parking instruction rather than declining to own one.
+3. `taxi` is a terminal phase at the arrival field — nothing follows it.

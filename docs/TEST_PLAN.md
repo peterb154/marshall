@@ -368,6 +368,7 @@ name in one sortie.
 | **H24** | **Inbound, once Batumi Approach has you.** Watch that the vectors settle | No **reversal** — a heading that swings back the other way by a hundred degrees or more between calls. On 10 August the phase never left `departure`, so the pilot-path guidance was switched off while the proactive monitor went on vectoring, and the two disagreed. If it happens, say so on the radio: the log now prints `phase REFUSED` and the inputs that caused it, and that line is the diagnosis | [#91] [#92] | **P1** |
 | **H25** | **Immediately after take-off**, listen for two calls | You are **not** told you are established, cleared, or on final. On 11 August the approach geometry was asked about an aeroplane at 0.6 nm and 472 feet climbing off Kobuleti, said yes, and the engine cleared him for an approach he had not started — which wedged the phase for the rest of the flight | [#93] | **P1** |
 | **H26** | **Being vectored, note every altitude you are given against the chart MVA** | It is never below it. On 11 August the geometry said *"maintain 8000"* at nineteen miles on the 056 radial — where the surveyed MVA is 8,000 — and what reached the air was *"level five thousand five hundred"*. The terrain was surveyed cell by cell so this could not happen; the number was dropped between deciding it and saying it | [#95] | **P1** |
+| **H27** | **En route, level at your cleared altitude**, report it | He agrees with it. On 11 August a pilot level at five thousand — the altitude on his own clearance — was told *"assigned altitude is five thousand five hundred, not five thousand"* and made to climb. Two ideas of one number, and the strip is the one that counts | [#98] | **P1** |
 
 **What each one is actually checking**
 
@@ -464,6 +465,7 @@ told to climb to three thousand. **Never flown.** See [#41].
 | F3 | P2 | Touch and go | You are **not** handed to Tower for the few seconds you are on the runway — `runway_touch` is deliberately not acted on | [#41] `DOWN` |
 | F4 | P2 | Land, stop, leave the slot, take a new aeroplane and check in | The old callsign is **gone from the board**. Watch `/diag` — a leftover here is the ghost that held a real pilot in the stack for a whole approach | [#41] `player_leave_unit` |
 | F5 | **P1** | After landing and clearing the runway, wait. Say nothing | He hands you to **Batumi Ground, 121.900**, unprompted. This was the last dead end in the ladder: `report_down` set the separation enum but not the sortie phase, and the phase branch that hands a parked aeroplane over could not run while he was on the ground. Tower should also **not** clear you to taxi to parking — that is Ground's; he says *exit the runway when able* | [#88] |
+| **F6** | After Ground has you and you are taxiing in, wait | **He does not hand you anywhere.** Ground is the end of the ladder; there is nothing after him. On 11 August he sent the pilot back to Batumi Tower — a rung that hands BACKWARDS, onto a controller who has already finished with him. He should also give a **parking instruction**, which is his, not decline to own one | [#100] | **P1** |
 
 ---
 
