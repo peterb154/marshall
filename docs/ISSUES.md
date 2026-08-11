@@ -5203,7 +5203,22 @@ supposed to complete had nothing left to complete.
 ## [SEP-13] "Holding short" on Ground does not move the phase — #106
 labels: bug, needs-flight-test
 
-**Status:** OPEN, found by `tools/ladder_rehearsal.py`, 11 August.
+**Status:** NOT A BUG in the engine -- **the record was stale**. Closed by #107,
+11 August, and the diagnosis below was wrong.
+
+`report_holding_short` did run, and the phase did move. The board was RECORDED
+before `decide()` let the engine hear the transmission, so the snapshot showed
+the rung he had been on when he keyed the microphone. The classifier was also
+verified correct on the exact Whisper output, including "Holding Short of
+Runways 07":
+
+    report_holding_short  <- Kobuleti Ground, Sockeye, Holding Short of Runways 07.
+
+Kept rather than deleted because the shape is worth remembering: every symptom
+below was real and every cause named was wrong, because the instrument was
+reading a turn late. See #107.
+
+**The original report, 11 August.**
 
     PILOT: Kobuleti Ground, Sockeye, Holding Short of Runways 07.
     ATC:   Sockeye, contact Kobuleti Tower one three three decimal zero, good day.
