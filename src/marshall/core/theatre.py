@@ -109,14 +109,17 @@ class Theatre:
 #
 # `MARSHALL_APPROACH=batumi-ils`. The ASR stays the default because it is what
 # has actually been flown; a default nobody has heard is not a default.
-CAUCASUS_RECOVERIES = {
-    "batumi-asr": "BATUMI_ASR",
-    "batumi-ils": "BATUMI_ILS",
-    "batumi-ndb": "BATUMI_APPROACH",
-}
+# GONE, and this is what it used to be:
+#
+#     CAUCASUS_RECOVERIES = {"batumi-asr": "BATUMI_ASR", ...}
+#
+# A key mapped to the NAME OF A PYTHON CONSTANT, so the set of arrivals a map
+# offered lived in this module rather than with the map. A theatre file could
+# publish a procedure that nothing was able to select, and adding one meant
+# editing here as well as there. The keys are the file's now. See #137.
 
 
-def published_approaches(fields=(), stations=()) -> dict:
+def published_approaches(fields=(), stations=(), theatre: str = "") -> dict:
     """The map's procedures, keyed, with the theatre's data composed back in.
 
     THIS IS WHERE THE TWO THINGS ARE PUT BACK TOGETHER, in one place and
@@ -134,7 +137,7 @@ def published_approaches(fields=(), stations=()) -> dict:
     from marshall.core import catalogue
     from marshall.core import route as R
 
-    at = {f.name: f for f in published_fixes()}
+    at = {f.name: f for f in published_fixes(theatre)}
     by_field = {f.name: f for f in fields}
 
     def fix(name):
@@ -152,7 +155,7 @@ def published_approaches(fields=(), stations=()) -> dict:
         return got
 
     out = {}
-    for a in catalogue.approaches():
+    for a in catalogue.approaches(theatre):
         knobs = a.model_dump(exclude={"key", "field", "atc", "beacon",
                                       "outer_hold", "arrival_fix", "iaf",
                                       "theatre_stations"})
@@ -168,7 +171,7 @@ def published_approaches(fields=(), stations=()) -> dict:
     return out
 
 
-def published_fields() -> tuple:
+def published_fields(theatre: str = "") -> tuple:
     """The map's aerodromes, from the configuration file.
 
     Converted to `Field_` here so everything downstream -- `station_for`,
@@ -187,10 +190,10 @@ def published_fields() -> tuple:
                  msa_sectors=[tuple(s) for s in f.msa_sectors],
                  mva_cells=[tuple(c) for c in f.mva_cells],
                  note=f.note)
-        for f in catalogue.aerodromes())
+        for f in catalogue.aerodromes(theatre))
 
 
-def published_stations() -> tuple:
+def published_stations(theatre: str = "") -> tuple:
     """The map's controllers, in the order the file lists them.
 
     ORDER IS THE LADDER, so it is preserved rather than sorted: `channels_for`
@@ -203,10 +206,10 @@ def published_stations() -> tuple:
         R.Station(s.name, s.freq_mhz, s.role, also=tuple(s.also),
                   voice=s.voice, channels=tuple(s.channels),
                   field=s.field, manner=s.manner)
-        for s in catalogue.controllers())
+        for s in catalogue.controllers(theatre))
 
 
-def published_fixes() -> tuple:
+def published_fixes(theatre: str = "") -> tuple:
     """The map's published fixes as `Fix` objects, from the configuration file.
 
     Converted here rather than returned as pydantic models so that everything
@@ -220,25 +223,43 @@ def published_fixes() -> tuple:
         R.Fix(f.name, f.ident, f.x, f.z, f.freq_mhz or None,
               sector=f.sector, note=f.note, navaid=f.navaid or "ndb",
               lat=f.lat, lon=f.lon)
-        for f in catalogue.published_fixes())
+        for f in catalogue.published_fixes(theatre))
 
 
 def caucasus() -> Theatre:
     """The 362nd. Kobuleti to Batumi, radar recovery, 1944 flavour available."""
+    from marshall.core import catalogue
     from marshall.core import route as R
-    want = os.environ.get("MARSHALL_APPROACH", "batumi-asr").strip().lower()
-    if want not in CAUCASUS_RECOVERIES:
-        want = "batumi-asr"
-    fields, stations = published_fields(), published_stations()
-    procedures = published_approaches(fields, stations)
+    # NAMES ITS OWN MAP. These read `MARSHALL_THEATRE` underneath, so when
+    # `current()` fell back to this function after a misspelt name, every
+    # loader went looking for `nevda.toml` again and the fallback landed
+    # nowhere. A function that IS the Caucasus theatre should not have to ask
+    # which theatre it is.
+    me = catalogue.identity("caucasus")
+    fields = published_fields("caucasus")
+    stations = published_stations("caucasus")
+    procedures = published_approaches(fields, stations, "caucasus")
+    # WHICH RECOVERY. `CAUCASUS_RECOVERIES` mapped a key to the NAME OF A
+    # PYTHON CONSTANT, so the set of arrivals a map offered was a dict in this
+    # module -- and a theatre file could add a procedure that nothing could
+    # select. The keys are the file's now, and an unknown one is named rather
+    # than silently swapped for the default, which is how a pilot came to fly a
+    # talkdown after asking for an ILS.
+    want = (os.environ.get("MARSHALL_APPROACH")
+            or me.default_approach).strip().lower()
+    if want not in procedures:
+        print(f"  !! no approach {want!r} on this map; the theatre publishes "
+              f"{', '.join(sorted(procedures))} — falling back to "
+              f"{me.default_approach!r}", flush=True)
+        want = me.default_approach
     recovery = procedures[want]
     return Theatre(
-        name="Caucasus", terrain="Caucasus", fields=fields,
-        stations=stations, departure=R.DEPARTURE_FIELD,
-        arrival=R.ARRIVAL_FIELD, approach=recovery,
+        name=me.name, terrain=me.terrain, fields=fields,
+        stations=stations, departure=me.departure,
+        arrival=me.arrival, approach=recovery,
         approaches=tuple(procedures.values()),
-        wind_from_deg=R.WIND_FROM_DEG, wind_mph=R.WIND_MPH,
-        bootstrap_plan="362nd-kobuleti-batumi", approach_key=want,
+        wind_from_deg=me.wind_from_deg, wind_mph=me.wind_mph,
+        bootstrap_plan=me.bootstrap_plan, approach_key=want,
         # THE PUBLISHED CATALOGUE, out of config/theatres/caucasus.toml.
         #
         # This used to scrape every module-level `Fix` out of `route.py`, which
@@ -252,7 +273,7 @@ def caucasus() -> Theatre:
         # Still EVERY published fix and not just tonight's legs: a ferry up the
         # coast routes via KOBULETI, which no sortie leg touches, and a plan
         # naming a fix the table does not hold is refused at delivery.
-        fixes=published_fixes(),
+        fixes=published_fixes("caucasus"),
         waypoints=tuple(R.sortie_points()),
         defended=tuple(R.DEFENDED), legs=tuple(R.SORTIE_LEGS))
 
@@ -301,8 +322,21 @@ THEATRES = {"caucasus": caucasus, "nevada": nevada}
 
 
 def current() -> Theatre:
-    """The theatre every component in this process is working."""
+    """The theatre every component in this process is working.
+
+    A NAME NOBODY HAS IS SAID OUT LOUD. `THEATRES.get(want, caucasus)` silently
+    swapped an unknown map for the Caucasus, so `MARSHALL_THEATRE=nevda` gave a
+    bridge working Georgia while its operator believed it was in the desert --
+    every frequency, fix and field real and belonging to the wrong continent.
+    The same shape as the approach key: a wrong answer that looks exactly like
+    a right one.
+    """
+    from marshall.core import catalogue
     want = os.environ.get("MARSHALL_THEATRE", "caucasus").strip().lower()
+    if want not in THEATRES:
+        print(f"  !! no theatre {want!r}. Configured maps: "
+              f"{', '.join(catalogue.maps()) or 'none'} — falling back to "
+              f"caucasus, which is probably not what you meant", flush=True)
     return THEATRES.get(want, caucasus)()
 
 

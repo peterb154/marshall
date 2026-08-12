@@ -7105,9 +7105,30 @@ no controllers at all, and it is selectable. Preserved exactly and filed as
 #140, because a migration that quietly changes behaviour is worse than the
 defect it fixes.
 
-**Still to move:** Nevada's procedures (its fixes are not published yet), the
-theatre registry, the five kneeboard pages that bind an approach at import, and
-the five migrations that INSERT flight plans.
+**The registry moved next.** `THEATRES = {"caucasus": caucasus, "nevada":
+nevada}` made adding a map mean writing a function, and `CAUCASUS_RECOVERIES`
+mapped an approach key to the NAME OF A PYTHON CONSTANT in a different module
+from the map — so a theatre file could publish a procedure nothing was able to
+select. A `[theatre]` table now carries the map's identity, the recovery keys
+are the file's, and `catalogue.maps()` discovers what is on disk.
+
+Two silent fallbacks became loud while doing it. `THEATRES.get(want, caucasus)`
+swapped an unknown map for the Caucasus without a word, so
+`MARSHALL_THEATRE=nevda` gave a bridge working Georgia while its operator
+believed it was in the desert — every frequency, fix and field real and on the
+wrong continent. Same for an unknown approach key, which is #131's fault one
+level up.
+
+**And the migrations stopped shipping flight plans.** Five of them INSERTed a
+plan, so every deployment of Marshall anywhere was born believing somebody was
+flying Kobuleti to Batumi. Removed: migrations are tracked by FILENAME with no
+checksum, so applied databases are untouched and only a fresh install sees the
+difference. All five verified against the real schema inside a rolled-back
+transaction.
+
+**Still to move:** Nevada — blocked on #141, a real coordinate discrepancy
+rather than effort — and the "NDB 13" kneeboard page, which is correctly bound
+to the NDB procedure but Caucasus-bound on any map.
 
 ### The counter-example worth copying
 
@@ -7245,3 +7266,43 @@ stations at all; it should name the field it serves and let the theatre answer
 "who works here". Then this profile has controllers because Batumi has
 controllers, and the question cannot be answered differently by two procedures
 at one aerodrome.
+
+---
+
+## [OPS-18] Nevada's TONOPAH fix is thirty kilometres from the sim's own VORTAC — #141
+labels: bug
+
+Found while moving Nevada's catalogue into configuration (#137), by looking for
+a citable source for its coordinates. The vendored `nevada-Beacons.lua` is the
+sim's own data and carries both frames for every beacon:
+
+    Silverbow  TQQ  BEACON_TYPE_VORTAC  113.000
+      position    = (-227436.9, ..., -174559.0)
+      positionGeo = (37.790475, -116.779233)
+
+`core/nevada.py` says:
+
+    TONOPAH  x = -200809  z = -196936  freq_mhz = 117.2
+
+That is **~34 km away, on a different frequency**, and the Tonopah FIELD sits
+at (-226613, -174653) — within a kilometre of the VORTAC and nowhere near the
+fix named after it. So either the fix is wrong, or it is deliberately some
+other point and badly named.
+
+It matters because the fix is the beacon of `tonopah-ils`: every range and
+radial that approach speaks is measured from it, and each one is a plausible
+number. This is the [ARCH-18] shape again — three sources, and only somebody
+who has flown it can say which is right.
+
+**Not guessed at, and Nevada is therefore NOT converted.** Its fields, stations
+and procedures could move today; its published fixes cannot, because publishing
+one means writing down a coordinate and a source, and I have two candidates and
+no way to choose. Picking the prettier one would put a real-looking number in a
+file with a citation next to it, which is worse than leaving it in Python where
+its provenance is at least visibly absent.
+
+**What it needs:** a Nevada sortie, or `coord.LOtoLL` asked with that map
+loaded. `vendor/dcs/nevada-Beacons.lua` pairs `position` with `positionGeo` for
+all 45 beacons, so once the right point is known the seeding is mechanical --
+and the same file makes Caucasus verifiable without a running server too, which
+is worth doing whichever way this goes.

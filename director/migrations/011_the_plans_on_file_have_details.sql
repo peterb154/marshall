@@ -45,19 +45,26 @@ UPDATE flight_plans SET
 -- clean match from a question the controller has to ask.
 UPDATE flight_plans SET label = NULL WHERE name = '362nd-kutaisi-ferry';
 
-INSERT INTO flight_plans (name, label, callsign, approach, origin, destination,
-                          route, cruise_ft, task, active)
-SELECT '362nd-kutaisi-transit', 'Samovar Three', NULL,
-       (SELECT name FROM approaches ORDER BY name LIMIT 1),
-       'Batumi', 'Batumi', 'BATUMI, FEET WET, KUTAISI, BATUMI', 7000,
-       'Transit up the coast, turning at Kutaisi', false
- WHERE EXISTS (SELECT 1 FROM approaches)
-ON CONFLICT (name) DO UPDATE SET
-    label       = EXCLUDED.label,
-    origin      = EXCLUDED.origin,
-    destination = EXCLUDED.destination,
-    route       = EXCLUDED.route,
-    cruise_ft   = EXCLUDED.cruise_ft,
-    task        = EXCLUDED.task;
+
 
 DELETE FROM flight_plans WHERE name = '362nd-kutaisi-ferry';
+
+-- SEEDED PLANS REMOVED, 12 August 2026.
+--
+-- A migration creates the SHAPE. It must not create the CONTENTS, and this
+-- file used to INSERT a flight plan -- so every deployment of Marshall
+-- anywhere was born believing somebody was flying it. #131 was the bridge
+-- reading its approach out of exactly such a row, and the pilot's objection
+-- was the plainer one:
+--
+--     "i dont understand this active business. sounds like mis-alignment
+--      between you and me"
+--
+-- A flight plan is something a PILOT files. He files it from his own cartridge
+-- (`core/dtc.py`) or from the /file page, and a fresh install should have an
+-- empty board rather than somebody else's sortie on it.
+--
+-- Applied databases are unaffected: migrations are tracked by FILENAME with no
+-- checksum, so this file will not run again and the rows it once created stay
+-- until somebody deletes them. Only a fresh install sees the difference.
+-- See docs/CONFIG.md and #137.

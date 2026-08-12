@@ -231,7 +231,29 @@ class Approach(_File):
     atc: Capability = Capability()
 
 
+class Identity(_File):
+    """What a map IS. Adding one was writing a Python function.
+
+        THEATRES = {"caucasus": caucasus, "nevada": nevada}
+
+    Where the sortie departs and recovers, which arrival is flown when nobody
+    has said, what the wind is doing -- all facts about the world, and none of
+    them a line of logic.
+    """
+    name: str
+    terrain: str
+    departure: str = ""
+    arrival: str = ""
+    # A STOPGAP, and the remainder of #2 is that there should be no such thing:
+    # which approach you are flying is a fact about your CLEARANCE.
+    default_approach: str = ""
+    bootstrap_plan: str = ""
+    wind_from_deg: float = 0.0
+    wind_mph: float = 0.0
+
+
 class TheatreFile(_File):
+    theatre: Identity | None = None
     pronunciation: Terms = Terms()
     recogniser: Phrases = Phrases()
     fix: list[PublishedFix] = []
@@ -380,6 +402,21 @@ def published_fixes(theatre: str = "") -> list[PublishedFix]:
     a fact about the name, not about which Python module it happens to sit in.
     """
     return list(_theatre(theatre or theatre_name()).fix)
+
+
+def identity(theatre: str = "") -> Identity | None:
+    """What this map is. None means the file predates the section."""
+    return _theatre(theatre or theatre_name()).theatre
+
+
+def maps() -> list[str]:
+    """Every theatre with a configuration file. Adding a map is adding a file.
+
+    Sorted so the listing is stable -- an operator reading "which maps do I
+    have" should not get a different order each time and wonder what changed.
+    """
+    d = root() / "theatres"
+    return sorted(p.stem for p in d.glob("*.toml")) if d.is_dir() else []
 
 
 def aerodromes(theatre: str = "") -> list[Aerodrome]:

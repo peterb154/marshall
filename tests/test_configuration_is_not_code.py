@@ -506,3 +506,77 @@ class TheFilesSayExactlyWhatThePythonSaid(unittest.TestCase):
                 T.published_approaches(T.published_fields(),
                                        T.published_stations())
         self.assertIn("NOWHERE", str(e.exception))
+
+
+class AMapIsAFileAndNotAFunction(unittest.TestCase):
+    """#137 -- `THEATRES = {"caucasus": caucasus, "nevada": nevada}`.
+
+    Adding a map meant writing a Python function, and the set of arrivals a map
+    offered lived in `CAUCASUS_RECOVERIES` -- a dict mapping a key to the NAME
+    OF A PYTHON CONSTANT, in a different module from the map. So a theatre file
+    could publish a procedure nothing was able to select.
+    """
+
+    def setUp(self):
+        catalogue.reload()
+        self.addCleanup(catalogue.reload)
+
+    def test_the_maps_are_discovered_from_disk(self):
+        self.assertEqual(catalogue.maps(), ["caucasus", "nevada"])
+
+    def test_the_theatre_carries_its_own_identity(self):
+        me = catalogue.identity("caucasus")
+        self.assertEqual((me.name, me.departure, me.arrival),
+                         ("Caucasus", "Kobuleti", "Batumi"))
+
+    def test_the_recoveries_are_the_files_keys(self):
+        from marshall.core import theatre as T
+
+        got = T.published_approaches(T.published_fields("caucasus"),
+                                     T.published_stations("caucasus"),
+                                     "caucasus")
+        self.assertEqual(sorted(got),
+                         ["batumi-asr", "batumi-ils", "batumi-ndb",
+                          "kobuleti-ils"])
+
+    def test_a_misspelt_map_is_said_out_loud_and_still_starts(self):
+        """`THEATRES.get(want, caucasus)` swapped an unknown map for the
+        Caucasus IN SILENCE, so MARSHALL_THEATRE=nevda gave a bridge working
+        Georgia while its operator believed it was in the desert -- every
+        frequency, fix and field real and on the wrong continent.
+
+        And the fallback has to LAND: the theatre builders read the environment
+        underneath, so they went looking for `nevda.toml` all over again and
+        the fallback crashed instead of falling back.
+        """
+        import contextlib
+        import io
+
+        from marshall.core import theatre as T
+
+        with mock.patch.dict(os.environ, {"MARSHALL_THEATRE": "nevda"}):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                th = T.current()
+            self.assertIn("no theatre 'nevda'", buf.getvalue())
+            self.assertIn("caucasus, nevada", buf.getvalue())
+            self.assertEqual(th.name, "Caucasus")
+            self.assertTrue(th.fields and th.approaches)
+
+    def test_an_unknown_approach_is_named_rather_than_swapped(self):
+        """The same fault one level down, and it has already cost a sortie:
+        `_approach_named` matched on a prefix and returned the surveillance
+        approach for a plan filed as `batumi-ils`, and the whole flight was
+        flown as a talkdown."""
+        import contextlib
+        import io
+
+        from marshall.core import theatre as T
+
+        with mock.patch.dict(os.environ, {"MARSHALL_THEATRE": "caucasus",
+                                          "MARSHALL_APPROACH": "batumi-gca"}):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                th = T.current()
+            self.assertIn("batumi-gca", buf.getvalue())
+            self.assertEqual(th.approach_key, "batumi-asr")

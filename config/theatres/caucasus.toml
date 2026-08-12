@@ -1,4 +1,24 @@
-# Caucasus -- the names on this map, and how they are said.
+# Caucasus.
+#
+# THE MAP ITSELF IS A TABLE. `THEATRES = {"caucasus": caucasus, "nevada":
+# nevada}` made adding a map mean writing a Python function; the identity of a
+# theatre -- where the sortie starts and ends, which recovery is flown unless
+# somebody says otherwise, what the wind is doing -- is data about the world.
+
+[theatre]
+name = "Caucasus"
+terrain = "Caucasus"
+departure = "Kobuleti"
+arrival = "Batumi"
+# WHICH ARRIVAL WHEN NOBODY HAS SAID. A stopgap, and the remainder of #2 is
+# that there should be no such thing: which approach you are flying is a fact
+# about your CLEARANCE, and until you have asked for one the honest answer is
+# that the controller has none for you.
+default_approach = "batumi-asr"
+bootstrap_plan = "362nd-kobuleti-batumi"
+wind_from_deg = 90.0
+wind_mph = 5.7539
+
 #
 # Georgian place names, and the previous spellings were a disaster on the air.
 # They used CAPITALS for the stressed syllable -- "Koh boo LEH tee" -- which is
