@@ -119,43 +119,28 @@ def build() -> str:
 <style>{STYLE}</style>
 <div class="file">
   <h1>FILE A FLIGHT PLAN</h1>
-  <div class="sub">Goes on the board the controller reads. A pilot asks for it
-    by its <b>label</b>, out loud, so the label is one word and the rules about
-    it are the director's — this page only asks.</div>
+  <div class="sub">Goes on the board the controller reads.</div>
 
   <div class="col-l">
   <div class="cart">
-    <h2>from a data cartridge</h2>
-    <div class="hint">Paste what DKS put on your clipboard. It fills the form
-      below — it does not file anything, because a cartridge that filed itself
-      would be a second filing path and the two would disagree the first time a
-      rule changed.</div>
+    <h2>DKS data cartridge import</h2>
     <textarea id="dtc" spellcheck="false"
       placeholder="RQsAAB+LCAAAAAAAAAPdVt..."></textarea>
-    <div class="hint">His own named steerpoints come with the plan. They are
-      not published to anybody else and nothing has to be pushed anywhere —
-      the plan carries each one with its position, so a route via FOO resolves
-      for whoever holds the plan and for nobody else.</div>
+
     <button id="read" type="button">Read cartridge</button>
     <div id="cartout"></div>
   </div>
 
   <form id="f" autocomplete="off">
-    <div class="hint" style="margin-bottom:8px">Below: what a cartridge cannot
-      know. A DTC has no spoken name, no key and no task &mdash; those are
-      yours. Everything under them is read from it.</div>
+
     <div class="two">
       <div><label>label</label>
         <input name="label" placeholder="Domino" required>
-        <div class="hint">One word, no digits — he says it on the radio, and
-          "Samovar One" is how the wrong sortie gets cleared.</div></div>
+        <div class="hint">One word, no digits.</div></div>
     </div>
     <label>task — what he is DOING</label>
     <input name="task" placeholder="Transit and recovery" required>
-    <div class="hint">Read from the cartridge's kneeboard notes when it has
-      them, and yours to edit. Not where he is going &mdash; the destination is
-      the last leg and is read from there. Repeating a place name here makes
-      this plan outrank the board on any request that mentions it.</div>
+
 
     <!-- WHAT A PLAN IS, after migration 031: a label, the legs, and the task.
          The boxes that used to sit here asked for four things that were not
@@ -184,8 +169,7 @@ def build() -> str:
       <label>route <i>read from the cartridge</i></label>
       <input name="route" list="fixes" readonly>
       <datalist id="fixes"></datalist>
-      <div class="hint" id="fixhint">the enroute legs; the last one is where he
-        is going, and each carries its own altitude</div>
+      <div class="hint" id="fixhint">the last leg is the destination</div>
     </div>
     <button id="go" type="submit">File it</button>
   </form>
@@ -205,9 +189,16 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g,
   c => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}}[c]));
 
+// THE LEGS ARE NOT A FORM FIELD, and that is why filing a cartridge failed
+// with "a plan needs at least one leg" while the page showed five of them.
+// `values()` is built from FormData -- form INPUTS -- and the legs come from
+// the cartridge, so they were displayed and then dropped on the floor.
+let LEGS = [];
+
 function values() {{
   const o = {{}};
   new FormData($('#f')).forEach((v, k) => o[k] = v);
+  o.legs = LEGS;
   return o;
 }}
 
@@ -293,7 +284,7 @@ $('#read').onclick = async () => {{
   }}
   // The route is shown back, not typed, so it is set whether or not it is empty.
   if ($('[name=route]')) $('[name=route]').value = d.route || '';
-  // HIS OWN WORDS FOR THE SORTIE, off the cartridge's kneeboard notes.
+  LEGS = d.legs || [];
   if (!$('[name=task]').value) $('[name=task]').value = d.task || '';
 
   const wps = res.waypoints || [];
@@ -304,10 +295,6 @@ $('#read').onclick = async () => {{
         + `<td class="n">${{w.lon.toFixed(4)}}</td>`
         + `<td class="n">${{(w.alt_ft || 0).toLocaleString()}} ft</td></tr>`).join('')
     + `</table>`;
-  const m = res.misc || {{}};
-  if (m.ils_mhz) h += `<div class="hint">cartridge also carries ILS `
-    + `${{esc(m.ils_mhz)}} / course ${{esc(m.ils_course)}}, TACAN `
-    + `${{esc(m.tacan)}}X — those are the jet's, not the plan's.</div>`;
   if (res.notes) h += `<div class="detail"><dt>kneeboard notes</dt>`
     + `<dd>${{esc(res.notes)}}</dd></div>`;
   h += `</div>`;
@@ -465,11 +452,10 @@ async function look(name) {{
     + `<dt>cruise</dt><dd>${{(p.cruise_ft || 0).toLocaleString()}} ft</dd>`
     + `<dt>recovery</dt><dd>${{esc(p.approach || '(none)')}}</dd>`
     + (legs.some(l => l.includes('class="miss"'))
-        ? `<div class="bad">a fix in red is on neither the published table nor `
-          + `this plan &mdash; a clearance naming it would be refused</div>` : '')
+        ? `<div class="bad">red: on no chart and not in this plan — it would `
+          + `be refused</div>` : '')
     + (legs.some(l => l.includes('class="own"'))
-        ? `<div class="hint">a fix in blue is this plan's own steerpoint. It `
-          + `is not published to anybody else, and it clears normally.</div>` : '')
+        ? `<div class="hint">blue: this plan's own steerpoint.</div>` : '')
     + `</div>`
     + `<div class="map" id="map-${{esc(name)}}"></div>`;
 
