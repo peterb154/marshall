@@ -6441,6 +6441,22 @@ row, and the clearance a controller reads aloud.
 ---
 
 ## [SEAM-13] The flight row's callsign is the unit name, so a pilot cannot be found by what he says — #128
+labels: identity
+
+**Status:** CLOSED 11 August. `names.handle` dropped ANY chunk with a digit, so
+`Nomad29` went with the squadron tag and the slot number and the fallback
+returned the whole raw unit name. It now drops only what is structurally a slot
+(all digits) or an ordinal squadron tag; everything else is a person.
+
+Attested by claude at bafcf01 — `ladder_rehearsal --only Q1a` PASSES against the
+live bridge through real SRS, Whisper and Polly: *"Kestrel seven one, Kobuleti
+Clearance, cleared to Batumi, as filed, maintain one zero thousand, departure
+frequency one two three..."*. Not `needs-flight-test`: the claim is that a
+callsign resolves and a clearance is issued, and a synthetic pilot flying the
+card row answers both.
+
+Found #129 on the way — the plan it was clearing named steerpoints that a bridge
+restart had already deleted.
 
 Found by `tools/ladder_rehearsal.py --only Q1a` while proving #126 — the first
 rehearsal of clearance delivery since the mission wiring was fixed.
