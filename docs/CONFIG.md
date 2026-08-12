@@ -83,6 +83,57 @@ was considered and rejected. It would make the separation invariant into data,
 and *an LLM never invents separation between aircraft* is the one sentence this
 whole system is built to keep true. A bad row must not be able to reach it.
 
+## A fix needs a NAME only if he can fly to it
+
+Settled 12 August, and it decides how big the catalogue has to be.
+
+    "in a F16, if ATC told me to fly direct to FOOBAR, and I dont have that as
+     a pre-programmed steerpoint, i cant get there anyway ... I dont think any
+     dcs plane can fly to arbitrary fixes"
+    "he can only fly, 1) his steerpoints, 2) navaids he can tune"
+    "Also, ATC can vector a pilot to any point they know about, for example on
+     the BATUMI ASR for ww2"
+
+A DCS jet has no navigation database. There is no Garmin with the enroute
+structure in it: the F-16 flies steerpoints out of the cartridge, and a
+frequency he can tune. So there are **two different jobs** here and they want
+opposite things:
+
+| | what it needs | may be spoken as a destination |
+|---|---|---|
+| **language** — clearances, "direct X", "report passing X" | his steerpoints; navaids he can tune | **yes** |
+| **geometry** — vectors, ranges, the letdown, the stack | every point a procedure uses | **no** |
+
+**A name is a promise that he can go there.** Aerodromes are not a third
+category — they are an instance of one or both. GPS coordinates in a pinch
+exist and are not worth planning for.
+
+**Geometry is unbounded and silent.** The Batumi ASR is the proof: the
+controller says "turn left heading one four five, descend two thousand" and
+computes against the final approach course, the FAF, the missed approach point
+and the threshold — none of which the pilot holds, and none of which he needs.
+He flies the headings.
+
+### What that settles
+
+  * **There is no value in importing hundreds of published fixes.** A catalogue
+    of enroute intersections would let a controller say names no aeroplane on
+    this server can fly to, which is worse than saying nothing. The catalogue
+    is bounded: the map's aerodromes and its navaids, both of which the sim
+    gives us in `Beacons.lua` with `positionGeo` — dozens per map, mechanical,
+    no chart transcription and no hand-authoring.
+  * **Both of this month's fix failures are one rule, broken in opposite
+    directions.** INITIAL is GEOMETRY — the fix the ASR vectors against — and
+    never needed a name a pilot could fly to; inventing one was harmless until
+    it collided with a real steerpoint (#143, #144). FEET WET was the reverse:
+    mission geometry published into the LANGUAGE set, so a controller could
+    offer a pilot a 1944 strike's turning point as a destination (#137).
+  * **It gives #133 its real shape.** Not "let ATC resolve private fixes" but:
+    *ATC's spoken vocabulary is his steerpoints plus the navaids he can tune.*
+    Which is also why a name collision resolves the way it does — if FYTTR is
+    both a published fix and a steerpoint in his jet, HIS is the one the
+    aeroplane will fly to.
+
 ## What a source is
 
 Reference data is seeded, never authored. Every row should be traceable to
