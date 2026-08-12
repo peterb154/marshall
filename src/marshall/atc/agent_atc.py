@@ -2059,6 +2059,11 @@ def _cleared_plan_now(known: str) -> dict:
                 # ACKNOWLEDGED three real states and this read the row without
                 # asking which one he was in -- see `_read_back_correct`.
                 "acknowledged": bool(row.get("clearance_ack")),
+                # WHICH RUNG HE IS ON, so `_read_back_correct` can tell a
+                # read-back of THIS clearance from a read-back of something a
+                # later controller said. Clearance Delivery owns the IFR
+                # clearance and nobody else may judge a read-back of it.
+                "sortie_phase": row.get("sortie_phase") or "",
                 # WHICH PROCEDURE HE IS RECOVERING ON. See migration 025 -- the
                 # column has existed since the plans table and the view did not
                 # carry it, so the bridge gave every aeroplane the one profile
@@ -2180,6 +2185,22 @@ def _read_back_correct(bridge, known: str,
     # clearance is not a read-back of it.
     if plan.get("acknowledged"):
         return None, []
+    # A READ-BACK IS READ BACK TO THE MAN WHO ISSUED IT. The IFR clearance is
+    # Clearance Delivery's; once he has let go, nothing the pilot says to
+    # anybody else is a read-back of it. Without this the check ran for the
+    # whole sortie and judged every later read-back of every other instruction
+    # against the departure clearance -- his taxi read-back on the ramp, his
+    # approach clearance read-back at thirty miles, and "clear of the active"
+    # after he had LANDED AT THE OTHER AERODROME, each answered with:
+    #
+    #     Sockeye, negative -- say again one zero thousand,
+    #     one two three decimal three, three three five zero.
+    #
+    # Eight times on 12 August, one of them on short final. He read it as ATC
+    # inventing a squawk and giving him the wrong field's frequency; it was
+    # this, reciting his departure clearance back at him an hour later.
+    if (plan.get("sortie_phase") or "clearance").lower() != "clearance":
+        return None, []
     d = _decision.Decision(
         kind="clearance", to=known,
         altitude_ft=plan.get("cruise_ft") or None,
@@ -2187,7 +2208,34 @@ def _read_back_correct(bridge, known: str,
         squawk=plan.get("squawk") or "")
     if not _decision.accepted_forms(d):
         return None, []                 # nothing to check him against
-    missed = _decision.verify(d, transcript)
+    # CUMULATIVE, BECAUSE A CORRECTION IS A CONVERSATION. Judging each
+    # transmission against the WHOLE clearance made the exchange unwinnable: he
+    # was told two elements were missing, read back exactly those two, and was
+    # marked down for the three he did not repeat that time --
+    #
+    #     ATC:   negative -- say again one zero thousand, three three five zero
+    #     PILOT: we expect one zero thousand, one zero minutes after departure,
+    #            and we're going to squawk three three five zero
+    #     ATC:   negative -- say again one zero thousand,
+    #            one two three decimal three, three three five zero
+    #
+    # -- and the frequency he HAD read back correctly the first time was now a
+    # miss. There is no transmission that ends that loop, so the clearance was
+    # never agreed, `clearance_ack` was never written, and everything downstream
+    # that asks "has he got his clearance?" got no for the rest of the flight.
+    #
+    # A real controller carries the outstanding items forward and asks only for
+    # what is still missing. So does this: what he has said across this
+    # clearance accumulates, and a fact spoken once stays spoken.
+    said = getattr(bridge, "read_back_said", None)
+    if said is None:
+        said = bridge.read_back_said = {}
+    key = (known or "").lower()
+    whole = " ".join(filter(None, (said.get(key, ""), transcript)))
+    said[key] = whole
+    missed = _decision.verify(d, whole)
+    if not missed:
+        said.pop(key, None)              # agreed; nothing left to carry
     return (not missed), missed
 
 
@@ -6221,6 +6269,12 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                                         field=getattr(getattr(ctl, "_me", None),
                                                       "field", "")),
                     "freq_mhz", None),
+                # THE SAME TWO THE DURABLE READ CARRIES. This cache is consulted
+                # BEFORE `_cleared_plan_now`, so a field missing here is a field
+                # missing full stop -- and both of these decide whether the
+                # read-back check runs at all.
+                "acknowledged": bool(_flight.get("clearance_ack")),
+                "sortie_phase": _flight.get("sortie_phase") or "",
             }
 
         # WHO HAS HIM NEXT, decided BEFORE the instructions are settled.

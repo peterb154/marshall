@@ -6692,3 +6692,206 @@ all name a point the pilot chose, which is the whole reason he named it.
 
 Needs a flight test: whether a controller referring to your own steerpoint by
 name lands as useful or as uncanny is a judgement only a pilot makes.
+
+---
+
+## [SEAM-16] The read-back correction had no exit, and ran for the whole sortie — #134
+labels: bug
+
+**Status:** CLOSED 12 August. Not `needs-flight-test`: every claim is
+structural and the evidence is the recorded transcripts, replayed verbatim.
+
+    "If the partial readback isn't issuing me a clearance, it should say so."
+    "how can a clearance not be issued due to a readback problem then every
+     body just continues as though nothing is wrong?"
+
+On 12 August this went out **eight times**, the last two on short final and
+after landing at the other aerodrome:
+
+    Sockeye, negative — say again one zero thousand,
+    one two three decimal three, three three five zero.
+
+The pilot logged it as three separate faults — a squawk being re-issued, the
+wrong field's departure frequency, and a controller who had lost the flight. It
+was one function reciting his departure clearance at him for twenty-six minutes.
+
+**Three faults, stacked, and the first one is the interesting one.**
+
+*A correct read-back was judged wrong.* `decision._said_words` refuses a match
+whose next word is another number word, so that "one three" cannot match inside
+"one three three decimal zero". Correct for a runway; fatal for everything else,
+because a number ending in a magnitude is FINISHED and what follows it is the
+next fact:
+
+    maintain one zero thousand, one two three decimal three
+                                ^ the altitude was reported missing
+
+*And a read-back through Whisper is not spelled the way `say.py` spells it.*
+The controller SYNTHESISES "one zero thousand"; the pilot is HEARD, and what
+came off the radio was `expect 1,000, 1, 0 minutes`, `frequency is 1, 2, 3
+decimal, 3`, `squawk 3, 3, 5, 0`, `1-0,000`. Every one is the right number,
+correctly read back, and none matched either spelling — the words are not
+present and no single digit token equals the value.
+
+*So the exchange became unwinnable.* Told two elements were missing, he read
+back exactly those two — and was judged against the WHOLE clearance again, so
+the frequency he had got right the first time became a miss:
+
+    ATC:   negative — say again one zero thousand, three three five zero
+    PILOT: we expect one zero thousand, one zero minutes after departure,
+           and we're going to squawk three three five zero
+    ATC:   negative — say again one zero thousand, one two three decimal
+           three, three three five zero
+
+There is no transmission that ends that. `clearance_ack` is only written when
+the read-back is judged fully correct, so it was never written — and the guard
+that stops the check running (`if plan.get("acknowledged")`) never fired. Every
+later read-back of every OTHER instruction was then judged against the departure
+clearance: his taxi read-back on the ramp, his ILS clearance read-back at thirty
+miles, and "clear of the active" after he had landed.
+
+**Fixed.** A number ending in a magnitude, or carrying a decimal, is finished.
+Split digit tokens are rejoined and every contiguous slice of a run is a
+candidate, so `1 0000 1 0` yields the ten thousand he said and not the
+1,000,010 a greedy join produces. The read-back is cumulative — what he has
+already said correctly stays said. And a read-back belongs to the man who
+ISSUED it: the IFR clearance is Clearance Delivery's, and once he has let go
+nobody else judges a read-back of it.
+
+Proved against the recorded transcripts rather than a tidied version of them —
+see `tests/test_read_back.py`, which replays both transmissions verbatim.
+
+**Still open, and it is the pilot's second sentence.** A clearance that was
+never agreed did not stop anything: Ground issued taxi to an aircraft with no
+IFR clearance and nobody said a word. That is #135.
+
+---
+
+## [SEAM-17] Ground taxied an aircraft whose clearance was never agreed — #135
+labels: bug
+
+    "And when I ask ground to taxi with no clearance — why does he let me go.
+     Talk about swallowing an error."
+
+The read-back loop of #134 meant `clearance_ack` was never written. Nothing
+downstream cared. He asked Kobuleti Ground for taxi and was given it, was handed
+to Tower, was cleared for take-off, and flew a full sortie to Batumi — the whole
+ladder, on a clearance the board still recorded as ISSUED and never AGREED.
+
+#105 made FILED, ISSUED and ACKNOWLEDGED three real states precisely so this
+question could be asked. It is asked in exactly one place — the read-back check
+itself — and by nothing that acts.
+
+**What it wants.** A rung that requires a clearance must refuse without one, and
+say which state he is actually in: "your IFR clearance has not been read back,
+contact Clearance on one two five decimal one" is a controller doing his job.
+Silence is the failure mode this codebase keeps producing — an error that
+changes nothing and is therefore indistinguishable from success.
+
+---
+
+## [ARCH-22] A new sortie inherited a dead one's state, because a flight row outlives the flight — #136
+labels: architecture
+
+    "why on earth is intent still ASR — where is that coming from. Something
+     about that stinks"
+
+Right, and it is not the classifier: asked that exact transmission it answers
+`wants='ILS 13'`. What happened is worse.
+
+At 04:52:00, on the transmission "Sakai is looking for the ILS runway 13 into
+Batumi", three fields changed at once:
+
+    intent       ''  ->  'asr approach'
+    phase        ENROUTE -> CLEARED
+    assigned_ft  None -> 4000
+
+That triple is the signature of `Controller.restore()` (controller.py:530-554),
+which hydrates an aircraft from its `flights` row. The row it found belonged to
+the PREVIOUS sortie — the 03:00 flight that really was on the ASR — because
+`flights` is keyed on `(mission, callsign)` and a mission instance outlives any
+number of sorties flown inside it. He landed, parked, ended the flight, started
+a new one, and got the dead one's state back the moment the engine engaged.
+
+It also explains `in_letdown: true` at 35 nm and an assigned altitude of 4,000
+he was never given.
+
+`docs/STATE.md` asks three questions and this is the third with no answer:
+
+    WHO OWNS IT     the controller
+    WHERE IT LIVES  flights
+    WHEN IT DIES    when the MISSION restarts  <- should be: when the SORTIE ends
+
+**What it wants:** a flight row scoped to the sortie, not the mission — and
+`restore` refusing to hydrate from a row whose sortie has ended, rather than
+silently dressing a new aeroplane in an old one's clothes.
+
+---
+
+## [ARCH-23] Fixes are Python, published to the database as though they were data — #137
+labels: architecture
+
+    "There are fixes in core/fixes.py??? Shouldn't all fixes be data in the
+     database?"
+    "we deleted the domino flight plan that had feet wet… where on earth did
+     that come from. It shouldn't be in the database from a flight plan as a
+     private fix and it's definitely not a public fix."
+
+Both right, and the second follows from the first. `FEET WET` is not a leftover
+from the deleted plan and deleting that plan could never have removed it: it is
+a module-level `Fix` in `core/fixes.py`, one of the 1944 strike sortie's own
+turning points, and the bridge PUSHES the lot into the `fixes` table on every
+start. So the database is a cache of a hard-coded list, and one mission's route
+points are published to every controller in every sortie as though they were
+navaids. When the pilot asked for a private steerpoint the controller could not
+resolve (#133), it reached into that catalogue and offered him one.
+
+The public/private distinction we settled for flight plans applies here one
+level up and was never applied: **FEET WET, INGRESS, EGRESS and TSUTSNVATI are
+that mission's private fixes.** They belong to the mission that flies them, not
+to the theatre.
+
+The other half is the one the pilot named first: forty aerodromes means forty
+hand-edits of a Python module, and `route.py` being "the single source of truth"
+is what makes that feel principled. It was true when there was one theatre and
+one sortie.
+
+**What it wants:** published fixes are rows, loaded from data, with a source
+that can be cited (a plate, an AIP, the sim's own `Beacons.lua`); a mission's
+route points live with the mission; and nothing invented gets published to
+everybody. See also #133, which is the same distinction for flight plans.
+
+---
+
+## [HO-6] Center issued an approach clearance, and the ladder ran backwards — #138
+labels: bug
+
+Batumi Approach never cleared him for the approach. Georgia Center did — twice:
+
+    04:52:00  Sockeye, cleared I-L-S approach runway 13, report established
+              on the final approach course.
+    04:56:33  Sockeye, cleared I-L-S approach runway 13, continue.
+
+    "approach, never actually cleared me for the approach, and never asked if
+     I have information alpha"
+
+An approach clearance is Approach's. A Center controller who issues one has
+issued a clearance he does not own, which is the aerodrome half of the invariant
+in `CLAUDE.md` — the same shape as a Ground controller putting an aeroplane on
+the runway.
+
+**And the handoff has no direction.** Having checked in with Batumi Approach at
+04:53:02, he was handed BACK to Center at 04:54:45, 27 nm inbound. Then Tower
+tried to hand him to Approach four times — 05:03:42, 05:04:16, 05:04:20,
+05:04:47 — at four, two and one miles on final:
+
+    "he just tried to transfer me back to approach when I was within five
+     miles on the final"
+
+Nothing in the rule table says a rung already passed cannot be offered again, so
+distance alone decides and an aircraft on final is geometrically "in Approach's
+airspace" for ever.
+
+Related and probably the same absent rule: no landing clearance was ever issued
+(Tower's whole transmission at 05:03:36 was "Sockeye, Batumi Tower"), and after
+he parked, Ground sent him back to Tower "for landing" — which is #100.

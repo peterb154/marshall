@@ -291,6 +291,35 @@ def _said_words(hay: str, form: str, numeric: bool) -> bool:
         rest = hay[m.end():].split()
         if not numeric or not rest or rest[0] not in _NUM:
             return True
+        # A NUMBER ENDING IN A MAGNITUDE IS FINISHED, and what follows it is the
+        # next fact, not the rest of this one. Without this, every fact spoken
+        # before another number was reported missing:
+        #
+        #     maintain one zero thousand, one two three decimal three
+        #                                 ^ a frequency, so the altitude was
+        #                                   "the front of a longer number"
+        #
+        # It made a CORRECT clearance read-back fail, which is the first domino
+        # of the eight bogus corrections on 12 August -- he was asked to say
+        # again a number he had just said, and no transmission could satisfy it.
+        #
+        # STILL GUARDED WHERE IT MATTERS. "five thousand" inside "five thousand
+        # five hundred" is a genuine continuation and is what #98 was about, so
+        # a magnitude that is itself followed by <number> <magnitude> is still
+        # the front of a longer one and still fails.
+        if f.rsplit(" ", 1)[-1] in ("thousand", "hundred"):
+            if len(rest) < 2 or rest[1] not in ("hundred", "thousand"):
+                return True
+        # A FREQUENCY IS FINISHED TOO, once its decimal has been spoken. Same
+        # false miss, different fact: "one two three decimal three" followed
+        # straight by "one zero thousand" was read as the front of a longer
+        # number, so the frequency he read back correctly was reported missing.
+        #
+        # The guard still does the job it was written for. "one three" -- a
+        # runway -- carries neither a magnitude nor a decimal, so it is still
+        # only a prefix and still fails inside "one three three decimal zero".
+        elif "decimal" in f.split():
+            return True
     return False
 
 
@@ -308,7 +337,65 @@ def _said_number(hay: str, value: float) -> bool:
                 return True
         except ValueError:
             continue
-    return False
+    return any(abs(n - value) < 1e-6 for n in _digit_runs(hay))
+
+
+def _digit_runs(hay: str) -> list[float]:
+    """Every number a pilot said as separated digits, rejoined.
+
+    A CONTROLLER'S NUMBERS ARE SYNTHESISED AND A PILOT'S ARE HEARD, and that
+    asymmetry is the whole reason this exists. `say.py` produces "one zero
+    thousand"; Whisper produces whatever it makes of a man saying the same
+    thing on a radio, and what it made of the 12 August clearance read-back was
+
+        expect 1,000, 1, 0 minutes after departure     one zero thousand
+        frequency is 1, 2, 3 decimal, 3                one two three decimal three
+        we're going to squawk 3, 3, 5, 0               three three five zero
+        1-0,000                                        one zero thousand
+
+    Every one of those is the right number, correctly read back, and none of
+    them matched: the word forms are not present and the digit forms are broken
+    into pieces no single token equals. So a pilot who did exactly as he was
+    asked was told "negative, say again" -- and since nothing could ever satisfy
+    it, his clearance was never marked agreed for the rest of the sortie.
+
+    Adjacent digit tokens are one number, and `decimal`/`point` between them is
+    the point. Nothing here interprets: it rejoins what the radio split.
+
+    ONE RUN IS SEVERAL NUMBERS, and joining it whole is not enough. The second
+    read-back came through as
+
+        we expect 1-0,000, 1-0 minutes after departure
+
+    which normalises to the four adjacent tokens `1 0000 1 0` -- an altitude and
+    a number of minutes with nothing between them. Joined greedily that is
+    1,000,010. So every contiguous slice of a run is a candidate, and one of
+    them is the ten thousand he was cleared to.
+    """
+    out: list[float] = []
+    runs: list[list[str]] = []
+    run: list[str] = []
+    for tok in [*hay.split(), "/"]:      # the sentinel closes the last run
+        if tok.isdigit():
+            run.append(tok)
+        elif tok in ("decimal", "point") and run and "." not in run:
+            run.append(".")
+        else:
+            if run:
+                runs.append(run)
+            run = []
+    for r in runs:
+        for i in range(len(r)):
+            for j in range(i + 1, len(r) + 1):
+                # A LEADING OR TRAILING POINT IS NOT A NUMBER. "one two three
+                # decimal" with nothing after it is an unfinished frequency.
+                if r[i] == "." or r[j - 1] == ".":
+                    continue
+                try:
+                    out.append(float("".join(r[i:j])))
+                except ValueError:
+                    continue
+    return out
 
 
 def verify(d: Decision, said: str) -> list[str]:
