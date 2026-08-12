@@ -7363,3 +7363,105 @@ loaded. `vendor/dcs/nevada-Beacons.lua` pairs `position` with `positionGeo` for
 all 45 beacons, so once the right point is known the seeding is mechanical --
 and the same file makes Caucasus verifiable without a running server too, which
 is worth doing whichever way this goes.
+
+---
+
+## [FP-8] A flight plan was a bag of columns, half of them the clearance's — #142
+labels: architecture
+
+**Status:** CLOSED 12 August. Structural throughout; the suite and the live
+board both check it.
+
+    "the origin should be determined at request time, the destination is the
+     last point. We should not define an approach in the flight plan. there
+     should be no cruise alt in flight plan."
+
+`flight_plans` carried thirteen columns and only three of them described a
+flight plan.
+
+**Two copies of the route, and they had already drifted.** On the live board:
+
+    route : FOO, BAR, SPAM, INITIAL
+    legs  : FOO, BAR, SPAM, BATUMI
+
+`route` was a string validation read; `legs` was the structured list with
+positions that the map and the clearance read. Nothing kept them in step.
+
+**And four columns that belong to the CLEARANCE, not the plan** — which the
+schema had already half-admitted, because `assigned_plans` has carried its own
+`origin`, `destination`, `route`, `cruise_ft` and `approach` since migration
+009. `approach` on the plan is what let the bridge read its own arrival out of
+a plan row (#131) and fly a man a talkdown after he asked for an ILS.
+
+**Fixed** (migration 031). A plan is `label`, `legs` and `task`. `route`,
+`destination` and `cruise_ft` are computed by `filing.derived` from the one
+list that has positions in it; `origin` is settled when he asks for his
+clearance; `name` is generated from the label rather than typed, because two
+hand-authored identifiers for one plan was one too many and the label is the
+one with a reason — it has to survive being said out loud through Whisper.
+
+The /file form stopped asking for five things it had no business asking for,
+and `task` is read from the cartridge's `KneeboardNotes` — the one field where
+a pilot describes his own sortie — rather than defaulted to the string
+"training", which told a controller nothing and made every plan score alike.
+
+**A mistake worth recording:** I dropped the columns before backfilling, and
+two Nevada plans that predated `legs` lost their routes. Recovered by hand and
+the migration now backfills first, so no other database repeats it.
+
+---
+
+## [FP-9] A private fix could silently take a published fix's name — #143
+labels: bug
+
+**Status:** CLOSED 12 August.
+
+    "I created a private fix called INITIAL this seems to be conflicting with a
+     public fix? ... How should we handle naming conflicts like this"
+
+Badly, and silently, which is the worst available answer. `plans.route_fixes`
+resolves the published catalogue FIRST, so a plan whose own leg is called
+INITIAL had that leg discarded and the controller vectored to the PUBLISHED
+initial approach fix instead. The pilot means one place, the controller means
+another, both are real points, and every range and bearing spoken is perfectly
+plausible. That is the shape of every bad hour this project has had.
+
+**The rule is about DISAGREEMENT, not about the name.** A cartridge carries a
+position for every steerpoint including the destination, so a plan routing to
+BATUMI arrives with BATUMI's own coordinates — the same aerodrome, not a
+redefinition. Refusing on the name alone rejects an ordinary flight plan, which
+I nearly shipped. So: a plan may NAME a published fix, and may carry its
+position, but if that position is more than a mile from the chart's it is
+refused and told how far off it is.
+
+Shadowing the other way is no better: a plan that redefined DIOMI for its own
+convenience would make one word mean two places depending on who is holding
+which piece of paper.
+
+---
+
+## [FP-10] INITIAL is invented, and its source line said otherwise — #144
+labels: bug
+
+**Status:** CLOSED 12 August — the citation is honest now. Whether a fictional
+scenario should publish invented fixes at all is left open deliberately.
+
+    "And, we probably made up the fix called INITIAL huh?"
+
+Yes. `core/fixes.py` shows its ident was CHOSEN rather than read:
+
+    # Beacon idents must NOT resemble the letters the ARA-8 keys for homing --
+    # U (..-), D (-..), A (.-), N (-.). An earlier build used B (-...), one dot
+    # from a homing D, and the two were indistinguishable in flight.
+    INITIAL = Fix("INITIAL", "SW", ...)
+
+When the published catalogue moved into configuration (#137) I gave every fix a
+REQUIRED `source`, and wrote INITIAL's as *"On the 1944 Batumi letdown plate as
+the initial approach fix"* — which describes a ROLE and reads as a CITATION.
+That is precisely the failure a required source field exists to prevent, and I
+committed it hours after refusing to do the same thing to Nevada's TONOPAH
+(#141) on exactly that ground.
+
+The line now says it is invented, that the plate is one we generate, and why
+the ident is what it is. Published because it is on the plate the pilot holds —
+published BY US, which is a different claim from published by an AIP.

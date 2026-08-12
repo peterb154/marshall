@@ -151,45 +151,44 @@ def build() -> str:
         <input name="label" placeholder="Domino" required>
         <div class="hint">One word, no digits. "Samovar One" is how the wrong
           sortie gets cleared.</div></div>
-      <div><label>name — the key</label>
-        <input name="name" placeholder="squadron-origin-destination" required>
-        <div class="hint">lowercase, hyphens. Goes in URLs and migrations.</div></div>
     </div>
     <label>task — what he is DOING</label>
     <input name="task" placeholder="Transit and recovery" required>
-    <div class="hint">Not where he is going: origin and destination have their
-      own boxes and are read from them. Repeating a place name here makes this
-      plan outrank the board on any request that mentions it.</div>
-    <!-- READ FROM THE CARTRIDGE, and left editable rather than hidden.
-         "the import is asking for informtion at that is already embedded in
-         the data cartrige" -- it was, and worse, it demanded it before the
-         Read button would do anything. A form that asks twice teaches you to
-         distrust the answer it already has. -->
+    <div class="hint">Read from the cartridge's kneeboard notes when it has
+      them, and yours to edit. Not where he is going &mdash; the destination is
+      the last leg and is read from there. Repeating a place name here makes
+      this plan outrank the board on any request that mentions it.</div>
+
+    <!-- WHAT A PLAN IS, after migration 031: a label, the legs, and the task.
+         The boxes that used to sit here asked for four things that were not
+         flight-plan fields at all:
+
+           name         a key. Generated from the label now -- two
+                        hand-authored identifiers for one plan was one too
+                        many, and the label is the one with a reason: it has to
+                        survive being said out loud through Whisper.
+           origin       "determined at request time". He calls Clearance from a
+                        parking spot; asking him to have written down where he
+                        is standing is asking him to tell you what you can see.
+           cruise_ft    "there should be no cruise alt in flight plan". Each
+                        leg carries its own.
+           approach     "We should not define an approach in the flight plan."
+                        Which arrival you fly is a fact about your CLEARANCE,
+                        and this selector is what let the bridge read its own
+                        procedure out of a plan row -- #131, which cost a
+                        sortie flown as a talkdown after the pilot asked for an
+                        ILS.
+
+         The route is shown back rather than asked for, because the cartridge
+         has it and a form that asks twice teaches you to distrust the answer
+         it already holds. -->
     <div class="from-dtc" id="derived">
-      <div class="two">
-        <div><label>origin <i>from the route</i></label>
-          <input name="origin" required></div>
-        <div><label>destination <i>from the route</i></label>
-          <input name="destination" required></div>
-      </div>
-      <label>route <i>from the route</i></label>
-      <input name="route" list="fixes" required>
+      <label>route <i>read from the cartridge</i></label>
+      <input name="route" list="fixes" readonly>
       <datalist id="fixes"></datalist>
-      <div class="hint" id="fixhint">the places the sim actually holds</div>
-      <label>cruise altitude, feet <i>the highest enroute leg</i></label>
-      <input name="cruise_ft" type="number" step="100" required>
-      <div class="hint">Read off the cartridge, not asked for. It is what
-        Clearance reads back to you &mdash; file five thousand while you climb
-        to ten and the climb is a level bust.</div>
+      <div class="hint" id="fixhint">the enroute legs; the last one is where he
+        is going, and each carries its own altitude</div>
     </div>
-    <label>recovery the bridge flies <i>not a flight-plan field</i></label>
-    <select name="approach"><option value="">(none)</option></select>
-    <div class="hint"><b>This is not something you file.</b> A real plan names a
-      destination and ATC assigns the approach when you get there. It is here
-      because the bridge reads it off the ACTIVE plan at start-up to decide
-      which procedure it is running &mdash; a selector wearing a flight-plan
-      field's clothes. Leave it alone unless you are changing what the
-      controller flies.</div>
     <button id="go" type="submit">File it</button>
   </form>
 

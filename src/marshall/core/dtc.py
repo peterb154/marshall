@@ -284,8 +284,44 @@ def plan_from(d: dict, name: str, approach: str = "", label: str = "",
              "alt_ft": int(w["alt_ft"] or 0),
              "lat": w["lat"], "lon": w["lon"]} for w in wps]
     return {"name": name, "label": label, "legs": legs,
+            # WHAT HE IS GOING OUT TO DO, off the cartridge.
+            #
+            #     "task (the flight description) should be extracted from the
+            #      DTC data and/or edited in the ux"
+            #
+            # `KneeboardNotes` is where a pilot writes the description of his
+            # own sortie, so it is the one field in the cartridge that answers
+            # this. It used to be the literal string "training", which told a
+            # controller nothing and made every filed plan score the same on
+            # any request -- and `task` is the only thing that tells two
+            # similar plans apart.
+            #
+            # Editable afterwards rather than final: the notes are HIS prose
+            # and may be a checklist, a frequency card or nothing at all.
+            "task": task_from(d),
+            # STILL RETURNED, and no longer filed. `origin` is settled when he
+            # asks for his clearance, `destination` is the last leg, `route`
+            # is the legs spoken, and `cruise_ft` is the highest of them --
+            # all four are computed by `filing.derived` now (migration 031).
+            # They stay in this dict because the /file page shows them back to
+            # a pilot while he is reading a cartridge, which is a different
+            # job from storing them.
             "origin": (start or dest).title(),
             "destination": (dest or start).title(),
             "route": ", ".join(via), "cruise_ft": int(cruise),
-            "task": "training", "approach": approach,
-            "enroute": via, "ladder": seats}
+            "approach": approach, "enroute": via, "ladder": seats}
+
+
+def task_from(d: dict, limit: int = 120) -> str:
+    """What the pilot wrote about this sortie, as one line.
+
+    His own words where he has them. `KneeboardNotes` is free prose and may run
+    to a checklist, so it is collapsed to a single line and cut -- `task` is a
+    label a controller matches a spoken request against, not a briefing.
+    """
+    notes = " ".join(str(d.get("KneeboardNotes") or "").split())
+    if not notes:
+        # NOT "training". A word every plan shares is a word that distinguishes
+        # nothing, and `plans.py` scores a request against this field.
+        return ""
+    return notes[:limit].rstrip(" ,.;-")

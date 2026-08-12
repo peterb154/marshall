@@ -111,7 +111,17 @@ lon = 41.368361
 freq_mhz = 128.0
 sector = "Batumi Approach"
 navaid = "ndb"
-source = "On the 1944 Batumi letdown plate as the initial approach fix; NDB SW 128.0."
+source = """INVENTED FOR THIS SCENARIO, and it must say so. There is no such
+navaid: the 1944 Batumi letdown this project flies is fiction, the plate is one
+we generate, and INITIAL is the name we gave its initial approach fix. Its ident
+SW was CHOSEN, not read -- see core/fixes.py: a beacon ident must share no Morse
+prefix with the ARA-8 homing letters U D A N, and an earlier build used B, one
+dot from a homing D, indistinguishable in flight.
+
+The first version of this line read \"On the 1944 Batumi letdown plate as the\ninitial approach fix\" -- which describes a ROLE and reads as a CITATION, and is
+the precise thing a required source field exists to prevent. Published because
+it is on the plate the pilot holds; published BY US, which is a different claim
+from published by an AIP."""
 note = "Offshore holding fix. Open water, no terrain in any quadrant."
 
 # --- aerodromes ------------------------------------------------------------

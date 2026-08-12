@@ -57,8 +57,11 @@ def _pool():
 # `legs` is the level per leg, which is what a flight plan actually carries --
 # `cruise_ft` is the highest of them, and the level a pilot MAINTAINS off the
 # ramp is the first. See migration 030 and `request_clearance`.
-_TEMPLATE_COLS = ("name", "label", "origin", "destination",
-                  "route", "legs", "cruise_ft", "task", "approach")
+# WHAT A PLAN ROW IS, after migration 031. `route`, `destination` and
+# `cruise_ft` come back from `filing.derived` -- computed from the legs rather
+# than stored beside them -- and `origin` and `approach` are the CLEARANCE'S,
+# which is why `assigned_plans` has its own columns for them.
+_TEMPLATE_COLS = ("name", "label", "legs", "task")
 
 
 def filed() -> list[dict]:
@@ -92,7 +95,8 @@ def filed() -> list[dict]:
         rows = c.execute(
             f"SELECT {', '.join(_TEMPLATE_COLS)} FROM flight_plans "
             f"ORDER BY label NULLS LAST, name").fetchall()
-    plans = [dict(zip(_TEMPLATE_COLS, r)) for r in rows]
+    from tools.filing import derived
+    plans = [derived(dict(zip(_TEMPLATE_COLS, r))) for r in rows]
     here = set(_known_fixes())
     if not here:
         return plans           # nothing published yet: filter nothing

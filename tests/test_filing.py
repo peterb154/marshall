@@ -32,20 +32,33 @@ FIXES = {"batumi", "kobuleti", "initial", "feet wet", "ingress", "tsutsnvati",
 APPROACHES = {"batumi-asr", "batumi-ndb"}
 TAKEN = {"domino": "362nd-kobuleti-batumi", "marlin": "362nd-coast-patrol"}
 
-# THE ROUTE IS THE ENROUTE PORTION. It used to read "BATUMI, FEET WET, BATUMI"
-# -- the aerodrome written in twice beside the origin and destination columns
-# that already hold it. See #127 and `filing.check`.
-GOOD = {"name": "362nd-night-run", "label": "Kestrel", "origin": "Batumi",
-        "destination": "Batumi", "route": "FEET WET",
-        "cruise_ft": 3000, "task": "Night patrol of the coastline",
-        "approach": "batumi-asr"}
+# A PLAN IS A LABEL, ITS LEGS AND A TASK. Migration 031 dropped `origin`,
+# `destination`, `route`, `cruise_ft` and `approach` -- every one of them either
+# a fact about the CLEARANCE or a second copy of the route:
+#
+#     "the origin should be determined at request time, the destination is the
+#      last point. We should not define an approach in the flight plan. there
+#      should be no cruise alt in flight plan."
+#
+# The last leg is where he is going. FEET WET is enroute, BATUMI is the
+# destination, and neither is written down twice.
+GOOD = {"label": "Kestrel",
+        "legs": [{"fix": "FEET WET", "alt_ft": 3000},
+                 {"fix": "BATUMI", "alt_ft": 0}],
+        "task": "Night patrol of the coastline"}
+
+# WHERE THE PUBLISHED FIXES ARE, for the collision rule: a plan may CARRY a
+# position for a published fix -- a cartridge does, for its destination -- but
+# it may not put it somewhere else.
+AT = {"batumi": (41.6096, 41.6002), "kobuleti": (41.9299, 41.8633),
+      "initial": (41.7875, 41.3684)}
 
 
 def check(**over):
     plan = dict(GOOD)
     plan.update(over)
     return F.check(plan, fixes=FIXES, approaches=APPROACHES, taken=TAKEN,
-                   updating=over.pop("updating", ""))
+                   updating=over.pop("updating", ""), at=AT)
 
 
 class TestWhatIsRefused(unittest.TestCase):
@@ -58,14 +71,17 @@ class TestWhatIsRefused(unittest.TestCase):
     def test_a_fix_nobody_holds(self):
         """The typo that motivated the whole module. INTIAL for INITIAL is one
         transposed letter and it reads perfectly well on screen."""
-        bad, _ = check(route="INTIAL")
+        bad, _ = check(legs=[{"fix": "INTIAL", "alt_ft": 3000},
+                             {"fix": "BATUMI", "alt_ft": 0}])
         self.assertTrue(bad)
         self.assertIn("INTIAL", bad[0])
 
     def test_it_names_WHICH_fix(self):
         """Not "invalid route". A six-fix route with one typo must say which of
         the six, or the person filing it reads all six again and picks wrong."""
-        bad, _ = check(route="FEET WET, NOWHERE, EGRESS")
+        bad, _ = check(legs=[{"fix": "FEET WET", "alt_ft": 3000},
+                             {"fix": "NOWHERE", "alt_ft": 3000},
+                             {"fix": "EGRESS", "alt_ft": 0}])
         self.assertEqual(len(bad), 1)
         self.assertIn("NOWHERE", bad[0])
         self.assertNotIn("EGRESS", bad[0])
@@ -73,7 +89,9 @@ class TestWhatIsRefused(unittest.TestCase):
     def test_a_route_is_case_and_space_insensitive(self):
         """The fix table is lowercase; routes are written in caps. Neither is
         wrong and the filer must not care."""
-        bad, _ = check(route="  ingress ,Feet Wet,  EGRESS ")
+        bad, _ = check(legs=[{"fix": " ingress ", "alt_ft": 3000},
+                             {"fix": "Feet Wet", "alt_ft": 3000},
+                             {"fix": "  EGRESS ", "alt_ft": 0}])
         self.assertEqual(bad, [])
 
     def test_one_fix_is_a_perfectly_good_route(self):
@@ -85,20 +103,45 @@ class TestWhatIsRefused(unittest.TestCase):
         What the module actually cares about is unchanged: every fix NAMED is
         one the sim holds. See #127.
         """
-        bad, _ = check(route="FEET WET")
+        bad, _ = check(legs=[{"fix": "FEET WET", "alt_ft": 3000},
+                             {"fix": "BATUMI", "alt_ft": 0}])
         self.assertEqual(bad, [])
 
-    def test_an_empty_route_is_direct(self):
-        bad, _ = check(route="")
+    def test_a_direct_flight_is_one_leg(self):
+        """Which is most of what gets flown here: Kobuleti to Batumi with
+        nothing published in between. The last leg is the destination, so a
+        direct flight is a plan with exactly one."""
+        bad, _ = check(legs=[{"fix": "BATUMI", "alt_ft": 0}])
         self.assertEqual(bad, [])
 
-    def test_repeating_an_aerodrome_is_warned_about_not_refused(self):
-        # Every row filed before #127 does this, so it cannot be a refusal --
-        # but it is the difference between "via" and "direct" and a controller
-        # reads it out.
-        bad, warn = check(route="BATUMI, FEET WET, BATUMI")
+    def test_a_plan_with_no_legs_at_all_is_refused(self):
+        bad, _ = check(legs=[])
+        self.assertTrue(any("at least one leg" in b for b in bad), bad)
+
+    def test_a_plan_may_carry_a_published_fix_at_its_published_place(self):
+        """A cartridge carries a position for EVERY steerpoint including the
+        destination, so a plan routing to BATUMI arrives with BATUMI's own
+        coordinates. That is the same aerodrome, not a redefinition -- and
+        refusing on the name alone rejected an ordinary flight plan."""
+        bad, _ = check(legs=[{"fix": "FEET WET", "alt_ft": 3000},
+                             {"fix": "BATUMI", "alt_ft": 0,
+                              "lat": 41.6096, "lon": 41.6002}])
         self.assertEqual(bad, [])
-        self.assertTrue(any("ENROUTE portion" in w for w in warn), warn)
+
+    def test_but_not_somewhere_else(self):
+        """The dangerous case, and it is dangerous because it is SILENT:
+        `route_fixes` resolves the published catalogue first, so the pilot's
+        own point is discarded and the controller vectors to ours. Two real
+        places, one word, a perfectly plausible range and bearing.
+
+            "I created a private fix called INITIAL this seems to be
+             conflicting with a public fix?"
+        """
+        bad, _ = check(legs=[{"fix": "INITIAL", "alt_ft": 3000,
+                              "lat": 42.1, "lon": 41.2},
+                             {"fix": "BATUMI", "alt_ft": 0}])
+        self.assertTrue(any("published fix" in b for b in bad), bad)
+        self.assertTrue(any("nm from where the chart does" in b for b in bad))
 
     def test_a_label_already_on_the_board(self):
         bad, _ = check(label="Domino")
@@ -122,27 +165,39 @@ class TestWhatIsRefused(unittest.TestCase):
                          fixes=FIXES, approaches=APPROACHES, taken=TAKEN)
         self.assertEqual(bad, [])
 
-    def test_an_approach_that_does_not_exist(self):
+    def test_an_approach_is_no_longer_a_plan_field(self):
+        """"We should not define an approach in the flight plan." Which arrival
+        you fly is a fact about your CLEARANCE (#2), and this column is what
+        let the bridge read its own procedure out of a plan row (#131)."""
+        # Not refused, IGNORED. An approach in the payload is a caller who has
+        # not caught up, not a plan that is wrong -- and refusing it would
+        # break every tool that still sends one while saying nothing useful.
         bad, _ = check(approach="batumi-ils")
-        self.assertTrue(any("no approach" in b for b in bad))
+        self.assertEqual(bad, [])
 
-    def test_no_approach_at_all_is_allowed(self):
+    def test_no_approach_at_all_is_allowed_too(self):
         """A plan may recover visually, or somewhere with no published
         procedure. Empty is a real answer."""
         bad, _ = check(approach="")
         self.assertEqual(bad, [])
 
-    def test_the_things_a_controller_reads_back_are_required(self):
-        for missing in ("origin", "destination", "task"):
-            with self.subTest(missing=missing):
-                bad, _ = check(**{missing: ""})
-                self.assertTrue(any(missing in b for b in bad))
+    def test_a_task_is_required_and_the_endpoints_are_not(self):
+        """Origin is settled when he asks for his clearance; the destination is
+        the last leg. Only the task is his to write down."""
+        bad, _ = check(task="")
+        self.assertTrue(any("task" in b for b in bad))
+        for gone in ("origin", "destination"):
+            with self.subTest(gone=gone):
+                bad, _ = check(**{gone: ""})
+                self.assertEqual(bad, [])
 
-    def test_an_altitude_that_is_not_a_number(self):
-        for alt in ("lots", "", None, 0, -500):
+    def test_a_leg_with_no_altitude(self):
+        """A leg is a place AND a level. Zero is legal -- that is a threshold."""
+        for alt in ("lots", None, -500):
             with self.subTest(alt=alt):
-                bad, _ = check(cruise_ft=alt)
-                self.assertTrue(any("altitude" in b for b in bad))
+                bad, _ = check(legs=[{"fix": "FEET WET", "alt_ft": alt},
+                                     {"fix": "BATUMI", "alt_ft": 0}])
+                self.assertTrue(any("altitude" in b for b in bad), bad)
 
 
 class TestWhatIsOnlyWarnedAbout(unittest.TestCase):
@@ -164,21 +219,19 @@ class TestWhatIsOnlyWarnedAbout(unittest.TestCase):
         """#57. The endpoints have their own columns and are scored from them;
         repeating one gives this plan triple credit for the same word and turns
         an ambiguous request into a confident wrong answer."""
-        _, warn = check(task="transit from Kobuleti to Batumi",
-                        origin="Kobuleti", destination="Batumi")
-        self.assertTrue(any("repeats the origin" in w for w in warn))
-        self.assertTrue(any("repeats the destination" in w for w in warn))
+        _, warn = check(task="transit from Kobuleti to Batumi")
+        self.assertTrue(any("repeats the destination" in w for w in warn), warn)
 
     def test_a_task_naming_a_place_that_is_not_an_endpoint_is_fine(self):
         """Anvil's job IS going to Kobuleti and its destination is Batumi. That
         is a task doing exactly what a task is for."""
-        _, warn = check(task="Escort a transport as far as Kobuleti",
-                        origin="Batumi", destination="Batumi")
+        _, warn = check(task="Escort a transport as far as Kobuleti")
         self.assertEqual(warn, [])
 
     def test_an_altitude_that_is_not_a_round_hundred(self):
-        _, warn = check(cruise_ft=5250)
-        self.assertTrue(any("round hundred" in w for w in warn))
+        _, warn = check(legs=[{"fix": "FEET WET", "alt_ft": 5250},
+                              {"fix": "BATUMI", "alt_ft": 0}])
+        self.assertTrue(any("round hundred" in w for w in warn), warn)
 
 
 class TestTheRouteIsNormalisedOnTheWayIn(unittest.TestCase):

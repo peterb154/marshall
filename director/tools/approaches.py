@@ -89,21 +89,31 @@ def upsert_flight_plan(name: str, callsign: str, approach: str,
 def list_flight_plans() -> list[dict]:
     _ensure()
     with get_pool().connection() as c:
-        rows = c.execute("SELECT name, callsign, approach, active FROM flight_plans "
+        rows = c.execute("SELECT name, callsign FROM flight_plans "
                          "ORDER BY name").fetchall()
-    return [{"name": n, "callsign": cs, "approach": a, "active": act}
-            for n, cs, a, act in rows]
+    # NO `approach` AND NO `active`. A plan does not name an arrival -- which
+    # one you fly is a fact about your clearance (#2) -- and `active` was how
+    # the bridge used to read its own procedure out of a plan row, which is
+    # #131. Both columns are gone; see migration 031.
+    return [{"name": n, "callsign": cs} for n, cs in rows]
 
 
 def active_flight_plan() -> dict | None:
-    """The loaded flight plan joined with its approach — what the plate reads."""
-    _ensure()
-    with get_pool().connection() as c:
-        r = c.execute(
-            "SELECT f.name, f.callsign, f.weather, a.name, a.field, a.data "
-            "FROM flight_plans f JOIN approaches a ON a.name=f.approach "
-            "WHERE f.active LIMIT 1").fetchone()
-    if not r:
-        return None
-    return {"name": r[0], "callsign": r[1], "weather": r[2],
-            "approach": {"name": r[3], "field": r[4], "data": r[5]}}
+    """Always None. THERE IS NO ACTIVE PLAN, and there should never have been.
+
+        "i dont understand this active business. sounds like mis-alignment
+         between you and me"
+        "whyt would the bridge load a default approach column?? doesnt make
+         sense"
+
+    Right on both counts. This read `flight_plans` for a row with `active` set
+    and joined it to the approach that row named -- two columns that are gone
+    (migration 031) because neither was a fact about a flight plan. Which
+    arrival is being flown is a property of a CLEARANCE (#2), and the bridge
+    reading its own procedure out of a plan row is #131, which cost a sortie.
+
+    KEPT AS A FUNCTION rather than deleted, because callers ask it a reasonable
+    question and None is the honest answer: nothing is "loaded". Deleting it
+    would push the same guess into whoever calls it next.
+    """
+    return None

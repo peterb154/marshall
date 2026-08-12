@@ -42,9 +42,15 @@ from marshall.core.db import pool as get_pool
 # it says which approach the bridge loads at start-up, it is set by the bridge's
 # own bootstrap, and letting a form move it means a filed plan can silently
 # change the procedure a controller is running.
-FIELDS = ("name", "label", "origin", "destination", "route", "legs",
-          "cruise_ft",
-          "task", "approach")
+# WHAT A PLAN IS MADE OF, after migration 031. Everything else that used to be
+# here was either a fact about the CLEARANCE wearing a plan's clothes (origin,
+# approach, cruise_ft -- all of which `assigned_plans` has carried since
+# migration 009) or a second copy of the route (destination, route).
+#
+#     "the origin should be determined at request time, the destination is the
+#      last point. We should not define an approach in the flight plan. there
+#      should be no cruise alt in flight plan."
+FIELDS = ("name", "label", "legs", "task")
 
 # A plan's `name` is a key, not prose: it goes in URLs, in migrations and in
 # `assigned_plans.template`.
@@ -56,6 +62,52 @@ _NAME_OK = re.compile(r"^[a-z0-9][a-z0-9-]{2,62}$")
 # Two" its own note warns against -- a transcriber that turns "one" into "won"
 # picks the wrong sortie and clears a man onto it.
 _LABEL_OK = re.compile(r"^[A-Za-z][A-Za-z'-]{1,23}$")
+
+
+def derived(plan: dict) -> dict:
+    """A plan row, plus the facts that used to be columns beside it.
+
+    `route`, `destination` and `cruise_ft` are no longer stored (migration
+    031) because every one of them was a second answer to a question `legs`
+    already answers -- and two of them had already drifted apart on the live
+    board. They are still what the rest of the system speaks, so they are
+    computed HERE, once, rather than in the six places that read a plan.
+
+        route        the legs before the last one -- the ENROUTE portion, which
+                     is what a controller reads back. #127.
+        destination  the last leg. "the destination is the last point."
+        cruise_ft    the highest level the route asks for. Kept for the scoring
+                     and the strip; the CLEARANCE altitude is `legs[0]`, and
+                     which is which is exactly what a single `cruise_ft`
+                     column could never say.
+
+    NOT `origin`. It is determined at request time -- he calls Clearance from a
+    parking spot, and where he is standing is not something he should have had
+    to write down in advance.
+    """
+    legs = [l for l in (plan.get("legs") or []) if isinstance(l, dict)]
+    names = [(l.get("fix") or "").strip() for l in legs]
+    alts = [int(l.get("alt_ft") or 0) for l in legs]
+    return {**plan,
+            "route": ", ".join(n for n in names[:-1] if n),
+            "destination": names[-1] if names else "",
+            "cruise_ft": max(alts) if alts else 0}
+
+
+def key_for(label: str) -> str:
+    """The storage key for a plan, from the word a pilot says.
+
+    A KEY IS GENERATED AND A LABEL IS AUTHORED. The form used to ask for both --
+    "name — the key" beside "label — what a pilot says" -- which is two
+    identifiers for one plan and one of them serving no purpose the other
+    could not. The label is the one that has to earn its shape: it is spoken on
+    a bad channel by somebody flying an aeroplane.
+
+    `name` survives as the key rather than being replaced by an id because it
+    is the FK target of `assigned_plans.template`, and because a URL somebody
+    has open should keep working.
+    """
+    return re.sub(r"[^a-z0-9]+", "-", (label or "").lower()).strip("-")[:63]
 
 
 def known_fixes() -> set[str]:
@@ -70,6 +122,19 @@ def known_fixes() -> set[str]:
     with get_pool().connection() as c:
         return {n.strip().lower()
                 for (n,) in c.execute("SELECT name FROM fixes").fetchall()}
+
+
+def known_positions() -> dict[str, tuple[float, float]]:
+    """Where each published fix IS, not just what it is called.
+
+    `known_fixes` answers "may a route name this?" and that is all `check` used
+    to need. Telling a plan that carries the SAME place from one that carries a
+    DIFFERENT place under a published name needs the position too -- see the
+    collision rule in `check`.
+    """
+    with get_pool().connection() as c:
+        return {n.strip().lower(): (la, lo) for n, la, lo
+                in c.execute("SELECT name, lat, lon FROM fixes").fetchall()}
 
 
 def known_approaches() -> set[str]:
@@ -107,7 +172,8 @@ def _near(a: str, b: str) -> bool:
 
 
 def check(plan: dict, *, fixes: set[str], approaches: set[str],
-          taken: dict[str, str], updating: str = "") -> tuple[list[str], list[str]]:
+          taken: dict[str, str], updating: str = "",
+          at: dict | None = None) -> tuple[list[str], list[str]]:
     """(refusals, warnings). Empty refusals means it can be filed.
 
     Refusals are things that are provably wrong -- a fix nobody holds, a label
@@ -125,9 +191,12 @@ def check(plan: dict, *, fixes: set[str], approaches: set[str],
     name = (plan.get("name") or "").strip()
     label = (plan.get("label") or "").strip()
 
+    # THE KEY IS DERIVED WHEN NOBODY SUPPLIED ONE, so it is checked rather than
+    # demanded: a pilot types a label and the slug follows from it.
+    name = name or key_for(label)
     if not _NAME_OK.match(name):
-        bad.append("name must be lowercase letters, digits and hyphens "
-                   "(3-63 characters) — it is a key, not a title")
+        bad.append("label must make a usable key — letters and digits, three "
+                   "characters or more")
     if not _LABEL_OK.match(label):
         bad.append("label must be ONE word a pilot can say — no digits, no "
                    "spaces. \"Samovar One\" and \"Samovar Two\" are how the "
@@ -144,93 +213,142 @@ def check(plan: dict, *, fixes: set[str], approaches: set[str],
                             f"garbled transmission and a pilot is cleared onto "
                             f"the wrong sortie")
 
-    for who in ("origin", "destination"):
-        if not (plan.get(who) or "").strip():
-            bad.append(f"{who} is required — it is what a controller reads back")
+    # NEITHER ORIGIN NOR DESTINATION IS ASKED FOR any more.
+    #
+    #     "the origin should be determined at request time, the destination is
+    #      the last point"
+    #
+    # Origin is where he is standing when he calls Clearance, and asking him to
+    # have written it down beforehand is asking him to tell you something you
+    # can see. Destination is the last leg, and it was in the row twice. Both
+    # columns are gone -- migration 031 -- and `filing.derived` computes the
+    # destination for everything that reads a plan.
 
-    # THE ROUTE IS THE ENROUTE PORTION, AND EMPTY IS LEGAL.
+    # THE ROUTE IS THE LEGS, and there is only one list now.
     #
-    #     "So ORIGIN and DESTINATION - should these be on the flightplan as
-    #      fixes?"
+    #     "the destination is the last point"
     #
-    # No. ICAO keeps them apart -- field 13 departure, field 15 the enroute
-    # portion, field 16 destination -- and this table has all three columns.
-    # Repeating the aerodromes inside `route` was duplication, and the rule
-    # underneath quietly came to depend on it: "at least two fixes" only ever
-    # passed BECAUSE the endpoints were padding the list. A genuine direct
-    # flight -- Kobuleti to Batumi with nothing published in between, which is
-    # most of what gets flown here -- has zero enroute fixes and could not be
-    # filed at all without writing its endpoints in twice.
+    # `route` was a comma-separated string beside a structured `legs` array,
+    # and the two had already drifted apart on the live board -- route said
+    # "FOO, BAR, SPAM, INITIAL" while legs ended at BATUMI, so validation read
+    # one and the map read the other. See migration 031.
+    legs = [l for l in (plan.get("legs") or []) if isinstance(l, dict)]
+    if not legs:
+        bad.append("a plan needs at least one leg — the last one is where he "
+                   "is going, and a route to nowhere is not a plan")
+    # EVERY FIX EITHER PUBLISHED OR CARRIED. A published fix anybody can look
+    # up; a private one the plan defines itself, with a position, so it is
+    # resolvable to whoever holds the plan and to nobody else. A name that is
+    # neither is the one thing this file exists to refuse -- a controller
+    # would have to say a place that is on no chart.
     #
-    # The rule this file actually wants is the one its own docstring states:
-    # every fix NAMED is one the sim holds. That is unchanged and is the whole
-    # point; what is gone is a length test standing in for it. See #127.
-    legs = route_fixes(plan.get("route", ""))
-    # ...OR ONE THE PLAN DEFINES ITSELF. A private fix is named by the pilot and
-    # carried with its position in `legs`, so the plan is self-contained and a
-    # route naming FOO resolves for anybody holding that plan. It does NOT make
-    # the name public: nothing else can see it, which is the point.
-    own = {(l.get("fix") or "").lower() for l in (plan.get("legs") or [])
-           if l.get("lat") is not None and l.get("lon") is not None}
-    # THE WHOLE REASON THIS FILE EXISTS. Named one at a time so a typo in a
-    # six-fix route says which of the six, rather than "invalid route".
-    for fx in legs:
-        if fx.lower() in own:
+    # Named ONE AT A TIME so a typo in a six-leg route says which of the six.
+    for i, leg in enumerate(legs, start=1):
+        fx = (leg.get("fix") or "").strip()
+        if not fx:
+            bad.append(f"leg {i} has no fix name")
             continue
-        if fx.lower() not in fixes:
-            bad.append(f"no fix called {fx} — the controller would have to "
-                       f"say a place that is not on any chart")
-    # A route that names its own endpoints is not refused -- every row filed
-    # before this change does -- but it is worth saying, because it is the
-    # difference between "via" and "direct" and a controller reads it out.
-    ends = {(plan.get("origin") or "").strip().lower(),
-            (plan.get("destination") or "").strip().lower()}
-    dupes = [f for f in legs if f.lower() in ends and f.strip()]
-    if dupes:
-        warn.append(f"{', '.join(dupes)} is already the origin or destination — "
-                    f"the route is the ENROUTE portion, and repeating an "
-                    f"aerodrome in it says he overflies his own field")
-
-    alt = plan.get("cruise_ft")
-    try:
-        alt = int(alt)
-    except (TypeError, ValueError):
-        alt = 0
-    if alt <= 0:
-        bad.append("cruise altitude must be a positive number of feet")
-    elif alt % 100:
-        warn.append(f"{alt} ft is not a round hundred; a controller will say it "
-                    f"as you wrote it")
+        carried = leg.get("lat") is not None and leg.get("lon") is not None
+        if not carried and fx.lower() not in fixes:
+            bad.append(f"no fix called {fx} — it is on no chart and this plan "
+                       f"does not give it a position")
+        # A PRIVATE FIX MAY NOT WEAR A PUBLISHED NAME, and this is refused
+        # rather than resolved because there IS no safe resolution.
+        #
+        # `route_fixes` checks the published catalogue first, so a plan whose
+        # own leg is called INITIAL has that leg silently discarded and the
+        # controller vectors to the PUBLISHED initial approach fix instead. The
+        # pilot means one place, the controller means another, both are real
+        # points, and the range and bearing spoken are perfectly plausible.
+        # That is the shape of every bad hour this project has had.
+        #
+        # Shadowing the other way is no better: a plan that redefined DIOMI for
+        # its own convenience would make one word mean two places depending on
+        # who is holding which piece of paper.
+        #
+        # So: pick another name. It is the pilot's own point and he may call it
+        # anything not already spoken by somebody else.
+        elif carried and fx.lower() in fixes:
+            # SAME NAME IS FINE; SAME NAME AND A DIFFERENT PLACE IS NOT.
+            #
+            # A cartridge carries a position for every steerpoint including the
+            # destination, so a plan routing to BATUMI arrives with BATUMI's
+            # coordinates in its legs -- and that is not a redefinition, it is
+            # the same aerodrome. Refusing on the name alone rejected an
+            # ordinary flight plan, which I nearly shipped.
+            #
+            # What is dangerous is DISAGREEMENT, and it is dangerous precisely
+            # because it is silent: `route_fixes` resolves the published
+            # catalogue first, so the pilot's point is discarded and the
+            # controller vectors to ours. Two real places, one word, a
+            # perfectly plausible range and bearing.
+            where = (at or {}).get(fx.lower())
+            off = _nm_apart(where, leg) if where else 0.0
+            if off > 1.0:
+                bad.append(
+                    f"{fx} is a published fix and this plan puts it {off:.0f} nm "
+                    f"from where the chart does — the controller would vector "
+                    f"you to his. Give your own point a name nobody else is "
+                    f"using")
+        alt = leg.get("alt_ft")
+        try:
+            alt = int(alt)
+        except (TypeError, ValueError):
+            alt = -1
+        if alt < 0:
+            bad.append(f"{fx} has no altitude — a leg is a place and a level")
+        elif alt and alt % 100:
+            warn.append(f"{fx} at {alt} ft is not a round hundred; a controller "
+                        f"will say it as you wrote it")
 
     if not (plan.get("task") or "").strip():
         bad.append("task is required — it is what a pilot actually asks for, "
                    "and the only thing that tells two similar plans apart")
-    else:
-        # The mistake of #57, refused rather than repeated. The endpoints have
-        # their own columns and are scored from them; repeating them in the task
-        # gives one plan triple credit for the same word and turns a deliberately
-        # ambiguous request into a confident wrong answer.
+    elif legs:
+        # The mistake of #57, warned about rather than repeated. The
+        # DESTINATION is the last leg and is scored from there; naming it in
+        # the task as well gives one plan double credit for the same word and
+        # turns a deliberately ambiguous request into a confident wrong answer.
         task = _words(plan["task"])
-        for who in ("origin", "destination"):
-            for w in _words(plan.get(who, "")):
-                if w in task:
-                    warn.append(
-                        f"the task repeats the {who} ({w}). It has its own "
-                        f"column and is scored from it — saying it twice makes "
-                        f"this plan outrank the board on any request that "
-                        f"mentions {w}")
+        for w in _words(legs[-1].get("fix") or ""):
+            if w in task:
+                warn.append(
+                    f"the task repeats the destination ({w}). It is the last "
+                    f"leg and is scored from there — saying it twice makes "
+                    f"this plan outrank the board on any request that "
+                    f"mentions {w}")
 
-    ap = (plan.get("approach") or "").strip()
-    if ap and ap not in approaches:
-        bad.append(f"no approach called {ap}")
-
+    # NO APPROACH CHECK, because a plan no longer names one. Which arrival you
+    # fly is a fact about your CLEARANCE -- see migration 031 and #2. The
+    # parameter stays so `check` keeps its shape for callers and tests.
     return bad, warn
 
 
 def check_live(plan: dict, updating: str = "") -> tuple[list[str], list[str]]:
     """`check`, against the board as it actually is."""
     return check(plan, fixes=known_fixes(), approaches=known_approaches(),
-                 taken=taken_labels(), updating=updating)
+                 taken=taken_labels(), updating=updating, at=known_positions())
+
+
+def _nm_apart(where, leg) -> float:
+    """Miles between a published position and the one a plan carries.
+
+    Great-circle, because a degree of longitude is not a degree of latitude and
+    at Batumi's parallel the error would be a third. Nothing here PROJECTS --
+    both positions are already lat/lon -- so this is a comparison and needs no
+    sim, which is the point of storing the sim's answer (#137).
+    """
+    import math
+    try:
+        la1, lo1 = float(where[0]), float(where[1])
+        la2, lo2 = float(leg["lat"]), float(leg["lon"])
+    except (TypeError, ValueError, KeyError, IndexError):
+        return 0.0
+    p1, p2 = math.radians(la1), math.radians(la2)
+    dp, dl = p2 - p1, math.radians(lo2 - lo1)
+    a = (math.sin(dp / 2) ** 2
+         + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2)
+    return 2 * 3440.065 * math.asin(min(1.0, math.sqrt(a)))
 
 
 def _words(text: str) -> set[str]:
@@ -244,26 +362,23 @@ def file_plan(plan: dict, updating: str = "") -> dict:
         return {"filed": False, "refused": bad, "warnings": warn}
 
     row = {k: (plan.get(k) or None) for k in FIELDS}
-    row["name"] = row["name"].strip()
     row["label"] = row["label"].strip()
-    row["cruise_ft"] = int(plan["cruise_ft"])
-    row["route"] = ", ".join(route_fixes(plan["route"]))
+    # THE KEY IS GENERATED, not typed. Two hand-authored identifiers for one
+    # plan was one too many, and the label is the one with a reason: it has to
+    # survive being said out loud through Whisper. A caller may still pass a
+    # name -- the DTC tool does, to update a plan it filed before -- and the
+    # slug is derived from the label when it does not.
+    row["name"] = (row["name"] or key_for(row["label"])).strip()
     # THE LEVEL PER LEG. Stored as given: it is the pilot's own profile and
-    # nothing here is entitled to round it. `cruise_ft` remains the highest,
-    # which is what a controller means by cruise -- see migration 030.
-    row["legs"] = Json(plan.get("legs")) if plan.get("legs") else None
+    # nothing here is entitled to round it.
+    row["legs"] = Json(plan.get("legs") or [])
     with get_pool().connection() as c:
         c.execute(
-            "INSERT INTO flight_plans (name, label, origin, destination, "
-            "route, legs, cruise_ft, task, approach) "
-            "VALUES (%(name)s, %(label)s, %(origin)s, %(destination)s, "
-            "%(route)s, %(legs)s, %(cruise_ft)s, %(task)s, %(approach)s) "
+            "INSERT INTO flight_plans (name, label, legs, task) "
+            "VALUES (%(name)s, %(label)s, %(legs)s, %(task)s) "
             "ON CONFLICT (name) DO UPDATE SET "
-            "label=EXCLUDED.label, origin=EXCLUDED.origin, "
-            "destination=EXCLUDED.destination, route=EXCLUDED.route, "
-            "legs=EXCLUDED.legs, "
-            "cruise_ft=EXCLUDED.cruise_ft, task=EXCLUDED.task, "
-            "approach=EXCLUDED.approach", row)
+            "label=EXCLUDED.label, legs=EXCLUDED.legs, task=EXCLUDED.task",
+            row)
     return {"filed": True, "name": row["name"], "warnings": warn}
 
 
