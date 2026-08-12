@@ -2208,7 +2208,10 @@ class Controller:
         # DEPARTURE COUNTS AS APPROACH -- `_owns` reads `Station.also`, and at a
         # field with one radar room they are the same man under two names.
         if not self._owns("approach"):
-            self._not_mine(ac, "approach", "The approach clearance")
+            # Lower case: `_not_mine` drops it mid-sentence after the
+            # callsign, so a capitalised phrase reads as a title and Polly
+            # gives it the wrong stress.
+            self._not_mine(ac, "approach", "the approach clearance")
             return
         if ac.phase == Phase.CLEARED:
             # Already cleared (e.g. the aircraft ahead just landed and freed the
