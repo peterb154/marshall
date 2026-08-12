@@ -116,6 +116,58 @@ CAUCASUS_RECOVERIES = {
 }
 
 
+def published_approaches(fields=(), stations=()) -> dict:
+    """The map's procedures, keyed, with the theatre's data composed back in.
+
+    THIS IS WHERE THE TWO THINGS ARE PUT BACK TOGETHER, in one place and
+    visibly. `ApproachProfile` carries `stations`, `msa_sectors` and
+    `mva_cells` as well as the procedure, so every profile is the theatre's
+    reference data welded to one arrival -- the unfinished half of #2, and the
+    reason the bridge cannot hold the first without defaulting the second.
+
+    The FILE holds only the procedure. The stations come from the theatre's own
+    list and the minimum altitudes from the aerodrome the procedure names, so
+    there is one copy of each and an approach cannot come to disagree with the
+    field it serves. When #2 is finished this function is where the welding
+    stops.
+    """
+    from marshall.core import catalogue
+    from marshall.core import route as R
+
+    at = {f.name: f for f in published_fixes()}
+    by_field = {f.name: f for f in fields}
+
+    def fix(name):
+        if not name:
+            return None
+        got = at.get(name)
+        if got is None:
+            # LOUD. A procedure naming a fix the catalogue does not publish is
+            # a procedure nobody can fly, and the failure must not be a None
+            # that turns into a plausible number three layers away.
+            raise ValueError(
+                f"approach names fix {name!r}, which this theatre does not "
+                f"publish -- add it to the theatre file with its source, or "
+                f"correct the name. See docs/CONFIG.md")
+        return got
+
+    out = {}
+    for a in catalogue.approaches():
+        knobs = a.model_dump(exclude={"key", "field", "atc", "beacon",
+                                      "outer_hold", "arrival_fix", "iaf",
+                                      "theatre_stations"})
+        f = by_field.get(a.field)
+        out[a.key] = R.ApproachProfile(
+            beacon=fix(a.beacon), outer_hold=fix(a.outer_hold),
+            arrival_fix=fix(a.arrival_fix), iaf=fix(a.iaf),
+            atc=R.AtcCapability(**a.atc.model_dump(exclude_none=True)),
+            stations=list(stations) if a.theatre_stations else [],
+            msa_sectors=[tuple(s) for s in (f.msa_sectors if f else [])],
+            mva_cells=[tuple(c) for c in (f.mva_cells if f else [])],
+            **knobs)
+    return out
+
+
 def published_fields() -> tuple:
     """The map's aerodromes, from the configuration file.
 
@@ -166,7 +218,8 @@ def published_fixes() -> tuple:
     from marshall.core import route as R
     return tuple(
         R.Fix(f.name, f.ident, f.x, f.z, f.freq_mhz or None,
-              note=f.note, navaid=f.navaid or "ndb", lat=f.lat, lon=f.lon)
+              sector=f.sector, note=f.note, navaid=f.navaid or "ndb",
+              lat=f.lat, lon=f.lon)
         for f in catalogue.published_fixes())
 
 
@@ -176,13 +229,14 @@ def caucasus() -> Theatre:
     want = os.environ.get("MARSHALL_APPROACH", "batumi-asr").strip().lower()
     if want not in CAUCASUS_RECOVERIES:
         want = "batumi-asr"
-    recovery = getattr(R, CAUCASUS_RECOVERIES[want])
+    fields, stations = published_fields(), published_stations()
+    procedures = published_approaches(fields, stations)
+    recovery = procedures[want]
     return Theatre(
-        name="Caucasus", terrain="Caucasus", fields=published_fields(),
-        stations=published_stations(), departure=R.DEPARTURE_FIELD,
+        name="Caucasus", terrain="Caucasus", fields=fields,
+        stations=stations, departure=R.DEPARTURE_FIELD,
         arrival=R.ARRIVAL_FIELD, approach=recovery,
-        approaches=(R.BATUMI_ASR, R.BATUMI_ILS, R.BATUMI_APPROACH,
-                    R.KOBULETI_ILS),
+        approaches=tuple(procedures.values()),
         wind_from_deg=R.WIND_FROM_DEG, wind_mph=R.WIND_MPH,
         bootstrap_plan="362nd-kobuleti-batumi", approach_key=want,
         # THE PUBLISHED CATALOGUE, out of config/theatres/caucasus.toml.

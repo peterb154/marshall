@@ -25,6 +25,7 @@ import textwrap
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest import mock
 
 from marshall.core import catalogue
 from marshall.radio import stt, tts
@@ -459,3 +460,49 @@ class TheFilesSayExactlyWhatThePythonSaid(unittest.TestCase):
 
         self.assertEqual([s.name for s in T.published_stations()],
                          [s.name for s in R.STATIONS])
+
+    def test_every_approach_survives_it_too(self):
+        """The largest of the three, and the one that had to be taken apart to
+        move: `ApproachProfile` carries the theatre's stations and the field's
+        minimum altitudes as well as the procedure, so the file holds only the
+        procedure and `published_approaches` composes the rest back in.
+
+        lat/lon are excepted because the file HAS them and the Python did not.
+        That is the gain, not a drift.
+        """
+        import dataclasses
+
+        from marshall.core import route as R
+        from marshall.core import theatre as T
+
+        got = T.published_approaches(T.published_fields(), T.published_stations())
+        for key, name in (("batumi-asr", "BATUMI_ASR"),
+                          ("batumi-ils", "BATUMI_ILS"),
+                          ("batumi-ndb", "BATUMI_APPROACH"),
+                          ("kobuleti-ils", "KOBULETI_ILS")):
+            was, now = getattr(R, name), got[key]
+            for f in dataclasses.fields(was):
+                with self.subTest(approach=key, attr=f.name):
+                    a, b = getattr(was, f.name), getattr(now, f.name)
+                    if f.name in ("msa_sectors", "mva_cells", "descent_table"):
+                        a = [tuple(x) for x in (a or [])]
+                        b = [tuple(x) for x in (b or [])]
+                    if isinstance(a, R.Fix) and isinstance(b, R.Fix):
+                        a = dataclasses.replace(a, lat=None, lon=None)
+                        b = dataclasses.replace(b, lat=None, lon=None)
+                    self.assertEqual(a, b)
+
+    def test_a_procedure_naming_an_unpublished_fix_is_refused(self):
+        """LOUD, not None. A procedure naming a fix the catalogue does not
+        publish is a procedure nobody can fly, and the failure must not become
+        a None that turns into a plausible number three layers away."""
+        from marshall.core import theatre as T
+
+        with mock.patch.object(catalogue, "approaches") as ap:
+            ap.return_value = [catalogue.Approach(
+                key="ghost", controller="Nowhere Approach", beacon="NOWHERE",
+                kind="ils")]
+            with self.assertRaises(ValueError) as e:
+                T.published_approaches(T.published_fields(),
+                                       T.published_stations())
+        self.assertIn("NOWHERE", str(e.exception))

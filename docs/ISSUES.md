@@ -7084,9 +7084,30 @@ straight to the agent describing how a man sounds on the radio. Green suite, no
 failure, and the brief had quietly changed. TOML multi-line literal strings fix
 it; the test keeps it fixed.
 
-**Still to move:** approach procedures (`core/approach.py`, `core/nevada.py`),
-the theatre registry, the five kneeboard pages that bind an approach at import,
-and the five migrations that INSERT flight plans.
+**Approach procedures moved next**, and they were the interesting one because
+they had to be TAKEN APART to move. `ApproachProfile` carries `stations`,
+`msa_sectors` and `mva_cells` as well as the procedure, so every profile is the
+theatre's reference data welded to one arrival — the unfinished half of #2, and
+the reason the bridge cannot hold the first without defaulting the second.
+
+The file holds only the procedure, and names its fixes rather than repeating
+them: a beacon appearing in two approaches must be the SAME beacon, and copying
+coordinates into both is how they come to differ by a decimal. The stations and
+minimum altitudes are composed back in by `theatre.published_approaches`, from
+the theatre's own list and the aerodrome the procedure names — one place, and
+visible, which is where the welding will stop when #2 is finished.
+
+Four procedures, byte-identical to the Python they replace, lat/lon excepted
+because the file has them and the Python did not.
+
+**And the guard found a real defect while doing it** — the 1944 letdown carries
+no controllers at all, and it is selectable. Preserved exactly and filed as
+#140, because a migration that quietly changes behaviour is worse than the
+defect it fixes.
+
+**Still to move:** Nevada's procedures (its fixes are not published yet), the
+theatre registry, the five kneeboard pages that bind an approach at import, and
+the five migrations that INSERT flight plans.
 
 ### The counter-example worth copying
 
@@ -7189,3 +7210,38 @@ the range, computed the way `_handoff_state` computes it. It stops the four
 Tower-to-Approach offers at one to four miles on final and the Center bounce at
 27 nm, and it is exactly the brittle direction test the pilot objected to. It
 comes out when the volumes are right.
+
+---
+
+## [ASR-8] The 1944 letdown profile carries no controllers at all — #140
+labels: bug
+
+Found while moving the approaches into configuration (#137), by a test that
+asserts the file says exactly what the Python said.
+
+`BATUMI_APPROACH` -- the period beacon letdown -- is built with `stations=[]`,
+where every other profile carries the theatre's nine. And it is SELECTABLE:
+
+    CAUCASUS_RECOVERIES = {"batumi-ndb": "BATUMI_APPROACH", ...}
+    MARSHALL_APPROACH=batumi-ndb
+
+So a bridge started on the 1944 flavour has a controller who cannot name a
+single frequency. `station_for` returns None for every role, which means no
+handoff can be spoken, no departure frequency can be issued, and the refusals
+that name a frequency -- "Take-off is Tower's, contact Kobuleti Tower one three
+three decimal zero" -- lose the half that tells a pilot what to do.
+
+Nobody has flown it, which is why nobody has noticed.
+
+**Preserved deliberately for now.** The configuration file sets
+`theatre_stations = false` on that one procedure and says why, because a data
+migration that quietly changes behaviour is worse than the defect it fixes --
+that is how you end up unable to tell a regression from a correction. The fix
+belongs in its own commit.
+
+**What it probably wants:** the station list is the THEATRE'S and not the
+procedure's, which is the unfinished half of #2. An approach should not carry
+stations at all; it should name the field it serves and let the theatre answer
+"who works here". Then this profile has controllers because Batumi has
+controllers, and the question cannot be answered differently by two procedures
+at one aerodrome.

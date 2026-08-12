@@ -52,6 +52,7 @@ z = 617386
 lat = 41.609594
 lon = 41.600234
 freq_mhz = 132.0
+sector = "Batumi Tower"
 navaid = "ndb"
 source = "UGSB. Aerodrome; NDB OS 132.0 on the AIP plate."
 note = "Field elevation 32 ft. Landing runway 12 (charted 13/31 today -- magnetic drift renamed it; we fly the period AIP designation)."
@@ -64,6 +65,7 @@ z = 635633
 lat = 41.929922
 lon = 41.863275
 freq_mhz = 124.0
+sector = "Kobuleti Departure"
 navaid = "ndb"
 source = "UG5X. Aerodrome; NDB MG 124.0."
 note = "Field elevation 59 ft. Departure end."
@@ -87,6 +89,7 @@ z = 596106
 lat = 41.787527
 lon = 41.368361
 freq_mhz = 128.0
+sector = "Batumi Approach"
 navaid = "ndb"
 source = "On the 1944 Batumi letdown plate as the initial approach fix; NDB SW 128.0."
 note = "Offshore holding fix. Open water, no terrain in any quadrant."
@@ -292,3 +295,250 @@ freq_mhz = 131.0
 role = "overlord"
 voice = "Kimberly"
 manner = '''Command, not service. Crisp, directive and impersonal -- she gives a flight a job rather than a heading, and she does not soften it. No small talk, no reassurance, and no interest in how you feel about the tasking. The only voice here that tells you what to do rather than what you are cleared to do.'''
+
+# --- approaches ------------------------------------------------------------
+#
+# ONE PROCEDURE PER TABLE, and the fixes are named rather than repeated: a
+# beacon that appears in two approaches must be the SAME beacon, and copying
+# its coordinates into both is how they come to differ by a decimal.
+#
+# WHAT IS DELIBERATELY ABSENT: `stations`, `msa_sectors` and `mva_cells`.
+# `ApproachProfile` carries all three today, so it is the theatre's reference
+# data and one arrival procedure welded together -- which is the unfinished
+# half of #2, the reason the bridge cannot have the first without defaulting
+# the second, and the reason a pilot was flown a talkdown after asking for an
+# ILS. They are composed back in from the FIELD named here, so there is one
+# copy of each and the file cannot disagree with the aerodrome.
+#
+# `field = ""` means the procedure carries no published minimum altitudes,
+# which is a real answer rather than a gap: the 1944 letdown predates them.
+
+[[approach]]
+key = "batumi-asr"
+field = "Batumi"
+controller = "Batumi Approach"
+beacon = "BATUMI"
+outer_hold = "KOBULETI"
+hold_base_ft = 4000
+cloud_thickness_ft = 3000
+vmc_margin_ft = 1000
+hold_step_ft = 1000
+hold_top_ft = 10000
+kind = "asr"
+guidance = "talkdown"
+final_intercept_nm = 11.0
+fap_nm = 6.0
+map_nm = 0.6
+tower_takes_nm = 5.0
+touchdown_offset_nm = 0.559
+grid_convergence_deg = 5.74
+approach_hands_over_nm = 25.0
+iaf = "INITIAL"
+iaf_alt_ft = 2000
+faf_label = "the final approach point"
+glidepath_deg = 3.0
+rdh_ft = 50
+field_thr_elev_ft = 17
+plate_png = "ugsb-ils-12.png"
+chart_name = "AD 2.UGSB-IAC-12-ILSy, AIRAC AMDT 02/2023"
+altimeter_datum = "QFE"
+descent_table = [[6.0, 2010], [5.0, 1682], [4.0, 1355], [3.0, 1031], [2.0, 708], [1.0, 387]]
+magvar_deg = 6.0
+final_crs_true_measured = 131.0
+final_crs = 125
+hold_turns = "right"
+hold_outbound_hdg = 180
+hold_leg_minutes = 1.0
+field_elev_ft = 32
+runway = "13"
+platform_ft = 2000
+speed_mph = 240
+final_speed_mph = 200
+descent_fpm = 500
+ceiling_ft = 400
+breakout_ft = 100
+min_hat_ft = 700
+missed_straight_ft = 800
+missed_turn = "LEFT"
+missed_hdg = 330
+missed_climb_ft = 3000
+
+[approach.atc]
+radar = true
+dme = false
+separation = "radar"
+era = "ww2"
+
+[[approach]]
+key = "batumi-ils"
+field = "Batumi"
+controller = "Batumi Approach"
+beacon = "BATUMI"
+outer_hold = "KOBULETI"
+hold_base_ft = 4000
+cloud_thickness_ft = 3000
+vmc_margin_ft = 1000
+hold_step_ft = 1000
+hold_top_ft = 10000
+kind = "ils"
+guidance = "intercept"
+final_intercept_nm = 11.0
+fap_nm = 6.0
+map_nm = 0.6
+tower_takes_nm = 5.0
+touchdown_offset_nm = 0.559
+grid_convergence_deg = 5.74
+approach_hands_over_nm = 25.0
+iaf = "INITIAL"
+iaf_alt_ft = 2000
+faf_label = "the final approach point"
+glidepath_deg = 3.0
+rdh_ft = 51
+field_thr_elev_ft = 17
+plate_png = "ugsb-ils-12.png"
+chart_name = "AD 2.UGSB-IAC-12-ILSy, AIRAC AMDT 05/25"
+altimeter_datum = "QFE"
+descent_table = [[6.0, 2010], [5.0, 1682], [4.0, 1355], [3.0, 1031], [2.0, 708], [1.0, 387]]
+magvar_deg = 6.0
+final_crs_true_measured = 131.0
+final_crs = 125
+hold_turns = "right"
+hold_outbound_hdg = 180
+hold_leg_minutes = 1.0
+field_elev_ft = 32
+runway = "13"
+platform_ft = 2000
+speed_mph = 240
+final_speed_mph = 200
+descent_fpm = 500
+ceiling_ft = 400
+breakout_ft = 100
+min_hat_ft = 360
+missed_straight_ft = 800
+missed_turn = "LEFT"
+missed_hdg = 330
+missed_climb_ft = 3000
+
+[approach.atc]
+radar = true
+dme = true
+separation = "radar"
+era = "modern"
+
+[[approach]]
+key = "batumi-ndb"
+field = ""
+# PRESERVED, NOT ENDORSED. This profile carries no station list in the
+# Python it replaces, so a bridge started on it has a controller who cannot
+# name a single frequency -- and it IS selectable, via MARSHALL_APPROACH.
+# A data migration must not quietly change behaviour, so the emptiness is
+# kept exactly and filed as its own defect. See #140.
+theatre_stations = false
+controller = "Batumi Approach"
+beacon = "BATUMI"
+outer_hold = "KOBULETI"
+arrival_fix = "INITIAL"
+hold_base_ft = 4000
+cloud_thickness_ft = 3000
+vmc_margin_ft = 1000
+hold_step_ft = 1000
+hold_top_ft = 10000
+kind = "ndb"
+guidance = "talkdown"
+final_intercept_nm = 11.0
+fap_nm = 6.0
+map_nm = 0.6
+tower_takes_nm = 5.0
+touchdown_offset_nm = 0.0
+grid_convergence_deg = 0.0
+approach_hands_over_nm = 25.0
+iaf_alt_ft = 2000
+faf_label = "the final approach point"
+glidepath_deg = 3.0
+rdh_ft = 50
+field_thr_elev_ft = 0
+plate_png = ""
+chart_name = ""
+altimeter_datum = "QNH"
+descent_table = []
+magvar_deg = 6.0
+final_crs = 124
+hold_turns = "RIGHT"
+hold_outbound_hdg = 180
+hold_leg_minutes = 1.0
+field_elev_ft = 32
+runway = "12"
+platform_ft = 2000
+speed_mph = 240
+final_speed_mph = 200
+descent_fpm = 500
+ceiling_ft = 400
+breakout_ft = 100
+min_hat_ft = 150
+missed_straight_ft = 800
+missed_turn = "LEFT"
+missed_hdg = 330
+missed_climb_ft = 3000
+
+[approach.atc]
+radar = true
+dme = false
+separation = "procedural"
+era = "ww2"
+vectors = false
+
+[[approach]]
+key = "kobuleti-ils"
+field = "Kobuleti"
+controller = "Kobuleti Departure"
+beacon = "KOBULETI"
+outer_hold = "INITIAL"
+hold_base_ft = 4000
+cloud_thickness_ft = 3000
+vmc_margin_ft = 1000
+hold_step_ft = 1000
+hold_top_ft = 10000
+kind = "ils"
+guidance = "intercept"
+final_intercept_nm = 11.0
+fap_nm = 6.0
+map_nm = 0.5
+tower_takes_nm = 5.0
+touchdown_offset_nm = 0.648
+grid_convergence_deg = 5.91
+approach_hands_over_nm = 25.0
+iaf = "INITIAL"
+iaf_alt_ft = 3000
+faf_label = "the final approach point"
+glidepath_deg = 3.0
+rdh_ft = 50
+field_thr_elev_ft = 59
+plate_png = ""
+chart_name = "AERODROME CHART KOBULETI (UG5X), TERPS"
+altimeter_datum = "QFE"
+descent_table = []
+magvar_deg = 6.0
+final_crs_true_measured = 75.94
+final_crs = 70
+hold_turns = "right"
+hold_outbound_hdg = 180
+hold_leg_minutes = 1.0
+field_elev_ft = 59
+runway = "07"
+platform_ft = 2000
+speed_mph = 240
+final_speed_mph = 200
+descent_fpm = 500
+ceiling_ft = 400
+breakout_ft = 100
+min_hat_ft = 200
+missed_straight_ft = 800
+missed_turn = "LEFT"
+missed_hdg = 330
+missed_climb_ft = 3000
+
+[approach.atc]
+radar = true
+dme = true
+separation = "radar"
+era = "modern"

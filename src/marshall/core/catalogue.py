@@ -116,6 +116,10 @@ class PublishedFix(_File):
     ident: str = ""
     freq_mhz: float = 0.0
     navaid: str = ""
+    # WHICH CONTROLLER OWNS THIS FREQUENCY. A beacon is somebody's, and the
+    # charts print it beside the ident -- a pilot tuning 132.0 is listening to
+    # Batumi Tower's beacon, not to an anonymous tone.
+    sector: str = ""
     # WHERE IT CAME FROM, and it is required. Reference data is seeded, never
     # authored: a fix nobody can cite is one somebody invented, which is the
     # whole of #133 and of FEET WET. Writing the source down is what stops the
@@ -177,12 +181,63 @@ class Controller(_File):
     manner: str = ""
 
 
+class Capability(_File):
+    """What this controller can DO -- the handicap dial.
+
+    Real ATC is the baseline and the 1944 beacon letdown is one flavour of it,
+    so this is per-procedure rather than global: no radar, no DME, blind
+    procedural separation and period phraseology are things you turn OFF.
+    """
+    radar: bool = True
+    dme: bool = True
+    separation: str = "radar"
+    era: str = "modern"
+    vectors: bool | None = None
+
+
+class Approach(_File):
+    """One published procedure.
+
+    FIXES ARE NAMED, NOT REPEATED. A beacon appearing in two approaches must be
+    the SAME beacon, and copying its coordinates into both is how they come to
+    differ by a decimal -- so `beacon`, `outer_hold`, `iaf` and `arrival_fix`
+    carry the name of a published fix and are resolved against the catalogue.
+
+    WHAT IS DELIBERATELY ABSENT is `stations`, `msa_sectors` and `mva_cells`.
+    `ApproachProfile` carries all three, so today it is the theatre's reference
+    data and one arrival procedure welded together -- which is the unfinished
+    half of #2: the bridge cannot have the reference data without also
+    defaulting an arrival, and a pilot who asked for an ILS was flown a
+    talkdown because of it. They are composed back in from the FIELD named
+    here, so there is exactly one copy of each and the file cannot come to
+    disagree with the aerodrome.
+    """
+    model_config = ConfigDict(extra="allow")   # the profile has ~40 knobs
+
+    key: str
+    controller: str
+    beacon: str
+    kind: str
+    # Whose minimum altitudes this procedure uses. Empty is a real answer and
+    # not a gap: the 1944 letdown predates published MVAs.
+    field: str = ""
+    outer_hold: str = ""
+    arrival_fix: str = ""
+    iaf: str = ""
+    # Whether this procedure carries the theatre's station list. False is
+    # a preserved wart rather than a design -- see #140 and the comment
+    # beside the one approach that sets it.
+    theatre_stations: bool = True
+    atc: Capability = Capability()
+
+
 class TheatreFile(_File):
     pronunciation: Terms = Terms()
     recogniser: Phrases = Phrases()
     fix: list[PublishedFix] = []
     field: list[Aerodrome] = []
     station: list[Controller] = []
+    approach: list[Approach] = []
 
 
 class CallsignsFile(_File):
@@ -335,6 +390,11 @@ def aerodromes(theatre: str = "") -> list[Aerodrome]:
 def controllers(theatre: str = "") -> list[Controller]:
     """The seats on this map, in ladder order as written."""
     return list(_theatre(theatre or theatre_name()).station)
+
+
+def approaches(theatre: str = "") -> list[Approach]:
+    """The procedures this map publishes, as written."""
+    return list(_theatre(theatre or theatre_name()).approach)
 
 
 def recogniser_phrases(callsigns=()) -> list[str]:
