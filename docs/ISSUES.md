@@ -6822,9 +6822,20 @@ he was never given.
     WHERE IT LIVES  flights
     WHEN IT DIES    when the MISSION restarts  <- should be: when the SORTIE ends
 
-**What it wants:** a flight row scoped to the sortie, not the mission — and
-`restore` refusing to hydrate from a row whose sortie has ended, rather than
-silently dressing a new aeroplane in an old one's clothes.
+**Half fixed, and the half that is done is a ceiling rather than the answer.**
+`hydrate` now restores the RECENT past only: a row nobody has touched for
+fifteen minutes is the last thing a finished flight said, not somebody
+currently flying, and it is skipped — out loud, naming what was dropped, because
+a board that silently discards an aeroplane reads exactly like a board with no
+aeroplane on it. A bridge restarted mid-sortie still takes seconds and is still
+invisible, which is the whole reason the cache exists.
+
+**The root cause is still there: the row outlives the flight.** The clean fix is
+procedural rather than temporal — *requesting an IFR clearance IS the start of a
+sortie*, so the first call of a new flight should retire whatever that callsign
+was doing before, instead of a timeout guessing at it. Fifteen minutes is a
+number chosen to be longer than a restart and shorter than a coffee break, and
+any number chosen that way is a number that will be wrong for somebody.
 
 ---
 

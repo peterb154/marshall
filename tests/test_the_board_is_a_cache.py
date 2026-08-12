@@ -129,3 +129,42 @@ class OneMappingBetweenThePhaseAndItsWord(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ARowFromAFinishedSortie(unittest.TestCase):
+    """#136 -- the board restores the recent past, not the distant past.
+
+    On 12 August a pilot flew Kobuleti to Batumi on the ILS and picked up the
+    03:00 sortie's state the moment the engine engaged: intent 'asr approach',
+    phase CLEARED, an assigned altitude of 4,000 nobody had given him. The row
+    was simply still there -- `flights` is keyed on (mission, callsign) and a
+    mission instance outlives every sortie flown inside it.
+    """
+
+    def rows(self, age_sec):
+        import datetime as dt
+        when = dt.datetime.now(dt.UTC) - dt.timedelta(seconds=age_sec)
+        return [{"callsign": "Sockeye", "intent": "asr approach",
+                 "cleared": "cleared", "assigned_ft": 4000,
+                 "sortie_phase": "approach", "updated_at": when.isoformat()}]
+
+    def test_an_hour_old_row_is_not_somebody_flying(self):
+        ctl = atc.Controller(profile=R.BATUMI_ASR)
+        self.assertEqual(ctl.hydrate(self.rows(3600)), 0)
+        self.assertEqual(ctl.aircraft, {})
+        self.assertEqual(ctl.skipped_stale, ["Sockeye"])
+
+    def test_a_bridge_restart_mid_sortie_is_still_invisible(self):
+        """The reason the cache exists. Seconds old is a restart, not a sortie."""
+        ctl = atc.Controller(profile=R.BATUMI_ASR)
+        self.assertEqual(ctl.hydrate(self.rows(20)), 1)
+        self.assertEqual(ctl.skipped_stale, [])
+        self.assertEqual(ctl.aircraft[ctl._resolve("Sockeye")].wants,
+                         "asr approach")
+
+    def test_a_row_with_no_timestamp_is_restored(self):
+        """Absence is 'we do not know', and the safe answer is what we did
+        before -- every hand-built row in the tests and rehearsals omits it."""
+        ctl = atc.Controller(profile=R.BATUMI_ASR)
+        self.assertEqual(ctl.hydrate([{"callsign": "Sockeye"}]), 1)
+        self.assertEqual(ctl.skipped_stale, [])

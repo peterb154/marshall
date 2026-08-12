@@ -5058,6 +5058,16 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         _n = ctl.hydrate((_rows or {}).get("flights") or [], _approach_named)
         if _n:
             print(f"  board: {_n} aircraft restored from the table", flush=True)
+        # AND WHAT WAS NOT RESTORED. A row from a finished sortie used to be
+        # restored in silence and then inherited by whoever flew next under the
+        # same callsign -- see #136. Naming them is the difference between "the
+        # board started empty because nobody is flying" and "the board started
+        # empty because I threw three rows away".
+        if getattr(ctl, "skipped_stale", None):
+            print(f"  board: {len(ctl.skipped_stale)} row(s) NOT restored — "
+                  f"last touched over {int(ctl.stale_after_sec / 60)} min ago, "
+                  f"so a finished sortie rather than one in progress: "
+                  f"{', '.join(sorted(set(ctl.skipped_stale)))}", flush=True)
     except Exception as e:
         print(f"  !! could not restore the board ({type(e).__name__}); starting "
               f"empty, which forgets anybody already flying", flush=True)

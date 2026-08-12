@@ -341,6 +341,31 @@ PHASE_FROM_WORD = {"unknown": "UNKNOWN", "enroute": "ENROUTE",
                    "missed": "MISSED", "landed": "LANDED"}
 
 
+def _too_old(row, stale_after_sec: float) -> bool:
+    """Is this flight row too old to be somebody currently flying?
+
+    NO TIMESTAMP MEANS RESTORE IT. Every caller that hand-builds rows -- the
+    tests, the rehearsals, `plan_sweep` -- omits `updated_at`, and a guard that
+    treated absence as staleness would empty the board for all of them. Absence
+    is "we do not know", and the safe answer to that is the behaviour we had.
+    """
+    got = row.get("updated_at")
+    if not got:
+        return False
+    import datetime as _dt
+    if isinstance(got, str):
+        try:
+            got = _dt.datetime.fromisoformat(got.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+    if not isinstance(got, _dt.datetime):
+        return False
+    now = _dt.datetime.now(_dt.UTC)
+    if got.tzinfo is None:
+        got = got.replace(tzinfo=_dt.UTC)
+    return (now - got).total_seconds() > stale_after_sec
+
+
 @dataclass
 class Controller:
     profile: R.ApproachProfile
@@ -371,6 +396,16 @@ class Controller:
     # cause survives, so anything that repairs an impossible state says so
     # here and `/diag` shows it.
     anomalies: list = field(default_factory=list)
+    # ROWS `hydrate` DECLINED TO RESTORE, and it says so rather than quietly
+    # starting a man from nothing. Skipped is reported, never silent: a board
+    # that silently drops an aeroplane reads exactly like a board with no
+    # aeroplane on it, which is the failure this whole cache exists to prevent.
+    skipped_stale: list = field(default_factory=list)
+    # HOW OLD A FLIGHT ROW MAY BE and still describe somebody who is flying.
+    # Fifteen minutes: a bridge restart is seconds, a pause for coffee is not a
+    # new sortie, and an hour-old row is the last thing a finished flight said.
+    # See #136.
+    stale_after_sec: float = 900.0
     # Actions the classifier chose that the procedure does not contain. Not
     # failures -- see `note_unreachable` -- but a count worth watching, because
     # a taxonomy that stops fitting shows up here first.
@@ -525,6 +560,36 @@ class Controller:
         for row in rows or []:
             cs = (row.get("callsign") or "").strip()
             if not cs:
+                continue
+            # A SORTIE THAT ENDED IS NOT A SORTIE IN PROGRESS. This restores
+            # the RECENT past, which is the whole point of it -- a bridge
+            # restarted mid-sortie takes seconds and a pilot should not be able
+            # to tell. A row nobody has touched for an hour is not somebody
+            # currently flying; it is the last thing a finished flight said.
+            #
+            # Restored anyway, it dressed a new aeroplane in a dead one's
+            # clothes. On 12 August the pilot flew Kobuleti to Batumi on the
+            # ILS, and the moment the engine engaged he acquired the 03:00
+            # sortie's state -- three fields at once, off one row:
+            #
+            #     intent       ''      -> 'asr approach'
+            #     phase        ENROUTE -> CLEARED
+            #     assigned_ft  None    -> 4000
+            #
+            #     "why on earth is intent still ASR -- where is that coming
+            #      from. Something about that stinks"
+            #
+            # It was not the classifier: asked that transmission it answers
+            # 'ILS 13'. `flights` is keyed on (mission, callsign) and a mission
+            # instance outlives every sortie flown inside it, so the row was
+            # simply still there. See #136 and docs/STATE.md -- this is the
+            # third question, WHEN DOES IT DIE, answered "when the mission
+            # restarts" where it should say "when the sortie ends".
+            #
+            # A CEILING, NOT A FIX. The row still ought to be retired when the
+            # sortie finishes; until it is, this stops the inheritance.
+            if _too_old(row, self.stale_after_sec):
+                self.skipped_stale.append(cs)
                 continue
             ac = self._enter(cs, int(row.get("claimed_size") or 1))
             ac.sortie_phase = row.get("sortie_phase") or ""
