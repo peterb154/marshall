@@ -7570,3 +7570,173 @@ what actually turned a latent bug into four red tests.
   * Nevada's #141 is unblocked by this — its navaids are now imported and
     citable, so the question is only whether the TONOPAH steerpoint was ever a
     navaid at all.
+
+---
+
+## [ARCH-26] A proposal half of the tree already obeys, and nobody could tell which half — #147
+labels: architecture, documentation
+
+    "I remember making this decision and I cannot find it."
+
+He was right and I told him it probably was not written down. It is —
+`docs/STRUCTURE.md`, 31 July, "Naming the parts, and the layout that follows" —
+and a search for "rename" does not find it because the document never uses the
+word. That is the smaller half of the problem. The larger half is that the
+document was written in the present tense about a layout we did not have, and
+by 12 August roughly half of it had quietly become true, so it read as a
+mixture of description and intent with nothing marking which sentence was
+which. Its own preamble warned about exactly this and the warning did not work:
+**a document nobody can date is a document nobody can find.**
+
+**Reconciled, 12 August.** Every claim in `STRUCTURE.md` is now marked APPLIED,
+PARTLY APPLIED, STILL INTENT or SUPERSEDED, with the commit that landed it. The
+reasoning is untouched, because the argument for why a name was wrong survives
+whether or not the rename happened.
+
+**What had landed:** `feed` out of the director and `srs` → `radio` (574906a);
+the prompts into the domain that speaks them (ebea93a); `route.py` split into
+six modules and a façade (df6ea5b); fields, stations and the four procedures
+into `config/theatres/*.toml` (03edb35, 311028a, 118a9e6); `kneeboard` as one
+module with `diag` as a page (e15c57c).
+
+**What had not, and this is the finding worth keeping.** The parts of the
+proposal about SHAPE landed; the parts about DELETION did not, and two went
+backwards:
+
+    director/app.py routes         24  (31 July)  ->  34
+    director/tools/flights.py     326 lines       ->  377
+    the /radar prose parsers      to be deleted   ->  replacement built
+                                                     (c6afa12), old path
+                                                     never switched off (#47)
+
+A structure change is easy to celebrate, because afterwards somebody can point
+at the new directory. A deletion nobody is accountable for does not happen.
+
+**THE DEPLOYABLE NAMES: decided, and the decision is NO.** `STRUCTURE.md` argues
+that "bridge" and "director" are accidents — the director was a separate repo
+merged by subtree on 25 July and the folder is the seam — and names them
+functionally instead: `marshall-radio`, `marshall-atc`, `marshall-feed`,
+`marshall-kneeboard`. The argument is right and the rename is deferred, for
+three costs the argument does not price:
+
+1. **The database.** `director/docker-compose.yml` pins `name:
+   marshall-director` because the Postgres volume is `marshall-director_pgdata`
+   and compose otherwise derives the project from the DIRECTORY. A folder rename
+   that forgets the pin brings the agent up on an empty volume — no contacts, no
+   sessions, no approaches — looking entirely healthy. A rename that must
+   preserve the old name in the one place a machine reads it is a rename of the
+   documentation only.
+2. **The subtree.** `git subtree add --prefix=director` (c5c5617), and
+   `diff -r /tmp/fresh-stamp director/` is how upstream is pulled.
+3. **`director/.env`**, which is this machine's credential file, git-ignored,
+   read by `src/marshall/config.py` as the single door. A rename moves a file
+   that is not in the repository, on a live box.
+
+**And the naming argument turns out to be a proxy for a layering argument**,
+which can be won without touching a directory name. Two of its premises have
+already expired: the "two unrelated things sharing a container" complaint was
+answered when `feed` left, and the prompts complaint when they left. What is
+left inside the deployable is `director/tools/` — twelve modules of ATC domain
+reasoning (`approaches`, `clearance`, `flights`, `identify`, `plans`,
+`frequencies`, `capability`, `filing`, `hooks`, `context`, `ops`) findable only
+by somebody who already knows to look in a container. That is the prompts
+problem one layer down.
+
+**Remaining scope**, in order, none of which requires a rename:
+
+1. `console_scripts` in `pyproject.toml` for what already exists —
+   `marshall-kneeboard`, `marshall-radio`. Costs nothing and makes the four
+   names real for the first time.
+2. `_run_srs` out of `agent_atc.py` (#55). Until the bridge's entrypoint is an
+   importable function, "a deployable is an entrypoint" has no referent.
+3. `director/tools/` into `src/marshall/atc/`, the same move as ebea93a. This
+   is where the value is.
+4. The endpoint and `flights.py` deletions, which fall out of 3.
+5. Only then is the directory name uninteresting enough to change safely.
+
+**Acceptance criteria**
+1. `docs/STRUCTURE.md` marks every claim with a status, and a reader can tell
+   the target from the tree without opening the source. (Done.)
+2. `CLAUDE.md` says that "bridge" and "director" are directory names rather
+   than a design, and states the `marshall-director_pgdata` constraint at the
+   point of temptation. (Done.)
+3. The four entrypoint names exist as `console_scripts` and the documentation
+   uses them.
+4. `director/tools/` holds no ATC domain reasoning.
+5. `director/app.py` has fewer routes than the 34 it has today, and the count
+   is in the issue when it changes.
+
+Code: `docs/STRUCTURE.md`, `CLAUDE.md`, `docs/START_HERE.md`, `pyproject.toml`,
+`director/`.
+
+Status: OPEN — the reconciliation shipped; items 3–5 are not built.
+
+---
+
+## [ATIS-4] The runway in use is measured, and the wind spoken beside it is a constant — #148
+labels: bug
+
+Found by the `STRUCTURE.md` reconciliation, which set out to date a document
+and turned this up on the way.
+
+`STRUCTURE.md` proposed, on 31 July, that the declared wind become a measured
+one: *"a hardcoded constant that the sim will now tell us, and the runway in
+use is computed from it. A declared wind is a stored answer to a question with
+a live input."* **Half of that shipped.** `atis/weather.py` samples the sim's
+wind ten metres above each field — deliberately not at the surface, because
+DCS's boundary layer reports calm on a usable day — and `atis/store.py` writes
+the resulting runway to the `atis` table. `Controller._runway_in_use` ASKS that
+table rather than recomputing, which is the whole point of it.
+
+**The wind itself was never rewired.** `WIND_FROM_DEG = 90.0` is still a module
+constant in `core/units.py`, and it is what gets said and drawn:
+
+    core/fields.py:126        Field_.active_end falls back to it
+    atc/controller.py:1968    _wind_phrase, on every landing and take-off
+    atc/assembly.py:487       the clearance
+    atc/briefing.py:155,450   the printed brief
+    kneeboard/navlog.py       the nav log
+    kneeboard/e6b.py          the E6B
+    kneeboard/asr_plate.py    the plate
+    mission/build.py:500      the .miz weather itself
+
+`controller.py:1862` is the sharp end, because it puts both in one sentence:
+
+    f"{self._runway_in_use()}, {self._wind_phrase()}"
+
+The runway asked from the measurement; the wind read from the constant. So
+Tower can clear an aircraft to land on the runway the measured wind chose while
+naming a wind that did not choose it — and on a day when the sim's wind is not
+090, the ATIS broadcast and the landing clearance disagree about the same
+number at the same field. The comment three lines above reads *"so all three
+name one runway"*, which is true, and is precisely the fix that did not follow
+the wind through.
+
+This is the failure this project exists to prevent, one field over: the chart
+and the radio disagreeing. It has survived because the Caucasus mission's
+declared wind and its sim wind have been close enough not to change a runway.
+
+**Remaining scope.** The wind is an observation, so it belongs where the
+observation lives: `atis` already holds it per field per instant. The spoken
+and drawn wind should be read from there, with the constant surviving only as
+the fallback for a component with no sim — and saying so, rather than silently
+substituting. `mission/build.py` is the exception and should stay: it AUTHORS
+the mission's weather, which is the one place a declared wind is the right
+answer.
+
+**Acceptance criteria**
+1. `Controller._wind_phrase` reads the same source as `_runway_in_use`, so one
+   sentence cannot carry two winds.
+2. The kneeboard's wind and the ATIS broadcast's wind agree for a given field
+   at a given time, and a test asserts it.
+3. A component with no sim says which wind it is using rather than presenting
+   the fallback as an observation.
+4. `mission/build.py` still declares the mission's wind, and the declared value
+   is what ATIS then measures.
+
+Tests: a new case beside `tests/test_two_fields.py`, since "the wrong answer is
+always plausible" is the same shape.
+Code: `src/marshall/core/units.py`, `src/marshall/atc/controller.py`,
+`src/marshall/atis/`, `src/marshall/kneeboard/`.
+
+Status: OPEN — diagnosed, not fixed.

@@ -123,18 +123,24 @@ One repo, two deployables. They are a single system with a contract between them
 so a change that spans the seam (a new clearance the agent must voice, say) lands
 as one commit.
 
-- **`src/marshall/`** — `core/route.py` (truth), `atc/` (the SRS bridge
+- **`src/marshall/`** — `core/route.py` (the façade over `units`, `airspace`,
+  `fixes`, `fields`, `stations`, `approach`), `atc/` (the SRS bridge
   `agent_atc.py`, the deterministic `controller.py`, `intents`/`bedrock_intent`,
-  `briefing.py` which generates the plate), `srs/` (two-way SRS voice client, STT,
-  TTS, plus the synthetic-pilot + multi-ship rehearsal test harness), `mission/`
-  (pydcs `.miz` builder + `ai_control.lua`), `kneeboard/` (charts).
+  `briefing.py` which generates the plate, and `agent/prompts/` — the
+  controller's own words, `soul`/`plate`/`rules`), `radio/` (two-way SRS voice
+  client, STT, TTS, plus the synthetic-pilot + multi-ship rehearsal test
+  harness — it was `srs/` until 31 July, and SRS is a vendor's name for a
+  transport), `feed/` (the sim mirrored into Postgres), `mission/` (pydcs `.miz`
+  builder + `ai_control.lua`), `kneeboard/` (charts).
 - **`director/`** (its own container stack) — the Bedrock agent on strands-pg
-  (Postgres + PostGIS + pgvector). Holds the prompts (`soul`/`plate`/`rules`,
-  `plate` generated from `route.py` and pushed by the bridge), the identity graph
-  (`contacts`), the live PostGIS track cache (`tracks`), the `approaches` +
-  `flight_plans` tables, and the DCS-gRPC tools. The bridge talks to it over HTTP
-  (`/atc`, `/radar`, `/hooks/due`, `/prompts`, ...). Run it with
-  `cd director && docker compose up -d`.
+  (Postgres + PostGIS + pgvector). Holds the identity graph (`contacts`), the
+  live PostGIS track cache (`tracks`), the `approaches` + `flight_plans` tables,
+  and the DCS-gRPC tools. The bridge talks to it over HTTP (`/atc`, `/radar`,
+  `/hooks/due`, `/prompts`, ...). Run it with
+  `cd director && docker compose up -d`. The **prompts are no longer here** —
+  they moved to `src/marshall/atc/agent/prompts/`, because how a controller says
+  an ILS clearance belongs beside the logic that decides it, not in a container's
+  directory next to a Dockerfile.
 
   Its compose project name is **pinned to `marshall-director`** — it predates the
   merge and its Postgres volume is `marshall-director_pgdata`. Don't let compose
@@ -142,6 +148,20 @@ as one commit.
   comes up with no contacts, sessions or approaches. It is also a stamp of
   `strands-pgsql-agent-framework`; `diff -r /tmp/fresh-stamp director/` still
   works for pulling upstream changes.
+
+**"Bridge" and "director" are directory names, not a design.** Both are
+deployables that grew out of where a file happened to sit — the director was a
+separate repository merged in by subtree on 25 July, and the folder is the seam.
+`docs/STRUCTURE.md` argues they should be *entrypoints* named for what they do
+(`marshall-radio`, `marshall-atc`, `marshall-feed`, `marshall-kneeboard`), and
+that argument is still right. **The rename is deferred, deliberately, and the
+reason is the pin above:** compose derives the project from the directory, so a
+folder rename that forgets `name: marshall-director` points the live agent at an
+empty volume. The valuable half — `director/tools/` is twelve modules of ATC
+domain logic living inside a container's directory, exactly as the prompts were
+before `ebea93a` moved them — needs no rename at all. Read STRUCTURE.md's
+decision section before touching a directory name; it is reconciled against the
+tree claim by claim, so you can tell the target from what is built (#147).
 
 ## How it runs
 The **SRS bridge** (`python -m marshall.atc.agent_atc --srs <host> <freq> <voice>

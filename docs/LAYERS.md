@@ -73,7 +73,8 @@ underneath it.
 depend on **nothing**. They are real layers with real
 tests. Nobody has to be talked into this architecture; most of it is built.
 
-**The bad news is one file.** `atc/agent_atc.py` is 3,688 lines and imports from
+**The bad news is one file.** `atc/agent_atc.py` is 6,656 lines (3,688 when this
+was written on 30 July — it has not stopped growing) and imports from
 L0, L1, L2, L3 and L4. That is what an orchestrator does and it is fine **if it
 is thin**. It is not thin. It is where the work happens, and until 30 July no
 test executed one line of its receive loop — which is not a coincidence, it is

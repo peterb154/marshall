@@ -117,7 +117,7 @@ When two sources disagree, believe them in this order:
 | `PHRASEOLOGY.md` | current reference | where the controller's words come from |
 | `PLANNER.md` | current reference | the flight planner, phase 1 built |
 | `SCHEMA.md` | **superseded proposal** | kept for its argument only |
-| `STRUCTURE.md` | **proposal** | a target layout, not today's |
+| `STRUCTURE.md` | **proposal, reconciled** | why the parts are named as they are. Every claim marked applied / partly / intent / superseded, with the commit. **Read it before renaming a directory** |
 | `BACKLOG.md` | pointer | superseded by `ISSUES.md` |
 | `AUDIT-2026-07-29.md` | historical debrief | a dated audit; findings are issues now |
 | `HANDOFF-board.md` | historical debrief | a session handoff |
@@ -163,7 +163,9 @@ ever answer them. See CLAUDE.md for the full line.
 
 - **One approach per bridge.** `load_and_push_plate` takes a single profile, so
   a bridge works one arrival at a time (#2).
-- **`agent_atc.py` is ~4,950 lines** and its loop functions are not directly
+- **`agent_atc.py` is 6,656 lines** (12 August; it was ~4,950 on 10 August and
+  3,688 on 30 July, and three documents each quoted a different figure until
+  the `STRUCTURE.md` reconciliation) and its loop functions are not directly
   callable by tests (#55).
 - **SIDs and STARs are not modelled**; departures are vectors and a cruise
   level (#70).
