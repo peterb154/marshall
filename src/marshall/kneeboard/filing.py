@@ -454,6 +454,29 @@ async function look(name) {{
     // the last leg and storing it twice is how the two came to disagree. On a
     // PAGE it reads as a list with its end cut off. One row, whole.
     + `<dt>route</dt><dd>${{legs.join(' &rarr; ') || '(none)'}}</dd>`
+    + `</div>`
+    // THE PLAN ITSELF, not a string made out of it.
+    //
+    //     "why there is a 'Route' and not just a list of coordinates with
+    //      altitudes?"
+    //
+    // There is not. `route` is DERIVED at read time by joining the leg names;
+    // what is stored is exactly this -- a place, a level and a position each.
+    // The panel was showing the derived string and hiding the thing, which
+    // reads as though the names were the data and the numbers were somewhere
+    // else.
+    + `<div class="wps"><table><tr><th>#</th><th>fix</th>`
+    + `<th class="n">alt</th><th class="n">lat</th><th class="n">lon</th></tr>`
+    + (p.legs || []).map((l, i) => `<tr><td>${{i + 1}}</td>`
+        + `<td>${{esc(l.fix)}}${{i === (p.legs.length - 1) ? ' <i>dest</i>' : ''}}</td>`
+        + `<td class="n">${{(l.alt_ft || 0).toLocaleString()}} ft</td>`
+        + (l.lat != null
+            ? `<td class="n">${{l.lat.toFixed(4)}}</td>`
+              + `<td class="n">${{l.lon.toFixed(4)}}</td>`
+            : `<td class="n miss" colspan="2">no position</td>`)
+        + `</tr>`).join('')
+    + `</table></div>`
+    + `<div class="detail">`
 
     // NO CRUISE AND NO RECOVERY. Both were dropped from the plan (migration
     // 031) and from the form, and this panel went on rendering them -- a
