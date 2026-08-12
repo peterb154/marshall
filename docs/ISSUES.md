@@ -6504,44 +6504,50 @@ and never revised — which would be #119's lifecycle question one column along.
 
 ## [ARCH-20] A filed plan outlives the steerpoints it names — #129
 
-Made by me on 11 August and found ten minutes later by the rehearsal that had
-just proved #128.
+**Status:** CLOSED 12 August. Attested by claude at 8587385.
 
-    PILOT: Kobuleti Clearance, Lancer38, Domino please.
-    ATC:   Domino routing is via fix points not held at this station —
-           unable that plan.
+    "wait.. why are those fixes coming from the flight plan????"
+    "Private fixes should only live in a flight plan"
 
-Correct, and the plan was correct too. `Domino` routed via **FOO, BAR, SPAM** —
-the pilot's own named steerpoints, filed with `--steerpoints` — and a bridge
-restart re-pushed the theatre's catalogue, which REPLACES the fix table and took
-them off it.
+The second sentence is the whole answer and it was settled days before I broke
+it. There are two kinds of fix and they have different owners:
 
-**Two lifetimes in one table.** `fixes` holds the theatre's published catalogue,
-owned by the bridge and republished on every start; the steerpoint push borrows
-the same table for something that belongs to one sortie and one aeroplane. So
-the owner of the first destroys the second, on a schedule nobody thinks about.
-That is `docs/STATE.md`'s three questions with two different answers each:
+    PUBLIC   on a plate, known to everybody, in the theatre catalogue.
+             DIOMI, UMROS, INITIAL. A plan may name one; it may not define one.
+    PRIVATE  named by the pilot, defined BY THE PLAN THAT NAMES IT.
+             FOO, BAR, SPAM. Resolvable to anybody holding that plan and to
+             nobody else, which is what "private" means.
 
-    WHO OWNS IT     the bridge / the pilot
-    WHERE IT LIVES  fixes / fixes
-    WHEN IT DIES    next bridge start / end of the sortie
+I put the private ones in the PUBLIC table. That table is owned by the bridge
+and REPLACED on every start -- correctly, so a Nevada run cannot keep Caucasus
+fixes -- so a pilot's own steerpoints were deleted by a restart and his filed
+route stopped resolving:
 
-And the durable thing names the perishable one: a **filed plan** is a row that
-survives everything, pointing at fixes that do not. Refile it without them and
-it is fine for ever; refile it with them and it works until the next restart,
-which is worse than either.
+    ATC: Your BatumiTest routing is via fix points not held at this station —
+         unable that plan as filed.
 
-The replace-on-push is not the bug and must not be softened — a Nevada run
-keeping Caucasus fixes is #89 and cost a sortie.
+Technically true and it reads as the plan being wrong. It happened twice: once
+the night it was built, and again after four restarts spent fixing something
+else.
 
-**What it wants** is the shape the pilot described: a `steerpoints` table keyed
-on the mission instance and the flight, and `filing.check_live` validating a
-route against the published catalogue **plus this flight's own points**. Then a
-name he chose is resolvable for exactly as long as he is flying, and a plan that
-names one is honest about whose it is.
+**Fixed.** `flight_plans.legs` already carried `{fix, alt_ft}` (migration 030);
+it carries `lat`/`lon` too, so a plan is self-contained. `plans.route_fixes`
+resolves a name against the public catalogue first and then against the plan's
+own legs; `filing.check_live` accepts a route naming a fix the plan defines.
+Nothing is written to the shared table, so nothing can delete it.
 
-Until then `--steerpoints` files a plan with a shorter life than the row it is
-written into, and the tool should say so where somebody will read it.
+Proved by doing the thing that used to break it: filed BatumiTest via FOO, BAR,
+SPAM and INITIAL, restarted the bridge so the catalogue was republished without
+them, and the plan still validated clean and still cleared —
+
+    cleared to Batumi, as filed, maintain five thousand, expect one zero
+    thousand one zero minutes after departure, departure frequency one two
+    three decimal three, squawk six four six seven
+
+**What is still not built** is the half the pilot actually asked for: a
+controller SAYING one. "Report passing BAR" needs the private fixes reaching
+the ATC side, which they now can — the plan holds them and `assigned_plans`
+copies the plan at clearance. Tracked as #133.
 
 ---
 
@@ -6649,3 +6655,40 @@ have a default: which approach you are flying is a fact about your clearance,
 and until you have asked for one the honest answer is that the controller has
 none for you. `MARSHALL_APPROACH` is a symptom of the same thing — an
 environment variable pre-selecting an arrival the bridge should not be choosing.
+
+---
+
+## [SEAM-15] A controller can resolve a private fix but cannot say one — #133
+labels: architecture
+
+The other half of #129, and the half the pilot actually asked for:
+
+    "But ATC should be able to get and referred to my private fixes when I open
+     a plan with those fixes and the names in there."
+
+#129 fixed the RESOLVING. A plan defines its own fixes in `legs`, `route_fixes`
+falls back to them, and `check_live` accepts a route naming one, so **FOO, BAR,
+SPAM** validate and clear without ever touching the shared table.
+
+What still cannot happen is a controller USING one. "Report passing BAR",
+"cleared direct SPAM", "say your distance to FOO" — every one of those needs the
+plan's private fixes on the ATC side of the seam, positioned, at the moment the
+transmission is built. They are copied into `assigned_plans` at clearance, so
+the data has arrived; nothing reads it for language, and the fix table the
+controller vectors against still holds only what is published.
+
+**Why it is a seam and not a feature.** The two brains disagree about what a fix
+IS. The director resolves names against a table; the bridge computes bearing and
+range against `Fix` objects projected through the sim. A private fix exists in
+the first world and not the second, so a controller asked for a range to one
+falls through to "no fix for that" — which is the correct answer to the wrong
+question, and reads to a pilot as ATC not knowing where his own route goes.
+
+**What it wants:** the assigned plan's legs projected the same way the theatre's
+catalogue is, scoped to the flight that filed them, so a private fix is
+vectorable for exactly as long as that aeroplane is flying and invisible to
+everybody else. Then `vector`, the arrival prompt and the enroute controller can
+all name a point the pilot chose, which is the whole reason he named it.
+
+Needs a flight test: whether a controller referring to your own steerpoint by
+name lands as useful or as uncanny is a judgement only a pilot makes.

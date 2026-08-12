@@ -166,9 +166,17 @@ def check(plan: dict, *, fixes: set[str], approaches: set[str],
     # every fix NAMED is one the sim holds. That is unchanged and is the whole
     # point; what is gone is a length test standing in for it. See #127.
     legs = route_fixes(plan.get("route", ""))
+    # ...OR ONE THE PLAN DEFINES ITSELF. A private fix is named by the pilot and
+    # carried with its position in `legs`, so the plan is self-contained and a
+    # route naming FOO resolves for anybody holding that plan. It does NOT make
+    # the name public: nothing else can see it, which is the point.
+    own = {(l.get("fix") or "").lower() for l in (plan.get("legs") or [])
+           if l.get("lat") is not None and l.get("lon") is not None}
     # THE WHOLE REASON THIS FILE EXISTS. Named one at a time so a typo in a
     # six-fix route says which of the six, rather than "invalid route".
     for fx in legs:
+        if fx.lower() in own:
+            continue
         if fx.lower() not in fixes:
             bad.append(f"no fix called {fx} — the controller would have to "
                        f"say a place that is not on any chart")

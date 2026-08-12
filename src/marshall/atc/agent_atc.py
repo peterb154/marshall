@@ -3613,6 +3613,22 @@ def push_fixes(base: str, profile) -> int:
     import grpc
     addr = _config.DCS_GRPC_ADDR
     with grpc.insecure_channel(addr) as ch:
+        # ASK WHETHER ANYONE IS THERE BEFORE ASKING A QUESTION, and give that its
+        # own short deadline. A host that REFUSES fails in milliseconds; a host
+        # that is simply GONE -- powered off, off the network -- swallows the SYN
+        # and the call sits on its 30 s deadline instead. That is right for a
+        # request the answer matters to, and wrong for this one, which is best
+        # effort and says so two paragraphs up.
+        #
+        # It surfaced as a red offline suite. `tests/test_loop.py` runs the
+        # startup path with a fake radio and no sim, so with the server up it
+        # cost nothing; with the server off it blew a 20 s budget on a call whose
+        # failure the caller discards -- and an environmental outage read exactly
+        # like a regression in the change being tested.
+        try:
+            grpc.channel_ready_future(ch).result(timeout=2.0)
+        except grpc.FutureTimeoutError:
+            raise ConnectionError(f"no sim at {addr}") from None
         raw = str(custom_pb2_grpc.CustomServiceStub(ch).Eval(
             custom_pb2.EvalRequest(lua=lua), timeout=30).json).strip('"')
 

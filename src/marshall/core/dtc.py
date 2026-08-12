@@ -269,8 +269,20 @@ def plan_from(d: dict, name: str, approach: str = "", label: str = "",
     # `cruise_ft` above is the HIGHEST of these and stays because a controller
     # means that by "cruise" -- but the level he is told to MAINTAIN off the
     # ramp is the first leg's, not the highest. See migration 030.
+    # AND WHERE EACH ONE IS. A private fix is defined BY THE PLAN that names
+    # it -- that is what makes it private and what makes it durable. Storing
+    # them in the theatre's catalogue instead put them in a table the bridge
+    # owns and republishes on every start, so a filed route quietly stopped
+    # resolving and the refusal read as the plan being wrong:
+    #
+    #     "Your BatumiTest routing is via fix points not held at this station"
+    #     "wait.. why are those fixes coming from the flight plan????"
+    #
+    # They were not. The plan NAMED them and something else owned them. It owns
+    # them now. See #129.
     legs = [{"fix": (w["name"] or f"STPT{w['seq']}").upper(),
-             "alt_ft": int(w["alt_ft"] or 0)} for w in wps]
+             "alt_ft": int(w["alt_ft"] or 0),
+             "lat": w["lat"], "lon": w["lon"]} for w in wps]
     return {"name": name, "label": label, "legs": legs,
             "origin": (start or dest).title(),
             "destination": (dest or start).title(),

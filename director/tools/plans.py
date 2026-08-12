@@ -375,14 +375,31 @@ def route_fixes(plan: dict, fixes: dict) -> tuple[list[dict], list[str]]:
     controller should refuse it at clearance delivery rather than discover it at
     the third leg.
     """
+    # A PLAN DEFINES ITS OWN PRIVATE FIXES, and they are looked up first.
+    #
+    #     "there are public fixes that are known to everybody because they're on
+    #      a plate, and private fixes that are in a Flight plan. But ATC should
+    #      be able to get and refer to my private fixes when I open a plan with
+    #      those fixes and the names in there."
+    #
+    # `legs` carries them with their positions, so opening the plan is what
+    # makes FOO resolvable -- which is exactly what "private" means. The public
+    # catalogue is still the authority for everything on a plate; a plan may
+    # not redefine DIOMI.
+    own = {(l.get("fix") or "").lower(): l for l in (plan.get("legs") or [])
+           if l.get("lat") is not None and l.get("lon") is not None}
     out, missing = [], []
     for raw in (plan.get("route") or "").split(","):
         name = raw.strip()
         if not name:
             continue
         ll = fixes.get(name.lower())
+        mine = own.get(name.lower())
         if ll:
             out.append({"name": name, "lat": ll[0], "lon": ll[1]})
+        elif mine:
+            out.append({"name": name, "lat": mine["lat"], "lon": mine["lon"],
+                        "private": True})
         else:
             missing.append(name)
     return out, missing
