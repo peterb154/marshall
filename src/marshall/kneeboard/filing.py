@@ -98,6 +98,8 @@ STYLE = """
   .file .map .attrib { position: absolute; right: 3px; bottom: 2px;
     font-size: 10px; background: rgba(239,231,210,.8); padding: 0 4px; }
   .file .miss { color: #b03024; }
+  /* His own steerpoint: not published, not wrong. */
+  .file .own  { color: #1d4e89; }
   .file .ok { background: #e2ecd6; border-left: 4px solid #4a7a24;
               padding: 8px 11px; margin: 6px 0; }
   .file .board { margin-top: 22px; border-top: 1px solid #8a8069;
@@ -413,10 +415,32 @@ async function look(name) {{
   try {{ where = (await (await fetch('/fixes')).json()).fixes || {{}}; }}
   catch (e) {{}}
   const known = Object.keys(where).map(s => s.toUpperCase());
+  // A PLAN DEFINES ITS OWN FIXES, and it is where the private ones live.
+  //
+  // This asked ONE question -- "is it on the published table?" -- and marked
+  // everything else red as "a clearance naming it would be refused". That was
+  // true until #129 and is now exactly backwards: FOO, BAR and SPAM are the
+  // pilot's own steerpoints, they live in `legs` with their positions, the
+  // plan validates clean and clears. The page was calling a working plan
+  // broken and drawing no map for it.
+  //
+  // Three states now, because there are three:
+  //     published   on a plate or an aerodrome -- anybody can resolve it
+  //     private     this plan defines it, with a position. His, and fine.
+  //     unknown     neither. THAT is the one a clearance would be refused for.
+  const mine = {{}};
+  for (const l of (p.legs || [])) {{
+    if (l && l.fix && l.lat != null && l.lon != null)
+      mine[String(l.fix).toUpperCase()] = [l.lat, l.lon];
+  }}
   const legs = String(p.route || '').split(',').map(s => s.trim())
     .filter(Boolean)
-    .map(f => known.length && !known.includes(f.toUpperCase())
-      ? `<span class="miss">${{esc(f)}} ?</span>` : esc(f));
+    .map(f => {{
+      const u = f.toUpperCase();
+      if (known.includes(u)) return esc(f);
+      if (mine[u]) return `<span class="own">${{esc(f)}}</span>`;
+      return `<span class="miss">${{esc(f)}} ?</span>`;
+    }});
   box.innerHTML = `<div class="detail">`
     + `<dt>key</dt><dd>${{esc(p.name)}}</dd>`
     + `<dt>said on the radio</dt><dd>${{esc(p.label || '(none)')}}</dd>`
@@ -424,9 +448,12 @@ async function look(name) {{
     + `<dt>route</dt><dd>${{legs.join(' &rarr; ') || '(none)'}}</dd>`
     + `<dt>cruise</dt><dd>${{(p.cruise_ft || 0).toLocaleString()}} ft</dd>`
     + `<dt>recovery</dt><dd>${{esc(p.approach || '(none)')}}</dd>`
-    + (legs.some(l => l.includes('miss'))
-        ? `<div class="bad">a fix in red is not on the sim's table — a `
-          + `clearance naming it would be refused</div>` : '')
+    + (legs.some(l => l.includes('class="miss"'))
+        ? `<div class="bad">a fix in red is on neither the published table nor `
+          + `this plan &mdash; a clearance naming it would be refused</div>` : '')
+    + (legs.some(l => l.includes('class="own"'))
+        ? `<div class="hint">a fix in blue is this plan's own steerpoint. It `
+          + `is not published to anybody else, and it clears normally.</div>` : '')
     + `</div>`
     + `<div class="map" id="map-${{esc(name)}}"></div>`;
 
@@ -435,9 +462,13 @@ async function look(name) {{
   // none. Only the fixes we have a position for -- a route naming one we do
   // not is exactly the case the red marking above is for, and half a line is
   // more honest than a straight one through a place we cannot find.
+  // THE PLAN'S OWN POSITIONS FIRST. It carries lat/lon per leg since #129, so
+  // a route of private steerpoints is perfectly drawable -- and used to render
+  // as "no positions for these fixes" and an empty box, because this looked
+  // only at the published table.
   const pts = String(p.route || '').split(',').map(s => s.trim())
     .filter(Boolean)
-    .map(f => ({{name: f, ll: where[f.toLowerCase()]}}))
+    .map(f => ({{name: f, ll: mine[f.toUpperCase()] || where[f.toLowerCase()]}}))
     .filter(o => Array.isArray(o.ll) && o.ll.length === 2)
     .map(o => ({{name: o.name, lat: o.ll[0], lon: o.ll[1]}}));
   drawMap(document.getElementById('map-' + name), pts);

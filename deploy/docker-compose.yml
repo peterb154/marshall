@@ -52,6 +52,14 @@ services:
     volumes:
       - ../src:/app/src:ro
       - ../docs:/app/docs:ro
+      # THE CONFIGURATION, and forgetting it took this container down.
+      #
+      # The fixes, aerodromes, controllers and procedures moved out of Python
+      # into `config/theatres/<map>.toml` (#137, docs/CONFIG.md). `src` was
+      # mounted and `config` was not, so the moment anything here imported
+      # `core.theatre` it raised FileNotFoundError and the app refused to
+      # start. Read-only: a web page has no business editing a theatre.
+      - ../config:/app/config:ro
       - ../build/vendor:/data/vendor:ro
       # The flight recorder, which /diag reads. The BRIDGE writes it on the
       # host; this container only ever reads. Without it the diagnostics page
