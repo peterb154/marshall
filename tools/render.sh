@@ -50,7 +50,19 @@ out="$here/shots/$name.png"
 
 # Common flags across both browsers: a real headless screenshot at the given
 # window size (so the shot is the kneeboard's aspect, not the desktop's).
+# --virtual-time-budget IS LOAD-BEARING for anything that fetches.
+#
+# `--screenshot` captures at the LOAD EVENT. The kneeboard's charts are static
+# HTML and looked fine; /file builds its board from `fetch('/plans')` AFTER
+# load, so the shot came back with a header, an import box, and nothing else --
+# and read exactly like a broken page. It was a broken screenshot.
+#
+# The flag makes headless Chromium run its clock forward until the budget is
+# spent or the page goes idle, so async work lands before the frame is taken.
+# Two seconds is far more than a localhost fetch needs and costs nothing when
+# the page has none.
 common=( --headless=new --disable-gpu --hide-scrollbars
+         --virtual-time-budget="${VTB:-2000}"
          --force-device-scale-factor=1 --window-size="${w},${h}" )
 
 is_wsl() { grep -qiE '(microsoft|wsl)' /proc/version 2>/dev/null; }
