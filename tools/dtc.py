@@ -95,6 +95,9 @@ def main(argv: list[str] | None = None) -> int:
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--show", action="store_true", help="print it and stop")
+    ap.add_argument("--raw", action="store_true",
+                    help="dump the WHOLE decoded cartridge as JSON and stop — "
+                         "everything DKS wrote, not just what we read")
     ap.add_argument("--file", default="", metavar="NAME",
                     help="file it as a plan under this name")
     ap.add_argument("--approach", default="", help="the recovery to fly")
@@ -117,6 +120,15 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as e:
         print(f"!! not a cartridge: {e}", file=sys.stderr)
         return 2
+
+    if args.raw:
+        # EVERYTHING, so a question about the cartridge can be answered from
+        # the cartridge. "does this DTC have my mission notes in it" is not a
+        # thing anybody should have to take on trust -- and the answer that
+        # time was no: `KneeboardNotes` was null and the only text in the whole
+        # file was `Aircraft: F16C`.
+        print(json.dumps(d, indent=2, sort_keys=True))
+        return 0
 
     wps = waypoints(d)
     print(f"{d.get('Aircraft', '?')}, {len(wps)} waypoints")

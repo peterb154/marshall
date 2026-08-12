@@ -500,8 +500,14 @@ async function look(name) {{
   // a route of private steerpoints is perfectly drawable -- and used to render
   // as "no positions for these fixes" and an empty box, because this looked
   // only at the published table.
-  const pts = String(p.route || '').split(',').map(s => s.trim())
-    .filter(Boolean)
+  // THE WHOLE CHAIN, including where he is going.
+  //
+  //     "the final steerpoint (Batumi) isnt showing on the map"
+  //
+  // Because this built from `route`, which is the ENROUTE portion -- so the
+  // map drew every leg except the one that matters most, and the line stopped
+  // one point short of the aerodrome.
+  const pts = chain
     .map(f => ({{name: f, ll: mine[f.toUpperCase()] || where[f.toLowerCase()]}}))
     .filter(o => Array.isArray(o.ll) && o.ll.length === 2)
     .map(o => ({{name: o.name, lat: o.ll[0], lon: o.ll[1]}}));
