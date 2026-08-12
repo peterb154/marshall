@@ -98,8 +98,6 @@ STYLE = """
   .file .map .attrib { position: absolute; right: 3px; bottom: 2px;
     font-size: 10px; background: rgba(239,231,210,.8); padding: 0 4px; }
   .file .miss { color: #b03024; }
-  /* His own steerpoint: not published, not wrong. */
-  .file .own  { color: #1d4e89; }
   .file .ok { background: #e2ecd6; border-left: 4px solid #4a7a24;
               padding: 8px 11px; margin: 6px 0; }
   .file .board { margin-top: 22px; border-top: 1px solid #8a8069;
@@ -425,30 +423,38 @@ async function look(name) {{
     if (l && l.fix && l.lat != null && l.lon != null)
       mine[String(l.fix).toUpperCase()] = [l.lat, l.lon];
   }}
-  const legs = String(p.route || '').split(',').map(s => s.trim())
+  const chain = [...String(p.route || '').split(',').map(s => s.trim())
+                   .filter(Boolean), p.destination].filter(Boolean);
+  const legs = chain
     .filter(Boolean)
     .map(f => {{
       const u = f.toUpperCase();
       if (known.includes(u)) return esc(f);
-      if (mine[u]) return `<span class="own">${{esc(f)}}</span>`;
+      // NOT MARKED AS "HIS OWN", because the page cannot tell that from a
+      // published fix this deployment has not loaded -- FYTTR, STRYK, GASS
+      // PEAK and APEX are real Nevada fixes and showed up blue purely because
+      // Nevada's catalogue is not in yet (#141). A colour that means two
+      // things means neither.
+      //
+      // What it CAN say is whether the plan can be flown: a fix with a
+      // position resolves, whoever owns the name; one without does not.
+      if (mine[u]) return esc(f);
       return `<span class="miss">${{esc(f)}} ?</span>`;
     }});
   box.innerHTML = `<div class="detail">`
     + `<dt>key</dt><dd>${{esc(p.name)}}</dd>`
     + `<dt>label</dt><dd>${{esc(p.label || '(none)')}}</dd>`
     + `<dt>task</dt><dd>${{esc(p.task || '(none)')}}</dd>`
-    + `<dt>route</dt><dd>${{legs.join(' &rarr; ') || '(direct)'}}</dd>`
-    // WHERE HE IS GOING, which had disappeared from this panel entirely.
+    // THE WHOLE CHAIN, ending where he is going.
     //
-    //     "Route - shouldnt this include the final steerpoint which was
-    //      Batumi? Maybe that was lost?"
+    //     "why doesnt that include the last steerpoint (the destination)?"
     //
-    // Not lost -- `route` is the ENROUTE portion and the destination is the
-    // last leg, so it was correct and invisible, which is its own kind of
-    // wrong. It gets its own row rather than being appended to the route,
-    // because "via" and "to" are different things and a controller reads them
-    // differently.
-    + `<dt>to</dt><dd>${{esc(p.destination || '(none)')}}</dd>`
+    // Asked twice, which is the answer: `route` being the ENROUTE portion is
+    // ICAO's split and it is right in the DATABASE, where the destination is
+    // the last leg and storing it twice is how the two came to disagree. On a
+    // PAGE it reads as a list with its end cut off. One row, whole.
+    + `<dt>route</dt><dd>${{legs.join(' &rarr; ') || '(none)'}}</dd>`
+
     // NO CRUISE AND NO RECOVERY. Both were dropped from the plan (migration
     // 031) and from the form, and this panel went on rendering them -- a
     // derived "cruise" that is just the highest leg, and a "recovery" that is
@@ -457,8 +463,7 @@ async function look(name) {{
     + (legs.some(l => l.includes('class="miss"'))
         ? `<div class="bad">red: on no chart and not in this plan — it would `
           + `be refused</div>` : '')
-    + (legs.some(l => l.includes('class="own"'))
-        ? `<div class="hint">blue: this plan's own steerpoint.</div>` : '')
+
     + `</div>`
     + `<div class="map" id="map-${{esc(name)}}"></div>`;
 
