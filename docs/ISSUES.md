@@ -6483,3 +6483,46 @@ Two things to establish: whether the handle derivation runs at all on this path,
 and whether `authority`/`confirmed` being empty is the same cause or a second
 one. Suspect the row is minted by the transmission before radar correlates it,
 and never revised — which would be #119's lifecycle question one column along.
+
+---
+
+## [ARCH-20] A filed plan outlives the steerpoints it names — #129
+
+Made by me on 11 August and found ten minutes later by the rehearsal that had
+just proved #128.
+
+    PILOT: Kobuleti Clearance, Lancer38, Domino please.
+    ATC:   Domino routing is via fix points not held at this station —
+           unable that plan.
+
+Correct, and the plan was correct too. `Domino` routed via **FOO, BAR, SPAM** —
+the pilot's own named steerpoints, filed with `--steerpoints` — and a bridge
+restart re-pushed the theatre's catalogue, which REPLACES the fix table and took
+them off it.
+
+**Two lifetimes in one table.** `fixes` holds the theatre's published catalogue,
+owned by the bridge and republished on every start; the steerpoint push borrows
+the same table for something that belongs to one sortie and one aeroplane. So
+the owner of the first destroys the second, on a schedule nobody thinks about.
+That is `docs/STATE.md`'s three questions with two different answers each:
+
+    WHO OWNS IT     the bridge / the pilot
+    WHERE IT LIVES  fixes / fixes
+    WHEN IT DIES    next bridge start / end of the sortie
+
+And the durable thing names the perishable one: a **filed plan** is a row that
+survives everything, pointing at fixes that do not. Refile it without them and
+it is fine for ever; refile it with them and it works until the next restart,
+which is worse than either.
+
+The replace-on-push is not the bug and must not be softened — a Nevada run
+keeping Caucasus fixes is #89 and cost a sortie.
+
+**What it wants** is the shape the pilot described: a `steerpoints` table keyed
+on the mission instance and the flight, and `filing.check_live` validating a
+route against the published catalogue **plus this flight's own points**. Then a
+name he chose is resolvable for exactly as long as he is flying, and a plan that
+names one is honest about whose it is.
+
+Until then `--steerpoints` files a plan with a shorter life than the row it is
+written into, and the tool should say so where somebody will read it.

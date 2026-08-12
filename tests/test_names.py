@@ -102,6 +102,29 @@ class TestTheHandleRuleIsUnchanged(unittest.TestCase):
     def test_a_name_that_is_all_digits_falls_back_to_itself(self):
         """"Viper2" is still somebody."""
         self.assertEqual(N.handle("Viper2"), "Viper2")
+        self.assertEqual(N.handle("1-1"), "1-1")
+
+    def test_a_human_whose_name_carries_a_number_keeps_it(self):
+        """CHANGED 11 August. The rule was "drop any chunk with a digit", which
+        dropped the PERSON when the person had one -- "Nomad29" went with the
+        squadron tag and the slot number, nothing was left, and the fallback
+        returned the whole raw string.
+
+        That became his callsign on the board, so he could not be found by the
+        name he says. Clearance delivery answered "I do not have you on the
+        board, you are three six two nd nomad two nine one, use that callsign"
+        -- a sim unit's name, and nothing a pilot would ever say. [#128]
+
+        The rule drops what is structurally a SLOT (all digits) or an ordinal
+        squadron TAG. Everything else is a person.
+        """
+        self.assertEqual(N.handle("362nd_Nomad29-1"), "Nomad29")
+        self.assertEqual(N.handle("31st Viper2-2"), "Viper2")
+
+    def test_a_squadron_tag_is_recognised_by_its_shape(self):
+        for tag in ("362nd", "1st", "23rd", "4th"):
+            with self.subTest(tag):
+                self.assertEqual(N.handle(f"{tag}_Sockeye-1"), "Sockeye")
 
 
 if __name__ == "__main__":

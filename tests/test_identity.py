@@ -589,10 +589,11 @@ class TestTheHandleIsWhoHeAlreadyIs(unittest.TestCase):
                 self.assertEqual(identity.handle(full), want)
 
     def test_a_slot_number_comes_off_too(self):
-        """The rule is "drop any chunk with a digit", not "take what follows
-        the first separator" -- which is the only version that survives this
-        one, since the obvious rule turns it into "1-1-1"."""
+        """Not "take what follows the first separator", which turns this into
+        "1-1-1". A chunk goes if it is all digits or an ordinal squadron tag --
+        see `names.handle`, and #128 for the pilot the older rule erased."""
         self.assertEqual(identity.handle("Hoover 1-1-1"), "Hoover")
+        self.assertEqual(identity.handle("362nd_Nomad29-1"), "Nomad29")
 
     def test_a_bare_name_is_left_alone(self):
         self.assertEqual(identity.handle("sockeye"), "sockeye")

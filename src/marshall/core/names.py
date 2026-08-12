@@ -98,17 +98,34 @@ def handle(name: str) -> str:
     pilot already has one. It is unique per person, never spoken, and survives a
     slot change, a callsign change and a mis-transcription.
 
-    THE RULE IS "DROP ANY CHUNK WITH A DIGIT IN IT", not "take what follows the
-    first separator". Squadron tags and slot numbers both carry digits and the
-    human's name does not, so one test removes both -- and it is the only
-    version that survives "Hoover 1-1-1", which the obvious rule turns into
-    "1-1-1".
+    THE RULE DROPS WHAT IS STRUCTURALLY A TAG OR A SLOT, not anything with a
+    digit in it. Both readings survive "Hoover 1-1-1" -- which is the case that
+    rules out the naive "take what follows the first separator" -- and they part
+    company on a human whose own name carries a number:
 
-    Falls back to the whole string when that would leave nothing, because a
-    pilot calling himself "Viper2" is still somebody.
+        362nd_Sockeye-1    ->  Sockeye     both
+        Hoover 1-1-1       ->  Hoover      both
+        362nd_Nomad29-1    ->  Nomad29     this one only
+
+    The older rule dropped "Nomad29" for having a 2 and a 9 in it, found nothing
+    left, and fell back to the WHOLE raw string -- squadron tag, slot number and
+    all. That became the callsign on the board, so a pilot could not be found by
+    the name he says: clearance delivery answered "I do not have you on the
+    board, you are three six two nd nomad two nine one, use that callsign",
+    which is a sim unit's name and nothing a pilot would ever say. [#128]
+
+    Its own docstring already knew about this pilot -- "a pilot calling himself
+    Viper2 is still somebody" -- and the fallback it offered him was his unit
+    name rather than his name.
+
+    So: a chunk goes if it is ALL digits (a slot: "1", "11") or an ordinal
+    squadron tag ("362nd", "1st"). Anything else is a person.
+
+    Falls back to the whole string when that would leave nothing, which is now
+    reachable only by a name that is nothing but digits.
     """
     parts = [p for p in re.split(r"[ _-]+", name or "")
-             if p and not re.search(r"\d", p)]
+             if p and not re.fullmatch(r"\d+(?:st|nd|rd|th)?", p, re.I)]
     return " ".join(parts) or (name or "")
 
 

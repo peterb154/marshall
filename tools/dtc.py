@@ -182,6 +182,15 @@ def main(argv: list[str] | None = None) -> int:
                 return 2
             _put(f"{args.base}/fixes", {"fixes": {**have, **sp}})
             print(f"  his steerpoints, for this sortie: {', '.join(sp)}")
+            # SAY WHAT IT COSTS, where somebody will read it. The plan is a row
+            # that survives everything; these live in the fix table, which the
+            # bridge REPLACES with the theatre's catalogue on every start. So a
+            # plan filed this way works until the next restart and is then
+            # refused -- "routing is via fix points not held at this station" --
+            # which is correct and reads as the plan being wrong. See #129.
+            print("  .. NOTE: a bridge restart republishes the theatre's fix "
+                  "catalogue and takes these off it. The plan will then be "
+                  "refused until you re-run this. See #129.", file=sys.stderr)
     try:
         out = _post(f"{args.base}/plans",
                     {**plan, "updating": plan["name"]})
