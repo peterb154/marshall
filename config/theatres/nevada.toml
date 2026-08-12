@@ -11,3 +11,333 @@
 [recogniser]
 phrases = ["Nellis", "Tonopah", "Creech", "Groom Lake", "Las Vegas",
            "Nellis Approach", "Nellis Tower"]
+
+# --- navaids ----------------------------------------------------------------
+#
+# Imported from `vendor/dcs/nevada-Beacons.lua` by
+# `tools/import_beacons.py`. The sim's own data, in the sim's own
+# frames -- nothing here was projected, transcribed or guessed, which is
+# why re-running the tool is the way to update it rather than editing
+# below.
+#
+# These are half of what a controller may NAME: a pilot flies his own
+# steerpoints and the navaids he can TUNE, and nothing else. See
+# docs/CONFIG.md.
+
+[[navaid]]
+field = "Beatty"
+ident = "BTY"
+kind = "vortac"
+mhz = 114.7
+channel = 94
+lat = 36.800583
+lon = -116.747647
+x = -337247.5625
+z = -171484.9375
+source = "nevada-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Bishop"
+ident = "BIH"
+kind = "vortac"
+mhz = 109.6
+channel = 33
+lat = 37.377
+lon = -118.3665
+x = -272456.59375
+z = -314982.75
+source = "nevada-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "BoulderCity"
+ident = "BLD"
+kind = "vortac"
+mhz = 116.7
+channel = 114
+lat = 35.995752
+lon = -114.863607
+x = -424440.15625
+z = -1424.503052
+source = "nevada-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "BryceCanyon"
+ident = "BCE"
+kind = "vortac"
+mhz = 112.8
+channel = 75
+lat = 37.689167
+lon = -112.303833
+x = -228309.53125
+z = 220166.203125
+source = "nevada-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "CedarCity"
+ident = "CDC"
+kind = "vortac"
+mhz = 117.3
+channel = 120
+lat = 37.787333
+lon = -113.068167
+x = -220522.046875
+z = 152270.421875
+source = "nevada-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Coaldale"
+ident = "OAL"
+kind = "vortac"
+mhz = 117.7
+channel = 124
+lat = 38.003333
+lon = -117.7705
+x = -203563.140625
+z = -261642.09375
+source = "nevada-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "ColoradoCity"
+ident = "AZC"
+kind = "ndb"
+mhz = 0.403
+lat = 36.959895
+lon = -113.008973
+x = -312156.03125
+z = 161375.6875
+source = "nevada-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Creech"
+ident = "INS"
+kind = "tacan"
+channel = 87
+lat = 36.585001
+lon = -115.670334
+x = -360368.5625
+z = -75045.421875
+source = "nevada-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Daggett"
+ident = "DAG"
+kind = "vortac"
+mhz = 113.2
+channel = 79
+lat = 34.962384
+lon = -116.578128
+x = -541075.1875
+z = -155482.53125
+source = "nevada-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "GOFFS"
+ident = "GFS"
+kind = "vortac"
+mhz = 114.4
+channel = 91
+lat = 35.131167
+lon = -115.1765
+x = -520917.28125
+z = -27855.832031
+source = "nevada-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "GrandCanyon"
+ident = "GCN"
+kind = "vor-dme"
+mhz = 113.1
+channel = 78
+lat = 35.960444
+lon = -112.145901
+x = -419559.71875
+z = 243873.65625
+source = "nevada-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Groom-Lake"
+ident = "GRL"
+kind = "tacan"
+channel = 18
+lat = 37.231778
+lon = -115.802638
+x = -288771.78125
+z = -87782.398438
+source = "nevada-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Hector"
+ident = "HEC"
+kind = "vortac"
+mhz = 112.7
+channel = 74
+lat = 34.797214
+lon = -116.462929
+x = -559341.375
+z = -144867.3125
+source = "nevada-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Kingman"
+ident = "IGM"
+kind = "vor-dme"
+mhz = 108.8
+channel = 25
+lat = 35.260535
+lon = -113.93413
+x = -503781.59375
+z = 84923.976563
+source = "nevada-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "McCarran-International"
+ident = "LAS"
+kind = "vortac"
+mhz = 116.9
+channel = 116
+lat = 36.079576
+lon = -115.159816
+x = -415686.09375
+z = -28303.363281
+source = "nevada-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Meggi"
+ident = "EC"
+kind = "ndb"
+mhz = 0.217
+lat = 37.791252
+lon = -113.020879
+x = -219910.453125
+z = 156418.015625
+source = "nevada-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Mercury"
+ident = "MCY"
+kind = "ndb"
+mhz = 0.326
+lat = 36.627456
+lon = -116.027531
+x = -356041.71875
+z = -107048.789063
+source = "nevada-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Milford"
+ident = "MLF"
+kind = "vortac"
+mhz = 112.1
+channel = 58
+lat = 38.360356
+lon = -113.013233
+x = -156700.828125
+z = 154376.0625
+source = "nevada-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Mina"
+ident = "MVA"
+kind = "vortac"
+mhz = 115.1
+channel = 98
+lat = 38.565333
+lon = -118.032833
+x = -140979.484375
+z = -283977.375
+source = "nevada-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "MormonMesa"
+ident = "MMM"
+kind = "vortac"
+mhz = 114.3
+channel = 90
+lat = 36.769333
+lon = -114.2775
+x = -337286.5625
+z = 48996.441406
+source = "nevada-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Needles"
+ident = "EED"
+kind = "vortac"
+mhz = 115.2
+channel = 99
+lat = 34.765927
+lon = -114.473902
+x = -560035.0
+z = 37194.679688
+source = "nevada-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Nellis"
+ident = "LSV"
+kind = "tacan"
+channel = 12
+lat = 36.244644
+lon = -115.025113
+x = -397135.9375
+z = -16545.675781
+source = "nevada-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "PeachSprings"
+ident = "PGS"
+kind = "vortac"
+mhz = 112.0
+channel = 57
+lat = 35.624667
+lon = -113.5445
+x = -462207.28125
+z = 118969.703125
+source = "nevada-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Silverbow"
+ident = "TQQ"
+kind = "vortac"
+mhz = 113.0
+channel = 77
+lat = 37.790475
+lon = -116.779233
+x = -227436.90625
+z = -174559.0
+source = "nevada-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "StGeorge"
+ident = "UTI"
+kind = "vor-dme"
+mhz = 108.6
+channel = 23
+lat = 37.088212
+lon = -113.592167
+x = -299933.84375
+z = 108917.28125
+source = "nevada-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Tonopah"
+ident = "TPH"
+kind = "vortac"
+mhz = 117.2
+channel = 119
+lat = 38.030667
+lon = -117.0335
+x = -200809.96875
+z = -196936.796875
+source = "nevada-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "WilsonCreek"
+ident = "ILC"
+kind = "vortac"
+mhz = 116.3
+channel = 110
+lat = 38.250167
+lon = -114.394167
+x = -173244.484375
+z = 34027.542969
+source = "nevada-Beacons.lua, the sim's own table"

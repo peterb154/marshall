@@ -576,3 +576,1368 @@ radar = true
 dme = true
 separation = "radar"
 era = "modern"
+
+# --- navaids ----------------------------------------------------------------
+#
+# Imported from `vendor/dcs/caucasus-Beacons.lua` by
+# `tools/import_beacons.py`. The sim's own data, in the sim's own
+# frames -- nothing here was projected, transcribed or guessed, which is
+# why re-running the tool is the way to update it rather than editing
+# below.
+#
+# These are half of what a controller may NAME: a pilot flies his own
+# steerpoints and the navaids he can TUNE, and nothing else. See
+# docs/CONFIG.md.
+
+[[navaid]]
+field = "Agoy"
+ident = "AG"
+kind = "ndb"
+mhz = 0.381
+lat = 44.133242
+lon = 39.034429
+x = -93707.710938
+z = 383231.0625
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Akhilleon"
+ident = "AH"
+kind = "ndb"
+mhz = 0.3
+lat = 45.439909
+lon = 36.853043
+x = 40930.476563
+z = 201825.6875
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Ali"
+ident = "AL"
+kind = "ndb"
+mhz = 0.353
+lat = 42.096021
+lon = 43.644701
+x = -282495.46875
+z = 781223.5
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Alushta"
+ident = "AL"
+kind = "ndb"
+mhz = 0.384
+lat = 44.674908
+lon = 34.398325
+x = -50326.164063
+z = 11313.958008
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Anapa-Vityazevo"
+ident = "AN"
+kind = "ndb"
+mhz = 0.443
+lat = 44.969992
+lon = 37.299308
+x = -9500.015625
+z = 239511.625
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Anapa-Vityazevo"
+ident = "AP"
+kind = "ndb"
+mhz = 0.443
+lat = 45.039907
+lon = 37.396435
+x = -1321.801758
+z = 246748.5
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Anapa-Vityazevo"
+ident = "N"
+kind = "ndb"
+mhz = 0.215
+lat = 44.987288
+lon = 37.323297
+x = -7477.841797
+z = 241300.703125
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Anapa-Vityazevo"
+ident = "P"
+kind = "ndb"
+mhz = 0.215
+lat = 45.022628
+lon = 37.372401
+x = -3343.976563
+z = 244959.421875
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Armavir"
+ident = "VM"
+kind = "ndb"
+mhz = 0.74
+lat = 44.966576
+lon = 41.116648
+x = 13270.845703
+z = 540570.375
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Batumi"
+ident = "LU"
+kind = "ndb"
+mhz = 0.43
+lat = 41.602594
+lon = 41.613238
+x = -356480.125
+z = 618549.1875
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Batumi"
+ident = "BTM"
+kind = "tacan"
+mhz = 977.0
+channel = 16
+lat = 41.610899
+lon = 41.600419
+x = -355664.40625
+z = 617386.8125
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Berdyansk"
+ident = "BD"
+kind = "ndb"
+mhz = 0.342
+lat = 46.816575
+lon = 36.766654
+x = 193557.578125
+z = 187810.609375
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Beslan"
+ident = "C"
+kind = "ndb"
+mhz = 0.25
+lat = 43.210717
+lon = 44.5721
+x = -148418.0
+z = 840849.1875
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Beslan"
+ident = "CX"
+kind = "ndb"
+mhz = 1.05
+lat = 43.2155
+lon = 44.539874
+x = -148253.15625
+z = 838154.1875
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Bolshevik"
+ident = "ND"
+kind = "ndb"
+mhz = 0.507
+lat = 45.766576
+lon = 40.233315
+x = 95501.28125
+z = 462884.59375
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Buyalyk"
+ident = "DW"
+kind = "ndb"
+mhz = 0.625
+lat = 46.899908
+lon = 30.699997
+x = 198494.375
+z = -274699.25
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Chervonoglinskoye"
+ident = "AR"
+kind = "ndb"
+mhz = 0.44
+lat = 45.949908
+lon = 29.383333
+x = 96729.375
+z = -379810.53125
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Dmitrovka"
+ident = "DM"
+kind = "ndb"
+mhz = 0.69
+lat = 45.489353
+lon = 35.058601
+x = 41259.871094
+z = 61344.707031
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Dobrushyn"
+ident = "DO"
+kind = "ndb"
+mhz = 1.175
+lat = 45.377964
+lon = 33.36166
+x = 26887.388672
+z = -71200.710938
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Dzhubga"
+ident = "DV"
+kind = "ndb"
+mhz = 0.42
+lat = 44.320464
+lon = 38.701374
+x = -74816.820313
+z = 355136.0625
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Elista"
+ident = "SA"
+kind = "ndb"
+mhz = 0.311
+lat = 46.373244
+lon = 44.333308
+x = 200185.21875
+z = 771829.25
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Feodosiya"
+ident = "IL"
+kind = "ndb"
+mhz = 0.3
+lat = 45.014353
+lon = 35.419712
+x = -10721.782227
+z = 91145.75
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Gali"
+ident = "DA"
+kind = "ndb"
+mhz = 0.525
+lat = 42.59991
+lon = 41.783315
+x = -244178.796875
+z = 621256.25
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Gelendzhik"
+ident = "GN"
+kind = "ndb"
+mhz = 1.0
+lat = 44.569658
+lon = 38.008795
+x = -50752.625
+z = 298204.46875
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Gelendzhik"
+ident = "GN"
+kind = "vor"
+mhz = 114.3
+channel = 90
+lat = 44.572498
+lon = 38.012222
+x = -50420.347656
+z = 298457.125
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Genichesk"
+ident = "GE"
+kind = "ndb"
+mhz = 0.3
+lat = 46.182408
+lon = 34.816102
+x = 117802.703125
+z = 40644.195313
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Gori"
+ident = "OE"
+kind = "ndb"
+mhz = 0.462
+lat = 42.016577
+lon = 44.1322
+x = -286124.3125
+z = 822770.125
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Grozny"
+ident = "WK"
+kind = "ndb"
+mhz = 0.83
+lat = 43.383244
+lon = 45.699975
+x = -115728.125
+z = 929610.25
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Gudauta"
+ident = "XC"
+kind = "ndb"
+mhz = 0.395
+lat = 43.099003
+lon = 40.578961
+x = -198344.5625
+z = 517357.0
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Herson"
+ident = "HS"
+kind = "ndb"
+mhz = 1.065
+lat = 46.666575
+lon = 32.499994
+x = 170119.265625
+z = -137766.03125
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Kakhovka"
+ident = "KH"
+kind = "ndb"
+mhz = 0.485
+lat = 46.808241
+lon = 33.496659
+x = 185859.78125
+z = -61623.34375
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Kalaus"
+ident = "BJ"
+kind = "ndb"
+mhz = 0.735
+lat = 43.466578
+lon = 45.216642
+x = -112412.046875
+z = 889038.25
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Kerch"
+ident = "KC"
+kind = "ndb"
+mhz = 1.05
+lat = 45.366575
+lon = 36.399988
+x = 31183.582031
+z = 166738.03125
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Kislovodsk"
+ident = "KW"
+kind = "ndb"
+mhz = 0.995
+lat = 43.941577
+lon = 42.649979
+x = -87247.726563
+z = 675046.6875
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Kobuleti"
+ident = "KT"
+kind = "ndb"
+mhz = 0.87
+lat = 41.918616
+lon = 41.802928
+x = -319739.03125
+z = 630753.5625
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Kobuleti"
+ident = "T"
+kind = "ndb"
+mhz = 0.49
+lat = 41.924494
+lon = 41.834303
+x = -318815.5625
+z = 633290.6875
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Kobuleti"
+ident = "KBL"
+kind = "tacan"
+mhz = 1154.0
+channel = 67
+lat = 41.93077
+lon = 41.86197
+x = -317879.0
+z = 635514.8125
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Komisarivka"
+ident = "KM"
+kind = "ndb"
+mhz = 0.95
+lat = 46.266575
+lon = 35.016657
+x = 127528.007813
+z = 55884.429688
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Krasnodar-Center"
+ident = "M"
+kind = "ndb"
+mhz = 0.303
+lat = 45.087368
+lon = 38.911608
+x = 11567.539063
+z = 365697.0
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Krasnodar-Center"
+ident = "MB"
+kind = "ndb"
+mhz = 0.625
+lat = 45.087925
+lon = 38.873594
+x = 11410.707031
+z = 362701.09375
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Krasnodar-Center"
+ident = "O"
+kind = "ndb"
+mhz = 0.303
+lat = 45.086491
+lon = 38.969263
+x = 11804.427734
+z = 370241.34375
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Krasnodar-Center"
+ident = "OC"
+kind = "ndb"
+mhz = 0.625
+lat = 45.085828
+lon = 39.012047
+x = 11980.96875
+z = 373613.71875
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Krasnodar-Pashkovsky"
+ident = "K"
+kind = "ndb"
+mhz = 0.24
+lat = 45.021929
+lon = 39.159769
+x = 5760.449219
+z = 385781.0
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Krasnodar-Pashkovsky"
+ident = "KR"
+kind = "ndb"
+mhz = 0.493
+lat = 45.006796
+lon = 39.133081
+x = 3919.23291
+z = 383806.1875
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Krasnodar-Pashkovsky"
+ident = "L"
+kind = "ndb"
+mhz = 0.24
+lat = 45.053921
+lon = 39.216297
+x = 9655.907227
+z = 389960.625
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Krasnodar-Pashkovsky"
+ident = "LD"
+kind = "ndb"
+mhz = 0.493
+lat = 45.069032
+lon = 39.243028
+x = 11497.123047
+z = 391935.4375
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Krasnodar-Pashkovsky"
+ident = "KN"
+kind = "vor"
+mhz = 115.8
+channel = 105
+lat = 45.020832
+lon = 39.163887
+x = 5663.36377
+z = 386114.75
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Krasny"
+ident = "KS"
+kind = "ndb"
+mhz = 1.025
+lat = 47.199909
+lon = 40.349981
+x = 255528.015625
+z = 457062.96875
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Kropotkin"
+ident = "KP"
+kind = "ndb"
+mhz = 0.214
+lat = 45.449909
+lon = 40.566648
+x = 62738.71875
+z = 492136.125
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Krymsk"
+ident = "K"
+kind = "ndb"
+mhz = 0.803
+lat = 44.983041
+lon = 38.014927
+x = -4801.45459
+z = 295853.0625
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Krymsk"
+ident = "KW"
+kind = "ndb"
+mhz = 0.408
+lat = 45.004894
+lon = 38.043726
+x = -2232.675781
+z = 297972.09375
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Krymsk"
+ident = "O"
+kind = "ndb"
+mhz = 0.803
+lat = 44.951723
+lon = 37.973692
+x = -8481.339844
+z = 292816.1875
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Krymsk"
+ident = "OX"
+kind = "ndb"
+mhz = 0.408
+lat = 44.933004
+lon = 37.949089
+x = -10679.844727
+z = 291002.59375
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Kutaisi"
+ident = "TI"
+kind = "ndb"
+mhz = 0.477
+lat = 42.174289
+lon = 42.454567
+x = -285504.6875
+z = 681690.0625
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Kutaisi"
+ident = "KTS"
+kind = "tacan"
+mhz = 1005.0
+channel = 44
+lat = 42.178443
+lon = 42.479213
+x = -284814.6875
+z = 683676.5
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Kutaisi"
+ident = "KT"
+kind = "vor"
+mhz = 113.6
+channel = 83
+lat = 42.174389
+lon = 42.455276
+x = -285487.03125
+z = 681747.5
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Ladozhskaya"
+ident = "RF"
+kind = "ndb"
+mhz = 0.324
+lat = 45.283243
+lon = 39.916649
+x = 39622.871094
+z = 442914.4375
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Lazarevskoye"
+ident = "LA"
+kind = "ndb"
+mhz = 0.307
+lat = 43.917131
+lon = 39.337484
+x = -115885.585938
+z = 409331.03125
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Liubymivka"
+ident = "LY"
+kind = "ndb"
+mhz = 0.67
+lat = 45.624908
+lon = 34.898324
+x = 56011.175781
+z = 48464.128906
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Lymans-Ke"
+ident = "LA"
+kind = "ndb"
+mhz = 0.75
+lat = 46.666575
+lon = 29.999999
+x = 174369.8125
+z = -329002.8125
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Manychsky"
+ident = "MN"
+kind = "ndb"
+mhz = 0.705
+lat = 47.049909
+lon = 40.366647
+x = 238988.84375
+z = 459902.875
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Mariupol"
+ident = "MA"
+kind = "ndb"
+mhz = 0.77
+lat = 47.083242
+lon = 37.449986
+x = 225914.703125
+z = 238245.421875
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Maykop"
+ident = "MA"
+kind = "ndb"
+mhz = 0.682
+lat = 44.622965
+lon = 40.146927
+x = -32141.814453
+z = 467470.5625
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Maykop-Khanskaya"
+ident = "D"
+kind = "ndb"
+mhz = 0.591
+lat = 44.664391
+lon = 40.012421
+x = -28470.767578
+z = 456401.46875
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Maykop-Khanskaya"
+ident = "DG"
+kind = "ndb"
+mhz = 0.289
+lat = 44.645015
+lon = 39.986269
+x = -30802.216797
+z = 454513.53125
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Maykop-Khanskaya"
+ident = "R"
+kind = "ndb"
+mhz = 0.591
+lat = 44.698086
+lon = 40.057981
+x = -24414.369141
+z = 459687.53125
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Maykop-Khanskaya"
+ident = "RK"
+kind = "ndb"
+mhz = 0.289
+lat = 44.717443
+lon = 40.084181
+x = -22082.919922
+z = 461575.46875
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Melitopol"
+ident = "NE"
+kind = "ndb"
+mhz = 0.74
+lat = 46.866575
+lon = 35.299989
+x = 194790.4375
+z = 75772.835938
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "MineralnyeVody"
+ident = "D"
+kind = "ndb"
+mhz = 0.283
+lat = 44.243846
+lon = 43.046088
+x = -49830.164063
+z = 702709.875
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "MineralnyeVody"
+ident = "MD"
+kind = "ndb"
+mhz = 0.583
+lat = 44.256747
+lon = 43.017738
+x = -48676.292969
+z = 700268.875
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "MineralnyeVody"
+ident = "N"
+kind = "ndb"
+mhz = 0.283
+lat = 44.211867
+lon = 43.116226
+x = -52688.359375
+z = 708754.0625
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "MineralnyeVody"
+ident = "NR"
+kind = "ndb"
+mhz = 0.583
+lat = 44.198946
+lon = 43.14453
+x = -53842.230469
+z = 711195.0625
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "MineralnyeVody"
+ident = "MN"
+kind = "vor"
+mhz = 117.1
+channel = 118
+lat = 44.239445
+lon = 43.054165
+x = -50239.421875
+z = 703415.5
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Mozdok"
+ident = "D"
+kind = "ndb"
+mhz = 1.065
+lat = 43.792126
+lon = 44.563089
+x = -83892.507813
+z = 831013.4375
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Mozdok"
+ident = "DO"
+kind = "ndb"
+mhz = 0.525
+lat = 43.79238
+lon = 44.538494
+x = -84144.421875
+z = 829029.375
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Mozdok"
+ident = "R"
+kind = "ndb"
+mhz = 1.065
+lat = 43.791336
+lon = 44.635898
+x = -83147.640625
+z = 836887.8125
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Mozdok"
+ident = "RM"
+kind = "ndb"
+mhz = 0.525
+lat = 43.790945
+lon = 44.670692
+x = -82791.179688
+z = 839695.25
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Mukhrani"
+ident = "DF"
+kind = "ndb"
+mhz = 0.52
+lat = 41.916577
+lon = 44.565533
+x = -292419.78125
+z = 860239.0625
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Nalchik"
+ident = "N"
+kind = "ndb"
+mhz = 0.35
+lat = 43.524039
+lon = 43.663409
+x = -123534.171875
+z = 762457.0625
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Nalchik"
+ident = "NL"
+kind = "ndb"
+mhz = 0.718
+lat = 43.535011
+lon = 43.692885
+x = -122005.132813
+z = 764682.375
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Nikolaev-Kulbakino"
+ident = "NK"
+kind = "ndb"
+mhz = 1.03
+lat = 46.933241
+lon = 32.099995
+x = 200023.625
+z = -168025.390625
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Nikolaev-Matveyevka"
+ident = "NK"
+kind = "ndb"
+mhz = 1.03
+lat = 47.087408
+lon = 31.973051
+x = 217274.171875
+z = -177463.6875
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Odessa"
+ident = "OD"
+kind = "ndb"
+mhz = 0.348
+lat = 46.306297
+lon = 30.661109
+x = 132623.734375
+z = -279618.625
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Odessa"
+ident = "WR"
+kind = "ndb"
+mhz = 0.309
+lat = 46.496019
+lon = 30.723886
+x = 153563.03125
+z = -274177.90625
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Parutine"
+ident = "PA"
+kind = "ndb"
+mhz = 0.905
+lat = 46.694908
+lon = 31.904995
+x = 173728.484375
+z = -183237.75
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Peredovay"
+ident = "PR"
+kind = "ndb"
+mhz = 1.21
+lat = 44.116576
+lon = 41.466648
+x = -78315.664063
+z = 578030.8125
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Primorsko-Akhtarsk"
+ident = "GW"
+kind = "ndb"
+mhz = 0.92
+lat = 46.049909
+lon = 38.233318
+x = 114807.015625
+z = 305325.96875
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Rostov-Na-Donu"
+ident = "RE"
+kind = "ndb"
+mhz = 0.32
+lat = 47.224909
+lon = 39.769982
+x = 254315.078125
+z = 412917.5
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Ryazanskaya"
+ident = "XT"
+kind = "ndb"
+mhz = 0.312
+lat = 44.966576
+lon = 39.56665
+x = 2140.25708
+z = 418337.25
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Sarmakovo"
+ident = "SR"
+kind = "ndb"
+mhz = 0.907
+lat = 43.74991
+lon = 43.116645
+x = -104016.257813
+z = 715148.0625
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Senaki-Kolkhi"
+ident = "B"
+kind = "ndb"
+mhz = 0.688
+lat = 42.245075
+lon = 42.018251
+x = -281575.5
+z = 644770.9375
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Senaki-Kolkhi"
+ident = "BI"
+kind = "ndb"
+mhz = 0.335
+lat = 42.249592
+lon = 41.986317
+x = -281354.25
+z = 642080.0
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Senaki-Kolkhi"
+ident = "TSK"
+kind = "tacan"
+mhz = 992.0
+channel = 31
+lat = 42.242087
+lon = 42.04702
+x = -281653.6875
+z = 647182.625
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Shyriaeve"
+ident = "SH"
+kind = "ndb"
+mhz = 0.389
+lat = 47.403241
+lon = 30.279998
+x = 255448.65625
+z = -304739.375
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Simferopol"
+ident = "KC"
+kind = "ndb"
+mhz = 0.58
+lat = 44.749908
+lon = 33.566659
+x = -42789.855469
+z = -54661.699219
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Skadovsk"
+ident = "SK"
+kind = "ndb"
+mhz = 0.68
+lat = 46.133242
+lon = 32.91666
+x = 110740.085938
+z = -105954.679688
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Smolenkaya"
+ident = "SM"
+kind = "ndb"
+mhz = 0.662
+lat = 44.787409
+lon = 38.796373
+x = -22412.445313
+z = 359018.03125
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Sochi-Adler"
+ident = "CO"
+kind = "ndb"
+mhz = 0.761
+lat = 43.435164
+lon = 39.911051
+x = -165720.53125
+z = 459873.46875
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Stavropol"
+ident = "KT"
+kind = "ndb"
+mhz = 0.73
+lat = 45.121577
+lon = 42.181646
+x = 39516.828125
+z = 622585.0
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Sukhoy"
+ident = "SH"
+kind = "ndb"
+mhz = 0.862
+lat = 47.09991
+lon = 41.349979
+x = 252081.109375
+z = 533942.125
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Sukhumi-Babushara"
+ident = "A"
+kind = "ndb"
+mhz = 0.995
+lat = 42.846418
+lon = 41.156849
+x = -221969.65625
+z = 567154.75
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Sukhumi-Babushara"
+ident = "AV"
+kind = "ndb"
+mhz = 0.489
+lat = 42.833582
+lon = 41.184697
+x = -223173.765625
+z = 569571.375
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Sultanskoye"
+ident = "SN"
+kind = "ndb"
+mhz = 0.866
+lat = 44.591577
+lon = 42.666645
+x = -14871.457031
+z = 667798.1875
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Taganrog"
+ident = "TC"
+kind = "ndb"
+mhz = 0.47
+lat = 47.249909
+lon = 38.833317
+x = 251346.78125
+z = 341832.1875
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "TaganrogYuzhny"
+ident = "TY"
+kind = "ndb"
+mhz = 0.72
+lat = 47.199909
+lon = 38.849984
+x = 245887.234375
+z = 343510.5625
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Tbilisi-Lochini"
+ident = "B"
+kind = "ndb"
+mhz = 0.923
+lat = 41.685992
+lon = 44.931895
+x = -313847.625
+z = 894297.875
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Tbilisi-Lochini"
+ident = "BP"
+kind = "ndb"
+mhz = 0.342
+lat = 41.703274
+lon = 44.909623
+x = -312185.40625
+z = 892170.1875
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Tbilisi-Lochini"
+ident = "N"
+kind = "ndb"
+mhz = 0.435
+lat = 41.650521
+lon = 44.977543
+x = -317258.75
+z = 898662.5
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Tbilisi-Lochini"
+ident = "NA"
+kind = "ndb"
+mhz = 0.211
+lat = 41.633231
+lon = 44.999778
+x = -318920.96875
+z = 900790.1875
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Tbilisi-Lochini"
+ident = "GTB"
+kind = "tacan"
+mhz = 986.0
+channel = 25
+lat = 41.670577
+lon = 44.930298
+x = -315581.71875
+z = 894405.6875
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Tbilisi-Lochini"
+ident = "TB"
+kind = "vor"
+mhz = 113.7
+channel = 84
+lat = 41.670555
+lon = 44.946945
+x = -315388.90625
+z = 895795.0625
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "TchervonoLissya"
+ident = "LE"
+kind = "ndb"
+mhz = 0.395
+lat = 44.833242
+lon = 34.249992
+x = -32929.128906
+z = -713.123108
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Tendrovskiy"
+ident = "TD"
+kind = "ndb"
+mhz = 0.309
+lat = 46.318519
+lon = 31.522774
+x = 132383.515625
+z = -213243.359375
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Teplorechensky"
+ident = "FM"
+kind = "ndb"
+mhz = 1.182
+lat = 44.15491
+lon = 43.533311
+x = -54782.4375
+z = 742905.8125
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Tikhoretsk"
+ident = "UH"
+kind = "ndb"
+mhz = 0.528
+lat = 45.833243
+lon = 40.083315
+x = 101857.085938
+z = 450564.0
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Tiraspol"
+ident = "TH"
+kind = "ndb"
+mhz = 0.515
+lat = 46.866575
+lon = 29.599999
+x = 197836.03125
+z = -358637.03125
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Ust-Labinks"
+ident = "NZ"
+kind = "ndb"
+mhz = 0.33
+lat = 45.226576
+lon = 39.65415
+x = 31587.583984
+z = 422850.9375
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Vaziani"
+ident = "VAS"
+kind = "tacan"
+mhz = 983.0
+channel = 22
+lat = 41.630707
+lon = 45.02734
+x = -318876.5
+z = 903131.125
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Vesely"
+ident = "WS"
+kind = "ndb"
+mhz = 0.641
+lat = 47.116576
+lon = 40.716647
+x = 248966.796875
+z = 485735.125
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Yalta"
+ident = "BS"
+kind = "ndb"
+mhz = 0.3
+lat = 46.879909
+lon = 37.33693
+x = 202840.78125
+z = 230918.171875
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Yasnaya"
+ident = "QG"
+kind = "ndb"
+mhz = 0.435
+lat = 46.883243
+lon = 40.666647
+x = 222679.15625
+z = 484495.90625
+source = "caucasus-Beacons.lua, the sim's own table"
+
+[[navaid]]
+field = "Yegorlykskaya"
+ident = "ER"
+kind = "ndb"
+mhz = 0.435
+lat = 46.583243
+lon = 40.666647
+x = 189361.796875
+z = 487761.8125
+source = "caucasus-Beacons.lua, the sim's own table"

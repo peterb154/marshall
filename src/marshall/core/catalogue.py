@@ -256,6 +256,26 @@ class Identity(_File):
     wind_mph: float = 0.0
 
 
+class Navaid(_File):
+    """A transmitter a pilot can TUNE, out of the sim's own Beacons.lua.
+
+    Half of everything a controller may NAME: he flies his own steerpoints and
+    the navaids he can tune, and nothing else (docs/CONFIG.md). Imported by
+    `tools/import_beacons.py` rather than authored -- both frames come
+    straight out of the sim, so nothing is projected or transcribed.
+    """
+    field: str
+    kind: str
+    lat: float
+    lon: float
+    ident: str = ""
+    mhz: float = 0.0
+    channel: int = 0
+    x: float = 0.0
+    z: float = 0.0
+    source: str
+
+
 class TheatreFile(_File):
     theatre: Identity | None = None
     pronunciation: Terms = Terms()
@@ -264,6 +284,7 @@ class TheatreFile(_File):
     field: list[Aerodrome] = []
     station: list[Controller] = []
     approach: list[Approach] = []
+    navaid: list[Navaid] = []
 
 
 class CallsignsFile(_File):
@@ -431,6 +452,11 @@ def aerodromes(theatre: str = "") -> list[Aerodrome]:
 def controllers(theatre: str = "") -> list[Controller]:
     """The seats on this map, in ladder order as written."""
     return list(_theatre(theatre or theatre_name()).station)
+
+
+def navaids(theatre: str = "") -> list[Navaid]:
+    """Every transmitter this map publishes that a pilot can tune."""
+    return list(_theatre(theatre or theatre_name()).navaid)
 
 
 def approaches(theatre: str = "") -> list[Approach]:

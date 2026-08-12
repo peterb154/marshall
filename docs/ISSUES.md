@@ -7465,3 +7465,53 @@ committed it hours after refusing to do the same thing to Nevada's TONOPAH
 The line now says it is invented, that the plate is one we generate, and why
 the ident is what it is. Published because it is on the plate the pilot holds —
 published BY US, which is a different claim from published by an AIP.
+
+---
+
+## [ARCH-25] The 1944 beacons are fiction sitting where the real navaids go — #145
+labels: architecture
+
+    "importing a map's naviads should be dead simple ... We can get rid of
+     those 1944 beacons for now.. I dont know how/if we'll use those again"
+
+`tools/import_beacons.py` lands the easy half: 122 tunable navaids for the
+Caucasus and 27 for Nevada, straight out of the sim's own `Beacons.lua` with
+both frames of position, no projection and no transcription. A new map costs a
+command.
+
+**What it exposed** is that a published "fix" is still two things welded
+together, exactly as `ApproachProfile` was:
+
+    a position   real, from the sim, correct in every era
+    a navaid     ident, frequency, type -- which is Beacons.lua for a modern
+                 sortie and INVENTED for 1944
+
+Ours against the sim's, for the same three fields:
+
+    BATUMI    OS  132.0 ndb      vs   ILS ILU 110.3 · TACAN BTM · homer LU 0.430
+    KOBULETI  MG  124.0 ndb      vs   ILS IKB 111.5 · TACAN KBL · homers KT/T
+    KUTAISI   KT  --             vs   VOR KT 113.6 · TACAN KTS · ILS IKS
+    INITIAL   SW  128.0 ndb      vs   nothing; we invented it
+
+The POSITIONS agree to a tenth of a mile — both descend from the aerodrome
+reference point. Every ident and frequency does not. A modern pilot tuning
+"BATUMI 132.0" gets silence: the homer is 0.430 and the TACAN is BTM.
+
+That matters because of the rule in `docs/CONFIG.md` — a pilot flies his
+steerpoints and the navaids he can TUNE — and *tunable* means the frequency has
+to be the one the aeroplane will actually receive in the era it is flying.
+
+**Still to do:**
+
+  * retire the four invented beacons. They cannot simply be deleted: the
+    approaches name INITIAL as their IAF, so the procedure must carry that
+    geometry INLINE first — *"the fixes dont have to have names, they are just
+    geometry"* — which is the same finding as [FP-10] arriving from the other
+    side.
+  * the ILS, which is the half that needs interpretation: a localiser and a
+    glideslope are two entries at two positions sharing one frequency, and
+    turning that pair into a procedure needs a course and a threshold. It
+    belongs with the approach, not in a mechanical import.
+  * Nevada's #141 is unblocked by this — its navaids are now imported and
+    citable, so the question is only whether the TONOPAH steerpoint was ever a
+    navaid at all.
