@@ -13,7 +13,11 @@ authors = [{ name = "peterb154" }]
 # while the bridge reached state over HTTP; now every part reads the same tables
 # through `core.db` and `core.schema`, so this is the one thing all of them
 # need. See docs/SCHEMA.md.
-dependencies = ["psycopg[binary,pool]>=3.2", "sqlalchemy>=2.0", "geoalchemy2>=0.15"]
+# pydantic validates the configuration FILES (see core/catalogue.py and
+# docs/CONFIG.md). A core dependency rather than an extra, because a bridge
+# that cannot check its own configuration is a bridge that starts on a typo.
+dependencies = ["psycopg[binary,pool]>=3.2", "sqlalchemy>=2.0", "geoalchemy2>=0.15",
+                "pydantic>=2.7"]
 
 [project.optional-dependencies]
 # The kneeboard / flight-planning web server. uvicorn gives the per-connection

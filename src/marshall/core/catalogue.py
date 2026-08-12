@@ -46,10 +46,61 @@ import tomllib
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import BaseModel, ConfigDict, ValidationError
+
 # The repo's own config directory, overridable for tests and for a deployment
 # that keeps its theatres somewhere else. Resolved at call time rather than at
 # import, so a test can point it somewhere and not fight import order.
 _DEFAULT = Path(__file__).resolve().parents[3] / "config"
+
+
+# --- the shape of a configuration file --------------------------------------
+#
+# `extra="forbid"` IS THE WHOLE POINT, and it is worth more than the typing.
+# Valid TOML is not valid configuration, and the gap between them is exactly
+# this project's oldest failure: a plausible file that silently does nothing.
+# Before this, both of these parsed clean and were ignored --
+#
+#     [recognizer]        the American spelling
+#     [pronounciation]    a misspelling nobody would see
+#
+# -- and the bridge came up with no pronunciation table and an unprimed
+# recogniser, saying not one word about either. A controller running on
+# silently-empty configuration is the shape of every foundational bug this
+# month: a real-looking answer belonging to nothing.
+#
+# WHY PYDANTIC RATHER THAN A HAND-ROLLED CHECK. It reports EVERY fault in the
+# file at once with the path to each, so fixing a theatre is one pass instead
+# of one restart per typo -- and the same models describe what crosses to
+# Postgres, so the file and the table cannot drift without a test noticing.
+# See docs/CONFIG.md.
+
+
+class _File(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class Terms(_File):
+    """Respellings. Free-form keys -- the WORDS are data, the sections are not."""
+    model_config = ConfigDict(extra="allow")
+
+
+class Phrases(_File):
+    phrases: list[str] = []
+
+
+class SpeechFile(_File):
+    terms: Terms = Terms()
+    recogniser: Phrases = Phrases()
+
+
+class TheatreFile(_File):
+    pronunciation: Terms = Terms()
+    recogniser: Phrases = Phrases()
+
+
+class CallsignsFile(_File):
+    pronunciation: Terms = Terms()
 
 
 def root() -> Path:
@@ -61,7 +112,14 @@ def theatre_name() -> str:
     return (os.environ.get("MARSHALL_THEATRE") or "caucasus").strip().lower()
 
 
-def _read(path: Path) -> dict:
+def _read(path: Path, model: type[BaseModel] | None = None):
+    """Parse and VALIDATE one configuration file.
+
+    Two separate failures, reported separately, because they have different
+    fixes: TOML that will not parse is a syntax error, and TOML that parses
+    into the wrong shape is a typo in a section name -- and the second used to
+    be silent.
+    """
     if not path.exists():
         raise FileNotFoundError(
             f"no configuration at {path}. A map with no file is far more "
@@ -70,21 +128,32 @@ def _read(path: Path) -> dict:
             f"absent. See docs/CONFIG.md")
     try:
         with path.open("rb") as fh:
-            return tomllib.load(fh)
+            raw = tomllib.load(fh)
     except tomllib.TOMLDecodeError as e:
         # NAMED, because "invalid config" three layers down a start-up trace is
         # the same amount of information as no message at all.
         raise ValueError(f"{path} is not valid TOML: {e}") from e
+    if model is None:
+        return raw
+    try:
+        return model.model_validate(raw)
+    except ValidationError as e:
+        # EVERY FAULT AT ONCE, with the key that caused it. One pass to fix a
+        # theatre, rather than one restart per typo.
+        faults = "; ".join(
+            f"{'.'.join(str(x) for x in err['loc'])}: {err['msg']}"
+            for err in e.errors())
+        raise ValueError(f"{path} is not valid configuration -- {faults}") from e
 
 
 @lru_cache(maxsize=8)
-def _universal() -> dict:
-    return _read(root() / "speech.toml")
+def _universal() -> SpeechFile:
+    return _read(root() / "speech.toml", SpeechFile)
 
 
 @lru_cache(maxsize=8)
-def _theatre(name: str) -> dict:
-    return _read(root() / "theatres" / f"{name}.toml")
+def _theatre(name: str) -> TheatreFile:
+    return _read(root() / "theatres" / f"{name}.toml", TheatreFile)
 
 
 def reload() -> None:
@@ -118,8 +187,8 @@ def speech(callsigns: dict | None = None) -> dict:
     """
     out: dict[str, str] = {}
     try:
-        out.update(_universal().get("terms") or {})
-        out.update(_theatre(theatre_name()).get("pronunciation") or {})
+        out.update(_universal().terms.model_dump())
+        out.update(_theatre(theatre_name()).pronunciation.model_dump())
     except (FileNotFoundError, ValueError) as e:
         print(f"  !! pronunciation unavailable ({e}); the controller will "
               f"have an accent", flush=True)
@@ -141,9 +210,16 @@ def known_callsigns() -> dict:
     misconfiguration.
     """
     try:
-        return dict(_read(root() / "callsigns.toml")
-                     .get("pronunciation") or {})
-    except (FileNotFoundError, ValueError):
+        return _read(root() / "callsigns.toml",
+                     CallsignsFile).pronunciation.model_dump()
+    except FileNotFoundError:
+        return {}
+    except ValueError as e:
+        # ABSENT IS FINE; WRONG IS NOT. A file somebody wrote and mistyped is a
+        # different thing from no file at all, and the second must not
+        # impersonate the first -- that is how a pilot's name goes unsaid with
+        # nothing on the log to explain it.
+        print(f"  !! {e}", flush=True)
         return {}
 
 
@@ -157,9 +233,8 @@ def recogniser_phrases(callsigns=()) -> list[str]:
     """
     got: list[str] = []
     try:
-        got += list((_universal().get("recogniser") or {}).get("phrases") or ())
-        got += list((_theatre(theatre_name()).get("recogniser") or {})
-                    .get("phrases") or ())
+        got += list(_universal().recogniser.phrases)
+        got += list(_theatre(theatre_name()).recogniser.phrases)
     except (FileNotFoundError, ValueError) as e:
         print(f"  !! recogniser hints unavailable ({e}); transcription will be "
               f"unprimed", flush=True)

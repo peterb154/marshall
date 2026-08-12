@@ -55,6 +55,27 @@ class Sandbox(unittest.TestCase):
         catalogue.known_callsigns.cache_clear()
         self._tmp.cleanup()
 
+
+    def assertLogsToStdout(self, needle):
+        """The loaders print rather than raise where they degrade, so the test
+        has to read stdout to prove the operator was told."""
+        import contextlib
+        import io
+        outer = self
+
+        class Ctx:
+            def __enter__(self):
+                self.buf = io.StringIO()
+                self.cm = contextlib.redirect_stdout(self.buf)
+                self.cm.__enter__()
+                return self
+
+            def __exit__(self, *exc):
+                self.cm.__exit__(*exc)
+                outer.assertIn(needle, self.buf.getvalue())
+                return False
+        return Ctx()
+
     def write(self, rel, text):
         p = self.dir / rel
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -187,6 +208,54 @@ class ABadFileIsLoudRatherThanEmpty(Sandbox):
         with self.assertRaises(ValueError) as e:
             catalogue._universal()
         self.assertIn("speech.toml", str(e.exception))
+
+    def test_a_mistyped_SECTION_is_caught_and_named(self):
+        """VALID TOML IS NOT VALID CONFIGURATION, and the gap between them was
+        silent. Both of these parse clean:
+
+            [recognizer]        the American spelling
+            [pronounciation]    a misspelling nobody would see
+
+        and the bridge came up with no pronunciation table and an unprimed
+        recogniser, saying nothing about either.
+        """
+        self.write("speech.toml", '[terms]\nnine = "niner"\n'
+                                  '[recognizer]\nphrases = ["say again"]\n')
+        with self.assertRaises(ValueError) as e:
+            catalogue._universal()
+        self.assertIn("recognizer", str(e.exception))
+        self.assertIn("speech.toml", str(e.exception))
+
+    def test_a_mistyped_theatre_section_too(self):
+        self.write("speech.toml", "[terms]\n")
+        self.write("theatres/testmap.toml",
+                   '[pronounciation]\nBatumi = "bah-too-mee"\n')
+        with self.assertRaises(ValueError) as e:
+            catalogue._theatre("testmap")
+        self.assertIn("pronounciation", str(e.exception))
+
+    def test_every_fault_is_reported_at_once(self):
+        """One pass to fix a theatre, not one restart per typo."""
+        self.write("speech.toml",
+                   '[terms]\n[recognizer]\nphrases = []\n[extras]\nx = 1\n')
+        with self.assertRaises(ValueError) as e:
+            catalogue._universal()
+        self.assertIn("recognizer", str(e.exception))
+        self.assertIn("extras", str(e.exception))
+
+    def test_the_words_themselves_stay_free_form(self):
+        """The SECTIONS are schema; the WORDS are data. Adding a respelling
+        must never require a code change -- that is the whole point."""
+        self.write("speech.toml", '[terms]\nwilco = "will co"\n')
+        self.write("theatres/testmap.toml", "[pronunciation]\n")
+        self.assertEqual(catalogue.speech()["wilco"], "will co")
+
+    def test_a_mistyped_callsigns_file_is_reported_not_swallowed(self):
+        """Absent is fine; WRONG is not. A file somebody wrote and mistyped is
+        a different thing from no file, and must not impersonate one."""
+        self.write("callsigns.toml", '[pronounciation]\nNomad = "no-mad"\n')
+        with self.assertLogsToStdout("callsigns.toml"):
+            self.assertEqual(catalogue.known_callsigns(), {})
 
 
 class TheRepoSOwnConfigurationLoads(unittest.TestCase):

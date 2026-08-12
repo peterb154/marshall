@@ -110,6 +110,51 @@ Batumi on the ASR — and #131 was the bridge reading its approach out of exactl
 that row. A flight plan is something a pilot files. Seeding belongs in a tool
 that can be re-run, pointed at a theatre, and cited.
 
+## Keeping the shape tight, and aligned with the database
+
+    "how do we keep the schema tight and aligned with the database? pydantic?"
+
+Yes, and the reason is not typing — it is that **valid TOML is not valid
+configuration**, and the gap between them was silent. Both of these parse
+clean and are ignored:
+
+    [recognizer]        the American spelling
+    [pronounciation]    a misspelling nobody would see
+
+The bridge then comes up with no pronunciation table and an unprimed
+recogniser, saying not one word about either — a plausible file that does
+nothing, which is this project's oldest failure shape wearing a new hat.
+
+So every config file is validated against a pydantic model with
+`extra="forbid"`, and the error names the file and the key. Every fault at
+once, so fixing a theatre is one pass rather than one restart per typo.
+
+**The sections are schema; the values are data.** `[terms]` and
+`[pronunciation]` are `extra="allow"` inside, because adding a respelling must
+never need a code change — that is the whole point. Adding a SECTION is a
+schema change and should be reviewed like one.
+
+### Alignment with Postgres, without coupling the two deployables
+
+Three shapes, and they are deliberately not one:
+
+    pydantic model    the FILE, and the object held in memory
+    SQLAlchemy model  the TABLE, for anything that needs SQL
+    a test            asserts the two agree, field by field
+
+The bridge and the director are separate deployables with a contract between
+them, and `push_fixes` says plainly that they *do not share code*. So a shared
+model across that seam would be the wrong kind of coupling — and the repo
+already has the right pattern for this: `director/tools/flights.py` duplicates
+`PHASES` from `phases.py` with the comment *"Duplicated deliberately: the
+director must be able to reject a phase it does not know without importing the
+ATC package"*.
+
+Duplicate deliberately, and **test that they agree** — because the failure mode
+is drift, and drift is exactly what a test catches and a shared import merely
+postpones. Reference data that never reaches SQL (pronunciation, recogniser
+hints) needs no table and gets none.
+
 ## Where we break this today
 
 Honest, and the list is the audit in #137: `core/fixes.py`, `core/fields.py`,

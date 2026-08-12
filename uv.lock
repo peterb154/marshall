@@ -457,6 +457,7 @@ source = { editable = "." }
 dependencies = [
     { name = "geoalchemy2" },
     { name = "psycopg", extra = ["binary", "pool"] },
+    { name = "pydantic" },
     { name = "sqlalchemy" },
 ]
 
@@ -499,6 +500,7 @@ requires-dist = [
     { name = "numpy", marker = "extra == 'voice'", specifier = ">=1.26" },
     { name = "opuslib", marker = "extra == 'voice'", specifier = ">=3.0" },
     { name = "psycopg", extras = ["binary", "pool"], specifier = ">=3.2" },
+    { name = "pydantic", specifier = ">=2.7" },
     { name = "pydcs", marker = "extra == 'dev'", specifier = ">=0.15.0" },
     { name = "pydcs", marker = "extra == 'mission'", specifier = ">=0.15.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
