@@ -7126,32 +7126,66 @@ checksum, so applied databases are untouched and only a fresh install sees the
 difference. All five verified against the real schema inside a rolled-back
 transaction.
 
-### NOT DONE, and the honest shape of what is left
+### The Python definitions are gone
 
-Counting proper nouns in live code after all of the above: **365, against 379
-at the audit.** Fourteen. That number is the useful one, because it says
-plainly what the commits do not:
+`core/fields.py`, `core/stations.py` and `core/approach.py` no longer DEFINE
+anything — `FIELDS`, `STATIONS`, `PRESET_LADDER`, the nine seats, the two
+aerodromes and the four procedures are all deleted. There is one copy.
 
-**The data now exists in TWO places.** The theatre reads the files at runtime —
-that path is converted and verified — but `core/fields.py`, `core/stations.py`,
-`core/approach.py` and `core/fixes.py` still DEFINE the same values, and
-**46 call sites still read them**: the kneeboard pages, `mission/build.py`, the
-synthetic pilot and the rehearsals.
+**Without touching the ~300 call sites**, which was the point of doing it this
+way. A module `__getattr__` in `route.py` resolves those names against the
+configured theatre, so `R.BATUMI_ASR` and `R.STATIONS` keep working and read
+from the file. That is the same argument `route.py`'s own re-export block
+already makes: keep the seam in one readable place rather than spread over
+forty files. The names resolve LAZILY too, so a tool that only wants
+`spell_alt` no longer needs a configured map to import.
 
-Two sources of truth is the thing this issue exists to end, so a conversion
-that adds one has not finished. What makes it survivable rather than a
-regression is that `TheFilesSayExactlyWhatThePythonSaid` asserts them equal
-attribute by attribute — drift is caught on the next test run rather than
-discovered on a sortie. It is a clamp, not a cure.
+THE CLASSES STAY IN PYTHON. `Fix`, `Field_`, `Station`, `ApproachProfile`,
+`may_vector`, the descent geometry — shapes and behaviour are code; only the
+INSTANCES were ever data. That sentence is the whole of `docs/CONFIG.md`.
 
-**To actually finish:** delete the Python definitions and point those 46 call
-sites at the theatre. That is where the remaining work is, and it is ordinary
-work rather than a design question — the design questions are all answered now.
-The guard test is deleted with them, having done its job.
+**`PRESET_LADDER` is now derived rather than written.** It was a hand-kept list
+of the same seats in the same order, so the card and the theatre could disagree
+about which button a pilot presses — and the fix for that is not to write it
+twice carefully but to write it once. The file says which seats are rungs
+(`preset = false` on Sentry, who is a controller you may call and not a step
+you are handed through).
 
-**Also still to move:** Nevada — blocked on #141, a real coordinate discrepancy
-rather than effort — and the "NDB 13" kneeboard page, which is correctly bound
-to the NDB procedure but Caucasus-bound on any map.
+**One subtlety worth keeping.** `R.KOB_CLEARANCE is profile.stations[0]` was
+true when both were one module constant, and several tests assert exactly
+that — identity is the cheapest way to say "the same controller, not a copy
+that happens to match". The caches are keyed on a RESOLVED map name for this
+reason: `stations_now("")` and `stations_now("caucasus")` were briefly two
+entries holding two equal-but-distinct sets, and four handoff tests went red.
+
+The migration guard is deleted, having done its job twice — a quote turned into
+an apostrophe, and #140. Comparing the files to themselves proves nothing; what
+replaced it asserts there is nothing left to drift FROM.
+
+### What is still Python, and why
+
+355 proper-noun references remain in live code, against 379 at the audit. The
+number stays high because most of what is left is not configuration:
+
+  * **`mission/build.py`** builds the 1944 `.miz`. A mission's own waypoints
+    and units belong to the mission — the same distinction as #133.
+  * **`intents.py`, `radio/pilot.py`, `radio/rehearsal.py`** are worked
+    EXAMPLES — "Pony one one, checking in" teaching a classifier what a
+    transmission sounds like. Teaching material, not facts about today.
+  * **`core/fixes.py`** still holds the strike's turning points, which is
+    correct: they are the sortie's, and publishing them was the original bug.
+  * **`core/nevada.py`** is genuinely unconverted, blocked on #141.
+
+### Still to move
+
+**Nevada**, blocked on #141 — a real coordinate discrepancy rather than effort.
+Publishing a fix means writing down a coordinate AND a source, and its TONOPAH
+sits ~34 km from the sim's own VORTAC on a different frequency. Its fields,
+stations and procedures could move tomorrow; its fixes cannot until somebody
+flies there.
+
+**The "NDB 13" kneeboard page**, which is correctly bound to the NDB procedure
+and wrongly bound to the Caucasus — it renders a Batumi plate on any map.
 
 ### The counter-example worth copying
 

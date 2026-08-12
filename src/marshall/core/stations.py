@@ -106,6 +106,10 @@ class Station:
     # which aerodrome they belong to is a category error rather than a missing
     # value.
     field: str = ""
+    # A rung of the comms ladder, and therefore a preset. See the theatre
+    # file: Sentry is a controller a pilot may call and not a step he is
+    # handed through.
+    preset: bool = True
     # HOW HE SOUNDS. Never what he decides.
     #
     #     "See if you can add some soul to each of the controllers so there's a
@@ -160,14 +164,19 @@ class Station:
 # CENTER IS NOT A FIELD'S CONTROLLER. Approach and Tower belong to an aerodrome;
 # a Center owns a region and hands you between aerodromes, so there is one for
 # the whole theatre rather than one per airfield.
-CENTER = Station(
-    "Georgia Center", 139.000, "center", voice="Brian",
-    manner="Unhurried and a little remote, like a man with a very large piece "
-           "of sky and no particular reason to rush. Formal without being "
-           "stiff. He works in whole minutes and hundreds of miles, so a "
-           "fifteen-mile problem does not move him. Never chatty, never curt "
-           "-- just distant, the way a voice sounds when it is not standing at "
-           "the same airfield you are.")
+# THE NINE SEATS THAT USED TO BE HERE ARE NOW DATA.
+#
+# `[[station]]` tables in `config/theatres/<map>.toml`, served to the call sites
+# that read `R.APPROACH` and `R.STATIONS` by a module `__getattr__` in
+# `route.py`. Adding a controller is adding a table; it used to be editing this
+# file and redeploying the bridge.
+#
+# What stays is the `Station` SHAPE and the preset ladder arithmetic -- and the
+# reason `field` is on every row, which is the one thing here that is a rule
+# rather than a fact: a role is only unique within an aerodrome, and four things
+# broke at once when the second field arrived because nothing said so.
+# See docs/CONFIG.md and #137.
+
 # THE PUBLISHED FREQUENCY FIRST, the tunable one beside it.
 #
 # AIP Georgia AD 2.UGSB-IAC-12-ILSy (10 AUG 2023) gives APP 124.425 and TWR
@@ -183,20 +192,6 @@ CENTER = Station(
 # pilot down through cloud to a runway he cannot see, which is the single moment
 # in this whole system where a controller's manner does real work. Everybody
 # else can afford a temper.
-APPROACH = Station("Batumi Approach", 124.425, "approach",
-                   channels=(124.000,),
-                   also=("departure",), voice="Matthew", field="Batumi",
-                   manner="Calm, methodical, and entirely unflappable -- the "
-                          "voice you want in the weather. He talks in an even "
-                          "rhythm and never speeds up, because the man on the "
-                          "other end is flying an instrument approach and "
-                          "takes his pace from yours. Warm, but economical: "
-                          "no chat during the talk-down, and every "
-                          "transmission is a number the pilot needs. If "
-                          "something goes wrong he gets quieter and more "
-                          "precise rather than louder. The one controller who "
-                          "is never, under any circumstances, short with "
-                          "anybody.")
 # GROUND IS ITS OWN SEAT NOW, and it used to be part of Tower's `also`.
 #
 # That was right while Batumi was the only aerodrome and a warbird had four
@@ -207,33 +202,11 @@ APPROACH = Station("Batumi Approach", 124.425, "approach",
 # to be able to get wrong and then fix.
 #
 # The 1944 arrangement is not deleted, it moved to `WW2_STATIONS` below.
-TOWER = Station("Batumi Tower", 118.600, "tower", channels=(118.000,),
-                voice="Joey", field="Batumi",
-                manner="Cheerful and genuinely pleased to see aeroplanes. He "
-                       "has a window and he uses it -- he will tell you the "
-                       "wind is being kind today, or that he has you visual on "
-                       "a two-mile final. Brisk when there is a sequence to "
-                       "run, friendly the rest of the time, and he says "
-                       "\"welcome back\" to somebody who has just landed out "
-                       "of the weather. Never gushing, and never so chatty "
-                       "that a landing clearance gets buried in it.")
 # 121.900 IS ASSIGNED BY US, not published. The AIP extract we hold for UGSB
 # gives APP and TWR and nothing else, so rather than invent a number with no
 # shape, this takes the frequency that ground control sits on at most of the
 # world's aerodromes. It is a plausible number honestly labelled, which is the
 # most we can claim for it.
-GROUND = Station("Batumi Ground", 121.900, "ground",
-                 also=("delivery", "clearance"), voice="Stephen",
-                 field="Batumi",
-                 manner="Gruff, and has been doing this a very long time. He "
-                        "uses as few words as the job allows and none at all "
-                        "for pleasantries -- \"taxi bravo, hold short one "
-                        "three\" and nothing after it. Faintly put upon by "
-                        "anyone who needs the taxiways explained, though he "
-                        "will explain them, correctly, every time. Not rude "
-                        "and never unsafe: he simply regards conversation as "
-                        "something that happens on other frequencies. A pilot "
-                        "who thanks him gets \"mm-hm\".")
 
 # ---------------------------------------------------------------------------
 # KOBULETI (UG5X) -- the departure field.
@@ -253,17 +226,6 @@ GROUND = Station("Batumi Ground", 121.900, "ground",
 
 # 125.100 is ASSIGNED. The chart publishes no clearance delivery -- a Soviet-era
 # military field would not have had one -- so this is ours, and marked.
-KOB_CLEARANCE = Station("Kobuleti Clearance", 125.100, "clearance",
-                        also=("delivery",), voice="Gregory", field="Kobuleti",
-                        manner="Precise to the point of pedantry, and reads a "
-                               "clearance like a man reading a form -- because "
-                               "that is exactly what it is. Unhurried, "
-                               "slightly officious, mildly satisfied when a "
-                               "read-back is correct and entirely willing to "
-                               "make you do it again when it is not. He will "
-                               "not let a wrong frequency or a wrong altitude "
-                               "past him, ever, and he is polite about it in a "
-                               "way that makes it worse.")
 # 133.000 AND 122.100 ARE BOTH PUBLISHED, and both are the Tower. The chart
 # lists 133.000 as TWR and 122.100 under "Additional Combined Frequencies" as
 # Tower again -- a real facility reachable on two VHF channels, which is what
@@ -293,42 +255,13 @@ KOB_CLEARANCE = Station("Kobuleti Clearance", 125.100, "clearance",
 # chart publishes no ground for Kobuleti, which a Soviet-era military field
 # would not have had separately. The published 133.000/122.100 pair goes to
 # TOWER, where the chart puts it.
-KOB_GROUND = Station("Kobuleti Ground", 121.800, "ground",
-                     voice="Justin", field="Kobuleti",
-                     manner="Brisk and strictly territorial. He owns the "
-                            "taxiways and nothing else, and he is scrupulous "
-                            "about the boundary -- you are cleared TO the "
-                            "runway and told to hold short of it, every time, "
-                            "in those words. Ask him for take-off and he will "
-                            "tell you that is Tower's, without warmth and "
-                            "without apology. No wasted syllables; he expects "
-                            "you to keep up.")
 # THE PUBLISHED TOWER, on the chart's own numbers. 133.000 is TWR and 122.100
 # is listed beside it under the additional combined frequencies -- one facility
 # reachable on two VHF channels, which is what `channels` has always meant.
-KOB_TOWER = Station("Kobuleti Tower", 133.000, "tower",
-                    channels=(122.100,), voice="Joanna", field="Kobuleti",
-                    manner="Owns the runway and nothing else, and is entirely "
-                           "relaxed about it -- there is rarely a queue. Warm "
-                           "and unhurried on the ground, crisp the moment "
-                           "anything is rolling. She will tell you the wind "
-                           "with a take-off clearance because that is what it "
-                           "is for, and she does not chat while an aeroplane "
-                           "is on the strip.")
 # 123.300 IS PUBLISHED, as "GCA" -- ground controlled approach, the radar
 # controller. Kobuleti is a PAR/SRA field, so the man on this frequency is the
 # same kind of controller Batumi Approach is, and giving him departures as well
 # as arrivals is what the chart already implies.
-KOB_DEPARTURE = Station("Kobuleti Departure", 123.300, "departure",
-                        also=("approach",), voice="Kevin", field="Kobuleti",
-                        manner="Dry, laconic, and comfortable with silence. A "
-                               "radar man: he tells you what he sees and then "
-                               "stops talking, and he does not fill the gaps. "
-                               "Occasional deadpan humour, never at the "
-                               "pilot's expense and never during anything that "
-                               "matters. If he says \"radar contact\" and "
-                               "nothing else for four minutes, that is because "
-                               "there is nothing else you need.")
 
 # The mission commander. Not a new kind of machine -- a controller with a wider
 # scope, which is why it is a Station like the others: it has a frequency, a
@@ -339,17 +272,7 @@ KOB_DEPARTURE = Station("Kobuleti Departure", 123.300, "departure",
 # Fourth preset deliberately. A period set has four buttons and the other three
 # are spoken for, so this is the last one available -- which is also true of a
 # real WW2 cockpit and is a reasonable constraint to design inside.
-OVERLORD = Station("Sentry", 131.000, "overlord", voice="Kimberly",
-                   manner="Command, not service. Crisp, directive and "
-                          "impersonal -- she gives a flight a job rather than "
-                          "a heading, and she does not soften it. No small "
-                          "talk, no reassurance, and no interest in how you "
-                          "feel about the tasking. The only voice here that "
-                          "tells you what to do rather than what you are "
-                          "cleared to do.")
 
-STATIONS = [KOB_CLEARANCE, KOB_GROUND, KOB_TOWER, KOB_DEPARTURE, CENTER,
-            APPROACH, TOWER, GROUND, OVERLORD]
 
 # THE ORDER A PILOT DIALS THEM, which is a fact about the SORTIE and not about
 # the airport. It is written down once, here, because three things have to agree
@@ -373,8 +296,10 @@ STATIONS = [KOB_CLEARANCE, KOB_GROUND, KOB_TOWER, KOB_DEPARTURE, CENTER,
 # Sentry is deliberately NOT on it. He is the mission commander, not a step in
 # the ladder, and a pilot flying Kobuleti to Batumi never needs him -- so he
 # keeps a preset above the ladder rather than a rung inside it.
-PRESET_LADDER = [KOB_CLEARANCE, KOB_GROUND, KOB_TOWER, KOB_DEPARTURE,
-                 CENTER, APPROACH, TOWER, GROUND]
+# DERIVED FROM THE FILE'S ORDER, which IS the ladder -- see `route.__getattr__`.
+# It was a hand-written list, so the card and the theatre could disagree about
+# which button a pilot presses, and the fix for that is not to write it twice
+# carefully but to write it once.
 
 
 # WHERE THE SORTIE STARTS AND WHERE IT ENDS.
@@ -409,7 +334,9 @@ def preset_of(station) -> int | None:
     about the number, rather than the pilot hunting for a frequency he was told
     in megahertz while flying an instrument approach.
     """
-    for i, s in enumerate(PRESET_LADDER, start=1):
+    # THE LADDER IS THE THEATRE'S, in the order its file lists the seats.
+    from marshall.core import route as _R
+    for i, s in enumerate(_R.PRESET_LADDER, start=1):
         if s.name == getattr(station, "name", station):
             return i
     return None

@@ -313,6 +313,10 @@ manner = '''Gruff, and has been doing this a very long time. He uses as few word
 name = "Sentry"
 freq_mhz = 131.0
 role = "overlord"
+# NOT A RUNG. He is the mission commander, not a step in the ladder, and a
+# pilot flying Kobuleti to Batumi never needs him -- so he keeps a preset
+# ABOVE the ladder rather than a place inside it.
+preset = false
 voice = "Kimberly"
 manner = '''Command, not service. Crisp, directive and impersonal -- she gives a flight a job rather than a heading, and she does not soften it. No small talk, no reassurance, and no interest in how you feel about the tasking. The only voice here that tells you what to do rather than what you are cleared to do.'''
 

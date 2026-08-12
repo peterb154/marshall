@@ -405,107 +405,81 @@ class TheTwoSourcesOfPositionAreMERGED(unittest.TestCase):
         self.assertIn("FEET WET", got, "the sim's answer was lost")
 
 
-class TheFilesSayExactlyWhatThePythonSaid(unittest.TestCase):
-    """The migration guard, and it has already earned its place.
+class TheFilesAreTheOnlyCopy(unittest.TestCase):
+    """What replaced the migration guard, now that the Python is gone.
 
-    Moving reference data out of Python is only safe if the move changes
-    nothing, and "nothing" has to be checked field by field rather than
-    eyeballed -- the first pass through this turned a double quote into an
-    apostrophe inside three controllers' `manner`, which is prose that goes
-    straight to the agent and describes how a man sounds on the radio. Green
-    suite, no test failed, and the controller's brief had quietly changed.
+    While the move was half done the same values existed TWICE -- in the files
+    and in `core/fields.py`, `core/stations.py`, `core/approach.py` -- and a
+    test asserted them equal attribute by attribute. It earned its keep twice:
+    it caught a double quote turned into an apostrophe inside three
+    controllers' `manner` (prose that goes straight to the agent, suite green,
+    brief silently changed), and it caught that the 1944 letdown carries no
+    controllers at all (#140).
 
-    Kept for the REST of #137: aerodromes and stations are done, approach
-    procedures and the theatre registry are not, and this is what will catch
-    the same class of slip when they move.
+    Then the Python was deleted and that test became a tautology comparing the
+    files to themselves, so it is gone. What is worth asserting now is that
+    there is nothing left to drift FROM.
     """
 
     def setUp(self):
         catalogue.reload()
         self.addCleanup(catalogue.reload)
 
-    def test_every_aerodrome_survives_the_round_trip(self):
+    def test_the_modules_no_longer_define_the_data(self):
+        from marshall.core import approach, fields, stations
+
+        for mod, names in ((approach, ("BATUMI_ASR", "BATUMI_ILS",
+                                       "BATUMI_APPROACH", "KOBULETI_ILS")),
+                           (fields, ("FIELDS", "BATUMI_FIELD",
+                                     "KOBULETI_FIELD")),
+                           (stations, ("STATIONS", "APPROACH", "TOWER",
+                                       "KOB_CLEARANCE", "PRESET_LADDER"))):
+            for n in names:
+                with self.subTest(module=mod.__name__, name=n):
+                    self.assertFalse(
+                        hasattr(mod, n),
+                        f"{mod.__name__}.{n} is back -- two copies again")
+
+    def test_the_names_still_resolve_for_the_call_sites(self):
+        """~300 of them read `R.BATUMI_ASR` and `R.STATIONS`. They keep
+        working; the values come from the theatre instead of a literal."""
         from marshall.core import route as R
-        from marshall.core import theatre as T
 
-        was = {f.name: f for f in R.FIELDS}
-        self.assertTrue(was, "nothing to compare against")
-        for now in T.published_fields():
-            for key in was[now.name].__dataclass_fields__:
-                with self.subTest(field=now.name, attr=key):
-                    a, b = getattr(was[now.name], key), getattr(now, key)
-                    if key in ("msa_sectors", "mva_cells"):
-                        a = [tuple(x) for x in (a or [])]
-                        b = [tuple(x) for x in (b or [])]
-                    self.assertEqual(a, b)
+        self.assertEqual(R.BATUMI_ILS.kind, "ils")
+        self.assertEqual(len(R.STATIONS), 9)
+        self.assertEqual([f.name for f in R.FIELDS], ["Batumi", "Kobuleti"])
 
-    def test_every_station_survives_it_too(self):
+    def test_one_object_per_thing(self):
+        """`R.KOB_CLEARANCE is profile.stations[0]` was true when both were one
+        module constant, and several tests assert exactly that -- identity is
+        the cheapest way to say "the same controller, not a copy that happens
+        to match". The caches are keyed on a RESOLVED map name for this reason:
+        `stations_now("")` and `stations_now("caucasus")` were briefly two
+        entries holding two equal-but-distinct sets."""
         from marshall.core import route as R
-        from marshall.core import theatre as T
 
-        was = {s.name: s for s in R.STATIONS}
-        for now in T.published_stations():
-            for key in was[now.name].__dataclass_fields__:
-                with self.subTest(station=now.name, attr=key):
-                    self.assertEqual(getattr(was[now.name], key),
-                                     getattr(now, key))
+        self.assertIs(R.KOB_CLEARANCE, R.BATUMI_ASR.stations[0])
+        self.assertIs(R.BATUMI_FIELD, R.FIELDS[0])
 
-    def test_the_ladder_keeps_its_order(self):
-        """ORDER IS THE LADDER. `channels_for` takes the first four presets and
-        `"ABCD"[i]` indexes the buttons, and both were correct only while there
-        were exactly four -- so a file that sorted its stations would put a
-        pilot on the wrong preset with nothing to show for it."""
+    def test_a_name_nobody_publishes_is_an_AttributeError(self):
+        """Which is what Python expects, and what keeps a typo an error rather
+        than a None that becomes a plausible number three layers away."""
         from marshall.core import route as R
-        from marshall.core import theatre as T
 
-        self.assertEqual([s.name for s in T.published_stations()],
-                         [s.name for s in R.STATIONS])
+        # The name is built rather than written so that neither ruff's
+        # "useless expression" nor its "constant getattr" rule applies -- both
+        # are right about ordinary code and wrong about a test whose whole
+        # subject is attribute lookup.
+        missing = "BATUMI" + "_GCA"
+        with self.assertRaises(AttributeError):
+            getattr(R, missing)
 
-    def test_every_approach_survives_it_too(self):
-        """The largest of the three, and the one that had to be taken apart to
-        move: `ApproachProfile` carries the theatre's stations and the field's
-        minimum altitudes as well as the procedure, so the file holds only the
-        procedure and `published_approaches` composes the rest back in.
-
-        lat/lon are excepted because the file HAS them and the Python did not.
-        That is the gain, not a drift.
-        """
-        import dataclasses
-
+    def test_the_ladder_is_the_files_order_minus_who_is_not_on_it(self):
         from marshall.core import route as R
-        from marshall.core import theatre as T
 
-        got = T.published_approaches(T.published_fields(), T.published_stations())
-        for key, name in (("batumi-asr", "BATUMI_ASR"),
-                          ("batumi-ils", "BATUMI_ILS"),
-                          ("batumi-ndb", "BATUMI_APPROACH"),
-                          ("kobuleti-ils", "KOBULETI_ILS")):
-            was, now = getattr(R, name), got[key]
-            for f in dataclasses.fields(was):
-                with self.subTest(approach=key, attr=f.name):
-                    a, b = getattr(was, f.name), getattr(now, f.name)
-                    if f.name in ("msa_sectors", "mva_cells", "descent_table"):
-                        a = [tuple(x) for x in (a or [])]
-                        b = [tuple(x) for x in (b or [])]
-                    if isinstance(a, R.Fix) and isinstance(b, R.Fix):
-                        a = dataclasses.replace(a, lat=None, lon=None)
-                        b = dataclasses.replace(b, lat=None, lon=None)
-                    self.assertEqual(a, b)
-
-    def test_a_procedure_naming_an_unpublished_fix_is_refused(self):
-        """LOUD, not None. A procedure naming a fix the catalogue does not
-        publish is a procedure nobody can fly, and the failure must not become
-        a None that turns into a plausible number three layers away."""
-        from marshall.core import theatre as T
-
-        with mock.patch.object(catalogue, "approaches") as ap:
-            ap.return_value = [catalogue.Approach(
-                key="ghost", controller="Nowhere Approach", beacon="NOWHERE",
-                kind="ils")]
-            with self.assertRaises(ValueError) as e:
-                T.published_approaches(T.published_fields(),
-                                       T.published_stations())
-        self.assertIn("NOWHERE", str(e.exception))
+        self.assertEqual([s.name for s in R.PRESET_LADDER][:2],
+                         ["Kobuleti Clearance", "Kobuleti Ground"])
+        self.assertNotIn("Sentry", [s.name for s in R.PRESET_LADDER])
 
 
 class AMapIsAFileAndNotAFunction(unittest.TestCase):

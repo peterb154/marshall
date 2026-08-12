@@ -177,6 +177,10 @@ class Controller(_File):
     # radar room, Departure IS Approach.
     also: list[str] = []
     channels: list[float] = []
+    # Is this seat a RUNG of the comms ladder, and therefore a radio preset?
+    # Everything a pilot is handed to in sequence is; a mission commander he
+    # may call at any time is not.
+    preset: bool = True
     voice: str = "Matthew"
     manner: str = ""
 

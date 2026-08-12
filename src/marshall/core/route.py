@@ -45,19 +45,16 @@ from marshall.core import geo as _geo
 from marshall.core.airspace import (  # noqa: F401
     MSA_SECTORS, MVA_CELLS, alt_for, msa_for, mva_for)
 from marshall.core.approach import (  # noqa: F401
-    ApproachProfile, AtcCapability, BATUMI_APPROACH, BATUMI_ASR, BATUMI_ILS,
-    KOBULETI_ILS, profile_from_dict, profile_to_dict)
+    ApproachProfile, AtcCapability, profile_from_dict, profile_to_dict)
 from marshall.core.fields import (  # noqa: F401
-    ARRIVAL_FIELD, BATUMI_FIELD, DEPARTURE_FIELD, Field_, FIELDS,
-    KOBULETI_FIELD, KOBULETI_MSA, KOBULETI_MVA, field_named)
+    ARRIVAL_FIELD, DEPARTURE_FIELD, Field_, KOBULETI_MSA, KOBULETI_MVA,
+    field_named)
 from marshall.core.fixes import (  # noqa: F401
     AIR_START, BATUMI, DEFENDED, FEET_WET, FIXES, Fix, HOMEBOUND, INGRESS,
     INITIAL, KOBULETI, KUTAISI, LEGS, SORTIE, SORTIE_ALT_FT, SORTIE_LEGS,
     TARGET_AREA, leg_altitude, sortie_points, steerpoint)
 from marshall.core.stations import (  # noqa: F401
-    APPROACH, CENTER, GROUND, KOB_CLEARANCE, KOB_DEPARTURE, KOB_GROUND,
-    KOB_TOWER, OVERLORD, PRESET_LADDER, PRESET_LETTERS, STATIONS, Station,
-    TOWER, preset_label, preset_of)
+    PRESET_LETTERS, Station, preset_label, preset_of)
 from marshall.core.units import (  # noqa: F401
     CRUISE_ALT_FT, CRUISE_TAS_MPH, INHG_PER_FT, MAGVAR, MPH_PER_KT, NM,
     QNH_INHG, QNH_MMHG, WIND_FROM_DEG, WIND_MPH, altimeter_spoken, ias_mph,
@@ -200,3 +197,87 @@ if __name__ == "__main__":
     print(f"{'TOTAL':22} {'':4} {'':7} "
           f"{sum(s.distance_nm for s in solve_route()):6.1f} {'':5} "
           f"{int(total)}:{round((total % 1) * 60):02d}")
+
+
+# --- the published catalogue, served from configuration ----------------------
+#
+# `BATUMI_ASR` and friends are no longer Python. They are tables in
+# `config/theatres/<map>.toml` (see `core/catalogue.py` and docs/CONFIG.md), and
+# this is what keeps some three hundred call sites reading `R.BATUMI_ASR`
+# working while there is exactly ONE copy of the data.
+#
+# WHY A MODULE `__getattr__` RATHER THAN EDITING THE CALL SITES. Both would
+# work, and this one leaves the seam in a single readable place instead of
+# spread over forty files -- which is the same argument the re-export at the top
+# of this module already makes. It also means the names resolve LAZILY: nothing
+# reads a theatre file at import, so a tool that only wants `spell_alt` does not
+# need a configured map to run.
+#
+# THE CLASSES STAY IN PYTHON. `Fix`, `Field_`, `Station` and `ApproachProfile`
+# are shapes and behaviour; only the INSTANCES were data. That line is the whole
+# of docs/CONFIG.md in one sentence.
+_FROM_THEATRE = {
+    "BATUMI_ASR": ("approach", "batumi-asr"),
+    "BATUMI_ILS": ("approach", "batumi-ils"),
+    "BATUMI_APPROACH": ("approach", "batumi-ndb"),
+    "KOBULETI_ILS": ("approach", "kobuleti-ils"),
+    # The controllers, by the names three hundred call sites already use.
+    "STATIONS": ("stations", ""),
+    "KOB_CLEARANCE": ("station", "Kobuleti Clearance"),
+    "KOB_GROUND": ("station", "Kobuleti Ground"),
+    "KOB_TOWER": ("station", "Kobuleti Tower"),
+    "KOB_DEPARTURE": ("station", "Kobuleti Departure"),
+    "CENTER": ("station", "Georgia Center"),
+    "APPROACH": ("station", "Batumi Approach"),
+    "TOWER": ("station", "Batumi Tower"),
+    "GROUND": ("station", "Batumi Ground"),
+    "OVERLORD": ("station", "Sentry"),
+    # ...and the aerodromes.
+    "PRESET_LADDER": ("ladder", ""),
+    "FIELDS": ("fields", ""),
+    "BATUMI_FIELD": ("field", "Batumi"),
+    "KOBULETI_FIELD": ("field", "Kobuleti"),
+}
+
+
+def __getattr__(name: str):
+    """Resolve a published name against the configured theatre.
+
+    Raises `AttributeError` for anything else, which is what Python expects and
+    what keeps a typo an error rather than a None that becomes a plausible
+    number three layers away.
+    """
+    want = _FROM_THEATRE.get(name)
+    if want is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    kind, key = want
+    from marshall.core import theatre as _th
+    # ONE OBJECT PER THING, which is why these go through the cached loaders
+    # rather than rebuilding. `R.KOB_CLEARANCE is profile.stations[0]` was true
+    # when both were one module constant, and tests assert exactly that -- an
+    # identity check is the cheapest way to say "the same controller, not a
+    # copy that happens to match".
+    if kind == "approach":
+        got = _th.approaches_now().get(key)
+        if got is None:
+            raise AttributeError(
+                f"{name} names approach {key!r}, which the configured theatre "
+                f"does not publish. See docs/CONFIG.md")
+        return got
+    if kind == "stations":
+        return list(_th.stations_now())
+    if kind == "ladder":
+        # THE ORDER IS THE FILE'S. Every card printed reads this, so the
+        # aeroplane, the kneeboard and the controller move together or not at
+        # all.
+        return [s for s in _th.stations_now() if s.preset]
+    if kind == "fields":
+        return _th.fields_now()
+    table, what = ((_th.stations_now(), "station") if kind == "station"
+                   else (_th.fields_now(), "aerodrome"))
+    for got in table:
+        if got.name == key:
+            return got
+    raise AttributeError(
+        f"{name} names {what} {key!r}, which the configured theatre does not "
+        f"have. See docs/CONFIG.md")

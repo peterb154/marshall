@@ -38,6 +38,7 @@ wrong map while sounding entirely normal.
 from __future__ import annotations
 
 import os
+from functools import lru_cache as _lru_cache
 from dataclasses import dataclass, field
 
 
@@ -205,8 +206,57 @@ def published_stations(theatre: str = "") -> tuple:
     return tuple(
         R.Station(s.name, s.freq_mhz, s.role, also=tuple(s.also),
                   voice=s.voice, channels=tuple(s.channels),
-                  field=s.field, manner=s.manner)
+                  field=s.field, preset=s.preset, manner=s.manner)
         for s in catalogue.controllers(theatre))
+
+
+def _map_name(theatre: str = "") -> str:
+    """The map we are configured for, resolved to a real one."""
+    name = (theatre or os.environ.get("MARSHALL_THEATRE")
+            or "caucasus").strip().lower()
+    return name if name in THEATRES else "caucasus"
+
+
+# RESOLVE THE NAME BEFORE THE CACHE, not inside it. `lru_cache` keys on the
+# ARGUMENT, so `stations_now("")` and `stations_now("caucasus")` were two
+# entries holding two sets of equal-but-distinct objects -- and
+# `R.KOB_CLEARANCE is profile.stations[0]` went false, which several tests
+# assert precisely because identity is the cheapest way to say "the same
+# controller, not a copy that happens to match".
+@_lru_cache(maxsize=4)
+def _stations_cached(name: str) -> tuple:
+    return published_stations(name)
+
+
+@_lru_cache(maxsize=4)
+def _fields_cached(name: str) -> tuple:
+    return published_fields(name)
+
+
+@_lru_cache(maxsize=4)
+def _approaches_cached(name: str) -> dict:
+    return published_approaches(_fields_cached(name), _stations_cached(name),
+                                name)
+
+
+def stations_now(theatre: str = "") -> tuple:
+    """The configured map's controllers -- ONE object per seat."""
+    return _stations_cached(_map_name(theatre))
+
+
+def fields_now(theatre: str = "") -> tuple:
+    """The configured map's aerodromes -- ONE object per field."""
+    return _fields_cached(_map_name(theatre))
+
+
+def approaches_now(theatre: str = "") -> dict:
+    """Every procedure the configured map publishes, keyed. Cached.
+
+    The entry point for `route.__getattr__`, so it is hit on ordinary attribute
+    access and must not rebuild the theatre each time. Cached on the map name;
+    `catalogue.reload()` is the way to forget, and the tests use it.
+    """
+    return _approaches_cached(_map_name(theatre))
 
 
 def published_fixes(theatre: str = "") -> tuple:
@@ -236,9 +286,8 @@ def caucasus() -> Theatre:
     # nowhere. A function that IS the Caucasus theatre should not have to ask
     # which theatre it is.
     me = catalogue.identity("caucasus")
-    fields = published_fields("caucasus")
-    stations = published_stations("caucasus")
-    procedures = published_approaches(fields, stations, "caucasus")
+    fields, stations = fields_now("caucasus"), stations_now("caucasus")
+    procedures = approaches_now("caucasus")
     # WHICH RECOVERY. `CAUCASUS_RECOVERIES` mapped a key to the NAME OF A
     # PYTHON CONSTANT, so the set of arrivals a map offered was a dict in this
     # module -- and a theatre file could add a procedure that nothing could

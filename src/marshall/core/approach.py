@@ -19,13 +19,12 @@ Properties recompute from the fields, so only the fields are stored.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field, replace, fields
+from dataclasses import asdict, dataclass, field, fields
 
 from marshall.core.airspace import msa_for, mva_for
-from marshall.core.fields import (ARRIVAL_FIELD, BATUMI_FIELD, KOBULETI_FIELD)
-from marshall.core.fixes import BATUMI, Fix, INITIAL, KOBULETI
-from marshall.core.stations import (APPROACH, KOB_DEPARTURE, Station,
-                                    STATIONS)
+from marshall.core.fields import (ARRIVAL_FIELD)
+from marshall.core.fixes import Fix
+from marshall.core.stations import (Station)
 from marshall.core.units import MAGVAR, MPH_PER_KT
 
 
@@ -825,33 +824,20 @@ class ApproachProfile:
 # over the water. We fly the same geometry with a scripted VHF homing beacon
 # (the real LU is a 430 kHz LF NDB the ARA-8 cannot steer on) and station
 # passage in lieu of the DME the P-51 does not carry.
-BATUMI_APPROACH = ApproachProfile(
-    controller="Batumi Approach",
-    beacon=BATUMI,
-    outer_hold=KOBULETI,
-    # Enroute he homes INITIAL (128), so Batumi Approach works him there; the
-    # letdown itself is flown homing BATUMI (132), which is Tower's frequency.
-    arrival_fix=INITIAL,
-    hold_base_ft=4000,
-    final_crs=124,
-    hold_turns="RIGHT",
-    # Read the field's own elevation rather than restating it. These two were 37
-    # and 32, and field_elev_ft is what sets MDA (min_hat_ft above the field), so
-    # the disagreement moved the minimums the pilot breaks out at.
-    field_elev_ft=BATUMI_FIELD.elevation_ft,
-    runway="12",
-    platform_ft=2000,
-    ceiling_ft=400,
-    # Radar ON (you wanted eyes), but the P-51 carries no DME and this is a 1944
-    # beacon letdown -- so the controller reads range off his own scope, separates
-    # procedurally on the single beacon, and talks period. Flip radar off here and
-    # it becomes the fully-blind classic.
-    # `vectors=False` SAID OUT LOUD rather than inferred from the procedure's
-    # name. He has eyes and does not steer: the pilot is flying a published
-    # letdown on a beacon and a heading would take him off it. See #53.
-    atc=AtcCapability(radar=True, dme=False, separation="procedural", era="ww2",
-                      vectors=False),
-)
+# THE FOUR PROCEDURES THAT USED TO BE HERE ARE NOW DATA.
+#
+#     BATUMI_APPROACH  KOBULETI_ILS  BATUMI_ASR  BATUMI_ILS
+#
+# They live in `config/theatres/caucasus.toml` as `[[approach]]` tables and are
+# served to the ~300 call sites that read `R.BATUMI_ASR` by a module
+# `__getattr__` in `route.py`. There is one copy now; there were two while the
+# migration was half done, bound only by a test.
+#
+# What STAYS in this file is everything a procedure DOES rather than everything
+# one IS: `ApproachProfile` itself, `may_vector`, the descent geometry, the
+# glidepath arithmetic. Shapes and behaviour are code; instances were data.
+# See docs/CONFIG.md and #137.
+
 
 
 # Batumi, worked as a SURVEILLANCE RADAR approach -- the default now.
@@ -900,134 +886,8 @@ BATUMI_APPROACH = ApproachProfile(
 # Magnetic works out at 069.9 and is spoken as 070, which is the number painted
 # on the runway -- so the three frames agree for once, and that is a coincidence
 # of this field rather than a rule.
-KOBULETI_ILS = ApproachProfile(
-    controller=KOB_DEPARTURE.name,   # the GCA seat works approaches here
-    beacon=KOBULETI,
-    outer_hold=INITIAL,
-    kind="ils",
-    # THE ONE FIELD THAT CHANGES THE PROCEDURE. He flies it; we position him.
-    guidance="intercept",
-    stations=list(STATIONS),
-    hold_base_ft=4000,
-    final_crs=70,                    # magnetic, and what is painted on it
-    final_crs_true_measured=75.94,   # geodesic, between the published thresholds
-    touchdown_offset_nm=0.648,       # half of 2,400 m, from the field centre
-    grid_convergence_deg=5.91,       # MEASURED here, not borrowed from Batumi
-    magvar_deg=6.0,                  # chart: VAR 6 E (2010)
-    field_elev_ft=KOBULETI_FIELD.elevation_ft,
-    field_thr_elev_ft=KOBULETI_FIELD.elevation_ft,
-    runway="07",
-    platform_ft=2000,
-    ceiling_ft=400,
-    # 200 FT, and this is the number that says what kind of approach it is. An
-    # ILS knows where you are within feet and gets a decision height around
-    # two hundred; the ASR at Batumi has no vertical guidance at all and sits
-    # at seven hundred. Transcribing one from the other is exactly the mistake
-    # `min_hat_ft` was written to stop.
-    min_hat_ft=200,                  # chart: ILS RWY 07, minima 200 - 0.8
-    final_intercept_nm=11.0,
-    fap_nm=6.0,
-    map_nm=0.5,
-    msa_sectors=list(KOBULETI_FIELD.msa_sectors),
-    mva_cells=list(KOBULETI_FIELD.mva_cells),
-    iaf=INITIAL,
-    iaf_alt_ft=3000,
-    chart_name="AERODROME CHART KOBULETI (UG5X), TERPS",
-    altimeter_datum="QFE",           # ex-Soviet field, same as Batumi
-    # NO DESCENT TABLE, and its absence is the procedure rather than a gap. A
-    # stepdown table is what a controller reads to a pilot who has no glidepath.
-    # This one has a three-degree glideslope in the aeroplane, so a table here
-    # would be advisory heights nobody needs and a second opinion on a descent
-    # the instrument is already flying.
-    atc=AtcCapability(radar=True, dme=True, separation="radar", era="modern"),
-)
 
 
-BATUMI_ASR = ApproachProfile(
-    controller=APPROACH.name,
-    beacon=BATUMI,                  # still the radar reference point, not a nav aid
-    outer_hold=KOBULETI,
-    kind="asr",
-    guidance="talkdown",            # no glidepath: he is talked to the MAP
-    stations=list(STATIONS),
-    hold_base_ft=4000,
-    final_crs=125,
-    # 131.3, AND THE FRAME IS THE WHOLE POINT.
-    #
-    # DCS's x/z grid is a transverse Mercator and its north is not true north:
-    # at Batumi the convergence is 5.74 degrees. So there are two right answers
-    # to "which way does this runway point", and they differ by six degrees:
-    #
-    #   305.6  the F10 ruler, the aircraft compass, and `getRunways().course`
-    #          -- all in the DCS GRID frame
-    #   311.3  the geodesic bearing between the two thresholds, computed from
-    #          lat/lon -- TRUE
-    #
-    # Our radials come from `ST_Azimuth` on lat/lon, so they are TRUE. The
-    # course must be in the same frame or the centreline is drawn six degrees
-    # off, which is what it was: on final Hoover reported himself right of
-    # course twice while the controller said left, and at 131.3 he was 683 ft
-    # and 729 ft RIGHT -- exactly as he called it.
-    #
-    # The first measurement of the night, a bearing between two points an
-    # aeroplane stopped at, gave 311.02. It was taken in the right frame and
-    # was correct to a third of a degree, and I threw it away in favour of two
-    # readings taken in the wrong one. If a number disagrees with the geometry
-    # you are debugging, check the FRAME before you check the number.
-    # 131 rather than 131.3: every heading is issued in whole degrees, so a
-    # course carrying a fraction leaves a permanent error the aeroplane can
-    # never null out, and it comes back as chatter -- 16 rapid reversals across
-    # the sweep at 131.3, 2 at 131, for a third of a degree.
-    final_crs_true_measured=131.0,
-    # Half of Batumi's 2,070 m runway: the 13 threshold, from the centre.
-    touchdown_offset_nm=0.559,
-    grid_convergence_deg=5.74,
-    field_elev_ft=BATUMI_FIELD.elevation_ft,
-    runway="13",
-    platform_ft=2000,
-    ceiling_ft=400,
-    # A radar approach, not the ILS the plate is drawn for, and its minima are
-    # bounded from two directions.
-    #
-    # From below by the chart: 687 ft is the obstacle clearance altitude for a
-    # 2.5% missed approach climb -- the lowest you may be and still clear the
-    # ground if you go around from there. It is a floor, not a decision height,
-    # and an MDA beneath it is not a minimum at all.
-    #
-    # From above by the procedure: a surveillance approach knows where you are
-    # to the width of a radar return and gives no vertical guidance, so it is
-    # flown to far higher minima than the ILS this chart is drawn for -- five
-    # hundred feet at the very least, often nearer a thousand.
-    #
-    # 700 above the field satisfies both. The profile inherited the ILS plate's
-    # 300 before anyone read the chart properly.
-    min_hat_ft=700,
-    final_intercept_nm=11.0,     # IF, per the AIP plate
-    fap_nm=6.0,                  # FAP -- descent begins
-    map_nm=0.6,
-    msa_sectors=list(BATUMI_FIELD.msa_sectors),
-    mva_cells=list(BATUMI_FIELD.mva_cells),
-    # The vectoring gate. NOT the published IAF: the real plate's IAF is the LU
-    # NDB *overhead the field* at 7,000, from which the pilot flies a racetrack
-    # reversal outbound on 304 and comes back inbound on 124. Under radar
-    # nobody flies that reversal -- the controller's whole job is to replace it,
-    # putting the aircraft on the 124 inbound already established. So the gate
-    # we vector to is a point on that inbound course, 15.0 nm out on the 304
-    # radial: four miles beyond the published IF, over open water, which is the
-    # roll-out room a standard-rate turn needs to be steady by the IF.
-    iaf=INITIAL,
-    iaf_alt_ft=2000,
-    plate_png="ugsb-ils-12.png",
-    altimeter_datum="QFE",       # ex-Soviet field
-    # AD 2.UGSB-IAC-12-ILSy, the ILU DME column of the descent table.
-    descent_table=[(6.0, 2010), (5.0, 1682), (4.0, 1355),
-                   (3.0, 1031), (2.0, 708), (1.0, 387)],
-    chart_name="AD 2.UGSB-IAC-12-ILSy, AIRAC AMDT 02/2023",
-    field_thr_elev_ft=17,        # threshold elevation, per the plate
-    # Radar-equipped and radar-separated: the handicaps that defined the beacon
-    # letdown do not apply to a procedure the controller flies for you.
-    atc=AtcCapability(radar=True, dme=False, separation="radar", era="ww2"),
-)
 
 
 # THE SAME PLATE, FLOWN THE WAY IT IS DRAWN.
@@ -1054,44 +914,6 @@ BATUMI_ASR = ApproachProfile(
 # says what is painted and what the ATIS announces, so 13; the plate's title
 # will disagree by one digit and that is correct, because it is the same strip.
 # See #125 for the variation itself, which is a live and separate question.
-BATUMI_ILS = replace(
-    BATUMI_ASR,
-    kind="ils",
-    guidance="intercept",
-    # He has a localiser and a glidepath and is flying both, so the controller
-    # vectors him to intercept and then goes quiet. `may_vector` reads this.
-    #
-    # DA(H) 377 (360 above the threshold), which is the OCA for a FIVE per cent
-    # missed approach climb gradient. The plate publishes both: 687 (670) at the
-    # standard 2.5 per cent, 377 (360) at 5.0. A Viper climbs at five per cent
-    # without noticing; a loaded transport does not, which is why the chart
-    # gives you the choice rather than a single number.
-    #
-    # NOT the ASR's 700. That figure is deliberately high because a surveillance
-    # approach knows where you are only to the width of a radar return and gives
-    # no vertical guidance at all. Here the aeroplane is on a glidepath.
-    min_hat_ft=360,
-    ceiling_ft=400,
-    # The published missed: straight ahead, and at 800 feet turn LEFT onto 330
-    # climbing to 3,000. IAS max 190 kt until the turn is complete, cat C/D.
-    missed_straight_ft=800,
-    missed_turn="LEFT",
-    missed_hdg=330,
-    missed_climb_ft=3000,
-    glidepath_deg=3.0,           # "GP 3.0" on the profile view
-    rdh_ft=51,                   # "ILS RDH 51'", its own box on the plate
-    # DME IS REQUIRED and the plate says so in a box of its own. Every fix on it
-    # is a DME distance -- IF at ILU D11.0, FAP at ILU D6.0 -- so an aeroplane
-    # without it cannot fly this procedure at all.
-    #
-    # ILU, the ILS DME, and NOT BTM. The plate quotes both (D11.0 / D11.9,
-    # D6.0 / D6.9) and they differ by nearly a mile, so it matters which one the
-    # pilot has tuned -- and BTM is the one DCS disagrees about: the chart pairs
-    # it with channel 21X, the sim has it on 16. ILU rides on the localiser at
-    # 110.30 and is correct in both worlds.
-    atc=AtcCapability(radar=True, dme=True, separation="radar", era="modern"),
-    chart_name="AD 2.UGSB-IAC-12-ILSy, AIRAC AMDT 05/25",
-)
 
 # --- serialization: an ApproachProfile <-> a plain dict (for the DB) ----------
 # An approach is static reference data; storing it means round-tripping the

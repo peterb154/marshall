@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from marshall.core.airspace import MSA_SECTORS, MVA_CELLS, msa_for, mva_for
+from marshall.core.airspace import msa_for, mva_for
 from marshall.core.units import WIND_FROM_DEG
 
 @dataclass
@@ -141,13 +141,15 @@ class Field_:
         return mva_for(bearing_deg, range_nm, self.mva_cells or None)
 
 
-BATUMI_FIELD = Field_(
-    "Batumi", -355811, 617386, 32, 124, ends=(13, 31),
-    atis_mhz=127.100, atis_uhf_mhz=280.000,
-    lat=41.6103, lon=41.5997,            # UGSB, published
-    msa_sectors=list(MSA_SECTORS),
-    mva_cells=list(MVA_CELLS),
-    note="Highest terrain 10,623 ft at 23 nm SE. Missed approach turns LEFT.")
+# THE AERODROMES THAT USED TO BE HERE ARE NOW DATA.
+#
+# `[[field]]` tables in `config/theatres/<map>.toml`, with their runway
+# designators, ATIS frequencies, magnetic variation, MSA sectors and MVA cells.
+# Adding an airfield is adding a table -- "we're going to add dozens of
+# airfields" used to be a code change.
+#
+# What stays is `Field_` itself and the lookups over it. See docs/CONFIG.md.
+
 
 # KOBULETI (UG5X). The departure field, and the second aerodrome this system has
 # ever had -- which is what turned `station_for` from a list walk into something
@@ -193,17 +195,9 @@ KOBULETI_MVA = [
     (90.0, 190.0, 25.0, 9600),
 ]
 
-KOBULETI_FIELD = Field_(
-    "Kobuleti", -317605, 636704, 59, 64, ends=(7, 25),
-    atis_mhz=127.400, atis_uhf_mhz=279.000,
-    lat=41.9297, lon=41.8656,            # UG5X, published
-    msa_sectors=list(KOBULETI_MSA), mva_cells=list(KOBULETI_MVA),
-    note="Field elevation 59 ft. Runway 07/25, 2400 m. TACAN 67X KBL, "
-         "ILS 111.50 on 07. GCA field: PAR and SRA published.")
 
 # EVERY AERODROME IN THE THEATRE, so `field_named` has something to search and
 # a third field is one entry rather than one more place to remember.
-FIELDS = (BATUMI_FIELD, KOBULETI_FIELD)
 
 
 #
@@ -235,7 +229,11 @@ def field_named(name: str):
     take-off clearance must read the same runway, and they will only do that if
     they read it from the same place.
     """
-    for f in FIELDS:
+    # ASKS THE THEATRE, because the aerodromes are its data now and not this
+    # module's. Imported here rather than at the top: `theatre` reads `Field_`
+    # from this file, so a module-level import would be a cycle.
+    from marshall.core import theatre as _th
+    for f in _th.fields_now():
         if f.name == name:
             return f
     return None
