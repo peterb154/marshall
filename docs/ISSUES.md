@@ -6592,6 +6592,14 @@ that can move him between fields.
 ---
 
 ## [ARCH-21] A flight plan is a route somebody filed, and nothing else — #131
+labels: architecture
+
+**Status:** CLOSED 12 August. Attested by claude at 5be4dcb — the bridge reads
+`theatre.approach_key` directly with no round trip; `departure_freq(field)`
+comes off `sectors` (Kobuleti 123.3, Batumi 124.425, previously the same number
+to that code); the `unfile` guard is gone and the finished plan was deleted and
+stayed deleted across a restart. Not `needs-flight-test`: every claim is
+structural and a machine answers all of them.
 
     "i dont understand this active business. sounds like mis-alignment between
      you and me"
