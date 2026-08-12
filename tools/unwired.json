@@ -36,6 +36,11 @@
    "function"
   ],
   [
+   "dtc:named_steerpoints",
+   "src/marshall/core/dtc.py:214",
+   "function"
+  ],
+  [
    "filing:check",
    "director/tools/filing.py:106",
    "function"

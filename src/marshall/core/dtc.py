@@ -227,6 +227,16 @@ def named_steerpoints(wps: list[dict], fields: tuple = ()) -> dict:
 
     Anything DKS left unnamed stays out -- "STPT" is the absence of a name, not a
     name, and filing it would be back to inventing.
+
+    NOTHING IN PRODUCTION CALLS THIS ANY MORE, and `tools/unwired.json` records
+    that so nobody discovers it by accident. Its last caller was the kneeboard's
+    `POST /dtc/steerpoints`, which pushed these into the SHARED `fixes` table --
+    #129, the bug where a plan routing via FOO stopped resolving the moment the
+    bridge next replaced that table. A plan carries its own fixes with their
+    positions now, `plan_from` applies the same "STPT is not a name" rule inline,
+    and so this is a deletion candidate rather than a facility: it survives only
+    because removing it takes its test with it, and that is a decision of its
+    own rather than a side effect of rebuilding a page.
     """
     skip = {f.upper() for f in fields}
     out = {}

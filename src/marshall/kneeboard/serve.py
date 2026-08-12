@@ -280,6 +280,11 @@ async def _director(method: str, path: str, body: bytes | None = None):
 
 @app.get("/file", response_class=HTMLResponse)
 async def file_a_plan():
+    # REFRESHED like every other page. It was the one route that did not, so
+    # editing the filing page changed nothing until some OTHER page was
+    # requested and happened to reload it on the way past -- which reads
+    # exactly like an edit that did not work.
+    refresh()
     from marshall.kneeboard import filing
     return HTMLResponse(filing.build(), headers=NO_CACHE)
 
@@ -335,75 +340,33 @@ async def read_cartridge(request: Request):
     except Exception:
         catalogue = {}
     try:
-        wps = _dtc.waypoints(d)
         draft = _dtc.plan_from(
             d, (body.get("name") or "").strip() or "untitled",
-            approach=(body.get("approach") or "").strip(),
             label=(body.get("label") or "").strip(),
-            catalogue=catalogue,
-            steerpoints=bool(body.get("steerpoints")))
+            catalogue=catalogue)
     except Exception as e:
         return JSONResponse({"refused": [f"cannot read the route: {e}"]},
                             status_code=400, headers=NO_CACHE)
-    misc = d.get("Misc") or {}
-    return JSONResponse(
-        {"draft": draft,
-         "aircraft": d.get("Aircraft") or "",
-         "notes": d.get("KneeboardNotes") or "",
-         "waypoints": wps,
-         "ladder": draft.get("ladder") or [],
-         "all_waypoints": _dtc.waypoints(d, route_only=False),
-         "steerpoints": sorted(
-             _dtc.named_steerpoints(wps, tuple(draft.get("ladder") or ()))),
-         "misc": {"ils_mhz": misc.get("ILSFrequency"),
-                  "ils_course": misc.get("ILSCourse"),
-                  "tacan": misc.get("TACANChannel"),
-                  "bingo": misc.get("Bingo")},
-         "radios": [{"radio": k,
-                     "presets": [{"n": p.get("Number"),
-                                  "name": p.get("Name"),
-                                  "mhz": p.get("Frequency")}
-                                 for p in (v.get("Presets") or [])]}
-                    for k, v in (d.get("Radios") or {}).items()]},
-        headers=NO_CACHE)
+    # THE DRAFT, AND NOTHING ELSE. This used to return the raw waypoints, the
+    # comms ladder, the unnamed steerpoints, the ILS, the TACAN and the bingo
+    # alongside it, and the page put most of them on screen:
+    #
+    #     "not required information"
+    #
+    # None of it is a flight plan and none of it can be filed, so a page showing
+    # it was showing a pilot data he could not act on beside data he had to. For
+    # LOOKING at a cartridge whole there is `tools/dtc.py --raw`, which answers
+    # that question from the cartridge instead of from our rendering of it.
+    return JSONResponse({"draft": draft}, headers=NO_CACHE)
 
 
-# HIS OWN TURNING POINTS, onto the fix table for this sortie only. Separate from
-# reading the cartridge because it MUTATES, and because a draft is something you
-# look at before deciding.
-@app.post("/dtc/steerpoints")
-async def push_steerpoints(request: Request):
-    from marshall.core import dtc as _dtc
-    body = json.loads((await request.body()) or b"{}")
-    try:
-        wps = _dtc.waypoints(_dtc.decode((body.get("cartridge") or "").strip()))
-    except Exception as e:
-        return JSONResponse({"refused": [str(e)]}, status_code=400,
-                            headers=NO_CACHE)
-    sp = _dtc.named_steerpoints(wps, tuple(_dtc.ladder(
-        _dtc.decode((body.get("cartridge") or "").strip()))))
-    if not sp:
-        return JSONResponse({"pushed": [], "why": "nothing he named"},
-                            headers=NO_CACHE)
-    # MERGED, NOT REPLACED. `set_fixes` says in its own docstring that the
-    # pushed set REPLACES the table -- right for the bridge, whose push is the
-    # whole theatre, and fatal here, where it is three steerpoints. It wiped all
-    # twenty-one once and the next filing was refused with "no fix called
-    # KOBULETI".
-    have = {}
-    got = await _director("GET", "/fixes")
-    try:
-        have = json.loads(bytes(got.body)).get("fixes") or {}
-    except Exception:
-        have = {}
-    if not have:
-        return JSONResponse(
-            {"refused": ["the fix table is empty — start the bridge first, it "
-                         "pushes the theatre's catalogue"]},
-            status_code=409, headers=NO_CACHE)
-    await _director("PUT", "/fixes",
-                    json.dumps({"fixes": {**have, **sp}}).encode())
-    return JSONResponse({"pushed": sorted(sp)}, headers=NO_CACHE)
+# NO `POST /dtc/steerpoints`. It pushed a pilot's private turning points into
+# the SHARED `fixes` table, which is #129 with an endpoint on it: that table is
+# the published catalogue, the bridge REPLACES it on every start, and a plan
+# routing via FOO stopped resolving the moment anything restarted. A plan
+# carries its own fixes with their positions now, so there is nothing left to
+# push -- and this was an ungated mutating route whose only caller (a checkbox
+# on /file) was deleted with the rest of that idea.
 
 
 # WHERE THE FIXES ARE, not merely what they are called. `/plans/fixes` returns
@@ -418,9 +381,9 @@ async def plans_fixes():
     return await _director("GET", "/plans/fixes")
 
 
-@app.get("/plans/approaches")
-async def plans_approaches():
-    return await _director("GET", "/plans/approaches")
+# NO `/plans/approaches`. A plan does not name an arrival -- which one you fly
+# is a fact about your CLEARANCE (migration 031, #131), so the selector this fed
+# is gone and proxying the list from a filing page only invites it back.
 
 
 @app.post("/plans/check")
