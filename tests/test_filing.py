@@ -128,20 +128,28 @@ class TestWhatIsRefused(unittest.TestCase):
                               "lat": 41.6096, "lon": 41.6002}])
         self.assertEqual(bad, [])
 
-    def test_but_not_somewhere_else(self):
-        """The dangerous case, and it is dangerous because it is SILENT:
-        `route_fixes` resolves the published catalogue first, so the pilot's
-        own point is discarded and the controller vectors to ours. Two real
-        places, one word, a perfectly plausible range and bearing.
+    def test_and_somewhere_else_is_reported_rather_than_refused(self):
+        """CHANGED, on the airframe.
 
-            "I created a private fix called INITIAL this seems to be
-             conflicting with a public fix?"
+            "he can only fly, 1) his steerpoints, 2) navaids he can tune"
+
+        This was a refusal for an hour, at a one-mile threshold picked to make
+        the BATUMI case pass -- which is exactly how TERMINAL_NM came to be
+        11 nm for a 22 nm procedure. The jet flies the CARTRIDGE: his HSI has
+        his INITIAL in it and the aeroplane goes there whatever our chart says,
+        so a controller substituting the published position is wrong about
+        where the aircraft will be.
+
+        It also punished a pilot for OUR data being wrong -- Nevada's TONOPAH
+        sits 34 km from the sim's own VORTAC (#141), so a correct cartridge
+        would have been rejected by an incorrect catalogue.
         """
-        bad, _ = check(legs=[{"fix": "INITIAL", "alt_ft": 3000,
-                              "lat": 42.1, "lon": 41.2},
-                             {"fix": "BATUMI", "alt_ft": 0}])
-        self.assertTrue(any("published fix" in b for b in bad), bad)
-        self.assertTrue(any("nm from where the chart does" in b for b in bad))
+        bad, warn = check(legs=[{"fix": "INITIAL", "alt_ft": 3000,
+                                 "lat": 42.1, "lon": 41.2},
+                                {"fix": "BATUMI", "alt_ft": 0}])
+        self.assertEqual(bad, [], "his own point is flyable and ours is not")
+        self.assertTrue(any("also a published fix" in w for w in warn), warn)
+        self.assertTrue(any("the one in your jet" in w for w in warn))
 
     def test_a_label_already_on_the_board(self):
         bad, _ = check(label="Domino")

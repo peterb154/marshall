@@ -395,11 +395,21 @@ def route_fixes(plan: dict, fixes: dict) -> tuple[list[dict], list[str]]:
             continue
         ll = fixes.get(name.lower())
         mine = own.get(name.lower())
-        if ll:
-            out.append({"name": name, "lat": ll[0], "lon": ll[1]})
-        elif mine:
+        # HIS OWN POSITION FIRST, and this order is the whole rule.
+        #
+        #     "he can only fly, 1) his steerpoints, 2) navaids he can tune"
+        #
+        # A DCS jet has no navigation database. If FYTTR is both a published
+        # fix and a steerpoint in his cartridge, the aeroplane is going to fly
+        # to HIS -- so a controller working from ours is wrong about where the
+        # aircraft will be, which is worse than the disagreement it was trying
+        # to avoid. This used to check the catalogue first, which is how a
+        # plan's own INITIAL was silently discarded.
+        if mine:
             out.append({"name": name, "lat": mine["lat"], "lon": mine["lon"],
                         "private": True})
+        elif ll:
+            out.append({"name": name, "lat": ll[0], "lon": ll[1]})
         else:
             missing.append(name)
     return out, missing

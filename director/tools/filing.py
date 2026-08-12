@@ -300,12 +300,25 @@ def check(plan: dict, *, fixes: set[str], approaches: set[str],
             # perfectly plausible range and bearing.
             where = (at or {}).get(fx.lower())
             off = _nm_apart(where, leg) if where else 0.0
+            # REPORTED, NOT REFUSED, and the reason is the airframe.
+            #
+            # The jet flies the cartridge: his HSI has HIS FYTTR in it and the
+            # aeroplane goes there whatever the chart says, so a controller
+            # substituting the published position is wrong about where the
+            # aircraft will be. `route_fixes` uses the plan's, and this says so
+            # rather than blocking a sortie over it.
+            #
+            # It was a refusal for an hour, at a one-mile threshold I picked to
+            # make the BATUMI case pass -- which is exactly how TERMINAL_NM
+            # came to be 11 nm for a 22 nm procedure (#139). It also punished a
+            # pilot for OUR data being wrong: Nevada's TONOPAH is 34 km from
+            # the sim's own VORTAC (#141), so a correct cartridge would have
+            # been rejected by an incorrect catalogue.
             if off > 1.0:
-                bad.append(
-                    f"{fx} is a published fix and this plan puts it {off:.0f} nm "
-                    f"from where the chart does — the controller would vector "
-                    f"you to his. Give your own point a name nobody else is "
-                    f"using")
+                warn.append(
+                    f"{fx} is also a published fix, {off:.0f} nm from where "
+                    f"this plan puts it. Yours is the one you will be worked "
+                    f"on — it is the one in your jet")
         alt = leg.get("alt_ft")
         try:
             alt = int(alt)
