@@ -442,7 +442,8 @@ async function look(name) {{
       return `<span class="miss">${{esc(f)}} ?</span>`;
     }});
   box.innerHTML = `<div class="detail">`
-    + `<dt>key</dt><dd>${{esc(p.name)}}</dd>`
+    // NO `key` ROW. It is generated from the label now and nobody types it,
+    // so showing it invites somebody to think it means something.
     + `<dt>label</dt><dd>${{esc(p.label || '(none)')}}</dd>`
     + `<dt>task</dt><dd>${{esc(p.task || '(none)')}}</dd>`
     // THE WHOLE CHAIN, ending where he is going.
