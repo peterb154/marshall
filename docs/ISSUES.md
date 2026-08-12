@@ -6588,3 +6588,56 @@ aerodrome's terminal area, not a number.
 to a Kobuleti station — the DESTINATION's Approach is unreachable from the rule
 table. That is why the airspace branch exists and why it is the only mechanism
 that can move him between fields.
+
+---
+
+## [ARCH-21] A flight plan is a route somebody filed, and nothing else — #131
+
+    "i dont understand this active business. sounds like mis-alignment between
+     you and me"
+    "whyt would the bridge load a default approach column?? doesnt make sense"
+
+Both right. `flight_plans` was doing two unrelated jobs, and the second one was
+not about flight plans at all:
+
+    a route a pilot filed and may request        <- what it is for
+    where the bridge parks "which arrival am     <- `active` + a round trip
+    I running tonight"
+
+**The round trip.** The bridge wrote `theatre.approach_key` onto a flight-plan
+row with `active=true`, read the row straight back, and rebuilt the approach
+profile from it — a journey with itself, for a value it was holding the whole
+time. The only thing it added was a chance to come back different, which is
+exactly what happened: `_approach_named` matched on a prefix and returned the
+surveillance approach for a plan filed as `batumi-ils`, and a whole sortie was
+flown as a talkdown (see the commit that fixed it).
+
+**What it cost a pilot.** Finishing with a route and trying to remove it:
+
+    "362nd-kobuleti-batumi is the ACTIVE plan — the bridge reads the approach it
+     runs from this row. Make another plan active first."
+
+There was no way to make another plan active — no endpoint, no button — and
+anything set by hand was overwritten at the next bridge start. The refusal named
+an action that could not be taken and would not have held.
+
+**Fixed:**
+
+  * the bridge reads its own theatre and never asks the director back
+  * `departure_freq` reads `sectors`, which carries the FIELD on every row —
+    it took "the first departure station in the active plan's profile" before,
+    which is field-blind, so a pilot cleared out of one aerodrome could be given
+    the other's departure frequency. Kobuleti 123.3, Batumi 124.425, and they
+    were the same number to that code.
+  * `unfile` has nothing left to guard
+  * the start-up line says `approach: batumi-ils (from the theatre)` rather than
+    naming a flight plan it does not load — it was printing the name of a row
+    that had just been deleted
+
+**Still open, and it is the rest of #2.** `ApproachProfile` carries the theatre's
+reference data (stations, fields, minimum altitudes) AND one arrival procedure,
+so the bridge cannot have the first without defaulting the second. It should not
+have a default: which approach you are flying is a fact about your clearance,
+and until you have asked for one the honest answer is that the controller has
+none for you. `MARSHALL_APPROACH` is a symptom of the same thing — an
+environment variable pre-selecting an arrival the bridge should not be choosing.

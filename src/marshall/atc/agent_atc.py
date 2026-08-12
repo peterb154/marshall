@@ -437,55 +437,50 @@ def load_and_push_plate(profile, base: str = BASE_URL):
     try:
         _put_json(f"{base}/approaches/{_th.approach_key}",
                   {"field": profile.beacon.name, "data": R.profile_to_dict(profile)})
-        # THE PLAN THIS SEEDS IS THE ONE BEING FLOWN.
+        # THE THEATRE ALREADY SAID WHICH PROCEDURE. It is not asked for back.
         #
-        # It used to be `362nd-batumi-asr` -- a Batumi-to-Batumi row from the
-        # single-aerodrome era -- upserted with active=true on every start. That
-        # made it impossible to take off the board: migration 020 deletes it,
-        # and the next bridge restart put it straight back and took the active
-        # flag with it. A cleanup that survives only until nobody is watching is
-        # worse than none.
+        #     "whyt would the bridge load a default approach column?? doesnt
+        #      make sense"
         #
-        # NO CALLSIGN. It wrote `R.FLIGHT_CALLSIGN` into the row, which is a
-        # Mustang's name on a plan an F-16 flies tonight. `plans.py` is explicit
-        # that a filed plan belongs to NOBODY until a clearance copies it into
-        # `assigned_plans`, so the column changes no decision -- it is simply
-        # untrue, and it is the sort of untrue thing somebody later reads as a
-        # fact.
-        _put_json(f"{base}/flightplans/{_th.bootstrap_plan}",
-                  {"approach": _th.approach_key, "active": True})
-        fp = _get_json(f"{base}/flightplan/active")
-        if fp.get("approach"):
-            # Remember which procedure this is, so a flight's row can say what
-            # it was cleared FOR and not merely that it was cleared.
-            global APPROACH_NAME
-            APPROACH_NAME = fp["approach"].get("name") or APPROACH_NAME
-            profile = R.profile_from_dict(fp["approach"]["data"])
-            print(f"  loaded flight plan '{fp['name']}' -> approach "
-                  f"'{fp['approach']['name']}'", flush=True)
-            # AND SAY WHAT WAS ACTUALLY LOADED, not merely what was asked for.
-            #
-            # `_approach_named` matched on a PREFIX, so "batumi-ils" returned
-            # whichever Batumi profile was listed first -- the surveillance
-            # approach -- and the bridge printed the line above and went on to
-            # fly a talkdown all night. Every number was real and belonged to
-            # the wrong procedure, so nothing looked wrong until a pilot said:
-            #
-            #     "I should be on the ILS13. Why would he say radar approach?"
-            #
-            # One line, printed once, and it is the difference between an hour
-            # of confusion and reading the first eight lines of the log.
-            print(f"  flying: {profile.kind.upper()} runway "
-                  f"{profile.runway}, {profile.guidance}, "
-                  f"{profile.controller}", flush=True)
-            _want = (fp["approach"]["name"] or "").rsplit("-", 1)[-1].lower()
-            if _want and _want != (profile.kind or "").lower():
-                print(f"  !! THE PLAN ASKED FOR {_want.upper()} AND THIS IS A "
-                      f"{profile.kind.upper()}. Every number will be real and "
-                      f"belong to the wrong procedure -- see _approach_named.",
-                      flush=True)
-    except (urllib.error.URLError, TimeoutError, OSError, ValueError, KeyError) as e:
-        print(f"  !! flight-plan bootstrap failed, using route.py: {e}", flush=True)
+        # It did not make sense. This wrote `_th.approach_key` onto a
+        # flight-plan row with `active=true`, read the row back, and rebuilt the
+        # profile from it -- a round trip with itself for a value it was holding
+        # the whole time. The only thing that trip added was a chance to come
+        # back different, which is exactly what happened: `_approach_named`
+        # matched on a prefix and returned the surveillance approach for a plan
+        # filed as `batumi-ils`.
+        #
+        # WHAT THE ROW COST A PILOT. `active` is not a fact about a flight plan
+        # -- it is this bridge's note-to-self about which arrival it is running
+        # -- and parking it there made deleting a route he had finished with
+        # impossible:
+        #
+        #     "362nd-kobuleti-batumi is the ACTIVE plan"
+        #     "i dont understand this active business. sounds like
+        #      mis-alignment between you and me"
+        #
+        # There was. A flight plan is a route somebody filed. Nothing else.
+        global APPROACH_NAME
+        APPROACH_NAME = _th.approach_key or APPROACH_NAME
+        # NOT "loaded flight plan X". It loads no plan and never did -- that
+        # line named the theatre's `bootstrap_plan` string, which since the
+        # round trip went away is not even a row that has to exist. It printed
+        # the name of a plan that had just been deleted, which is exactly the
+        # sort of true-looking untruth this file keeps having to unpick.
+        print(f"  approach: {APPROACH_NAME} (from the theatre)", flush=True)
+        # AND SAY WHAT IS ACTUALLY LOADED, not merely what was asked for. One
+        # line, printed once, and it is the difference between an hour of
+        # confusion and reading the top of the log.
+        print(f"  flying: {profile.kind.upper()} runway {profile.runway}, "
+              f"{profile.guidance}, {profile.controller}", flush=True)
+        _want = (APPROACH_NAME or "").rsplit("-", 1)[-1].lower()
+        if _want and _want != (profile.kind or "").lower():
+            print(f"  !! THE THEATRE ASKED FOR {_want.upper()} AND THIS IS A "
+                  f"{profile.kind.upper()} -- every number will be real and "
+                  f"belong to the wrong procedure.", flush=True)
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError,
+            KeyError) as e:
+        print(f"  !! approach bootstrap: {e}", flush=True)
 
     try:
         n = push_fixes(base, profile)

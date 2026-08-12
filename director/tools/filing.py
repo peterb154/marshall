@@ -260,20 +260,38 @@ def file_plan(plan: dict, updating: str = "") -> dict:
 
 
 def unfile(name: str) -> dict:
-    """Take a plan off the board.
+    """Take a plan off the board. A flight plan is a route somebody filed.
 
-    REFUSED WHILE IT IS ACTIVE, because `active` is how the bridge finds the
-    approach it runs -- deleting that row leaves a controller with no procedure
-    and the failure appears at the next restart rather than here (#61).
+    IT USED TO REFUSE WHILE THE ROW WAS `active`, because that was how the
+    bridge found the approach it runs -- so finishing with a route and trying
+    to remove it produced:
+
+        "362nd-kobuleti-batumi is the ACTIVE plan -- the bridge reads the
+         approach it runs from this row. Make another plan active first."
+
+    Every part of which was a problem. There was no way to make another plan
+    active -- no endpoint, no button -- and anything set by hand was overwritten
+    at the next bridge start, so the instruction named an action that could not
+    be taken and would not have held. And it should never have been the pilot's
+    concern in the first place:
+
+        "i dont understand this active business. sounds like mis-alignment
+         between you and me"
+
+    There was. `active` is not a fact about a flight plan; it was this bridge's
+    note-to-self about which arrival it is running, parked on a route somebody
+    else owns. The bridge reads its own theatre now and the director reads
+    `sectors`, so nothing consults the column and there is nothing left to
+    guard. See #131.
+
+    A plan a flight is ALREADY FLYING is a different question and a real one --
+    that lives in `assigned_plans`, which has its own row and its own lifetime,
+    and removing the template does not take a clearance away from anybody.
     """
     with get_pool().connection() as c:
-        row = c.execute("SELECT active FROM flight_plans WHERE name=%s",
+        row = c.execute("SELECT name FROM flight_plans WHERE name=%s",
                         (name,)).fetchone()
         if row is None:
             return {"removed": False, "refused": [f"no plan called {name}"]}
-        if row[0]:
-            return {"removed": False, "refused": [
-                f"{name} is the ACTIVE plan — the bridge reads the approach it "
-                f"runs from this row. Make another plan active first."]}
         c.execute("DELETE FROM flight_plans WHERE name=%s", (name,))
     return {"removed": True, "name": name}

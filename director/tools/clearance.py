@@ -192,25 +192,40 @@ def ack(flight_id: int) -> dict:
 
 # --- the numbers the clearance needs, from what is published ----------------
 
-def _stations() -> list[dict]:
-    from tools.approaches import active_flight_plan
-    fp = active_flight_plan() or {}
-    return ((fp.get("approach") or {}).get("data") or {}).get("stations") or []
+def departure_freq(field: str = "") -> float:
+    """Whom he calls after he rolls, off the SECTORS this bridge published.
 
+    IT USED TO READ THE ACTIVE FLIGHT PLAN'S APPROACH BLOB and take the first
+    departure station in it. Two faults in one line.
 
-def departure_freq() -> float:
-    """Whom he calls after he rolls, read off the published stations rather than
-    remembered here. One field's Approach also works Departure; picking it out
-    of the profile means a mission that splits them does not need this file
-    changed."""
-    for s in _stations():
-        roles = [s.get("role") or "", *(s.get("also") or ())]
-        if "departure" in roles:
-            return float(s.get("freq_mhz") or 0)
-    for s in _stations():
-        if (s.get("role") or "") == "approach":
-            return float(s.get("freq_mhz") or 0)
-    return 0.0
+    The first is that `flight_plans.active` is not a fact about a flight plan --
+    it is the bridge's note-to-self about which arrival it is running -- and
+    reading world state off it is what made a finished route undeletable:
+
+        "i dont understand this active business. sounds like mis-alignment
+         between you and me"
+
+    The second is that "the first departure station" is FIELD-BLIND. A profile
+    carries the whole theatre's stations, so with Kobuleti and Batumi both
+    listed, whichever came first won -- and a pilot cleared out of one field
+    could be given the other's departure frequency. Real number, wrong airport;
+    the shape this project keeps finding, and the fourth place it has appeared.
+
+    `sectors` is pushed by the bridge from the theatre (migration 027) and
+    carries the field on every row, so the question can be asked properly:
+    whose departure frequency, at WHICH aerodrome. Approach and Departure are
+    one seat on one frequency -- see `Station.also` -- so the approach sector IS
+    the answer.
+    """
+    if not field:
+        return 0.0
+    with _pool().connection() as c:
+        r = c.execute(
+            "SELECT freq_mhz FROM sectors "
+            " WHERE lower(field) = lower(%s) AND role IN ('departure','approach')"
+            " ORDER BY CASE role WHEN 'departure' THEN 0 ELSE 1 END LIMIT 1",
+            (field,)).fetchone()
+    return float(r[0]) if r and r[0] else 0.0
 
 
 def aircraft_type(flight: dict) -> str | None:
@@ -412,7 +427,7 @@ def clearance_tools(mission: str = "default", station: str = "") -> list:
         _initial = (_legs[0].get("alt_ft") if _legs else 0) or \
             (plan.get("cruise_ft") or 0)
         words = P.clearance(plan, flight_id=f["id"],
-                            departure_freq=departure_freq(),
+                            departure_freq=departure_freq(here),
                             initial_ft=_initial)
         why = ", ".join(hit.get("why") or []) or "the one on file"
         return (f"SAY THIS, verbatim and complete, after his callsign: {words}\n"
