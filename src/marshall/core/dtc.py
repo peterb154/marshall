@@ -280,9 +280,22 @@ def plan_from(d: dict, name: str, approach: str = "", label: str = "",
     #
     # They were not. The plan NAMED them and something else owned them. It owns
     # them now. See #129.
-    legs = [{"fix": (w["name"] or f"STPT{w['seq']}").upper(),
+    # A STEERPOINT HE DID NOT NAME IS NOT A LEG. "STPT" is the absence of a
+    # name, and turning it into STPT1 is inventing one -- which is what
+    # STPT1/2/3 was, and what he objected to:
+    #
+    #     "in civil avation, we dont make up our own random fixes"
+    #
+    # The last waypoint is kept whatever it is called, because it is where he
+    # is going and a plan needs a destination more than it needs a tidy name.
+    def _named(w):
+        n = (w["name"] or "").strip().upper()
+        return n not in ("", "STPT", "WP")
+
+    keep = [w for w in wps[:-1] if _named(w)] + wps[-1:]
+    legs = [{"fix": (w["name"] or "").strip().upper() or f"WAYPOINT {w['seq']}",
              "alt_ft": int(w["alt_ft"] or 0),
-             "lat": w["lat"], "lon": w["lon"]} for w in wps]
+             "lat": w["lat"], "lon": w["lon"]} for w in keep]
     return {"name": name, "label": label, "legs": legs,
             # WHAT HE IS GOING OUT TO DO, off the cartridge.
             #
@@ -308,7 +321,14 @@ def plan_from(d: dict, name: str, approach: str = "", label: str = "",
             # job from storing them.
             "origin": (start or dest).title(),
             "destination": (dest or start).title(),
-            "route": ", ".join(via), "cruise_ft": int(cruise),
+            # THE SAME DERIVATION THE BOARD USES, so the form shows what will
+            # actually be filed. This was `route_through(...)`, which keeps
+            # only PUBLISHED names -- so a cartridge routed via a pilot's own
+            # steerpoints showed an empty route in the form and a full one on
+            # the board ten seconds later. The route is the legs before the
+            # last, whoever owns their names; see `filing.derived`.
+            "route": ", ".join(l["fix"] for l in legs[:-1]),
+            "cruise_ft": int(cruise),
             "approach": approach, "enroute": via, "ladder": seats}
 
 

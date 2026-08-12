@@ -139,13 +139,27 @@ class TestWhatMayBeFiled(unittest.TestCase):
         self.assertEqual(dtc.plan_from(self.d, "x", label="D")["destination"],
                          "Batumi")
 
-    def test_by_default_his_own_names_are_not_filed(self):
-        # THE CIVIL RULE. "in civil avation, we dont make up our own random
-        # fixes in a flight plan though." A filed route is a shared PUBLISHED
-        # reference and his cartridge is published to nobody.
-        route = dtc.plan_from(self.d, "x", label="D")["route"]
+    def test_his_own_names_ARE_filed_now_with_their_positions(self):
+        """SUPERSEDED, and by the pilot rather than by me.
+
+        This used to assert the opposite -- "a filed route is a shared
+        PUBLISHED reference and his cartridge is published to nobody" -- which
+        was right about publishing and wrong about filing:
+
+            "But ATC should be able to get and referred to my private fixes
+             when I open a plan with those fixes and the names in there."
+            "Private fixes should only live in a flight plan"
+
+        So they are IN the plan, each with its position, which is what makes
+        them resolvable to whoever holds it and to nobody else. See #129.
+        """
+        plan = dtc.plan_from(self.d, "x", label="D")
+        named = {leg["fix"] for leg in plan["legs"]}
         for n in ("FOO", "BAR", "SPAM"):
-            self.assertNotIn(n, route)
+            self.assertIn(n, named)
+            self.assertIn(n, plan["route"])
+        for leg in plan["legs"]:
+            self.assertIsNotNone(leg["lat"], f"{leg['fix']} has no position")
 
     def test_asked_for_they_are(self):
         # ...and he may choose to SHARE them, which is a different question from
@@ -184,8 +198,10 @@ class TestWhatMayBeFiled(unittest.TestCase):
         got = dtc.plan_from(dtc.decode(_cartridge(bare)), "x", label="D",
                             steerpoints=True)
         # Nothing he named, so nothing enroute -- which is "direct", and legal
-        # since #127. The endpoints are still known, from the ladder.
+        # since #127. The destination survives whatever it is called, because a
+        # plan needs somewhere to go more than it needs a tidy name.
         self.assertEqual(got["route"], "")
+        self.assertEqual([leg["fix"] for leg in got["legs"]], ["BATUMI"])
         self.assertEqual((got["origin"], got["destination"]),
                          ("Kobuleti", "Batumi"))
 

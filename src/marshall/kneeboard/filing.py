@@ -132,12 +132,10 @@ def build() -> str:
       rule changed.</div>
     <textarea id="dtc" spellcheck="false"
       placeholder="RQsAAB+LCAAAAAAAAAPdVt..."></textarea>
-    <label style="display:inline; text-transform:none; letter-spacing:0">
-      <input type="checkbox" id="sp" style="width:auto"> file his own named
-      steerpoints (FOO, BAR…) as fixes for this sortie</label>
-    <div class="hint">His names are SHARED, not published — he typed them and
-      they are on his HSI. They belong to one aeroplane and die with the sortie:
-      the bridge's catalogue push at start-up takes them off the fix table.</div>
+    <div class="hint">His own named steerpoints come with the plan. They are
+      not published to anybody else and nothing has to be pushed anywhere —
+      the plan carries each one with its position, so a route via FOO resolves
+      for whoever holds the plan and for nobody else.</div>
     <button id="read" type="button">Read cartridge</button>
     <div id="cartout"></div>
   </div>
@@ -147,10 +145,10 @@ def build() -> str:
       know. A DTC has no spoken name, no key and no task &mdash; those are
       yours. Everything under them is read from it.</div>
     <div class="two">
-      <div><label>label — what a pilot says</label>
+      <div><label>label</label>
         <input name="label" placeholder="Domino" required>
-        <div class="hint">One word, no digits. "Samovar One" is how the wrong
-          sortie gets cleared.</div></div>
+        <div class="hint">One word, no digits — he says it on the radio, and
+          "Samovar One" is how the wrong sortie gets cleared.</div></div>
     </div>
     <label>task — what he is DOING</label>
     <input name="task" placeholder="Transit and recovery" required>
@@ -276,19 +274,26 @@ $('#read').onclick = async () => {{
   const v = values();
   const r = await fetch('/dtc', {{method: 'POST',
     headers: {{'content-type': 'application/json'}},
-    body: JSON.stringify({{cartridge: $('#dtc').value,
-                          name: v.name, label: v.label,
-                          approach: v.approach,
-                          steerpoints: $('#sp').checked}})}});
+    body: JSON.stringify({{cartridge: $('#dtc').value, label: v.label}})}});
   const res = await r.json();
   if (res.refused) {{ await say(res); return; }}
 
   const d = res.draft || {{}};
-  // Only what the cartridge actually knows. A label and a key are a human's to
-  // choose and are left alone if already typed.
-  for (const k of ['origin', 'destination', 'route', 'cruise_ft']) {{
-    if (d[k] != null && d[k] !== '') $(`[name=${{k}}]`).value = d[k];
+  // ONLY THE BOXES THAT STILL EXIST, and this is why "Read Cartridge" stopped
+  // working: the loop wrote `origin`, `destination` and `cruise_ft` into
+  // inputs that migration 031 removed from the form, so `$(...)` came back
+  // null, `.value =` threw, and everything after it -- the waypoint table, the
+  // notes, the validation -- never ran. A dead handler and a silent page.
+  //
+  // Guarded rather than trimmed to a fixed list: the next field to go should
+  // not take the reader with it.
+  for (const [k, val] of Object.entries(d)) {{
+    const el = $(`[name=${{k}}]`);
+    if (el && val != null && val !== '' && !el.value) el.value = val;
   }}
+  // The route is shown back, not typed, so it is set whether or not it is empty.
+  if ($('[name=route]')) $('[name=route]').value = d.route || '';
+  // HIS OWN WORDS FOR THE SORTIE, off the cartridge's kneeboard notes.
   if (!$('[name=task]').value) $('[name=task]').value = d.task || '';
 
   const wps = res.waypoints || [];
@@ -308,15 +313,16 @@ $('#read').onclick = async () => {{
   h += `</div>`;
   $('#cartout').innerHTML = h;
 
-  if ($('#sp').checked) {{
-    const p = await (await fetch('/dtc/steerpoints', {{method: 'POST',
-      headers: {{'content-type': 'application/json'}},
-      body: JSON.stringify({{cartridge: $('#dtc').value}})}})).json();
-    if (p.refused) await say(p);
-    else if ((p.pushed || []).length)
-      $('#cartout').innerHTML += `<div class="ok">his steerpoints, for this `
-        + `sortie: ${{esc(p.pushed.join(', '))}}</div>`;
-  }}
+  // THE STEERPOINT CHECKBOX IS GONE, and it is worth saying what it did.
+  //
+  //     "What is the checkbox 'file his own named steerpoints' even for?"
+  //
+  // It pushed his private steerpoints into the SHARED fix table -- which is
+  // exactly #129: that table is the published catalogue, the bridge replaces
+  // it on every start, and a plan routing via FOO stopped resolving the moment
+  // anything restarted. A plan carries its own fixes now, with their positions,
+  // so there is nothing left to push and the box only offered a way to break
+  // the thing it looked like it was helping.
   check();
 }};
 
@@ -442,9 +448,20 @@ async function look(name) {{
     }});
   box.innerHTML = `<div class="detail">`
     + `<dt>key</dt><dd>${{esc(p.name)}}</dd>`
-    + `<dt>said on the radio</dt><dd>${{esc(p.label || '(none)')}}</dd>`
+    + `<dt>label</dt><dd>${{esc(p.label || '(none)')}}</dd>`
     + `<dt>task</dt><dd>${{esc(p.task || '(none)')}}</dd>`
-    + `<dt>route</dt><dd>${{legs.join(' &rarr; ') || '(none)'}}</dd>`
+    + `<dt>route</dt><dd>${{legs.join(' &rarr; ') || '(direct)'}}</dd>`
+    // WHERE HE IS GOING, which had disappeared from this panel entirely.
+    //
+    //     "Route - shouldnt this include the final steerpoint which was
+    //      Batumi? Maybe that was lost?"
+    //
+    // Not lost -- `route` is the ENROUTE portion and the destination is the
+    // last leg, so it was correct and invisible, which is its own kind of
+    // wrong. It gets its own row rather than being appended to the route,
+    // because "via" and "to" are different things and a controller reads them
+    // differently.
+    + `<dt>to</dt><dd>${{esc(p.destination || '(none)')}}</dd>`
     + `<dt>cruise</dt><dd>${{(p.cruise_ft || 0).toLocaleString()}} ft</dd>`
     + `<dt>recovery</dt><dd>${{esc(p.approach || '(none)')}}</dd>`
     + (legs.some(l => l.includes('class="miss"'))
