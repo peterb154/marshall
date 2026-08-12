@@ -7573,6 +7573,60 @@ what actually turned a latent bug into four red tests.
 
 ---
 
+## [HO-7] Tower gives a man on final back to Approach, because "airborne" is a state read as an event — #146
+labels: bug
+
+The #138 fix stopped this in one of the three places that can decide it, and
+the place it did not reach is the one that outranks the other two.
+
+`next_controller` is a cascade — the sim's events, then the ladder, then the
+airspace volumes — and #138 put the direction test into `leaving_my_airspace`,
+which is the THIRD rung. The first is `handoff_on_the_event`, which reasons:
+
+    not on the ground, and I am Tower  ->  he got airborne, give him to Approach
+
+`on_ground` is a STATE, not the moment it changed. It is equally true of a jet
+that has just rotated and of one four miles out on a final approach — so an
+arrival on Tower's frequency was handed straight back to Approach, which is the
+transmission the pilot got four times inside five miles on 12 August and the
+one #138 was written to stop.
+
+**Found by `tools/ghost_flight.py --inbound`**, the first thing that has ever
+flown an arrival rather than a departure. Two authorised handoffs two hundred
+yards apart, in opposite directions, both correct by their own branch:
+
+    06:20  4.7 nm  Dagger one six, contact Batumi Tower one one eight decimal six.
+    06:32  4.5 nm  Dagger one six, contact Batumi Approach one two four decimal
+                   four two five.
+    06:36  4.5 nm  Dagger16, roger, contact Batumi Approach, one two four
+                   decimal four two five.
+
+The last two are the monitor and the receive path arriving at the same wrong
+answer independently, which is what one shared cascade is supposed to prevent
+and does — it is the cascade's own first rung that is wrong.
+
+**Fixed.** Airborne means DEPARTING, and whether he is departing is a fact we
+hold: `handoff_on_the_event` now takes the fix and declines the tower ->
+approach direction for an aircraft pointed at the field. The landing direction
+(approach -> tower) is untouched, and a controller with no radar picture — no
+fix — behaves exactly as before, because a guard that needs a picture must not
+disarm somebody who has none.
+
+**And the trend test was written out three times and enforced in two**, which is
+how the third one got missed. It is one function now, `coming_towards_us`, read
+by `_handoff_state`, `leaving_my_airspace` and the event branch.
+
+Tests: `AirborneIsNotAnEvent` and `OneDefinitionOfInbound` in
+`tests/test_the_ladder_has_a_direction.py`; the harness that found it is guarded
+by `tests/test_ghost_flies_an_arrival.py`.
+Code: `src/marshall/atc/agent_atc.py`, `tools/ghost_flight.py`.
+
+Status: SHIPPED/UNVERIFIED — a ghost flew it, structurally, and the rerun is
+clean. A pilot still has to fly a real arrival and hear whether the frequency
+he is left on is the right one.
+
+---
+
 ## [ARCH-26] A proposal half of the tree already obeys, and nobody could tell which half — #147
 labels: architecture, documentation
 

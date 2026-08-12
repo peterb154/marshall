@@ -108,6 +108,118 @@ class AnInboundAircraftIsNotLeaving(unittest.TestCase):
                                   self.p, pos))
 
 
+class AirborneIsNotAnEvent(unittest.TestCase):
+    """The rung the first fix could not reach, because it is decided earlier.
+
+    `next_controller` is a cascade -- the sim's events, then the ladder, then
+    the volumes -- and #138 was fixed in the THIRD of those. The first one,
+    `handoff_on_the_event`, answers "he is airborne and he is Tower's, so give
+    him back to Approach" without ever looking at which way he is going, so it
+    kept producing the exact transmission the fix was written to stop. On 12
+    August the pilot got it four times inside five miles; a ghost flown inbound
+    on 12 August got it twice, two hundred yards after being handed TO Tower:
+
+        4.7 nm  Dagger one six, contact Batumi Tower one one eight decimal six.
+        4.5 nm  Dagger one six, contact Batumi Approach one two four decimal
+                four two five.
+
+    `on_ground` is a STATE and the branch reads it as an EVENT: it is equally
+    true of a jet that has just rotated and of one on a four-mile final. What
+    distinguishes them is the trend, which is a fact we hold and were not using
+    -- the third place the same rule had to be written, which is why it is now
+    one function (`coming_towards_us`).
+    """
+
+    ON_FINAL = ("362nd_sockeye [Sockeye] (F-16C_50, manned): 4.5 nm on the 311 "
+                "radial, 1,350 ft, heading 131, 300 knots")
+    JUST_OFF = ("362nd_sockeye [Sockeye] (F-16C_50, manned): 2.0 nm on the 112 "
+                "radial, 1,200 ft, heading 112, 220 knots")
+
+    def setUp(self):
+        self.p = R.BATUMI_ILS
+        self.tower = self.p.station_for("tower", field="Batumi")
+
+    def at(self, nm, radial, heading, alt=1350):
+        return asr.Position(range_nm=nm, radial_deg=radial, alt_ft=alt,
+                            heading_deg=heading)
+
+    def test_tower_keeps_a_man_on_final(self):
+        self.assertIsNone(
+            A.handoff_on_the_event(self.ON_FINAL, "362nd_sockeye", self.tower,
+                                   self.p, self.at(4.5, 311, 131)))
+
+    def test_and_at_every_range_inside_the_circuit(self):
+        """Four, two and one mile, which is where he got all four of them."""
+        for nm in (4.0, 2.0, 1.0):
+            with self.subTest(nm=nm):
+                self.assertIsNone(
+                    A.handoff_on_the_event(self.ON_FINAL, "362nd_sockeye",
+                                           self.tower, self.p,
+                                           self.at(nm, 311, 131)))
+
+    def test_a_departure_is_still_handed_to_approach(self):
+        """The case the branch exists for, and it must survive: he rotated, he
+        is going away, and Tower owns the runway rather than the departure."""
+        got = A.handoff_on_the_event(self.JUST_OFF, "362nd_sockeye", self.tower,
+                                     self.p, self.at(2.0, 112, 112))
+        self.assertIsNotNone(got)
+        self.assertIn("approach", got.name.lower())
+
+    def test_a_controller_with_no_radar_behaves_exactly_as_before(self):
+        """No fix, no opinion about direction -- and the old answer stands. A
+        guard that needs a picture must not disarm a controller who has none."""
+        got = A.handoff_on_the_event(self.JUST_OFF, "362nd_sockeye", self.tower,
+                                     self.p)
+        self.assertIsNotNone(got)
+        self.assertIn("approach", got.name.lower())
+
+    def test_landing_still_ends_the_approach(self):
+        """The other direction of the same branch, untouched: on the ground
+        under a radar controller is Tower's, whichever way he was pointing."""
+        down = ("362nd_sockeye [Sockeye] (F-16C_50, manned, on the ground): "
+                "0.5 nm on the 112 radial, 40 ft, heading 131, 8 knots")
+        got = A.handoff_on_the_event(
+            down, "362nd_sockeye", self.p.station_for("approach", field="Batumi"),
+            self.p, self.at(0.5, 112, 131, alt=40))
+        self.assertIsNotNone(got)
+        self.assertIn("tower", got.name.lower())
+
+
+class OneDefinitionOfInbound(unittest.TestCase):
+    """It was written out three times and enforced in two.
+
+    Every one of these had its own copy of "within a quadrant of the reciprocal
+    of the radial", and the copy that was missing is the one that outranks the
+    other two. A rule stated three times is a rule that can be fixed twice.
+    """
+
+    def test_the_recorded_arrival_reads_as_coming_towards_us(self):
+        self.assertTrue(A.coming_towards_us(
+            asr.Position(range_nm=27.0, radial_deg=328, alt_ft=10000,
+                         heading_deg=213)))
+
+    def test_a_departure_does_not(self):
+        self.assertFalse(A.coming_towards_us(
+            asr.Position(range_nm=11.0, radial_deg=40, alt_ft=5000,
+                         heading_deg=40)))
+
+    def test_and_nothing_known_is_not_an_arrival_either(self):
+        """"We cannot tell" and "he is going away" must not be one answer."""
+        self.assertFalse(A.coming_towards_us(None))
+        self.assertFalse(A.coming_towards_us(
+            asr.Position(range_nm=20.0, radial_deg=90, alt_ft=5000,
+                         heading_deg=None)))
+
+    def test_the_ladder_reads_it_from_the_same_place(self):
+        """`_handoff_state` and the event branch must agree by construction,
+        which is what having one function buys."""
+        pos = asr.Position(range_nm=4.5, radial_deg=311, alt_ft=1350,
+                           heading_deg=131)
+        st = A._handoff_state("", "362nd_nobody", pos)
+        self.assertTrue(st.inbound)
+        self.assertIs(st.inbound, A.coming_towards_us(pos))
+
+
 class NobodyIssuesAClearanceThatIsNotHis(unittest.TestCase):
     """The other half of #138, and the aerodrome invariant from CLAUDE.md.
 

@@ -3029,7 +3029,7 @@ def next_controller(scope, track: str, me, profile, fix, *, known: str = "",
     down = is_on_the_ground(scope, track, fix)
     # A man on the runway is Tower's and is going nowhere. The EVENT branch may
     # have said otherwise -- being down outranks it.
-    nxt = None if down else handoff_on_the_event(scope, track, me, profile)
+    nxt = None if down else handoff_on_the_event(scope, track, me, profile, fix)
     if nxt is None and me is not None:
         # `phase` is what he is DOING, and it is the only thing that can hand
         # over the ground half of a sortie -- see `handoff.due`. A parked
@@ -3195,28 +3195,44 @@ def watching_him(bridge, ctl, profile, cs, pos, scope, fallback_hz=0.0,
     return nxt, ("", "")
 
 
-def _handoff_state(scope, track: str, pos, phase: str = "") -> object:
-    """The three facts a handoff rule is allowed to look at.
+def coming_towards_us(fix) -> bool:
+    """Is he ARRIVING -- the trend, not the range. One definition, three callers.
 
-    INBOUND IS A TREND, not a position, and it is the whole reason this is not
-    a bare distance test: five miles outbound climbing and five miles inbound
+    INBOUND IS A TREND, not a position, and it is the whole reason none of this
+    is a bare distance test: five miles outbound climbing and five miles inbound
     descending are the same range and opposite events. He is inbound when his
     heading points back towards the field -- within a quadrant of the reciprocal
     of the radial he is sitting on.
+
+    IT WAS WRITTEN OUT THREE TIMES, which is how the third place got missed. The
+    ladder had it (`_handoff_state`), the airspace branch got it on 12 August
+    (`leaving_my_airspace`, #138), and the EVENT branch -- which outranks both --
+    never had it at all, so an aeroplane four miles out on final was still being
+    told to go back to Approach after the fix that was supposed to stop it. A
+    rule stated in three places is a rule enforced in two.
+
+    NOT GUESSED AT. A fix with no heading or no radial answers False: "we cannot
+    tell" and "he is going away" must not be the same answer, because one of
+    them moves an aeroplane.
     """
+    hdg = getattr(fix, "heading_deg", None)
+    radial = getattr(fix, "radial_deg", None)
+    if hdg is None or radial is None:
+        return False
+    from marshall.atc import asr as _asr
+    return abs(_asr.angle_diff((radial + 180) % 360, hdg)) < 90
+
+
+def _handoff_state(scope, track: str, pos, phase: str = "") -> object:
+    """The three facts a handoff rule is allowed to look at."""
     from marshall.atc import handoff as _h
-    ground = is_on_the_ground(scope, track, pos)
-    nm = getattr(pos, "range_nm", None)
-    hdg = getattr(pos, "heading_deg", None)
-    radial = getattr(pos, "radial_deg", None)
-    inbound = False
-    if hdg is not None and radial is not None:
-        from marshall.atc import asr as _asr
-        inbound = abs(_asr.angle_diff((radial + 180) % 360, hdg)) < 90
-    return _h.State(on_ground=ground, range_nm=nm, inbound=inbound, phase=phase)
+    return _h.State(on_ground=is_on_the_ground(scope, track, pos),
+                    range_nm=getattr(pos, "range_nm", None),
+                    inbound=coming_towards_us(pos), phase=phase)
 
 
-def handoff_on_the_event(scope: str, track: str, me, profile) -> object | None:
+def handoff_on_the_event(scope: str, track: str, me, profile,
+                         fix=None) -> object | None:
     """Touching down ends the approach. Getting airborne ends Tower's business.
 
         "Landing / takeoff event should be triggers to switch to/from tower"
@@ -3231,6 +3247,26 @@ def handoff_on_the_event(scope: str, track: str, me, profile) -> object | None:
     Both directions, because only one was ever wired. A departing flight was
     given to Approach at twenty-five miles and never handed back, since nothing
     marked the moment Tower was done with him.
+
+    AND "AIRBORNE" IS NOT AN EVENT, WHICH IS THE FAULT BELOW. `on_ground` is a
+    state, not the moment it changed, so "he is flying and he is Tower's" is
+    true of a jet that has just rotated AND of one four miles out on final --
+    and this branch is the FIRST rung of the cascade, so it answered for both
+    before anything that knows about arrivals was consulted. The airspace branch
+    got a direction on 12 August (#138) and this one did not, so the sortie that
+    fix was written for still got:
+
+        4.7 nm  Dagger one six, contact Batumi Tower one one eight decimal six.
+        4.5 nm  Dagger one six, contact Batumi Approach one two four decimal
+                four two five.
+
+    Two hundred yards apart, in opposite directions -- found by
+    `tools/ghost_flight.py --inbound`, which is the first thing that has ever
+    flown an arrival. What makes the take-off case a take-off is that he is
+    LEAVING, and that is a fact we hold: see `coming_towards_us`.
+
+    A fix is optional and its absence changes nothing, because a controller with
+    no radar picture is exactly the case that must keep working the way it did.
 
     Silent unless the sim has actually said so. `on_ground` is False both for an
     aeroplane in the air and for one nothing has been reported about, and this
@@ -3248,7 +3284,11 @@ def handoff_on_the_event(scope: str, track: str, me, profile) -> object | None:
     if unit.on_ground and role == "approach":
         return profile.station_for("tower", field=fld)
     if not unit.on_ground and role == "tower":
-        # Airborne again: Tower owns the runway, not the departure.
+        # Airborne again: Tower owns the runway, not the departure -- unless he
+        # is pointed AT the runway, in which case he is an arrival on final and
+        # Tower is the man who owns him.
+        if coming_towards_us(fix):
+            return None
         return profile.station_for("approach", field=fld)
     return None
 
@@ -3331,12 +3371,8 @@ def leaving_my_airspace(base: str, session_id: str, callsign: str, me,
     # volume from the procedure and this guard is unnecessary. See #139, which
     # is blocked on #137 because containment needs fixes that carry lat/lon.
     # See #138 for what it cost.
-    _hdg = getattr(fix, "heading_deg", None)
-    _radial = getattr(fix, "radial_deg", None)
-    if _hdg is not None and _radial is not None:
-        from marshall.atc import asr as _asr
-        if abs(_asr.angle_diff((_radial + 180) % 360, _hdg)) < 90:
-            return None
+    if coming_towards_us(fix):
+        return None
     # A talkdown in progress outranks any question of geography. Tower's volume
     # has a 4,000 ft ceiling, so an aircraft descending the final sits inside it
     # -- and handing him over there is precisely the bug that took a pilot off
