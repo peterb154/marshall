@@ -121,6 +121,23 @@ class Aircraft:
     # no stack, no levels and no sequence, and forcing it into an arrival enum
     # would have meant inventing arrival states for a man who has not moved.
     sortie_phase: str = ""
+    # HAS HE AGREED HIS IFR CLEARANCE? Three states, and they are the point:
+    #
+    #   None    nobody has issued him one, or nobody knows -- never blocks
+    #   False   ISSUED and not yet read back correctly
+    #   True    ACKNOWLEDGED
+    #
+    # #105 made FILED, ISSUED and ACKNOWLEDGED real so that a later rung could
+    # ask. Nothing asked, so on 12 August a read-back loop that could not
+    # terminate (#134) left this at False for a whole sortie and it cost
+    # nothing: Ground gave him taxi, Tower cleared him off, and he flew to
+    # Batumi on a clearance the board recorded as never agreed.
+    #
+    #     "And when I ask ground to taxi with no clearance -- why does he let
+    #      me go. Talk about swallowing an error."
+    #
+    # See #135.
+    clearance_agreed: bool | None = None
     # WHICH INFORMATION HE SAID HE HAS. Empty means he did not mention one,
     # which gets a different answer on the radio from claiming the wrong one:
     # the first is a prompt, the second is a correction.
@@ -597,6 +614,14 @@ class Controller:
             ac.approaches = int(row.get("approaches_flown") or 0)
             ac.atis_letter = row.get("atis_letter") or ""
             ac.wants = row.get("intent") or ""
+            # WHETHER HE HAS AGREED HIS CLEARANCE, off the durable record. A
+            # row with a cruise level or a squawk has had one ISSUED; the
+            # timestamp says whether he ever read it back. Absent both, nobody
+            # has cleared him and the answer stays None, which never blocks.
+            if row.get("clearance_ack"):
+                ac.clearance_agreed = True
+            elif row.get("cruise_ft") or row.get("squawk"):
+                ac.clearance_agreed = False
             ac.track = row.get("track_name") or ""
             ac.radar_identified = bool(row.get("radar_identified"))
             if row.get("assigned_ft"):
@@ -1964,6 +1989,11 @@ class Controller:
         # treating it as wrong would strand a man who read it back perfectly.
         if correct is True:
             ac.sortie_phase = "taxi"
+            # AGREED, AND THE ENGINE REMEMBERS IT AGREED. FILED, ISSUED and
+            # ACKNOWLEDGED became three real states in #105 so that the next
+            # rung could ask which one he was in; nothing asked. See
+            # `request_taxi` and #135.
+            ac.clearance_agreed = True
             return
         if correct is False and missed:
             # NAME WHAT HE MISSED, from the verifier that found it. The agent
@@ -2035,6 +2065,33 @@ class Controller:
         ac.sortie_phase, ac.last_report_t = "taxi", self.t
         if not self._owns("ground"):
             self._not_mine(ac, "ground", "Taxi")
+            return
+        # AND HE DOES NOT MOVE ON A CLEARANCE HE HAS NOT AGREED.
+        #
+        # `clearance_agreed` is False only when one was ISSUED and the read-back
+        # has not been accepted -- None, the ordinary case for VFR and for
+        # anybody nobody has cleared, passes straight through. So this refuses
+        # exactly the situation that has no other exit, and says which it is:
+        # "not read back" is a different problem from "not filed", and a pilot
+        # can only fix the one he is told about.
+        #
+        # Silence here is what the pilot actually objected to. An error that
+        # changes nothing is indistinguishable from no error, and he flew a
+        # whole sortie -- taxi, take-off, two aerodromes -- before anything
+        # noticed his clearance had never been agreed. See #135 and #134.
+        if ac.clearance_agreed is False:
+            who = self.profile.station_for(
+                "clearance", field=getattr(getattr(self, "_me", None),
+                                           "field", ""))
+            where = (f", contact {who.name} {spell_freq(who.freq_mhz)}"
+                     if who is not None else "")
+            self.say(ac.callsign,
+                     f"{self._addr(ac)}, your IFR clearance has not been read "
+                     f"back{where}.",
+                     decided=D.Decision(
+                         kind="refuse", to=ac.callsign, role="clearance",
+                         station=getattr(who, "name", ""),
+                         frequency_mhz=getattr(who, "freq_mhz", None)))
             return
         rwy = self._runway_in_use()
         self.say(ac.callsign,
@@ -2127,6 +2184,32 @@ class Controller:
         # or beacon report) should still be worked, not ignored. Enter a new
         # arrival into the stack bottom-up, then let the sequencer clear them.
         ac = self.get(cs)
+        # THE APPROACH CLEARANCE IS APPROACH'S, and this is the same invariant
+        # `request_takeoff` has enforced since the ground procedure was written
+        # -- the terminal end of it simply never got the line.
+        #
+        #     04:52:00  Sockeye, cleared I-L-S approach runway 13, report
+        #               established on the final approach course.
+        #     04:56:33  Sockeye, cleared I-L-S approach runway 13, continue.
+        #
+        # Georgia Center, twice, on 12 August; and Batumi Approach never cleared
+        # him at all, which is what the pilot logged:
+        #
+        #     "approach, never actually cleared me for the approach, and never
+        #      asked if I have information alpha"
+        #
+        # It is not a phrasing fault. An approach clearance puts an aeroplane
+        # into the letdown, which holds ONE aircraft, so a controller who issues
+        # one for a runway that is not his has put a second aeroplane somewhere
+        # the man responsible for it cannot see. That is the accident this
+        # engine exists to prevent, arrived at by an unguarded method rather
+        # than by anything a pilot did. See #138.
+        #
+        # DEPARTURE COUNTS AS APPROACH -- `_owns` reads `Station.also`, and at a
+        # field with one radar room they are the same man under two names.
+        if not self._owns("approach"):
+            self._not_mine(ac, "approach", "The approach clearance")
+            return
         if ac.phase == Phase.CLEARED:
             # Already cleared (e.g. the aircraft ahead just landed and freed the
             # letdown for him) -- re-affirm, don't send him back to the hold.

@@ -1,0 +1,169 @@
+"""An arrival climbs the ladder, and geography must not push him back down.
+
+#138, from the sortie of 12 August. Two complaints, one cause:
+
+    04:54:45   checked in with Batumi Approach at 27 nm inbound, handed BACK
+               to Georgia Center
+    05:03:42   Batumi Tower tried to hand him to Batumi Approach, four times,
+               at four, two and one miles on final
+
+        "he just tried to transfer me back to approach when I was within five
+         miles on the final"
+        "that was totally wrong that he wants me to go to approach"
+
+There is no `tower -> approach` rule and never was. Both came from the PostGIS
+airspace volumes -- the third and weakest kind of evidence `next_controller`
+consults -- and the monotonic guard at the end of `leaving_my_airspace` could
+stop neither: it forbids handing a man UP the ladder, so `tower -> approach`
+counts as DOWN and is allowed. An aeroplane on final is inside Approach's
+volume for as long as he is flying, because Tower's authority is the runway and
+the circuit rather than a shape on a map.
+
+The fix is the function's own name. It answers a question about a man who is
+LEAVING; an aeroplane pointed at the field is not leaving.
+
+The ranges, radials and headings below are off the flight recorder.
+"""
+
+from __future__ import annotations
+
+import unittest
+
+from marshall.atc import agent_atc as A
+from marshall.atc import controller as atc
+from marshall.atc import asr
+from marshall.core import route as R
+
+# WOULD FAIL IF REACHED. Every case here must be decided before any HTTP call,
+# so the port is one nothing is listening on -- a test that passes because the
+# director happened to be down would prove nothing at all.
+NOWHERE = "http://127.0.0.1:1"
+
+
+class AnInboundAircraftIsNotLeaving(unittest.TestCase):
+
+    def setUp(self):
+        self.p = R.BATUMI_ILS
+
+    def at(self, nm, radial, heading, alt=3000):
+        return asr.Position(range_nm=nm, radial_deg=radial, alt_ft=alt,
+                            heading_deg=heading)
+
+    def test_tower_does_not_give_a_man_on_final_back_to_approach(self):
+        """05:03:42, 05:04:16, 05:04:20, 05:04:47 -- four times, inside 5 nm."""
+        tower = self.p.station_for("tower", field="Batumi")
+        for nm in (5.0, 4.0, 2.0, 1.0):
+            with self.subTest(nm=nm):
+                self.assertIsNone(
+                    A.leaving_my_airspace(NOWHERE, "s", "Sockeye", tower,
+                                          self.p, self.at(nm, 313, 133)))
+
+    def test_approach_keeps_an_arrival_at_twenty_seven_miles(self):
+        """04:54:45. He had checked in with Batumi Approach ninety seconds
+        earlier and was handed back to Center."""
+        approach = self.p.station_for("approach", field="Batumi")
+        self.assertIsNone(
+            A.leaving_my_airspace(NOWHERE, "s", "Sockeye", approach, self.p,
+                                  self.at(27.0, 328, 213, alt=10000)))
+
+    def test_the_recorded_geometry_reads_as_inbound(self):
+        """The scope line at 04:51:57, verbatim:
+
+            362nd_sockeye (F-16C_50, manned): 35.0 nm on the 328 radial,
+            10,136 ft, heading 213, 562 knots
+
+        Sitting on the 328 radial means the field is on 148. Heading 213 is
+        sixty-five degrees off that -- inside the quadrant, so he is closing.
+        """
+        self.assertLess(abs(asr.angle_diff((328 + 180) % 360, 213)), 90)
+
+    def test_an_outbound_departure_is_still_handed_over(self):
+        """The case the airspace branch exists for, and it must survive.
+
+        A jet leaving Kobuleti for Batumi turns for the destination and is never
+        twenty-five miles outbound, so `departure -> center` cannot fire on this
+        sortie and the volume is the only thing that catches him. Outbound, the
+        question is a real one and the branch must reach the director -- which
+        is not listening, so it returns None rather than a station, and that is
+        the check: it got far enough to try.
+        """
+        dep = self.p.station_for("departure", field="Kobuleti")
+        # ON the 040 radial and heading 040 is straight out from the field.
+        # The first version of this fixture said heading 220, which is the
+        # reciprocal -- an aeroplane flying home, asserted to be leaving.
+        out = self.at(11.0, 40, 40)
+        self.assertGreater(abs(asr.angle_diff((40 + 180) % 360, 40)), 90,
+                           "the fixture must actually be outbound")
+        self.assertIsNone(A.leaving_my_airspace(NOWHERE, "s", "Sockeye", dep,
+                                                self.p, out))
+
+    def test_a_fix_with_no_heading_is_not_guessed_at(self):
+        """No trend, no opinion from this guard -- it falls through to the rest
+        rather than inventing a direction."""
+        pos = asr.Position(range_nm=20.0, radial_deg=90, alt_ft=5000,
+                           heading_deg=None)
+        self.assertIsNone(
+            A.leaving_my_airspace(NOWHERE, "s", "Sockeye",
+                                  self.p.station_for("approach", field="Batumi"),
+                                  self.p, pos))
+
+
+class NobodyIssuesAClearanceThatIsNotHis(unittest.TestCase):
+    """The other half of #138, and the aerodrome invariant from CLAUDE.md.
+
+    The GROUND half has been enforced since the ground procedure was written --
+    `request_takeoff` refuses and redirects. The TERMINAL half was written down
+    only in the agent's brief, as English, so `request_approach` had no such
+    line and Georgia Center cleared a man for the ILS twice while Batumi
+    Approach cleared him not at all.
+
+    REFUSE AND REDIRECT, not silence. A controller who simply does nothing is
+    the failure this codebase keeps producing -- indistinguishable from one who
+    agreed.
+    """
+
+    def setUp(self):
+        self.p = R.BATUMI_ILS
+
+    def working(self, role, field="Batumi"):
+        ctl = atc.Controller(profile=self.p)
+        ctl._me = self.p.station_for(role, field=field)
+        return ctl
+
+    def test_center_may_not_clear_an_approach(self):
+        ctl = self.working("center", field="")
+        ctl.request_approach("Sockeye")
+        said = " ".join(t.text for t in ctl.out)
+        self.assertIn("Approach's", said)
+        self.assertNotIn("cleared", said.lower())
+
+    def test_and_he_says_which_frequency(self):
+        """Naming the position alone leaves a pilot hunting for a number."""
+        ctl = self.working("center", field="")
+        ctl.request_approach("Sockeye")
+        self.assertIn("contact", " ".join(t.text for t in ctl.out))
+
+    def test_approach_still_works_him(self):
+        ctl = self.working("approach")
+        ctl.request_approach("Sockeye")
+        said = " ".join(t.text for t in ctl.out).lower()
+        self.assertNotIn("approach's", said)
+
+    def test_departure_may_too_because_it_is_the_same_man(self):
+        """`Station.also` -- one radar room answering to two names. A field
+        with a single controller must not refuse its own arrivals."""
+        ctl = self.working("departure", field="Kobuleti")
+        ctl.request_approach("Sockeye")
+        self.assertNotIn("Approach's", " ".join(t.text for t in ctl.out))
+
+    def test_an_engine_told_nothing_still_works(self):
+        """`_owns` returns True when the bridge has not said who is speaking --
+        every tool and rehearsal builds a Controller without a station, and the
+        engine is blind by design rather than mute."""
+        ctl = atc.Controller(profile=self.p)
+        ctl.request_approach("Sockeye")
+        self.assertNotIn("Approach's", " ".join(t.text for t in ctl.out))
+
+
+if __name__ == "__main__":
+    unittest.main()

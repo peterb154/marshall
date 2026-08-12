@@ -3274,6 +3274,52 @@ def leaving_my_airspace(base: str, session_id: str, callsign: str, me,
     # we have and were not using.
     if under_our_vectors:
         return None
+    # AN INBOUND AEROPLANE IS NOT LEAVING ANYBODY'S AIRSPACE, which is the
+    # question this function is named after and was not asking.
+    #
+    # Geography moves a man who is going away. Arrivals climb the ladder --
+    # center, approach, tower, ground -- and that is the RULES table's job,
+    # because the trigger is procedural (established, on final, landed) and not
+    # a volume. Consulted for an arrival anyway, geometry answers a question
+    # nobody asked, and it answers it with whichever volume he happens to be
+    # inside. On 12 August, 27 nm inbound to Batumi and already checked in with
+    # Approach, he was offered back to Center; then Tower tried four times to
+    # give him to Approach at four, two and one miles on final:
+    #
+    #     "he just tried to transfer me back to approach when I was within
+    #      five miles on the final"
+    #     "that was totally wrong that he wants me to go to approach"
+    #
+    # The guard at the bottom could not stop either. It forbids handing him UP
+    # the ladder, so tower -> approach is "down" and permitted -- and an
+    # aeroplane on final is inside Approach's volume for ever, because Tower's
+    # authority is the runway and the circuit rather than a shape on a map.
+    #
+    # THE TREND, NOT THE RANGE, and computed the way `_handoff_state` computes
+    # it: five miles outbound climbing and five miles inbound descending are the
+    # same distance and opposite events.
+    #
+    # AND THIS IS A HEURISTIC STANDING IN FOR A FACT, which is worth saying
+    # plainly because the pilot said it first:
+    #
+    #     "Trying to determine the direction of a ladder and assuming it always
+    #      goes in one direction is brittle"
+    #
+    # It is. The real fault is that the terminal area does not contain the
+    # approach it serves: `TERMINAL_NM` is 25 but the published reach is
+    # `min(25, nearest_field/2)`, Kobuleti and Batumi are 22 nm apart, so both
+    # areas are ELEVEN-mile circles -- and Batumi's ILS holds at Kobuleti,
+    # twenty-two miles out. At 27 nm inbound he really was in Center's airspace
+    # by the map; the geometry was right and the map was wrong. Derive the
+    # volume from the procedure and this guard is unnecessary. See #139, which
+    # is blocked on #137 because containment needs fixes that carry lat/lon.
+    # See #138 for what it cost.
+    _hdg = getattr(fix, "heading_deg", None)
+    _radial = getattr(fix, "radial_deg", None)
+    if _hdg is not None and _radial is not None:
+        from marshall.atc import asr as _asr
+        if abs(_asr.angle_diff((_radial + 180) % 360, _hdg)) < 90:
+            return None
     # A talkdown in progress outranks any question of geography. Tower's volume
     # has a 4,000 ft ceiling, so an aircraft descending the final sits inside it
     # -- and handing him over there is precisely the bug that took a pilot off

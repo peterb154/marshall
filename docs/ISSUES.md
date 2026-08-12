@@ -6906,3 +6906,62 @@ airspace" for ever.
 Related and probably the same absent rule: no landing clearance was ever issued
 (Tower's whole transmission at 05:03:36 was "Sockeye, Batumi Tower"), and after
 he parked, Ground sent him back to Tower "for landing" — which is #100.
+
+---
+
+## [ARCH-24] A terminal area does not contain the approach it serves — #139
+labels: architecture
+
+    "If the approach requires us maneuvering outside a 25nm ring then maybe we
+     should extend that airspace so that the whole approach is covered by the
+     airspace. If the approach doesn't require maneuvering in centers airspace
+     but we accidentally cross into center because the pilot f d up, maybe his
+     approach should be cancelled and he handed back to center. Trying to
+     determine the direction of a ladder and assuming it always goes in one
+     direction is brittle."
+
+Right on all three counts, and the arithmetic is worse than the hypothesis.
+`airspace.TERMINAL_NM` is 25 nm, but the reach actually published is
+
+    reach = min(TERMINAL_NM, nearest_other_field_nm / 2)
+
+and Kobuleti and Batumi are twenty-two miles apart — so **both terminal areas
+are eleven-mile circles.** Batumi's ILS has its outer hold at KOBULETI, which is
+those same twenty-two miles out. The procedure begins at double the radius of
+the airspace that owns it.
+
+So the 12 August bounce was not a stray: at 27 nm inbound, established, he was
+GENUINELY in Center's airspace by the published map. The geometry answered
+correctly and the answer was absurd, which is the signature of a volume that
+does not describe what it is for.
+
+The midpoint split exists so two adjacent fields do not overlap. That is the
+wrong constraint. Real terminal areas overlap, and two fields twenty-two miles
+apart whose approaches both reach thirty are one radar room with two names —
+which `Station.also` already models for the CONTROLLER and nothing models for
+the AIRSPACE.
+
+**What it wants, in the pilot's own two parts:**
+
+  * **The volume is derived from the procedure it serves.** A terminal area must
+    contain every fix its own approaches use, plus the manoeuvring room they
+    need. Then "he is outside my airspace" cannot fire on a man flying the
+    approach as published, on any map, in any era, because the shape comes from
+    the procedure rather than from a constant.
+  * **Leaving it is an EVENT, not a handoff.** If he strays out of the terminal
+    area, the approach is cancelled and he is handed back — said out loud, as a
+    controller would. A silent bounce between two frequencies is the thing that
+    has no procedural meaning; a cancelled approach has one, and a pilot knows
+    what to do about it.
+
+**Blocked on #137.** Computing "does this volume contain that fix" needs the
+fixes to carry lat/lon, and in `core/fixes.py` they carry DCS grid metres and
+are projected only by asking the sim at bridge start. That is the same root
+cause as FEET WET: flight data living in Python.
+
+**Interim, and it is a heuristic, so it is written down as one.**
+`leaving_my_airspace` now declines to move an INBOUND aircraft — the trend, not
+the range, computed the way `_handoff_state` computes it. It stops the four
+Tower-to-Approach offers at one to four miles on final and the Center bounce at
+27 nm, and it is exactly the brittle direction test the pilot objected to. It
+comes out when the volumes are right.

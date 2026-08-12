@@ -843,3 +843,59 @@ class GroundIsTheEndOfTheLadder(GroundCase):
                                       I.IntentKind.REQUEST_TAXI)
         self.assertEqual(phase, "taxi")
         self.assertIn("hold short", said.lower())
+
+
+class GroundDoesNotMoveAnAircraftOnAnUnagreedClearance(unittest.TestCase):
+    """#135 -- "why does he let me go. Talk about swallowing an error."
+
+    `clearance_agreed` has three states and only one of them refuses:
+
+        None    nobody has cleared him, or nobody knows -- VFR passes through
+        False   ISSUED and not read back correctly
+        True    ACKNOWLEDGED
+
+    On 12 August the read-back loop of #134 could not terminate, so this sat at
+    False for a whole sortie and cost nothing: taxi, take-off, and a flight to
+    another aerodrome on a clearance the board recorded as never agreed.
+    """
+
+    def ground(self):
+        ctl = atc.Controller(profile=R.BATUMI_ASR)
+        ctl._me = R.BATUMI_ASR.station_for("ground", field="Kobuleti")
+        return ctl
+
+    def test_taxi_is_refused_until_the_clearance_is_read_back(self):
+        ctl = self.ground()
+        ctl.get("Sockeye").clearance_agreed = False
+        ctl.request_taxi("Sockeye")
+        said = " ".join(t.text for t in ctl.out)
+        self.assertIn("has not been read back", said)
+        self.assertNotIn("taxi to runway", said.lower())
+
+    def test_and_it_says_who_to_call(self):
+        """A refusal that names no frequency is a refusal with no way out."""
+        ctl = self.ground()
+        ctl.get("Sockeye").clearance_agreed = False
+        ctl.request_taxi("Sockeye")
+        self.assertIn("contact", " ".join(t.text for t in ctl.out))
+
+    def test_an_agreed_clearance_taxis_normally(self):
+        ctl = self.ground()
+        ctl.get("Sockeye").clearance_agreed = True
+        ctl.request_taxi("Sockeye")
+        self.assertIn("taxi to runway",
+                      " ".join(t.text for t in ctl.out).lower())
+
+    def test_nobody_cleared_him_at_all_still_taxis(self):
+        """VFR, and everyone the engine has never been told about. Unknown
+        never blocks -- a guard that fires on missing information silences a
+        controller the first time the board is quiet."""
+        ctl = self.ground()
+        ctl.request_taxi("Sockeye")
+        self.assertIn("taxi to runway",
+                      " ".join(t.text for t in ctl.out).lower())
+
+    def test_a_correct_read_back_agrees_it(self):
+        ctl = self.ground()
+        ctl.clearance_read_back("Sockeye", correct=True)
+        self.assertIs(ctl.get("Sockeye").clearance_agreed, True)
