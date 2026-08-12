@@ -468,7 +468,7 @@ async function look(name) {{
     + `<div class="wps"><table><tr><th>#</th><th>fix</th>`
     + `<th class="n">alt</th><th class="n">lat</th><th class="n">lon</th></tr>`
     + (p.legs || []).map((l, i) => `<tr><td>${{i + 1}}</td>`
-        + `<td>${{esc(l.fix)}}${{i === (p.legs.length - 1) ? ' <i>dest</i>' : ''}}</td>`
+        + `<td>${{esc(l.fix)}}</td>`
         + `<td class="n">${{(l.alt_ft || 0).toLocaleString()}} ft</td>`
         + (l.lat != null
             ? `<td class="n">${{l.lat.toFixed(4)}}</td>`

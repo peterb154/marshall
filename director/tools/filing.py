@@ -75,7 +75,17 @@ def derived(plan: dict) -> dict:
 
         route        the legs before the last one -- the ENROUTE portion, which
                      is what a controller reads back. #127.
-        destination  the last leg. "the destination is the last point."
+        destination  the last leg, and NOTHING ELSE MAKES IT SPECIAL:
+
+                         "the destination (Nellis) is just the last
+                          steerpoint.. nothing special about it except perhaps
+                          when referring to the plan 'IFR flight to Nellis'"
+
+                     Which is the whole of it. It is not a column, not a kind
+                     of leg, and nothing in the engine branches on it. It is
+                     computed here because a controller SAYS it -- "cleared to
+                     Nellis as filed" -- and because a pilot asks for a plan by
+                     where it goes. A speech concept, derived on the way out.
         cruise_ft    the highest level the route asks for. Kept for the scoring
                      and the strip; the CLEARANCE altitude is `legs[0]`, and
                      which is which is exactly what a single `cruise_ft`
