@@ -29,7 +29,14 @@ per-waypoint elevation; `Radios` carries the preset ladder; `Misc` carries the
 ILS, TACAN and bingo. Nothing here is guessed -- it was read off a live export.
 
     uv run python tools/dtc.py --show < cartridge.txt
-    uv run python tools/dtc.py --file 362nd-kobuleti-batumi < cartridge.txt
+    uv run python tools/dtc.py --raw  < cartridge.txt
+    uv run python tools/dtc.py --file batumi-test --label BatumiTest < cartridge.txt
+
+GONE WITH MIGRATION 031 AND #129: `--approach`, because a plan does not name a
+recovery -- which arrival you fly is a fact about your clearance -- and
+`--steerpoints`, which pushed a pilot's own fixes into the SHARED table the
+bridge republishes on every start, so a filed route stopped resolving at the
+next restart. A plan carries its own fixes now, with their positions.
 """
 
 from __future__ import annotations
@@ -51,7 +58,7 @@ BASE = "http://localhost:8000"
 # format the other copies -- which is how two readers come to disagree about
 # what a pilot filed.
 from marshall.core.dtc import (
-    decode, named_steerpoints, plan_from, waypoints)
+    decode, decode_raw, plan_from, waypoints)
 
 
 def existing_label(name: str, base: str = BASE) -> str:
@@ -96,15 +103,10 @@ def main(argv: list[str] | None = None) -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--show", action="store_true", help="print it and stop")
     ap.add_argument("--raw", action="store_true",
-                    help="dump the WHOLE decoded cartridge as JSON and stop — "
-                         "everything DKS wrote, not just what we read")
+                    help="print the cartridge's JSON exactly as DKS wrote it, "
+                         "and stop. Not our rendering of it")
     ap.add_argument("--file", default="", metavar="NAME",
                     help="file it as a plan under this name")
-    ap.add_argument("--approach", default="", help="the recovery to fly")
-    ap.add_argument("--steerpoints", action="store_true",
-                    help="file HIS named turning points and put them on the "
-                         "fix table for this sortie -- shared with him, not "
-                         "published to anybody else. See `named_steerpoints`")
     ap.add_argument("--label", default="",
                     help="the ONE word a pilot says to request it; kept from "
                          "the board when the plan is already filed")
@@ -115,20 +117,26 @@ def main(argv: list[str] | None = None) -> int:
 
     text = (sys.stdin.read() if args.cartridge == "-"
             else Path(args.cartridge).read_text())
+    # RAW MEANS RAW, and it is answered before anything is parsed.
+    #
+    #     "I would like to see the raw jason of the dtc file as an option"
+    #     "not the interpreted one"
+    #
+    # Printing `json.dumps(decode(text))` would be OUR rendering -- reordered,
+    # reindented, and folded through a parser. For "what is actually in this
+    # file?" that is the wrong answer however close it looks.
+    if args.raw:
+        try:
+            print(decode_raw(text))
+        except Exception as e:
+            print(f"!! not a cartridge: {e}", file=sys.stderr)
+            return 2
+        return 0
     try:
         d = decode(text)
     except Exception as e:
         print(f"!! not a cartridge: {e}", file=sys.stderr)
         return 2
-
-    if args.raw:
-        # EVERYTHING, so a question about the cartridge can be answered from
-        # the cartridge. "does this DTC have my mission notes in it" is not a
-        # thing anybody should have to take on trust -- and the answer that
-        # time was no: `KneeboardNotes` was null and the only text in the whole
-        # file was `Aircraft: F16C`.
-        print(json.dumps(d, indent=2, sort_keys=True))
-        return 0
 
     wps = waypoints(d)
     print(f"{d.get('Aircraft', '?')}, {len(wps)} waypoints")
@@ -158,9 +166,8 @@ def main(argv: list[str] | None = None) -> int:
     except Exception:
         print("  .. could not reach the fix catalogue; the route will be "
               "origin to destination direct", file=sys.stderr)
-    plan = plan_from(d, args.file, approach=args.approach, catalogue=catalogue,
-                     label=args.label or existing_label(args.file, args.base),
-                     steerpoints=args.steerpoints)
+    plan = plan_from(d, args.file, catalogue=catalogue,
+                     label=args.label or existing_label(args.file, args.base))
     if not plan["label"]:
         print(f"!! {args.file} is not on the board and has no --label. A plan "
               f"needs ONE sayable word for a pilot to request it by.",
@@ -168,41 +175,6 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     print(f"\nfiling {plan['name']}: {plan['route']} at {plan['cruise_ft']}, "
           f"recovering on {plan['approach']}")
-    if args.steerpoints:
-        # PUSHED SO THE ROUTE CAN BE VALIDATED. `filing.check_live` refuses a
-        # route naming a fix the table does not hold, and it is right to -- a
-        # plan validated against fixes that do not exist is a plan nobody can
-        # be cleared on.
-        #
-        # MERGED, NOT REPLACED, and this cost a catalogue. `set_fixes` says in
-        # its own docstring that THE PUSHED SET REPLACES THE TABLE -- which is
-        # right for the bridge, whose push is the whole theatre, and fatal here,
-        # where it is three steerpoints. It wiped all twenty-one and the very
-        # next filing was refused with "no fix called KOBULETI". Read the
-        # catalogue, add to it, push the union.
-        sp = named_steerpoints(wps, tuple(plan.get('ladder') or ()))
-        if sp:
-            have = {}
-            try:
-                with urllib.request.urlopen(f"{args.base}/fixes", timeout=10) as r:
-                    have = json.loads(r.read()).get("fixes") or {}
-            except Exception:
-                pass
-            if not have:
-                print("!! the fix table is empty -- start the bridge first, it "
-                      "pushes the theatre's catalogue", file=sys.stderr)
-                return 2
-            _put(f"{args.base}/fixes", {"fixes": {**have, **sp}})
-            print(f"  his steerpoints, for this sortie: {', '.join(sp)}")
-            # SAY WHAT IT COSTS, where somebody will read it. The plan is a row
-            # that survives everything; these live in the fix table, which the
-            # bridge REPLACES with the theatre's catalogue on every start. So a
-            # plan filed this way works until the next restart and is then
-            # refused -- "routing is via fix points not held at this station" --
-            # which is correct and reads as the plan being wrong. See #129.
-            print("  .. NOTE: a bridge restart republishes the theatre's fix "
-                  "catalogue and takes these off it. The plan will then be "
-                  "refused until you re-run this. See #129.", file=sys.stderr)
     try:
         out = _post(f"{args.base}/plans",
                     {**plan, "updating": plan["name"]})

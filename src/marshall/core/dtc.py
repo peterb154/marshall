@@ -52,6 +52,20 @@ def decode(text: str) -> dict:
     return json.loads(body)
 
 
+def decode_raw(text: str) -> str:
+    """The cartridge's JSON exactly as DKS wrote it. Not re-serialised.
+
+    `decode` returns a dict, and printing that back out is OUR rendering of it
+    -- reordered, reindented, `null` where DKS may have written something this
+    parser folded away. For "what is actually in this file?" that is the wrong
+    answer, however close it looks.
+    """
+    raw = base64.b64decode("".join(text.split()))
+    if len(raw) < 8:
+        raise ValueError("too short to be a cartridge")
+    return gzip.decompress(raw[4:]).decode("utf-8", "replace")
+
+
 def latlon(s: str) -> float:
     """A DKS position string to decimal degrees.
 
