@@ -116,6 +116,22 @@ CAUCASUS_RECOVERIES = {
 }
 
 
+def published_fixes() -> tuple:
+    """The map's published fixes as `Fix` objects, from the configuration file.
+
+    Converted here rather than returned as pydantic models so that everything
+    downstream -- `push_fixes`, `field_origin`, the mission builder, the charts
+    -- keeps working against the one type it already knows. The file is the
+    source; `Fix` is the shape the rest of the system speaks.
+    """
+    from marshall.core import catalogue
+    from marshall.core import route as R
+    return tuple(
+        R.Fix(f.name, f.ident, f.x, f.z, f.freq_mhz or None,
+              note=f.note, navaid=f.navaid or "ndb", lat=f.lat, lon=f.lon)
+        for f in catalogue.published_fixes())
+
+
 def caucasus() -> Theatre:
     """The 362nd. Kobuleti to Batumi, radar recovery, 1944 flavour available."""
     from marshall.core import route as R
@@ -131,11 +147,20 @@ def caucasus() -> Theatre:
                     R.KOBULETI_ILS),
         wind_from_deg=R.WIND_FROM_DEG, wind_mph=R.WIND_MPH,
         bootstrap_plan="362nd-kobuleti-batumi", approach_key=want,
-        # EVERY Fix the module publishes, not just tonight's legs: a ferry up
-        # the coast routes via KOBULETI, which no sortie leg touches, and a plan
+        # THE PUBLISHED CATALOGUE, out of config/theatres/caucasus.toml.
+        #
+        # This used to scrape every module-level `Fix` out of `route.py`, which
+        # is a fact about which Python module a name sits in and not about
+        # whether anybody can look it up. So the 362nd's own turning points --
+        # FEET WET, INGRESS, EGRESS, TSUTSNVATI -- were published to every
+        # controller in every sortie as though they were navaids, and a pilot
+        # asking for a steerpoint the controller could not resolve was offered
+        # one of them. See #137.
+        #
+        # Still EVERY published fix and not just tonight's legs: a ferry up the
+        # coast routes via KOBULETI, which no sortie leg touches, and a plan
         # naming a fix the table does not hold is refused at delivery.
-        fixes=tuple({f.name: f for f in vars(R).values()
-                     if isinstance(f, R.Fix)}.values()),
+        fixes=published_fixes(),
         waypoints=tuple(R.sortie_points()),
         defended=tuple(R.DEFENDED), legs=tuple(R.SORTIE_LEGS))
 

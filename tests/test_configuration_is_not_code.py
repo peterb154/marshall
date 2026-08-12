@@ -280,3 +280,125 @@ class TheRepoSOwnConfigurationLoads(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ThePublishedCatalogueIsCitable(unittest.TestCase):
+    """The shipped Caucasus catalogue, and what may be in it.
+
+    `theatre.fixes` used to be built by scraping every module-level `Fix` out
+    of `route.py` -- a fact about which Python file a name sits in, not about
+    whether anybody can look it up. So the 362nd's own turning points were
+    published to every controller in every sortie as though they were navaids:
+
+        "we deleted the domino flight plan that had feet wet… where on earth
+         did that come from. It shouldn't be in the database from a flight plan
+         as a private fix and it's definitely not a public fix."
+    """
+
+    def setUp(self):
+        catalogue.reload()
+        self.addCleanup(catalogue.reload)
+
+    def test_the_sorties_own_turning_points_are_not_published(self):
+        names = {f.name for f in catalogue.published_fixes("caucasus")}
+        for mine in ("FEET WET", "INGRESS", "EGRESS", "TSUTSNVATI", "REHEARSAL"):
+            self.assertNotIn(mine, names)
+
+    def test_the_aerodromes_and_the_plate_fix_are(self):
+        names = {f.name for f in catalogue.published_fixes("caucasus")}
+        self.assertEqual(names, {"BATUMI", "KOBULETI", "KUTAISI", "INITIAL"})
+
+    def test_every_published_fix_cites_a_source(self):
+        """Reference data is seeded, never authored. A fix nobody can cite is
+        one somebody invented."""
+        for f in catalogue.published_fixes("caucasus"):
+            with self.subTest(fix=f.name):
+                self.assertTrue(f.source.strip(), f"{f.name} cites nothing")
+
+    def test_a_fix_with_no_position_is_refused(self):
+        """Required, not defaulted: a fix at 0,0 is in the Gulf of Guinea and
+        every range from it is a real-looking number belonging nowhere."""
+        from pydantic import ValidationError
+        with self.assertRaises(ValidationError):
+            catalogue.PublishedFix(name="NOWHERE", x=1, z=2, source="test")
+
+
+class GeometryWithoutARunningSim(unittest.TestCase):
+    """What the stored projection buys, and it is the point of the exercise.
+
+    Until now the only thing that could turn a fix into a position was
+    `coord.LOtoLL` over gRPC at bridge start. So "does this terminal area
+    contain its own approach" -- #139, the 11 nm circle around a procedure that
+    starts at 22 -- could not be asked in a test, in a tool, or at all without
+    the server up.
+    """
+
+    def setUp(self):
+        catalogue.reload()
+        self.addCleanup(catalogue.reload)
+
+    def test_the_theatre_carries_positions_offline(self):
+        from marshall.core import theatre as T
+        for f in T.published_fixes():
+            with self.subTest(fix=f.name):
+                self.assertIsNotNone(f.lat)
+                self.assertIsNotNone(f.lon)
+
+    def test_the_distance_that_proves_139(self):
+        """Batumi's ILS holds at KOBULETI. Its terminal area is published as
+        min(25, nearest_field/2) -- and the two fields are 22 nm apart, so the
+        area is ELEVEN miles and the procedure begins at twenty-two.
+
+        Computed here from the files alone, which is the whole point: this
+        assertion could not have been written last week.
+        """
+        from marshall.core import geo
+        at = {f.name: f for f in catalogue.published_fixes("caucasus")}
+        nm, _ = geo.range_bearing_true(
+            (at["BATUMI"].lat, at["BATUMI"].lon),
+            at["KOBULETI"].lat, at["KOBULETI"].lon)
+        self.assertAlmostEqual(nm, 22.0, delta=1.5)
+        from marshall.core import airspace
+        self.assertLess(min(airspace.TERMINAL_NM, nm / 2.0), nm,
+                        "the published area does not reach its own outer hold")
+
+
+class TheTwoSourcesOfPositionAreMERGED(unittest.TestCase):
+    """One table, two sources, and the second must not silently win.
+
+    Caught on a running bridge and not by the suite: the published table came
+    back holding FEET WET, INGRESS and EGRESS -- the sortie's own turning
+    points -- and not one aerodrome. `push_fixes` collected the configured
+    coordinates, then the sim branch did `out = {}` before adding its own.
+
+    Exactly the replace-versus-merge that cost a whole catalogue in #129. Two
+    sources for one table is the shape; it will happen again, so it gets a test
+    rather than a comment.
+    """
+
+    def test_configured_fixes_survive_the_sim_branch(self):
+        from unittest import mock
+
+        from marshall.atc import agent_atc as A
+        from marshall.core import route as R
+
+        configured = R.Fix("BATUMI", "OS", -355811, 617386, 132.0,
+                           lat=41.6096, lon=41.6002)
+        sortie_only = R.Fix("FEET WET", "", -355811, 595162, None)
+
+        class Theatre:
+            fixes = (configured,)
+            waypoints = ((1, sortie_only),)
+
+        pushed = {}
+        with mock.patch.object(A, "_theatre") as th, \
+             mock.patch.object(A, "_put_json",
+                               side_effect=lambda url, body: pushed.update(body)), \
+             mock.patch.object(A, "_eval_fix_positions",
+                               return_value={"FEET WET": [41.629, 41.336]}):
+            th.current.return_value = Theatre()
+            A.push_fixes("http://unused", profile=None)
+
+        got = pushed.get("fixes") or {}
+        self.assertIn("BATUMI", got, "the configured fix was wiped by the sim branch")
+        self.assertIn("FEET WET", got, "the sim's answer was lost")

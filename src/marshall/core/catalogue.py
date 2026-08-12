@@ -94,9 +94,40 @@ class SpeechFile(_File):
     recogniser: Phrases = Phrases()
 
 
+class PublishedFix(_File):
+    """One fix anybody can look up: on a plate, in an AIP, or an aerodrome.
+
+    BOTH FRAMES, and neither is derived from the other. `x`/`z` are the DCS
+    grid metres the mission builder and the engine work in; `lat`/`lon` are the
+    SIM'S OWN projection of them, taken through `coord.LOtoLL` and stored.
+
+    Storing the projection rather than asking for it at every start is the
+    point: Caucasus is a transverse Mercator, a flat-earth offset from the
+    field was 7.6 nm wrong at the target area, and until now the only thing
+    that could turn a fix into a position was a running sim. So "does this
+    terminal area contain its own approach" (#139) could not be answered
+    offline at all -- not in a test, not in a tool, not without the server up.
+    """
+    name: str
+    x: float
+    z: float
+    lat: float
+    lon: float
+    ident: str = ""
+    freq_mhz: float = 0.0
+    navaid: str = ""
+    # WHERE IT CAME FROM, and it is required. Reference data is seeded, never
+    # authored: a fix nobody can cite is one somebody invented, which is the
+    # whole of #133 and of FEET WET. Writing the source down is what stops the
+    # next person adding a convenient name.
+    source: str
+    note: str = ""
+
+
 class TheatreFile(_File):
     pronunciation: Terms = Terms()
     recogniser: Phrases = Phrases()
+    fix: list[PublishedFix] = []
 
 
 class CallsignsFile(_File):
@@ -221,6 +252,24 @@ def known_callsigns() -> dict:
         # nothing on the log to explain it.
         print(f"  !! {e}", flush=True)
         return {}
+
+
+def published_fixes(theatre: str = "") -> list[PublishedFix]:
+    """The fixes this map publishes -- every one citable, none invented.
+
+    NOT THE SORTIE'S TURNING POINTS. `theatre.fixes` used to be built by
+    scraping every module-level `Fix` out of `route.py`:
+
+        fixes=tuple({f.name: f for f in vars(R).values()
+                     if isinstance(f, R.Fix)}.values())
+
+    -- so the 1944 strike's own route points (FEET WET, INGRESS, EGRESS,
+    TSUTSNVATI) were published to every controller in every sortie as though
+    they were navaids, and a pilot asking for a steerpoint the controller
+    could not resolve was offered one of them. Whether a name is PUBLISHED is
+    a fact about the name, not about which Python module it happens to sit in.
+    """
+    return list(_theatre(theatre or theatre_name()).fix)
 
 
 def recogniser_phrases(callsigns=()) -> list[str]:

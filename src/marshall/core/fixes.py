@@ -36,6 +36,19 @@ class Fix:
     # it cannot home the NDB that a 1944 Mustang homes without difficulty.
     # See atc/equipment.py.
     navaid: str = "ndb"
+    # THE SIM'S OWN PROJECTION, when we have it. Optional because a Fix built
+    # in a test or by the mission builder has grid metres and nothing else, and
+    # None means "ask the sim" exactly as before.
+    #
+    # Carried so that geometry can be done WITHOUT A RUNNING SIM. Until this,
+    # the only thing that could turn a fix into a position was `coord.LOtoLL`
+    # over gRPC at bridge start, so "does this terminal area contain its own
+    # approach" (#139) was unanswerable in a test. Never computed by us --
+    # Caucasus is a transverse Mercator and a flat-earth offset was 7.6 nm
+    # wrong at the target area. Seeded into config/theatres/<map>.toml from the
+    # sim itself; see core/catalogue.py.
+    lat: float | None = None
+    lon: float | None = None
 
 
 # Beacon idents must NOT resemble the letters the ARA-8 keys for homing --

@@ -7036,6 +7036,46 @@ That survives the move intact.
 And a migration creates the SHAPE, never the CONTENTS: seeding belongs in a tool
 that can be re-run, pointed at a theatre, and cited.
 
+### Progress, 12 August
+
+**Done, and the pattern is proved end to end:**
+
+  * `config/speech.toml` — aviation English, true on every map
+  * `config/theatres/<map>.toml` — the names on that map, and its published
+    fixes with the SIM'S OWN lat/lon stored rather than asked for
+  * `config/callsigns.toml` — the stopgap third scope, and it says so
+  * `core/catalogue.py` — the loader, pydantic-validated with `extra="forbid"`
+  * the pronunciation table, the Whisper prompt and the published fix catalogue
+    all read through it
+
+**What that bought, beyond the tidiness:**
+
+`theatre.fixes` was built by scraping every module-level `Fix` out of
+`route.py` — a fact about which Python file a name sits in, not about whether
+anybody can look it up. The published catalogue is now four citable fixes
+(three aerodromes and the fix on the letdown plate), each carrying its source,
+and the 362nd's turning points are the sortie's.
+
+And **geometry works with no sim.** Every published fix carries `coord.LOtoLL`'s
+own answer, so "does this terminal area contain its own approach" is now a
+question a test can ask — which is what #139 was blocked on. The assertion that
+Batumi's terminal area is eleven miles and its ILS holds at twenty-two is in
+`tests/test_configuration_is_not_code.py`, and it could not have been written
+last week.
+
+**One bug shipped and caught on the running bridge, not by the suite.**
+`push_fixes` collected the configured coordinates and then the sim branch did
+`out = {}` before adding its own — so the published table came back holding
+FEET WET, INGRESS and EGRESS and not one aerodrome. Exactly the
+replace-versus-merge that cost a catalogue in #129: two sources for one table,
+the second silently winning. The gRPC call is now its own function so the merge
+is testable without a server, and it has a test.
+
+**Still to move:** aerodromes and their frequencies (`core/fields.py`,
+`core/stations.py`), approach procedures, the theatre registry, the five
+kneeboard pages that bind an approach at import, and the five migrations that
+INSERT flight plans.
+
 ### The counter-example worth copying
 
 `core/dtc.py` already does this correctly: it reads a cartridge the pilot

@@ -27,3 +27,66 @@ Tbilisi = "tbil-ee-see"
 [recogniser]
 phrases = ["Batumi", "Kobuleti", "Kutaisi", "Senaki", "Georgia Center",
            "Oscar Sierra", "Mike Golf"]
+
+# --- published fixes -------------------------------------------------------
+#
+# WHAT MAKES A FIX PUBLISHED is that somebody else can look it up: it is on a
+# plate, in an AIP, or it is an aerodrome. A name only one party can resolve is
+# worse than no name, because it reads as agreement -- see #133, and FEET WET,
+# which is the same finding one level up.
+#
+# The 362nd's own turning points (FEET WET, INGRESS, EGRESS, TSUTSNVATI,
+# REHEARSAL) are NOT here. They belong to the sortie that flies them.
+#
+# lat/lon are the SIM'S OWN projection, taken through `coord.LOtoLL` on
+# 12 August 2026 and stored rather than asked for at every start. Caucasus is a
+# transverse Mercator: a flat-earth offset from the field was measured at 1.2
+# nm wrong at the coast and 7.6 nm wrong at the target area, so this must never
+# be computed by us. `x`/`z` are the DCS grid metres the mission builder needs.
+
+[[fix]]
+name = "BATUMI"
+ident = "OS"
+x = -355811
+z = 617386
+lat = 41.609594
+lon = 41.600234
+freq_mhz = 132.0
+navaid = "ndb"
+source = "UGSB. Aerodrome; NDB OS 132.0 on the AIP plate."
+note = "Field elevation 32 ft. Landing runway 12 (charted 13/31 today -- magnetic drift renamed it; we fly the period AIP designation)."
+
+[[fix]]
+name = "KOBULETI"
+ident = "MG"
+x = -317962
+z = 635633
+lat = 41.929922
+lon = 41.863275
+freq_mhz = 124.0
+navaid = "ndb"
+source = "UG5X. Aerodrome; NDB MG 124.0."
+note = "Field elevation 59 ft. Departure end."
+
+[[fix]]
+name = "KUTAISI"
+ident = "KT"
+x = -284887
+z = 683859
+lat = 42.177619
+lon = 42.481296
+navaid = "ndb"
+source = "UGKO. Aerodrome; NDB KT."
+note = "Red field. The transit turning point, not a diversion -- Batumi is the only blue aerodrome on the map."
+
+[[fix]]
+name = "INITIAL"
+ident = "SW"
+x = -337949
+z = 596106
+lat = 41.787527
+lon = 41.368361
+freq_mhz = 128.0
+navaid = "ndb"
+source = "On the 1944 Batumi letdown plate as the initial approach fix; NDB SW 128.0."
+note = "Offshore holding fix. Open water, no terrain in any quadrant."

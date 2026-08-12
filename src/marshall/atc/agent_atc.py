@@ -484,7 +484,12 @@ def load_and_push_plate(profile, base: str = BASE_URL):
 
     try:
         n = push_fixes(base, profile)
-        print(f"  pushed {n} named fixes (projected by the sim)", flush=True)
+        # NOT "projected by the sim" any more, and the wording matters: the
+        # published fixes carry their coordinates in the theatre file and only
+        # the sortie's own turning points still need asking for. A log line
+        # naming the wrong source is how you debug the wrong thing.
+        print(f"  pushed {n} named fixes (published from the theatre file, "
+              f"sortie waypoints from the sim)", flush=True)
     except Exception as e:      # a fix table is not worth failing to start for
         print(f"  !! fix push failed, controller has the field only: {e}",
               flush=True)
@@ -3697,8 +3702,49 @@ def push_fixes(base: str, profile) -> int:
             fixes.setdefault(f.name, f)
     if not fixes:
         return 0
-    lua = "local o = {} "
+    # WHAT THE CONFIGURATION ALREADY KNOWS, taken first and for nothing.
+    #
+    # The published fixes carry the sim's own projection in
+    # config/theatres/<map>.toml -- projected through `coord.LOtoLL` once and
+    # written down, rather than asked for on every start. So a bridge with no
+    # sim reachable still publishes a complete catalogue for every fix on the
+    # map, where before it published NONE of them and fell back to "controller
+    # has the field only".
+    #
+    # The remainder -- the sortie's own turning points, which carry grid metres
+    # and nothing else -- still needs the sim, and still degrades quietly when
+    # it is not there. See #137 and docs/CONFIG.md.
+    out = {}
     for name, f in fixes.items():
+        la, lo = getattr(f, "lat", None), getattr(f, "lon", None)
+        if la is not None and lo is not None:
+            out[name] = [float(la), float(lo)]
+    unknown = {n: f for n, f in fixes.items() if n not in out}
+    if not unknown:
+        return _finish_fixes(base, out, _th, profile)
+    # ADDED TO, NOT REPLACING. This was `out = {}` and it wiped the configured
+    # coordinates the block above had just collected -- so the sim's answers for
+    # the sortie's turning points survived and every PUBLISHED fix was dropped.
+    # The live table came back holding FEET WET, INGRESS and EGRESS and not one
+    # aerodrome, which is precisely backwards.
+    #
+    # The same shape as the `set_fixes` replace-versus-merge that cost a
+    # catalogue in #129: two sources for one table, and the second silently
+    # winning. It survived a green suite and was caught by reading the published
+    # table on a running bridge.
+    out.update(_eval_fix_positions(unknown))
+    return _finish_fixes(base, out, _th, profile)
+
+
+def _eval_fix_positions(unknown: dict) -> dict:
+    """Ask the SIM where these are. Its projection, never ours.
+
+    Its own function so the merge above can be tested without a server -- the
+    two-sources-one-table bug it guards is not reachable otherwise, and it is
+    the second time this repo has shipped that exact fault.
+    """
+    lua = "local o = {} "
+    for name, f in unknown.items():
         lua += (f'do local la, lo = coord.LOtoLL({{x = {f.x}, y = 0, z = {f.z}}}) '
                 f'o[#o+1] = string.format("%s|%.6f|%.6f", "{name}", la, lo) end ')
     lua += 'return table.concat(o, ";")'
@@ -3725,14 +3771,23 @@ def push_fixes(base: str, profile) -> int:
             raise ConnectionError(f"no sim at {addr}") from None
         raw = str(custom_pb2_grpc.CustomServiceStub(ch).Eval(
             custom_pb2.EvalRequest(lua=lua), timeout=30).json).strip('"')
-
-    out = {}
+    got = {}
     for rec in raw.split(";"):
         if rec.count("|") == 2:
             name, la, lo = rec.split("|")
-            out[name] = [float(la), float(lo)]
-            # Steerpoint NUMBERS too -- "distance to waypoint three" is how a
-            # pilot asks, and the name is what the chart shows.
+            got[name] = [float(la), float(lo)]
+    return got
+
+
+def _finish_fixes(base: str, out: dict, _th, profile) -> int:
+    """Publish the projected table, whichever way the positions were got.
+
+    One tail for both paths -- the configured coordinates and the sim's -- so
+    the numeric aliases, the push and the kept copy cannot come to differ
+    depending on whether the server happened to be up.
+    """
+    # Steerpoint NUMBERS too -- "distance to waypoint three" is how a pilot
+    # asks, and the name is what the chart shows.
     for n, f in _th.waypoints:
         if f.name in out:
             out[f"waypoint {n}"] = out[f.name]
