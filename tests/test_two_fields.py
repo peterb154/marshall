@@ -668,6 +668,89 @@ class TestTheCheckInReplyDependsOnWhichWayHeIsGoing(unittest.TestCase):
         self.assertIn("field in sight", self.greeting(R.APPROACH, ""))
 
 
+class AnArrivalFixIsNotEVIDENCEOFANYTHING(unittest.TestCase):
+    """The fifth entry in this file's opening list, found the same way. [#145]
+
+        field_origin(profile)   one field, so the profile's beacon was his
+        check_in()              one profile carried an arrival fix, and it had
+                                no ground seats to contradict it
+
+    `check_in` opened with a branch that read, entire:
+
+        fix = self._pro(ac).arrival_fix
+        if fix is not None and tower_freq and tower_freq != here_freq:
+            call = f"..., radar not available, report {fix.name}. ..."
+
+    From the SHAPE of the procedure's fix data it concluded two facts nobody had
+    told it -- that the controller has no radar, and that this aeroplane is
+    arriving -- and it sat above every branch that asks the questions properly.
+
+    It could not be caught, because the one profile carrying an `arrival_fix`
+    was the 1944 letdown, and that profile carries no station list (#140). No
+    Clearance seat, no Departure seat, nothing to be wrong AT. Taking INITIAL
+    out of the published catalogue meant a laddered procedure could carry its
+    own arrival fix for the first time -- and four tests in this file and in
+    test_atis.py went red at once, none of them naming this line.
+
+    The radar half was wrong on the air already. `SeeingHimAndSteeringHimAreTwo\
+Capabilities` below asserts `R.BATUMI_APPROACH.atc.radar` is True on purpose --
+    "he can see him" -- so the engine told a pilot the radar was out while the
+    same profile told the rest of the system it was up. `agent_atc` string-
+    replaced the phrase back out on the way to the radio, using the BRIDGE's
+    profile to correct a claim about somebody else's aeroplane.
+    """
+
+    def greeting(self, station, phase, profile=None):
+        from marshall.atc import controller as C
+        c = C.Controller(profile or self.laddered())
+        c._me = station
+        c.get("Sockeye").sortie_phase = phase
+        c.check_in("Sockeye")
+        return " ".join(t.text for t in c.take_out())
+
+    def laddered(self, **over):
+        """A procedure with BOTH an arrival fix and a full station ladder --
+        the combination that did not exist while INITIAL was published."""
+        import dataclasses
+        return dataclasses.replace(R.BATUMI_ASR, arrival_fix=R.INITIAL, **over)
+
+    def test_a_departing_aircraft_is_not_given_an_arrival_briefing(self):
+        said = self.greeting(R.KOB_DEPARTURE, "departure")
+        self.assertIn("radar contact", said)
+        self.assertNotIn("report INITIAL", said)
+
+    def test_nor_is_a_man_who_has_not_started_his_engine(self):
+        said = self.greeting(R.KOB_CLEARANCE, "")
+        self.assertNotIn("report", said.lower())
+
+    def test_but_the_arrival_still_gets_it(self):
+        """The half that must not be lost: on a procedure that homes a fix
+        enroute, THAT is what he reports, and the handoff is a trigger he flies
+        to rather than a channel change now."""
+        said = self.greeting(R.KOB_DEPARTURE, "arrival")
+        self.assertIn("report INITIAL", said)
+        self.assertIn("At INITIAL contact Batumi Tower", said)
+
+    def test_a_controller_who_can_see_him_does_not_say_the_radar_is_out(self):
+        """The claim is `atc.radar`'s, and nothing else's. This is the assertion
+        that replaces the string-replace deleted from `agent_atc`: a plaster
+        applied downstream cannot know whose aeroplane it is."""
+        self.assertTrue(R.BATUMI_APPROACH.atc.radar)
+        said = self.greeting(R.APPROACH, "arrival", R.BATUMI_APPROACH)
+        self.assertIn("report INITIAL", said)
+        self.assertNotIn("radar not available", said)
+
+    def test_and_one_who_genuinely_cannot_see_him_still_does(self):
+        """The other direction, which is the one that gets somebody hurt. A
+        blind controller must say so -- and used to have it stripped whenever
+        the BRIDGE's own procedure had radar."""
+        import dataclasses
+        blind = self.laddered(
+            atc=dataclasses.replace(R.BATUMI_ASR.atc, radar=False))
+        said = self.greeting(R.APPROACH, "arrival", blind)
+        self.assertIn("radar not available", said)
+
+
 class SeeingHimAndSteeringHimAreTwoCapabilities(unittest.TestCase):
     """`AtcCapability.radar` was answering two questions. [#53]
 

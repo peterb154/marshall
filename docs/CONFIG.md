@@ -125,7 +125,10 @@ He flies the headings.
   * **Both of this month's fix failures are one rule, broken in opposite
     directions.** INITIAL is GEOMETRY — the fix the ASR vectors against — and
     never needed a name a pilot could fly to; inventing one was harmless until
-    it collided with a real steerpoint (#143, #144). FEET WET was the reverse:
+    it collided with a real steerpoint (#143, #144). It is out of the catalogue
+    as of 12 August and lives on the approaches that use it, as
+    `[approach.own_point]` — same place, same ident, offered to nobody who is
+    not flying that letdown (#145). FEET WET was the reverse:
     mission geometry published into the LANGUAGE set, so a controller could
     offer a pilot a 1944 strike's turning point as a destination (#137).
   * **It gives #133 its real shape.** Not "let ATC resolve private fixes" but:

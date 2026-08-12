@@ -7501,13 +7501,68 @@ That matters because of the rule in `docs/CONFIG.md` — a pilot flies his
 steerpoints and the navaids he can TUNE — and *tunable* means the frequency has
 to be the one the aeroplane will actually receive in the era it is flying.
 
+**INITIAL is out, 12 August**, and the interesting part is what it took two
+failed attempts to find. The point itself moved exactly as planned: the four
+approaches that name it carry it as `[approach.own_point]` — same position, same
+ident SW, same 128.0 — and `theatre.published_approaches` resolves a fix role
+against the published catalogue first and the procedure's own point second. The
+published Caucasus catalogue is now the three aerodromes and nothing else, which
+is `docs/CONFIG.md`'s rule stated as data: *a fix needs a NAME only if he can
+fly to it.*
+
+**What it broke was `check_in`, and the fault was not in the change.** Both
+attempts died on the same four tests — a departing aircraft told to report an
+approach fix, a man on the ramp given an arrival briefing, a radar controller
+announcing "radar not available". `check_in` opened with this:
+
+    fix = self._pro(ac).arrival_fix
+    if fix is not None and tower_freq and tower_freq != here_freq:
+        call = f"..., radar not available, report {fix.name}. ..."
+
+From the SHAPE of the procedure's fix data it concluded two things nobody had
+told it — that the controller has no radar, and that this aeroplane is arriving
+— and it sat above every branch that asks those questions properly. It is #53
+again: *a capability is declared, never inferred.*
+
+Both halves were already wrong. `BATUMI_APPROACH` is the only profile carrying
+an `arrival_fix`, and it sets `radar=True` **on purpose** — `SeeingHimAndSteering\
+AreTwoCapabilities` asserts exactly that, "he can see him", because the
+controller reads ranges off his own scope while the pilot flies the pattern on
+the beacon. So the engine has been telling a pilot the radar is out while the
+same profile tells the rest of the system it is up, and `agent_atc` string-
+replaced the phrase back out on the way to the radio:
+
+    if directive and ctl.profile.atc.radar:
+        directive = directive.replace("radar not available, ", "")
+
+A correction applied by the one component that cannot know whose aeroplane it
+is. `ctl.profile` is the BRIDGE's arrival and two profiles are worked at once,
+so a genuinely blind controller's warning was stripped whenever the bridge's own
+procedure had radar — the failure it existed to prevent, wearing the other hat.
+
+It survived because that profile carries no station list (#140): no Clearance
+seat and no Departure seat to be wrong at. Publishing INITIAL was what kept any
+LADDERED procedure from carrying an arrival fix, so retiring it made a two-week-
+old bug reachable, which is this file's oldest shape — *correct by accident,
+because a question with one possible answer cannot be answered wrongly.*
+
+Fixed at the source: the arrival-fix greeting is nested inside the guard it
+should always have shared with the greeting below it (`_arriving` and a seat
+that works arrivals — they are one greeting spelled two ways), the phrase is
+`atc.radar`'s and the capability is the AIRCRAFT's. The plaster in `agent_atc`
+is deleted and replaced by `AnArrivalFixIsNotEVIDENCEOFANYTHING` in
+`tests/test_two_fields.py`, which asserts both directions.
+
+The third thing worth writing down: **an unused role is not an unresolvable
+name.** Both attempts fell back to the procedure's own point on an empty string,
+so the radar ASR — which names no `arrival_fix` at all — acquired one. That is
+what actually turned a latent bug into four red tests.
+
 **Still to do:**
 
-  * retire the four invented beacons. They cannot simply be deleted: the
-    approaches name INITIAL as their IAF, so the procedure must carry that
-    geometry INLINE first — *"the fixes dont have to have names, they are just
-    geometry"* — which is the same finding as [FP-10] arriving from the other
-    side.
+  * the other three invented beacons. BATUMI, KOBULETI and KUTAISI are
+    aerodromes and stay published; what is invented is their ident and
+    frequency, which is the era question rather than the catalogue question.
   * the ILS, which is the half that needs interpretation: a localiser and a
     glideslope are two entries at two positions sharing one frequency, and
     turning that pair into a procedure needs a course and a threshold. It

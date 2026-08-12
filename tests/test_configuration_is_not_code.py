@@ -305,9 +305,60 @@ class ThePublishedCatalogueIsCitable(unittest.TestCase):
         for mine in ("FEET WET", "INGRESS", "EGRESS", "TSUTSNVATI", "REHEARSAL"):
             self.assertNotIn(mine, names)
 
-    def test_the_aerodromes_and_the_plate_fix_are(self):
+    def test_the_aerodromes_ARE_the_catalogue(self):
+        """CHANGED. This asserted a fourth name, INITIAL, and called it "the
+        plate fix" -- which is exactly the claim that turned out to be wrong.
+
+            "I created a private fix called INITIAL this seems to be
+             conflicting with a fix in your list"
+
+        It is the initial approach fix of a letdown we invented, on a plate we
+        generate. Nobody outside that procedure can look it up, and a real DKS
+        cartridge carries a steerpoint of the same name thirteen miles away --
+        so publishing ours warned a pilot about a collision with our own
+        fiction on every import (#143, #144, #145).
+
+        The rule it now encodes is docs/CONFIG.md's: a fix needs a NAME only if
+        he can fly to it. What is left is the three aerodromes, every one of
+        which a pilot can look up and go to.
+        """
         names = {f.name for f in catalogue.published_fixes("caucasus")}
-        self.assertEqual(names, {"BATUMI", "KOBULETI", "KUTAISI", "INITIAL"})
+        self.assertEqual(names, {"BATUMI", "KOBULETI", "KUTAISI"})
+
+    def test_the_letdowns_own_point_is_still_THERE_just_not_published(self):
+        """The other half, and it is the half that must not be lost. Retiring
+        INITIAL is not deleting it: the procedures that use it carry it, at the
+        same place, on the same frequency, under the same name."""
+        from marshall.core import theatre as T
+        got = T.published_approaches(
+            fields=T.published_fields("caucasus"),
+            stations=T.published_stations("caucasus"), theatre="caucasus")
+        asr, ndb = got["batumi-asr"], got["batumi-ndb"]
+        self.assertEqual(asr.iaf.name, "INITIAL")
+        self.assertEqual(ndb.arrival_fix.name, "INITIAL")
+        self.assertEqual(asr.iaf.freq_mhz, 128.0)
+        self.assertEqual(asr.iaf.ident, "SW")
+        # ...and it is ONE point, not four that happen to agree.
+        for a in got.values():
+            for role in ("iaf", "arrival_fix", "outer_hold"):
+                f = getattr(a, role, None)
+                if f is not None and f.name == "INITIAL":
+                    self.assertEqual((f.x, f.z), (asr.iaf.x, asr.iaf.z))
+                    self.assertEqual((f.lat, f.lon), (asr.iaf.lat, asr.iaf.lon))
+
+    def test_a_role_the_approach_does_not_use_stays_None(self):
+        """An UNUSED role is not an unresolvable name, and conflating the two is
+        what broke the first two attempts at this. The radar ASR names no
+        `arrival_fix`; falling back to the procedure's own point on the empty
+        string gave it one, and a controller who reads `arrival_fix is not None`
+        as "he is arriving and I am blind" then briefed a departing aircraft on
+        an approach. `briefing.py` guards on the same None."""
+        from marshall.core import theatre as T
+        got = T.published_approaches(
+            fields=T.published_fields("caucasus"),
+            stations=T.published_stations("caucasus"), theatre="caucasus")
+        self.assertIsNone(got["batumi-asr"].arrival_fix)
+        self.assertIsNone(got["batumi-ndb"].iaf)
 
     def test_every_published_fix_cites_a_source(self):
         """Reference data is seeded, never authored. A fix nobody can cite is

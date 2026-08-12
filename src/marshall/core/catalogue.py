@@ -199,6 +199,50 @@ class Capability(_File):
     vectors: bool | None = None
 
 
+class OwnPoint(_File):
+    """A point a procedure USES and nobody PUBLISHES. Geometry, not a navaid.
+
+        "the fixes dont have to have names, they are just geometry"
+
+    docs/CONFIG.md settles which fixes need to be in the catalogue at all: *a
+    fix needs a NAME only if he can fly to it*. A pilot flies his steerpoints
+    and the navaids he can tune, and nothing else -- so the LANGUAGE set is
+    bounded and citable, while the GEOMETRY a procedure computes against is
+    unbounded and silent. The Batumi ASR is the standing proof: it vectors
+    against a final approach course, a FAP, a missed approach point and a
+    threshold, and the pilot holds none of them.
+
+    INITIAL was the counter-example. It is the initial approach fix of the 1944
+    Batumi letdown -- a procedure this project INVENTED, on a plate this project
+    GENERATES -- and it was published as though an AIP had it, ident and all.
+    Harmless until a real DKS cartridge turned up carrying a steerpoint of the
+    same name thirteen miles away, at which point every import of a perfectly
+    good flight plan warned about a collision with our fiction (#143, #144).
+    His is real and his is the one the aeroplane will actually fly to.
+
+    So the point moves in HERE, where the procedure that uses it keeps it: same
+    position, same ident, same frequency, no longer offered to anybody who is
+    not flying this approach. It has no `source` because it is not reference
+    data and cites nothing; that is the whole distinction. What it does have is
+    the four coordinates required rather than defaulted -- a fix at 0,0 is in
+    the Gulf of Guinea and every range from it is a real-looking number
+    belonging nowhere, which is the same rule `PublishedFix` enforces.
+
+    ONE PER PROCEDURE, and the NAME comes from the role that asks for it --
+    `iaf = "INITIAL"` names it once and no copy can drift from another.
+    """
+    x: float
+    z: float
+    lat: float
+    lon: float
+    # Kept because the period letdown TUNES this beacon: the ARA-8 homes
+    # whatever it is set to, so the controller working the enroute phase has to
+    # be ON the fix's frequency (see `ApproachProfile.station`). Dropping it
+    # put Approach on a channel the pilot physically could not hear.
+    ident: str = ""
+    mhz: float = 0.0
+
+
 class Approach(_File):
     """One published procedure.
 
@@ -206,6 +250,11 @@ class Approach(_File):
     the SAME beacon, and copying its coordinates into both is how they come to
     differ by a decimal -- so `beacon`, `outer_hold`, `iaf` and `arrival_fix`
     carry the name of a published fix and are resolved against the catalogue.
+
+    ...AND FAILING THAT, against `own_point` -- the one point this procedure
+    uses that nobody publishes. See `OwnPoint`, and docs/CONFIG.md for why the
+    catalogue is the language a controller may speak rather than every place he
+    can compute against.
 
     WHAT IS DELIBERATELY ABSENT is `stations`, `msa_sectors` and `mva_cells`.
     `ApproachProfile` carries all three, so today it is the theatre's reference
@@ -233,6 +282,7 @@ class Approach(_File):
     # beside the one approach that sets it.
     theatre_stations: bool = True
     atc: Capability = Capability()
+    own_point: OwnPoint | None = None
 
 
 class Identity(_File):

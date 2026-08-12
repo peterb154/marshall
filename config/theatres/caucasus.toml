@@ -101,28 +101,24 @@ navaid = "ndb"
 source = "UGKO. Aerodrome; NDB KT."
 note = "Red field. The transit turning point, not a diversion -- Batumi is the only blue aerodrome on the map."
 
-[[fix]]
-name = "INITIAL"
-ident = "SW"
-x = -337949
-z = 596106
-lat = 41.787527
-lon = 41.368361
-freq_mhz = 128.0
-sector = "Batumi Approach"
-navaid = "ndb"
-source = """INVENTED FOR THIS SCENARIO, and it must say so. There is no such
-navaid: the 1944 Batumi letdown this project flies is fiction, the plate is one
-we generate, and INITIAL is the name we gave its initial approach fix. Its ident
-SW was CHOSEN, not read -- see core/fixes.py: a beacon ident must share no Morse
-prefix with the ARA-8 homing letters U D A N, and an earlier build used B, one
-dot from a homing D, indistinguishable in flight.
-
-The first version of this line read \"On the 1944 Batumi letdown plate as the\ninitial approach fix\" -- which describes a ROLE and reads as a CITATION, and is
-the precise thing a required source field exists to prevent. Published because
-it is on the plate the pilot holds; published BY US, which is a different claim
-from published by an AIP."""
-note = "Offshore holding fix. Open water, no terrain in any quadrant."
+# INITIAL IS NOT HERE ANY MORE, and where it went is the point. It used to be a
+# fourth [[fix]] beside the three aerodromes, with an ident, a frequency and a
+# source line admitting it was invented for this scenario. It is the initial
+# approach fix of the 1944 Batumi letdown -- a procedure we made up, on a plate
+# we generate -- so nothing outside that procedure could ever look it up.
+#
+#     "I created a private fix called INITIAL this seems to be conflicting with
+#      a fix in your list"
+#
+# A real DKS cartridge carries a steerpoint of the same name thirteen miles
+# away. His is real, ours is fiction, and his is the one the aeroplane will
+# actually fly to -- so every import of a good flight plan warned about a
+# collision with our own invention (#143, #144).
+#
+# It lives on the four approaches that use it now, as `[approach.own_point]`:
+# same position, same ident SW, same 128.0, and no longer offered to a pilot
+# who is not flying that letdown. A fix needs a NAME only if he can fly to it;
+# the rest is geometry. See docs/CONFIG.md and #145.
 
 # --- aerodromes ------------------------------------------------------------
 #
@@ -403,6 +399,20 @@ dme = false
 separation = "radar"
 era = "ww2"
 
+# THE LETDOWN'S OWN POINT, which nobody publishes. It used to be a [[fix]] in
+# the catalogue above; see the note where it was, and #145. Same coordinates,
+# same ident, same frequency -- carried by the procedures that use it instead of
+# offered to every controller on the map as though an AIP had it.
+#
+# The name is the role's: `iaf = "INITIAL"` above says it once.
+[approach.own_point]
+x = -337949
+z = 596106
+lat = 41.787527
+lon = 41.368361
+ident = "SW"
+mhz = 128.0
+
 [[approach]]
 key = "batumi-ils"
 field = "Batumi"
@@ -458,6 +468,18 @@ radar = true
 dme = true
 separation = "radar"
 era = "modern"
+
+# The same point again, and it is the same point: one set of numbers per
+# procedure, and the procedures that share it were never able to disagree
+# because they all named one published fix. They still cannot, because a test
+# says so -- see test_configuration_is_not_code.
+[approach.own_point]
+x = -337949
+z = 596106
+lat = 41.787527
+lon = 41.368361
+ident = "SW"
+mhz = 128.0
 
 [[approach]]
 key = "batumi-ndb"
@@ -521,6 +543,18 @@ separation = "procedural"
 era = "ww2"
 vectors = false
 
+# The same point again, and it is the same point: one set of numbers per
+# procedure, and the procedures that share it were never able to disagree
+# because they all named one published fix. They still cannot, because a test
+# says so -- see test_configuration_is_not_code.
+[approach.own_point]
+x = -337949
+z = 596106
+lat = 41.787527
+lon = 41.368361
+ident = "SW"
+mhz = 128.0
+
 [[approach]]
 key = "kobuleti-ils"
 field = "Kobuleti"
@@ -576,6 +610,18 @@ radar = true
 dme = true
 separation = "radar"
 era = "modern"
+
+# The same point again, and it is the same point: one set of numbers per
+# procedure, and the procedures that share it were never able to disagree
+# because they all named one published fix. They still cannot, because a test
+# says so -- see test_configuration_is_not_code.
+[approach.own_point]
+x = -337949
+z = 596106
+lat = 41.787527
+lon = 41.368361
+ident = "SW"
+mhz = 128.0
 
 # --- navaids ----------------------------------------------------------------
 #

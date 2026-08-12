@@ -2689,10 +2689,22 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
     except Exception as e:                       # must not break the call
         print(f"  !! controller classify failed: {e}", flush=True)
 
-    # A radar-equipped controller doesn't say "radar not available" -- that's the
-    # blind engine's stock phrase; strip it so the agent doesn't parrot it.
-    if directive and ctl.profile.atc.radar:
-        directive = directive.replace("radar not available, ", "")
+    # GONE, and what it was is the point:
+    #
+    #     if directive and ctl.profile.atc.radar:
+    #         directive = directive.replace("radar not available, ", "")
+    #
+    # A correction applied here for a claim made in `check_in`, by the one
+    # component that cannot know whose aeroplane it is. `ctl.profile` is the
+    # BRIDGE's arrival, and two profiles are worked at once -- so a genuinely
+    # blind controller's warning was stripped whenever the bridge's own
+    # procedure had radar, which is the failure this guard was meant to prevent
+    # wearing the other hat.
+    #
+    # `check_in` reads `atc.radar` off the aircraft's own profile now, so the
+    # phrase is only ever emitted by a controller who cannot see. There is
+    # nothing left to strip; a plaster that can never match is one nobody will
+    # think to remove when the wound underneath reopens. [#53, #145]
 
     # Stack only when there's a live multi-ship sequence (latched until everyone's
     # resolved, so the last ship's clearance still flows when the one ahead lands).

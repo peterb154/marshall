@@ -1469,22 +1469,66 @@ class Controller:
         else:
             here, here_freq = self.profile.station(enroute=True)
         tower, tower_freq = self.profile.station()
-        fix = self._pro(ac).arrival_fix
-        if fix is not None and tower_freq and tower_freq != here_freq:
-            # Report the fix he is CURRENTLY homing, and change channel when he
-            # gets there. Telling him to contact Tower now would take him off
-            # the arrival fix's frequency while he is still navigating to it --
-            # the set homes whatever it is tuned to, so switching early does not
-            # just change who he is talking to, it removes the needle he is
-            # steering on. The handoff is a trigger he owns and flies to.
-            call = (f"{self._addr(ac)}, {here}, radar not available, "
-                    f"report {fix.name}. At {fix.name} contact {tower} "
-                    f"{spell_freq(tower_freq)} -- you will be homing "
-                    f"{self._pro(ac).beacon.name} from there.")
-        elif self._arriving(ac) and (self._owns("approach")
-                                     or self._owns("center")):
-            call = (f"{self._addr(ac)}, {here}, "
-                    f"{self._report_phrase()}.")
+        pro = self._pro(ac)
+        fix = pro.arrival_fix
+        # A CAPABILITY IS DECLARED, NEVER INFERRED FROM THE SHAPE OF THE DATA,
+        # and this branch broke that rule twice in one condition. [#53, #145]
+        #
+        # It read, in full, `if fix is not None and tower_freq != here_freq` --
+        # and from that it concluded two things it had not been told:
+        #
+        #   "radar not available"     from the procedure CARRYING an arrival
+        #                             fix, never from `atc.radar`
+        #   he is ARRIVING            from nothing at all; it sits above the
+        #                             phase-aware branches and is reached first
+        #
+        # Both are wrong today and one of them is wrong on the air. The 1944
+        # letdown is the only profile that carries an `arrival_fix`, and it sets
+        # `radar=True` ON PURPOSE -- see `SeeingHimAndSteeringHimAreTwoCapabilities`
+        # one file over: "he can see him", because the controller reads ranges
+        # off his own scope while the pilot flies the pattern on the beacon. So
+        # the engine has been telling a pilot the radar is out while the same
+        # profile tells the rest of the system it is up. `agent_atc` then string-
+        # replaced the phrase back out on the way to the radio, which is a
+        # correction applied by the one component that cannot know whose
+        # aeroplane it is.
+        #
+        # It survived because that profile carries no station list (#140), so it
+        # has no Clearance and no Departure seat to expose the second half. Give
+        # ANY laddered procedure an arrival fix -- which is what taking INITIAL
+        # out of the published catalogue does -- and a man on the ramp is told
+        # to report a fix forty miles away, and a jet on climb-out is given an
+        # arrival briefing. Four tests fell over at once and none of them named
+        # this line.
+        #
+        # SO IT IS NESTED NOW, inside the guard it should always have shared.
+        # These are not two greetings, they are ONE -- the arrival greeting --
+        # spelled two ways, because a procedure whose enroute phase homes a fix
+        # asks him to report THAT rather than the field in sight. What decides
+        # whether he is greeted as an arrival at all is the same in both: is he
+        # on his way in, and is this a seat that works arrivals.
+        if self._arriving(ac) and (self._owns("approach")
+                                   or self._owns("center")):
+            if fix is not None and tower_freq and tower_freq != here_freq:
+                # Report the fix he is CURRENTLY homing, and change channel when
+                # he gets there. Telling him to contact Tower now would take him
+                # off the arrival fix's frequency while he is still navigating to
+                # it -- the set homes whatever it is tuned to, so switching early
+                # does not just change who he is talking to, it removes the
+                # needle he is steering on. The handoff is a trigger he owns and
+                # flies to.
+                #
+                # The capability is the AIRCRAFT's, not the bridge's: two
+                # profiles are worked at once and only one of them is his.
+                blind = ("" if getattr(pro.atc, "radar", True)
+                         else "radar not available, ")
+                call = (f"{self._addr(ac)}, {here}, {blind}"
+                        f"report {fix.name}. At {fix.name} contact {tower} "
+                        f"{spell_freq(tower_freq)} -- you will be homing "
+                        f"{pro.beacon.name} from there.")
+            else:
+                call = (f"{self._addr(ac)}, {here}, "
+                        f"{self._report_phrase()}.")
         elif self._owns("departure") or self._owns("center"):
             # A DEPARTING AIRCRAFT IS NOT ASKED TO REPORT THE FIELD IN SIGHT.
             #

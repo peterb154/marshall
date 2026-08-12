@@ -141,29 +141,66 @@ def published_approaches(fields=(), stations=(), theatre: str = "") -> dict:
     at = {f.name: f for f in published_fixes(theatre)}
     by_field = {f.name: f for f in fields}
 
-    def fix(name):
-        if not name:
+    def own_point(a):
+        """The one point this procedure uses that the catalogue does not hold.
+
+        BUILT ONCE PER APPROACH, so a point named in two roles -- Kobuleti's ILS
+        holds at its own IAF -- is one object and not two that happen to agree.
+        `route.__getattr__` makes the same argument for the cached loaders, and
+        several tests assert identity rather than equality because that is the
+        cheapest way to say "the same place, not a copy".
+
+        The NAME is the role's. `iaf = "INITIAL"` says it once, so there is no
+        second spelling to drift, and an approach that carries geometry for one
+        point may not name two -- the second would silently get the first's
+        coordinates under its own name, which is this project's favourite
+        failure shape: a real-looking number belonging somewhere else.
+        """
+        want = [n for n in (a.beacon, a.outer_hold, a.arrival_fix, a.iaf)
+                if n and n not in at]
+        if not want:
             return None
-        got = at.get(name)
-        if got is None:
-            # LOUD. A procedure naming a fix the catalogue does not publish is
-            # a procedure nobody can fly, and the failure must not be a None
-            # that turns into a plausible number three layers away.
+        if len(set(want)) > 1:
             raise ValueError(
-                f"approach names fix {name!r}, which this theatre does not "
-                f"publish -- add it to the theatre file with its source, or "
-                f"correct the name. See docs/CONFIG.md")
-        return got
+                f"approach {a.key!r} names {len(set(want))} fixes this theatre "
+                f"does not publish ({', '.join(sorted(set(want)))}) and carries "
+                f"geometry for one. See docs/CONFIG.md")
+        if a.own_point is None:
+            # LOUD. A procedure naming a fix that is neither published nor
+            # carried is a procedure nobody can fly, and the failure must not be
+            # a None that turns into a plausible number three layers away.
+            raise ValueError(
+                f"approach {a.key!r} names fix {want[0]!r}, which this theatre "
+                f"does not publish and the procedure does not carry -- add it "
+                f"to the theatre file with its source, give the approach an "
+                f"[approach.own_point], or correct the name. See docs/CONFIG.md")
+        p = a.own_point
+        # `sector` is who owns the FREQUENCY, and `station()` reads it to decide
+        # who talks to him while he is homing this point. The procedure's own
+        # controller, because a point that is not published belongs to nobody
+        # else -- and it is the procedure that put him on this needle.
+        return R.Fix(want[0], p.ident, p.x, p.z, p.mhz or None,
+                     sector=a.controller, lat=p.lat, lon=p.lon)
 
     out = {}
     for a in catalogue.approaches(theatre):
         knobs = a.model_dump(exclude={"key", "field", "atc", "beacon",
                                       "outer_hold", "arrival_fix", "iaf",
-                                      "theatre_stations"})
+                                      "theatre_stations", "own_point"})
+        # AN UNUSED ROLE IS NOT AN UNRESOLVABLE NAME, and conflating the two is
+        # what broke the first two attempts at #145. An approach that names no
+        # `arrival_fix` has no enroute homing fix -- `briefing.py` guards on
+        # exactly that -- while an approach that names one the catalogue does
+        # not hold has its own. The empty string is the first case and must stay
+        # None; falling back on it handed the radar ASR the letdown's IAF and
+        # sent a departing aircraft an arrival briefing.
+        mine = own_point(a)
+        def role(want, _mine=mine):
+            return (at.get(want) or _mine) if want else None
         f = by_field.get(a.field)
         out[a.key] = R.ApproachProfile(
-            beacon=fix(a.beacon), outer_hold=fix(a.outer_hold),
-            arrival_fix=fix(a.arrival_fix), iaf=fix(a.iaf),
+            beacon=role(a.beacon), outer_hold=role(a.outer_hold),
+            arrival_fix=role(a.arrival_fix), iaf=role(a.iaf),
             atc=R.AtcCapability(**a.atc.model_dump(exclude_none=True)),
             stations=list(stations) if a.theatre_stations else [],
             msa_sectors=[tuple(s) for s in (f.msa_sectors if f else [])],
