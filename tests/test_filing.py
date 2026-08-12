@@ -246,3 +246,31 @@ class TestTheRouteIsNormalisedOnTheWayIn(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheDestinationsAltitudeIsTheGround(unittest.TestCase):
+    """A cartridge writes the FIELD ELEVATION on the last waypoint.
+
+        "whats this 'NELLIS at 1842 ft is not a round hundred'"
+
+    Nellis is 1,842 ft above sea level and Batumi is 33. Neither is a level a
+    controller assigns, so the round-hundred rule does not apply to them --
+    and warning about every arrival taught a pilot to ignore the one warning
+    that means something.
+    """
+
+    def test_the_field_elevation_is_not_warned_about(self):
+        _, warn = F.check(
+            {"label": "Nomad", "task": "Range work",
+             "legs": [{"fix": "FEET WET", "alt_ft": 9000},
+                      {"fix": "BATUMI", "alt_ft": 33}]},
+            fixes=FIXES, approaches=APPROACHES, taken=TAKEN, at=AT)
+        self.assertEqual(warn, [])
+
+    def test_but_an_enroute_leg_still_is(self):
+        _, warn = F.check(
+            {"label": "Nomad", "task": "Range work",
+             "legs": [{"fix": "FEET WET", "alt_ft": 9550},
+                      {"fix": "BATUMI", "alt_ft": 33}]},
+            fixes=FIXES, approaches=APPROACHES, taken=TAKEN, at=AT)
+        self.assertTrue(any("round hundred" in w for w in warn), warn)

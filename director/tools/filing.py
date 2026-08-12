@@ -242,6 +242,12 @@ def check(plan: dict, *, fixes: set[str], approaches: set[str],
     # neither is the one thing this file exists to refuse -- a controller
     # would have to say a place that is on no chart.
     #
+    # THE LAST LEG'S ALTITUDE IS THE GROUND. A cartridge writes the field
+    # elevation on the destination -- Nellis 1,842 ft, Batumi 33 -- and that is
+    # not a level anybody assigns, so the round-hundred check does not apply to
+    # it. Warning about it taught a pilot to ignore the one warning that means
+    # something.
+    #
     # Named ONE AT A TIME so a typo in a six-leg route says which of the six.
     for i, leg in enumerate(legs, start=1):
         fx = (leg.get("fix") or "").strip()
@@ -297,7 +303,7 @@ def check(plan: dict, *, fixes: set[str], approaches: set[str],
             alt = -1
         if alt < 0:
             bad.append(f"{fx} has no altitude — a leg is a place and a level")
-        elif alt and alt % 100:
+        elif alt and alt % 100 and i < len(legs):
             warn.append(f"{fx} at {alt} ft is not a round hundred; a controller "
                         f"will say it as you wrote it")
 
