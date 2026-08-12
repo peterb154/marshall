@@ -6874,6 +6874,121 @@ everybody. See also #133, which is the same distinction for flight plans.
 
 ---
 
+## The audit, 12 August
+
+    "why dont you conduct an investigation, looking for smells, where we might
+     be storing coordinates or pilot names or flight names or airport names or
+     approach names in code"
+    "this system should work on any map in any era with any pilot flying any
+     flight plan"
+
+Counted with comments and docstrings STRIPPED, so these are live code and not
+narrative. Ordered by how badly each blocks that sentence.
+
+### 1. Coordinates — and this is what blocks #139
+
+`core/fixes.py` defines nine `Fix` objects carrying **DCS grid metres**:
+
+    KOBULETI = Fix("KOBULETI", "MG", -317962, 635633, 124.000, ...)
+    BATUMI   = Fix("BATUMI",   "OS", -355811, 617386, 132.000, ...)
+
+There is no lat/lon on a fix anywhere. The only thing that can turn one into a
+position is the sim, asked at bridge start through `coord.LOtoLL` -- which is
+why `push_fixes` exists, why the fix table is a cache of a Python list, and why
+"does this terminal area contain that approach fix" (#139) cannot be answered
+offline at all. `core/fields.py` does carry lat/lon, for exactly two fields.
+
+### 2. One sortie's route points, published as navaids
+
+`fixes.py:130` -- `SORTIE = [BATUMI, FEET_WET, INGRESS, TARGET_AREA, HOMEBOUND,
+BATUMI]`. FEET WET, INGRESS, EGRESS and TSUTSNVATI are the 1944 strike's own
+turning points and go into the shared catalogue on every bridge start. This is
+the original complaint and it is the same public/private confusion as #133, one
+level up.
+
+### 3. Aerodromes and their frequencies are Python constants
+
+`core/stations.py` -- eight module-level `Station(...)` definitions:
+
+    APPROACH      = Station("Batumi Approach",   124.425, "approach", ...)
+    KOB_DEPARTURE = Station("Kobuleti Departure", 123.300, "departure", ...)
+
+`core/fields.py` ends with `FIELDS = (BATUMI_FIELD, KOBULETI_FIELD)` and two
+constants naming this sortie outright: `DEPARTURE_FIELD = "Kobuleti"`,
+`ARRIVAL_FIELD = "Batumi"`. Adding an aerodrome means editing Python and
+redeploying, which is the "forty aerodromes" problem stated as code.
+
+### 4. Approach procedures are Python constants, and pages are bound to one
+
+Six: `BATUMI_APPROACH`, `KOBULETI_ILS`, `BATUMI_ASR`, `BATUMI_ILS`,
+`NELLIS_ILS`, `TONOPAH_ILS`. Worse, five kneeboard modules bind one at import:
+
+    kneeboard/plate.py:28      P = R.BATUMI_APPROACH
+    kneeboard/asr_plate.py:24  P = R.BATUMI_ASR
+    kneeboard/routemap.py:23   P = R.BATUMI_ASR
+    kneeboard/aip_plate.py:30  P = R.BATUMI_ASR
+    kneeboard/brief.py:18      P = R.BATUMI_ASR
+
+A page is a function of a Card (#71); five of them are functions of one
+aerodrome's surveillance approach, chosen at import time.
+
+### 5. A map is a Python function
+
+    THEATRES = {"caucasus": caucasus, "nevada": nevada}
+    want = os.environ.get("MARSHALL_THEATRE", "caucasus")
+
+Plus `CAUCASUS_RECOVERIES` and `NEVADA_SORTIES` as literal dicts. Adding a map
+means writing a function, not loading a file.
+
+### 6. The pilot-facing language is tuned to one mission — the "any pilot" smell
+
+The sharpest one, because it is already a live complaint.
+
+`radio/tts.py` holds a **pronunciation table** as a Python dict: `"Sockeye":
+"sock eye"`, `"Batumi": "bah-too-mee"`, and ten Georgian place names. A new
+pilot with a new callsign is mispronounced on the air until somebody edits
+Python and restarts the bridge. #97 is the symptom of this being code.
+
+`radio/stt.py:21` hard-codes the **Whisper domain prompt**:
+
+    "Radio calls to Batumi Approach. Mustang callsigns: Pony one one, Pony
+     two, ... Terms: ... over the beacon, ... Oscar Sierra, Batumi, Kobuleti"
+
+and `domain_prompt(..., field: str = "Batumi")`. So transcription accuracy is
+biased toward a 1944 Mustang sortie at Batumi -- while the pilot flies an F-16
+out of Kobuleti. Whatever the recogniser is primed for, it is not the sortie
+being flown, and this is the layer every one of his words passes through first.
+
+### 7. Flight plans arrive with the database schema
+
+Migrations `011`, `012`, `017`, `022` and `024` `INSERT INTO flight_plans`:
+
+    INSERT INTO flight_plans (name, label, ...) VALUES
+      ('362nd-kobuleti-batumi', 'Domino', ..., 'batumi-asr', 'Kobuleti',
+       'Batumi', 'KOBULETI, INITIAL, BATUMI', 5000, ...)
+
+A flight plan is something a pilot files. Shipping one as schema means every
+deployment of Marshall anywhere is born believing somebody is flying Kobuleti
+to Batumi on the ASR -- and #131 was the bridge reading its approach out of
+exactly this row.
+
+### 8. Low, and listed so nobody re-finds them
+
+`prompts/rules.md` names Sockeye, Pony and Batumi in worked EXAMPLES. Examples
+are teaching material and belong in the brief; they are only a smell if a
+controller starts treating them as facts about today. `prompts/plate.md` is
+generated from `route.py`, so it inherits whatever the layers above fix.
+
+### The counter-example worth copying
+
+`core/dtc.py` already does this correctly: it reads a cartridge the pilot
+exported, derives origin, destination, route, altitudes and the comms ladder
+from it, and hard-codes nothing about which map or which sortie. The whole file
+works on Nevada and Caucasus without knowing either exists. Whatever shape the
+fix takes, that is what the rest should look like.
+
+---
+
 ## [HO-6] Center issued an approach clearance, and the ladder ran backwards — #138
 labels: bug
 
