@@ -7126,7 +7126,30 @@ checksum, so applied databases are untouched and only a fresh install sees the
 difference. All five verified against the real schema inside a rolled-back
 transaction.
 
-**Still to move:** Nevada — blocked on #141, a real coordinate discrepancy
+### NOT DONE, and the honest shape of what is left
+
+Counting proper nouns in live code after all of the above: **365, against 379
+at the audit.** Fourteen. That number is the useful one, because it says
+plainly what the commits do not:
+
+**The data now exists in TWO places.** The theatre reads the files at runtime —
+that path is converted and verified — but `core/fields.py`, `core/stations.py`,
+`core/approach.py` and `core/fixes.py` still DEFINE the same values, and
+**46 call sites still read them**: the kneeboard pages, `mission/build.py`, the
+synthetic pilot and the rehearsals.
+
+Two sources of truth is the thing this issue exists to end, so a conversion
+that adds one has not finished. What makes it survivable rather than a
+regression is that `TheFilesSayExactlyWhatThePythonSaid` asserts them equal
+attribute by attribute — drift is caught on the next test run rather than
+discovered on a sortie. It is a clamp, not a cure.
+
+**To actually finish:** delete the Python definitions and point those 46 call
+sites at the theatre. That is where the remaining work is, and it is ordinary
+work rather than a design question — the design questions are all answered now.
+The guard test is deleted with them, having done its job.
+
+**Also still to move:** Nevada — blocked on #141, a real coordinate discrepancy
 rather than effort — and the "NDB 13" kneeboard page, which is correctly bound
 to the NDB procedure but Caucasus-bound on any map.
 
