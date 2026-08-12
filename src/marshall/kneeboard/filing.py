@@ -449,8 +449,11 @@ async function look(name) {{
     // because "via" and "to" are different things and a controller reads them
     // differently.
     + `<dt>to</dt><dd>${{esc(p.destination || '(none)')}}</dd>`
-    + `<dt>cruise</dt><dd>${{(p.cruise_ft || 0).toLocaleString()}} ft</dd>`
-    + `<dt>recovery</dt><dd>${{esc(p.approach || '(none)')}}</dd>`
+    // NO CRUISE AND NO RECOVERY. Both were dropped from the plan (migration
+    // 031) and from the form, and this panel went on rendering them -- a
+    // derived "cruise" that is just the highest leg, and a "recovery" that is
+    // always (none) because a plan cannot name one any more. A field showing a
+    // number the thing does not have is worse than no field.
     + (legs.some(l => l.includes('class="miss"'))
         ? `<div class="bad">red: on no chart and not in this plan — it would `
           + `be refused</div>` : '')
