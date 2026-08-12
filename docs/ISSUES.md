@@ -6542,3 +6542,49 @@ names one is honest about whose it is.
 
 Until then `--steerpoints` files a plan with a shorter life than the row it is
 written into, and the tool should say so where somebody will read it.
+
+---
+
+## [SEAM-14] There is no enroute phase on a twenty-two mile sortie — #130
+
+    "Also kob departure didn't hand me off to center again"
+
+Not a handoff bug. Kobuleti and Batumi are **22.6 nm apart**, so their derived
+terminal areas are 11.3 nm each and they touch. The ladder's rule is
+
+    Rule("departure", "center", "outbound_beyond", CENTER_NM)   # 25 nm
+
+and a pilot going from one field to the other is **never 25 miles outbound from
+where he started** — he turns for the destination first. Measured, from the
+monitor's own log:
+
+    Kobuleti Departure keeps him -- departure,  3 nm, outbound
+                                                10 nm, outbound
+                                                11 nm, inbound     <- turned
+                                                10 nm, inbound
+    DEBUG NOTE  "I've not been handed off to Georgia Center yet"
+    DEBUG NOTE  "obviously, Kobuleti Departure can't handle that question.
+                 I'm going to switch myself to center"
+
+He reached Batumi Approach at 23 miles because the AGENT proposed it and the
+bridge authorised it — not because any rule fired.
+
+**Center is a fiction on this route**, and the comms card promising preset 5
+makes it look like a fault. Three ways out, and the choice is a design one:
+
+1. **Skip it.** Departure hands straight to the destination's Approach on a
+   short hop. Real, and it is what happens between two fields this close.
+2. **Scale the boundary to the field.** `DEPARTURE_NM`, `ARRIVAL_NM` and
+   `CENTER_NM` are described in `handoff.py` as *"defaults until the airfield
+   table exists"* — and the `sectors` table now holds each field's actual
+   radius. The constant was standing in for exactly that.
+3. **Fly further.** The Nevada sortie is 60+ nm and has a real enroute leg.
+
+(1) and (2) are the same change from different ends: the boundary is the
+aerodrome's terminal area, not a number.
+
+**One thing the ladder cannot express either way.** `handoff.due` resolves
+`rule.to` within `me.field`, so a departure at Kobuleti can only ever be handed
+to a Kobuleti station — the DESTINATION's Approach is unreachable from the rule
+table. That is why the airspace branch exists and why it is the only mechanism
+that can move him between fields.

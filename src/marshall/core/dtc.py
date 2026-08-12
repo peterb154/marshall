@@ -265,7 +265,13 @@ def plan_from(d: dict, name: str, approach: str = "", label: str = "",
     via = ([w["name"].strip().upper() for w in enroute
             if (w["name"] or "").strip().upper() not in ("", "STPT", "WP")]
            if steerpoints else route_through(enroute, catalogue or {}))
-    return {"name": name, "label": label,
+    # THE LEVEL PER LEG, which is what a flight plan actually carries.
+    # `cruise_ft` above is the HIGHEST of these and stays because a controller
+    # means that by "cruise" -- but the level he is told to MAINTAIN off the
+    # ramp is the first leg's, not the highest. See migration 030.
+    legs = [{"fix": (w["name"] or f"STPT{w['seq']}").upper(),
+             "alt_ft": int(w["alt_ft"] or 0)} for w in wps]
+    return {"name": name, "label": label, "legs": legs,
             "origin": (start or dest).title(),
             "destination": (dest or start).title(),
             "route": ", ".join(via), "cruise_ft": int(cruise),

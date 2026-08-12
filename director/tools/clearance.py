@@ -54,8 +54,11 @@ def _pool():
 # to no person and no flight. `Pony 1-1` on a template is a mission-editor unit
 # name, and matching a live pilot to it hands him a plan he never asked for on
 # the strength of a coincidence.
+# `legs` is the level per leg, which is what a flight plan actually carries --
+# `cruise_ft` is the highest of them, and the level a pilot MAINTAINS off the
+# ramp is the first. See migration 030 and `request_clearance`.
 _TEMPLATE_COLS = ("name", "label", "origin", "destination",
-                  "route", "cruise_ft", "task", "approach")
+                  "route", "legs", "cruise_ft", "task", "approach")
 
 
 def filed() -> list[dict]:
@@ -392,9 +395,25 @@ def clearance_tools(mission: str = "default", station: str = "") -> list:
         # different fields on one night.
         got = assign(f["id"], {**plan, "origin": here or plan.get("origin")},
                      mission=mission)
+        # THE FIRST LEG IS WHAT HE MAINTAINS; THE HIGHEST IS WHAT HE EXPECTS.
+        #
+        #     "The Clearance delivery gave me a clearance to 1,000, even though
+        #      my first waypoint is 5,000."
+        #
+        # This passed `cruise_ft` as the initial, so the two were always equal
+        # and `plans.clearance`'s "expect ... one zero minutes after departure"
+        # clause -- written for exactly this -- could never fire. He was cleared
+        # off the ramp to a level a later leg wanted.
+        #
+        # `legs` carries the profile the pilot actually filed (migration 030).
+        # Falls back to the cruise for a plan filed before it, which behaves
+        # exactly as it did.
+        _legs = plan.get("legs") or []
+        _initial = (_legs[0].get("alt_ft") if _legs else 0) or \
+            (plan.get("cruise_ft") or 0)
         words = P.clearance(plan, flight_id=f["id"],
                             departure_freq=departure_freq(),
-                            initial_ft=plan.get("cruise_ft") or 0)
+                            initial_ft=_initial)
         why = ", ".join(hit.get("why") or []) or "the one on file"
         return (f"SAY THIS, verbatim and complete, after his callsign: {words}\n"
                 f"(matched on {why}; plan {got.get('label') or plan.get('name')}. "

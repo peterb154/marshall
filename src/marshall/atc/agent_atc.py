@@ -35,6 +35,7 @@ from marshall import config as _config
 from marshall import config
 from marshall.core import names as _names
 from marshall.core import geo as _geo
+from marshall.atc import callsign as _callsign
 from marshall.atc import controller as _controller
 from marshall.atc import intents as _intents
 from marshall.atc import talkdown as _talkdown
@@ -462,6 +463,27 @@ def load_and_push_plate(profile, base: str = BASE_URL):
             profile = R.profile_from_dict(fp["approach"]["data"])
             print(f"  loaded flight plan '{fp['name']}' -> approach "
                   f"'{fp['approach']['name']}'", flush=True)
+            # AND SAY WHAT WAS ACTUALLY LOADED, not merely what was asked for.
+            #
+            # `_approach_named` matched on a PREFIX, so "batumi-ils" returned
+            # whichever Batumi profile was listed first -- the surveillance
+            # approach -- and the bridge printed the line above and went on to
+            # fly a talkdown all night. Every number was real and belonged to
+            # the wrong procedure, so nothing looked wrong until a pilot said:
+            #
+            #     "I should be on the ILS13. Why would he say radar approach?"
+            #
+            # One line, printed once, and it is the difference between an hour
+            # of confusion and reading the first eight lines of the log.
+            print(f"  flying: {profile.kind.upper()} runway "
+                  f"{profile.runway}, {profile.guidance}, "
+                  f"{profile.controller}", flush=True)
+            _want = (fp["approach"]["name"] or "").rsplit("-", 1)[-1].lower()
+            if _want and _want != (profile.kind or "").lower():
+                print(f"  !! THE PLAN ASKED FOR {_want.upper()} AND THIS IS A "
+                      f"{profile.kind.upper()}. Every number will be real and "
+                      f"belong to the wrong procedure -- see _approach_named.",
+                      flush=True)
     except (urllib.error.URLError, TimeoutError, OSError, ValueError, KeyError) as e:
         print(f"  !! flight-plan bootstrap failed, using route.py: {e}", flush=True)
 
@@ -2038,6 +2060,10 @@ def _cleared_plan_now(known: str) -> dict:
             return {}
         return {"cruise_ft": row.get("cruise_ft"),
                 "squawk": row.get("squawk") or "",
+                # WHETHER HE HAS ALREADY AGREED IT. #105 made FILED, ISSUED and
+                # ACKNOWLEDGED three real states and this read the row without
+                # asking which one he was in -- see `_read_back_correct`.
+                "acknowledged": bool(row.get("clearance_ack")),
                 # WHICH PROCEDURE HE IS RECOVERING ON. See migration 025 -- the
                 # column has existed since the plans table and the view did not
                 # carry it, so the bridge gave every aeroplane the one profile
@@ -2058,12 +2084,32 @@ def _approach_named(key: str):
     if not key:
         return None
     th = _theatre.current()
+    # EXACT FIRST, AND IT IS NOT A TIDINESS RULE. `key.startswith(f"{name}-")`
+    # matches EVERY approach at that aerodrome, so "batumi-ils" returned
+    # whichever Batumi profile the theatre happened to list first -- the ASR.
+    #
+    # The whole sortie of 12 August followed from that one line. The engine
+    # cleared him for a "radar approach" while his plate said ILS, the intercept
+    # vectors never fired because the profile it read was a talkdown, the
+    # established-and-silent branch could not be reached, and the pilot flew
+    # through the centreline, out to twenty-one miles, and turned himself back
+    # in. Every number was a real number belonging to the wrong procedure.
+    #
+    # It was correct while Batumi had ONE approach -- the shape this project
+    # keeps finding, and the sixth time this month. A second one arrived and it
+    # collided on the first flight.
+    #
+    # The loose match stays as a SECOND pass: a plan naming "batumi" with no
+    # procedure still wants that field's default rather than nothing.
+    cands = []
     for p in getattr(th, "approaches", ()) or ():
         name = (getattr(getattr(p, "beacon", None), "name", "") or "").lower()
         kind = (getattr(p, "kind", "") or "").lower()
-        if key in (f"{name}-{kind}", name, kind) or key.startswith(f"{name}-"):
+        if key == f"{name}-{kind}":
             return p
-    return None
+        if key in (name, kind) or key.startswith(f"{name}-"):
+            cands.append(p)
+    return cands[0] if cands else None
 
 
 def _read_back_correct(bridge, known: str,
@@ -2123,6 +2169,22 @@ def _read_back_correct(bridge, known: str,
             # answer to "was his read-back correct?" asked of a man who has not
             # been given a clearance: not "yes".
             return None, []
+    # AN AGREED CLEARANCE IS NOT STILL BEING READ BACK, and this judged every
+    # later transmission against it for the rest of the sortie. Acknowledged on
+    # the ramp at Kobuleti, he was still being marked against it at eight miles
+    # on the ILS:
+    #
+    #     PILOT: Batumi Approach, sockeye is established on the Ils one three.
+    #     ATC:   Sockeye, negative -- say again one zero thousand,
+    #            one two four decimal four two five, zero zero four four.
+    #
+    # Three times, on final, in the weather. #105 made FILED, ISSUED and
+    # ACKNOWLEDGED three real states precisely so this question has an answer;
+    # nothing was asking it. Once he has agreed it there is nothing left to
+    # judge, and a transmission that merely shares a number with an old
+    # clearance is not a read-back of it.
+    if plan.get("acknowledged"):
+        return None, []
     d = _decision.Decision(
         kind="clearance", to=known,
         altitude_ft=plan.get("cruise_ft") or None,
@@ -2408,7 +2470,24 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
                     f"reading the taxi clearance back, not reporting the hold. "
                     f"Acknowledge the read-back; he is still yours.", "")
 
-        beacon_flown = not getattr(ctl.profile, "vectored", False)
+        # DOES THIS PROCEDURE HAVE A BEACON HE FLIES TO AND REPORTS OVER?
+        #
+        # It asked `profile.vectored`, which is False for an ILS -- correctly,
+        # because that flag asks who owns navigation ALL THE WAY DOWN and on an
+        # ILS that is the pilot. So every position report on an ILS was read as
+        # a claim to be over a beacon and rejected:
+        #
+        #     PILOT: Batumi Approach, sockeye is established on the ILS-13.
+        #     ATC:   radar shows you one one miles out, you have NOT reached
+        #            the beacon
+        #     PILOT: "Glog, I have no idea what he's talking about on the beacon"
+        #
+        # Four times in one arrival, to a man who was exactly where he said he
+        # was. The third site to ask `vectored` a question it does not answer --
+        # `may_vector` exists for precisely this and gets it right for all
+        # three: the letdown flies a beacon, the ASR and the ILS do not.
+        from marshall.core.approach import may_vector as _may_vector
+        beacon_flown = not _may_vector(ctl.profile)
         if (beacon_flown and intent.kind is intents.IntentKind.REPORT_BEACON
                 and nm is not None and nm > OVERHEAD_NM):
             print(f"  !! rejected: claims the beacon, radar shows {nm:.1f} nm",
@@ -3161,26 +3240,29 @@ def leaving_my_airspace(base: str, session_id: str, callsign: str, me,
             and fix is not None
             and fix.range_nm <= profile.final_intercept_nm):
         return None
-    # INSIDE THE TERMINAL AREA THE LADDER OWNS HIM, and the volumes do not get a
-    # vote. This function's own docstring says what airspace is FOR -- "the case
-    # range cannot express at all" -- and a departure at three miles is not that
-    # case: it is the most ordinary distance there is, and `handoff.py` has a
-    # rule for it.
+    # INSIDE HIS OWN TERMINAL AREA THE LADDER OWNS HIM -- and the measure is the
+    # AERODROME'S volume, not a fixed twenty-five miles.
     #
-    # Without this, a gap in the map reads as an answer. `flight_airspace`
-    # COALESCEs onto the unbounded sector, so an aeroplane inside NO described
-    # volume becomes the Center's -- and Kobuleti had no volume at all, so a jet
-    # three miles off its runway at two thousand feet was offered Georgia Center
-    # while still in the circuit. Migration 027 gives it one; this makes the
-    # next theatre safe before anybody flies it, because Nevada has the same
-    # hole today and "no sector defined" must never mean "he is enroute".
+    # This was `fix.range_nm < CENTER_NM`, added when Kobuleti had no sector at
+    # all and an aeroplane three miles off its runway fell through to the
+    # unbounded fallback and was offered Georgia Center in the circuit. Migration
+    # 027 gave every field a volume, so the gap that guard was patching is gone
+    # -- and the guard then broke the case it was standing in front of.
     #
-    # CENTER_NM is the right threshold because it is the ladder's OWN answer to
-    # the same question: it is where `departure -> center` fires, so inside it
-    # the rules have already said he is not Center's yet.
-    if fix is not None and getattr(fix, "range_nm", None) is not None \
-            and fix.range_nm < _handoff.CENTER_NM:
-        return None
+    # Kobuleti and Batumi are twenty-two miles apart. Their terminal areas meet
+    # at eleven. A pilot going from one to the other is NEVER twenty-five miles
+    # outbound from where he started -- he turns for the destination first -- so
+    # `departure -> center` cannot fire on this sortie at all, and the airspace
+    # branch, which would have caught him leaving Kobuleti's area at eleven, was
+    # blocked by this line:
+    #
+    #     handoff/none  Kobuleti Departure keeps him -- departure, 11 nm, inbound
+    #     DEBUG NOTE    "I've not been handed off to Georgia Center yet"
+    #     DEBUG NOTE    "obviously, Kobuleti Departure can't handle that
+    #                    question. I'm going to switch myself to center"
+    #
+    # The volumes already encode how big each field's area is, which is the
+    # thing a fixed number was standing in for. Ask them.
     try:
         row = _get_json(f"{base}/flights/airspace?"
                         + urllib.parse.urlencode({"callsign": callsign,
@@ -5069,7 +5151,21 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     if hasattr(profile, "station_on") else None)
         reply, sent = strip_unauthorised_handoff(
             reply, _authorised,
-            keep_him=(f"{to_callsign}, {_me_here.name}, go ahead."
+            # HIS NAME AS IT IS SAID, not the board's key for him. The key is
+            # lower-cased by `identity._handle_for` on purpose -- so every dict
+            # the bridge holds him under agrees -- and this put that raw string
+            # on the air:
+            #
+            #     "sockeye, Batumi Tower, go ahead."
+            #     "the pronunciation table is not being used by Batumi Tower"
+            #
+            # It reads as one controller who cannot say his name, and it is
+            # only that controller because this fallback fires when the agent
+            # proposes a handoff nobody authorised -- which Tower did most.
+            # Everything else goes through `callsign.parse().spoken`; this was
+            # the one path that did not.
+            keep_him=(f"{_callsign.parse(to_callsign).spoken}, "
+                      f"{_me_here.name}, go ahead."
                       if to_callsign and _me_here else ""))
         if sent:
             print(f"  .. refused an unauthorised handoff: {sent}",

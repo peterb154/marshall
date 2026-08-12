@@ -34,13 +34,16 @@ from __future__ import annotations
 
 import re
 
+from psycopg.types.json import Json
+
 from marshall.core.db import pool as get_pool
 
 # The columns a filed plan is made of. `active` is deliberately NOT among them:
 # it says which approach the bridge loads at start-up, it is set by the bridge's
 # own bootstrap, and letting a form move it means a filed plan can silently
 # change the procedure a controller is running.
-FIELDS = ("name", "label", "origin", "destination", "route", "cruise_ft",
+FIELDS = ("name", "label", "origin", "destination", "route", "legs",
+          "cruise_ft",
           "task", "approach")
 
 # A plan's `name` is a key, not prose: it goes in URLs, in migrations and in
@@ -237,15 +240,20 @@ def file_plan(plan: dict, updating: str = "") -> dict:
     row["label"] = row["label"].strip()
     row["cruise_ft"] = int(plan["cruise_ft"])
     row["route"] = ", ".join(route_fixes(plan["route"]))
+    # THE LEVEL PER LEG. Stored as given: it is the pilot's own profile and
+    # nothing here is entitled to round it. `cruise_ft` remains the highest,
+    # which is what a controller means by cruise -- see migration 030.
+    row["legs"] = Json(plan.get("legs")) if plan.get("legs") else None
     with get_pool().connection() as c:
         c.execute(
             "INSERT INTO flight_plans (name, label, origin, destination, "
-            "route, cruise_ft, task, approach) "
+            "route, legs, cruise_ft, task, approach) "
             "VALUES (%(name)s, %(label)s, %(origin)s, %(destination)s, "
-            "%(route)s, %(cruise_ft)s, %(task)s, %(approach)s) "
+            "%(route)s, %(legs)s, %(cruise_ft)s, %(task)s, %(approach)s) "
             "ON CONFLICT (name) DO UPDATE SET "
             "label=EXCLUDED.label, origin=EXCLUDED.origin, "
             "destination=EXCLUDED.destination, route=EXCLUDED.route, "
+            "legs=EXCLUDED.legs, "
             "cruise_ft=EXCLUDED.cruise_ft, task=EXCLUDED.task, "
             "approach=EXCLUDED.approach", row)
     return {"filed": True, "name": row["name"], "warnings": warn}

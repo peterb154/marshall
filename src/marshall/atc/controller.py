@@ -35,6 +35,8 @@ The state machine does not change.
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import re
 from dataclasses import dataclass, field
 from enum import Enum, auto
@@ -434,8 +436,24 @@ class Controller:
         from marshall.core.approach import may_vector
         return may_vector(self.profile)
 
+    # WHAT A CONTROLLER CALLS THE PROCEDURE, out loud. It knew exactly two --
+    # "radar approach" or "beacon approach" -- so an ILS was cleared as a radar
+    # approach, which a pilot holding an ILS plate reasonably queried:
+    #
+    #     "I should be on the ILS13. Why would he say radar approach?"
+    #
+    # Keyed on the PROCEDURE now rather than on whether he may be vectored,
+    # because those are different questions: an ILS and a surveillance approach
+    # are both vectored and are not the same thing to fly.
+    _APPROACH_WORD: ClassVar[dict[str, str]] = {
+        "ils": "I-L-S approach", "asr": "radar approach",
+        "par": "precision approach", "ndb": "beacon approach",
+        "vor": "V-O-R approach", "tacan": "TACAN approach"}
+
     def _approach_name(self) -> str:
-        return "radar approach" if self._vectored else "beacon approach"
+        kind = (getattr(self.profile, "kind", "") or "").lower()
+        return self._APPROACH_WORD.get(
+            kind, "radar approach" if self._vectored else "beacon approach")
 
     def release(self, callsign: str) -> bool:
         """Take him off the board. Nobody is sitting in that aeroplane.
