@@ -1,0 +1,53 @@
+# How the radio says things -- the part that is true everywhere.
+#
+# Aviation English, not a map and not a sortie. These respellings hold at
+# Batumi in 1944 and at Nellis today, so they live here rather than in a
+# theatre file. Anything that names a PLACE belongs in config/theatres/<map>.toml;
+# anything that names a PILOT belongs to the sortie he is flying.
+#
+# WHY RESPELLING RATHER THAN SSML <phoneme>. It needs no change to how we call
+# synthesize_speech, it cannot produce malformed markup mid-transmission, and
+# anyone can add a line after hearing a word come out wrong. The cost is that
+# the fix lives in the audio and not in the transcript, which is the right
+# trade for a radio.
+#
+# ONLY WORDS ACTUALLY HEARD TO COME OUT WRONG. Guessing at pronunciations Polly
+# already gets right is how you end up "fixing" roger into something worse.
+
+[terms]
+# THE ICAO DIGITS, applied to every outgoing string.
+#
+#     "We need to build a pronunciation table in bridge that every string is
+#      passed through to fix pronunciations."
+#
+# `core/say.py` already produces these words for anything the deterministic
+# controller composes -- but the AGENT writes its own prose, and a controller
+# who says "five" in one sentence and "fife" in the next is two people.
+three = "tree"
+five = "fife"
+nine = "niner"
+
+# The one that started the table. Polly reads it as the past tense -- "RED-back"
+# -- because that is the commoner English word. A controller says "REED-back".
+readback = "reed back"
+readbacks = "reed backs"
+
+# WHAT WHISPER SHOULD EXPECT TO HEAR, for the half of the radio that listens.
+#
+# A recogniser primed for the wrong sortie mishears the right one. This used to
+# be a sentence hard-coded in `radio/stt.py` reading "Radio calls to Batumi
+# Approach. Mustang callsigns: Pony one one ..." -- so an F-16 departing
+# Kobuleti was transcribed by a model expecting Mustangs in the circuit at an
+# aerodrome forty miles away. See #137.
+#
+# SPOKEN FORMS, NOT WRITTEN ONES. Priming it with "Pony 1-1" teaches it nothing
+# about the sound a pilot makes; "Pony one one" does.
+[recogniser]
+phrases = [
+  "checking in", "request approach", "holding", "over the beacon",
+  "established", "inbound", "outbound", "procedure turn", "going around",
+  "missed approach", "field in sight", "cleared to land", "wilco", "roger",
+  "say again", "how do you read", "do you copy", "with you", "level",
+  "thousand feet", "DME", "squawk", "ident", "read back", "hold short",
+  "ready to taxi", "ready for departure", "request IFR clearance",
+]

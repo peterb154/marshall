@@ -1,0 +1,13 @@
+# Nevada (NTTR).
+#
+# Nothing here yet needs respelling: Polly says "Nellis" and "Tonopah" the way
+# a controller does. The file exists rather than being absent on purpose --
+# `catalogue.py` treats a MISSING theatre file as an error, because a map with
+# no configuration is far more likely to be a typo in MARSHALL_THEATRE than a
+# map that genuinely needs none. An empty table says "checked, nothing needed".
+
+[pronunciation]
+
+[recogniser]
+phrases = ["Nellis", "Tonopah", "Creech", "Groom Lake", "Las Vegas",
+           "Nellis Approach", "Nellis Tower"]

@@ -17,16 +17,29 @@ hand (the synthetic pilot, the rehearsal harness).
 
 from __future__ import annotations
 
-WHISPER_PROMPT = (
-    "Radio calls to Batumi Approach. Mustang callsigns: Pony one one, Pony two, "
-    "Pony three, Pony four (the number is spoken as digits, e.g. 'Pony two', not "
-    "'Pony do'). Terms: checking in, request approach, holding, over the beacon, "
-    "established on the beam, platform, missed approach, going around, field in "
-    "sight, thousand feet, DME, Oscar Sierra, Batumi, Kobuleti, do you copy, how "
-    "do you read.")
+def default_prompt() -> str:
+    """What to prime Whisper with when nobody has said whose sortie this is.
+
+    THIS USED TO BE A 1944 MUSTANG SORTIE, as a module constant:
+
+        "Radio calls to Batumi Approach. Mustang callsigns: Pony one one,
+         Pony two ... over the beacon, ... Oscar Sierra, Batumi, Kobuleti"
+
+    -- the default argument of `transcribe`, so every caller that did not pass
+    a prompt primed the recogniser for Mustangs in the circuit at Batumi while
+    an F-16 flew out of Kobuleti. Priming with another sortie's names is worse
+    than not priming: it biases the transcript toward words that cannot occur.
+
+    Now it is the configured phrases for whatever map is loaded, and nothing
+    else -- no aerodrome, no callsigns, no era. See config/speech.toml, the
+    theatre files, and docs/CONFIG.md. #137.
+    """
+    from marshall.core import catalogue
+    got = catalogue.recogniser_phrases()
+    return "Radio calls. Terms: " + ", ".join(got) + "." if got else ""
 
 
-def domain_prompt(stations=(), fixes=(), callsigns=(), field: str = "Batumi",
+def domain_prompt(stations=(), fixes=(), callsigns=(), field: str = "",
                   plans=()) -> str:
     """Prime Whisper with the proper nouns that are actually on the air.
 
@@ -43,7 +56,11 @@ def domain_prompt(stations=(), fixes=(), callsigns=(), field: str = "Batumi",
     # it with "Pony 1-1" teaches it nothing about the sound a pilot makes --
     # "Pony one one" does. Same for the fixes: a chart says FEET WET and a pilot
     # says "feet wet".
-    bits = [f"Radio calls at {field.title()}."]
+    # NO DEFAULT AERODROME. This parameter used to default to "Batumi", so a
+    # caller who did not know the field primed the recogniser for one -- a
+    # Caucasus fact leaking into a theatre-neutral path. Empty primes nothing,
+    # which is the honest answer and strictly better than the wrong name.
+    bits = [f"Radio calls at {field.title()}." if field else "Radio calls."]
     if callsigns:
         bits.append("Callsigns: " + ", ".join(dict.fromkeys(callsigns)) + ".")
     if stations:
@@ -57,11 +74,14 @@ def domain_prompt(stations=(), fixes=(), callsigns=(), field: str = "Batumi",
         # mangled one does not cost a word, it clears him on somebody else's
         # route.
         bits.append("Flight plans: " + ", ".join(dict.fromkeys(plans)) + ".")
-    bits.append(
-        "Numbers are spoken as digits. Terms: checking in, request approach, "
-        "holding, established, platform, missed approach, going around, field "
-        "in sight, cleared to land, altimeter, steerpoint, waypoint, ingress, "
-        "egress, say again, how do you read.")
+    # THE PHRASEOLOGY IS CONFIGURED, not written here. It was a sentence in
+    # this file listing "ingress, egress" -- two turning points of one 1944
+    # strike sortie -- as though they were aviation terms every pilot says.
+    from marshall.core import catalogue
+    terms = catalogue.recogniser_phrases()
+    if terms:
+        bits.append("Numbers are spoken as digits. Terms: "
+                    + ", ".join(terms) + ".")
     return " ".join(bits)
 
 
@@ -71,10 +91,15 @@ def load_model(size: str = "base.en"):
     return WhisperModel(size, device="cpu", compute_type="int8")
 
 
-def transcribe(model, pcm, prompt: str = WHISPER_PROMPT) -> str:
-    """int16 PCM -> text, primed with the domain prompt. '' if nothing was said."""
+def transcribe(model, pcm, prompt: str = "") -> str:
+    """int16 PCM -> text, primed with the domain prompt. '' if nothing was said.
+
+    An empty prompt means "you did not tell me who is flying", and the answer
+    is the configured phrases for this map -- never another sortie's callsigns.
+    See `default_prompt`.
+    """
     import numpy as np
 
     segs, _ = model.transcribe(pcm.astype(np.float32) / 32768.0, language="en",
-                               initial_prompt=prompt)
+                               initial_prompt=prompt or default_prompt())
     return " ".join(s.text for s in segs).strip()

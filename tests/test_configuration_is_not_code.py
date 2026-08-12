@@ -1,0 +1,213 @@
+"""Configuration comes from files, and the three scopes stay apart.
+
+#137. The first slice of it: how the radio SAYS things and what it expects to
+HEAR were both Python.
+
+    "all of that should be configuration stored in the database, not code ...
+     I feel like we are still under-leveraging the database as a source of
+     truth"
+    "I could be convinced that configuration can be structured files/objects
+     that are loaded into memory rather than stored in the database - just not
+     intermixed with code."
+
+The bug this prevents is not "a constant in a file". It is THREE KINDS OF FACT
+IN ONE DICT: `SAY_AS` held "niner" (aviation English, true everywhere),
+"Kobuleti" (a name on one map) and "Sockeye" (one pilot's callsign on one
+evening) as though they were the same kind of thing. So a new pilot was
+mispronounced on the air until somebody edited Python and restarted the
+bridge -- which is #97, and which makes "works with any pilot" impossible.
+"""
+
+from __future__ import annotations
+
+import os
+import textwrap
+import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from marshall.core import catalogue
+from marshall.radio import stt, tts
+
+
+class Sandbox(unittest.TestCase):
+    """Each test gets its own config directory, so none of them reads the repo's."""
+
+    def setUp(self):
+        self._tmp = TemporaryDirectory()
+        self.dir = Path(self._tmp.name)
+        (self.dir / "theatres").mkdir()
+        self._env = {k: os.environ.get(k)
+                     for k in ("MARSHALL_CONFIG_DIR", "MARSHALL_THEATRE")}
+        os.environ["MARSHALL_CONFIG_DIR"] = str(self.dir)
+        os.environ["MARSHALL_THEATRE"] = "testmap"
+        catalogue.reload()
+        catalogue.known_callsigns.cache_clear()
+        self.addCleanup(self._restore)
+
+    def _restore(self):
+        for k, v in self._env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        catalogue.reload()
+        catalogue.known_callsigns.cache_clear()
+        self._tmp.cleanup()
+
+    def write(self, rel, text):
+        p = self.dir / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(textwrap.dedent(text), encoding="utf-8")
+        catalogue.reload()
+        catalogue.known_callsigns.cache_clear()
+
+
+class TheThreeScopesStayApart(Sandbox):
+
+    def setUp(self):
+        super().setUp()
+        self.write("speech.toml", """
+            [terms]
+            nine = "niner"
+            [recogniser]
+            phrases = ["say again"]
+        """)
+        self.write("theatres/testmap.toml", """
+            [pronunciation]
+            Kobuleti = "koh-boo-lay-tee"
+            [recogniser]
+            phrases = ["Kobuleti"]
+        """)
+
+    def test_universal_terms_apply_on_every_map(self):
+        self.assertEqual(catalogue.speech()["nine"], "niner")
+
+    def test_the_map_contributes_its_own_names(self):
+        self.assertEqual(catalogue.speech()["Kobuleti"], "koh-boo-lay-tee")
+
+    def test_another_map_does_not_get_this_one_s_names(self):
+        """Priming or respelling with another map's names is worse than doing
+        neither: it biases toward words that cannot occur."""
+        self.write("theatres/othermap.toml", "[pronunciation]\n")
+        os.environ["MARSHALL_THEATRE"] = "othermap"
+        catalogue.reload()
+        self.assertNotIn("Kobuleti", catalogue.speech())
+        self.assertEqual(catalogue.speech()["nine"], "niner", "aviation is aviation")
+
+    def test_a_callsign_is_the_sortie_s_and_is_passed_in(self):
+        said = catalogue.speech({"Nomad": "no-mad"})
+        self.assertEqual(said["Nomad"], "no-mad")
+        self.assertNotIn("Nomad", catalogue.speech(),
+                         "one pilot's name is not a fact about the map")
+
+    def test_a_map_may_not_redefine_aviation_english(self):
+        """Precedence is universal < theatre < sortie, so a pilot may fix how
+        his own name is said; a map may not quietly turn 'niner' back into
+        'nine' for everybody."""
+        said = catalogue.speech({"nine": "NINE"})
+        self.assertEqual(said["nine"], "NINE", "the sortie is the last word")
+
+
+class WhatTheRadioSays(Sandbox):
+
+    def test_pronounce_reads_the_files(self):
+        self.write("speech.toml", '[terms]\nthree = "tree"\n')
+        self.write("theatres/testmap.toml", '[pronunciation]\nBatumi = "bah-too-mee"\n')
+        self.assertEqual(tts.pronounce("Runway three at Batumi", callsigns={}),
+                         "Runway tree at Bah-too-mee")
+
+    def test_a_new_pilot_needs_no_code_change(self):
+        """#97 in one line. Adding a callsign used to mean editing Python."""
+        self.write("speech.toml", "[terms]\n")
+        self.write("theatres/testmap.toml", "[pronunciation]\n")
+        self.assertEqual(tts.pronounce("Nomad two nine", {"Nomad": "no-mad"}),
+                         "No-mad two nine")
+
+    def test_capitalisation_is_preserved(self):
+        self.write("speech.toml", '[terms]\nreadback = "reed back"\n')
+        self.write("theatres/testmap.toml", "[pronunciation]\n")
+        self.assertEqual(tts.pronounce("Readback correct", callsigns={}),
+                         "Reed back correct")
+
+    def test_no_config_is_an_accent_and_not_a_silence(self):
+        """The one place a missing file is survivable, and it is a judgement:
+        a controller with no table has an accent, a controller who cannot start
+        is silence on every frequency."""
+        self.assertEqual(tts.pronounce("Runway three", callsigns={}),
+                         "Runway three")
+
+
+class WhatTheRadioExpectsToHear(Sandbox):
+
+    def test_the_default_prompt_names_no_sortie(self):
+        """It used to be a 1944 Mustang sortie at Batumi, as the default
+        argument of `transcribe` -- so every caller who passed no prompt primed
+        for Mustangs while an F-16 flew."""
+        self.write("speech.toml", '[recogniser]\nphrases = ["say again"]\n')
+        self.write("theatres/testmap.toml",
+                   '[recogniser]\nphrases = ["Kobuleti"]\n')
+        got = stt.default_prompt()
+        self.assertIn("say again", got)
+        self.assertIn("Kobuleti", got)
+        for gone in ("Mustang", "Pony", "Batumi", "Oscar Sierra"):
+            self.assertNotIn(gone, got)
+
+    def test_the_live_prompt_puts_the_man_on_the_radio_first(self):
+        """A prompt is a budget -- Whisper weighs the start of it more."""
+        self.write("speech.toml", '[recogniser]\nphrases = ["say again"]\n')
+        self.write("theatres/testmap.toml", "[recogniser]\nphrases = []\n")
+        got = stt.domain_prompt(callsigns=["Nomad two nine"], field="Kobuleti")
+        self.assertLess(got.index("Nomad two nine"), got.index("say again"))
+
+    def test_no_default_aerodrome(self):
+        self.write("speech.toml", "[recogniser]\nphrases = []\n")
+        self.write("theatres/testmap.toml", "[recogniser]\nphrases = []\n")
+        self.assertNotIn("Batumi", stt.domain_prompt())
+
+    def test_nothing_is_primed_twice(self):
+        self.write("speech.toml", '[recogniser]\nphrases = ["Kobuleti"]\n')
+        self.write("theatres/testmap.toml",
+                   '[recogniser]\nphrases = ["kobuleti"]\n')
+        self.assertEqual(catalogue.recogniser_phrases().count("Kobuleti"), 1)
+
+
+class ABadFileIsLoudRatherThanEmpty(Sandbox):
+    """A controller running on silently-empty configuration says numbers that
+    are merely plausible, which is the shape of every foundational bug this
+    month."""
+
+    def test_a_missing_theatre_is_an_error_not_a_shrug(self):
+        self.write("speech.toml", "[terms]\n")
+        with self.assertRaises(FileNotFoundError):
+            catalogue._theatre("nosuchmap")
+
+    def test_malformed_toml_names_the_file(self):
+        self.write("speech.toml", "[terms\nbroken = ")
+        with self.assertRaises(ValueError) as e:
+            catalogue._universal()
+        self.assertIn("speech.toml", str(e.exception))
+
+
+class TheRepoSOwnConfigurationLoads(unittest.TestCase):
+    """Not a sandbox -- the shipped files, which nothing else would catch."""
+
+    def setUp(self):
+        catalogue.reload()
+        self.addCleanup(catalogue.reload)
+
+    def test_every_shipped_theatre_parses(self):
+        for p in sorted((catalogue.root() / "theatres").glob("*.toml")):
+            with self.subTest(theatre=p.stem):
+                got = catalogue._read(p)
+                self.assertIsInstance(got.get("pronunciation", {}), dict)
+
+    def test_the_universal_table_is_aviation_and_not_a_map(self):
+        """The regression that started this: no place name, no callsign."""
+        terms = catalogue._read(catalogue.root() / "speech.toml")["terms"]
+        for leaked in ("Batumi", "Kobuleti", "Sockeye", "Nellis", "Pony"):
+            self.assertNotIn(leaked, terms)
+
+
+if __name__ == "__main__":
+    unittest.main()

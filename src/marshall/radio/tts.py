@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from dataclasses import dataclass
+from functools import lru_cache
 import hashlib
 
 from marshall import config
@@ -39,82 +40,74 @@ _POLLY_RATE = 16000  # Polly PCM tops out here -- and matches SRS, so no resampl
 
 # Words Polly gets wrong, respelled the way it should say them.
 #
-# Plain respelling rather than SSML <phoneme> tags on purpose: it needs no
-# change to how we call synthesize_speech, it cannot produce malformed markup
-# mid-transmission, and anyone can add a line after hearing a word come out
-# wrong. The cost is that the fix lives in the audio and not in the transcript,
-# which is the right trade for a radio.
+# THE TABLE IS NOT HERE ANY MORE. It lives in `config/speech.toml` and
+# `config/theatres/<map>.toml`, read through `core.catalogue` -- because it was
+# three different kinds of fact in one Python dict:
 #
-# "readback" is the one that started this: Polly reads it as the past tense --
-# "RED-back" -- because that is the commoner English word. A controller says
-# "REED-back".
-SAY_AS = {
-    # THE ICAO DIGITS, applied to EVERY outgoing string.
-    #
-    #     "We need to build a pronunciation table in bridge that every string
-    #      is passed through to fix pronunciations."
-    #
-    # `core/say.py` already produces these words for anything the deterministic
-    # controller composes -- but the AGENT writes its own prose and says "five
-    # thousand", so the two brains had drifted apart on phraseology within a
-    # single sortie. A pilot would have heard "fife thousand" from the engine
-    # and "five thousand" from the model, one transmission apart.
-    #
-    # Fixing it here catches both, because everything that reaches a radio
-    # comes through `pcm16k`. The transcript keeps whichever word was written,
-    # which is the documented trade of this table: the fix lives in the audio.
-    "three": "tree",
-    "five": "fife",
-    "nine": "niner",
-    "readback": "reed back",
-    "readbacks": "reed backs",
-    # CALLSIGNS. Polly reads "Sockeye" as a single Japanese-looking word and
-    # says it like the rice wine. It is two English words and a fish.
-    "Sockeye": "sock eye",
-    # THE GEORGIAN FIELDS, and the previous spellings were a disaster on the
-    # air. They used CAPITALS for the stressed syllable -- "Koh boo LEH tee" --
-    # which is a convention for a human reader and nothing at all to Polly:
-    # a capitalised fragment gets read as an initialism or simply flattened,
-    # so the emphasis never landed and the seams between syllables did.
-    #
-    # Lower case throughout, and syllables joined with hyphens rather than
-    # spaces: a space is a word boundary and Polly pauses at it, which is what
-    # turned three-syllable place names into three separate words.
-    "Batumi": "bah-too-mee",
-    "Kobuleti": "koh-boo-lay-tee",
-    "Senaki": "seh-nah-kee",
-    "Kutaisi": "koo-tah-ee-see",
-    "Sukhumi": "soo-koo-mee",
-    "Vaziani": "vah-zee-ah-nee",
-    "Tsutsnvati": "tsoots-nah-vah-tee",
-    "Gudauta": "goo-dah-oo-tah",
-    "Soganlug": "soh-gahn-loog",
-    "Tbilisi": "tbil-ee-see",
-}
-# Only words actually heard to come out wrong go in here. Guessing at
-# pronunciations Polly already gets right is how you end up "fixing" roger into
-# something worse.
-
-_SAY_AS_RE = re.compile(
-    r"\b(" + "|".join(sorted(SAY_AS, key=len, reverse=True)) + r")\b", re.I)
+#     "niner"      aviation English, true on every map in every era
+#     "Kobuleti"   a name on THIS map
+#     "Sockeye"    one pilot's callsign, on one evening
+#
+# So a new pilot with a new callsign was mispronounced on the air until
+# somebody edited this file and restarted the bridge, which is #97 -- and
+# "should work with any pilot" was impossible while a callsign had to be
+# compiled in. See docs/CONFIG.md and #137.
+#
+# The respelling convention that took two attempts to get right is documented
+# in the TOML beside the entries it applies to, which is where somebody adding
+# a word will actually read it.
 
 
-def pronounce(text: str) -> str:
-    """Respell the handful of words Polly mangles, preserving capitalisation."""
+def say_as(callsigns: dict | None = None) -> dict:
+    """The respellings in force: universal, then this map, then this sortie.
+
+    Falls back to `catalogue.known_callsigns()` when the caller passes nothing,
+    so a bridge that has not been told who is flying still says the names it
+    knows. That fallback is the stopgap described in config/callsigns.toml and
+    goes when a pilot record exists.
+    """
+    from marshall.core import catalogue
+    return catalogue.speech(
+        catalogue.known_callsigns() if callsigns is None else callsigns)
+
+
+@lru_cache(maxsize=8)
+def _matcher(words: tuple) -> re.Pattern:
+    """One regex per distinct table, cached.
+
+    Built at import from a module constant before the table could change.
+    Now the sortie's callsigns are part of it, so it is derived from whatever
+    is in force -- longest first, so "Pony one one" wins over "Pony one".
+    """
+    return re.compile(r"\b(" + "|".join(
+        re.escape(w) for w in sorted(words, key=len, reverse=True)) + r")\b",
+        re.I)
+
+
+def pronounce(text: str, callsigns: dict | None = None) -> str:
+    """Respell the words Polly mangles, preserving capitalisation.
+
+    `callsigns` is this sortie's own respellings -- his name, said his way. It
+    is passed in rather than looked up because this module has no business
+    knowing who is flying; the bridge hands it whatever the board holds.
+    """
+    table = say_as(callsigns)
+    if not table:
+        return text or ""
     # CASE-INSENSITIVELY, because the regex already matches that way and the
-    # lookup did not. Every key here is a proper noun stored capitalised, so
-    # "batumi" out of a transcript matched the pattern, missed the table, and
-    # went to Polly unrespelled -- the exact mangling this exists to prevent,
-    # for anybody who did not capitalise.
-    _FOLDED = {k.lower(): v for k, v in SAY_AS.items()}
+    # lookup did not. Every place name is stored capitalised, so "batumi" out
+    # of a transcript matched the pattern, missed the table, and went to Polly
+    # unrespelled -- the exact mangling this exists to prevent, for anybody who
+    # did not capitalise.
+    folded = {k.lower(): v for k, v in table.items()}
 
     def sub(m):
         word = m.group(1)
-        said = _FOLDED.get(word.lower()) or word
+        said = folded.get(word.lower()) or word
         if word[:1].isupper():
             return said[:1].upper() + said[1:]
         return said[:1].lower() + said[1:]
-    return _SAY_AS_RE.sub(sub, text or "")
+    return _matcher(tuple(sorted(table))).sub(sub, text or "")
 
 
 # ---------------------------------------------------------------------------

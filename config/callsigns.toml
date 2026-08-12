@@ -1,0 +1,17 @@
+# How today's pilots' callsigns are said.
+#
+# A STOPGAP, and it says so where somebody will read it. A callsign belongs to
+# whoever is flying -- it is SORTIE scope, not a fact about aviation and not a
+# fact about a map -- so its real home is the pilot's own record on the board,
+# beside his handle and his flight plan. There is no such record yet, so this
+# file is the third scope in the only form available.
+#
+# What it must NOT become is a growing list of everybody who has ever flown.
+# When a pilot record exists, `catalogue.known_callsigns` goes and the bridge
+# reads his respelling from the board like every other fact about him. See
+# #137 and docs/CONFIG.md.
+
+[pronunciation]
+# Polly reads "Sockeye" as a single Japanese-looking word and says it like the
+# rice wine. It is two English words and a fish.
+Sockeye = "sock eye"
