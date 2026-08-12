@@ -6979,6 +6979,63 @@ are teaching material and belong in the brief; they are only a smell if a
 controller starts treating them as facts about today. `prompts/plate.md` is
 generated from `route.py`, so it inherits whatever the layers above fix.
 
+### The doctrine that produced all eight, and the fix for it
+
+The audit above is a list of symptoms. The cause is one sentence, and it is in
+the front door:
+
+    CLAUDE.md      core/route.py is the single source of truth
+                   (fixes, wind, the ApproachProfile + its capability)
+
+    docs/STATE.md  Postgres is the single source of truth for anything that
+                   outlives a transmission
+
+Same phrase, two documents, opposite answers — and `LAYERS.md` put
+`core/route.py` in Layer 1, "World: what exists, where it is, what is
+published", beside `tracks` and `events`. So the architecture did not merely
+permit fixes and frequencies to live in Python; it declared them foundational,
+and every agent reading CLAUDE.md went to code to change them.
+
+`STATE.md` claimed Postgres for STATE and was right. Nothing ever claimed a home
+for CONFIGURATION, so it defaulted to code and code had a document calling it
+truth. That is the missing category.
+
+    "all of that should be configuration stored in the database, not code ...
+     You keep going to code to implement some fix ... I feel like we are still
+     under-leveraging the database as a source of truth"
+
+**Settled 12 August, and written into `docs/CONFIG.md`:**
+
+    Would a different map, era, pilot or flight plan change this value?
+    Then it is DATA, and it lives in the database.
+
+    reference (navaids, fields, frequencies, procedures, magvar, airspace
+               radii, pronunciation, recogniser vocabulary)   -> rows, seeded
+               from a citable source
+    sortie    (flight plans, steerpoints, callsigns)          -> rows, the
+               pilot's
+    behaviour (separation, the letdown, the phase machine,
+               who owns which clearance, the geometry)        -> code, tested
+
+**Numbers in the database, logic in code.** `sectors(field, role, radius_nm,
+ceiling_ft)` and `handoff_rules(from_role, to_role, condition, threshold_nm)`
+are rows, per theatre, seeded from the procedure they serve; `_inbound_within`,
+the separation engine and the phase machine read them and decide nothing about
+their values. A new map tunes rows; a new RULE is a commit with a test.
+
+The alternative — the rule table itself as rows the engine interprets — was
+considered and rejected: it makes the separation invariant into data, and *an
+LLM never invents separation between aircraft* is the sentence this system
+exists to keep true. A bad row must not be able to reach it.
+
+`core/route.py` stays, as a typed READER over those tables rather than their
+author. Its virtue was never that it held the numbers — it was that the mission
+builder, the chart and the ATC all read one thing and so could not disagree.
+That survives the move intact.
+
+And a migration creates the SHAPE, never the CONTENTS: seeding belongs in a tool
+that can be re-run, pointed at a theatre, and cited.
+
 ### The counter-example worth copying
 
 `core/dtc.py` already does this correctly: it reads a cartridge the pilot

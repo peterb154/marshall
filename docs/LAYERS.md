@@ -43,7 +43,7 @@ seconds with no sim, no network and no model.
 | **4** | **Control** | separation. The board, the stack, sequencing | `controller.py`, `geometry.py` |
 | **3** | **Membership** | who is flying with whom | `flights.py` |
 | **2** | **Identity** | which radio is which aeroplane is which person | `identity.py` |
-| **1** | **World** | what exists, where it is, what is published | `tracks`, `events`, `core/route.py`, `atis/` |
+| **1** | **World** | what exists, where it is, what is published | `tracks`, `events`, the catalogue tables read through `core/route.py`, `atis/` |
 | **0** | **Transport** | audio, frequencies, GUIDs, client names. No aviation | `radio/client.py`, `radio/pool.py`, `radio/stt.py`, `radio/tts.py`, `core/say.py` |
 
 **`decision.py` is the seam between 5 and 6.** The engine decides; the agent

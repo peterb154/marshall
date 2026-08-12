@@ -7,6 +7,12 @@
 > system is FOR, `WIRING.md` what it DOES, `LAYERS.md` what may depend on what.
 > This says what may be REMEMBERED, by whom, and until when — which is the axis
 > every foundational bug this month has fallen along.
+>
+> **`CONFIG.md` is its twin and was missing until 12 August.** This document
+> owns what the system LEARNS while it runs; that one owns what it is TOLD
+> before anybody flies. Nothing claimed the second, so configuration defaulted
+> to Python — and `CLAUDE.md` had a sentence calling Python the source of truth
+> for exactly the facts that should have been rows.
 
 ---
 

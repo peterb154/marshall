@@ -36,8 +36,27 @@ been handed.
 controller's brain. "Handicaps" — no radar, no DME, blind procedural separation,
 period phraseology — are a per-mission `AtcCapability` you dial in; the 1944
 Batumi beacon letdown is one such flavour, not the baseline. `core/route.py` is
-the single source of truth (fixes, wind, the `ApproachProfile` + its capability);
-the mission builder, the chart, and the ATC all read it, so they can't disagree.
+the ONE PLACE EVERYTHING READS FROM (fixes, wind, the `ApproachProfile` + its
+capability); the mission builder, the chart, and the ATC all read it, so they
+can't disagree.
+
+**It is not where those facts belong, and this line used to say it was.** It
+called `route.py` "the single source of truth" while `docs/STATE.md` said
+Postgres was — the same phrase, in two documents, with opposite answers, and
+`LAYERS.md` placing `route.py` in Layer 1 beside `tracks`. So the architecture
+declared *code* foundational for the fixes, the frequencies and the procedures,
+and every agent who read this file went to Python to change them. That is how
+"add an aerodrome" and "add a pilot's callsign" both became *edit code and
+restart*, and how the speech recogniser ended up primed for a 1944 Mustang
+sortie while an F-16 flew the mission.
+
+**Read `docs/CONFIG.md` before adding a constant.** One rule — *would a
+different map, era, pilot or flight plan change this value? then it is data* —
+and the split it implies: reference and sortie facts are rows in Postgres,
+seeded from a citable source; the RULES of controlling stay in code and stay
+tested. Numbers in the database, logic in code. `route.py` keeps its job as the
+one thing everybody reads, as a typed reader over those tables rather than
+their author. Tracked in #137.
 
 **Two aerodromes, and it changed what "truth" has to mean.** The sortie departs
 **Kobuleti** and recovers into **Batumi** — an eight-rung comms ladder across
