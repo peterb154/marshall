@@ -6437,3 +6437,49 @@ today's schema says they have the same origin.
 
 Not to be done while somebody is flying: 2 touches the validator, every filed
 row, and the clearance a controller reads aloud.
+
+---
+
+## [SEAM-13] The flight row's callsign is the unit name, so a pilot cannot be found by what he says — #128
+
+Found by `tools/ladder_rehearsal.py --only Q1a` while proving #126 — the first
+rehearsal of clearance delivery since the mission wiring was fixed.
+
+    PILOT: Kobuleti Clearance, Nomad29, Domino please.
+    ATC:   Nomad two nine, I do not have you on the board.
+           You are three six two nd nomad two nine one — use that callsign.
+
+**The board is being read correctly now** (that is #126 working: before it, the
+tool could not see the board at all and said so flatly). What it holds is wrong:
+
+    callsign   362nd_nomad29-1     <- the UNIT name, lower-cased
+    track      362nd_Nomad29-1
+    authority  (none)
+    confirmed  (none)
+
+`park_an_aeroplane`'s own docstring says the chain should derive the handle:
+*"`362nd_Sockeye-1` derives to the handle `Sockeye`, which is exactly what the
+synthetic pilot calls himself."* It did not. The raw track name went into the
+`callsign` column instead, so `_flight("Nomad29")` misses and every
+callsign-keyed tool misses with it.
+
+**And the refusal then tells him to rename himself after a sim unit.**
+`not_on_the_board` names the closed set, which is right and is what makes this
+diagnosable at all — but the set it names is track names, so the advice is *"use
+callsign 362nd_nomad29-1"*, which no pilot would ever say and no transcriber
+would ever hear.
+
+Isolated from the identity fault, the clearance path is correct — bound a flight
+by hand under the right mission and it issues:
+
+    cleared to Batumi, as filed, maintain one zero thousand,
+    departure frequency one two three decimal three, squawk one four two one
+    (matched on destination, origin (from who he called); plan Domino)
+
+so this is the LAST thing between a pilot and his clearance, and it is on the
+identity side rather than the clearance side.
+
+Two things to establish: whether the handle derivation runs at all on this path,
+and whether `authority`/`confirmed` being empty is the same cause or a second
+one. Suspect the row is minted by the transmission before radar correlates it,
+and never revised — which would be #119's lifecycle question one column along.
