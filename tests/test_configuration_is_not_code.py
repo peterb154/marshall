@@ -402,3 +402,60 @@ class TheTwoSourcesOfPositionAreMERGED(unittest.TestCase):
         got = pushed.get("fixes") or {}
         self.assertIn("BATUMI", got, "the configured fix was wiped by the sim branch")
         self.assertIn("FEET WET", got, "the sim's answer was lost")
+
+
+class TheFilesSayExactlyWhatThePythonSaid(unittest.TestCase):
+    """The migration guard, and it has already earned its place.
+
+    Moving reference data out of Python is only safe if the move changes
+    nothing, and "nothing" has to be checked field by field rather than
+    eyeballed -- the first pass through this turned a double quote into an
+    apostrophe inside three controllers' `manner`, which is prose that goes
+    straight to the agent and describes how a man sounds on the radio. Green
+    suite, no test failed, and the controller's brief had quietly changed.
+
+    Kept for the REST of #137: aerodromes and stations are done, approach
+    procedures and the theatre registry are not, and this is what will catch
+    the same class of slip when they move.
+    """
+
+    def setUp(self):
+        catalogue.reload()
+        self.addCleanup(catalogue.reload)
+
+    def test_every_aerodrome_survives_the_round_trip(self):
+        from marshall.core import route as R
+        from marshall.core import theatre as T
+
+        was = {f.name: f for f in R.FIELDS}
+        self.assertTrue(was, "nothing to compare against")
+        for now in T.published_fields():
+            for key in was[now.name].__dataclass_fields__:
+                with self.subTest(field=now.name, attr=key):
+                    a, b = getattr(was[now.name], key), getattr(now, key)
+                    if key in ("msa_sectors", "mva_cells"):
+                        a = [tuple(x) for x in (a or [])]
+                        b = [tuple(x) for x in (b or [])]
+                    self.assertEqual(a, b)
+
+    def test_every_station_survives_it_too(self):
+        from marshall.core import route as R
+        from marshall.core import theatre as T
+
+        was = {s.name: s for s in R.STATIONS}
+        for now in T.published_stations():
+            for key in was[now.name].__dataclass_fields__:
+                with self.subTest(station=now.name, attr=key):
+                    self.assertEqual(getattr(was[now.name], key),
+                                     getattr(now, key))
+
+    def test_the_ladder_keeps_its_order(self):
+        """ORDER IS THE LADDER. `channels_for` takes the first four presets and
+        `"ABCD"[i]` indexes the buttons, and both were correct only while there
+        were exactly four -- so a file that sorted its stations would put a
+        pilot on the wrong preset with nothing to show for it."""
+        from marshall.core import route as R
+        from marshall.core import theatre as T
+
+        self.assertEqual([s.name for s in T.published_stations()],
+                         [s.name for s in R.STATIONS])

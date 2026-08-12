@@ -124,10 +124,65 @@ class PublishedFix(_File):
     note: str = ""
 
 
+class Aerodrome(_File):
+    """One airfield. Adding one is adding a table, not editing Python.
+
+    `runway` is the landing heading MAGNETIC; `ends` are the DESIGNATORS
+    painted on the tarmac, and they are separate data rather than the heading
+    rounded. Batumi's heading is 124, which rounds to 12 -- and DCS does call
+    it 12 -- while the AIP plate says 13/31 because magnetic drift renamed it
+    and the paint caught up. Rounding produced "runway 12" and "runway 06",
+    which are the numbers on nobody's chart. See #125.
+    """
+    name: str
+    x: float
+    z: float
+    lat: float
+    lon: float
+    elevation_ft: int
+    runway: int
+    ends: tuple[int, int] = (0, 0)
+    atis_mhz: float = 0.0
+    atis_uhf_mhz: float = 0.0
+    magvar_deg: float | None = None
+    grid_convergence_deg: float | None = None
+    # (from_bearing, to_bearing, altitude_ft) and
+    # (from_bearing, to_bearing, range_nm, altitude_ft). Sampled off the
+    # terrain rather than guessed -- a minimum altitude somebody invented is a
+    # number a controller will read to a pilot in the weather.
+    msa_sectors: list[tuple[float, float, int]] = []
+    mva_cells: list[tuple[float, float, float, int]] = []
+    note: str = ""
+
+
+class Controller(_File):
+    """One seat on one frequency.
+
+    A ROLE IS ONLY UNIQUE WITHIN AN AERODROME. `station_for("tower")` matched
+    the first Tower in a list and was right only while there was one of them --
+    one of the four things the second aerodrome broke at once, because a
+    question with one possible answer cannot be answered wrongly. So `field` is
+    not decoration; it is what makes the answer resolvable. Empty means
+    genuinely theatre-wide: a Center, an AWACS.
+    """
+    name: str
+    freq_mhz: float
+    role: str
+    field: str = ""
+    # The other names this one seat answers to -- at a field with a single
+    # radar room, Departure IS Approach.
+    also: list[str] = []
+    channels: list[float] = []
+    voice: str = "Matthew"
+    manner: str = ""
+
+
 class TheatreFile(_File):
     pronunciation: Terms = Terms()
     recogniser: Phrases = Phrases()
     fix: list[PublishedFix] = []
+    field: list[Aerodrome] = []
+    station: list[Controller] = []
 
 
 class CallsignsFile(_File):
@@ -270,6 +325,16 @@ def published_fixes(theatre: str = "") -> list[PublishedFix]:
     a fact about the name, not about which Python module it happens to sit in.
     """
     return list(_theatre(theatre or theatre_name()).fix)
+
+
+def aerodromes(theatre: str = "") -> list[Aerodrome]:
+    """The airfields on this map."""
+    return list(_theatre(theatre or theatre_name()).field)
+
+
+def controllers(theatre: str = "") -> list[Controller]:
+    """The seats on this map, in ladder order as written."""
+    return list(_theatre(theatre or theatre_name()).station)
 
 
 def recogniser_phrases(callsigns=()) -> list[str]:

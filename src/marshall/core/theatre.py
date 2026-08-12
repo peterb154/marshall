@@ -116,6 +116,44 @@ CAUCASUS_RECOVERIES = {
 }
 
 
+def published_fields() -> tuple:
+    """The map's aerodromes, from the configuration file.
+
+    Converted to `Field_` here so everything downstream -- `station_for`,
+    `runway_in_use`, the MSA/MVA lookups, the charts -- keeps working against
+    the type it already knows. The file is the source; `Field_` is the shape
+    the rest of the system speaks.
+    """
+    from marshall.core import catalogue
+    from marshall.core import route as R
+    return tuple(
+        R.Field_(f.name, f.x, f.z, f.elevation_ft, f.runway,
+                 ends=tuple(f.ends), atis_mhz=f.atis_mhz,
+                 atis_uhf_mhz=f.atis_uhf_mhz, lat=f.lat, lon=f.lon,
+                 magvar_deg=f.magvar_deg,
+                 grid_convergence_deg=f.grid_convergence_deg,
+                 msa_sectors=[tuple(s) for s in f.msa_sectors],
+                 mva_cells=[tuple(c) for c in f.mva_cells],
+                 note=f.note)
+        for f in catalogue.aerodromes())
+
+
+def published_stations() -> tuple:
+    """The map's controllers, in the order the file lists them.
+
+    ORDER IS THE LADDER, so it is preserved rather than sorted: `channels_for`
+    takes the first four presets and `"ABCD"[i]` indexes the buttons, and both
+    were correct only while there were exactly four.
+    """
+    from marshall.core import catalogue
+    from marshall.core import route as R
+    return tuple(
+        R.Station(s.name, s.freq_mhz, s.role, also=tuple(s.also),
+                  voice=s.voice, channels=tuple(s.channels),
+                  field=s.field, manner=s.manner)
+        for s in catalogue.controllers())
+
+
 def published_fixes() -> tuple:
     """The map's published fixes as `Fix` objects, from the configuration file.
 
@@ -140,8 +178,8 @@ def caucasus() -> Theatre:
         want = "batumi-asr"
     recovery = getattr(R, CAUCASUS_RECOVERIES[want])
     return Theatre(
-        name="Caucasus", terrain="Caucasus", fields=tuple(R.FIELDS),
-        stations=tuple(R.STATIONS), departure=R.DEPARTURE_FIELD,
+        name="Caucasus", terrain="Caucasus", fields=published_fields(),
+        stations=published_stations(), departure=R.DEPARTURE_FIELD,
         arrival=R.ARRIVAL_FIELD, approach=recovery,
         approaches=(R.BATUMI_ASR, R.BATUMI_ILS, R.BATUMI_APPROACH,
                     R.KOBULETI_ILS),

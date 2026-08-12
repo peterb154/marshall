@@ -7071,10 +7071,22 @@ replace-versus-merge that cost a catalogue in #129: two sources for one table,
 the second silently winning. The gRPC call is now its own function so the merge
 is testable without a server, and it has a test.
 
-**Still to move:** aerodromes and their frequencies (`core/fields.py`,
-`core/stations.py`), approach procedures, the theatre registry, the five
-kneeboard pages that bind an approach at import, and the five migrations that
-INSERT flight plans.
+**Aerodromes and controllers moved next**, so `[[field]]` and `[[station]]`
+tables now carry Batumi and Kobuleti, all nine seats, the runway designators,
+the ATIS frequencies, and both fields' MSA sectors and 48 MVA cells apiece.
+Adding an airfield is adding a table.
+
+And the move is guarded rather than eyeballed: a test walks every attribute of
+every field and station and asserts the file says exactly what the Python said.
+It earned its place immediately — the first pass turned a double quote into an
+apostrophe inside three controllers' `manner`, which is prose that goes
+straight to the agent describing how a man sounds on the radio. Green suite, no
+failure, and the brief had quietly changed. TOML multi-line literal strings fix
+it; the test keeps it fixed.
+
+**Still to move:** approach procedures (`core/approach.py`, `core/nevada.py`),
+the theatre registry, the five kneeboard pages that bind an approach at import,
+and the five migrations that INSERT flight plans.
 
 ### The counter-example worth copying
 

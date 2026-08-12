@@ -90,3 +90,205 @@ freq_mhz = 128.0
 navaid = "ndb"
 source = "On the 1944 Batumi letdown plate as the initial approach fix; NDB SW 128.0."
 note = "Offshore holding fix. Open water, no terrain in any quadrant."
+
+# --- aerodromes ------------------------------------------------------------
+#
+# ADDING ONE IS ADDING A TABLE HERE. It used to mean editing core/fields.py,
+# appending to a FIELDS tuple and redeploying the bridge, which is the whole of
+# 'we're going to add dozens of airfields' stated as a code change.
+#
+# `runway` is the landing heading MAGNETIC; `ends` are the DESIGNATORS painted
+# on the tarmac, and they are data rather than the heading rounded. Batumi's
+# heading is 124, which rounds to 12 -- and DCS does call it 12 -- while the
+# current AIP plate says 13/31 because magnetic drift renamed it and the paint
+# caught up. Rounding gave 'runway 12' and 'runway 06', the numbers on nobody's
+# chart. See #125 for the three magnetic variations this theatre has.
+#
+# msa_sectors are (from_bearing, to_bearing, altitude_ft); mva_cells are
+# (from_bearing, to_bearing, range_nm, altitude_ft), sampled off the terrain.
+
+[[field]]
+name = "Batumi"
+x = -355811
+z = 617386
+lat = 41.6103
+lon = 41.5997
+elevation_ft = 32
+runway = 124
+ends = [13, 31]
+atis_mhz = 127.1
+atis_uhf_mhz = 280.0
+magvar_deg = 0.0
+grid_convergence_deg = 0.0
+note = "Highest terrain 10,623 ft at 23 nm SE. Missed approach turns LEFT."
+msa_sectors = [
+  [217.0, 38.0, 7000],
+  [38.0, 217.0, 13600],
+]
+mva_cells = [
+  [0.0, 30.0, 5.0, 1500],
+  [0.0, 30.0, 10.0, 1000],
+  [0.0, 30.0, 15.0, 1500],
+  [0.0, 30.0, 25.0, 1500],
+  [30.0, 60.0, 5.0, 1500],
+  [30.0, 60.0, 10.0, 3000],
+  [30.0, 60.0, 15.0, 5500],
+  [30.0, 60.0, 25.0, 8000],
+  [60.0, 90.0, 5.0, 3000],
+  [60.0, 90.0, 10.0, 5500],
+  [60.0, 90.0, 15.0, 6000],
+  [60.0, 90.0, 25.0, 9000],
+  [90.0, 120.0, 5.0, 3000],
+  [90.0, 120.0, 10.0, 5000],
+  [90.0, 120.0, 15.0, 6500],
+  [90.0, 120.0, 25.0, 11000],
+  [120.0, 150.0, 5.0, 3000],
+  [120.0, 150.0, 10.0, 5000],
+  [120.0, 150.0, 15.0, 8000],
+  [120.0, 150.0, 25.0, 12000],
+  [150.0, 180.0, 5.0, 4000],
+  [150.0, 180.0, 10.0, 6000],
+  [150.0, 180.0, 15.0, 5500],
+  [150.0, 180.0, 25.0, 9500],
+  [180.0, 210.0, 5.0, 3000],
+  [180.0, 210.0, 10.0, 4000],
+  [180.0, 210.0, 15.0, 6000],
+  [180.0, 210.0, 25.0, 9000],
+  [210.0, 240.0, 5.0, 1500],
+  [210.0, 240.0, 10.0, 1000],
+  [210.0, 240.0, 15.0, 1000],
+  [210.0, 240.0, 25.0, 3500],
+  [240.0, 270.0, 5.0, 1500],
+  [240.0, 270.0, 10.0, 1000],
+  [240.0, 270.0, 15.0, 1000],
+  [240.0, 270.0, 25.0, 1000],
+  [270.0, 300.0, 5.0, 1500],
+  [270.0, 300.0, 10.0, 1000],
+  [270.0, 300.0, 15.0, 1000],
+  [270.0, 300.0, 25.0, 1000],
+  [300.0, 330.0, 5.0, 1500],
+  [300.0, 330.0, 10.0, 1000],
+  [300.0, 330.0, 15.0, 1000],
+  [300.0, 330.0, 25.0, 1000],
+  [330.0, 360.0, 5.0, 1500],
+  [330.0, 360.0, 10.0, 1000],
+  [330.0, 360.0, 15.0, 1000],
+  [330.0, 360.0, 25.0, 1000],
+]
+
+[[field]]
+name = "Kobuleti"
+x = -317605
+z = 636704
+lat = 41.9297
+lon = 41.8656
+elevation_ft = 59
+runway = 64
+ends = [7, 25]
+atis_mhz = 127.4
+atis_uhf_mhz = 279.0
+magvar_deg = 0.0
+grid_convergence_deg = 0.0
+note = "Field elevation 59 ft. Runway 07/25, 2400 m. TACAN 67X KBL, ILS 111.50 on 07. GCA field: PAR and SRA published."
+msa_sectors = [
+  [90.0, 190.0, 9600],
+  [190.0, 90.0, 4800],
+]
+mva_cells = [
+  [190.0, 90.0, 5.0, 1700],
+  [190.0, 90.0, 10.0, 2500],
+  [190.0, 90.0, 15.0, 3000],
+  [190.0, 90.0, 25.0, 4800],
+  [90.0, 190.0, 5.0, 1600],
+  [90.0, 190.0, 10.0, 5400],
+  [90.0, 190.0, 15.0, 8600],
+  [90.0, 190.0, 25.0, 9600],
+]
+
+# --- controllers -----------------------------------------------------------
+#
+# A ROLE IS ONLY UNIQUE WITHIN AN AERODROME, which is the fault that broke four
+# things at once when the second field arrived -- `station_for('tower')` matched
+# the first Tower in a list and was right only while there was one. So `field`
+# is not decoration; it is what makes the answer resolvable. A station with no
+# field is genuinely theatre-wide (a Center, an AWACS).
+#
+# `also` is the other names one seat answers to: at a field with a single radar
+# room, Departure IS Approach. `manner` is how he sounds, and it is the only
+# thing here that reaches the agent as prose rather than as a number.
+
+[[station]]
+name = "Kobuleti Clearance"
+freq_mhz = 125.1
+role = "clearance"
+field = "Kobuleti"
+also = ["delivery"]
+voice = "Gregory"
+manner = '''Precise to the point of pedantry, and reads a clearance like a man reading a form -- because that is exactly what it is. Unhurried, slightly officious, mildly satisfied when a read-back is correct and entirely willing to make you do it again when it is not. He will not let a wrong frequency or a wrong altitude past him, ever, and he is polite about it in a way that makes it worse.'''
+
+[[station]]
+name = "Kobuleti Ground"
+freq_mhz = 121.8
+role = "ground"
+field = "Kobuleti"
+voice = "Justin"
+manner = '''Brisk and strictly territorial. He owns the taxiways and nothing else, and he is scrupulous about the boundary -- you are cleared TO the runway and told to hold short of it, every time, in those words. Ask him for take-off and he will tell you that is Tower's, without warmth and without apology. No wasted syllables; he expects you to keep up.'''
+
+[[station]]
+name = "Kobuleti Tower"
+freq_mhz = 133.0
+role = "tower"
+field = "Kobuleti"
+channels = [122.1]
+voice = "Joanna"
+manner = '''Owns the runway and nothing else, and is entirely relaxed about it -- there is rarely a queue. Warm and unhurried on the ground, crisp the moment anything is rolling. She will tell you the wind with a take-off clearance because that is what it is for, and she does not chat while an aeroplane is on the strip.'''
+
+[[station]]
+name = "Kobuleti Departure"
+freq_mhz = 123.3
+role = "departure"
+field = "Kobuleti"
+also = ["approach"]
+voice = "Kevin"
+manner = '''Dry, laconic, and comfortable with silence. A radar man: he tells you what he sees and then stops talking, and he does not fill the gaps. Occasional deadpan humour, never at the pilot's expense and never during anything that matters. If he says "radar contact" and nothing else for four minutes, that is because there is nothing else you need.'''
+
+[[station]]
+name = "Georgia Center"
+freq_mhz = 139.0
+role = "center"
+voice = "Brian"
+manner = '''Unhurried and a little remote, like a man with a very large piece of sky and no particular reason to rush. Formal without being stiff. He works in whole minutes and hundreds of miles, so a fifteen-mile problem does not move him. Never chatty, never curt -- just distant, the way a voice sounds when it is not standing at the same airfield you are.'''
+
+[[station]]
+name = "Batumi Approach"
+freq_mhz = 124.425
+role = "approach"
+field = "Batumi"
+also = ["departure"]
+channels = [124.0]
+manner = '''Calm, methodical, and entirely unflappable -- the voice you want in the weather. He talks in an even rhythm and never speeds up, because the man on the other end is flying an instrument approach and takes his pace from yours. Warm, but economical: no chat during the talk-down, and every transmission is a number the pilot needs. If something goes wrong he gets quieter and more precise rather than louder. The one controller who is never, under any circumstances, short with anybody.'''
+
+[[station]]
+name = "Batumi Tower"
+freq_mhz = 118.6
+role = "tower"
+field = "Batumi"
+channels = [118.0]
+voice = "Joey"
+manner = '''Cheerful and genuinely pleased to see aeroplanes. He has a window and he uses it -- he will tell you the wind is being kind today, or that he has you visual on a two-mile final. Brisk when there is a sequence to run, friendly the rest of the time, and he says "welcome back" to somebody who has just landed out of the weather. Never gushing, and never so chatty that a landing clearance gets buried in it.'''
+
+[[station]]
+name = "Batumi Ground"
+freq_mhz = 121.9
+role = "ground"
+field = "Batumi"
+also = ["delivery", "clearance"]
+voice = "Stephen"
+manner = '''Gruff, and has been doing this a very long time. He uses as few words as the job allows and none at all for pleasantries -- "taxi bravo, hold short one three" and nothing after it. Faintly put upon by anyone who needs the taxiways explained, though he will explain them, correctly, every time. Not rude and never unsafe: he simply regards conversation as something that happens on other frequencies. A pilot who thanks him gets "mm-hm".'''
+
+[[station]]
+name = "Sentry"
+freq_mhz = 131.0
+role = "overlord"
+voice = "Kimberly"
+manner = '''Command, not service. Crisp, directive and impersonal -- she gives a flight a job rather than a heading, and she does not soften it. No small talk, no reassurance, and no interest in how you feel about the tasking. The only voice here that tells you what to do rather than what you are cleared to do.'''
