@@ -69,7 +69,7 @@ def _channels(profile: R.ApproachProfile) -> list[str]:
     # below is about homing one and there is now such a thing as an approach
     # that homes nothing at all (#163). Two Nones, one lesson.
     if (getattr(profile, "arrival_fix", None) is None
-            or getattr(profile, "beacon", None) is None):
+            or getattr(profile, "navaid", None) is None):
         return []
     enr_name, enr_freq = profile.station(enroute=True)
     twr_name, twr_freq = profile.station()

@@ -1570,7 +1570,7 @@ class Controller:
                 # conditional on the fact it asserts, which is what it should
                 # always have been.
                 homing = (f" -- you will be homing {pro.navaid.name} from there"
-                          if getattr(pro, "beacon", None) is not None else "")
+                          if getattr(pro, "navaid", None) is not None else "")
                 call = (f"{self._addr(ac)}, {here}, {blind}"
                         f"report {fix.name}. At {fix.name} contact {tower} "
                         f"{spell_freq(tower_freq)}{homing}.")

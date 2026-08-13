@@ -3943,7 +3943,7 @@ def push_fixes(base: str, profile) -> int:
     # BOTH SLOTS. `beacon` was one field and is two: the aerodrome is always
     # there and a beacon only sometimes, and each is a place the controller
     # may need to resolve by name.
-    for attr in ("aerodrome", "beacon", "outer_hold", "arrival_fix"):
+    for attr in ("aerodrome", "navaid", "outer_hold", "arrival_fix"):
         f = getattr(profile, attr, None)
         if f is not None and getattr(f, "name", None):
             fixes.setdefault(f.name, f)

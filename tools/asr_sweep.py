@@ -351,15 +351,31 @@ BASELINE = {
 TURN_SLACK = 0.05
 
 
+# THE AERODROME, not the beacon. A procedure is named `<field>-<kind>` --
+# "batumi-asr", "nellis-ils" -- and both helpers below read `beacon` for the
+# field's name because that is where it lived until #163 split the slot. The
+# read went to a property, then to a renamed attribute, and `getattr` answered
+# "" both times: every key came out `"-asr"`, nothing matched, and the sweep
+# reported NO APPROACHES ON THE MAP.
+#
+# It did not fail. It printed "no approach called 'batumi-asr'" and returned 2,
+# which `tools/check.py` renders as SKIP -- so the one instrument that measures
+# the GEOMETRY of an approach has been standing down since the split, saying so
+# on every run, in the line everybody reads as "needs the sim". That is the
+# whole argument for `check.py` naming what a skip leaves unguarded.
+def _field_of(p) -> str:
+    """The aerodrome this procedure arrives at, lower-cased, or ''."""
+    return (getattr(getattr(p, "aerodrome", None), "name", "") or "").lower()
+
+
 def _known_profiles() -> list[str]:
     """Every approach the loaded theatre publishes, by the name a plan uses."""
     from marshall.core import theatre as _t
     out = []
     for p in getattr(_t.current(), "approaches", ()) or ():
-        beacon = (getattr(getattr(p, "beacon", None), "name", "") or "").lower()
-        kind = (getattr(p, "kind", "") or "").lower()
-        if beacon and kind:
-            out.append(f"{beacon}-{kind}")
+        field, kind = _field_of(p), (getattr(p, "kind", "") or "").lower()
+        if field and kind:
+            out.append(f"{field}-{kind}")
     return out
 
 
@@ -369,9 +385,8 @@ def _profile_named(key: str):
     from marshall.core import theatre as _t
     key = (key or "").strip().lower()
     for p in getattr(_t.current(), "approaches", ()) or ():
-        beacon = (getattr(getattr(p, "beacon", None), "name", "") or "").lower()
-        kind = (getattr(p, "kind", "") or "").lower()
-        if key in (f"{beacon}-{kind}", beacon, kind):
+        field, kind = _field_of(p), (getattr(p, "kind", "") or "").lower()
+        if key in (f"{field}-{kind}", field, kind):
             return p
     return None
 

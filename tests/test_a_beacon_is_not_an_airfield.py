@@ -185,5 +185,76 @@ class TestTheMergedAnswerIsGone(unittest.TestCase):
                 self.assertIsNotNone(q.aerodrome)
 
 
+class TestNothingStillReadsTheRetiredSlot(unittest.TestCase):
+    """`beacon` is not an attribute of anything. Asserted by grep, on purpose.
+
+    THE SLOT WAS RETIRED IN THREE STEPS and each one left readers behind, which
+    is the whole finding of #162: a mechanism can be replaced while the old path
+    keeps most of the call sites, and every acceptance criterion still passes
+    because none of them asks HOW MANY.
+
+        4d174de  split it, and left `beacon` as a property returning the merged
+                 answer -- six readers, pinned by a test
+        31e0670  deleted the property, and deleting it found FOUR MORE that had
+                 reached it through `getattr(p, "beacon", None)` and so were
+                 invisible to both the grep and the pin
+        037a979  renamed the surviving slot to `navaid`, and left THREE:
+
+            controller.py    the letdown check-in tested `beacon` while saying
+                             `navaid.name` -- so " -- you will be homing BATUMI
+                             from there" stopped being said at all
+            briefing.py      the same shape, and the plate silently lost its
+                             whole **Channels.** paragraph: which frequency the
+                             enroute leg is flown on, and why
+            agent_atc.py     the beacon stopped being registered as a resolvable
+                             fix name
+
+    None of the three raised. `getattr(p, "beacon", None)` answers None for an
+    attribute that does not exist, which is indistinguishable from a procedure
+    that genuinely has no beacon -- so a rename produced a controller who said
+    less, correctly-shaped and quietly wrong. That is the exact failure mode
+    `test_asking_an_ILS_for_a_navaid_raises` guards from the other direction,
+    and it is why this one is a grep rather than a behaviour.
+
+    Comments may say "beacon" as often as they like; it is still the word for
+    the thing. What may not survive is a READ.
+    """
+
+    # `\.beacon` catches the attribute, the `getattr` form catches the one that
+    # hid from the first two greps.
+    READS = __import__("re").compile(
+        r"\.beacon\b|getattr\([^,]+,\s*[\"']beacon[\"']")
+
+    def test_no_module_reads_it(self):
+        import pathlib
+        root = pathlib.Path(__file__).resolve().parents[1]
+        bad = []
+        for where in ("src", "tools"):
+            for path in sorted((root / where).rglob("*.py")):
+                for n, line in enumerate(path.read_text().splitlines(), 1):
+                    code = line.split("#", 1)[0]
+                    if self.READS.search(code):
+                        bad.append(f"{path.relative_to(root)}:{n}: {line.strip()}")
+        self.assertEqual(bad, [], "\n".join(
+            ["`beacon` is not an attribute -- the slot is `navaid`, and a "
+             "getattr for the old name answers None rather than raising:",
+             *bad]))
+
+    def test_the_letdown_check_in_still_names_the_beacon(self):
+        """The sentence the last rename dropped. It is the one thing a pilot
+        needs off that transmission: the fix he tunes when he gets there."""
+        from marshall.atc import controller as C
+        ctl = C.Controller(getattr(R, THE_LETDOWN))
+        ctl.check_in("Pony 1-1", 1)
+        said = " ".join(tx.text for tx in ctl.out)
+        self.assertIn("homing BATUMI", said)
+
+    def test_the_letdown_plate_still_says_which_channel(self):
+        from marshall.atc import briefing
+        plate = briefing.plate(getattr(R, THE_LETDOWN))
+        self.assertIn("**Channels.**", plate)
+        self.assertIn("homing BATUMI", plate)
+
+
 if __name__ == "__main__":
     unittest.main()
