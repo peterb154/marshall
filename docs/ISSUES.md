@@ -9130,3 +9130,79 @@ it changes what a controller says.
 Labels: needs-flight-test
 
 ---
+
+## [SEAM-20] The bridge owes the director two facts it can no longer derive — #166
+
+Two halves of one thing: the director is asked questions only the BRIDGE knows
+the answer to, and #162 quietly removed the last channel for one of them.
+
+### The station list has no writer, and that is a regression from #162
+
+`push_sectors` states the rule outright — *"THE BRIDGE KNOWS WHICH MAP IS LOADED
+AND THE DIRECTOR DOES NOT"* — and the director container has no `config/` at
+all: `catalogue.maps()` returns `[]` and `route.STATIONS` raises
+`FileNotFoundError: /config/theatres/caucasus.toml`. So reading the theatre in
+the director's process is precisely the mistake that comment records.
+
+Until last night the seats reached it by ACCIDENT: `ApproachProfile` carried a
+`stations` list, `profile_to_dict` is `asdict`, and the whole profile is pushed.
+**#162 step 1 took stations off the profile — correctly — and nothing replaced
+the writer.** `'stations' in profile_to_dict(BATUMI_ASR)` is `False` now, and the
+live rows show the seam exactly:
+
+    batumi-asr  | has_stations t | 9      <- fossil, written 25 July
+    batumi-ils  | t | 9                   <- fossil
+    batumi-ndb  | f | 0                   <- written AFTER the move
+    nellis-ils  | t | 9                   <- fossil
+    tonopah-ils | t | 8                   <- fossil
+
+`batumi-ndb` is what every row looks like from now on, so on a fresh database
+`look_up_frequency` answers *"no station list is published"* to every question
+about every field on every map, for ever. The only reason it works today is that
+four rows predate the change.
+
+`sectors` is not a substitute: 5 rows, all with geometry, and no Ground, no
+Clearance, no Sentry.
+
+**What it wants:** a `push_stations` beside `push_sectors` in `agent_atc.py`,
+pushing the theatre's seats as the bridge already pushes its sectors, its fixes
+and its plate. Not a table nothing writes — that is what `tools/unwired.py`
+exists to catch.
+
+### A promise knows its seat, and the callback still guesses
+
+`director/tools/hooks.py` now keys hooks on `(session, seat)` and every hook
+carries its `station`, `role` and `seat`, so the promise is filed under the man
+who made it. The last step is the bridge's: `agent_atc.py:5812` calls
+`hook_frequency(why, bridge.heard_on, bridge.last_active_hz[0])`, which falls
+back to **the last channel anybody spoke on**. It must read `hook["station"]`
+and resolve that seat's own frequency.
+
+The director cannot close this half either — it is never told which frequency a
+seat sits on, which is the same asymmetry as above.
+
+**Until it is fixed**, Kobuleti Ground promises *"I'll call you back for taxi"*
+and the callback goes out wherever the guess lands — on a busy sortie, Batumi
+Approach's channel.
+
+**Acceptance criteria.**
+
+- A fresh director database answers a frequency question correctly for every
+  seat on both maps, and a test proves the push happens at bridge start rather
+  than asserting the rows exist.
+- A hook set by Kobuleti Ground is voiced on Kobuleti Ground's frequency, with
+  no other traffic required to disambiguate it.
+- `tools/unwired.py` stays green: nothing is added that nothing writes or reads.
+
+Tests: `tests/test_a_promise_belongs_to_a_seat.py` and
+`tests/test_a_frequency_comes_off_his_own_map.py` cover the director halves and
+pass; both bridge halves are untested because they do not exist.
+Code: `src/marshall/atc/agent_atc.py` (`push_sectors` neighbourhood, and
+`hook_frequency` at ~5812).
+
+Status: OPEN — found by fixing the director side, which could not reach either.
+The station half is a REGRESSION from #162 and should be fixed before a sortie
+on a database that has been reset.
+Labels: needs-flight-test
+
+---
