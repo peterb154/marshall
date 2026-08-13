@@ -3914,9 +3914,35 @@ is not always red.
 ## [HO-3] Nothing hands a landed aircraft to Batumi Ground — #77
 labels: bug, needs-flight-test
 
-**Status:** FIXED 10 August with [SEP-5] / #88, needs the next sortie. It was
-one of three symptoms of the same unreachable branch, not a gap of its own.
-bullet under "still dead ends" in an issue all of whose own criteria are met.
+**Status:** FIXED 13 August, needs the next sortie. Half of it went with
+[SEP-5] / #88 on 10 August — the phase branch that hands a parked aeroplane over
+could not run while he was on the ground — and that left the rung reachable but
+still entered by the PILOT asking for a stand, which is criterion 1 unmet: he
+had to speak to advance the last rung of his own sortie.
+
+**What closed it is a sentence, not a mechanism.**
+
+    "We can just have tower say something like -- 'sockeye, batumi tower,
+     welcome, exit runway and contact ground' once it's on the ground"
+
+`Controller.report_down` already fires off the radar poll with no pilot in it,
+already says *"welcome, exit the runway when able"*, and now names Ground and
+his frequency in the same breath and moves the phase to `taxi_in` with it. The
+words and the rung are decided in one place from one lookup, because a handoff
+spoken by one authority and booked by another is two answers to one question
+(#115).
+
+**The design that was NOT built, and why it is worth writing down.** The
+obvious reading of criterion 1 is to watch him VACATE and hand him over
+afterwards, and there is no honest observable for it. An aerodrome row carries a
+position, an elevation, a landing heading and the runway designators — no
+threshold coordinates and no length — so "clear of the strip" reduces to a
+threshold over a cross-track measured from a reference point that is only
+approximately on the centreline. Tuned generously it is a handoff that never
+comes for a man who parks near the runway line; tuned tightly it is Tower
+releasing an aeroplane still rolling on the active, which is the invariant this
+engine exists to hold. A real tower does not wait for any of that: the frequency
+change goes out during the roll-out. Deleting the question beat answering it.
 
     F5. After landing and clearing the runway, wait. Say nothing.
         Nothing hands you to Batumi Ground.
@@ -3935,17 +3961,32 @@ call".
 
 **Ground transitions are not geometry**, which is what makes this cheap: a phase
 with no volume is owned outright by the controller `phases.py` names, so moving
-into it IS the handoff. The rule wants to be `landed -> ground at the arrival
-field`, in the same table as the rest.
+into it IS the handoff. It needed no new rule row in the end — `taxi_in` is
+already Ground's phase and already has no successor, so the landing simply moves
+him onto it.
 
 **Acceptance criteria**
 1. After landing and clearing, the pilot is handed to Batumi Ground with the
-   frequency, unprompted, with no request.
+   frequency, unprompted, with no request. **MET, and by a test rather than a
+   claim** — `TowerGivesHimGroundOnTheRollOut` in
+   `tests/test_ground_procedure.py` lands an aeroplane, dispatches no intent at
+   all, and asserts the name, the spoken frequency and the rung.
 2. It is the ARRIVAL field's Ground — not Kobuleti's, which is the failure mode
-   two aerodromes made reachable.
-3. `tests/test_handoff_rules.py` covers it, and the structural test that every
-   rule reads the trend still passes.
+   two aerodromes made reachable. **MET**: `test_it_is_the_ARRIVAL_fields_ground`
+   lands under each Tower in turn, and the other field's ground frequency is
+   asserted absent as well as the right one present.
+3. ~~`tests/test_handoff_rules.py` covers it~~ — it does not, and that is
+   correct rather than a shortfall. The transition is phase ownership and not a
+   rule row, so the coverage lives beside the other ground transitions in
+   `test_ground_procedure.py`; the structural test that every rule reads the
+   trend is untouched and still passes.
 4. Card row F5 stops describing a known gap and becomes an ordinary check.
+   **MET** — F5 and F5b are rewritten, and the preamble note warning that the
+   card and the design disagreed is gone.
+5. **AND #100 IS NOT REVERTED.** Its three criteria are asserted from the far
+   side of the new trigger: nothing hands him on once he is with Ground, Ground
+   still owns the parking instruction when he arrives already on `taxi_in`, and
+   `taxi_in` still has no successor.
 
 ---
 
@@ -5092,6 +5133,17 @@ landed is a taxi IN.
 
 The ladder now closes: Tower keeps him while he is on the runway, the taxi
 request is what gives him to Ground, and Ground parks him with nobody after.
+
+**AMENDED 13 August — one sentence of that was wrong, and only one.** "The taxi
+request is what gives him to Ground" was a convenient trigger, not a designed
+one: it made the PILOT responsible for advancing the last rung of his own
+sortie, which is exactly what #77's criterion 1 refuses. The right principle is
+two paragraphs above and this issue applied it only to telling the two journeys
+apart — **the ENGINE knows which rung he is on**. It knows he has landed, too.
+So the trigger moved from his mouth to the sim: `report_down` fires off the
+radar poll and gives him Ground on the roll-out. Everything else here stands,
+including all three criteria below, and the request path is untouched — a pilot
+who asks anyway gets what he got yesterday.
 
 Reported live, 11 August — the last exchange of the sortie.
 
@@ -8237,6 +8289,32 @@ recovery and taxi in, which is the behaviour it is about (card rows for #77 and
 
 ## [KB-5] The diagnostics page consoled: a value with no source, no age, and no record of deciding nothing — #155
 labels: bug, needs-flight-test
+
+**ADDED 13 August — a position must name what it is measured FROM.**
+
+    "So for 160, the diag screen should show the reference bra - whatever
+     that be."
+
+Today the board prints a range and a radial and never says the datum. That is
+exactly how #160 stayed invisible: every Center range was measured from Batumi
+because `field_origin` fell through to the loaded arrival's beacon, and no
+screen anywhere said "Batumi" — you had to read the function to find out.
+
+A number whose reference is unstated is the same defect this whole issue is
+about, in its purest form. It is not wrong, it is unfalsifiable.
+
+So the payload carries the reference beside the position — the NAME and WHY it
+was chosen — and the board renders it:
+
+    position   23.4 nm / 033°   from BATUMI · his destination
+    position   23.4 nm / 033°   from BATUMI · the loaded approach   <- today
+    position   18.1 nm / 210°   from BULLSEYE · nobody is working him
+
+**Do this BEFORE #160 is fixed, not after.** The second line is what the board
+would print today, and it makes the bug self-evident to anyone glancing at the
+page. A board that confesses its provenance is worth more than one that is
+quietly right, because the next wrong datum will not be this one.
+
 
     "I feel like the diag page might need revamping. I feel like it might have
      been lying a little to console me. I want to make sure that it represents
