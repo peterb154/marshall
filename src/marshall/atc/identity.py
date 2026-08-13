@@ -137,11 +137,29 @@ class Unit:
     callsign: str = ""         # what something has already correlated it to
     type: str = ""             # the airframe, which is where equipment comes from
     manned: bool = False       # is there a person in it? see `by_elimination`
-    # THE SIM SAID SO, from its land/takeoff events -- not inferred from
-    # altitude and speed. False means either "airborne" or "nothing has told
-    # us", and the caller keeps its own fallback for the second; see
-    # director/tools/events.py and [ARCH-3] / #41.
+    # THE SIM SAID SO, from `Unit.inAir()` on the track row -- not inferred
+    # from altitude and speed. THE SIM SAYS HE IS DOWN, and nothing else: it is
+    # False for an aeroplane in the air AND for one nothing has been reported
+    # about, which is why it is not the thing to ask when you mean "flying".
     on_ground: bool = False
+    # ...AND THE THIRD ANSWER, WHICH USED TO BE DESCRIBED HERE AND NOT CARRIED.
+    #
+    # The comment on `on_ground` said "False means either 'airborne' or
+    # 'nothing has told us', and the caller keeps its own fallback for the
+    # second" -- and no caller did. There was nothing to keep a fallback ON: by
+    # the time a Unit reached anybody there were two states where the database
+    # had three, so `not on_ground` was the only test available and it answered
+    # True for an aeroplane radar had never reported.
+    #
+    #     None   nothing has told us      the sweep has not reached him, the
+    #                                     cache is cold, the scan is degraded
+    #     True   the sim says he is up
+    #     False  the sim says he is down  (and `on_ground` is True)
+    #
+    # `handoff._airborne` is the model: "he is flying, POSITIVELY -- not merely
+    # 'not known to be down'". Anything that MOVES an aeroplane asks
+    # `in_air is True`. [#149]
+    in_air: bool | None = None
     # "ground" or "ship" when the sim says so, empty for aircraft. The streamer
     # has always known it and used to throw it away; without it nothing
     # downstream could tell a T-55 from an F-16 -- see audit #45, where a lone
@@ -233,11 +251,20 @@ def units_on(scope: str) -> list[Unit]:
         # strongest link in the system was severed and the pilot was identified
         # only by ELIMINATION, which works with one man up and fails with two.
         # He was being called "viper".
+        # `in_air` IS READ, NOT RECONSTRUCTED. A contact dict that carries the
+        # key states one of three things; one that does not carry it has told
+        # us nothing, and `None` is what nothing looks like. Deriving it from
+        # `not on_ground` here would rebuild the collapse this exists to
+        # remove -- one line further down the pipe, where it would be harder to
+        # find. Every producer in the tree emits it: `core/scope.contacts`,
+        # `feed.tracks.contacts` and the degraded `feed.dcs.contacts_live`.
         return [Unit(c.get("label") or c.get("name", ""),
                      c.get("callsign", "") or "",
                      c.get("type", "") or "", bool(c.get("manned")),
-                     bool(c.get("on_ground")),
-                     "" if c.get("category") in ("airplane", "helicopter")
+                     on_ground=bool(c.get("on_ground")),
+                     in_air=c.get("in_air"),
+                     category="" if c.get("category")
+                     in ("airplane", "helicopter")
                      else (c.get("category") or ""))
                 for c in got if c.get("name")]
 
@@ -258,8 +285,18 @@ def units_on(scope: str) -> list[Unit]:
         grounded = "on the ground" in low
         category = next((c for c in ("ground", "ship") if f", {c}" in low), "")
         kind = kind.split(",")[0].strip()
-        out.append(Unit(name, (m.group(2) or "").strip(), kind, manned, grounded,
-                        category))
+        # THE PROSE HAS TWO STATES AND CANNOT GET A THIRD, so this parser says
+        # so out loud instead of leaving `in_air` at its `None` default. The
+        # picture prints "on the ground" or it prints nothing; there is no
+        # marker for "not known" because a controller does not say that about a
+        # blip he can see. Absence of the marker has always MEANT airborne
+        # here, and this is the fallback path -- a director too old to send
+        # contacts, or a radar hiccup -- so turning every regex-parsed aircraft
+        # into an unknown would disarm the event handoff for the one case that
+        # is already degraded. Today's behaviour, stated rather than inherited.
+        out.append(Unit(name, (m.group(2) or "").strip(), kind, manned,
+                        on_ground=grounded, in_air=not grounded,
+                        category=category))
 
         # THE REST OF THE FORMATION. They are real aeroplanes with real radios
         # and each one is somebody -- the lead's line is simply where the
@@ -277,10 +314,12 @@ def units_on(scope: str) -> list[Unit]:
                 continue
             spec = (om.group(2) or "")
             olow = spec.lower()
+            ogrounded = "on the ground" in olow
             out.append(Unit(oname, "", spec.split(",")[0].strip(),
-                            "manned" in olow, "on the ground" in olow,
-                            next((c for c in ("ground", "ship")
-                                  if f", {c}" in olow), "")))
+                            "manned" in olow, on_ground=ogrounded,
+                            in_air=not ogrounded,     # same two states -- above
+                            category=next((c for c in ("ground", "ship")
+                                           if f", {c}" in olow), "")))
     return out
 
 

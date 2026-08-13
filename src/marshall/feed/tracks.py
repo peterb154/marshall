@@ -716,7 +716,17 @@ def contacts(bindings: dict | None = None) -> list[dict] | None:
     # the same fact reconstructed from a lossy log -- blank for anything that
     # spawned parked, gone after a director restart. NULL here means the sweep
     # has not run yet, and that is not the same as "airborne".
+    #
+    # AND THE ROW CARRIES THAT THIRD ANSWER OUT, which this comment used to
+    # promise and the dict below used to drop: two sets ("down" and everything
+    # else) cannot say "not known", so a unit the sweep had not reached left
+    # here looking exactly like one the sim says is flying. `in_air` is emitted
+    # beside `on_ground` -- same shape as `core/scope.contacts`, because these
+    # two functions serve the same dict to the same consumers and a fact that
+    # survives one path and not the other is worse than one that survives
+    # neither. [#149]
     down = {r[1] for r in rows if r[13] is False}
+    air = {r[1]: r[13] for r in rows}
     naming = _unique_labels(rows)
     out = []
     for group in _clusters(rows):
@@ -730,6 +740,7 @@ def contacts(bindings: dict | None = None) -> list[dict] | None:
                 "category": (r[9] or ""),
                 "manned": bool(r[8]),
                 "player": r[8] or "",
+                "in_air": air.get(name),
                 "on_ground": name in down,
                 "lat": r[10], "lon": r[11],
                 "alt_ft": alt_ft, "heading": heading, "speed_kt": speed_kt,
@@ -995,6 +1006,20 @@ def _render(rows: list, bindings: dict) -> list[str]:
     #
     # `in_air IS NULL` means the sweep has not reached this unit yet, and that
     # is a third answer: not down, not flying, not known.
+    #
+    # AND THIS FUNCTION HAS TWO STATES BY CONSTRUCTION, WHICH IS THE HONEST
+    # THING TO SAY RATHER THAN LEAVE THE COMMENT ABOVE STANDING OVER A SET.
+    # The picture is PROSE for a model to read: a contact is printed "on the
+    # ground" or it is not, and there is no third marker to print because a
+    # controller does not say "I cannot tell whether he is flying" about a blip
+    # he can see. So a unit the sweep has not reached renders exactly like one
+    # in the air, deliberately, and that is unchanged.
+    #
+    # What must NOT happen is a decision being taken on it. The structured path
+    # (`contacts`, `core/scope.contacts`) carries `in_air` with all three
+    # answers, and everything that acts -- the handoff on the sim's event, the
+    # state on the board -- reads that. The prose stays a rendering at the edge,
+    # which is what `core/scope`'s own docstring says it is for. [#149]
     down = {r[1] for r in rows if len(r) > 13 and r[13] is False}
     for group in _clusters(rows):
         label, name, typ, alt_ft, heading, speed_kt, nm, radial = group[0][:8]
