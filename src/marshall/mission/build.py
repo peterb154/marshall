@@ -313,7 +313,7 @@ def add_testbed(m, usa) -> None:
 
 
 def add_session_slots(m, usa, air_alt_ft: dict | None = None,
-                      each: int = 2) -> list[tuple[int, str]]:
+                      each: int = 2) -> list[tuple[int, str, str]]:
     """Eight client slots for a two-pilot session: half on the ramp, half airborne.
 
     RETURNS ITS OWN (unit id, type) SLOTS, and that return value is not
@@ -378,7 +378,7 @@ def add_session_slots(m, usa, air_alt_ft: dict | None = None,
     # two-field ladder (see `_short_card`), and he is pulled from session
     # missions anyway -- so parking him where his own controllers are is the
     # honest arrangement rather than giving him a card he cannot use.
-    mine: list[tuple[int, str]] = []
+    mine: list[tuple[int, str, str]] = []
     for name, kind, how, home in (
             ("Viper", F_16C_50, StartType.Warm, "Kobuleti"),
             ("Pony", P_51D_30_NA, StartType.Cold, "Batumi")):
@@ -399,7 +399,7 @@ def add_session_slots(m, usa, air_alt_ft: dict | None = None,
         for n, unit in enumerate(grp.units, start=1):
             unit.name = f"{name} 1-{n}"
             unit.set_client()
-            mine.append((unit.id, kind.id))
+            mine.append((unit.id, kind.id, home))
         set_channels(grp, home=home)
         # THE FLIGHT PLAN IN THE AEROPLANE, not only on the kneeboard.
         #
@@ -445,8 +445,11 @@ def add_session_slots(m, usa, air_alt_ft: dict | None = None,
             # route waypoints and defaults to about 83 knots -- below an F-16's
             # stall. This trap has now bitten four times in this file.
             unit.speed = speed_ms
-            mine.append((unit.id, kind.id))
-        set_channels(grp)
+            # THE FIELD HE IS RECOVERING INTO. He is airborne, so there is no
+            # ramp to read it off -- and a card is worth having for the seats
+            # he is about to need, not for the ones he never taxied past.
+            mine.append((unit.id, kind.id, R.ARRIVAL_FIELD))
+        set_channels(grp, home=R.ARRIVAL_FIELD)
         for fix in R.FIXES[1:]:
             grp.add_waypoint(Point(fix.x, fix.z, m.terrain), alt_m)
         for wp in grp.points:
@@ -605,7 +608,7 @@ def build(weather: str = "light", traffic: bool = False,
     for unit in flight.units:
         unit.speed = cruise_ms
         unit.alt = alt_m
-    set_channels(flight)
+    set_channels(flight, home=R.ARRIVAL_FIELD)
 
     # (The old lone "Sockeye" hot-ramp listening slot lived here. The squadron
     # below replaces it -- every one of those is a client on the ramp, so there
@@ -636,7 +639,7 @@ def build(weather: str = "light", traffic: bool = False,
         unit.alt, unit.speed = alt_m, jug_ms
         unit.name = f"Hammer 1-{n}"
         unit.set_client()
-    set_channels(jugs)
+    set_channels(jugs, home=R.ARRIVAL_FIELD)
 
     # ---- the squadron ----------------------------------------------------
     #
@@ -649,23 +652,28 @@ def build(weather: str = "light", traffic: bool = False,
     #
     # Every one of them is a client. An empty slot costs nothing; a missing one
     # costs a squadron mate the sortie.
-    client_slots: list[tuple[int, str]] = []
+    client_slots: list[tuple[int, str, str]] = []
     # A SESSION MISSION REPLACES THE SQUADRON RATHER THAN JOINING IT. Seventeen
     # warbird slots fill every parking space at Batumi, and an F-16 needs a
     # bigger one than any that is left -- so the eight slots actually being
     # flown could not spawn. Two pilots do not need a squadron behind them, and
     # an empty ramp is also a quieter scope to debug against.
+    # WHERE THEY PARK, written once. The ramp decides the aerodrome, the
+    # aerodrome decides the comms card, and the two used to be a literal here
+    # and a table order in `write_presets` -- which is how the Mustang on this
+    # ramp came to carry four Kobuleti frequencies.
+    ramp = R.ARRIVAL_FIELD
     for name, kind, _cruise, howmany in ([] if session else SQUADRON):
         sq = m.flight_group_from_airport(
             country=usa, name=name, aircraft_type=kind,
-            airport=m.terrain.airports["Batumi"],
+            airport=m.terrain.airports[ramp],
             start_type=StartType.Cold, group_size=howmany)
         sq.frequency = R.TOWER.freq_mhz        # cold on the ramp: ground/tower
         for n, unit in enumerate(sq.units, start=1):
             unit.name = f"{name} 1-{n}"
             unit.set_client()
-            client_slots.append((unit.id, kind.id))
-        set_channels(sq)
+            client_slots.append((unit.id, kind.id, ramp))
+        set_channels(sq, home=ramp)
 
     if traffic:
         add_traffic(m, usa)
@@ -748,8 +756,10 @@ def build(weather: str = "light", traffic: bool = False,
     if session:
         return m, list(session_slots)
     slots = list(client_slots)
-    slots += [(u.id, P_51D_30_NA.id) for u in flight.units]
-    slots += [(u.id, P_47D_30.id) for u in jugs.units]
+    # AIRBORNE AND INBOUND, so the field on his card is the one he recovers
+    # into rather than one he never left.
+    slots += [(u.id, P_51D_30_NA.id, R.ARRIVAL_FIELD) for u in flight.units]
+    slots += [(u.id, P_47D_30.id, R.ARRIVAL_FIELD) for u in jugs.units]
     return m, slots
 
 
@@ -1070,35 +1080,97 @@ def set_channels(group, home: str = "") -> None:
                     break                       # this radio has no such preset
 
 
-def write_presets(miz: Path, slots: list[tuple[int, str]]) -> None:
+PRESET_BUTTONS = 5
+
+
+def _preset_body(home: str) -> str:
+    """The SETTINGS.lua an aeroplane BASED AT `home` gets on its buttons.
+
+    THE OTHER FIELD'S FIRST FIVE IS WHAT THIS USED TO WRITE. It read
+    `[s.freq_mhz for s in R.STATIONS][:5]` -- the theatre's table in table
+    order, which begins at the departure field -- and `PRESET_PATHS` covers
+    only the P-51 and the P-47, which are exactly the airframes parked at
+    BATUMI. So the Mustang pilot on the Batumi ramp pressed A, B, C and D and
+    reached four Kobuleti controllers forty miles up the coast, with no Batumi
+    frequency on his set at all:
+
+        1  125.100  Kobuleti Clearance      channels_for(limit=5, home=Batumi)
+        2  121.800  Kobuleti Ground           124.425  Batumi Approach
+        3  133.000  Kobuleti Tower            118.600  Batumi Tower
+        4  123.300  Kobuleti Departure        121.900  Batumi Ground
+        5  139.000  Georgia Center            139.000  Georgia Center
+                                              125.100  Kobuleti Clearance
+
+    This is `stations[:4]` alive in a second place -- the same fault
+    `channels_for` was written to end, in the one file that was still slicing
+    the raw table. The docstring above it said "The presets are the CONTROLLERS
+    now... Center, Approach, Tower", which is another comment correcting its own
+    code.
+
+    So it asks `channels_for`, which is the one function the mission, the
+    kneeboard and the tests all read, and hands it the field the aeroplane is
+    actually standing on. `_short_card` then does the choosing it was written
+    for: his own aerodrome's seats first, the region controller keeping a
+    button because he is reachable from anywhere, and the other field's
+    controllers falling off the end.
+    """
+    freqs = [mhz for _, mhz in channels_for(limit=PRESET_BUTTONS, home=home)]
+    while len(freqs) < PRESET_BUTTONS:
+        freqs.append(freqs[-1] if freqs else R.STATIONS[0].freq_mhz)
+    return ("settings=\n{\n\t[\"dials\"]=\n\t{\n\t\t[\"channel\"]=0,\n\t},\n"
+            "\t[\"presets\"]=\n\t{\n"
+            + "".join(f"\t\t[{i+1}]={int(f*1_000_000)},\n"
+                      for i, f in enumerate(freqs[:PRESET_BUTTONS]))
+            + "\t},\n}\n")
+
+
+def write_presets(miz: Path, slots: list[tuple[int, str, str]]) -> None:
     """SCR-522 channel presets. They can only be set on the ground, so without
     this the flight has no way to tune the controllers.
 
     The presets are the CONTROLLERS now, not beacons. Under a radar approach the
     pilot navigates by nothing, so a frequency is only ever somebody to talk to:
-    Center, Approach, Tower."""
-    presets = [s.freq_mhz for s in R.STATIONS]
-    while len(presets) < 5:
-        presets.append(presets[-1])
-    body = ("settings=\n{\n\t[\"dials\"]=\n\t{\n\t\t[\"channel\"]=0,\n\t},\n"
-            "\t[\"presets\"]=\n\t{\n"
-            + "".join(f"\t\t[{i+1}]={int(f*1_000_000)},\n"
-                      for i, f in enumerate(presets[:5]))
-            + "\t},\n}\n")
+    Center, Approach, Tower.
 
+    A SLOT IS (unit id, DCS type, FIELD), and the field is the new part. The
+    unit id decides where the avionics file is written and the type decides
+    whether we know how to write one; neither says which aerodrome the
+    aeroplane is sitting on, and that is the only thing that decides which four
+    controllers are worth a button. One body for every slot in the mission was
+    right while every client was parked at one field, and this mission has
+    clients at two. See `_preset_body`.
+    """
     with zipfile.ZipFile(miz) as zf:
         blobs = {n: zf.read(n) for n in zf.namelist()}
     blobs.setdefault("theatre", b"Caucasus")     # pydcs omits it
     wrote, skipped = {}, {}
-    for uid, kind in slots:
+    bodies: dict[str, str] = {}
+    for slot in slots:
+        # A SLOT THAT NAMES NO FIELD IS REFUSED, LOUDLY. The failure this
+        # replaces was four real frequencies at the wrong airport, which looks
+        # exactly like a working comms card until a pilot keys the mic; the
+        # unpacking error a two-tuple would raise says nothing about why.
+        if len(slot) != 3:
+            raise ValueError(
+                f"preset slot {slot!r} names no aerodrome. A card is a "
+                f"FIELD's comms ladder -- a role is unique only within one -- "
+                f"so a slot is (unit id, DCS type, field).")
+        uid, kind, home = slot
         radio = PRESET_PATHS.get(kind)
         if radio:
+            body = bodies.setdefault(home, _preset_body(home))
             blobs[f"Avionics/{kind}/{uid}/{radio}/SETTINGS.lua"] = body.encode("utf-8")
-            wrote[kind] = wrote.get(kind, 0) + 1
+            wrote[kind, home] = wrote.get((kind, home), 0) + 1
         else:
             skipped[kind] = skipped.get(kind, 0) + 1
-    for kind, n in wrote.items():
-        print(f"  presets written for {n} x {kind}  (avionics file)")
+    # WHOSE CARD, said out loud. The whole fault here was four plausible
+    # frequencies belonging to the wrong airport, and a line reading "presets
+    # written for 3 x P-51D-30-NA" is exactly as true of the wrong ones.
+    for (kind, home), n in wrote.items():
+        card = ", ".join(f"{mhz:g}" for _, mhz in
+                         channels_for(limit=PRESET_BUTTONS, home=home))
+        print(f"  presets written for {n} x {kind} based at "
+              f"{home or '(no field named)'}: {card}  (avionics file)")
     # TWO WAYS AN AEROPLANE GETS ITS PRESETS, and this warned about only one.
     #
     # A WW2 set stores them in an Avionics SETTINGS.lua, which is what the loop

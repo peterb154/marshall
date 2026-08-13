@@ -1201,17 +1201,45 @@ def he_landed(sortie: Sortie) -> tuple[bool | None, str]:
     a landed aeroplane to Ground (#77), and Ground answered a parked pilot as
     though he were departing (#100).
 
-    Judged on the board rather than on the words, and on BOTH rungs, because
-    `landed` is Tower's and `taxi_in` is Ground's and the fault was the join.
+    Judged on the board rather than on the words, and on the rung that is the
+    END of the ladder rather than on the pair, which is what this used to demand
+    and what #77 made wrong.
+
+    `landed` IS NO LONGER A RUNG THE BOARD CAN BE SAMPLED ON, at a field with a
+    Ground seat. `report_down` composes the roll-out goodbye and moves him to
+    `taxi_in` in the same call (df38ae1), so the two are one step: the board
+    goes `approach -> taxi_in` and `landed` is passed straight through.
+    `phases.derive` then refuses `taxi_in -> landed` for ever, so nothing brings
+    it back. Measured on the first `--sortie` run after that commit, 13 August:
+
+        clearance -> taxi -> holding_short -> departure -> arrival -> approach
+          -> taxi_in
+
+    -- a perfect recovery, reported FAIL by this function on the absence of a
+    state the fix had deliberately made transient. `landed` keeps its meaning at
+    a field with no Ground seat to pass him to, which is why it is REPORTED
+    when it appears rather than forbidden.
+
+    So what is asserted is the thing #154 was actually about: the last rung of
+    the ladder was reached, and reached FROM THE AIR. The second half is not
+    decoration -- `taxi_in` is a ground phase, and a fixture that never flew
+    could sit on it all day. Demanding an airborne phase before it is what makes
+    this a recovery rather than a parked aeroplane.
     """
     got = phases_reached(sortie)
-    if "landed" not in got:
-        return False, ("he never reached `landed` -- the board went "
-                       + " -> ".join(got or ["(nothing)"]))
     if "taxi_in" not in got:
-        return False, ("he landed and never reached `taxi_in`, so nobody "
-                       "parked him -- " + " -> ".join(got))
-    return True, " -> ".join(got)
+        return False, ("he never reached `taxi_in`, so nobody parked him -- "
+                       "the board went " + " -> ".join(got or ["(nothing)"]))
+    before = got[:got.index("taxi_in")]
+    from marshall.atc import phases as _ph
+    if not any(_ph.has_flown(p) for p in before):
+        return False, ("he reached `taxi_in` without ever being airborne, "
+                       "which is a parked aeroplane and not a recovery -- "
+                       + " -> ".join(got))
+    how = ("via `landed`" if "landed" in got else
+           "straight off `%s`, which is #77's roll-out goodbye moving him and "
+           "`landed` in one step" % (before[-1] if before else "?"))
+    return True, f"{' -> '.join(got)}   ({how})"
 
 
 def the_eight_rungs(events: list[dict]) -> list[tuple[float, str, str]]:
@@ -1701,6 +1729,334 @@ def _sortie(args, th, recorder: Path) -> int:
     return 1 if any(h == "FAIL" for _, h, _ in verdicts) else 0
 
 
+# --- the touch-and-go, which nothing had ever flown -------------------------
+#
+# THE GOODBYE MADE A NEW FAULT REACHABLE. #77 has Tower name Ground in the
+# roll-out transmission, unprompted, off the radar poll -- and the poll runs
+# every four seconds against a roll that takes ten to twenty. So on a
+# touch-and-go it fires: he is told to call Ground and put on `taxi_in`, and
+# then he flies. Before #164 nothing could retrieve him -- there was no row out
+# of a ground seat at all, `handoff_on_the_event` covers only approach and
+# tower, and `phases.derive` refuses `taxi_in -> landed`.
+#
+# It is enforced in TWO places and so it has to be provoked in two, which is
+# why this mode gets airborne twice off one arrival:
+#
+#   the phase guard   he is still on TOWER's frequency, and his PHASE says
+#                     Ground. `due` gives a phase whose `aims_at` is "none"
+#                     outright ownership, so without the guard the phase hands
+#                     a flying aeroplane to Ground before the rule table is
+#                     consulted at all. What a machine can judge is the
+#                     ABSENCE: no ground seat was named while he was airborne.
+#   the rule rows     he has complied -- checked in with Ground -- and THEN
+#                     gets airborne. Now he really is a ground seat's aeroplane
+#                     and `Rule("ground", "tower", "airborne")` is the only
+#                     thing that can move him. Here a machine can judge a
+#                     PRESENCE: an authorised handoff back to Tower.
+#
+# Only the second half is the invariant proving itself. The first half is the
+# half that fails silently, and a run that only flew the second would pass with
+# the guard deleted.
+
+
+def wait_for(s: Sortie, want, seconds: float, tick: float = 1.0):
+    """Poll the recorder until something appears, or give up and say so.
+
+    THE RECORD, NOT THE AUDIO -- the same bargain every other judgement in this
+    file makes. `want(events)` returns whatever it found or a falsy value, and
+    the timeout is a real answer: a transmission that had not arrived after a
+    minute did not arrive.
+    """
+    end = time.time() + seconds
+    while True:
+        got = want(s.events())
+        if got:
+            return got
+        if time.time() >= end:
+            return None
+        time.sleep(tick)
+
+
+def _after(events: list[dict], t: float, kinds: tuple[str, ...]) -> list[dict]:
+    return [e for e in events if float(e.get("t", 0.0)) > t
+            and str(e.get("kind", "")) in kinds]
+
+
+def get_airborne(ghost: Ghost, bat, heading: float, *, speed: float,
+                 seconds: float, tick: float, s: Sortie, why: str) -> None:
+    """Off the runway again, climbing away, for as long as it takes to be seen.
+
+    HE HAS TO BE POSITIVELY FLYING, because the rule says so. `_airborne` is
+    `not on_ground and range_nm is not None` and `is_on_the_ground` falls back
+    to altitude-above-the-FIELD under two hundred feet AND under sixty knots,
+    since a ghost is in `tracks` and never in the sim's unit list. So a fixture
+    that lifts off at forty knots is still on the ground to every rule that
+    matters, and the run would prove nothing.
+
+    And he must stay up for several POLLS. The monitor's clock is its own, not
+    ours; one repaint is a frame the poll can miss entirely.
+    """
+    elev = float(getattr(bat, "elevation_ft", 0) or 0)
+    print(f"\n── he gets airborne again -- {why}")
+    ghost.put(in_air=True, speed_kt=speed, alt_ft=elev + 400.0,
+              heading=heading)
+    end = time.time() + seconds
+    while time.time() < end:
+        time.sleep(tick)
+        nlat, nlon = _step(ghost.lat, ghost.lon, heading,
+                           speed * (tick / 3600.0))
+        ghost.put(lat=nlat, lon=nlon,
+                  alt_ft=min(elev + 4_000.0, ghost.alt_ft + 250.0))
+        _b, nm = _bearing_range(bat.lat, bat.lon, ghost.lat, ghost.lon)
+        s.here(nm, "BAT")
+        print(f"  .. airborne, {nm:5.1f} nm from {bat.name}, "
+              f"{ghost.alt_ft:6.0f} ft", end="\r", flush=True)
+    print()
+
+
+def put_him_down(ghost: Ghost, bat, heading: float) -> None:
+    """Stopped, on the field. `on_ground` is a speed and an altitude here."""
+    ghost.put(lat=bat.lat, lon=bat.lon,
+              alt_ft=float(getattr(bat, "elevation_ft", 0) or 0),
+              speed_kt=0.0, heading=heading, in_air=False)
+
+
+def _ground_names(th, field: str) -> set[str]:
+    """Every seat at this aerodrome that cannot have a flying aeroplane.
+
+    `_GROUND_SEATS` IS THE AUTHORITY and is read rather than copied -- the whole
+    substance of #164 is that the list is named once so its two enforcement
+    points cannot drift, and a harness with its own third copy would be the
+    same mistake one level out.
+    """
+    from marshall.atc.handoff import _GROUND_SEATS
+    return {s.name.lower() for s in th.stations
+            if s.role in _GROUND_SEATS
+            and (s.field or "").lower() == field.lower()}
+
+
+def nobody_sent_a_flying_man_to_ground(events: list[dict], th, field: str,
+                                       after: float, provoked: bool
+                                       ) -> tuple[bool | None, str]:
+    """#164, the half that fails silently -- the phase-ownership guard.
+
+    `after` is the moment he left the ground with `taxi_in` on him. Every
+    handoff from then on is judged, and a ground seat named at all is the fault:
+    before the guard the phase branch fired one every four seconds.
+    """
+    if not provoked:
+        return None, ("the goodbye never came, so he was never on `taxi_in` "
+                      "-- the situation the guard exists for did not arise")
+    seats = _ground_names(th, field)
+    bad = []
+    for e in handoffs(events):
+        if float(e.get("t", 0.0)) <= after:
+            continue
+        text = str(e.get("text", "")).lower()
+        if str(e.get("to", "")).lower() in ("ground", "clearance") or \
+                any(n in text for n in seats):
+            bad.append(e)
+    if bad:
+        return False, ("a flying aeroplane was handed to a ground seat: "
+                       + " | ".join(str(e.get("text", "")) for e in bad))
+    seen = [str(e.get("to", "?")) for e in handoffs(events)
+            if float(e.get("t", 0.0)) > after]
+    return True, ("no ground seat was named while he was flying"
+                  + (f"; what did fire: {', '.join(seen)}" if seen
+                     else "; nothing was handed over at all"))
+
+
+def tower_took_him_back(events: list[dict], th, twr, after: float
+                        ) -> tuple[bool | None, str]:
+    """#164, the half that can be seen -- `Rule("ground", "tower", "airborne")`.
+
+    He is a ground seat's aeroplane by the only measure that decides it --
+    `heard_on`, the frequency he last spoke on -- and he is flying. The one
+    thing that may move him is the rule row, and it names Tower.
+    """
+    got = [e for e in handoffs(events) if float(e.get("t", 0.0)) > after
+           and handed_to_station(str(e.get("text", "")),
+                                 str(e.get("to", "")), th) == twr.name]
+    if got:
+        return True, f"{twr.name} took him back: {got[0].get('text', '')}"
+    other = [f"{e.get('to', '?')}: {e.get('text', '')}"
+             for e in handoffs(events) if float(e.get("t", 0.0)) > after]
+    if other:
+        return False, (f"he was moved, but not to {twr.name} -- "
+                       + " | ".join(other))
+    why = [str(e.get("text", "")) for e in _after(events, after,
+                                                  ("handoff/none",))]
+    return False, ("nothing retrieved him; he is still a ground seat's "
+                   "aeroplane, airborne"
+                   + (f" -- the monitor said: {' | '.join(why[:3])}" if why
+                      else " -- and the monitor said nothing at all"))
+
+
+def the_goodbye_named_ground(events: list[dict], gnd, after: float
+                             ) -> tuple[bool | None, str]:
+    """#77 criterion 1 -- unprompted, and with the RIGHT number in it.
+
+    Two facts and #115's point is the second: the frequency he is told to dial
+    must be the frequency the handoff was booked against, or the words and the
+    record are two answers to one question.
+    """
+    from marshall.core import say
+    bye = _after(events, after, ("atc/landed",))
+    if not bye:
+        return None, "nothing was said on the roll-out at all"
+    text = str(bye[0].get("text", ""))
+    low = text.lower()
+    if gnd.name.lower() not in low:
+        return False, f"the roll-out named no Ground: {text}"
+    want = say.spell_freq(gnd.freq_mhz).lower()
+    if want not in low:
+        return False, (f"named {gnd.name} without his frequency "
+                       f"({want}): {text}")
+    ho = [e for e in _after(events, after, ("atc/handoff",))
+          if str(e.get("to", "")).lower() == "ground"]
+    if not ho:
+        return False, (f"the words carried the handoff and the record did "
+                       f"not book it: {text}")
+    return True, f"{text}"
+
+
+def _touch_and_go(args, th, recorder: Path) -> int:
+    """An arrival, a landing, and then he flies -- twice, for two enforcements."""
+    from marshall.core import say
+    bat = th.field_named(th.arrival)
+    apr = _st(th, "approach", bat.name)
+    twr = _st(th, "tower", bat.name)
+    gnd = _st(th, "ground", bat.name)
+    if None in (bat, apr, twr, gnd):
+        print(f"!! {th.arrival} has no approach, tower and ground to fly this",
+              file=sys.stderr)
+        return 2
+    profile = th.approach
+    radial, final_hdg = arrival_geometry(bat, profile)
+    in_rwy = say.spell_rwy(bat.runway_in_use(th.wind_from_deg))
+    who, track = args.name, f"362nd_{args.name}"
+    s = Sortie(args, recorder)
+
+    print(f"a touch-and-go: {who} into {bat.name}, runway {in_rwy}, on the "
+          f"{radial:03.0f} radial from {args.from_nm:.0f} miles")
+    print(f"  track {track}, recorder {recorder.name}")
+    print(f"  {apr.name} {apr.freq_mhz:.3f} / {twr.name} {twr.freq_mhz:.3f} / "
+          f"{gnd.name} {gnd.freq_mhz:.3f}")
+
+    start = _step(bat.lat, bat.lon, radial, args.from_nm)
+    ghost = Ghost(track, who, lat=start[0], lon=start[1],
+                  alt_ft=arrival_alt(args.from_nm), heading=final_hdg,
+                  speed_kt=args.in_speed, in_air=True, tick=args.tick).start()
+    s.here(args.from_nm, "BAT")
+    said_apr, said_twr = [False], [False]
+    began = time.time()
+    touched, first_up, checked_in, second_up = 0.0, 0.0, 0.0, 0.0
+    bye = None
+    try:
+        def inbound(remaining: float) -> bool:
+            s.here(remaining, "BAT")
+            if not said_apr[0] and (sent_to(s, apr.name, th, began)
+                                    or remaining <= args.approach_nm):
+                said_apr[0] = True
+                s.say("T1", apr.freq_mhz,
+                      f"{apr.name}, {who}, {int(remaining)} miles northwest, "
+                      f"descending {say.spell_alt(_round_k(arrival_alt(remaining)))}"
+                      f", information alpha, request the I-L-S runway {in_rwy}.",
+                      "the arrival, on the frequency that makes him Approach's")
+            if not said_twr[0] and sent_to(s, twr.name, th, began):
+                said_twr[0] = True
+                s.say("T2", twr.freq_mhz,
+                      f"{twr.name}, {who}, {max(int(remaining), 1)} miles on "
+                      f"final, gear down.",
+                      "he goes when he is sent")
+            print(f"  .. {remaining:5.1f} nm from {bat.name}, "
+                  f"{arrival_alt(remaining):6.0f} ft", end="\r", flush=True)
+            return False
+
+        touchdown = _step(bat.lat, bat.lon, radial, 0.3)
+        fly_to(ghost, touchdown[0], touchdown[1], speed_kt=args.in_speed,
+               alt_for=arrival_alt, tick=args.tick, watch=inbound)
+
+        # ---- he touches down, and says nothing --------------------------
+        put_him_down(ghost, bat, final_hdg)
+        touched = time.time()
+        s.here(0.0, "BAT")
+        print(f"\n  down at {bat.name}, and he does not key the mic.")
+        print(f"  waiting up to {args.goodbye_wait:.0f}s for the roll-out "
+              f"transmission (#77 criterion 1)")
+        bye = wait_for(s, lambda ev: _after(ev, touched, ("atc/landed",)),
+                       args.goodbye_wait)
+        if bye:
+            print(f"   ATC[down]: {bye[0].get('text', '')}")
+        else:
+            print("   (nothing -- the goodbye never came)")
+
+        # ---- and then he flies. The phase says Ground; he is on Tower ----
+        first_up = time.time()
+        get_airborne(ghost, bat, final_hdg, speed=args.tg_speed,
+                     seconds=args.tg_watch, tick=args.tick, s=s,
+                     why="a TOUCH-AND-GO, still on Tower's frequency, with "
+                         "`taxi_in` on him (#164, the phase guard)")
+
+        # ---- round again, and this time he COMPLIES before he flies ------
+        put_him_down(ghost, bat, final_hdg)
+        s.here(0.0, "BAT")
+        print(f"\n  stopped again at {bat.name}.")
+        time.sleep(args.tick * 2)
+        s.say("T3", gnd.freq_mhz,
+              f"{gnd.name}, {who}, clear of runway {in_rwy}, "
+              f"request taxi to parking.",
+              "he does as he was told, so now he really is Ground's")
+        checked_in = time.time()
+        second_up = time.time()
+        get_airborne(ghost, bat, final_hdg, speed=args.tg_speed,
+                     seconds=args.tg_watch, tick=args.tick, s=s,
+                     why="airborne off a GROUND frequency -- nothing but "
+                         "`Rule(ground, tower, airborne)` can move him (#164)")
+    except _Enough as e:
+        print(f"\n  stopped after {e}, as asked.")
+    except KeyboardInterrupt:
+        print("\n  interrupted.")
+    finally:
+        ghost.close()
+        forget_him(who, "http://localhost:8000")
+
+    got = s.events()
+    transcript(got, s.line, s.t0)
+    print("\n  every handoff the bridge AUTHORISED:")
+    for t, role, text in the_eight_rungs(got):
+        print(f"    {s.line.where(t)}  -> {role}: {text}")
+    if not the_eight_rungs(got):
+        print("    (none)")
+    print("\n  every reason the monitor gave for keeping him:")
+    for e in got:
+        if str(e.get("kind", "")) == "handoff/none":
+            print(f"    {s.line.where(float(e.get('t', 0.0)))}  "
+                  f"{e.get('text', '')}")
+
+    verdicts = [
+        a_verdict("#77   the roll-out named Ground, unprompted, with his number",
+                  *the_goodbye_named_ground(got, gnd, touched)),
+        a_verdict("#164  a flying aeroplane is never sent to Ground",
+                  *nobody_sent_a_flying_man_to_ground(got, th, bat.name,
+                                                      first_up, bool(bye))),
+        a_verdict("#164  and Tower takes him back off a ground frequency",
+                  *tower_took_him_back(got, th, twr, second_up)),
+        a_verdict("      every reply on its own field's frequency",
+                  *right_fields_numbers(got, th)),
+    ]
+    print()
+    for name, how, why in verdicts:
+        print(f"{how:<14} {name}\n               {why}")
+    if s.misheard:
+        print(f"\n  MISHEARD even after a second attempt: "
+              f"{', '.join(s.misheard)}")
+    print(f"\n  (he checked in with {gnd.name} at "
+          f"{int(checked_in - s.t0) if checked_in else 0}s.)")
+    _limits()
+    return 1 if any(h == "FAIL" for _, h, _ in verdicts) else 0
+
+
 def _limits() -> None:
     print("\n  What this run did NOT check: the sim's feed (a ghost is written "
           "straight into `tracks` and skips the stream, the projection and the "
@@ -1774,6 +2130,24 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--wait", type=float, default=22.0,
                     help="seconds to allow for a reply before calling it "
                          "silence")
+    ap.add_argument("--touch-and-go", action="store_true",
+                    help="fly an ARRIVAL, land, and then get airborne again -- "
+                         "twice, because #164 is enforced in two places: once "
+                         "with the roll-out's `taxi_in` on him and Tower still "
+                         "his (the phase guard, which fails SILENTLY), and once "
+                         "after he has checked in with Ground (the rule row, "
+                         "which fails visibly)")
+    ap.add_argument("--goodbye-wait", type=float, default=60.0,
+                    help="touch-and-go: seconds to allow for the roll-out "
+                         "transmission before calling it silence. The radar "
+                         "poll is on its own clock, not ours")
+    ap.add_argument("--tg-watch", type=float, default=45.0,
+                    help="touch-and-go: seconds to stay airborne and watch "
+                         "after each lift-off -- several polls, not one")
+    ap.add_argument("--tg-speed", type=float, default=200.0,
+                    help="touch-and-go: knots on the climb-out. Must be well "
+                         "over GROUND_SPEED_KT or he is still 'down' to every "
+                         "rule that reads it")
     ap.add_argument("--stop-after", default="",
                     help="sortie: the last rung to fly (R1..R14). The ground "
                          "rungs are three minutes and the whole ladder is "
@@ -1787,9 +2161,12 @@ def main(argv: list[str] | None = None) -> int:
     # A SORTIE IS BOTH DIRECTIONS, so it settles its own numbers first: it flies
     # out to `--out-nm` and comes back from `--from-nm`, and asking
     # `flying_inbound` which of those it is has no answer.
-    inbound = (False if args.sortie
+    # A TOUCH-AND-GO IS AN ARRIVAL that does not stay arrived, so it settles
+    # its own direction the way a sortie does rather than asking two ranges.
+    inbound = (True if args.touch_and_go else
+               False if args.sortie
                else flying_inbound(args.inbound, args.from_nm, args.to))
-    if args.sortie and args.from_nm is None:
+    if (args.sortie or args.touch_and_go) and args.from_nm is None:
         args.from_nm = 32.0
     if args.from_nm is None:
         args.from_nm = 32.0 if inbound else 3.0
@@ -1797,7 +2174,7 @@ def main(argv: list[str] | None = None) -> int:
         args.to = 2.0 if inbound else 32.0
     if args.speed is None:
         args.speed = 300.0 if inbound else 420.0
-    if inbound and args.to >= args.from_nm:
+    if inbound and not args.touch_and_go and args.to >= args.from_nm:
         print("!! an arrival ends closer than it starts", file=sys.stderr)
         return 2
     if not args.name:
@@ -1821,6 +2198,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"!! {want} is not a field in {th.name}", file=sys.stderr)
         return 2
     recorder = config.BUILD_DIR / "logs" / f"flight-{args.session}.jsonl"
+    if args.touch_and_go:
+        return _touch_and_go(args, th, recorder)
     if args.sortie:
         return _sortie(args, th, recorder)
     if inbound:

@@ -470,16 +470,36 @@ warning that the card and the design disagreed because `taxi_in` was entered by
 the pilot's request, is settled: the trigger moved from your mouth to the sim
 and the request still works if you get there first.
 
+**F5, F5b and F3b were flown by a ghost on 13 August at `806a728`**
+(`tools/ghost_flight.py --sortie` and `--touch-and-go`, session `hooks`,
+`MARSHALL_APPROACH=batumi-ils`). What the harness could answer, it answered: the
+roll-out transmission fired off the radar poll with no pilot in it, named
+**Batumi Ground one two one decimal nine** — the arrival field's — and was
+booked as `atc/handoff to: ground` in the same instant, so the words and the
+record agree. A ghost then got airborne off the roll-out and was **not** given
+to Ground, and one that had already checked in with Ground was **retrieved by
+Batumi Tower**. The rows stay on the card because what is left on them is a
+pilot's.
+
 **Listen for the timing rather than the words**, because that is the half no
 rehearsal can score. It arrives while you are still rolling, which is what a
 real tower does — and if it lands on top of you at a moment that makes no sense,
 that is the finding.
+
+**And listen for how MANY times he says it.** A ghost that landed and then
+reported down and then asked Tower for taxi was told *"contact Batumi Ground one
+two one decimal nine"* **three times in forty seconds** — once unprompted on the
+roll-out, once when he reported down, once when he asked for parking. Every one
+of them is correct on its own (he had not changed frequency, so telling him
+again is what a tower does) and a machine cannot say whether the third was
+tiresome. You can.
 
 | ID | Prio | Test | What should happen | Fix under test |
 |----|------|------|--------------------|----------------|
 | F1 | P1 | Fly the approach to a full stop | Handed to **Tower over the runway**, not at a range on final, and nothing tells you to climb once you are down | [#41] `land` |
 | F2 | P1 | Go around from short final | **No handoff to Tower**, and no reversal back towards the field while you are climbing out. A go-around at half a mile is closer than a landing at one | [#41], [#19] |
 | F3 | P2 | Touch and go | You are **not** handed to Tower for the few seconds you are on the runway — `runway_touch` is deliberately not acted on | [#41] `DOWN` |
+| **F3b** | **P1** | **Touch and go, and then say nothing** — or get airborne again at any point after Tower has said goodbye | **Nobody hands a flying aeroplane to Ground.** The roll-out goodbye moves you to `taxi_in` while you are still rolling, so an aeroplane that then flies is a ground controller's aeroplane in the air; before 13 August nothing could retrieve it and you sat on 121.900, airborne. If you have already checked in with Ground, **Batumi Tower takes you back** — *"contact Batumi Tower one one eight decimal six"*. A ghost flew both halves on 13 August and both fired. **What is yours:** on the touch-and-go the goodbye is followed about fourteen seconds later by *"contact Batumi Approach one two four decimal four two five"*, with nothing from you in between. It is defensible — you are airborne, leaving, and Batumi has no Departure seat — but it is two frequency changes in a quarter of a minute at a hundred feet, and whether that is a controller working or a controller thrashing is an ear's question | [#164], [#77] |
 | F4b | **P1** | **Say something Whisper will mangle** — a hurried call, a name half-swallowed, someone else's callsign — then check `/diag` | **No aeroplane appeared that does not exist.** One P-47 once entered the stack as "Hammer 1-1", "Hammer 1-3", "All 4" and "Maintained 2" — four aircraft, three imaginary, each with a place in the queue. With one ship that is untidy; with two a ghost at the head holds real pilots for an aeroplane that will never arrive. The identity work since means a radio is bound by RADAR and a mangled name should reach nothing, but the closure condition here has always been a live sortie and nobody has flown one | [#13] | ghosts |
 | F4 | P2 | Land, stop, leave the slot, take a new aeroplane and check in | The old callsign is **gone from the board**. Watch `/diag` — a leftover here is the ghost that held a real pilot in the stack for a whole approach | [#41] `player_leave_unit` |
 | F5 | **P1** | **Land, and say nothing at all for the rest of the sortie** | On the roll-out Tower says *"welcome, exit the runway and contact Batumi Ground one two one decimal niner"*, and you reach a stand without ever keying the mic. This was the last dead end in the ladder. Tower should **not** clear you to taxi to parking — that is Ground's; he names the man who owns it | [#88], [#77] |

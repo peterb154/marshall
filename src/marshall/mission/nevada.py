@@ -68,7 +68,7 @@ def build(*, hot: bool = True, each: int = 2, wind_from: int = 210,
     #
     # Hot at both, so either direction starts on the radio rather than on a
     # checklist.
-    slots: list[tuple[int, str]] = []
+    slots: list[tuple[int, str, str]] = []
     for name, home, first in (("Viper", "Nellis", N.NELLIS_CLEARANCE),
                               ("Dagger", "Tonopah", N.TONOPAH_TOWER)):
         slots += _seats(m, usa, name, home, first, hot, each)
@@ -77,7 +77,7 @@ def build(*, hot: bool = True, each: int = 2, wind_from: int = 210,
 
 def _seats(m, usa, name: str, home: str, first, hot: bool, each: int):
     """One flight of client slots, hot in parking at `home`."""
-    slots: list[tuple[int, str]] = []
+    slots: list[tuple[int, str, str]] = []
     grp = m.flight_group_from_airport(
         country=usa, name=name, aircraft_type=F_16C_50,
         airport=m.terrain.airports[home],
@@ -93,8 +93,12 @@ def _seats(m, usa, name: str, home: str, first, hot: bool, each: int):
     for i, unit in enumerate(grp.units, start=1):
         unit.name = f"{name} 1-{i}"
         unit.set_client()
-        slots.append((unit.id, F_16C_50.id))
-    set_channels(grp)
+        # THE FIELD HE IS PARKED AT travels with the slot. `write_presets`
+        # writes a card per aerodrome now, because a role is only unique
+        # within one and the first five seats in the theatre's table are the
+        # other field's.
+        slots.append((unit.id, F_16C_50.id, home))
+    set_channels(grp, home=home)
 
     # THE FLIGHT PLAN IN THE JET. A route in the .miz IS the DTC load, so the
     # steerpoints come up already holding TPH and Tonopah -- the same fixes the
