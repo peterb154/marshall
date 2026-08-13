@@ -710,6 +710,30 @@ class Controller:
         if ac is not None and ft:
             ac.cleared_ft = int(ft)
 
+    def note_clearance_agreed(self, callsign: str, agreed: bool) -> None:
+        """Whether the clearance on the board has been READ BACK. Told, not decided.
+
+        THE SAME GAP AS `note_cleared_level`, AND IT MADE #135 UNREACHABLE. This
+        engine does not issue the IFR clearance -- the director's tool composes
+        it -- so it cannot know one exists, and `clearance_agreed` was written
+        in exactly two places: `hydrate`, which runs once when the bridge
+        starts, and `clearance_read_back`, which only ever sets it TRUE. Nothing
+        in a live sortie could set it False.
+
+        So `request_taxi`'s refusal was dead code from the moment it was
+        written. The unit tests set the field by hand and passed; a ghost flown
+        down the ladder on 13 August asked Ground for taxi with an unagreed
+        clearance and was cleared to the runway, which is the fault #135 exists
+        to prevent, in the run written to prove it fixed.
+
+        `None` is not reachable from here on purpose: the bridge calls this only
+        when the board actually holds a clearance, and "nobody has cleared him"
+        stays the field's own default, which never blocks.
+        """
+        ac = self.aircraft.get(self._resolve(callsign))
+        if ac is not None:
+            ac.clearance_agreed = bool(agreed)
+
     def may_be_sequenced(self, ac) -> bool:
         """Can this aircraft take a place in the stack?
 
@@ -2143,6 +2167,26 @@ class Controller:
         # whole sortie -- taxi, take-off, two aerodromes -- before anything
         # noticed his clearance had never been agreed. See #135 and #134.
         if ac.clearance_agreed is False:
+            # AND HE IS NOT TAXIING, so the phase must not say he is.
+            #
+            # The line at the top of this method moves him to `taxi` whatever
+            # happens, on the reasoning that he IS ready to taxi and saying so
+            # on the wrong frequency does not make it untrue. That is right for
+            # the `_owns` case above and wrong here, because the PHASE IS THE
+            # HANDOFF: `handoff.due` owns a phase with no geometry outright, so
+            # `taxi` means Ground has him -- and a man who has just been sent
+            # back to Clearance was handed on to Ground in the same breath as
+            # being refused. Measured on the first end-to-end sortie:
+            #
+            #     ATC  your IFR clearance has not been read back, contact
+            #          Kobuleti Clearance one two five decimal one
+            #     ATC  readback correct, contact Kobuleti Ground one two one
+            #          decimal eight            <- the refused taxi, authorised
+            #
+            # That is #135's own complaint back again -- "why does he let me
+            # go" -- with the refusal audible and changing nothing. He is on
+            # Clearance's rung until Clearance is finished with him. [#82]
+            ac.sortie_phase = "clearance"
             who = self.profile.station_for(
                 "clearance", field=getattr(getattr(self, "_me", None),
                                            "field", ""))

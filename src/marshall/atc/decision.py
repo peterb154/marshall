@@ -260,7 +260,34 @@ def _normalise(said: str) -> str:
     s = re.sub(r"(?<=\d),(?=\d\d\d)", "", s)          # 2,000 -> 2000
     s = re.sub(r",", " ", s)
     s = re.sub(r"(?<!\d)\.|\.(?!\d)", " ", s)
-    return " ".join(s.split())
+    # AND THE ICAO SPELLINGS ARE THE SAME DIGITS. A radio says "tree" for three
+    # and "niner" for nine, and Whisper writes down what it hears:
+    #
+    #     said     one two three decimal three     (the departure frequency)
+    #     heard    one two three decimal tree
+    #
+    # Measured on a ghost sortie on 13 August. That is a frequency read back
+    # perfectly, and it matched neither the word form -- which spells "three" --
+    # nor `_digit_runs`, which only rejoins digit TOKENS. So the controller
+    # asked him to say again a number he had just said correctly, which is the
+    # first domino of #134 and the fault this file's `_digit_runs` was written
+    # for, arriving by a different door.
+    #
+    # `_NUM` below has listed these four alternates since it was written, so
+    # half the module already knew a pilot might say them; nothing mapped them.
+    return " ".join(_ICAO.get(w, w) for w in s.split())
+
+
+# The alternate spellings of a spoken digit, mapped onto the ones `say.py`
+# produces. Only the four that differ -- the rest are already the same word.
+_ICAO = {"tree": "three", "fower": "four", "fife": "five", "niner": "nine"}
+
+# ...and the same digits as VALUES, for a run that mixes notations. Applied
+# after `_ICAO`, so the alternates need no second listing. `oh` is here and
+# nowhere else: nobody writes it, and a pilot says it constantly.
+_SPOKEN_DIGIT = {"zero": "0", "oh": "0", "one": "1", "two": "2", "three": "3",
+                 "four": "4", "five": "5", "six": "6", "seven": "7",
+                 "eight": "8", "nine": "9"}
 
 
 # The words a spoken number is made of. A spoken match that runs straight into
@@ -371,19 +398,55 @@ def _digit_runs(hay: str) -> list[float]:
     a number of minutes with nothing between them. Joined greedily that is
     1,000,010. So every contiguous slice of a run is a candidate, and one of
     them is the ten thousand he was cleared to.
+
+    AND A RUN MAY BE HALF DIGITS AND HALF WORDS, which is the case that got
+    through. On 13 August a ghost read his clearance back and Whisper wrote:
+
+        the departure frequency is 1-2-3 decimal tree
+
+    Every character of the right number, in three different notations at once.
+    The word form is not there (`three` is spelled `tree`, and `1 2 3` is not
+    `one two three`); the digit run stops at the `decimal` because what follows
+    it is a word, so the slice ends with a trailing point and is discarded. The
+    frequency he had just read back correctly was reported missing and he was
+    asked to say it again -- #134, arriving through the last door left open.
+
+    Whisper is not consistent WITHIN one transmission and there is no reason it
+    should be: it is transcribing a man, not a protocol.
+
+    ONLY A MIXED RUN, AND THE LIMIT IS NOT FUSSINESS -- it is the guard in
+    `_said_words` that stops "one three" matching inside "one three three
+    decimal zero". A run made entirely of WORDS is the canonical spelling, the
+    word matcher already handles it, and rejoining it here would hand every
+    spoken number every sub-number it contains: a runway satisfied by a
+    frequency, which is the one confusion this module was built to refuse. See
+    `TheVerifierMustStillCatchIt` in tests/test_decision_enforced.py, which
+    catches exactly that and caught it here.
+
+    So a spoken digit joins a run that ALREADY has a written digit in it, and
+    starts nothing on its own. That is precisely the case Whisper invents and
+    nobody else produces.
     """
     out: list[float] = []
     runs: list[list[str]] = []
     run: list[str] = []
+    written = False                      # did this run come off the keyboard?
+
+    def close():
+        nonlocal run, written
+        if run and written:
+            runs.append(run)
+        run, written = [], False
+
     for tok in [*hay.split(), "/"]:      # the sentinel closes the last run
-        if tok.isdigit():
-            run.append(tok)
+        digit = tok if tok.isdigit() else _SPOKEN_DIGIT.get(tok)
+        if digit is not None:
+            run.append(digit)
+            written = written or tok.isdigit()
         elif tok in ("decimal", "point") and run and "." not in run:
             run.append(".")
         else:
-            if run:
-                runs.append(run)
-            run = []
+            close()
     for r in runs:
         for i in range(len(r)):
             for j in range(i + 1, len(r) + 1):

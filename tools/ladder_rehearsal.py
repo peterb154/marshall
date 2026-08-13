@@ -382,6 +382,27 @@ def all_of(*checks):
     return check
 
 
+def only_if_there_is_a_plan(plan: dict, *checks):
+    """The plan's numbers, or SKIP -- never a check with the numbers missing.
+
+    `said("cleared to", "")` is true of every sentence containing "cleared to",
+    because the empty string is in everything; `_alt_words(0)` is the word
+    "zero", which most clearances contain. So with no plan on file this row
+    could not fail, and it silently could not fail for weeks -- the theatre's
+    `bootstrap_plan` names a row that was deliberately deleted.
+
+    Skipped is reported, never silent. Same rule as `check.py` and the same rule
+    as `atis_confirmed` one screen up, which refuses to fail a controller for
+    not naming a letter nobody is broadcasting.
+    """
+    def check(ev):
+        if not plan.get("destination") or not plan.get("cruise_ft"):
+            return None, ("no plan on file to be cleared on -- nothing here "
+                          "knows the destination or the level to check for")
+        return all_of(*checks)(ev)
+    return check
+
+
 # --- the sortie -------------------------------------------------------------
 #
 # One entry per card row we keep re-flying. The frequency matters as much as the
@@ -400,6 +421,14 @@ def filed_plan(th) -> dict:
     Empty when the director is unreachable; the caller then uses generic
     phrasing, which is honest -- a row that cannot know the number should not
     pretend to check it.
+
+    AND THE BOOTSTRAP NAME IS NOT A ROW ANY MORE. `agent_atc` says so in its own
+    words -- the plan the theatre names "is not even a row that has to exist"
+    since the approach round trip went away, and `362nd-kobuleti-batumi` was
+    deleted. So this returned {} on every Caucasus run, Q1a asked for "the filed
+    plan" instead of a label, and its check degraded to `said("cleared to", "")`
+    plus `_alt_words(0)` -- which is the word "zero", present in most
+    clearances. A row that cannot fail is worse than one that is not there.
     """
     import urllib.request
     try:
@@ -407,7 +436,16 @@ def filed_plan(th) -> dict:
             plans = json.loads(r.read().decode("utf-8", "replace"))["plans"]
     except Exception:
         return {}
-    return next((p for p in plans if p.get("name") == th.bootstrap_plan), {})
+    got = next((p for p in plans if p.get("name") == th.bootstrap_plan), {})
+    if got:
+        return got
+    # WHERE THE SORTIE IS GOING, which is the property that made it the
+    # theatre's plan in the first place. Named rather than guessed at: a plan
+    # that ends at the field this theatre recovers into is the one a pilot on
+    # this route would file, and asking for it by label is the whole of the row.
+    return next((p for p in plans
+                 if (p.get("destination") or "").lower()
+                 == (th.arrival or "").lower()), {})
 
 
 def ladder_for(th, who: str = "Sockeye"):
@@ -475,8 +513,10 @@ def ladder_for(th, who: str = "Sockeye"):
          # to..." any more than he announces his own station, and a check that
          # demands it teaches him to be unnatural to stay green -- the same
          # mistake Q1 made and the same fix.
-         all_of(said("cleared to", plan.get("destination", "").lower()),
-                said(_alt_words(plan.get("cruise_ft") or 0))),
+         only_if_there_is_a_plan(
+             plan,
+             said("cleared to", plan.get("destination", "").lower()),
+             said(_alt_words(plan.get("cruise_ft") or 0))),
          "the clearance is issued from the plan on file"),
 
         ("Q3b", clr.freq_mhz,

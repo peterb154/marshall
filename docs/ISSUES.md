@@ -8544,3 +8544,69 @@ Status: FIXED in code, needs a pilot to see the right words on the strip.
 Labels: needs-flight-test
 
 ---
+
+## [RAD-7] A Center measures from whichever arrival the bridge was started with — #160
+
+    "So what is the reference when on center (like right now)"
+    "And why batumi? And what would it be in Nevada? I smell a stink"
+
+The stink is real. Every range and bearing a Center speaks — and every distance
+the /diag board shows while Center owns the aeroplane — is measured from
+**Batumi**, and nothing decided that. It is a fallback.
+
+`field_origin(profile, field)` answers "where does this controller measure
+from", and it is correct for a field controller: `field` names his aerodrome
+and `PROJECTED` resolves it. **A Center has no field** — its airspace is the
+whole theatre — so it is called with `field=""`, drops through the `if field:`
+branch, and lands on:
+
+    for attr in ("beacon", "arrival_fix", "outer_hold"):
+
+`profile` is the loaded `ApproachProfile`. On `batumi-ils` that beacon is
+Batumi's, so Center says Batumi. Start the same bridge on `kobuleti-ils` and
+every number Center speaks moves forty miles, with no other change and nothing
+said. On Nevada it is Nellis, or Tonopah if that is the recovery you picked.
+
+**This is capability inferred from data shape again** — the class the audit
+named — and the recurring shape besides: `field_origin` was written when the
+only controller who mattered had a field, and the fallback that was harmless
+then became a silent wrong answer when Center arrived. The docstring already
+tells this story about Kobuleti's controllers and stops one controller short.
+
+**What it should be.** A controller with no aerodrome measures from the
+**bullseye**. That is what a bullseye is for, it is the reference a pilot's HSI
+is already set to for a contact nobody is working, and the row has existed since
+migration 016 — `Scope` carries it, `picture.py` renders from it. `field_origin`
+has simply never heard of it.
+
+So the origin is chosen by the controller's ROLE, not by what is left over:
+
+    a field controller   his own field's beacon        (unchanged)
+    a Center             the theatre bullseye
+    neither              None, and the picture renders nothing — #109 settled
+                         that an origin-less picture is not a picture
+
+**Why it is not a one-line change.** `CENTER_NM` — the range at which Center
+hands over — is computed against this same origin, so fixing the reference also
+moves a handoff boundary. It changes numbers a pilot hears AND when he changes
+frequency, which is a ghost flight's worth of verification, not a test's.
+
+**Acceptance criteria.**
+
+- Center's ranges are measured from the bullseye on both theatres, proven by a
+  test that loads `batumi-ils` and `kobuleti-ils` and asserts Center's origin is
+  IDENTICAL across the two. That test fails today and is the whole bug.
+- A field controller's origin is unchanged — `tests/test_two_fields.py` stays
+  green.
+- The handoff range change is measured and stated before it flies, not
+  discovered from the cockpit.
+
+Tests: needs one; `tests/test_two_fields.py` is the right home.
+Code: `src/marshall/atc/agent_atc.py` (`field_origin`, ~3634; caller at 153),
+`CENTER_NM`.
+
+Status: OPEN — diagnosed from a live board, deliberately not fixed in the same
+commit as the strip work.
+Labels: needs-flight-test
+
+---
