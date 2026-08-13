@@ -290,6 +290,19 @@ def main() -> int:
         gs = state.get(n)
         if gs is None:
             drift.append((e, None, "not on GitHub"))
+        elif not e["status"]:
+            # NO STATUS AT ALL, which this check could not see. It compared only
+            # the statuses it could READ, so an entry with no `**Status:**` line
+            # was skipped in silence and counted as agreeing -- and twelve of
+            # them had accumulated, several long since fixed. A tracker that
+            # cannot tell done from open about a fifth of its open issues makes
+            # a backlog look larger than it is, which is its own kind of cost.
+            #
+            # Same fault as the approach sweep returning 2 and being rendered as
+            # SKIP: a check whose silence reads as agreement. The rule this file
+            # already states about the card applies to itself -- "a check that
+            # silently ignores a quarter of the document is worse than no check".
+            drift.append((e, n, "no Status line — cannot tell done from open"))
         elif gs == "CLOSED" and e["status"] not in DONE:
             drift.append((e, n, f"closed on GitHub, reads {e['status'] or '?'}"))
         elif gs == "OPEN" and e["status"] in DONE and n not in flight_test:
