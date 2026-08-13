@@ -8684,9 +8684,18 @@ overridable by `MARSHALL_APPROACH`, resolved once at boot into a module-global
                                      per-aircraft one -- is read TWICE.
 
 That last line is the measurement that matters. **#2 [ARCH-1] "One approach
-profile per flight, not per bridge" is marked SHIPPED/UNVERIFIED and is 2 call
-sites out of 28.** The mechanism landed; almost nothing uses it. Every symptom
-above is a consequence of the other 26.
+profile per flight, not per bridge" is marked *"FIXED 11 August. All four
+criteria met."* and is 2 call sites out of 28.** The mechanism landed and almost
+nothing uses it; every symptom above is a consequence of the other 26.
+
+That gap is its own finding, and it is the one worth generalising. All four
+criteria WERE met — each is about a flight getting its own profile, and a flight
+does. None of them asks *what fraction of the code reads it*, so a mechanism
+could be added beside the singleton it was meant to replace and satisfy every
+one. **A criterion that a parallel implementation can satisfy does not retire
+the thing it was replacing**, and "the old path is gone" is the criterion that
+was missing. See the acceptance criteria below, which are written as greps for
+exactly that reason.
 
 **What it costs to keep.** A restart from the wrong shell changes the procedure
 (#158, done by accident during a rehearsal — `batumi-ils` became `batumi-asr`);
