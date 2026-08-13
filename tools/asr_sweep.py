@@ -316,7 +316,44 @@ def sweep(profile, sloppy: bool = False,
 # state for one nobody has swept before: the numbers are on the screen, and
 # calling them a regression against another procedure's would be noise, which is
 # how a check stops being read. Record one here when it is worth defending.
-BASELINE_FOR = {"batumi-asr-13": "the recorded Batumi figures"}
+# ONE BASELINE PER PROCEDURE, and it used to be one baseline FULL STOP. The
+# figures below were Batumi's, and `BASELINE_FOR` was the list of approaches
+# allowed to be judged against them -- which could only ever be Batumi, because
+# judging Nellis against Georgian numbers is the noise this file warns about.
+#
+# The consequence was that both Nevada approaches REPORTED and were judged by
+# nothing, on a map with 10,500 ft of terrain, for as long as they have existed.
+# `check.py` said PASS. Same family as the sweep returning 2 and rendering as
+# SKIP: an instrument that runs and concludes nothing reads exactly like one
+# that ran and was satisfied. [#117]
+#
+# An approach still absent from this table reports and does not judge -- that is
+# the honest state for one nobody has swept. Record one when it is worth
+# defending, which means when somebody has looked at the numbers once.
+BASELINE_FOR = {
+    "batumi-asr-13":  "the recorded Batumi figures",
+    "nellis-ils-21":  "Nevada, recorded 13 August after #19",
+    "tonopah-ils-15": "Nevada, recorded 13 August after #19",
+}
+
+# NEVADA'S NUMBERS ARE NOT TARGETS, they are today's truth written down so a
+# regression is visible. Nellis still dithers 67 times where Batumi dithers
+# none, which is #117's remaining half and is recorded rather than accepted:
+# the terrain is a mile and a half up and the geometry was tuned on a sea-level
+# Georgian field. Both maps reach the missed approach point from all 1,296
+# starts now, which is #117's first half and #20's whole.
+BASELINE_BY_PROFILE = {
+    "nellis-ils-21": {
+        "clean":  {"arrived": 1296, "dither": 67, "turns": 679},
+        "sloppy": {"arrived": 1296, "dither": 62, "turns": 1074},
+        "deaf":   {"arrived": 20, "dither": 26, "turns": 1860},
+    },
+    "tonopah-ils-15": {
+        "clean":  {"arrived": 1296, "dither": 20, "turns": 599},
+        "sloppy": {"arrived": 1296, "dither": 20, "turns": 999},
+        "deaf":   {"arrived": 20, "dither": 20, "turns": 1848},
+    },
+}
 
 BASELINE = {
     "clean":  {"arrived": 1296, "dither": 0, "turns": 576},
@@ -472,7 +509,12 @@ def main() -> int:
                   f"{rad:03d} radial, heading {hdg:03d}")
 
     mode = "deaf" if args.deaf else ("sloppy" if args.sloppy else "clean")
-    base = BASELINE.get(mode) if args.profile in BASELINE_FOR else None
+    # HIS OWN FIGURES FIRST. `BASELINE` is Batumi's; a procedure with its own
+    # row is judged against itself, which is the only comparison that means
+    # anything across two maps and two kinds of terrain.
+    base = (BASELINE_BY_PROFILE.get(args.profile, {}).get(mode)
+            or (BASELINE.get(mode) if args.profile in BASELINE_FOR
+                and args.profile not in BASELINE_BY_PROFILE else None))
     if base is None:
         print(f"  baseline      none recorded for {args.profile} — figures "
               f"reported, nothing judged")
