@@ -7872,6 +7872,25 @@ reasoning (`approaches`, `clearance`, `flights`, `identify`, `plans`,
 by somebody who already knows to look in a container. That is the prompts
 problem one layer down.
 
+**THE WORD ITSELF COSTS COMPREHENSION, and that half needs no rename at all.**
+13 August, reading an answer that explained a datum by saying "the bridge was
+started on `batumi-asr`":
+
+    "The bridge is not the term we should use, I think you mean radio and/or srs"
+
+He is right about the referent — the thing that holds `APPROACH_NAME` and the
+one `ApproachProfile` is the radio process, `python -m marshall.atc.agent_atc
+--srs`, which `STRUCTURE.md` already proposes to call `marshall-radio`. And the
+misreading it produced is not cosmetic: "the bridge has an approach loaded"
+sounds like an implementation detail, where "**the radio** has an approach
+loaded" is self-evidently absurd and is exactly why #162 exists. A name that
+hides the wrongness of a design is doing damage while the rename is deferred.
+
+So item 1 below is not the cheapest item, it is the one with a live cost:
+`console_scripts` make the four names real, and then the documentation, the
+issues and the answers can stop saying "bridge" without any directory, volume
+or subtree moving.
+
 **Remaining scope**, in order, none of which requires a rename:
 
 1. `console_scripts` in `pyproject.toml` for what already exists —
@@ -8669,10 +8688,13 @@ and `PROJECTED` resolves it. **A Center has no field** — its airspace is the
 whole theatre — so it is called with `field=""`, drops through the `if field:`
 branch, and lands on:
 
-    for attr in ("beacon", "arrival_fix", "outer_hold"):
+    for attr in ("aerodrome", "arrival_fix", "outer_hold"):
 
-`profile` is the loaded `ApproachProfile`. On `batumi-ils` that beacon is
-Batumi's, so Center says Batumi. Start the same bridge on `kobuleti-ils` and
+(it read `beacon` first until #163 renamed the field that was doing the
+aerodrome's job; the fallback and its consequence are unchanged.)
+
+`profile` is the loaded `ApproachProfile`. On `batumi-ils` that aerodrome is
+Batumi, so Center says Batumi. Start the same bridge on `kobuleti-ils` and
 every number Center speaks moves forty miles, with no other change and nothing
 said. On Nevada it is Nellis, or Tonopah if that is the recovery you picked.
 
@@ -8747,6 +8769,29 @@ sounds exactly like a right one.
 So: say the datum first, choose the field second. A stated wrong reference is a
 bug somebody finds; an unstated right one is luck.
 
+**THE FOURTH `why` MUST NOT SURVIVE #162, and that is the answer to the question
+this issue keeps being asked.** Round two of the board questions, 13 August:
+
+    WHY_APPROACH    = "the loaded approach"   << this should be the same as the
+                                                 destination no?
+
+**No — and the fact that they are the same TONIGHT is the entire bug.**
+`WHY_DESTINATION` is a fact about the AEROPLANE (`legs[-1]` of the plan he was
+cleared on). `WHY_APPROACH` is a fact about the PROCESS (`theatre.default_approach`,
+`config/theatres/caucasus.toml`, resolved once at boot into a module-global and
+handed to `field_origin` as `profile`). They coincide because he happened to be
+flying to the field the radio happened to be started on. A restart onto another
+procedure (#158), a diversion, or a second aeroplane separates them, and nothing
+in the code notices.
+
+So the fix is not "point `WHY_APPROACH` at the destination". It is that after
+#162 there is no loaded approach for a datum to fall back TO, and the fallback
+branch — the `for attr in (...)` loop over an `ApproachProfile` — goes with it.
+Three `why`s remain and they are exhaustive: his field (the speaking seat), his
+destination (the aeroplane), the bullseye (display only, when nobody is working
+him). A fourth that names the radio's own startup argument is not a reason, it
+is the absence of one.
+
 **Why it is not a one-line change.** `CENTER_NM` — the range at which Center
 hands over — is computed against this same origin, so fixing the reference also
 moves a handoff boundary. It changes numbers a pilot hears AND when he changes
@@ -8754,9 +8799,18 @@ frequency, which is a ghost flight's worth of verification, not a test's.
 
 **Acceptance criteria.**
 
-- Center's ranges are measured from the bullseye on both theatres, proven by a
-  test that loads `batumi-ils` and `kobuleti-ils` and asserts Center's origin is
-  IDENTICAL across the two. That test fails today and is the whole bug.
+- Center's range for an aeroplane is measured from the field HIS plan ends at,
+  proven by a test that loads `batumi-ils` and `kobuleti-ils` and asserts
+  Center's origin for one aeroplane is IDENTICAL across the two. That test fails
+  today and is the whole bug. (This criterion said "the bullseye" until the
+  13 August revision above replaced that answer; it is corrected here rather
+  than left to contradict the body, which is how #70 came to describe surveys
+  that had been flown.)
+- With no aeroplane being worked, the board's datum is the bullseye and it is
+  never spoken.
+- `grep WHY_APPROACH` returns nothing, and no origin anywhere is derived from an
+  `ApproachProfile`. A fallback that still exists is a fallback something will
+  take.
 - A field controller's origin is unchanged — `tests/test_two_fields.py` stays
   green.
 - The handoff range change is measured and stated before it flies, not
@@ -8876,6 +8930,19 @@ arrival he never asked for, which is the mechanism behind the original
 3. Where there is genuinely no aeroplane — a Center's origin, ATIS choosing a
    runway — the answer comes from the ROLE and the FIELD, not from an arrival.
    #160 specifies that half.
+
+**RESTATED BY THE OWNER, 13 August, unprompted and in the same words**, which is
+worth recording because it is the second independent arrival at the same
+decision:
+
+    "the radio should not have a default appproach it was loaded with.
+     Approaches should be assigned on a per flight basis at runtim ... and also
+     make sure that the radio/srs is completely flexible to work any approach"
+
+`config/theatres/caucasus.toml:17` still reads `default_approach = "batumi-asr-13"`
+as of that afternoon, so nothing about this has landed yet; `nevada.toml`
+already carries none and says so in a comment, which is the shape the Caucasus
+file should end up in.
 
 **Acceptance criteria.**
 
@@ -9442,5 +9509,189 @@ Code: `src/marshall/atc/agent_atc.py` (the hook-tick publishes).
 
 Status: OPEN — belongs to #155's remaining scope; file it separately so it
 cannot be closed by the parts of #155 that are done.
+
+---
+
+## [SEP-18] Nothing owns the runway, and nothing separates an aeroplane that is not on the approach — #170
+labels: architecture
+
+    "so, separation is only an apprach function? you saying the other phases of
+     control have no separation engine? That seems like a flaw? What makes sure
+     only one aircraft is on the runway at a time, or that two aircraft dont hit
+     eachother en route?"
+
+    "im pretty fearful that this separation thing is overly fit to ww2 ASR
+     approaches"
+
+**He is right, and the answer to both of his examples is "nothing".** Not
+"something imperfect" — nothing. This is the honest statement of a scope that
+has never been written down, filed so that it is a decision somebody made rather
+than a gap nobody noticed.
+
+**Separation is the arrival, and only the arrival.** `Phase` (`controller.py`)
+has seven values — UNKNOWN, ENROUTE, HOLDING, CLEARED, MISSED, BANISHED, LANDED
+— and every one of them is about the stack and the letdown. `Aircraft`'s own
+comment says so, and the ground half of the same file states the boundary
+outright:
+
+    THESE MOVE `sortie_phase` AND NOTHING ELSE. There is no stack on the ramp,
+    no levels and no sequence, so the separation engine has nothing to say here
+    and must not pretend otherwise
+
+That is correct as far as it goes — a holding stack is not what keeps a runway
+clear — but nothing else was built to keep it clear either.
+
+**Half one: nobody checks the runway.** `Controller.request_takeoff` asks
+exactly one question before issuing the clearance, and it is `self._owns("tower")`
+— whether the SEAT may speak (#65). It then reads the runway in use and says
+"cleared for take-off". It does not ask whether anybody is on it.
+`report_landed` issues a landing clearance the same way: field in sight, the
+runway in use, the wind. Two aeroplanes at one aerodrome are serialised only by
+the arrival stack, and an aeroplane enters that stack only through `check_in`
+or `seed_from_radar` — both arrivals. **A departure and an arrival are never
+sequenced against each other at all**, and two departures are not either.
+
+There is a real reason it was not built, and it is already written down in
+`report_down`'s docstring:
+
+    an aerodrome row carries a position, an elevation and a landing heading,
+    and no runway polygon
+
+Confirmed against the data: a `fields` row is `name, x, z, elevation_ft,
+runway, ends, atis_*, msa_sectors, mva_cells, magvar_deg, lat, lon,
+grid_convergence_deg, note`. No length, no polygon, no thresholds as points. So
+"is the strip occupied" cannot be answered geometrically today, which is why
+nothing asks it.
+
+**But the observable already exists on the ladder.** `phases.PHASES` defines
+`landed` as "down and still on the runway" and `taxi_in` as "off the runway to
+a stand", and Tower moves a man between them himself. One aeroplane in `landed`
+at my field is a runway I must not clear anybody onto, and that check needs no
+geometry, no radar and no new fact — only the discipline of asking.
+
+**Half two: enroute, nobody is separating anybody, and that is by
+construction.** There is no conflict detection, no proximity test and no
+separation minimum anywhere in `src/marshall/atc/` outside the holding stack —
+grep for `conflict`, `proximity`, `separation minim` returns only SQL `ON
+CONFLICT` clauses and a formation's 0.3 nm formatting. And the invariant
+forbids the other brain from filling the gap: *"An LLM never invents separation
+between aircraft."* The deterministic half covers the arrival; the agent may
+not; therefore between wheels-up and the arrival check-in the answer to "who is
+separating these two aeroplanes" is **nobody, and no component is even
+responsible for noticing.** It has never bitten because this route is 22.6 nm
+(#130) and the sorties are single-ship, which is precisely the shape of thing
+that bites first on a bigger map.
+
+**The fear, adjudicated — half right, and the other half is worse.** The
+engine's world model IS the single-beacon letdown: `controller.py`'s module
+docstring opens *"The controller is BLIND: no telemetry, no radar, no connection
+to DCS ... separation is by ASSIGNED ALTITUDE"*, and its four stack rules are
+declared *"all forced by the letdown geometry"*. But it is NOT confined to the
+1944 ASR — `BATUMI_ILS` carries the same hold, the same outer hold and the same
+sequencing, and the identical machine runs it. So the accurate complaint is not
+"it only works for the period approach". It is **one procedure's mechanism is
+the only mechanism there is, and it is applied to procedures it was not derived
+from** — the same shape as #53 (a radar capability on the profile whose whole
+purpose is not having radar) and #113 (no procedure model at all).
+
+**And the seam function's docstring says the opposite of what the code does**,
+which is how a reader — or an answer written for the owner — gets this wrong.
+`agent_atc.decide` still documents:
+
+    directive/stack   the blind engine's next step and the holding stack,
+                      and ONLY when it is engaged
+
+`engaged` has gated nothing since the engine was hoisted out of that branch: the
+parameter appears in the body only inside comments (`inspect.getsource(decide)`
+confirms it), the caller still computes `engaged = SEP_ALWAYS or n_contacts >= 2
+or len(ctl.aircraft) >= 2` and now uses it for the canned-reply path alone. The
+one docstring anybody consults to find out what the deterministic half does
+describes a gate that is gone.
+
+**What it wants.** The runway half is small, buildable today and safety-critical;
+the enroute half is a decision before it is code. Do not conflate them.
+
+**Acceptance criteria.**
+
+- A take-off clearance is refused, with a hold-short instruction, while another
+  aeroplane at that field is `landed` — proven by a test with two aircraft at one
+  aerodrome and no sim.
+- A landing clearance is subject to the same check, and the man who is refused
+  is told to go around or continue to expect it, not left with silence.
+- Two aeroplanes at TWO fields do not interfere with each other — the check is
+  per aerodrome, which is `tests/test_two_fields.py`'s whole subject.
+- What separates two aeroplanes that are not in the arrival stack is decided and
+  written into `docs/DESIGN.md`, even if the decision is "nothing, deliberately,
+  until there is traffic to separate". A stated absence is checkable; this one
+  was neither stated nor checkable.
+- `decide`'s docstring describes its code: either `engaged` gates something
+  again, or the parameter and the sentence both go.
+
+Tests: `tests/test_controller.py` (two aircraft, one field, one runway);
+`tests/test_two_fields.py` for the per-aerodrome half.
+Code: `src/marshall/atc/controller.py` (`request_takeoff`, `report_landed`,
+`Phase`, the ground-half comment), `src/marshall/atc/agent_atc.py` (`decide`).
+
+**Status:** OPEN — raised by the owner on the /diag board, 13 August. The runway
+half is the one to build; the enroute half is a decision to take first.
+
+---
+
+## [KB-7] Two columns on the board print the same word and mean different things — #171
+labels: bug
+
+    "in this case, wasnt the aircraft ENROUTE and with GA Center? Why would
+     separation say UNKNOWN?"
+
+He was reading one card with two rows on it:
+
+    separation   UNKNOWN
+    ladder       departure        <- `enroute` after #168
+
+Both were correct, and the page gave him no way to know that. After #168 the
+same card reads `separation UNKNOWN` beside `ladder enroute` — **the same word
+present in one column and absent from the other, on one aeroplane, at the same
+instant.**
+
+The two columns answer different questions and the source says so at length
+(`Aircraft`'s comment in `controller.py`): `separation` is `Aircraft.phase`,
+where he sits in the ARRIVAL QUEUE, and `Phase.ENROUTE` has exactly one writer —
+`check_in`, `controller.py:1653` — which is checking in with the arrival
+controller, not being handed to a Center. `ladder` is `sortie_phase`, what he is
+DOING across the whole sortie, and it is what `handoff.due` reads. The
+distinction is right and must not be collapsed.
+
+**But it is documented in the SOURCE, and this page exists so a pilot on the
+knee does not have to read the source** (#155). `diag.py` renders
+`kv('separation', ...)` and `kv('ladder', ...)` with no statement of what either
+measures, and `UNKNOWN` — a real, correct engine state meaning "nothing has ever
+put this man in the queue" — reads on a diagnostics page as "the system does not
+know", which is exactly how it was read.
+
+This is the consoling shape inverted: not a value that reassures, a value that
+alarms. It cost a question from the owner and a page of answer, and it will cost
+it again on every sortie until the aeroplane checks in with Approach.
+
+**What it wants.** The label names the question the column answers — the arrival
+queue, not "separation" in the abstract — and the value for "never admitted to
+the queue" does not use the page's own word for ignorance. This is a rendering
+change and nothing published needs to move.
+
+**Acceptance criteria.**
+
+- A reader who has never opened `controller.py` can say, from the page alone,
+  why one aeroplane is `enroute` on one row and `UNKNOWN` on the other.
+- The two columns cannot be read as two spellings of one fact, and a test in
+  `tests/test_diag.py` asserts the page distinguishes them rather than asserting
+  a string is present.
+- No value on the card is rendered with a word the page also uses for "the
+  snapshot does not contain this" — a missing fact still renders blank (#155
+  criterion 2, which stays green).
+
+Tests: `tests/test_diag.py`.
+Code: `src/marshall/kneeboard/diag.py` (the `separation` / `ladder` rows).
+
+**Status:** OPEN — found by the owner reading the board, 13 August; separate
+from #155 so it cannot be closed by the parts of #155 that are already done.
 
 ---
