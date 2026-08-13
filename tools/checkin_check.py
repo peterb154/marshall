@@ -41,10 +41,14 @@ from marshall.core import route as R
 
 def main() -> int:
     p = R.BATUMI_ASR
-    # No field on either, which is what they have always been: a role is
-    # unique only within an aerodrome and this asks the theatre for the
-    # first one it lists. Unchanged by the move in #162.
-    approach = R.station_for("approach").freq_mhz * 1e6
+    # QUALIFIED, because a role is unique only within an aerodrome. These
+    # asked for the first seat the theatre listed and were right by luck.
+    #
+    # Center takes no field on purpose -- his airspace IS the theatre, so
+    # there is no aerodrome to name and only one of him. That asymmetry is
+    # the same one under #160: a controller with no field is a different
+    # kind of thing, not a field controller with the argument left off.
+    approach = R.station_for("approach", field=R.ARRIVAL_FIELD).freq_mhz * 1e6
     center = R.station_for("center").freq_mhz * 1e6
 
     ctl = atc.Controller(p)

@@ -35,7 +35,9 @@ from marshall.core import route as R
 
 def main() -> int:
     p = R.BATUMI_ASR
-    hz = R.station_for("approach").freq_mhz * 1e6
+    # QUALIFIED -- a role is unique only within an aerodrome. See
+    # tests/test_two_fields.py; unqualified this was right by luck.
+    hz = R.station_for("approach", field=R.ARRIVAL_FIELD).freq_mhz * 1e6
     ok = True
 
     def check(name: str, got: bool, expect: bool) -> None:

@@ -152,11 +152,18 @@ def main() -> int:
         from marshall.radio import tts
         from marshall.radio.client import AM, SRSClient, radio
 
-        # UNQUALIFIED, and it was before the seats moved off the profile
-        # too. A role is unique only within an aerodrome, so this returns
-        # whichever Approach the theatre lists first. Left exactly as it
-        # was rather than quietly given a field -- see #162.
-        station = R.station_for("approach") or R.STATIONS[0]
+        # QUALIFIED. A role is unique only within an AERODROME, and this
+        # asked for "approach" with no field -- so it returned whichever the
+        # theatre listed first and happened to be right.
+        #
+        # Right by luck, not by accident of ordering alone: `station_for`
+        # matches a PRIMARY role before an `also`, so Kobuleti Departure --
+        # which wears `also=("approach",)` -- could never win it. Add a second
+        # field with a primary Approach seat and first-match decides, and the
+        # wrong answer is a real controller on a real frequency at the wrong
+        # airport. See tests/test_two_fields.py.
+        station = R.station_for("approach", field=R.ARRIVAL_FIELD) \
+            or R.STATIONS[0]
         hz = station.freq_mhz * 1_000_000
         srs = SRSClient(args.srs, name=f"{station.name} (ASR)").connect(
             [radio(hz, AM)])
