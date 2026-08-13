@@ -171,20 +171,55 @@ def _all_matching(mission: str, known: dict) -> list[dict]:
     return out
 
 
+def _unset(v) -> bool:
+    """Does this column hold NO ANSWER, as opposed to a false or zero one?
+
+    "I was not told" and "the answer is no" are two different sentences and only
+    one of them is usually true. NULL is the first; so is the empty string, which
+    is how every text column on this table spells unset. `False` and `0` are the
+    second, and they are answers somebody paid for.
+
+    THIS USED TO BE `v in (None, "", 0)` AND IT COST THE DISTINCTION, because
+    `False in (None, "", 0)` is True in Python -- `False == 0`. So a merge could
+    overwrite:
+
+        on_visual = False        he is NOT flying it himself, keep talking him down
+        approaches_flown = 0     he has flown none
+        missed_count = 0         he has gone around none
+        assigned_ft = 0          nothing assigned
+        sequence_no = 0          not in the sequence
+
+    `on_visual` is the one that reaches a pilot. It means "he has the field and
+    is flying it himself, the talk-down must stop", and a merge that turned a
+    deliberate False into the loser's True stopped a talk-down for a man who
+    never said he had anything in sight. The schema is honest about these
+    (`NOT NULL DEFAULT false`); this is where the honesty was thrown away, on the
+    identity path, at the moment two rows are discovered to be one aeroplane.
+    [#153]
+    """
+    return v is None or v == ""
+
+
 def _merge(rows: list[dict]) -> dict:
     """Collapse several rows for one aeroplane into the oldest of them.
 
-    Anything the survivor does not know, it takes from the others; anything it
-    already knows, it keeps, because the earlier record is the one with the
-    conversation behind it. The losers are deleted rather than blanked, since a
-    row with every name stripped out is a ghost that the next lookup will
-    happily create all over again.
+    Anything the survivor WAS NOT TOLD, it takes from the others; anything it
+    already knows -- including a no and including a nought -- it keeps, because
+    the earlier record is the one with the conversation behind it. The losers are
+    deleted rather than blanked, since a row with every name stripped out is a
+    ghost that the next lookup will happily create all over again.
+
+    See `_unset` for the difference between an empty column and a false one,
+    which this got wrong for as long as it existed.
     """
     keep, rest = rows[0], rows[1:]
     fill = {}
     for other in rest:
         for k in _FIELDS:
-            if keep.get(k) in (None, "", 0) and other.get(k) not in (None, ""):
+            # BOTH SIDES ASK THE SAME QUESTION. The donor test was already
+            # `not in (None, "")` and therefore already right; they are one
+            # function now so they cannot come apart later.
+            if _unset(keep.get(k)) and not _unset(other.get(k)):
                 fill.setdefault(k, other[k])
     with get_pool().connection() as c:
         for other in rest:

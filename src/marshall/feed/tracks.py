@@ -30,6 +30,7 @@ except ImportError:
         return fn
 
 from marshall.core.db import pool as get_pool
+from marshall.feed import categories as _cat
 from marshall.feed.dcs import DCS_GRPC_ADDR, _M_TO_FT, home_field
 
 _MS_TO_KT = 1.94384
@@ -364,11 +365,17 @@ def reconcile(names: set[str]) -> int:
 
 
 # The sim's category numbers, as the words everything downstream uses.
+#
+# THE WORDS THEMSELVES LIVE IN `feed.categories` and are imported rather than
+# spelled here, because this module needs grpc to import and the vocabulary is
+# read by five things that do not. It was written out again at each of them,
+# case-sensitively, against a column this module is not the only writer of --
+# see that module's header, and [#156].
 _CATEGORY = {
-    common_pb2.GROUP_CATEGORY_AIRPLANE: "airplane",
-    common_pb2.GROUP_CATEGORY_HELICOPTER: "helicopter",
-    common_pb2.GROUP_CATEGORY_GROUND: "ground",
-    common_pb2.GROUP_CATEGORY_SHIP: "ship",
+    common_pb2.GROUP_CATEGORY_AIRPLANE: _cat.AIRPLANE,
+    common_pb2.GROUP_CATEGORY_HELICOPTER: _cat.HELICOPTER,
+    common_pb2.GROUP_CATEGORY_GROUND: _cat.GROUND,
+    common_pb2.GROUP_CATEGORY_SHIP: _cat.SHIP,
 }
 
 
@@ -984,8 +991,8 @@ def _other_ship(row: list, lead: list, naming: dict, down: set) -> str:
     # The category, on the wingmen too. Only the lead carried it, so four tanks
     # in one group rendered as one ground unit and three aircraft -- and
     # `count_contacts` duly engaged the separation engine for a lone pilot.
-    if len(row) > 9 and row[9] not in ("airplane", "helicopter", ""):
-        bits.append(row[9])
+    if len(row) > 9 and not _cat.is_aircraft(row[9]):
+        bits.append(_cat.word(row[9]))
     if row[1] in down:
         bits.append("on the ground")
     ax, ay = xy(lead[6], lead[7])
@@ -1034,8 +1041,8 @@ def _render(rows: list, bindings: dict) -> list[str]:
         # parenthetical the manned marker uses, so every existing parser
         # tolerates it -- `units_on` splits on the comma and takes the type.
         # Without it nothing downstream can tell a tank from a fighter.
-        if len(group[0]) > 9 and group[0][9] not in ("airplane", "helicopter", ""):
-            manned += f", {group[0][9]}"
+        if len(group[0]) > 9 and not _cat.is_aircraft(group[0][9]):
+            manned += f", {_cat.word(group[0][9])}"
         # "on the ground" comes from the sim's land/takeoff events, not from a
         # guess at altitude and speed.
         if name in down:

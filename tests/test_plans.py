@@ -173,14 +173,23 @@ class TestHowMuchHelpHeNeeds(unittest.TestCase):
     def test_anything_modern_is_assumed_to_know_where_it_is(self):
         self.assertEqual(P.nav_of("F-16C_50"), "ins")
 
-    def test_an_unknown_type_gets_the_cautious_answer(self):
-        """Unknown here means unknown in a 1944 hangar, so assume he needs
-        help -- the failure of guessing wrong that way is chatter, and the
-        other way is a pilot left alone who cannot navigate."""
-        self.assertEqual(P.nav_of(None), "dr")
+    def test_no_airframe_at_all_is_not_a_capability(self):
+        """THIS TEST USED TO ASSERT `nav_of(None) == "dr"`, on the reasoning that
+        "unknown here means unknown in a 1944 hangar, so assume he needs help".
+
+        It conflated two unknowns. An unlisted TYPE is one -- we know the
+        airframe and it is not in the table -- and it still gets the generous
+        `ins`, tested above. NO TYPE AT ALL is the other: `clearance.aircraft_type`
+        returns None when the pilot has not been correlated to a track yet, which
+        says nothing whatever about what he is flying. Answering it with the most
+        pessimistic capability meant the agent VOICED "dead reckoning only, a
+        compass, a watch and a map" over a man in an F-16. [#153]
+
+        See tests/test_i_do_not_know_is_not_it_does_not_exist.py."""
+        self.assertEqual(P.nav_of(None), "")
 
     def test_each_level_says_what_to_do_about_it(self):
-        for nav in ("ins", "adf", "dr"):
+        for nav in ("ins", "adf", "dr", ""):
             with self.subTest(nav=nav):
                 self.assertTrue(P.help_level(nav).strip())
 

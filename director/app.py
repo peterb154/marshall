@@ -411,6 +411,11 @@ def radar_endpoint(session_id: str = "") -> dict:
     `bullseye` travels with it because a shared reference is useless if each
     consumer has to go and find it separately -- that is how Batumi's ARP ended
     up as a module constant in the first place.
+
+    AND `contacts: null` IS NOT `contacts: []`. An empty list is an answer -- it
+    says radar looked and nothing is flying. `null` says radar could not be read,
+    and `radar_read` names which of the two it is in a word rather than leaving
+    every consumer to infer it from a missing key. See below. [#153]
     """
     from marshall.feed.dcs import contacts_live
     from marshall.feed.tracks import bullseyes, contacts
@@ -419,14 +424,37 @@ def radar_endpoint(session_id: str = "") -> dict:
     # uses, so the prose and the data can never come from different sources and
     # disagree. `contacts` returns None (not []) when the cache cannot be read,
     # which is what distinguishes "cold cache" from "empty sky".
-    got = contacts(binds)
+    got, read = contacts(binds), "cache"
     if got is None:
         try:
-            got = contacts_live(binds)
-        except Exception:
-            got = []
+            got, read = contacts_live(binds), "live"
+        except Exception as e:
+            # WHAT THIS USED TO DO WAS `got = []`, two lines under the comment
+            # above explaining the exact distinction it threw away. The cache
+            # could not be read AND the live scan raised -- so nothing knows
+            # anything about the sky -- and the answer that went out on the wire
+            # was "there is nothing flying", which is a statement of fact about
+            # the world made by a process that had just failed twice to look at
+            # it. `picture` on the next line comes from a SEPARATE call, so the
+            # prose could carry four aircraft while the structured field beside
+            # it said the sky was empty, inside one response.
+            #
+            # Silent, too: the only record of a double radar failure was an
+            # empty list indistinguishable from a quiet night.
+            log.warning("radar unreadable: cache cold and the live scan "
+                        "failed (%s); reporting UNREAD, not an empty sky",
+                        str(e)[:120])
+            got, read = None, "failed"
+    # `radar_read` is the word, published beside the data rather than derived
+    # from it -- a consumer that works out "null means failed" for itself is a
+    # consumer holding a rule, and it will be wrong the first time this changes.
+    #     cache   read from the PostGIS track cache
+    #     live    the cache was cold; this is a live gRPC scan
+    #     failed  neither could be read. `contacts` is null and says nothing
+    #             about what is flying.
     return {"picture": radar_picture(binds),
             "contacts": got,
+            "radar_read": read,
             "bullseye": bullseyes()}
 
 

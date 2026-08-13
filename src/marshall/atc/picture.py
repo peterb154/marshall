@@ -31,6 +31,8 @@ from __future__ import annotations
 
 
 from marshall.core import geo as _geo
+# What the sim calls a return, and the one question anybody asks about it.
+from marshall.feed import categories as _cat
 
 # A formation is tight: line abreast or trail, inside a couple of miles and a
 # few hundred feet, all pointing the same way. These live here as well as in the
@@ -62,9 +64,12 @@ def _marks(c: dict) -> str:
     out = ""
     if c.get("manned"):
         out += ", manned"
+    # ANYTHING THAT IS NOT AN AEROPLANE SAYS SO, and what counts as one is
+    # `feed.categories`' answer rather than two literals written out here. The
+    # column has two writers and they did not agree on a capital letter. [#156]
     cat = c.get("category") or ""
-    if cat not in ("airplane", "helicopter", ""):
-        out += f", {cat}"
+    if not _cat.is_aircraft(cat):
+        out += f", {_cat.word(cat)}"
     if c.get("on_ground"):
         out += ", on the ground"
     return out
@@ -87,8 +92,8 @@ def _other_ship(c: dict, lead: dict) -> str:
     if c.get("manned"):
         bits.append("manned")
     cat = c.get("category") or ""
-    if cat not in ("airplane", "helicopter", ""):
-        bits.append(cat)
+    if not _cat.is_aircraft(cat):
+        bits.append(_cat.word(cat))
     if c.get("on_ground"):
         bits.append("on the ground")
     bits.append(f"{nm_between(lead, c):.1f} nm")

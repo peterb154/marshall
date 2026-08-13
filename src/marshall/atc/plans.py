@@ -449,22 +449,56 @@ NAV_BY_TYPE = {
 }
 
 
-def nav_of(aircraft_type: str | None) -> str:
-    """How he navigates. Anything modern is assumed to know where it is.
+#   ""    NOBODY HAS TOLD US WHAT HE IS FLYING. Not a capability at all, and
+#         that is the point of its being here: an absent airframe used to be
+#         answered with `dr`, the most pessimistic of the three, so "we have not
+#         identified him" was indistinguishable from "we know he is on a compass
+#         and a watch". There was no output meaning "we do not know". [#153]
 
-    The default matters and is deliberately the GENEROUS one: a type nobody has
-    listed is far more likely to be a jet with an inertial platform than a 1944
-    fighter, and treating an F-16 like a Mustang produces a controller reading
-    ranges to a man watching a moving map -- chatter over somebody busy, which
-    is the failure this project keeps finding.
+
+def nav_of(aircraft_type: str | None) -> str:
+    """How he navigates, or "" when nothing has said what he is flying.
+
+    THE TWO UNKNOWNS ARE DIFFERENT QUESTIONS and answering them the same way is
+    the whole of [#153]'s third site:
+
+        an unlisted TYPE      we know the airframe, it is not in the table.
+                              Answered GENEROUSLY, and deliberately: a type
+                              nobody listed is far more likely to be a jet with
+                              an inertial platform than a 1944 fighter, and
+                              treating an F-16 like a Mustang produces a
+                              controller reading ranges to a man watching a
+                              moving map -- chatter over somebody busy.
+        NO TYPE AT ALL        `clearance.aircraft_type` returns None both when
+                              the pilot has not been correlated to a track yet
+                              and when the row is missing. That is not an
+                              airframe we failed to recognise; it is an airframe
+                              nobody has stated.
+
+    The first still gets `ins`. The second gets "", and `help_level` says so in
+    words rather than inventing the most pessimistic capability and handing the
+    controller a flat instruction built on it.
+
+    A CONFIDENT DENIAL IS THE FAILURE THIS PROJECT KEEPS PRODUCING, and it is
+    worse from here than from most places, because the agent VOICES what
+    `help_level` returns. "I do not know" and "it does not exist" are two
+    different sentences and only one of them is usually true.
     """
-    if not aircraft_type:
-        return "dr"          # unknown and in this hangar: assume he needs help
+    if not aircraft_type or not aircraft_type.strip():
+        return ""
     return NAV_BY_TYPE.get(aircraft_type.strip(), "ins")
 
 
 def help_level(nav: str) -> str:
-    """One line the controller's prompt can act on."""
+    """One line the controller's prompt can act on.
+
+    THE EMPTY KEY IS AN ANSWER NOW. It used to fall through to "", so a flight
+    with no known airframe contributed no line at all -- and before that it never
+    arose, because `nav_of` turned an absent airframe into `dr` and the
+    controller was told flatly that a man he had not yet identified could not
+    tell him where he was. What he is handed instead names the gap and says what
+    to do about it, which is what a real controller does: he asks. [#153]
+    """
     return {
         "ins": "He has an inertial platform and knows his position exactly. "
                "Name the fix and leave him alone; do not read him ranges.",
@@ -473,4 +507,8 @@ def help_level(nav: str) -> str:
         "dr": "Dead reckoning only -- a compass, a watch and a map. He needs "
               "position reports outbound and vectors home, and he cannot tell "
               "you where he is more precisely than a landmark.",
+        "": "Nothing has told us what he is flying -- radar has not been "
+            "correlated to him yet -- so how much navigation help he needs is "
+            "UNKNOWN. Do not assume either way. If it matters for what you are "
+            "about to give him, ask him what he is flying.",
     }.get(nav, "")
