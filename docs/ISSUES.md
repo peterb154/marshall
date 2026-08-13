@@ -8943,7 +8943,7 @@ Labels: needs-flight-test
 
 ---
 
-## [HO-8] An airborne aeroplane is never Ground's — #164
+## [HO-9] An airborne aeroplane is never Ground's — #164
 
     "Yes, an airborne airplane is never ground's. Just have tower take him back
      if he's flying - even if he already said welcome go to ground"
