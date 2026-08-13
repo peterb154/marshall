@@ -6184,6 +6184,16 @@ because a flight that starts on Departure never has a first handoff to be
 suppressed by. The rung now passes end to end: Tower → Departure → Center at
 exactly twenty-five miles, with the monitor accounting for itself every five.
 
+**Status:** FIXED 13 August — `0ff0467`, `dee3600`, `124ff1c`. All four hold at
+HEAD: `watching_him` returns `(station, why)` and asks `next_controller` in
+every branch, the thread records `handoff/none` and `/diag` has a row for it,
+`a_fresh_offer` keys the memory on the CONTROLLER rather than the callsign, and
+the picture is drawn per aerodrome. `tests/test_the_monitor_says_why.py` is
+green. Not `needs-flight-test`: every claim is structural. One sentence above is
+now stale and is left standing as the record — `leaving_my_airspace` no longer
+abstains inside terminal distance, that guard having been deliberately replaced
+by the `coming_towards_us` trend test under #138.
+
 ---
 
 ## [ASR-7] An ILS is not a talkdown, and nothing had ever flown one — #123
@@ -6226,6 +6236,15 @@ centreline, or never.
 
 Still to fly: the Kobuleti ILS 07 recovery end to end. See
 `tests/test_the_ils_is_not_a_talkdown.py`.
+
+**Status:** SHIPPED/UNVERIFIED — `may_vector` is one question in
+`core/approach.py`, asked by both the guidance context and the radar monitor: an
+ILS controller vectors to the intercept and goes quiet at established, the ASR
+still talks him all the way down, the beacon letdown never vectors at all, and
+the approach clearance rides on the last vector. All four are in
+`tests/test_the_ils_is_not_a_talkdown.py` and green, and a ghost flew the BATUMI
+ILS arrival end to end (`655bf90`). The line above is the reason this is not
+FIXED: nobody has flown the Kobuleti ILS 07 recovery.
 
 ---
 
@@ -6357,6 +6376,15 @@ pilot something; this is a number we owe him correctly on every single vector.
 `magvar` becomes the fourth audited quantity, and the audit's answer here is a
 correction rather than a broadcast.
 
+**Status:** OPEN — no commit anywhere references it, and the disagreement
+survived the #137 conversion intact rather than being settled by it:
+`config/theatres/caucasus.toml` now gives the Batumi FIELD `magvar_deg = 0.0`
+and the Batumi ILS `magvar_deg = 6.0`, in one file, six lines of table apart,
+and `atc/asr.py` applies the profile's on every correction. Nor has a pilot been
+asked: the Q9 this entry cites is struck through and is the range-datum row
+(`[R#16]`), not the HSI reading — so this has no card row at all and the number
+has never been taken.
+
 ---
 
 ## [SEAM-12] Clearance delivery searched an empty board, and said so three times — #126
@@ -6405,6 +6433,20 @@ what happened. Clearance delivery is the one seat where the pilot has NOT yet
 been bound to a track, so it is the seat where that confusion is guaranteed.
 Open: the refusal should say which board it means, and should look at what is
 filed before it decides it cannot help.
+
+**Status:** CLOSED 13 August — `471c0a7`, `Closes #126`, attested by claude. The
+mission travels on the `/atc` body, `director/app.py` calls
+`clearance_tools(mission, station)` and keys the agent cache on it, and
+`tests/test_the_clearance_reads_this_sortie.py` pins all four legs of that
+wiring including that the no-argument form is gone. Half of the "Open:" above
+landed with it — `not_on_the_board` now says which board it means and is told in
+so many words not to tell him a plan is missing.
+
+**One item of that paragraph did NOT land, and is written down here rather than
+lost with the issue:** `request_clearance` still returns `_not_on_the_board`
+before it ever calls `resolve(said, callsign)`, so clearance delivery still
+decides it cannot help without looking at what is filed. Re-file it if it is
+heard on the radio again.
 
 ---
 
@@ -6647,6 +6689,15 @@ to a Kobuleti station — the DESTINATION's Approach is unreachable from the rul
 table. That is why the airspace branch exists and why it is the only mechanism
 that can move him between fields.
 
+**Status:** CLOSED 13 August on GitHub, and recorded here with the caveat this
+file should keep: **the geometry did not move.** `handoff.py` still fires
+`departure → center` at a flat `CENTER_NM = TERMINAL_NM = 25.0` while
+`core/airspace.py` derives an eleven-mile area for each of the two fields, and
+the rule does not read the derived reach — none of the three options above was
+taken. What answered the symptom instead was #168: `enroute` is now a phase an
+aeroplane can be IN when Center works him, which is a different fact from being
+far enough out to be handed there.
+
 ---
 
 ## [ARCH-21] A flight plan is a route somebody filed, and nothing else — #131
@@ -6744,6 +6795,15 @@ all name a point the pilot chose, which is the whole reason he named it.
 
 Needs a flight test: whether a controller referring to your own steerpoint by
 name lands as useful or as uncanny is a judgement only a pilot makes.
+
+**Status:** OPEN — the rule was settled and no code has followed it. `bda3d1d`
+says in its own body "No code in this commit. The rule had to be right before
+the schema follows it", and no schema has: nothing reads an assigned plan's legs
+for geometry, `push_fixes` still builds the controller's table from the
+theatre's fixes and waypoints alone, no migration scopes `fixes` to a flight,
+and `clearance.py` still asserts "THE PUBLISHED FIX TABLE IS THE WORLD". A
+private fix is still resolvable and still unspeakable, which is the exact
+asymmetry in the title.
 
 ---
 
@@ -6901,9 +6961,10 @@ Tests: `GroundCanActuallyRefuse` and `ARefusalDoesNotMoveHimOn` in
 `tests/test_ground_procedure.py`.
 Code: `src/marshall/atc/controller.py`, `src/marshall/atc/agent_atc.py`.
 
-Status: SHIPPED/UNVERIFIED — flown by a synthetic pilot end to end: refused
+**Status:** SHIPPED/UNVERIFIED — flown by a synthetic pilot end to end: refused
 with the frequency at 01:17, agreed at 02:36, taxied. Whether it SOUNDS like one
-controller is still a pilot's.
+controller is still a pilot's. Card row Q3c is the one that asks it, and it is
+struck through — flown, so what remains is the ear, not the structure.
 
 ---
 
@@ -6954,6 +7015,14 @@ was doing before, instead of a timeout guessing at it. Fifteen minutes is a
 number chosen to be longer than a restart and shorter than a coffee break, and
 any number chosen that way is a number that will be wrong for somebody.
 
+**Status:** PARTLY, and the split is exactly as the two paragraphs above
+describe it. The ceiling is in and guarded: `Controller.hydrate` skips a row
+untouched for `stale_after_sec = 900.0` and reports it in `skipped_stale`
+instead of silently, with `tests/test_the_board_is_a_cache.py` asserting the
+name that was dropped. The root cause is untouched — nothing retires a
+callsign's previous row when he asks for a new IFR clearance, and `controller.py`
+still carries the comment saying so in capitals: "A CEILING, NOT A FIX".
+
 ---
 
 ## [ARCH-23] Fixes are Python, published to the database as though they were data — #137
@@ -6988,6 +7057,19 @@ one sortie.
 that can be cited (a plate, an AIP, the sim's own `Beacons.lua`); a mission's
 route points live with the mission; and nothing invented gets published to
 everybody. See also #133, which is the same distinction for flight plans.
+
+**Status:** PARTLY, and the headline complaint is still live. Items 3 and 4 of
+the audit below are done: aerodromes, stations and approaches became TOML rows,
+the Python definitions were DELETED (`118a9e6`) and `route.py` is a reader over
+them through a module `__getattr__`. Item 2 is not. `core/fixes.py` was never
+converted — FEET WET, INGRESS, TSUTSNVATI, EGRESS and `SORTIE` are still Python
+— and they re-enter through the back door: `theatre.waypoints` is built from
+them and `push_fixes` merges the waypoints into the shared table, so this
+mission's private turning points are STILL published to every controller on
+every bridge start. That is the sentence the pilot opened with. `core/fields.py`
+also still hard-codes `DEPARTURE_FIELD = "Kobuleti"` and
+`ARRIVAL_FIELD = "Batumi"`, and `3a30af3` already says all of this in fewer
+words.
 
 ---
 
@@ -8702,12 +8784,13 @@ Tests: needs one; `tools/bridge.py` has no test today.
 Code: `tools/bridge.py` (`DEFAULT_ARGS`, `_env`, `restart`),
 `src/marshall/core/theatre.py`.
 
-**Status:** OPEN — reproduced twice today, once by accident and once
-deliberately, and nothing has been built since. `tools/bridge.py`'s restart is
-still a bare `stop(); return start()`, `DEFAULT_ARGS` still carries `--theatre`
-and nothing else, `MARSHALL_APPROACH` appears nowhere in that file, and there is
-still no test for the launcher — so neither half of the criterion (carry it
-forward, or say what you are changing) exists.
+**Status:** FIXED 13 August — commit `6e83dc9`, `Closes #158`, landed while this
+audit was running. `restart` reads `/proc/<pid>/environ` off the running bridge
+BEFORE stopping it, so the procedure survives; `--approach` is parsed the way
+`--theatre` is, and an operator who asks for a different one is told what is
+about to change. `tools/bridge.py` had no test at all, which is what this cost;
+the one that matters now spawns a real child, because the property being relied
+on is that `/proc/<pid>/environ` is the environment at EXEC time.
 
 ---
 
