@@ -8573,18 +8573,45 @@ only controller who mattered had a field, and the fallback that was harmless
 then became a silent wrong answer when Center arrived. The docstring already
 tells this story about Kobuleti's controllers and stops one controller short.
 
-**What it should be.** A controller with no aerodrome measures from the
-**bullseye**. That is what a bullseye is for, it is the reference a pilot's HSI
-is already set to for a contact nobody is working, and the row has existed since
-migration 016 — `Scope` carries it, `picture.py` renders from it. `field_origin`
-has simply never heard of it.
+**What it should be — REVISED 13 August, and the first answer was wrong.**
 
-So the origin is chosen by the controller's ROLE, not by what is left over:
+This entry originally said a Center measures from the **bullseye**. The owner
+asked the better question:
 
-    a field controller   his own field's beacon        (unchanged)
-    a Center             the theatre bullseye
-    neither              None, and the picture renders nothing — #109 settled
+    "is this mostly about the diag screen? Does center actually need a bra
+     always computed?"
+
+No, and no. It is not mostly the screen — `scope.origin` feeds any range or
+radial the controller SPEAKS, and via `asr.Position.range_nm` it feeds
+`Rule("center", "approach", "inbound_within", CENTER_NM)`, so it moves
+aeroplanes. But a Center does not need a bearing-range-altitude at all. What a
+Center does is route him, descend him, and hand him off at the right point, and
+the only range in that is **"is he within 25 miles of the field he is going
+to"**.
+
+A bullseye is a TACTICAL reference — an AWACS construct. A Center working an IFR
+arrival would not use one, and proposing it here was reaching for the nearest
+available origin instead of asking what the number is for. The same mistake this
+whole issue is about, one layer up.
+
+**The reference is the aerodrome he is flying to**, which comes from his
+clearance — `legs[-1]`, the destination that #142 settled is just the last
+steerpoint. And today's accidental answer is already that field: `profile.beacon`
+is Batumi's, Batumi is where he is going, so the NUMBER is right. It is wrong
+only in PROVENANCE, which is why nothing looks broken until the radio's arrival
+and the aeroplane's destination differ — a second aircraft, a diversion, a
+restart onto another procedure.
+
+    a field controller   his own field's beacon              (unchanged)
+    working an aircraft  the field HE is going to, from his plan
+    nobody is working him  the bullseye, for DISPLAY only — the diag board's
+                         position column, never anything spoken
+    no destination yet   None, and the picture renders nothing — #109 settled
                          that an origin-less picture is not a picture
+
+**So this collapses into #162 step 2** rather than being its own feature. The fix
+is not "teach `field_origin` about bullseyes", it is "stop asking the radio, ask
+the aeroplane" — the same sentence as every other item tonight.
 
 **Why it is not a one-line change.** `CENTER_NM` — the range at which Center
 hands over — is computed against this same origin, so fixing the reference also
