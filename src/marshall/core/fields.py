@@ -138,13 +138,53 @@ class Field_:
             return self.ends[1]
         return self.ends[0]
 
-    def msa_for(self, bearing_deg: float) -> int:
-        """Published MSA -- briefed, charted, and not for vectoring."""
-        return msa_for(bearing_deg, self.msa_sectors or None)
+    def msa_for(self, bearing_deg: float) -> int | None:
+        """Published MSA on this bearing -- briefed, charted, not for vectoring.
 
-    def mva_for(self, bearing_deg: float, range_nm: float | None = None) -> int:
-        """The lowest a controller may assign an aircraft here."""
-        return mva_for(bearing_deg, range_nm, self.mva_cells or None)
+        `None` WHERE NOTHING IS PUBLISHED, and that is the whole of the fix
+        here. It used to read `self.msa_sectors or None`, and the `or None`
+        sent an empty grid down to `airspace.MSA_SECTORS` -- which is BATUMI's:
+        7,000 and 13,600 feet, surveyed against the Lesser Caucasus. So an
+        aerodrome nobody has surveyed inherited a Georgian mountain range,
+        silently, and the numbers came back identical to Batumi's byte for
+        byte. A field on flat ground is briefed eleven thousand feet for
+        terrain a hundred miles away, and a field standing higher than
+        Batumi's mountains is briefed under its own ramp.
+
+        The correct code was twenty lines away the whole time and says why:
+        `ApproachProfile.min_safe_ft` walks surveyed MVA, then published MSA,
+        then platform, and its docstring reads "Defaulting to the module's
+        tables instead would hand a new field Batumi's mountains". This is the
+        same ladder, on the object that owns the tables.
+
+        An absent minimum altitude is not the same fact as a low one, and a
+        caller must be able to tell them apart -- which it cannot when the
+        answer is a plausible integer belonging to another continent. #109:
+        a picture with no origin renders nothing rather than a guess.
+        """
+        return msa_for(bearing_deg, self.msa_sectors) if self.msa_sectors else None
+
+    def mva_for(self, bearing_deg: float,
+                range_nm: float | None = None) -> int | None:
+        """The lowest a controller may ASSIGN an aircraft here, or None.
+
+        A LADDER, not a default -- the same one `ApproachProfile.min_safe_ft`
+        walks, and for the same reason. A surveyed MVA if this field has one;
+        otherwise its own published MSA, which is higher than it needs to be
+        and therefore safe; otherwise nothing, because there is nothing.
+
+        Falling back to the MSA is the field's OWN number and is the honest
+        conservative answer. Falling back to `airspace.MVA_CELLS`, which is
+        what this did, is another aerodrome's survey: west of an unsurveyed
+        field at 4,494 ft it assigned 1,000 ft, three and a half thousand feet
+        below the ground, in a transmission a pilot flies in cloud.
+        """
+        if self.mva_cells:
+            return mva_for(bearing_deg, range_nm, self.mva_cells)
+        # HIS PUBLISHED MSA, and it is named rather than silently substituted:
+        # the caller gets a real minimum for THIS aerodrome, from the only
+        # other table this aerodrome has.
+        return self.msa_for(bearing_deg)
 
 
 # THE AERODROMES THAT USED TO BE HERE ARE NOW DATA.
