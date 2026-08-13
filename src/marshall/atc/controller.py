@@ -385,7 +385,31 @@ def _too_old(row, stale_after_sec: float) -> bool:
 
 @dataclass
 class Controller:
-    profile: R.ApproachProfile
+    # THE ARRIVAL THE RADIO WAS STARTED WITH, and it is OPTIONAL because there
+    # is no such thing as the theatre's approach.
+    #
+    #     "I don't understand what this whole business about a theater default
+    #      approach is. There should be no such thing"
+    #
+    # A pilot flies the approach his CLEARANCE names. That is settled
+    # everywhere else already -- migration 031 took `approach` out of
+    # `flight_plans` because which arrival you fly is a fact about your
+    # clearance and not about your route, `flights.cleared_approach` is the
+    # column that holds it, and `hydrate` brings it back across a restart. A
+    # field OFFERS a set of approaches and Approach issues one of them to one
+    # aeroplane. Nothing in that story needs a singular "the approach", and a
+    # controller who has issued none should not be holding one.
+    #
+    # It stays as a fallback for exactly one caller -- `_pro`, for an aeroplane
+    # nobody has cleared for anything -- and #162 step 1 removes the thing that
+    # fills it. Until then the important half is that it may be EMPTY: a
+    # Controller built with no arrival at all still works for everything that
+    # is not an approach, which is the whole ground ladder, the whole enroute
+    # half, and every seat below Approach. That property is the acceptance
+    # criterion #2 did not have, and it is what makes "the old path is gone"
+    # checkable rather than assertable -- nothing radio-wide can be being
+    # consulted if there is nothing radio-wide to consult.
+    profile: R.ApproachProfile | None = None
     aircraft: dict[str, Aircraft] = field(default_factory=dict)
     out: list[Tx] = field(default_factory=list)
     t: float = 0.0
@@ -526,8 +550,19 @@ class Controller:
         -- so reading the bridge's profile here is how a man on the ILS gets
         cleared for a radar approach while the aeroplane beside him, on the
         radar approach, is told the same thing and is right.
+
+        NO PROCEDURE MEANS THE BARE WORD. The fallback below picks between a
+        radar approach and a beacon approach for a procedure whose `kind` this
+        table does not know, and there is a difference between a procedure that
+        did not say and NO PROCEDURE AT ALL: the second was falling through to
+        "beacon approach", which clears an F-16 for a 1944 letdown that does
+        not exist at a field nobody named. Naming a procedure is not this
+        method's to invent, and "cleared approach" commits to nothing.
         """
-        kind = (getattr(self._pro(ac), "kind", "") or "").lower()
+        pro = self._pro(ac)
+        if pro is None:
+            return "approach"
+        kind = (getattr(pro, "kind", "") or "").lower()
         return self._APPROACH_WORD.get(
             kind, "radar approach" if self._vectored(ac) else "beacon approach")
 
@@ -1313,6 +1348,24 @@ class Controller:
         c = callsign.parse(ac.callsign)
         return c.spoken_flight if ac.is_flight else c.spoken
 
+    def _introduce(self, ac) -> str:
+        """"Batumi Approach, " -- or nothing at all, punctuation included.
+
+        The controller working THIS aeroplane names himself, which is the same
+        rule `report_down` was corrected to (#77): nobody speaks under another
+        controller's name. Three transmissions do it -- the hold with the
+        sequence number, the letdown timeout and the overdue prompt -- and all
+        three read the radio's arrival until #162.
+
+        AND AN ANONYMOUS CONTROLLER SAYS NOTHING RATHER THAN A BARE COMMA. A
+        `Controller` with no procedure has no name to give; "Pony one one, ,
+        report position" is what a format string does with an empty slot, and
+        it reaches Polly as a stumble. The trailing separator belongs to the
+        name, so the sentence closes up when there is none. [#109]
+        """
+        name = getattr(self._pro(ac), "controller", "")
+        return f"{name}, " if name else ""
+
     def _key(self, ac=None) -> str:
         """Which letdown/stack this aeroplane belongs to. The AERODROME's name.
 
@@ -1892,10 +1945,10 @@ class Controller:
             # Established inbound on the beam: start the station-passage clock.
             # The pilot flies the MAP on a watch; ATC times the same number and
             # calls it as backup (aural station passage does not read in the sim).
-            ac.map_t = self.t + self._pro(ac).final_approach_sec
+            ac.map_t = self.t + getattr(self._pro(ac), "final_approach_sec", 0.0)
             self.say(ac.callsign,
                      f"{self._addr(ac)}, roger, station passage "
-                     f"{spell_dur(self._pro(ac).final_approach_sec)}, "
+                     f"{spell_dur(getattr(self._pro(ac), "final_approach_sec", 0.0))}, "
                      f"report field in sight or missed approach.")
         elif (altitude_ft and ac.governing_ft
               and altitude_ft != ac.governing_ft):
@@ -1937,10 +1990,16 @@ class Controller:
         ac.map_t = None
         if self._in_letdown(ac) == ac.callsign:
             self._set_letdown(ac, None)
+        # NO PROCEDURE, NO PUBLISHED LEVEL. `assigned_ft` of None is the
+        # engine's own "nobody has put him anywhere", which is the truth here
+        # -- an aeroplane going round off an approach he was never cleared for
+        # has no missed-approach altitude, and inventing one puts a number on
+        # the board that no chart supports. See `_missed_instruction`.
+        pro = self._pro(ac)
         if ac.approaches >= MAX_APPROACHES:
-            ac.phase, ac.assigned_ft = Phase.BANISHED, self._pro(ac).top_ft
+            ac.phase, ac.assigned_ft = Phase.BANISHED, getattr(pro, "top_ft", None)
             return True
-        ac.phase, ac.assigned_ft = Phase.MISSED, self._pro(ac).missed_ft
+        ac.phase, ac.assigned_ft = Phase.MISSED, getattr(pro, "missed_ft", None)
         return False
 
     def _missed_instruction(self, ac, banished: bool) -> str:
@@ -1964,6 +2023,17 @@ class Controller:
         meeting: a real fix, a real frequency, the wrong airport.
         """
         pro = self._pro(ac)
+        # A GO-AROUND OFF AN APPROACH NOBODY CLEARED. Every figure below is
+        # published geometry -- the missed altitude, the outer hold, its
+        # frequency -- and there is none, so none is said. What survives is the
+        # part that is the CONTROLLER's rather than the chart's: get him
+        # climbing, and find out what he wants. #109's rule, at the moment a
+        # pilot is busiest.
+        if pro is None:
+            return ("climb, and say your intentions."
+                    if banished else
+                    "climb, and say your intentions. "
+                    "You are number one for the approach.")
         if banished:
             return (f"climb {spell_alt(pro.top_ft)}, proceed "
                     f"{pro.outer_hold.name}, contact "
@@ -2224,7 +2294,7 @@ class Controller:
         # A flight may fly a visual as a flight -- see `report_beacon`. It is
         # one entity, it gets one clearance, and the lead flies it.
         ac = self.get(cs)
-        runway = self._pro(ac).runway or "in use"
+        runway = getattr(self._pro(ac), "runway", "") or "in use"
         if not self._in_letdown(ac) or self._in_letdown(ac) == ac.callsign:
             self._set_letdown(ac, ac.callsign)
             ac.phase, ac.on_visual, ac.last_report_t = Phase.CLEARED, True, self.t
@@ -2242,7 +2312,7 @@ class Controller:
         # owns once the pilot is flying his own approach.
         ac.phase = Phase.HOLDING
         if ac.assigned_ft is None:
-            ac.assigned_ft = self._free_slot(ac) or self._pro(ac).bottom_ft
+            ac.assigned_ft = self._free_slot(ac) or getattr(self._pro(ac), "bottom_ft", None)
         place = len(self._holders(ac))
         words = ["", "one", "two", "three", "four", "five", "six"]
         self.say(ac.callsign,
@@ -2613,7 +2683,7 @@ class Controller:
             # letdown for him) -- re-affirm, don't send him back to the hold.
             self.say(ac.callsign,
                      f"{self._addr(ac)}, cleared {self._approach_name(ac)} runway "
-                     f"{self._pro(ac).runway or 'in use'}, continue.")
+                     f"{getattr(self._pro(ac), 'runway', '') or 'in use'}, continue.")
             return
         if not self.may_be_sequenced(ac):
             # NOT RADAR IDENTIFIED. He does not get a level, he does not get a
@@ -2659,11 +2729,11 @@ class Controller:
         if held_at is not None and not (self._in_letdown(ac) is None
                                         and self._next_up(ac) is ac):
             self.say(ac.callsign,
-                     f"{self._addr(ac)}, {self._pro(ac).controller}, "
+                     f"{self._addr(ac)}, {self._introduce(ac)}"
                      f"{self._hold_phrase(ac, held_at, ac.kit)}.",
                      decided=D.Decision(kind="hold", to=ac.callsign,
                                         altitude_ft=held_at,
-                                        station=self._pro(ac).controller))
+                                        station=getattr(self._pro(ac), "controller", "")))
         self._try_clear(requested_by=ac.callsign)
 
     # -- the sequencing core ----------------------------------------------
@@ -2768,12 +2838,12 @@ class Controller:
         self._set_letdown(ac, ac.callsign)
         self.say(ac.callsign,
                  f"{self._addr(ac)}, cleared {self._approach_name(ac)} runway "
-                 f"{self._pro(ac).runway or 'in use'}, "
+                 f"{getattr(self._pro(ac), 'runway', '') or 'in use'}, "
                  f"{self._report_phrase(ac)}. "
                  f"Report missed approach or landing."
                  f"{self._no_acknowledgement_phrase(ac)}",
                  decided=D.Decision(kind="cleared_approach", to=ac.callsign,
-                                    runway=self._pro(ac).runway or "",
+                                    runway=getattr(self._pro(ac), 'runway', '') or "",
                                     note=self._approach_name(ac)))
         if was_bottom_holder:
             self._step_down(ac)
@@ -2837,7 +2907,7 @@ class Controller:
                 continue
             ac = self.aircraft.get(cs)
             addr = self._addr(ac) if ac else callsign.parse(cs).spoken
-            self.say(cs, f"{addr}, {self._pro(ac).controller}, no report, "
+            self.say(cs, f"{addr}, {self._introduce(ac)}no report, "
                          f"say intentions.")
             # ...AND HIS LEVEL WITH HIM. `_spoken_for` now reserves the
             # altitude of the aircraft in the letdown, so declaring the letdown
@@ -2863,7 +2933,7 @@ class Controller:
             # radio's. Two aeroplanes go quiet in two stacks and both were
             # prompted by the same controller, one of whom is not working that
             # field. The letdown timeout eight lines up already asked `_pro`.
-            self.say(ac.callsign, f"{self._addr(ac)}, {self._pro(ac).controller}, "
+            self.say(ac.callsign, f"{self._addr(ac)}, {self._introduce(ac)}"
                                   f"report position.")
 
 

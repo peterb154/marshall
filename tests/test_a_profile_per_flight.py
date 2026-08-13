@@ -62,9 +62,22 @@ class TwoFieldsAtOnce(unittest.TestCase):
                             self.c._pro(self.away).mda_ft)
         self.assertEqual(self.c._pro(self.home).mda_ft, N.NELLIS_ILS.mda_ft)
 
-    def test_an_unassigned_aeroplane_still_gets_the_bridges_profile(self):
-        """Which is what everything did before, and is right for an aircraft
-        nobody has cleared for anything."""
+    def test_an_unassigned_aeroplane_falls_back_to_whatever_the_radio_holds(self):
+        """THE BEHAVIOUR BEING RETIRED, kept as one test and named as such.
+
+        This used to be called `..._still_gets_the_bridges_profile` and read as
+        an endorsement. It is not one. `_pro` falling back to `self.profile` is
+        a transitional arrangement with an issue against it: there is no such
+        thing as the theatre's approach, a pilot flies the one his CLEARANCE
+        names, and #162 step 1 deletes the `default_approach` that fills this
+        slot. What survives after that is `None`, which is what
+        `AControllerWithNoArrivalAtAll` below asserts.
+
+        Kept rather than deleted for one reason -- it is still the behaviour,
+        and a test that stops matching the code silently is worse than one that
+        is honest about being temporary. The pair of them is the whole state of
+        the migration: the fallback works, and the absence of it works too.
+        """
         self.c.check_in("Nobody 1")
         ac = self.c.aircraft[self.c._resolve("Nobody 1")]
         self.assertIs(self.c._pro(ac), N.TONOPAH_ILS)
@@ -136,6 +149,181 @@ class TheBoardSaysWhichLetdownHeIsIn(TwoFieldsAtOnce):
         self.assertTrue(rows["Home 1"]["in_letdown"])
         self.assertTrue(rows["Away 1"]["in_letdown"],
                         "the board can only see one letdown again")
+
+
+class AControllerWithNoArrivalAtAll(unittest.TestCase):
+    """`Controller()`. No profile. THE CRITERION #2 DID NOT HAVE. [#162]
+
+        "I don't understand what this whole business about a theater default
+         approach is. There should be no such thing"
+
+    #2 was marked FIXED on 11 August with all four of its acceptance criteria
+    met, and it was 2 call sites out of 28. Every criterion was about whether a
+    FLIGHT gets its own profile, and one does; none of them asks what fraction
+    of the code reads it. So the mechanism landed beside the singleton it was
+    meant to replace and satisfied the lot -- which is the finding worth
+    generalising: **a criterion a parallel implementation can satisfy does not
+    retire the thing it was replacing.**
+
+    This is the one that cannot be satisfied in parallel. It does not count
+    call sites and it does not grep; it removes the radio-wide profile
+    entirely, and then asks whether a controller still works. Nothing
+    radio-wide can be being consulted if there is nothing radio-wide to
+    consult, and no amount of `Aircraft.profile` beside a live `self.profile`
+    will make it pass.
+
+    WHAT MUST WORK IS EVERYTHING THAT IS NOT AN APPROACH, which is most of a
+    sortie: the whole ground ladder from clearance to the stand, the enroute
+    greeting, the runway in use, the wind, refusing a clearance that is not
+    this seat's, and the channel every one of those goes out on. An approach is
+    the one thing that genuinely needs a procedure, because a procedure is what
+    an approach IS.
+
+    WHAT MUST NOT HAPPEN IS AN INVENTED NUMBER. A missing procedure is not a
+    reason to read the dataclass's defaults back out as though they were data
+    -- 180 and one minute belong to a procedure that declined to say, not to
+    the absence of one. #109 settled this for a picture with no origin and it
+    is the same rule here: a value with no owner renders NOTHING. A heading
+    invented for a hold is a real heading over real terrain.
+    """
+
+    def setUp(self):
+        self.c = atc.Controller()
+        self.assertIsNone(self.c.profile, "the fixture is the point of it")
+
+    # -- it comes up at all ------------------------------------------------
+    def test_it_constructs_with_no_arguments(self):
+        self.assertEqual(atc.Controller().aircraft, {})
+
+    def test_an_aeroplane_nobody_cleared_has_no_procedure(self):
+        self.c.check_in("Pony 1-1")
+        ac = self.c.aircraft[self.c._resolve("Pony 1-1")]
+        self.assertIsNone(self.c._pro(ac),
+                          "there is no such thing as the theatre's approach")
+
+    # -- the whole ground ladder, which is where a sortie starts and ends ---
+    def test_the_ground_ladder_runs_end_to_end(self):
+        """Clearance, taxi, hold short, take-off, landing, roll-out, stand.
+
+        Driven as a pilot drives it, through the public entry points, because
+        the question is whether a CONTROLLER works rather than whether a method
+        does. Nothing here is an approach and nothing here needs one.
+        """
+        self.c.check_in("Pony 1-1")
+        for step, args in (("request_clearance", ()),
+                           ("clearance_read_back", (True,)),
+                           ("request_taxi", ()),
+                           ("report_holding_short", ()),
+                           ("request_takeoff", ()),
+                           ("report_landed", ()),
+                           ("report_down", ()),
+                           ("taxi_in", ())):
+            with self.subTest(step):
+                getattr(self.c, step)("Pony 1-1", *args)
+        self.assertEqual(self.c.anomalies, [])
+        said = " ".join(tx.text for tx in self.c.out)
+        self.assertIn("taxi to runway", said)
+        self.assertIn("cleared for take-off", said)
+        self.assertIn("taxi to parking", said)
+
+    def test_the_runway_and_the_wind_come_off_the_broadcast(self):
+        """Neither is the profile's, and neither ever was -- they belong to the
+        field the speaking controller is at. With no profile they are simply
+        the only answer there is."""
+        self.assertNotIn("in use", self.c._runway_in_use())
+        self.assertIn("wind", self.c._wind_phrase())
+
+    def test_a_transmission_still_has_a_channel(self):
+        """`say` chose the frequency off the radio's arrival. A comms ladder
+        belongs to the MAP -- you do not need an arrival to be told who works
+        Tower -- so it comes off the theatre and the aeroplane is still
+        reachable."""
+        self.c.check_in("Pony 1-1")
+        self.assertTrue(all(tx.freq_mhz for tx in self.c.out))
+        self.assertTrue(all(tx.controller for tx in self.c.out))
+
+    def test_a_clearance_that_is_not_his_is_still_refused(self):
+        """The aerodrome half of the invariant does not need a procedure: only
+        Tower puts an aeroplane on a runway, whatever anybody is flying."""
+        self.c._me = RT.KOB_GROUND
+        self.c.check_in("Pony 1-1")
+        self.c.request_takeoff("Pony 1-1")
+        self.assertIn("Tower's", " ".join(tx.text for tx in self.c.out))
+
+    # -- and the separation engine, which is this file's whole job ----------
+    def test_nobody_is_stacked_on_levels_that_do_not_exist(self):
+        """AN APPROACH IS THE ONE THING THAT GENUINELY NEEDS A PROCEDURE, and
+        the engine says so out loud instead of guessing.
+
+        A holding stack is `stack_ft` -- published levels above one aerodrome.
+        With no arrival there are none, so there is nothing to sequence anybody
+        into, and the honest answer is the one a real controller gives: no
+        holding available, remain clear. Two aircraft, two refusals, nobody
+        assigned an altitude and nobody cleared.
+
+        The alternative is the whole reason this test exists. Inventing a stack
+        would put two aeroplanes on levels no chart supports, over a field
+        nobody named, and it would LOOK exactly like working separation.
+        """
+        for cs in ("Pony 1-1", "Pony 2-1"):
+            self.c.check_in(cs)
+            self.c.note_radar_contact(cs, True)
+            self.c.report_beacon(cs, 6000)
+        for ac in self.c.aircraft.values():
+            with self.subTest(ac.callsign):
+                self.assertIsNone(ac.assigned_ft)
+                self.assertNotEqual(ac.phase, atc.Phase.CLEARED)
+        self.assertEqual(self.c._letdown_by, {})
+        self.assertEqual(
+            2, " ".join(tx.text for tx in self.c.out).count("no holding available"),
+            "a refusal that is not said is indistinguishable from a hold")
+
+    def test_a_go_around_still_gets_a_climb_and_no_altitude(self):
+        """The climb is the controller's and goes out; the missed-approach
+        altitude is the chart's and there is no chart."""
+        self.c.check_in("Pony 1-1")
+        self.c.report_missed("Pony 1-1")
+        said = " ".join(tx.text for tx in self.c.out)
+        self.assertIn("climb", said)
+        self.assertIn("say your intentions", said)
+        self.assertNotIn("thousand", said)
+
+    # -- nothing is invented -----------------------------------------------
+    def test_the_hold_carries_a_LEVEL_and_no_racetrack(self):
+        """The level is the engine's and keeps him off the others. The heading
+        and the leg time are published geometry at a field, and there is no
+        field -- so they are not said, rather than said from a default."""
+        said = self.c._hold_phrase(None, 6000)
+        self.assertIn("six thousand", said)
+        for invented in ("outbound", "inbound", "turns", "one eight zero"):
+            with self.subTest(invented):
+                self.assertNotIn(invented, said)
+
+    def test_no_navaid_is_named_anywhere(self):
+        """A fix nobody published is a real place a pilot can be sent to."""
+        self.c.check_in("Pony 1-1")
+        self.c.note_radar_contact("Pony 1-1", True)
+        self.c.report_beacon("Pony 1-1", 6000)
+        self.c.report_missed("Pony 1-1")
+        said = " ".join(tx.text for tx in self.c.out)
+        for fix in ("BATUMI", "KOBULETI", "INITIAL", "NELLIS", "TONOPAH"):
+            with self.subTest(fix):
+                self.assertNotIn(fix, said)
+
+    def test_he_is_not_cleared_for_a_1944_letdown_by_default(self):
+        """The fallback said "beacon approach", which is the over-fit this
+        whole issue is about arriving through a default."""
+        self.assertEqual(self.c._approach_name(None), "approach")
+
+    def test_an_anonymous_controller_does_not_introduce_himself(self):
+        """And does not leave the comma behind either -- "Pony one one, ,
+        report position" is what a format string does with an empty slot."""
+        self.assertEqual(self.c._introduce(None), "")
+        self.c.check_in("Pony 1-1")
+        self.c.note_radar_contact("Pony 1-1", True)
+        self.c.report_beacon("Pony 1-1", 6000)
+        self.c.tick(atc.REPORT_OVERDUE_SEC + 1)
+        self.assertNotIn(", ,", " ".join(tx.text for tx in self.c.out))
 
 
 if __name__ == "__main__":
