@@ -13,10 +13,40 @@ import unittest
 from marshall.atc import controller as atc
 from marshall.atc import equipment as E
 from marshall.core import route as R
+from tests import theatre as T
 
 
 def profile(**over):
-    return dataclasses.replace(R.BATUMI_APPROACH, **over)
+    """THE PROCEDURE THESE TESTS FLY, whichever map is loaded.
+
+    This was `dataclasses.replace(profile(), **over)`, evaluated the
+    moment anybody imported the module -- and since `test_formations.py` and
+    `test_asr.py` import it from here, one Georgian name at module scope decided
+    the map for 240 tests and made three files uncollectable on any other.
+
+    `T.letdown()` is the same object on the Caucasus: `batumi-ndb`, published,
+    unchanged, so not a number below moves. On a map that publishes no beacon
+    letdown it is CONSTRUCTED, at that map's arrival field, from the same
+    numbers -- which is the point rather than a compromise. Everything in this
+    file is a RULE of the separation engine (enter at the top, step down on
+    vacate, one in the letdown, a go-around goes to the front) and a rule that
+    only holds over Georgia is not a rule.
+
+    The 13 August inventory's census of what this suite ever builds opens with
+    "ApproachProfiles the suite CONSTRUCTS: zero". Every test here was quietly
+    asserting against Batumi's stack because Batumi's stack was the only one
+    that existed.
+    """
+    return dataclasses.replace(T.letdown(), **over)
+
+
+def vectored(**over):
+    """A RADAR ARRIVAL: the procedure this map's bridge is started on, which is
+    the Batumi ASR on one and the Nellis ILS on the other. Where these tests
+    said `vectored()` they meant "an approach the controller steers", and the
+    contrast with `profile()` -- the letdown, which he does not steer -- is what
+    half of them are about."""
+    return dataclasses.replace(T.the_arrival(), **over) if over else T.the_arrival()
 
 
 def texts(ctl):
@@ -282,7 +312,7 @@ class TestChannels(unittest.TestCase):
         self.assertEqual(banish[0].freq_mhz, R.KOBULETI.freq_mhz)
 
     def test_a_single_controller_field_needs_no_handoff(self):
-        one = dataclasses.replace(R.BATUMI_APPROACH, arrival_fix=None)
+        one = dataclasses.replace(profile(), arrival_fix=None)
         ctl = atc.Controller(one)
         ctl.check_in("Pony 1-1")
         self.assertEqual(ctl.out[0].freq_mhz, R.BATUMI.freq_mhz)
@@ -292,7 +322,7 @@ class TestProfileRoundTrip(unittest.TestCase):
     """Approaches are stored, so a profile outlives the code that wrote it."""
 
     def test_every_nested_fix_is_rebuilt(self):
-        rt = R.profile_from_dict(R.profile_to_dict(R.BATUMI_APPROACH))
+        rt = R.profile_from_dict(R.profile_to_dict(profile()))
         # `aerodrome` AND `beacon`, which is what `beacon` was two of. This
         # profile is the letdown, so it is the one that has both -- and a
         # round trip that dropped either would put an approach back with
@@ -304,7 +334,7 @@ class TestProfileRoundTrip(unittest.TestCase):
         # A list of dicts passes every check and fails only when something asks
         # a Station for its name -- which for a stored profile is during bridge
         # start-up, in front of a waiting pilot. It did exactly that.
-        rt = R.profile_from_dict(R.profile_to_dict(R.BATUMI_ASR))
+        rt = R.profile_from_dict(R.profile_to_dict(vectored()))
         self.assertTrue(R.STATIONS)
         for s in R.STATIONS:
             self.assertIsInstance(s, R.Station)
@@ -315,13 +345,13 @@ class TestProfileRoundTrip(unittest.TestCase):
     def test_a_round_tripped_profile_can_still_pick_a_channel(self):
         # The failure this guards: a dict left in arrival_fix passes every other
         # check and only breaks when the controller asks which frequency to use.
-        rt = R.profile_from_dict(R.profile_to_dict(R.BATUMI_APPROACH))
+        rt = R.profile_from_dict(R.profile_to_dict(profile()))
         self.assertEqual(rt.station(enroute=True), ("Batumi Approach", 128.0))
         self.assertEqual(rt.station(), ("Batumi Tower", 132.0))
         self.assertEqual(rt.station(banished=True), ("Kobuleti Departure", 124.0))
 
     def test_a_legacy_row_without_arrival_fix_still_loads(self):
-        d = R.profile_to_dict(R.BATUMI_APPROACH)
+        d = R.profile_to_dict(profile())
         d.pop("arrival_fix")
         rt = R.profile_from_dict(d)
         self.assertIsNone(rt.arrival_fix)
@@ -343,8 +373,8 @@ class TestApproachVocabulary(unittest.TestCase):
     """
 
     def setUp(self):
-        self.asr = atc.Controller(R.BATUMI_ASR)
-        self.ndb = atc.Controller(R.BATUMI_APPROACH)
+        self.asr = atc.Controller(vectored())
+        self.ndb = atc.Controller(profile())
 
     def test_the_radar_approach_is_not_called_a_beacon_approach(self):
         self.assertIn("radar", self.asr._approach_name(None))
@@ -356,7 +386,7 @@ class TestApproachVocabulary(unittest.TestCase):
         # THE AERODROME, because the ASR has no beacon to name -- that is the
         # point of the test and #163 made it sayable. A vectored hold is an
         # altitude; it must not name a place at all.
-        self.assertNotIn(R.BATUMI_ASR.aerodrome.name.lower(), hold.lower())
+        self.assertNotIn(vectored().aerodrome.name.lower(), hold.lower())
         self.assertIn("six thousand", hold)
         # and he is told the wait ends with a call from the controller, since
         # there is no fix for him to arrive at and report
@@ -365,7 +395,7 @@ class TestApproachVocabulary(unittest.TestCase):
     def test_the_letdown_still_holds_at_its_beacon(self):
         hold = self.ndb._hold_phrase(None, 6000)
         # ITS HOMER, and this is the one procedure that has one.
-        self.assertIn(R.BATUMI_APPROACH.navaid.name, hold)
+        self.assertIn(profile().navaid.name, hold)
 
     def test_no_beacon_report_is_ever_asked_for_on_a_radar_approach(self):
         self.assertNotIn("beacon", self.asr._report_phrase(None).lower())
@@ -406,7 +436,7 @@ class TestApproachVocabulary(unittest.TestCase):
         # The belt-and-braces check: drive a whole arrival and read every
         # transmission. A single leftover literal is a fix named to an aircraft
         # that cannot find it.
-        c = atc.Controller(R.BATUMI_ASR)
+        c = atc.Controller(vectored())
         said = []
         c.say = lambda cs, text, ref=None, decided=None: said.append(text)
         c.check_in("Pony 1-1")
@@ -414,9 +444,9 @@ class TestApproachVocabulary(unittest.TestCase):
         # The controller is CALLED "Batumi Approach", so the bare word proves
         # nothing -- what must not appear is the beacon used as a place: a fix
         # to fly to, hold at, or report over. Strip his own name, then look.
-        beacon = R.BATUMI_ASR.aerodrome.name.lower()
+        beacon = vectored().aerodrome.name.lower()
         for line in said:
-            bare = line.lower().replace(R.BATUMI_ASR.controller.lower(), "")
+            bare = line.lower().replace(vectored().controller.lower(), "")
             self.assertNotIn("beacon", bare, line)
             self.assertNotIn(beacon, bare, line)
 
@@ -433,23 +463,23 @@ class TestVectoredHoldingIsVisual(unittest.TestCase):
     """
 
     def test_the_vectored_stack_starts_above_the_cloud_tops(self):
-        p = R.BATUMI_ASR
+        p = vectored()
         self.assertGreater(p.stack_ft[0], p.tops_ft,
                            "aircraft told to hold present position inside cloud")
         self.assertGreaterEqual(p.stack_ft[0] - p.tops_ft, p.vmc_margin_ft)
 
     def test_the_beacon_letdown_may_hold_lower(self):
         # It has a fix to hold over, so cloud does not stop it.
-        self.assertLess(R.BATUMI_APPROACH.stack_ft[0], R.BATUMI_ASR.stack_ft[0])
+        self.assertLess(profile().stack_ft[0], vectored().stack_ft[0])
 
     def test_a_higher_ceiling_pushes_the_vectored_stack_up(self):
-        low = dataclasses.replace(R.BATUMI_ASR, ceiling_ft=400)
-        high = dataclasses.replace(R.BATUMI_ASR, ceiling_ft=6000)
+        low = dataclasses.replace(vectored(), ceiling_ft=400)
+        high = dataclasses.replace(vectored(), ceiling_ft=6000)
         self.assertGreater(high.stack_ft[0], low.stack_ft[0])
         self.assertGreater(high.stack_ft[0], high.tops_ft)
 
     def test_the_levels_still_separate(self):
-        p = R.BATUMI_ASR
+        p = vectored()
         gaps = {b - a for a, b in zip(p.stack_ft, p.stack_ft[1:])}
         self.assertEqual(gaps, {p.hold_step_ft})
 
@@ -469,7 +499,7 @@ class TestTheBlindEngineIsToldWhatRadarSees(unittest.TestCase):
     """
 
     def setUp(self):
-        self.c = atc.Controller(R.BATUMI_ASR)
+        self.c = atc.Controller(vectored())
         self.said = []
         self.c.say = lambda cs, text, ref=None, decided=None: self.said.append(text)
 
@@ -527,7 +557,7 @@ class TestHeadingsAreSpokenLikeHeadings(unittest.TestCase):
         self.assertEqual(atc.spell_hdg(90), "zero nine zero")
 
     def test_the_holding_racetrack_reads_back_sensibly(self):
-        c = atc.Controller(R.BATUMI_ASR)
+        c = atc.Controller(vectored())
         hold = c._hold_phrase(None, 8000)
         self.assertIn("one eight zero outbound", hold)
         self.assertIn("three six zero inbound", hold)
@@ -551,7 +581,7 @@ class AStationIsTheTheatresAndNotTheApproachs(unittest.TestCase):
         names = {f.name for f in dc.fields(R.ApproachProfile)}
         self.assertNotIn("stations", names)
         for attr in ("station_for", "station_on"):
-            self.assertFalse(hasattr(R.BATUMI_ASR, attr),
+            self.assertFalse(hasattr(vectored(), attr),
                              f"the profile answers {attr} again")
 
     def test_the_theatre_answers_and_still_wants_a_field(self):
@@ -583,14 +613,14 @@ class AStationIsTheTheatresAndNotTheApproachs(unittest.TestCase):
         answered None. Moving the table to the map would have handed the 1944
         letdown eight modern seats if the bit had not moved with it.
         """
-        self.assertFalse(R.BATUMI_APPROACH.theatre_stations)
-        self.assertTrue(R.BATUMI_ASR.theatre_stations)
+        self.assertFalse(profile().theatre_stations)
+        self.assertTrue(vectored().theatre_stations)
         self.assertIsNone(R.station_for("tower", field="Batumi",
-                                        procedure=R.BATUMI_APPROACH))
+                                        procedure=profile()))
         self.assertIsNone(R.station_on(R.TOWER.freq_mhz,
-                                       procedure=R.BATUMI_APPROACH))
+                                       procedure=profile()))
         # ...and his controller still comes off the fix he is homing.
-        self.assertEqual(R.BATUMI_APPROACH.station(), ("Batumi Tower", 132.0))
+        self.assertEqual(profile().station(), ("Batumi Tower", 132.0))
 
 
 class TestStationsAreChosenByRole(unittest.TestCase):
@@ -603,15 +633,15 @@ class TestStationsAreChosenByRole(unittest.TestCase):
     """
 
     def test_the_landing_goes_to_tower_not_to_whoever_is_last(self):
-        self.assertEqual(R.BATUMI_ASR.station(), (R.TOWER.name, R.TOWER.freq_mhz))
+        self.assertEqual(vectored().station(), (R.TOWER.name, R.TOWER.freq_mhz))
 
     def test_enroute_goes_to_center(self):
-        self.assertEqual(R.BATUMI_ASR.station(enroute=True),
+        self.assertEqual(vectored().station(enroute=True),
                          (R.CENTER.name, R.CENTER.freq_mhz))
 
     def test_the_overlord_is_never_an_arrival_station(self):
         for kwargs in ({}, {"enroute": True}, {"banished": True}):
-            self.assertNotEqual(R.BATUMI_ASR.station(**kwargs)[0], R.OVERLORD.name)
+            self.assertNotEqual(vectored().station(**kwargs)[0], R.OVERLORD.name)
 
     def test_a_field_with_no_tower_falls_back_to_approach(self):
         """A field with no Tower is now made by taking one out of the MAP's
@@ -621,7 +651,7 @@ class TestStationsAreChosenByRole(unittest.TestCase):
         from marshall.core import theatre as T
         thin = (R.CENTER, R.APPROACH, R.OVERLORD)
         with mock.patch.object(T, "stations_now", lambda *a, **k: thin):
-            self.assertEqual(R.BATUMI_ASR.station()[0], R.APPROACH.name)
+            self.assertEqual(vectored().station()[0], R.APPROACH.name)
 
 
 class TestNobodyClearedNobodyVectored(unittest.TestCase):
@@ -805,8 +835,7 @@ class TestTheMissedApproachLatch(unittest.TestCase):
     def setUp(self):
         from marshall.atc import agent_atc
         from marshall.atc import asr
-        from marshall.core import route as R
-        self.A, self.asr, self.p = agent_atc, asr, R.BATUMI_ASR
+        self.A, self.asr, self.p = agent_atc, asr, vectored()
         # A fresh store IS the reset -- `_flying_missed.clear()` on a module
         # global was the old way. See [LAYERS.md] step 2.
         self.bridge = agent_atc.Bridge()
@@ -998,8 +1027,8 @@ class TestAHoldHeCanActuallyFly(unittest.TestCase):
     """
 
     def setUp(self):
-        self.radar = atc.Controller(R.BATUMI_ASR)          # no navaid
-        self.beacon = atc.Controller(R.BATUMI_APPROACH)    # he can find the fix
+        self.radar = atc.Controller(vectored())          # no navaid
+        self.beacon = atc.Controller(profile())    # he can find the fix
 
     def test_it_carries_both_headings_and_the_time_on_each(self):
         said = self.radar._hold_phrase(None, 6000)
@@ -1041,7 +1070,7 @@ class TestEveryHoldGoesThroughOnePhrase(unittest.TestCase):
     """
 
     def test_the_second_aircraft_gets_a_hold_he_can_fly(self):
-        c = atc.Controller(R.BATUMI_ASR)
+        c = atc.Controller(vectored())
         c.report_beacon("Pony 1-1", 6000)
         c.out.clear()
         c.report_beacon("Hammer 1-2", 5000)
@@ -1051,7 +1080,7 @@ class TestEveryHoldGoesThroughOnePhrase(unittest.TestCase):
         self.assertNotIn("as published", said)
 
     def test_on_a_beacon_field_it_is_still_the_published_hold(self):
-        c = atc.Controller(R.BATUMI_APPROACH)
+        c = atc.Controller(profile())
         c.report_beacon("Pony 1-1", 6000)
         c.out.clear()
         c.report_beacon("Hammer 1-2", 5000)
@@ -1072,8 +1101,8 @@ class TestWhatHeIsFlyingDecidesTheHold(unittest.TestCase):
     homing this field's NDB.
     """
 
-    def hold_for(self, kit, profile=None):
-        c = atc.Controller(profile or R.BATUMI_APPROACH)
+    def hold_for(self, kit, pro=None):
+        c = atc.Controller(pro or profile())
         c.report_beacon("Pony 1-1", 6000)
         c.note_equipment("Pony 1-1", kit)
         return c._hold_phrase(c.aircraft["Pony 1-1"], 6000, c.aircraft["Pony 1-1"].kit)
@@ -1113,17 +1142,17 @@ class TestWhatHeIsFlyingDecidesTheHold(unittest.TestCase):
         """There is nothing to hold over, whatever he is carrying."""
         for t in ("P-51D-30-NA", "P-47D-30", "F-16C_50"):
             with self.subTest(t=t):
-                said = self.hold_for(E.receivers(t), R.BATUMI_ASR)
+                said = self.hold_for(E.receivers(t), vectored())
                 self.assertNotIn("as published", said)
 
     def test_the_equipment_is_remembered_on_the_aircraft(self):
-        c = atc.Controller(R.BATUMI_ASR)
+        c = atc.Controller(vectored())
         c.report_beacon("Pony 1-1", 6000)
         c.note_equipment("Pony 1-1", E.receivers("P-51D-30-NA"))
         self.assertEqual(c.aircraft["Pony 1-1"].kit, frozenset({"adf"}))
 
     def test_noting_equipment_for_somebody_not_on_the_board_is_harmless(self):
-        c = atc.Controller(R.BATUMI_ASR)
+        c = atc.Controller(vectored())
         c.note_equipment("Ghost 9-9", frozenset())
         self.assertNotIn("Ghost 9-9", c.aircraft)
 
@@ -1153,7 +1182,7 @@ class TestNobodyIsSequencedUntilRadarHasHim(unittest.TestCase):
         c.note_radar_contact(cs, True)
 
     def test_an_unidentified_callsign_gets_no_place_in_the_queue(self):
-        c = atc.Controller(R.BATUMI_ASR)
+        c = atc.Controller(vectored())
         c.request_approach("Maintained 2")
         said = self.out(c)
         self.assertIn("not radar identified", said)
@@ -1162,7 +1191,7 @@ class TestNobodyIsSequencedUntilRadarHasHim(unittest.TestCase):
 
     def test_and_holds_nobody_behind_it(self):
         """The whole cost of the bug: a real pilot queued behind a sentence."""
-        c = atc.Controller(R.BATUMI_ASR)
+        c = atc.Controller(vectored())
         c.request_approach("Maintained 2")
         c.out.clear()
         self.seen(c, "Falcon 1-1")
@@ -1172,13 +1201,13 @@ class TestNobodyIsSequencedUntilRadarHasHim(unittest.TestCase):
         self.assertNotIn("number two", said)
 
     def test_a_radar_identified_aircraft_is_worked_normally(self):
-        c = atc.Controller(R.BATUMI_ASR)
+        c = atc.Controller(vectored())
         self.seen(c, "Falcon 1-1")
         c.request_approach("Falcon 1-1")
         self.assertIn("cleared", self.out(c))
 
     def test_losing_radar_contact_is_as_visible_as_finding_it(self):
-        c = atc.Controller(R.BATUMI_ASR)
+        c = atc.Controller(vectored())
         self.seen(c, "Falcon 1-1")
         c.note_radar_contact("Falcon 1-1", False)
         self.assertFalse(c.may_be_sequenced(c.aircraft["Falcon 1-1"]))
@@ -1187,7 +1216,7 @@ class TestNobodyIsSequencedUntilRadarHasHim(unittest.TestCase):
         """A beacon letdown has no radar at all. Being unseen is the NORMAL
         condition there and this rule must not apply, or the controller refuses
         to work anybody."""
-        c = atc.Controller(R.BATUMI_APPROACH)
+        c = atc.Controller(profile())
         c.request_approach("Pony 1-1")
         said = self.out(c)
         self.assertNotIn("not radar identified", said)
@@ -1208,7 +1237,7 @@ class TestAHoldNobodyWillFly(unittest.TestCase):
     """
 
     def setUp(self):
-        self.ctl = atc.Controller(R.BATUMI_ASR)
+        self.ctl = atc.Controller(vectored())
 
     def _admit(self, *names):
         for cs in names:
@@ -1272,7 +1301,7 @@ class TestACheckInDoesNotUndoAClearance(unittest.TestCase):
     """
 
     def setUp(self):
-        self.ctl = atc.Controller(R.BATUMI_ASR)
+        self.ctl = atc.Controller(vectored())
         self.ctl.t = 0.0
 
     def cleared(self, cs="Sockeye"):
@@ -1343,7 +1372,7 @@ class TestNobodyIsNumberTwoBehindHimself(unittest.TestCase):
     """
 
     def setUp(self):
-        self.ctl = atc.Controller(R.BATUMI_ASR)
+        self.ctl = atc.Controller(vectored())
         self.ctl.t = 0.0
 
     def _stuck(self, cs="Sockeye"):

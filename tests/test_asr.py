@@ -14,11 +14,27 @@ from marshall.atc import asr
 from marshall.atc import geometry as G
 from marshall.atc import handoff as H
 from marshall.core import route as R
+from tests import theatre as T
 
 
 def profile(**over):
-    base = dataclasses.replace(R.BATUMI_APPROACH, kind="asr")
+    """A SURVEILLANCE APPROACH, on whichever map is loaded.
+
+    `profile()` stood here at module scope, so the geometry that puts an
+    aeroplane on a runway was only ever checked against one runway, at one
+    field, at sea level, on one bearing. It is built off `T.letdown()` now --
+    the same object on the Caucasus, so no number below moves -- with `kind`
+    forced to "asr" exactly as before, because what this file is about is a
+    controller who navigates rather than a particular aerodrome.
+    """
+    base = dataclasses.replace(T.letdown(), kind="asr")
     return dataclasses.replace(base, **over) if over else base
+
+
+def vectored():
+    """The map's radar arrival, where these tests want the bridge's procedure
+    rather than a constructed one."""
+    return T.the_arrival()
 
 
 def right_of_course_nm(range_nm, radial, final_crs):
@@ -267,7 +283,7 @@ class TestRoomToFly(unittest.TestCase):
     """
 
     def setUp(self):
-        self.p = R.BATUMI_ASR
+        self.p = vectored()
 
     def test_close_in_and_off_the_centreline_is_not_in_position(self):
         """The RULE: inside a few miles, a mile and a bit off the line is not a
@@ -325,7 +341,7 @@ class TestOnTheGround(unittest.TestCase):
     """
 
     def setUp(self):
-        self.p = R.BATUMI_ASR
+        self.p = vectored()
 
     def at(self, nm, radial, alt):
         return asr.Position(range_nm=nm, radial_deg=radial, alt_ft=alt,
@@ -357,7 +373,7 @@ class TestConvergence(unittest.TestCase):
     """
 
     def setUp(self):
-        self.p = R.BATUMI_ASR
+        self.p = vectored()
 
     def flies_to_the_field(self, nm, radial, heading, limit=80):
         for _ in range(limit):
@@ -396,8 +412,8 @@ class TestVectoredFlag(unittest.TestCase):
         # The two guidance modes are mutually exclusive: a homing adapter points
         # the nose at the beacon, so a vector heading destroys the only course
         # reference the pilot has.
-        self.assertTrue(profile().vectored)
-        self.assertFalse(R.BATUMI_APPROACH.vectored)
+        self.assertTrue(profile().vectored)          # kind="asr"
+        self.assertFalse(T.letdown().vectored)       # the beacon letdown
 
 
 class TestSpokenRange(unittest.TestCase):
@@ -414,7 +430,7 @@ class TestStations(unittest.TestCase):
     """Who the controller is, and when he lets go."""
 
     def setUp(self):
-        self.p = R.BATUMI_ASR
+        self.p = vectored()
 
     # Read the frequencies off the stations rather than hardcoding them: these
     # tests broke the moment the numbers moved, which is noise, not signal.
@@ -553,7 +569,7 @@ class TestTerrain(unittest.TestCase):
     """
 
     def setUp(self):
-        self.p = R.BATUMI_ASR
+        self.p = vectored()
 
     def test_published_sectors_match_the_plate(self):
         # AD 2.UGSB-IAC-12-ILSy: 7,000 from 217 clockwise through north to 038,
@@ -668,7 +684,7 @@ class TestLeavingMyAirspace(unittest.TestCase):
     def setUp(self):
         from marshall.atc import agent_atc
         self.A = agent_atc
-        self.p = R.BATUMI_ASR
+        self.p = vectored()
         self.approach = R.station_for("approach")
 
     def at(self, nm):
@@ -738,7 +754,7 @@ class TestClimbingOutOnTheMissed(unittest.TestCase):
     """
 
     def setUp(self):
-        self.p = R.BATUMI_ASR
+        self.p = vectored()
 
     def climbing_out(self, nm, alt):
         return asr.Position(range_nm=nm, radial_deg=self.p.missed_hdg,
@@ -815,7 +831,7 @@ class TestTheReversalHooverFlew(unittest.TestCase):
              (7.7, 315, 1848, 324), (8.5, 316, 1800, 324), (10.0, 318, 1800, 324)]
 
     def headings(self):
-        p = R.BATUMI_ASR
+        p = vectored()
         return [asr.guide(G.Position(rng, rad, alt, hdg), p).heading
                 for rng, rad, alt, hdg in self.TRACE]
 
