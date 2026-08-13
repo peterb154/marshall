@@ -2157,7 +2157,7 @@ def _approach_named(key: str):
     #
     # The loose match stays as a SECOND pass: a plan naming "batumi" with no
     # procedure still wants that field's default rather than nothing.
-    cands = []
+    exact, loose = [], []
     for p in getattr(th, "approaches", ()) or ():
         # THE AERODROME, which is what the key has always spelled: a procedure
         # is named `<field>-<kind>` -- "batumi-ils", "kobuleti-ils". It read
@@ -2167,11 +2167,53 @@ def _approach_named(key: str):
         # the test that pins them saw it. Both now look for either spelling.
         name = (getattr(getattr(p, "aerodrome", None), "name", "") or "").lower()
         kind = (getattr(p, "kind", "") or "").lower()
+        rwy = str(getattr(p, "runway", "") or "").lower()
+        if key == f"{name}-{kind}-{rwy}":
+            return p          # unique by construction: field, kind AND runway
+        # THE RUNWAY IS PART OF THE NAME. Two approaches at one field differ by
+        # the runway they serve -- ILS 13 and ILS 31 are the same localiser from
+        # opposite ends and are not interchangeable -- so `<field>-<kind>` can
+        # NAME only one of them. Batumi is 13/31 and an ILS to 31 is an ordinary
+        # thing to add. [#165]
+        # THE RUNWAY-LESS FORM IS NOT EXACT, and treating it as exact was the
+        # bug one level in: `batumi-ils` names one procedure today and two the
+        # day an ILS to 31 is published, and returning on the first match is
+        # what #131 did. It is COLLECTED and resolved only if it is unique.
         if key == f"{name}-{kind}":
-            return p
-        if key in (name, kind) or key.startswith(f"{name}-"):
-            cands.append(p)
-    return cands[0] if cands else None
+            exact.append(p)
+        elif key in (name, kind) or key.startswith(f"{name}-"):
+            loose.append(p)
+    # ONE CANDIDATE OR NONE. This returned `cands[0]`, and picking the first of
+    # several is #131 exactly: on 12 August it cleared a man for a "radar
+    # approach" while his plate said ILS, and every number he was given was a
+    # real number belonging to the wrong procedure.
+    #
+    # Loose matching is still worth having -- a plan naming just "batumi" wants
+    # that field's approach when the field has one. It stops being worth having
+    # the moment the field has two, and then the honest answer is that the
+    # request does not name a procedure. #1 G3/G4 settled this shape for flight
+    # plans: "when to ASK instead of picking one".
+    for cands in (exact, loose):
+        if len(cands) == 1:
+            return cands[0]
+        if len(cands) > 1:
+            print(f"  !! {key!r} names {len(cands)} procedures — "
+                  f"{', '.join(sorted(_key_of(c) for c in cands))}. "
+                  f"Naming the runway is what tells them apart.", flush=True)
+            return None
+    return None
+
+
+def _key_of(p) -> str:
+    """The key a procedure answers to, rebuilt from what it is.
+
+    `<field>-<kind>-<runway>`, which is how a published procedure is named
+    everywhere outside this system: ILS RWY 13, VOR RWY 31.
+    """
+    name = (getattr(getattr(p, "aerodrome", None), "name", "") or "").lower()
+    kind = (getattr(p, "kind", "") or "").lower()
+    rwy = str(getattr(p, "runway", "") or "").lower()
+    return "-".join(x for x in (name, kind, rwy) if x)
 
 
 def _read_back_correct(bridge, known: str,

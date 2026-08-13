@@ -26,6 +26,7 @@ the first flight.
 """
 
 import unittest
+import unittest.mock
 
 from marshall.atc import agent_atc as A
 from marshall.atc import controller as C
@@ -51,10 +52,26 @@ class TestAPlanGetsTheProcedureItNames(unittest.TestCase):
     def test_another_aerodrome_is_untouched(self):
         self.assertEqual(A._approach_named("kobuleti-ils").kind, "ils")
 
-    def test_a_field_with_no_procedure_still_gets_its_default(self):
-        # The loose match stays as a SECOND pass -- a plan naming just the field
-        # wants that field's default rather than nothing at all.
-        self.assertIsNotNone(A._approach_named("batumi"))
+    def test_a_field_with_ONE_procedure_still_resolves_loosely(self):
+        # The loose match stays as a SECOND pass, and is worth having exactly
+        # while there is nothing to choose between: Kobuleti publishes one.
+        self.assertEqual(A._approach_named("kobuleti").kind, "ils")
+
+    def test_but_a_field_with_SEVERAL_refuses_and_names_them(self):
+        """This asserted that "batumi" gets "that field's default", and there
+        is no such thing -- #162 deleted the concept on the owner's
+        instruction: "There should be no such thing".
+
+        Batumi publishes three. Returning the first of them is #131 exactly:
+        on 12 August it cleared a man for a radar approach while his plate said
+        ILS, and every number he was given was real and belonged to the wrong
+        procedure. #1 G3/G4 settled the shape for flight plans -- "when to ASK
+        instead of picking one" -- and a procedure is no different.
+
+        So the rule is not "prefer a default", it is "resolve when there is one
+        answer". [#165]
+        """
+        self.assertIsNone(A._approach_named("batumi"))
 
     def test_a_key_nobody_publishes_gets_nothing(self):
         # Not somebody else's approach. That is the whole reason this function
@@ -89,3 +106,63 @@ class TestWhatHeCallsItOnTheRadio(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTwoILSApproachesAtOneField(unittest.TestCase):
+    """Batumi is 13/31, and an ILS to 31 is an ordinary thing to add.
+
+        "batumi_ils … I don't know what that is. There could be multiple ils
+         approaches into a field"
+
+    A key of `<field>-<kind>` can NAME only one of them, so the second cannot
+    be published at all -- and if it could, `<field>-<kind>` would match both
+    and the resolver returned the first. That is #131 one axis over: the fix
+    then was to match exactly first, and matching exactly is no help when two
+    procedures have the same exact name.
+
+    Real procedures are named for the runway they serve -- ILS RWY 13, VOR RWY
+    31 -- because the runway is what makes two approaches at one field
+    different things. [#165]
+    """
+
+    def build_the_reciprocal(self):
+        """Batumi's ILS from the other end, as data, off the published one."""
+        import dataclasses
+        from marshall.core import route as R
+        ils = R.BATUMI_ILS
+        return dataclasses.replace(
+            ils, runway="31",
+            final_crs=(ils.final_crs + 180) % 360,
+            controller=ils.controller)
+
+    def test_the_key_can_tell_them_apart(self):
+        ils13, ils31 = R.BATUMI_ILS, self.build_the_reciprocal()
+        self.assertNotEqual(A._key_of(ils13), A._key_of(ils31))
+        self.assertEqual(A._key_of(ils13), "batumi-ils-13")
+        self.assertEqual(A._key_of(ils31), "batumi-ils-31")
+
+    def test_and_each_resolves_to_itself(self):
+        """The assertion that could not previously be written: with both
+        published, asking for one must not hand back the other."""
+        import dataclasses
+        from marshall.core import theatre as _th
+        th = _th.current()
+        both = dataclasses.replace(
+            th, approaches=(*th.approaches, self.build_the_reciprocal()))
+        with unittest.mock.patch.object(A, "_theatre",
+                                        unittest.mock.Mock(current=lambda: both)):
+            self.assertEqual(A._approach_named("batumi-ils-13").runway, "13")
+            self.assertEqual(A._approach_named("batumi-ils-31").runway, "31")
+
+    def test_and_the_runway_less_key_becomes_ambiguous(self):
+        """`batumi-ils` names one procedure today and two once 31 exists. The
+        honest answer then is that the request does not name a procedure --
+        not whichever the theatre happens to list first."""
+        import dataclasses
+        from marshall.core import theatre as _th
+        th = _th.current()
+        both = dataclasses.replace(
+            th, approaches=(*th.approaches, self.build_the_reciprocal()))
+        with unittest.mock.patch.object(A, "_theatre",
+                                        unittest.mock.Mock(current=lambda: both)):
+            self.assertIsNone(A._approach_named("batumi-ils"))
