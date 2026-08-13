@@ -8839,3 +8839,81 @@ Status: OPEN — the decision is made; this supersedes the "default" half of #2.
 Labels: needs-flight-test
 
 ---
+
+## [ARCH-30] A beacon is not an airfield — #163
+
+    "A beacon is not an airfield. They are separate things and you have built
+     them as though they are. ... I think all approaches have an airfield. Not
+     all approaches have a beacon. A beacon may be used for things other than
+     an approach"
+
+All three are right, and the theatre file already half-agrees: an `[[approach]]`
+row carries `field = "Batumi"` AND `beacon = "BATUMI"`, and the second is doing
+the first one's job.
+
+**What `beacon` actually resolves to.** The fix named BATUMI:
+
+    [[fix]] name = "BATUMI"  ident = "OS"  freq_mhz = 132.0  navaid = "ndb"
+            lat = 41.609594  lon = 41.600234
+
+That is the AERODROME REFERENCE POINT wearing a beacon's ident and frequency —
+and a fictional one: `tools/import_beacons.py` says so in its own docstring,
+*"`BATUMI` on `OS` at 132.0 was invented for the period scenario -- the real
+Batumi homer is `LU` on 0.430"*. The real one is already in the file, imported
+from the sim's own `Beacons.lua`, and **it is 0.72 nm from the aerodrome**. Two
+different places, one row.
+
+Both `batumi-ils` and `kobuleti-ils` name a `beacon`. **Neither has one.** An ILS
+is a localiser and a glideslope; nobody homes on the field. The row exists
+because the object needed a position and `beacon` was the field that had one.
+
+**What it is used for today** — `profile.beacon` does three unrelated jobs:
+
+    a navaid he tunes and holds on   "hold at BATUMI as published", "report
+                                     BATUMI inbound" -- real for an NDB
+                                     letdown, meaningless on an ILS
+    the geometric datum              IAF offsets, the plate, the AIP chart.
+                                     `asr_plate.py`: "the radar reference
+                                     point IS the field"
+    the origin fallback              what a Center measures from       -> #160
+
+Only the first is a beacon's job. The other two are the FIELD's, and the field
+is already named on the same row.
+
+**The shape it should be.**
+
+    an approach ALWAYS has a field       -> `field`, required, the datum for
+                                            everything positional
+    an approach SOMETIMES has a beacon   -> optional, and only where the
+                                            procedure actually homes on one
+                                            (the 1944 letdown)
+    a beacon EXISTS WITHOUT an approach  -> `[[navaid]]`, theatre data. 122 are
+                                            already imported per map and no
+                                            approach need mention them
+
+**Why it matters beyond tidiness.** This is the conflation under #160: a Center
+measured from "the beacon" because the beacon was secretly the field. It is also
+why `field_origin` looks reasonable while being wrong — every name in it is
+plausible. And a fictional ident on a real aerodrome's row is the thing the
+required `source` field exists to prevent.
+
+**Acceptance criteria.**
+
+- `ApproachProfile` has no `beacon` unless the procedure homes on one; `field`
+  is what everything positional reads.
+- The BATUMI and KOBULETI fixes stop carrying an ident and a frequency. A navaid
+  is a `[[navaid]]` row, sourced from `Beacons.lua`.
+- The 1944 beacon letdown still names its beacon, on its own frequency, and its
+  plate is unchanged — that procedure genuinely has one.
+- Nothing a pilot hears changes for the two ILS approaches, proven by snapshot
+  the way `d5e243b` proved the station move.
+
+Tests: `tests/test_two_fields.py`, the approach sweep, a snapshot of both plates.
+Code: `src/marshall/core/approach.py`, `catalogue.py`, `theatre.py`,
+`config/theatres/*.toml`, `kneeboard/asr_plate.py`, `aip_plate.py`,
+`atc/asr.py`, `atc/briefing.py`, `atc/controller.py`.
+
+Status: OPEN — the decision is made. Blocks the clean version of #160.
+Labels: needs-flight-test
+
+---
