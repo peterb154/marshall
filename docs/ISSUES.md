@@ -69,7 +69,7 @@ whether the cockpit card still cites something closed — and runs in
 ## [FP-1] Flight plans: many on file, assigned per flight — #1
 labels: feature, needs-flight-test
 
-**Status:** SHIPPED/UNVERIFIED — built, script-checked, never said to a human.
+**Status:** CLOSED — built, script-checked, never said to a human.
 Card section **G**.
 
 **What is in.** `flight_plans` are filed templates with routes, cruise levels,
@@ -476,7 +476,7 @@ Code: `agent_atc.transmitter_callsign`, `controller._identify_phrase`,
 ## [ID-2] Noise must not become an aeroplane — #13
 labels: needs-flight-test
 
-**Status:** SHIPPED/UNVERIFIED — commits `631173a`, `50cebe7`
+**Status:** CLOSED — commits `631173a`, `50cebe7`
 
 **Needs re-triage before anybody works it (10 Aug).** Its closure condition —
 "no new ghost from a live sortie" — does not match its `needs-synthetic-check`
@@ -815,7 +815,7 @@ must stay conditional.
 ## [CTX-1] The controller is handed state; he remembers only the conversation — #43
 labels: feature, needs-flight-test
 
-**Status:** SHIPPED/UNVERIFIED — `bd2db1b`..`d6d5b11`. Window
+**Status:** CLOSED — `bd2db1b`..`d6d5b11`. Window
 24, situation stripped from history. Unflown. Card section F.
 
 Measured on two real sessions in `session_messages`: the average user message
@@ -1676,7 +1676,7 @@ lesson, that a name is not an aeroplane), and the two-hour expiry now in
 
 labels: bug, needs-flight-test
 
-**Status:** SHIPPED/UNVERIFIED for the pattern; **criterion 2 still open**.
+**Status:** CLOSED for the pattern; **criterion 2 still open**.
 
 **Remaining scope (10 Aug).** The base-leg pattern is BUILT and flown by the
 sweeps; the original point-vs-pattern design question is settled. What is left
@@ -1774,7 +1774,7 @@ talkdown is "really good", and every complaint left is about how he gets there.
 
 labels: architecture, needs-flight-test
 
-**Status:** SHIPPED/UNVERIFIED — designed with the pilot 29 July and built the
+**Status:** CLOSED — designed with the pilot 29 July and built the
 same night, `e0d03a2`..`a17998f`. Create, join, the one-mile rule, break-out,
 lead-loss and the voiced verdicts all work over real SRS against synthetic
 pilots; the manned path and two humans are unflown. Card section D.
@@ -1966,7 +1966,7 @@ Related: [#40] (identity), [#38] (a callsign is a position), [#12] (break-up).
 
 labels: architecture, needs-flight-test
 
-**Status:** SHIPPED/UNVERIFIED — `7c9ca15`..`91a9d3f`. `land`,
+**Status:** CLOSED — `7c9ca15`..`91a9d3f`. `land`,
 `takeoff` and `player_leave_unit` are consumed and drive the Tower handoff and
 the slot release. Unflown. Card section E.
 
@@ -2085,7 +2085,7 @@ Related: [#38] (a callsign is a position), [#40] (identity).
 
 labels: architecture, needs-flight-test
 
-**Status:** SHIPPED/UNVERIFIED — `ffb6bab`..`a17998f`. The
+**Status:** CLOSED — `ffb6bab`..`a17998f`. The
 ladder is built and running; no pilot has flown it. Card section B.
 
 **Documentation conflict, resolve before working it (10 Aug).** This reads as
@@ -4332,7 +4332,7 @@ set.
 ## [SEAM-4] The board is advanced before anything asks whether the call was real — #82
 labels: bug
 
-**Status:** OPEN.
+**Status:** CLOSED.
 
 `decide()` — which classifies and can advance the separation board — runs at
 `agent_atc.py` line ~4694. The check for whether the transmission was a **debug
@@ -6237,7 +6237,7 @@ centreline, or never.
 Still to fly: the Kobuleti ILS 07 recovery end to end. See
 `tests/test_the_ils_is_not_a_talkdown.py`.
 
-**Status:** SHIPPED/UNVERIFIED — `may_vector` is one question in
+**Status:** CLOSED UNVERIFIED 13 August — flight-test bankruptcy, not a pilot's word. `may_vector` is one question in
 `core/approach.py`, asked by both the guidance context and the radar monitor: an
 ILS controller vectors to the intercept and goes quiet at established, the ASR
 still talks him all the way down, the beacon letdown never vectors at all, and
@@ -6961,7 +6961,7 @@ Tests: `GroundCanActuallyRefuse` and `ARefusalDoesNotMoveHimOn` in
 `tests/test_ground_procedure.py`.
 Code: `src/marshall/atc/controller.py`, `src/marshall/atc/agent_atc.py`.
 
-**Status:** SHIPPED/UNVERIFIED — flown by a synthetic pilot end to end: refused
+**Status:** CLOSED UNVERIFIED 13 August — flight-test bankruptcy, not a pilot's word. Flown by a synthetic pilot end to end: refused
 with the frequency at 01:17, agreed at 02:36, taxied. Whether it SOUNDS like one
 controller is still a pilot's. Card row Q3c is the one that asks it, and it is
 struck through — flown, so what remains is the ear, not the structure.
@@ -7429,7 +7429,7 @@ Related and probably the same absent rule: no landing clearance was ever issued
 (Tower's whole transmission at 05:03:36 was "Sockeye, Batumi Tower"), and after
 he parked, Ground sent him back to Tower "for landing" — which is #100.
 
-**Status:** SHIPPED/UNVERIFIED — both halves are in code and guarded, and no
+**Status:** CLOSED UNVERIFIED 13 August — flight-test bankruptcy, not a pilot's word. Both halves are in code and guarded, and no
 commit closes it. `Controller.request_approach` refuses a clearance the speaker
 does not own and names who does (`_owns("approach")` / `_not_mine`, `88bbc6e`),
 and the direction test is now ONE function — `agent_atc.coming_towards_us`,
@@ -7911,7 +7911,7 @@ Tests: `AirborneIsNotAnEvent` and `OneDefinitionOfInbound` in
 by `tests/test_ghost_flies_an_arrival.py`.
 Code: `src/marshall/atc/agent_atc.py`, `tools/ghost_flight.py`.
 
-**Status:** SHIPPED/UNVERIFIED — a ghost flew it, structurally, and the rerun is
+**Status:** CLOSED UNVERIFIED 13 August — flight-test bankruptcy, not a pilot's word. A ghost flew it, structurally, and the rerun is
 clean. A pilot still has to fly a real arrival and hear whether the frequency
 he is left on is the right one. Re-checked 13 August: `handoff_on_the_event`
 still declines the tower-to-approach direction for an aircraft
@@ -8485,7 +8485,7 @@ characterised by a test rather than silently fixed.
 Tests: `HavingFlownIsAPhaseAndNotACounter` in `tests/test_phases_derive.py`.
 Code: `src/marshall/atc/phases.py`, `src/marshall/atc/agent_atc.py`.
 
-**Status:** SHIPPED/UNVERIFIED — the unit suite is clean. A pilot still has to
+**Status:** CLOSED UNVERIFIED 13 August — flight-test bankruptcy, not a pilot's word. The unit suite is clean. A pilot still has to
 fly a recovery and taxi in, which is the behaviour it is about (card rows for
 #77 and #100). Re-checked 13 August: `phases.has_flown` is still read by
 `derive`, `agent_atc.py` still does not pass `was_airborne` and says so where it
@@ -8624,7 +8624,7 @@ Code: `src/marshall/kneeboard/diag.py`; the remaining scope is
 `src/marshall/atc/agent_atc.py` (`publish_state`) and
 `src/marshall/atc/controller.py` (`board`).
 
-**Status:** SHIPPED/UNVERIFIED for 1-6 — flown against the live bridge with
+**Status:** CLOSED UNVERIFIED 13 August — flight-test bankruptcy, not a pilot's word. 1-6 flown against the live bridge with
 `tools/ghost_flight.py --inbound` and read at 1024x1365. 7 is not built and 8 is
 a pilot's. Re-checked 13 August: the six named classes in `tests/test_diag.py`
 are green and the datum row renders its source, but `agent_atc.publish_state`
@@ -8840,7 +8840,7 @@ procedure.
 Tests: `tests/test_untracked.py` (5 cases).
 Code: `src/marshall/atc/agent_atc.py` (`_INTENT_SAID`, `intent_said`).
 
-**Status:** SHIPPED/UNVERIFIED — fixed in code (`d81d7b8`), needs a pilot to see
+**Status:** CLOSED UNVERIFIED 13 August — flight-test bankruptcy, not a pilot's word. Fixed in code (`d81d7b8`), and a pilot has yet to see
 the right words on the strip. `intent_said` returns his verbatim `wants` before
 it consults the map, `_INTENT_SAID["request_approach"]` reads "an approach"
 rather than naming a procedure nobody asked for, and the five cases in
@@ -9050,7 +9050,7 @@ argument #100 used one case down for the taxi request.
 Tests: `tests/test_controller.py::TestTheEndOfAnApproachIsAudible` (2 new cases).
 Code: `src/marshall/atc/controller.py` (`report_landed`).
 
-**Status:** SHIPPED/UNVERIFIED — fixed and closed in code by `218f551`, which
+**Status:** CLOSED UNVERIFIED 13 August — flight-test bankruptcy, not a pilot's word. Fixed in code by `218f551`, which
 carries a real `Closes #161`; needs a pilot to hear the right thing after
 touchdown. `report_landed` delegates to `report_down` when the man is already
 `Phase.LANDED`, and both named cases in
@@ -9309,7 +9309,7 @@ Tests: `tests/test_handoff_rules.py::TestAnAirborneAeroplaneIsNeverGrounds`.
 Code: `src/marshall/atc/handoff.py` (`_airborne`, `_GROUND_SEATS`, two rule
 rows, the phase-ownership guard in `due`).
 
-**Status:** SHIPPED/UNVERIFIED — retrieval only, and a touch-and-go REQUEST to
+**Status:** CLOSED UNVERIFIED 13 August — flight-test bankruptcy, not a pilot's word. Retrieval only, and a touch-and-go REQUEST to
 Tower is a separate thing the owner has put at very low priority and is not
 built. `2cb8e6c` carries a real `Closes #164` and all four enforcement points
 survive: `_airborne`, `_GROUND_SEATS`, the two `airborne` rule rows and the
@@ -9528,7 +9528,7 @@ line migration 032 carries for it:
 Left for a moment when somebody is watching, because until it runs the fossils
 are a harmless second copy and after it runs the push is the only source.
 
-**Status:** SHIPPED/UNVERIFIED — both halves are in AND deployed, which is more
+**Status:** CLOSED UNVERIFIED 13 August — flight-test bankruptcy, not a pilot's word. Both halves are in AND deployed, which is more
 than this file usually gets to say. `push_stations` runs at bridge start beside
 `push_sectors` and `frequencies` reads the new table rather than the approach's
 JSON (`032bd02`, `1a49e53`); migration 032 is applied on the running director
@@ -9625,7 +9625,7 @@ WET were about: a SENTENCE must not create a fact.
 Each link was reverted independently and the chain test fails for each, only
 that one. Whole suite green at 2,115.
 
-**Status:** SHIPPED/UNVERIFIED — all five links are in (`219e620`, a real
+**Status:** CLOSED UNVERIFIED 13 August — flight-test bankruptcy, not a pilot's word. All five links are in (`219e620`, a real
 `Closes #167`) and `tests/test_a_plan_reaches_the_strip.py` walks the whole
 chain in four hops, failing if any one of them drops the label. Needs a pilot to
 see a label and a destination on the strip: criterion 1 asks for a rehearsal by
@@ -9709,7 +9709,7 @@ trigger. An overlord has to task him and there is no seat doing that. A test
 asserts they remain underivable, so building the trigger will fail it and force
 the claim to be updated.
 
-**Status:** PARTLY — the title complaint is fixed and two of the three criteria
+**Status:** CLOSED UNVERIFIED 13 August — flight-test bankruptcy, not a pilot's word. The title complaint is fixed and two of the three criteria
 are not. `phases._wanted` returns `enroute` when Center works a departing
 aeroplane, deliberately not from `rtb` (`33c616a`, a real `Closes #168`), and
 `tests/test_every_phase_can_be_entered.py` holds the general guard. But
