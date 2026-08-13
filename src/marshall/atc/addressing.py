@@ -123,6 +123,11 @@ def misnamed(bridge, ctl, claim: str, known: str, who: str,
     # what this function is for, does not also use the right one.
     if said and known and _names_himself(said, known):
         return ""
+    # ...OR HE SAID IT AND WHISPER BROKE IT. A correction fired at a man radar
+    # had already named, in the same transmission the engine cleared him to
+    # taxi: "Pan three, I do not have you on the board" to Panther 2-6.
+    if known and _mangled_form_of(claim, known):
+        return ""
     ok = {n.lower() for n in bridge.flights.names()}
     ok |= {n.lower() for n in known_flight_names()}
     for n in (known, who):
@@ -142,6 +147,62 @@ def misnamed(bridge, ctl, claim: str, known: str, who: str,
         return (f"{said}, I do not have you on the board. "
                 f"You are {C.parse(known).spoken} — use that callsign.")
     return f"{said}, I do not have you on the board. Say your callsign."
+
+
+def _mangled_form_of(claim: str, known: str) -> bool:
+    """Is this claim the RIGHT callsign, damaged in transit?
+
+        heard    "Batumi Ground, Pan three twenty six, clear of runway one
+                  tree, request taxi to parking."
+        who      panther26   radar   Panther26
+        engine   "Panther two six, taxi to parking, your discretion."
+        spoken   "Pan three, I DO NOT HAVE YOU ON THE BOARD, you are Panther
+                  two six, use that callsign. Panther two six, taxi to
+                  parking, your discretion."
+
+    Caught live on 13 August. He is on the board -- the engine cleared him to
+    taxi in the same breath -- and radar had already named him. Polly said
+    "Panther two six" and Whisper wrote "Pan three twenty six", so
+    `_names_himself` could not find "panther" and the fragment looked like a
+    man calling himself something else.
+
+    THE IDENTITY LADDER ALREADY SETTLES THIS and this function was the one
+    place not obeying it: "RADAR, via the radio. No microphone in the chain at
+    all. A GARBLED CALLSIGN CANNOT TOUCH IT and neither can a confident wrong
+    one." A correction sourced from the words is the microphone touching it.
+
+    But the correction exists for a real case and must survive -- "Sockeye
+    screwed up by using Falcon1-1 on the radio and needs to be corrected" --
+    so the test is not "did radar name him" (radar names him in both cases).
+    It is whether the claim is a DAMAGED SPELLING of his own callsign or a
+    different one:
+
+        Pan three   / Panther26   0.71     Falcon 1-1 / Sockeye    0.13
+        Pan three 26/ Panther26   0.84     Hoover 1-1 / Sockeye    0.27
+        Panther 26  / Panther26   1.00     Colt 2-1   / Panther26  0.27
+
+    A gap that wide is a threshold anywhere in the middle, and 0.6 leaves both
+    sides room. `squash` first, so the comparison is between the reduced forms
+    two systems can agree on rather than between two spellings.
+    """
+    import difflib
+
+    from marshall.atc import callsign as C
+    from marshall.core.names import squash
+    a, b = squash(claim), squash(known)
+    if not a or not b:
+        return False
+    # A DESIGNATION IS NOT A MANGLING, and it scores like one. "Apex 1-2"
+    # against the flight "Apex" is 0.80 -- higher than "Pan three" -- because
+    # it CONTAINS the name rather than damaging it. That is a man naming a
+    # wingman, a different aeroplane, and correcting him is the point.
+    #
+    # Whisper subtracts and substitutes; it does not append a member number. So
+    # a claim holding the flight name whole is his own words, not broken ones.
+    flight = squash(C.parse(known).flight or known)
+    if flight and flight in a:
+        return False
+    return difflib.SequenceMatcher(None, a, b).ratio() >= 0.6
 
 
 def _names_himself(said: str, known: str) -> bool:

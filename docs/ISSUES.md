@@ -9935,3 +9935,69 @@ Code: `src/marshall/kneeboard/diag.py` (the `separation` / `ladder` rows).
 from #155 so it cannot be closed by the parts of #155 that are already done.
 
 ---
+
+## [ID-8] Whisper breaking his callsign is not him using the wrong one — #172
+
+Caught on the board by the owner, 13 August, in a single transmission:
+
+    heard    "Batumi Ground, Pan three twenty six, clear of runway one tree,
+              request taxi to parking."
+    who      panther26   radar   Panther26
+    engine   "Panther two six, taxi to parking, your discretion."
+    spoken   "Pan three, I DO NOT HAVE YOU ON THE BOARD, you are Panther two
+              six, use that callsign. Panther two six, taxi to parking, your
+              discretion."
+
+**He is on the board.** The engine cleared him to taxi in the same breath, and
+radar had named him before he keyed the microphone. The controller contradicted
+himself inside one transmission, and the false half is the part the engine never
+decided.
+
+**Cause.** Polly said "Panther two six" and Whisper wrote "Pan three twenty
+six". `_names_himself` looks for "panther" in the transcript, does not find it,
+and `_plausible_callsign("Pan three")` is true — any English word in front of a
+digit is a candidate. So a damaged spelling of his own callsign read as a man
+calling himself something else.
+
+**The identity ladder already forbids this**, and `misnamed` was the one place
+not obeying it: *"RADAR, via the radio. No microphone in the chain at all. A
+GARBLED CALLSIGN CANNOT TOUCH IT and neither can a confident wrong one."* A
+correction sourced from the words is the microphone touching it.
+
+**Why the obvious guard is wrong.** "Do not correct when radar named him" fails,
+because radar names him in the case the correction EXISTS for too — Sockeye
+calling himself Falcon 1-1 is still Sockeye on the scope, and telling him so is
+the whole requirement: *"Sockeye screwed up by using Falcon1-1 on the radio and
+needs to be corrected."*
+
+The real question is whether the claim is a DAMAGED SPELLING of his own callsign
+or a different callsign, and the two separate by a wide margin:
+
+    Pan three    / Panther26   0.71        Falcon 1-1 / Sockeye     0.13
+    Pan three 26 / Panther26   0.84        Hoover 1-1 / Sockeye     0.27
+                                           Colt 2-1   / Panther26   0.27
+
+**A designation is not a mangling, and it scores like one.** "Apex 1-2" against
+the flight "Apex" is 0.80 — higher than the broken form — because it CONTAINS
+the name rather than damaging it. That is a man naming a wingman, a different
+aeroplane, and correcting him is correct. Whisper subtracts and substitutes; it
+does not append a member number. So a claim holding the flight name whole is his
+own words.
+
+**Acceptance criteria.**
+
+- The transmission above produces the engine's sentence and nothing else.
+- Sockeye calling himself Falcon 1-1 is still corrected, and still told what to
+  use instead.
+- A member designation is still corrected.
+- The threshold is not tuned to the example: mangled forms and different
+  callsigns are separated by a gap, and a test asserts both sides of it.
+
+Tests: `tests/test_identity.py::TestWhisperBreakingHisCallsignIsNotHimUsingTheWrongOne`.
+Code: `src/marshall/atc/addressing.py` (`_mangled_form_of`, `misnamed`).
+
+**Status:** FIXED 13 August — needs a pilot to hear one sentence where there
+were two.
+labels: bug, needs-flight-test
+
+---

@@ -873,3 +873,90 @@ class TestACallsignIsCorrectedOnCheckInOnly(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestWhisperBreakingHisCallsignIsNotHimUsingTheWrongOne(unittest.TestCase):
+    """Caught live on the board, 13 August, in one transmission:
+
+        heard    "Batumi Ground, Pan three twenty six, clear of runway one
+                  tree, request taxi to parking."
+        who      panther26   radar   Panther26
+        engine   "Panther two six, taxi to parking, your discretion."
+        spoken   "Pan three, I DO NOT HAVE YOU ON THE BOARD, you are Panther
+                  two six, use that callsign. Panther two six, taxi to
+                  parking, your discretion."
+
+    He IS on the board. The engine cleared him to taxi in the same breath, and
+    radar had named him before he keyed the microphone. The controller
+    contradicted himself inside one transmission, and the false half was the
+    part the engine never decided.
+
+    Polly said "Panther two six" and Whisper wrote "Pan three twenty six", so
+    `_names_himself` could not find "panther" and the fragment looked like a man
+    calling himself something else.
+
+    THE IDENTITY LADDER ALREADY FORBIDS THIS: "RADAR, via the radio. No
+    microphone in the chain at all. A garbled callsign cannot touch it and
+    neither can a confident wrong one." A correction sourced from the words is
+    the microphone touching it.
+
+    The correction itself must survive, because it answers a real requirement:
+    "Sockeye screwed up by using Falcon1-1 on the radio and needs to be
+    corrected." So the test cannot be "did radar name him" -- radar names him in
+    both cases. It is whether the claim is a DAMAGED SPELLING of his own
+    callsign or a different callsign entirely.
+    """
+
+    def misnamed(self, claim, known, said=""):
+        from marshall.atc import agent_atc as A
+        from marshall.atc.addressing import misnamed as _misnamed
+
+        class Ctl:
+            def board(self):
+                return []
+        return _misnamed(A.Bridge(), Ctl(), claim, known, known,
+                         said=said or claim)
+
+    def test_the_transmission_that_caused_this(self):
+        said = ("Batumi Ground, Pan three twenty six, clear of runway one tree, "
+                "request taxi to parking.")
+        self.assertEqual(self.misnamed("Pan three", "Panther26", said), "")
+
+    def test_nor_when_whisper_keeps_the_digits(self):
+        self.assertEqual(self.misnamed("Pan three 26", "Panther26"), "")
+
+    def test_but_a_DIFFERENT_callsign_is_still_corrected(self):
+        """The requirement this mechanism exists for. Sockeye calling himself
+        Falcon 1-1 is a man using somebody else's callsign, and being told so
+        is the point -- even though we know perfectly well who he is."""
+        got = self.misnamed("Falcon 1-1", "Sockeye")
+        self.assertIn("do not have you on the board", got)
+        self.assertIn("Sockeye", got)
+
+    def test_and_so_is_a_wrong_one_that_shares_no_sound(self):
+        got = self.misnamed("Colt 2-1", "Panther26")
+        self.assertIn("do not have you on the board", got)
+
+    def test_the_two_cases_are_separated_by_a_wide_margin(self):
+        """Not a tuned threshold. Damaged spellings score 0.71 and above,
+        different callsigns 0.29 and below, and 0.6 sits in the gap with room
+        on both sides -- which is why this is a rule rather than a fudge."""
+        from marshall.atc.addressing import _mangled_form_of
+        for claim, known in (("Pan three", "Panther26"),
+                             ("Pan three 26", "Panther26")):
+            with self.subTest(mangled=claim):
+                self.assertTrue(_mangled_form_of(claim, known))
+        # NOT a mangling, and it must not be: a correctly spoken callsign is
+        # caught one guard earlier by `_names_himself`. Nor is a member
+        # designation -- "Apex 1-2" against the flight "Apex" scores 0.80,
+        # HIGHER than the broken form, because it CONTAINS the name rather than
+        # damaging it. That is a man naming a wingman and correcting him is the
+        # whole point. Whisper subtracts and substitutes; it does not append a
+        # member number.
+        for claim, known in (("Panther 26", "Panther26"), ("Apex 1-2", "Apex")):
+            with self.subTest(not_mangled=claim):
+                self.assertFalse(_mangled_form_of(claim, known))
+        for claim, known in (("Falcon 1-1", "Sockeye"), ("Hoover 1-1", "Sockeye"),
+                             ("Colt 2-1", "Panther26"), ("Send six", "Sockeye")):
+            with self.subTest(different=claim):
+                self.assertFalse(_mangled_form_of(claim, known))
