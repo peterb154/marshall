@@ -29,19 +29,44 @@ from marshall.atc import agent_atc, asr, talkdown
 from marshall.atc.geometry import Position
 from marshall.core import route as R
 from marshall.core.approach import may_vector
+from tests import theatre as T
 
 
 class TestMayVector(unittest.TestCase):
     """One question, asked one way. It was asked three and they disagreed."""
 
+    def test_every_published_procedure_answers_it_the_same_way_twice(self):
+        """THE RULE, over whatever the map publishes: a heading may be issued
+        wherever the CONTROLLER navigates any part of the approach, and never on
+        a procedure flown on a navaid the homing adapter is pointed at.
+
+        Written as a walk rather than three names because the disagreement this
+        file records was between three call sites, not between three maps -- and
+        on Nevada nine procedures asked it and nothing checked the answer.
+        """
+        for key, p in sorted(T.approaches().items()):
+            with self.subTest(procedure=key, kind=p.kind, guidance=p.guidance):
+                want = p.atc.vectors
+                if want is None:
+                    want = p.kind in ("asr", "ils", "visual")
+                self.assertIs(may_vector(p), bool(want),
+                              "may_vector disagrees with the capability the "
+                              "procedure declares")
+
+    @T.skip_unless("caucasus", why="the Kobuleti ILS by name; the rule is "
+                                   "asserted over every published procedure above")
     def test_the_ils_controller_vectors(self):
         # He does not talk the pilot down, but he absolutely gives headings --
         # that is the half of the approach he owns.
         self.assertTrue(may_vector(R.KOBULETI_ILS))
 
+    @T.skip_unless("caucasus", why="the Batumi ASR; no other published map has "
+                                   "a surveillance approach")
     def test_the_surveillance_approach_vectors(self):
         self.assertTrue(may_vector(R.BATUMI_ASR))
 
+    @T.skip_unless("caucasus", why="the 1944 beacon letdown, which no other "
+                                   "published map has")
     def test_the_beacon_letdown_never_does(self):
         # The homing adapter points the nose at the beacon: a heading destroys
         # the only course reference he has. The capability says so outright and
@@ -52,8 +77,9 @@ class TestMayVector(unittest.TestCase):
         # `vectored` asks who navigates to the runway; `may_vector` asks whether
         # a heading may be issued at all. Both are false for the letdown and
         # they differ on the ILS, which is exactly the case that was broken.
-        self.assertFalse(R.KOBULETI_ILS.vectored)
-        self.assertTrue(may_vector(R.KOBULETI_ILS))
+        ils = T.the_ils()
+        self.assertFalse(ils.vectored)
+        self.assertTrue(may_vector(ils))
 
 
 def _inbound(profile, range_nm, xtk_nm=0.0, alt_ft=3000, heading=None):
@@ -73,7 +99,12 @@ def _inbound(profile, range_nm, xtk_nm=0.0, alt_ft=3000, heading=None):
 class TestTheInterceptCarriesTheClearance(unittest.TestCase):
     """The last vector is a different transmission from the ones before it."""
 
-    P = R.KOBULETI_ILS
+    @property
+    def P(self):
+        """THE MAP'S ILS. Every number below is read off it rather than written
+        down, so the geometry is exercised against Nellis's runway 21 as well as
+        Kobuleti's 07 -- two different final courses, two different fields."""
+        return T.the_ils()
 
     def test_a_repositioning_turn_is_not_the_intercept(self):
         # Well outside the final segment and being taken across it. Clearing
@@ -124,30 +155,39 @@ class TestTheInterceptCarriesTheClearance(unittest.TestCase):
 class TestEstablishedIsWhereHeStops(unittest.TestCase):
     """On the needles, the controller's job is a handoff and then silence."""
 
-    def scope(self, profile, nm, alt=2000, tag="Pony one one"):
+    def scope(self, profile, nm, alt=None, tag="Pony one one"):
+        # ON THE GLIDEPATH, computed rather than written down. 2,000 ft is on
+        # the beam six miles out at a sea-level Georgian field and 150 ft above
+        # the DIRT at Nellis, whose ramp is at 1,850 -- so a fixed number is a
+        # fixture about one map wearing the shape of a fixture about a rule.
+        alt = profile.glidepath_ft_at(nm) if alt is None else alt
         radial = (profile.final_crs_true + 180) % 360
         return (f"Enfield11 [{tag}] (F-16C_50): {nm} nm on the {radial:.0f} "
                 f"radial, {alt:,} ft, heading {profile.final_crs_true:.0f}")
 
     def test_the_guidance_context_goes_quiet(self):
-        pos = _inbound(R.KOBULETI_ILS, 6.0, alt_ft=2000)
-        self.assertTrue(asr.guide(pos, R.KOBULETI_ILS).established)
+        ils = T.the_ils()
+        pos = _inbound(ils, 6.0, alt_ft=ils.glidepath_ft_at(6.0))
+        self.assertTrue(asr.guide(pos, ils).established)
         # It is prose for the agent, so this asserts on what it is TOLD rather
         # than on a phrase: say nothing about range, heading, altitude or the
         # glidepath -- which we cannot see -- and hand him to Tower.
-        out = agent_atc.asr_context(
-            R.KOBULETI_ILS, self.scope(R.KOBULETI_ILS, 6.0), "Pony 1-1")
+        out = agent_atc.asr_context(ils, self.scope(ils, 6.0), "Pony 1-1")
         self.assertIn("SAY NOTHING", out)
         self.assertIn("Tower", out)
 
     def test_the_guidance_context_vectors_before_that(self):
         # The bug in one assertion: this returned "" for the whole approach.
+        ils = T.the_ils()
         out = agent_atc.asr_context(
-            R.KOBULETI_ILS, self.scope(R.KOBULETI_ILS, 25.0, alt=8000),
+            ils, self.scope(ils, 25.0, alt=ils.field_elev_ft + 6000),
             "Pony 1-1")
         self.assertNotEqual(out, "")
         self.assertIn("ILS", out)
 
+    @T.skip_unless("caucasus", why="the Batumi ASR is the only published "
+                                   "surveillance approach on any map; the ILS "
+                                   "silence above is asserted everywhere")
     def test_the_asr_still_talks_him_all_the_way_down(self):
         # The contrast that makes the ILS silence meaningful. On a surveillance
         # approach the controller IS the approach aid, so established is where

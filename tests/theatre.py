@@ -135,7 +135,19 @@ def other():
 
 
 def field_of(profile):
-    """The `Field_` an approach arrives at. `profile.aerodrome` is a `Fix`."""
+    """The `Field_` an approach arrives at. `profile.aerodrome` is a `Fix`.
+
+    CASE-FOLDED, because the two catalogues disagree about it and always have: a
+    fix is named `BATUMI` and an aerodrome is named `Batumi`, so
+    `field_named(profile.aerodrome.name)` is `None` on the Caucasus and a real
+    field on Nevada, where the Tonopah fix happens to be title-cased. That is a
+    one-of-a-thing fault of its own and it belongs to `src/`; here it is worked
+    around in ONE place rather than in each test that trips over it.
+    """
+    want = profile.aerodrome.name.lower()
+    for f in fields():
+        if f.name.lower() == want:
+            return f
     return R.field_named(profile.aerodrome.name)
 
 

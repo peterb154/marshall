@@ -24,28 +24,65 @@ from marshall.atc import handoff as H
 from marshall.atc import intents as I
 from marshall.atc import phases as PH
 from marshall.core import route as R
+from tests import theatre as T
 
-P = R.BATUMI_ASR
-DEP = R.DEPARTURE_FIELD
+# `P = P()` / `DEP = R.DEPARTURE_FIELD` stood here at module scope and
+# neither survives a different map -- `ARRIVAL_FIELD` and `DEPARTURE_FIELD` are
+# Caucasus literals in `core/fields.py` (finding 2 of the 13 August inventory).
+# So the file that guards "nobody issues a clearance that is not his" could not
+# be loaded at the second aerodrome.
+#
+# THE TWO FIELDS ARE ASKED FOR BY THEIR JOB. `HOME` is the aerodrome the sortie
+# is worked on the ground at -- Kobuleti on the Caucasus, Tonopah on Nevada --
+# and `AWAY` is the one at the other end of the route. What matters to every
+# test below is only that they are TWO, so that a clearance issued by the wrong
+# one is a wrong answer that looks exactly like a right one.
 
 
-def station(name):
-    return next(s for s in R.STATIONS if s.name == name)
+def P():
+    return T.the_arrival()
+
+
+def AWAY():
+    """The field the loaded arrival lands at."""
+    return T.arrival()
+
+
+def HOME():
+    """The other one, which is where the ground half of a sortie happens."""
+    return T.other()
+
+
+def seat(role, field=None):
+    """A named seat, AT A FIELD, resolved now. Raises rather than returning the
+    other aerodrome's man, because a silent substitution here is the fault."""
+    fld = field or HOME()
+    got = R.station_for(role, field=fld.name)
+    if got is None:
+        raise unittest.SkipTest(f"{fld.name} staffs no {role} on {T.name()}")
+    return got
+
+
+def station(who):
+    """By name, or straight through if a `Station` was handed in."""
+    if not isinstance(who, str):
+        return who
+    return next(s for s in R.STATIONS if s.name == who)
 
 
 class GroundCase(unittest.TestCase):
     def setUp(self):
-        self.ctl = atc.Controller(P)
+        self.ctl = atc.Controller(P())
         self.ctl.t = 0.0
 
-    def turn(self, station_name, kind):
+    def turn(self, who, kind):
         """One transmission, on one frequency, and what follows from it."""
-        me = station(station_name)
+        me = station(who)
         self.ctl._me = me
         self.ctl.out.clear()
         I.dispatch(self.ctl, I.Intent(kind=kind, callsign="Sockeye"))
         ac = self.ctl.aircraft[self.ctl._resolve("Sockeye")]
-        v = H.due(P, me, H.State(True, 0.3, False, phase=ac.sortie_phase))
+        v = H.due(P(), me, H.State(True, 0.3, False, phase=ac.sortie_phase))
         nxt = None if (v is None or v.same_station) else v.station.name
         said = " | ".join(t.text for t in self.ctl.out)
         return ac.sortie_phase, nxt, said
@@ -55,45 +92,45 @@ class TestTheLadderDownToTheRunway(GroundCase):
     """Clearance, Ground, Tower -- in that order and no other."""
 
     def test_clearance_keeps_him_until_the_readback(self):
-        phase, nxt, _ = self.turn("Kobuleti Clearance",
+        phase, nxt, _ = self.turn(seat("clearance", HOME()),
                                   I.IntentKind.REQUEST_CLEARANCE)
         self.assertEqual(phase, "clearance")
         self.assertIsNone(nxt, "handed on before the clearance was read back")
 
     def test_a_correct_readback_hands_him_to_ground(self):
-        self.turn("Kobuleti Clearance", I.IntentKind.REQUEST_CLEARANCE)
+        self.turn(seat("clearance", HOME()), I.IntentKind.REQUEST_CLEARANCE)
         self.ctl.clearance_read_back("Sockeye", correct=True)
         ac = self.ctl.aircraft[self.ctl._resolve("Sockeye")]
         self.assertEqual(ac.sortie_phase, "taxi")
-        v = H.due(P, station("Kobuleti Clearance"),
+        v = H.due(P(), station(seat("clearance", HOME())),
                   H.State(True, 0.3, False, phase=ac.sortie_phase))
-        self.assertEqual(v.station.name, "Kobuleti Ground")
+        self.assertEqual(v.station, seat("ground", HOME()))
 
     def test_A_WRONG_READBACK_MOVES_NOBODY(self):
         """The whole point of reading it back. He does not go anywhere until
         the numbers agree, and a controller who hands him on regardless has
         turned the read-back into a formality."""
-        self.turn("Kobuleti Clearance", I.IntentKind.REQUEST_CLEARANCE)
+        self.turn(seat("clearance", HOME()), I.IntentKind.REQUEST_CLEARANCE)
         self.ctl.clearance_read_back("Sockeye", correct=False)
         ac = self.ctl.aircraft[self.ctl._resolve("Sockeye")]
         self.assertEqual(ac.sortie_phase, "clearance")
-        self.assertIsNone(H.due(P, station("Kobuleti Clearance"),
+        self.assertIsNone(H.due(P(), station(seat("clearance", HOME())),
                                 H.State(True, 0.3, False,
                                         phase=ac.sortie_phase)))
 
     def test_ground_clears_him_to_the_runway_and_says_hold_short(self):
-        _, _, said = self.turn("Kobuleti Ground", I.IntentKind.REQUEST_TAXI)
+        _, _, said = self.turn(seat("ground", HOME()), I.IntentKind.REQUEST_TAXI)
         self.assertIn("taxi to runway", said.lower())
         self.assertIn("hold short", said.lower())
 
     def test_reporting_holding_short_hands_him_to_tower(self):
-        phase, nxt, _ = self.turn("Kobuleti Ground",
+        phase, nxt, _ = self.turn(seat("ground", HOME()),
                                   I.IntentKind.REPORT_HOLDING_SHORT)
         self.assertEqual(phase, "holding_short")
-        self.assertEqual(nxt, "Kobuleti Tower")
+        self.assertEqual(nxt, seat("tower", HOME()).name)
 
     def test_tower_clears_the_take_off(self):
-        phase, _, said = self.turn("Kobuleti Tower",
+        phase, _, said = self.turn(seat("tower", HOME()),
                                    I.IntentKind.REQUEST_TAKEOFF)
         self.assertEqual(phase, "departure")
         self.assertIn("cleared for take-off", said.lower())
@@ -108,29 +145,41 @@ class TestNobodyIssuesSomebodyElsesClearance(GroundCase):
     """
 
     def test_GROUND_MAY_NOT_CLEAR_A_TAKE_OFF(self):
-        _, _, said = self.turn("Kobuleti Ground", I.IntentKind.REQUEST_TAKEOFF)
+        _, _, said = self.turn(seat("ground", HOME()), I.IntentKind.REQUEST_TAKEOFF)
         self.assertNotIn("cleared for take-off", said.lower())
         self.assertIn("tower", said.lower())
 
     def test_and_he_says_which_frequency(self):
         """Naming the position alone leaves a taxiing pilot hunting for a
         number. The frequency is what makes it a handoff rather than a hint."""
-        _, _, said = self.turn("Kobuleti Ground", I.IntentKind.REQUEST_TAKEOFF)
-        self.assertIn("one three three", said)
+        _, _, said = self.turn(seat("ground", HOME()), I.IntentKind.REQUEST_TAKEOFF)
+        self.assertIn(atc.spell_freq(seat("tower", HOME()).freq_mhz), said,
+                      "he named the position and not the number")
 
     def test_clearance_does_not_issue_taxi(self):
-        _, _, said = self.turn("Kobuleti Clearance", I.IntentKind.REQUEST_TAXI)
+        _, _, said = self.turn(seat("clearance", HOME()), I.IntentKind.REQUEST_TAXI)
         self.assertNotIn("taxi to runway", said.lower())
         self.assertIn("ground", said.lower())
 
     def test_a_seat_that_covers_both_may_do_both(self):
         """A field that genuinely combines them is legal -- what is not legal
-        is one that does not, doing it anyway. Batumi Ground covers clearance
-        and delivery, so a clearance request is his."""
-        self.assertIn("clearance", R.GROUND.also)
-        self.ctl._me = R.GROUND
-        self.assertTrue(self.ctl._owns("clearance"))
-        self.assertFalse(self.ctl._owns("tower"))
+        is one that does not, doing it anyway. Read off the station table: on
+        one map it is Batumi Ground wearing the clearance hat, on the other it
+        is Silverbow Tower. Either way the rule is that the HAT decides."""
+        folded = [x for x in R.STATIONS
+                  if "clearance" in (getattr(x, "also", ()) or ())]
+        if not folded:
+            raise unittest.SkipTest(
+                f"{T.name()} staffs a separate clearance seat at every field, "
+                f"so no seat covers two of these positions")
+        for me in folded:
+            with self.subTest(who=me.name):
+                self.ctl._me = me
+                self.assertTrue(self.ctl._owns("clearance"))
+                # ...and still only what he actually wears.
+                owns_tower = (me.role == "tower"
+                              or "tower" in (getattr(me, "also", ()) or ()))
+                self.assertEqual(self.ctl._owns("tower"), owns_tower)
 
     def test_an_engine_that_was_not_told_who_it_is_still_works(self):
         """`_me` is None in the dry runs and the unit tests. The engine is
@@ -147,18 +196,23 @@ class TestTheRunwayIsTheFIELDS(GroundCase):
     def test_ground_and_tower_name_the_same_runway(self):
         """A taxi instruction and a take-off clearance that disagree is a jet
         lined up on the wrong strip."""
-        _, _, taxi = self.turn("Kobuleti Ground", I.IntentKind.REQUEST_TAXI)
-        _, _, dep = self.turn("Kobuleti Tower", I.IntentKind.REQUEST_TAKEOFF)
-        rwy = atc.spell_rwy(R.KOBULETI_FIELD.runway_in_use())
+        _, _, taxi = self.turn(seat("ground", HOME()), I.IntentKind.REQUEST_TAXI)
+        _, _, dep = self.turn(seat("tower", HOME()), I.IntentKind.REQUEST_TAKEOFF)
+        rwy = atc.spell_rwy(HOME().runway_in_use())
         self.assertIn(rwy, taxi)
         self.assertIn(rwy, dep)
 
     def test_it_is_the_departure_fields_runway_not_the_profiles(self):
-        """The profile describes the approach at the OTHER end of the route and
-        its runway is 13. A jet at Kobuleti must not be sent to it."""
-        _, _, taxi = self.turn("Kobuleti Ground", I.IntentKind.REQUEST_TAXI)
-        self.assertIn(atc.spell_rwy(7), taxi)
-        self.assertNotIn(atc.spell_rwy(13), taxi)
+        """The profile describes the approach at the OTHER end of the route. A
+        jet on THIS ramp must not be sent to that runway -- the wrong answer is
+        a real strip at a real aerodrome, which is what makes it dangerous."""
+        _, _, taxi = self.turn(seat("ground", HOME()), I.IntentKind.REQUEST_TAXI)
+        mine = atc.spell_rwy(HOME().runway_in_use())
+        theirs = atc.spell_rwy(int(P().runway))
+        self.assertIn(mine, taxi)
+        if theirs != mine:
+            self.assertNotIn(theirs, taxi,
+                             "cleared to taxi to the arrival field's runway")
 
 
 class TestItIsSaidTheWayItIsSaid(unittest.TestCase):
@@ -176,8 +230,12 @@ class TestItIsSaidTheWayItIsSaid(unittest.TestCase):
         self.assertEqual(atc.spell_count(5), "five")
 
     def test_the_wind_phrase_says_both_correctly(self):
-        said = atc.Controller(P)._wind_phrase()
-        self.assertIn("zero nine zero", said)
+        """A direction is three digits and a speed is a quantity. The direction
+        is read off the map's declaration rather than written down -- 090 on one
+        map, 210 on the other, and the SHAPE is the assertion."""
+        from marshall.core import theatre as TH
+        said = atc.Controller(P())._wind_phrase()
+        self.assertIn(atc.spell_hdg(int(TH.declared_wind()[0])), said)
         self.assertNotIn("at zero", said)
 
 
@@ -217,8 +275,8 @@ class TestThePhaseTableIsCoherent(unittest.TestCase):
         for name in ("clearance", "taxi", "holding_short"):
             with self.subTest(phase=name):
                 self.assertIsNotNone(
-                    R.station_for(PH.owner_of(name), field=DEP),
-                    f"nobody at {DEP} works {name}")
+                    R.station_for(PH.owner_of(name), field=HOME().name),
+                    f"nobody at {HOME().name} works {name}")
 
 
 if __name__ == "__main__":
@@ -258,12 +316,11 @@ class TestAParkedAeroplaneHasNoApproachGeometry(unittest.TestCase):
         phase he is in" and therefore no guidance."""
         from marshall.atc import agent_atc as A
         from marshall.atc import controller as C
-        from marshall.core import route as R
-        ctl = C.Controller(R.BATUMI_ASR)
+        ctl = C.Controller(P())
         ac = ctl.get("Sockeye")
         ac.sortie_phase = phase
         return A.settle(A.Bridge(), "taxi to runway zero seven", "", "",
-                        pos, R.BATUMI_ASR, "Sockeye", ctl, scope="", track="")
+                        pos, P(), "Sockeye", ctl, scope="", track="")
 
     def test_a_jet_on_the_ramp_gets_no_guidance_and_keeps_its_clearance(self):
         directive, _stack, _v, guide, dropped = self.settle(
@@ -306,16 +363,23 @@ class TestTheBriefSaysWhatIsNotYours(unittest.TestCase):
     def brief(self, station):
         from marshall.atc import agent_atc as A
         from marshall.atc import assembly
-        from marshall.core import route as R
         return assembly.compose_message(
             A.Bridge(), scope="", known="Sockeye",
-            transcript="ready for departure", profile=R.BATUMI_ASR, me=station,
+            transcript="ready for departure", profile=P(), me=station,
             fix=None, nxt=None, directive="", stack="", vectoring="",
             _flight={}, _flight_say="", claim="", name_say="")[0]
 
     def test_a_ground_seat_is_told_the_runway_is_not_his(self):
         from marshall.core import route as R
-        for st in (R.KOB_GROUND, R.KOB_CLEARANCE, R.GROUND):
+        # EVERY SEAT ON THE MAP THAT DOES NOT OWN A RUNWAY. Not a written list:
+        # `seat("clearance", ...)` resolves to Silverbow TOWER at Tonopah, who
+        # genuinely does own it, and a list would have asserted the opposite of
+        # the rule against him.
+        ground_seats = [x for x in R.STATIONS
+                        if x.field and x.role in ("ground", "clearance")
+                        and "tower" not in (getattr(x, "also", ()) or ())]
+        self.assertTrue(ground_seats, "the map staffs no ground seat at all")
+        for st in ground_seats:
             with self.subTest(who=st.name):
                 said = self.brief(st)
                 self.assertIn("NOT YOURS: THE RUNWAY", said)
@@ -324,13 +388,13 @@ class TestTheBriefSaysWhatIsNotYours(unittest.TestCase):
     def test_and_told_which_frequency_to_send_him_to(self):
         """Naming only the position leaves him hunting for a number while
         holding short."""
-        from marshall.core import route as R
-        self.assertIn("Kobuleti Tower", self.brief(R.KOB_GROUND))
-        self.assertIn("one three three decimal zero", self.brief(R.KOB_GROUND))
+        gnd, twr = seat("ground", HOME()), seat("tower", HOME())
+        said = self.brief(gnd)
+        self.assertIn(twr.name, said)
+        self.assertIn(atc.spell_freq(twr.freq_mhz), said)
 
     def test_a_tower_seat_is_not_told_the_runway_is_not_his(self):
-        from marshall.core import route as R
-        for st in (R.KOB_TOWER, R.TOWER):
+        for st in (seat("tower", HOME()), seat("tower", AWAY())):
             with self.subTest(who=st.name):
                 self.assertNotIn("NOT YOURS: THE RUNWAY", self.brief(st))
 
@@ -339,24 +403,22 @@ class TestTheBriefSaysWhatIsNotYours(unittest.TestCase):
         frequency and relays Tower's landing clearance rather than sending a man
         in cloud to another radio. Telling Approach it may not clear a landing
         would break the procedure."""
-        from marshall.core import route as R
-        self.assertNotIn("NOT YOURS: THE RUNWAY", self.brief(R.APPROACH))
+        self.assertNotIn("NOT YOURS: THE RUNWAY", self.brief(seat("approach", AWAY())))
 
     def test_a_tower_seat_is_told_the_ramp_is_not_his(self):
         """Batumi Tower cleared a pilot to taxi to parking after landing, which
         is Ground's."""
-        from marshall.core import route as R
-        said = self.brief(R.TOWER)
+        twr, gnd = seat("tower", AWAY()), seat("ground", AWAY())
+        said = self.brief(twr)
         self.assertIn("NOT YOURS: THE GROUND", said)
-        self.assertIn("one two one decimal nine", said)
+        self.assertIn(atc.spell_freq(gnd.freq_mhz), said)
 
     def test_a_field_that_really_does_fold_them_together_says_the_opposite(self):
         """Read off the station table, not written into the prose. A seat whose
         `also` includes tower genuinely owns the runway and must not be told
         otherwise."""
         import dataclasses
-        from marshall.core import route as R
-        both = dataclasses.replace(R.KOB_GROUND, also=("tower",))
+        both = dataclasses.replace(seat("ground", HOME()), also=("tower",))
         self.assertNotIn("NOT YOURS: THE RUNWAY", self.brief(both))
 
 
@@ -382,9 +444,8 @@ class AReadBackIsATransmissionTheSystemCanHear(unittest.TestCase):
 
     def setUp(self):
         from marshall.atc import controller as atc, intents
-        from marshall.core import route as R
         self.intents = intents
-        self.ctl = atc.Controller(R.BATUMI_ASR)
+        self.ctl = atc.Controller(P())
         self.ctl.check_in("Sockeye 1-1")
         self.ctl.out.clear()
 
@@ -503,8 +564,7 @@ class TheAtisLetterCrossesTheSeam(unittest.TestCase):
         import unittest.mock as mock
         from marshall.atc import controller as atc
         from marshall.atis import store
-        from marshall.core import route as R
-        c = atc.Controller(R.BATUMI_ASR)
+        c = atc.Controller(P())
         with mock.patch.object(store, "current",
                                return_value=mock.Mock(on_the_air=True,
                                                       letter="Alpha")):
@@ -518,8 +578,7 @@ class TheAtisLetterCrossesTheSeam(unittest.TestCase):
         import unittest.mock as mock
         from marshall.atc import controller as atc
         from marshall.atis import store
-        from marshall.core import route as R
-        c = atc.Controller(R.BATUMI_ASR)
+        c = atc.Controller(P())
         with mock.patch.object(store, "current",
                                return_value=mock.Mock(on_the_air=False,
                                                       letter="")):
@@ -588,7 +647,7 @@ class ReadingBackTheTaxiClearanceIsNotArrivingAtTheHold(unittest.TestCase):
         from marshall.atc import agent_atc as A, bedrock_intent, controller as atc, intents
         from marshall.core import route as R
         self.A, self.intents, self.bedrock = A, intents, bedrock_intent
-        self.ctl = atc.Controller(R.BATUMI_ASR)
+        self.ctl = atc.Controller(P())
         self.ctl._me = R.station_on(121.800)     # Kobuleti Ground
         self._real = bedrock_intent.classify
 
@@ -646,8 +705,7 @@ class DeliveryAsksAboutTheWeatherToo(unittest.TestCase):
         import unittest.mock as mock
         from marshall.atc import controller as atc
         from marshall.atis import store
-        from marshall.core import route as R
-        c = atc.Controller(R.BATUMI_ASR)
+        c = atc.Controller(P())
         with mock.patch.object(store, "current",
                                return_value=mock.Mock(on_the_air=on_air,
                                                       letter=letter)):
@@ -717,7 +775,7 @@ class OnlyOneThingJudgesTheReadBack(unittest.TestCase):
         self.assertTrue(any("four six two zero" in m for m in missed))
 
     def test_the_engine_names_the_missed_element(self):
-        ctl = atc.Controller(P)
+        ctl = atc.Controller(P())
         ctl.request_clearance("Sockeye")
         ctl.out.clear()
         ctl.clearance_read_back("Sockeye", correct=False,
@@ -727,7 +785,7 @@ class OnlyOneThingJudgesTheReadBack(unittest.TestCase):
         self.assertIn("four six two zero", said)
 
     def test_a_wrong_read_back_still_moves_nobody(self):
-        ctl = atc.Controller(P)
+        ctl = atc.Controller(P())
         ctl.request_clearance("Sockeye")
         ctl.clearance_read_back("Sockeye", correct=False, missed=("squawk",))
         ac = ctl.aircraft[ctl._resolve("Sockeye")]
@@ -785,7 +843,7 @@ class GroundIsTheEndOfTheLadder(GroundCase):
         return me
 
     def test_ground_gives_the_parking_instruction(self):
-        self._landed("Kobuleti Ground")
+        self._landed(seat("ground", HOME()))
         I.dispatch(self.ctl, I.Intent(kind=I.IntentKind.REQUEST_TAXI,
                                       callsign="Sockeye"))
         said = " | ".join(t.text for t in self.ctl.out).lower()
@@ -794,19 +852,19 @@ class GroundIsTheEndOfTheLadder(GroundCase):
 
     def test_and_nothing_hands_him_anywhere_after_it(self):
         """The whole point. `taxi_in` has no successor and Ground owns it."""
-        me = self._landed("Kobuleti Ground")
+        me = self._landed(seat("ground", HOME()))
         I.dispatch(self.ctl, I.Intent(kind=I.IntentKind.REQUEST_TAXI,
                                       callsign="Sockeye"))
         ac = self.ctl.aircraft[self.ctl._resolve("Sockeye")]
         self.assertEqual(ac.sortie_phase, "taxi_in")
         self.assertEqual(PH.get("taxi_in").follows, ())
-        self.assertIsNone(H.due(P, me, H.State(True, 0.2, False,
+        self.assertIsNone(H.due(P(), me, H.State(True, 0.2, False,
                                                phase=ac.sortie_phase)))
 
     def test_tower_does_not_answer_for_parking(self):
         """Symmetric with Ground refusing a take-off: a seat answers for what it
         owns and names the man who owns the rest."""
-        self._landed("Kobuleti Tower")
+        self._landed(seat("tower", HOME()))
         I.dispatch(self.ctl, I.Intent(kind=I.IntentKind.REQUEST_TAXI,
                                       callsign="Sockeye"))
         said = " | ".join(t.text for t in self.ctl.out).lower()
@@ -826,21 +884,21 @@ class GroundIsTheEndOfTheLadder(GroundCase):
         that asks hands him BACKWARDS to Tower -- the fault this class is named
         after, reached by a different road.
         """
-        me = station("Kobuleti Ground")
+        me = station(seat("ground", HOME()))
         self.ctl._me = me
         self.ctl.report_down("Sockeye")
         said = " ".join(t.text for t in self.ctl.out).lower()
         ac = self.ctl.aircraft[self.ctl._resolve("Sockeye")]
         self.assertEqual(ac.sortie_phase, "taxi_in")
-        self.assertIsNone(H.due(P, me, H.State(True, 0.2, False,
+        self.assertIsNone(H.due(P(), me, H.State(True, 0.2, False,
                                                phase=ac.sortie_phase)))
         self.assertIn("exit the runway when able", said)
         self.assertNotIn("contact", said)
-        self.assertIn("kobuleti ground", said, "he spoke under Tower's name")
+        self.assertIn(me.name.lower(), said, "he spoke under Tower's name")
 
     def test_taxiing_OUT_is_untouched(self):
         """The same words, the other direction, from a man who has not flown."""
-        phase, _nxt, said = self.turn("Kobuleti Ground",
+        phase, _nxt, said = self.turn(seat("ground", HOME()),
                                       I.IntentKind.REQUEST_TAXI)
         self.assertEqual(phase, "taxi")
         self.assertIn("hold short", said.lower())
@@ -886,19 +944,19 @@ class TowerGivesHimGroundOnTheRollOut(GroundCase):
 
     def test_the_touchdown_names_ground_and_the_frequency(self):
         """Criterion 1, and the pilot said nothing to earn it."""
-        _me, _ac, said = self.landed_under("Kobuleti Tower")
-        self.assertIn("Kobuleti Ground", said)
-        self.assertIn(atc.spell_freq(station("Kobuleti Ground").freq_mhz), said)
+        _me, _ac, said = self.landed_under(seat("tower", HOME()))
+        self.assertIn(seat("ground", HOME()).name, said)
+        self.assertIn(atc.spell_freq(station(seat("ground", HOME())).freq_mhz), said)
         self.assertIn("exit the runway", said.lower())
         # ...and the OTHER field's ground frequency is the plausible wrong one.
-        self.assertNotIn(atc.spell_freq(station("Batumi Ground").freq_mhz),
+        self.assertNotIn(atc.spell_freq(station(seat("ground", AWAY())).freq_mhz),
                          said)
 
     def test_it_is_the_ARRIVAL_fields_ground(self):
         """Criterion 2. A role is unique only within an aerodrome, and the
         wrong answer here is a real controller on a real frequency."""
-        _me, _ac, said = self.landed_under("Batumi Tower")
-        self.assertIn("Batumi Ground", said)
+        _me, _ac, said = self.landed_under(seat("tower", AWAY()))
+        self.assertIn(seat("ground", AWAY()).name, said)
         self.assertNotIn("Kobuleti", said)
 
     def test_whoever_says_it_says_it_under_his_own_name(self):
@@ -912,10 +970,10 @@ class TowerGivesHimGroundOnTheRollOut(GroundCase):
         under another controller's name -- it is the same rule as a seat not
         issuing a clearance that is not his, one level down.
         """
-        _me, _ac, said = self.landed_under("Batumi Approach")
-        self.assertIn("Batumi Approach", said)
+        _me, _ac, said = self.landed_under(seat("approach", AWAY()))
+        self.assertIn(seat("approach", AWAY()).name, said)
         self.assertNotIn("Tower", said)
-        self.assertIn("Batumi Ground", said, "and he still gets the next man")
+        self.assertIn(seat("ground", AWAY()).name, said, "and he still gets the next man")
 
     def test_the_phase_moves_to_grounds_rung_in_the_same_breath(self):
         """Criterion 3. The words and the rung are decided in one place.
@@ -925,22 +983,22 @@ class TowerGivesHimGroundOnTheRollOut(GroundCase):
         the transmission and the station the ladder resolves have to be the same
         object, not two lookups that currently agree.
         """
-        me, ac, said = self.landed_under("Kobuleti Tower")
+        me, ac, said = self.landed_under(seat("tower", HOME()))
         self.assertEqual(ac.sortie_phase, "taxi_in")
-        v = H.due(P, me, H.State(True, 0.2, False, phase=ac.sortie_phase))
+        v = H.due(P(), me, H.State(True, 0.2, False, phase=ac.sortie_phase))
         self.assertIsNotNone(v, "landing did not authorise a handoff")
-        self.assertEqual(v.station.name, "Kobuleti Ground")
+        self.assertEqual(v.station, seat("ground", HOME()))
         self.assertIn(v.station.name, said)
         self.assertIn(atc.spell_freq(v.station.freq_mhz), said)
 
     def test_the_decision_carries_the_frequency_it_spoke(self):
         """What the recorder and the verifier read, rather than the prose."""
-        me, _ac, _said = self.landed_under("Kobuleti Tower")
+        me, _ac, _said = self.landed_under(seat("tower", HOME()))
         d = next((t.decision for t in self.ctl.out
                   if getattr(t.decision, "kind", "") == "handoff"), None)
         self.assertIsNotNone(d, "the goodbye carried no handoff decision")
         self.assertEqual(d.role, "ground")
-        self.assertEqual(d.station, "Kobuleti Ground")
+        self.assertEqual(d.station, seat("ground", HOME()).name)
         self.assertEqual(d.frequency_mhz,
                          R.station_for("ground",
                                        field=me.field).freq_mhz)
@@ -952,9 +1010,9 @@ class TowerGivesHimGroundOnTheRollOut(GroundCase):
         reading Tower's phase and returning him to a controller who had finished
         with him. Moving the phase EARLIER must not reopen it.
         """
-        _me, ac, _said = self.landed_under("Kobuleti Tower")
-        gnd = station("Kobuleti Ground")
-        self.assertIsNone(H.due(P, gnd, H.State(True, 0.2, False,
+        _me, ac, _said = self.landed_under(seat("tower", HOME()))
+        gnd = station(seat("ground", HOME()))
+        self.assertIsNone(H.due(P(), gnd, H.State(True, 0.2, False,
                                                 phase=ac.sortie_phase)),
                           "Ground handed a landed aeroplane somewhere")
         self.assertEqual(PH.get("taxi_in").follows, ())
@@ -962,8 +1020,8 @@ class TowerGivesHimGroundOnTheRollOut(GroundCase):
     def test_ground_still_owns_the_parking_instruction(self):
         """#100 criterion 2. He arrives on the frequency already on Ground's
         rung, and Ground must still answer for the stand rather than decline."""
-        self.landed_under("Kobuleti Tower")
-        self.ctl._me = station("Kobuleti Ground")
+        self.landed_under(seat("tower", HOME()))
+        self.ctl._me = station(seat("ground", HOME()))
         self.ctl.out.clear()
         I.dispatch(self.ctl, I.Intent(kind=I.IntentKind.REQUEST_TAXI,
                                       callsign="Sockeye"))
@@ -979,8 +1037,8 @@ class TowerGivesHimGroundOnTheRollOut(GroundCase):
         transmission is reachable more than once, and on GROUND's frequency it
         would be an instruction to contact himself.
         """
-        self.landed_under("Kobuleti Tower")
-        self.ctl._me = station("Kobuleti Ground")
+        self.landed_under(seat("tower", HOME()))
+        self.ctl._me = station(seat("ground", HOME()))
         self.ctl.out.clear()
         self.ctl.report_down("Sockeye")
         said = " | ".join(t.text for t in self.ctl.out)
@@ -994,7 +1052,7 @@ class TowerGivesHimGroundOnTheRollOut(GroundCase):
         station that is not there is worse than one who says nothing. `landed`
         is still a real rung: down, on the strip, Tower's.
         """
-        me = station("Georgia Center")       # no field, therefore no ground seat
+        me = R.station_for("center")         # no field, therefore no ground seat
         self.ctl._me = me
         self.ctl.report_down("Sockeye")
         ac = self.ctl.aircraft[self.ctl._resolve("Sockeye")]
@@ -1009,7 +1067,7 @@ class TowerGivesHimGroundOnTheRollOut(GroundCase):
         A pilot who asks for a stand -- because he missed the call, or because
         he is quicker than the radar poll -- gets what he got yesterday.
         """
-        self.ctl._me = station("Kobuleti Ground")
+        self.ctl._me = station(seat("ground", HOME()))
         I.dispatch(self.ctl, I.Intent(kind=I.IntentKind.REQUEST_CLEARANCE,
                                       callsign="Sockeye"))
         ac = self.ctl.aircraft[self.ctl._resolve("Sockeye")]
@@ -1034,7 +1092,7 @@ class TowerGivesHimGroundOnTheRollOut(GroundCase):
         self.assertEqual(PH.derive("taxi", on_ground=True), "taxi")
         self.assertEqual(PH.derive("", on_ground=True), "clearance")
         # ...and the words he gets are the outbound ones, to the runway.
-        phase, _nxt, said = self.turn("Kobuleti Ground",
+        phase, _nxt, said = self.turn(seat("ground", HOME()),
                                       I.IntentKind.REQUEST_TAXI)
         self.assertEqual(phase, "taxi")
         self.assertNotIn("welcome", said.lower())
@@ -1056,7 +1114,7 @@ class GroundDoesNotMoveAnAircraftOnAnUnagreedClearance(unittest.TestCase):
     """
 
     def ground(self):
-        ctl = atc.Controller(profile=R.BATUMI_ASR)
+        ctl = atc.Controller(profile=P())
         ctl._me = R.station_for("ground", field="Kobuleti")
         return ctl
 

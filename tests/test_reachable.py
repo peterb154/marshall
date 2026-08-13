@@ -21,24 +21,44 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from marshall.atc import reachable as RE
 from marshall.atc.intents import IntentKind as K
-from marshall.core import route as R
+from marshall.core import route as R  # noqa: F401  -- kept for `R.` in helpers
+from tests import theatre as T
+
+# THE PROCEDURES ARE PROPS HERE, not subjects. What this file guards is which
+# intents a procedure and a position make REACHABLE, so it wants "a vectored
+# arrival", "an ILS" and "a beacon letdown" rather than three Georgian names --
+# and naming them made the module uncollectable on any other map.
+
+
+def VECTORED():
+    """A radar arrival the controller steers: the map's own."""
+    return T.the_arrival()
+
+
+def ILS():
+    return T.the_ils()
+
+
+def LETDOWN():
+    """A procedure flown on a navaid, where station passage is the procedure."""
+    return T.letdown()
 
 
 class TestTheBeaconReportThatStartedIt(unittest.TestCase):
 
     def test_a_radar_approach_has_no_station_to_pass(self):
-        self.assertFalse(RE.reachable(K.REPORT_BEACON, R.BATUMI_ASR))
+        self.assertFalse(RE.reachable(K.REPORT_BEACON, VECTORED()))
 
     def test_nor_does_an_ils(self):
         """He reports established on an ILS, which is a different thing and a
         different intent. There is still no station passage."""
-        self.assertFalse(RE.reachable(K.REPORT_BEACON, R.KOBULETI_ILS))
+        self.assertFalse(RE.reachable(K.REPORT_BEACON, ILS()))
 
     def test_the_beacon_letdown_keeps_it(self):
         """The procedure it belongs to. Station passage IS the letdown: the
         pilot flies the missed approach point off his own clock and the
         controller backs him up."""
-        self.assertTrue(RE.reachable(K.REPORT_BEACON, R.BATUMI_APPROACH))
+        self.assertTrue(RE.reachable(K.REPORT_BEACON, LETDOWN()))
 
     def test_a_blind_controller_keeps_it_on_any_procedure(self):
         """The rule is not "is it an NDB". A controller with no radar has no
@@ -46,12 +66,12 @@ class TestTheBeaconReportThatStartedIt(unittest.TestCase):
         only thing he has -- whatever the procedure is called."""
         import dataclasses
         blind = dataclasses.replace(
-            R.BATUMI_ASR,
-            atc=dataclasses.replace(R.BATUMI_ASR.atc, radar=False))
+            VECTORED(),
+            atc=dataclasses.replace(VECTORED().atc, radar=False))
         self.assertTrue(RE.reachable(K.REPORT_BEACON, blind))
 
     def test_the_reason_is_sayable(self):
-        why = RE.why_not(K.REPORT_BEACON, R.BATUMI_ASR)
+        why = RE.why_not(K.REPORT_BEACON, VECTORED())
         self.assertIn("no station to pass", why)
 
 
@@ -61,21 +81,21 @@ class TestWhereTheAeroplaneIs(unittest.TestCase):
         for kind in (K.REPORT_MISSED, K.REQUEST_APPROACH, K.REQUEST_VISUAL):
             with self.subTest(kind=kind):
                 self.assertFalse(
-                    RE.reachable(kind, R.BATUMI_ASR, on_ground=True))
+                    RE.reachable(kind, VECTORED(), on_ground=True))
 
     def test_an_airborne_aeroplane_cannot_ask_to_taxi(self):
         for kind in (K.REQUEST_TAXI, K.REQUEST_CLEARANCE,
                      K.REPORT_HOLDING_SHORT, K.REQUEST_TAKEOFF):
             with self.subTest(kind=kind):
                 self.assertFalse(
-                    RE.reachable(kind, R.BATUMI_ASR, on_ground=False))
+                    RE.reachable(kind, VECTORED(), on_ground=False))
 
     def test_ground_actions_work_on_the_ground(self):
         for kind in (K.REQUEST_TAXI, K.REQUEST_CLEARANCE,
                      K.REPORT_HOLDING_SHORT, K.REQUEST_TAKEOFF):
             with self.subTest(kind=kind):
                 self.assertTrue(
-                    RE.reachable(kind, R.BATUMI_ASR, on_ground=True))
+                    RE.reachable(kind, VECTORED(), on_ground=True))
 
     def test_not_knowing_never_blocks(self):
         """`on_ground` is None when the scope has dropped or no event has been
@@ -84,7 +104,7 @@ class TestWhereTheAeroplaneIs(unittest.TestCase):
         for kind in (K.REPORT_MISSED, K.REQUEST_TAXI, K.REQUEST_TAKEOFF):
             with self.subTest(kind=kind):
                 self.assertTrue(
-                    RE.reachable(kind, R.BATUMI_ASR, on_ground=None))
+                    RE.reachable(kind, VECTORED(), on_ground=None))
 
     def test_check_in_and_landing_are_always_reachable(self):
         """Two things a pilot may do at any point of any procedure, in the air
@@ -94,7 +114,7 @@ class TestWhereTheAeroplaneIs(unittest.TestCase):
             for ground in (True, False, None):
                 with self.subTest(kind=kind, on_ground=ground):
                     self.assertTrue(
-                        RE.reachable(kind, R.BATUMI_ASR, on_ground=ground))
+                        RE.reachable(kind, VECTORED(), on_ground=ground))
 
 
 class TestTheRouterActuallyHonoursIt(unittest.TestCase):
@@ -102,7 +122,8 @@ class TestTheRouterActuallyHonoursIt(unittest.TestCase):
     the shape of half the bugs in this project: a rule that exists in one
     function and is not called from the path that needed it."""
 
-    def controller(self, profile=R.BATUMI_ASR):
+    def controller(self, profile=None):
+        profile = VECTORED() if profile is None else profile
         from marshall.atc import controller as C
         return C.Controller(profile)
 
@@ -125,7 +146,7 @@ class TestTheRouterActuallyHonoursIt(unittest.TestCase):
         self.assertTrue(ctl.unreachable, "the stand-down was not logged")
 
     def test_and_it_does_reach_the_engine_on_the_letdown(self):
-        ctl = self.controller(R.BATUMI_APPROACH)
+        ctl = self.controller(LETDOWN())
         ctl.get("Sockeye")
         self.dispatch(ctl, K.REPORT_BEACON)
         self.assertEqual(ctl.unreachable, [],
@@ -154,7 +175,7 @@ class TestTheGateDidNotShutTheDoorOnEntry(unittest.TestCase):
     def board_after(self, kind):
         from marshall.atc import controller as C
         from marshall.atc import intents
-        ctl = C.Controller(R.BATUMI_ASR)
+        ctl = C.Controller(VECTORED())
         intents.dispatch(ctl, intents.Intent(kind=kind, callsign="Sockeye"),
                          on_ground=False)
         return [r.get("callsign") for r in ctl.board()]
@@ -167,7 +188,7 @@ class TestTheGateDidNotShutTheDoorOnEntry(unittest.TestCase):
 
     def test_both_are_reachable_airborne_on_every_procedure(self):
         """Because if either were ever gated, the door closes completely."""
-        for profile in (R.BATUMI_ASR, R.KOBULETI_ILS, R.BATUMI_APPROACH):
+        for profile in (VECTORED(), ILS(), LETDOWN()):
             for kind in (K.CHECK_IN, K.REQUEST_APPROACH):
                 with self.subTest(procedure=profile.kind, kind=kind):
                     self.assertTrue(
@@ -198,7 +219,7 @@ class TheGateAsksHISPROCEDURE(unittest.TestCase):
 
     def ctl(self):
         from marshall.atc import controller as C
-        return C.Controller(R.BATUMI_ASR)          # the BRIDGE has radar
+        return C.Controller(VECTORED())          # the BRIDGE has radar
 
     def test_the_letdown_pilot_keeps_his_station_passage(self):
         """A Mustang on the 1944 beacon letdown, on a bridge started on the
@@ -206,7 +227,7 @@ class TheGateAsksHISPROCEDURE(unittest.TestCase):
         from marshall.atc import intents
         ctl = self.ctl()
         ctl.get("Pony 1-1")
-        ctl.assign_approach("Pony 1-1", R.BATUMI_APPROACH, named="batumi-ndb")
+        ctl.assign_approach("Pony 1-1", LETDOWN(), named="letdown")
         handled = intents.dispatch(
             ctl, intents.Intent(kind=K.REPORT_BEACON, callsign="Pony 1-1"),
             on_ground=False)

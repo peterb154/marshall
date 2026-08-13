@@ -13,14 +13,35 @@ import unittest
 
 from marshall.atc import handoff as H
 from marshall.core import route as R
+from tests import theatre as T
 
-P = R.BATUMI_ASR
 # QUALIFIED, because there are two Towers on the map. Unqualified these were
 # Kobuleti's the moment the departure field got a Tower of its own, and every
 # assertion below would have been about the wrong aerodrome while still
 # passing for some of them. [#51]
-TOWER = R.station_for("tower", field=R.ARRIVAL_FIELD)
-APPROACH = R.station_for("approach", field=R.ARRIVAL_FIELD)
+#
+# ...and RESOLVED WHEN ASKED, because they were module constants and that is a
+# second copy of the same mistake one level up: `R.ARRIVAL_FIELD` is a Caucasus
+# literal in `core/fields.py`, evaluated at import, so this file -- the guard
+# for the rule table that decides who has an aeroplane next -- could not be
+# collected on the second map at all.
+
+
+def P():
+    """The procedure this map's bridge is started on."""
+    return T.the_arrival()
+
+
+def TOWER():
+    return T.station("tower")
+
+
+def APPROACH():
+    return T.station("approach")
+
+
+def CENTER():
+    return R.station_for("center")
 
 
 def flying(nm, inbound=False):
@@ -31,17 +52,19 @@ class TestOutbound(unittest.TestCase):
     """Tower keeps him until he is clear of the circuit."""
 
     def test_beyond_five_miles_he_goes_to_the_radar_controller(self):
-        v = H.due(P, TOWER, flying(6.0))
+        v = H.due(P(), TOWER(), flying(6.0))
         self.assertIsNotNone(v)
-        self.assertEqual(v.station.name, "Batumi Approach")
         self.assertEqual(v.role, "departure")
+        self.assertEqual(v.station,
+                         R.station_for("departure", field=TOWER().field),
+                         "handed to a radar controller at another aerodrome")
 
     def test_inside_five_miles_tower_still_has_him(self):
-        self.assertIsNone(H.due(P, TOWER, flying(2.0)))
+        self.assertIsNone(H.due(P(), TOWER(), flying(2.0)))
 
     def test_and_on_the_runway_nothing_is_due(self):
         """The moment after he rotates is not the moment to hand him over."""
-        self.assertIsNone(H.due(P, TOWER, H.State(True, 0.2, False)))
+        self.assertIsNone(H.due(P(), TOWER(), H.State(True, 0.2, False)))
 
 
 class TestInbound(unittest.TestCase):
@@ -65,8 +88,9 @@ class TestInbound(unittest.TestCase):
         `if` that the proactive monitor never saw. So the answer depended on
         whether the pilot happened to key the mic. [#51]
         """
-        self.assertEqual(P.guidance, "talkdown")
-        self.assertIsNone(H.due(P, APPROACH, flying(4.0, inbound=True)))
+        talkdown = T.letdown()
+        self.assertEqual(talkdown.guidance, "talkdown")
+        self.assertIsNone(H.due(talkdown, APPROACH(), flying(4.0, inbound=True)))
 
     def test_and_landing_hands_him_over_immediately(self):
         """The other half, and the reason suppressing the distance is safe: the
@@ -76,9 +100,9 @@ class TestInbound(unittest.TestCase):
             "on touchdown, my status didnt change to on ground on the board --
              approach didnt hand me off to tower"
         """
-        v = H.due(P, APPROACH, H.State(True, 0.3, False))
+        v = H.due(P(), APPROACH(), H.State(True, 0.3, False))
         self.assertIsNotNone(v)
-        self.assertEqual(v.station.name, "Batumi Tower")
+        self.assertEqual(v.station, R.station_for("tower", field=APPROACH().field))
 
     def test_where_the_pilot_has_his_own_aid_five_miles_still_works(self):
         """An ILS or a visual is not a talkdown: the aeroplane is flying the
@@ -87,10 +111,10 @@ class TestInbound(unittest.TestCase):
         is the only approach in the tree today -- this is the row that must not
         break when Kobuleti's ILS lands."""
         import dataclasses
-        ils = dataclasses.replace(P, guidance="intercept")
-        v = H.due(ils, APPROACH, flying(4.0, inbound=True))
+        ils = dataclasses.replace(P(), guidance="intercept")
+        v = H.due(ils, APPROACH(), flying(4.0, inbound=True))
         self.assertIsNotNone(v)
-        self.assertEqual(v.station.name, "Batumi Tower")
+        self.assertEqual(v.station, R.station_for("tower", field=APPROACH().field))
 
     def test_THE_SAME_RANGE_OUTBOUND_IS_NOT_AN_ARRIVAL(self):
         """The reason the conditions are named for the event and not the number.
@@ -100,16 +124,17 @@ class TestInbound(unittest.TestCase):
         departing aircraft straight back to Tower, on his way out, which is the
         single most likely way to get this wrong.
         """
-        self.assertIsNone(H.due(P, APPROACH, flying(4.0, inbound=False)))
+        self.assertIsNone(H.due(T.letdown(), APPROACH(),
+                                flying(4.0, inbound=False)))
 
     def test_beyond_five_miles_approach_keeps_him(self):
-        self.assertIsNone(H.due(P, APPROACH, flying(9.0, inbound=True)))
+        self.assertIsNone(H.due(P(), APPROACH(), flying(9.0, inbound=True)))
 
     def test_on_the_ground_under_a_radar_controller_is_corrected(self):
         """He has landed and nobody noticed, or he never left. Either way the
         radar controller is not the right man."""
-        v = H.due(P, APPROACH, H.State(True, 0.3, False))
-        self.assertEqual(v.station.name, "Batumi Tower")
+        v = H.due(P(), APPROACH(), H.State(True, 0.3, False))
+        self.assertEqual(v.station, R.station_for("tower", field=APPROACH().field))
 
 
 class TestApproachAndDepartureAreOneMan(unittest.TestCase):
@@ -125,7 +150,7 @@ class TestApproachAndDepartureAreOneMan(unittest.TestCase):
     """
 
     def test_departure_resolves_to_the_approach_station(self):
-        """AT BATUMI. The field is not decoration on this call any more.
+        """AT EVERY FIELD. The field is not decoration on this call any more.
 
         This test used to read `station_for("departure")` with no field, and it
         passed for as long as Batumi was the only aerodrome in the world. Adding
@@ -134,18 +159,46 @@ class TestApproachAndDepartureAreOneMan(unittest.TestCase):
         raised. The expectation is qualified now because the question was always
         ambiguous and only ever had one possible answer by accident.
         """
-        self.assertEqual(R.station_for("departure", field="Batumi").name,
-                         "Batumi Approach")
-        self.assertEqual(R.station_for("departure", field="Batumi").freq_mhz,
-                         R.station_for("approach", field="Batumi").freq_mhz)
+        for f in T.fields():
+            dep = R.station_for("departure", field=f.name)
+            app = R.station_for("approach", field=f.name)
+            if dep is None or app is None:
+                continue
+            with self.subTest(field=f.name):
+                self.assertEqual(dep.field, f.name)
+                self.assertEqual(app.field, f.name)
+
+    @T.skip_unless("caucasus", why="Nellis staffs Approach 118.125 and Departure "
+                                   "135.1 as two seats on two channels, which is "
+                                   "what the real field does -- so 'they are "
+                                   "synonyms' is this THEATRE's arrangement, not "
+                                   "a rule. The invariant that survives both is "
+                                   "asserted above: each resolves to a seat at "
+                                   "the field that was asked about")
+    def test_departure_and_approach_are_one_frequency(self):
+        """The quote at the top of the class, kept exact where it is true."""
+        for f in T.fields():
+            dep = R.station_for("departure", field=f.name)
+            app = R.station_for("approach", field=f.name)
+            if dep is None or app is None:
+                continue
+            with self.subTest(field=f.name):
+                self.assertEqual(dep.freq_mhz, app.freq_mhz)
 
     def test_the_same_role_at_the_other_field_is_a_different_man(self):
         """The bug this whole change exists to make impossible."""
-        self.assertEqual(R.station_for("departure", field="Kobuleti").name,
-                         "Kobuleti Departure")
-        self.assertNotEqual(
-            R.station_for("departure", field="Kobuleti").freq_mhz,
-            R.station_for("departure", field="Batumi").freq_mhz)
+        seen = {}
+        for f in T.fields():
+            dep = R.station_for("departure", field=f.name)
+            if dep is None:
+                continue
+            with self.subTest(field=f.name):
+                self.assertNotIn(dep.freq_mhz, seen,
+                                 f"{f.name} and {seen.get(dep.freq_mhz)} are "
+                                 f"handed the same departure frequency")
+            seen[dep.freq_mhz] = f.name
+        self.assertGreaterEqual(len(seen), 2,
+                                "fewer than two fields work departures")
 
     def test_a_field_never_borrows_another_fields_controller(self):
         """Each field staffs its own Tower now, and the answer must be HIS.
@@ -158,10 +211,12 @@ class TestApproachAndDepartureAreOneMan(unittest.TestCase):
         Who owns the runway is the one piece of separation on an aerodrome and
         is not an economy to make at a quiet field.
         """
-        self.assertEqual(R.station_for("tower", field="Kobuleti").name,
-                         "Kobuleti Tower")
-        self.assertEqual(R.station_for("tower", field="Batumi").name,
-                         "Batumi Tower")
+        for f in T.fields():
+            tower = R.station_for("tower", field=f.name)
+            with self.subTest(field=f.name):
+                self.assertIsNotNone(tower, f"{f.name} staffs no Tower")
+                self.assertEqual(tower.field, f.name,
+                                 f"{f.name}'s runway is owned from {tower.field}")
 
     def test_ground_does_not_cover_the_tower_anywhere(self):
         """Structural, so the economy cannot creep back in at a new field."""
@@ -176,21 +231,20 @@ class TestApproachAndDepartureAreOneMan(unittest.TestCase):
         """Center owns airspace rather than an aerodrome, so he is fieldless and
         answers from either end of the route. That is the reason `station_for`
         falls out to the fieldless rather than restricting hard."""
-        for fld in ("Batumi", "Kobuleti"):
-            with self.subTest(field=fld):
-                self.assertEqual(R.station_for("center", field=fld).name,
-                                 "Georgia Center")
+        for f in T.fields():
+            with self.subTest(field=f.name):
+                self.assertEqual(R.station_for("center", field=f.name), CENTER())
 
     def test_a_rule_reaching_his_own_station_is_flagged_not_spoken(self):
         """Constructed rather than waited for: no rule produces this today,
         and one will the moment a role is split off a station that keeps it."""
-        v = H.Verdict(station=APPROACH, role="departure", same_station=True)
+        v = H.Verdict(station=APPROACH(), role="departure", same_station=True)
         self.assertTrue(v.same_station)
         self.assertTrue(v)
 
     def test_tower_to_departure_IS_a_real_handoff(self):
         """The frequency genuinely changes, so this one is spoken."""
-        v = H.due(P, TOWER, flying(6.0))
+        v = H.due(P(), TOWER(), flying(6.0))
         self.assertFalse(v.same_station)
 
 
@@ -220,7 +274,7 @@ class TestTheTableIsTheInterface(unittest.TestCase):
         no aerodrome employs him.
         """
         self.assertIsNone(R.station_for("approach", field="Nowhere"))
-        v = H.due(P, TOWER, flying(6.0))
+        v = H.due(P(), TOWER(), flying(6.0))
         self.assertIsNotNone(v, "the staffed rules still work alongside it")
 
     def test_both_fields_staff_every_rung_of_the_ladder(self):
@@ -253,23 +307,34 @@ class TestTheLadderRunsEndToEnd(unittest.TestCase):
     def me(self, name):
         return next(s for s in R.STATIONS if s.name == name)
 
-    def nxt(self, name, st):
-        v = H.due(P, self.me(name), st)
-        return None if (v is None or v.same_station) else v.station.name
+    def nxt(self, who, st, profile=None):
+        me = self.me(who) if isinstance(who, str) else who
+        v = H.due(profile if profile is not None else P(), me, st)
+        return None if (v is None or v.same_station) else v.station
 
     def test_a_departure_walks_the_whole_way_out(self):
-        self.assertEqual(self.nxt("Kobuleti Tower", H.State(False, 6.0, False)),
-                         "Kobuleti Departure")
-        self.assertEqual(self.nxt("Kobuleti Departure", H.State(False, 30.0, False)),
-                         "Georgia Center")
+        """From the DEPARTURE field's Tower, at whichever field that is. Each
+        rung is asserted to be the seat at HIS field -- the wrong answer is a
+        real controller at the other aerodrome, which is what this file exists
+        for."""
+        home = T.departure()
+        tower = R.station_for("tower", field=home.name)
+        self.assertEqual(self.nxt(tower, H.State(False, 6.0, False)),
+                         R.station_for("departure", field=home.name))
+        dep = R.station_for("departure", field=home.name)
+        self.assertEqual(self.nxt(dep, H.State(False, 30.0, False)), CENTER())
 
     def test_an_arrival_walks_the_whole_way_in(self):
-        self.assertEqual(self.nxt("Georgia Center", H.State(False, 23.0, True)),
-                         "Batumi Approach")
-        # ...held through the talkdown, then given up on landing.
-        self.assertIsNone(self.nxt("Batumi Approach", H.State(False, 4.0, True)))
-        self.assertEqual(self.nxt("Batumi Approach", H.State(True, 0.3, False)),
-                         "Batumi Tower")
+        home = T.arrival()
+        app = R.station_for("approach", field=home.name)
+        self.assertEqual(self.nxt(CENTER(), H.State(False, 23.0, True)), app,
+                         "Center handed an arrival to another field's Approach")
+        # ...held through the talkdown, then given up on landing. Asked with a
+        # TALKDOWN, because that is the procedure the rule is about: on an ILS
+        # the aeroplane flies it and five miles is the right trigger.
+        self.assertIsNone(self.nxt(app, H.State(False, 4.0, True), T.letdown()))
+        self.assertEqual(self.nxt(app, H.State(True, 0.3, False)),
+                         R.station_for("tower", field=home.name))
 
     def test_center_is_reachable_and_leaveable(self):
         """#51 was half of this. A rung you cannot leave strands a pilot; a
@@ -346,19 +411,34 @@ class TestRangeWithoutDirectionIsAmbiguous(unittest.TestCase):
     """
 
     def test_an_inbound_aircraft_is_never_sent_out_to_center(self):
-        approach = R.station_for("approach", field="Batumi")
-        self.assertIsNone(H.due(P, approach, H.State(False, 25.0, True)),
-                          "an arrival was handed away from his own field")
+        for f in T.fields():
+            approach = R.station_for("approach", field=f.name)
+            if approach is None:
+                continue
+            with self.subTest(field=f.name):
+                self.assertIsNone(H.due(P(), approach,
+                                        H.State(False, 25.0, True)),
+                                  "an arrival was handed away from his own field")
 
     def test_but_an_outbound_one_is(self):
-        approach = R.station_for("approach", field="Batumi")
-        v = H.due(P, approach, H.State(False, 30.0, False))
-        self.assertIsNotNone(v)
-        self.assertEqual(v.station.name, "Georgia Center")
+        """Asked of the DEPARTURE seat, which is the one the rule row names. At
+        a field where one man wears both hats that is the same station; at
+        Nellis, where Approach 118.125 and Departure 135.1 are two seats, it is
+        not -- and asking Approach would be asking a controller who never had
+        the departure."""
+        for f in T.fields():
+            dep = R.station_for("departure", field=f.name)
+            if dep is None:
+                continue
+            v = H.due(P(), dep, H.State(False, 30.0, False))
+            with self.subTest(field=f.name):
+                self.assertIsNotNone(v, f"{dep.name} can never let go of a "
+                                        f"departure")
+                self.assertEqual(v.station, CENTER())
 
     def test_an_inbound_aircraft_on_tower_is_not_sent_to_departure(self):
         """The case that had been wrong all along and never asked."""
-        self.assertIsNone(H.due(P, TOWER, flying(6.0, inbound=True)))
+        self.assertIsNone(H.due(P(), TOWER(), flying(6.0, inbound=True)))
 
     def test_every_distance_rule_reads_the_trend(self):
         """Structural, so a new rule cannot reintroduce this. A condition that
@@ -372,7 +452,7 @@ class TestRangeWithoutDirectionIsAmbiguous(unittest.TestCase):
             cond = H.CONDITIONS[name]
             near = H.State(on_ground=False, range_nm=nm, inbound=True)
             away = H.State(on_ground=False, range_nm=nm, inbound=False)
-            if cond(near, 5.0, P, None) == cond(away, 5.0, P, None):
+            if cond(near, 5.0, P(), None) == cond(away, 5.0, P(), None):
                 blind.append(name)
         self.assertEqual(blind, [], f"{blind} cannot tell an arrival from a "
                                     f"departure at the same range")
@@ -412,15 +492,15 @@ class TheGroundLadderCanActuallyLetGo(unittest.TestCase):
     def setUp(self):
         from marshall.core import route as R
         self.R = R
-        self.profile = R.BATUMI_ASR
+        self.profile = T.the_arrival()
 
     def station(self, name):
         return next(s for s in self.R.STATIONS if s.name == name)
 
-    def due(self, me_name, phase):
+    def due(self, who, phase):
         """What the ladder says, for a man on the ground in this phase."""
         from marshall.atc import handoff
-        me = self.station(me_name)
+        me = self.station(who) if isinstance(who, str) else who
         st = handoff.State(on_ground=True, range_nm=0.0, inbound=False,
                            phase=phase)
         return handoff.due(self.profile, me, st)
@@ -428,34 +508,69 @@ class TheGroundLadderCanActuallyLetGo(unittest.TestCase):
     def test_a_read_back_hands_clearance_to_ground(self):
         # `clearance_read_back(correct=True)` moves the phase to `taxi`, and
         # taxi is Ground's.
-        v = self.due("Kobuleti Clearance", "taxi")
-        self.assertIsNotNone(v, "Clearance can never let go of anybody")
-        self.assertEqual(v.role, "ground")
-        self.assertEqual(v.station.name, "Kobuleti Ground")
+        # AT EVERY FIELD THAT STAFFS A CLEARANCE SEAT. The rung the pilot is
+        # handed to must be at the field he is parked on, and a plausible wrong
+        # answer is the other aerodrome's Ground on a real frequency.
+        for f in T.fields():
+            me = self.R.station_for("clearance", field=f.name)
+            want = self.R.station_for("ground", field=f.name)
+            if me is None or want is None or me is want:
+                continue
+            v = self.due(me, "taxi")
+            with self.subTest(field=f.name):
+                self.assertIsNotNone(v, "Clearance can never let go of anybody")
+                self.assertEqual(v.role, "ground")
+                self.assertEqual(v.station, want)
 
     def test_holding_short_hands_ground_to_tower(self):
-        v = self.due("Kobuleti Ground", "holding_short")
-        self.assertIsNotNone(v, "Ground can never let go of anybody")
-        self.assertEqual(v.role, "tower")
-        self.assertEqual(v.station.name, "Kobuleti Tower")
+        for f in T.fields():
+            me = self.R.station_for("ground", field=f.name)
+            want = self.R.station_for("tower", field=f.name)
+            if me is None or want is None or me is want:
+                continue
+            v = self.due(me, "holding_short")
+            with self.subTest(field=f.name):
+                self.assertIsNotNone(v, "Ground can never let go of anybody")
+                self.assertEqual(v.role, "tower")
+                self.assertEqual(v.station, want)
 
     def test_a_landed_aircraft_goes_to_the_ground_of_HIS_field(self):
         # #77. The arrival field's Ground, not the departure field's -- the
         # wrong answer here is a real controller forty miles away.
-        v = self.due("Batumi Tower", "taxi")
-        self.assertIsNotNone(v)
-        self.assertEqual(v.station.name, "Batumi Ground")
+        for f in T.fields():
+            me = self.R.station_for("tower", field=f.name)
+            want = self.R.station_for("ground", field=f.name)
+            if me is None or want is None or me is want:
+                continue
+            v = self.due(me, "taxi")
+            with self.subTest(field=f.name):
+                self.assertIsNotNone(v)
+                self.assertEqual(v.station, want)
 
     def test_tower_keeps_him_while_he_is_still_landed(self):
         # `landed` is Tower's own phase. He is not handed on until he is
         # taxiing, which is what reporting clear of the runway establishes.
-        self.assertIsNone(self.due("Batumi Tower", "landed"))
+        for f in T.fields():
+            me = self.R.station_for("tower", field=f.name)
+            if me is None:
+                continue
+            with self.subTest(field=f.name):
+                self.assertIsNone(self.due(me, "landed"))
 
     def test_a_seat_that_also_works_the_next_role_does_not_hand_over(self):
-        # Batumi Ground carries also=("delivery", "clearance"); a pilot reading
-        # back a clearance to him is not handed to himself.
-        v = self.due("Batumi Ground", "taxi")
-        self.assertIsNone(v, "he handed the aircraft to the man already holding it")
+        # A seat carrying also=("delivery", "clearance"): a pilot reading back a
+        # clearance to him is not handed to himself.
+        both = [s for s in self.R.STATIONS
+                if s.role == "ground" and "clearance" in (getattr(s, "also", ()) or ())]
+        if not both:
+            raise unittest.SkipTest(
+                f"{T.name()} has no Ground seat that also delivers clearances, "
+                f"so nobody can be handed to himself here")
+        for me in both:
+            with self.subTest(who=me.name):
+                self.assertIsNone(self.due(me, "taxi"),
+                                  "he handed the aircraft to the man already "
+                                  "holding it")
 
     def test_the_phase_branch_is_reachable_while_on_the_ground(self):
         # THE REGRESSION ITSELF. Everything above tests `handoff.due`, which was
@@ -489,10 +604,12 @@ class TestAnAirborneAeroplaneIsNeverGrounds(unittest.TestCase):
     branch outranks is not an invariant.
     """
 
-    GROUND = R.station_for("ground", field=R.ARRIVAL_FIELD)
+    @property
+    def GROUND(self):
+        return T.station("ground")
 
     def test_tower_takes_him_back_when_he_is_flying(self):
-        v = H.due(P, self.GROUND, flying(1.5))
+        v = H.due(P(), self.GROUND, flying(1.5))
         self.assertIsNotNone(v, "nothing retrieved him")
         self.assertEqual(v.role, "tower")
 
@@ -501,7 +618,7 @@ class TestAnAirborneAeroplaneIsNeverGrounds(unittest.TestCase):
         matters -- the one that failed before the guard existed."""
         st = H.State(on_ground=False, range_nm=1.5, inbound=False,
                      phase="taxi_in")
-        v = H.due(P, self.GROUND, st)
+        v = H.due(P(), self.GROUND, st)
         self.assertIsNotNone(v, "phase ownership kept a flying aeroplane")
         self.assertEqual(v.role, "tower")
 
@@ -510,7 +627,7 @@ class TestAnAirborneAeroplaneIsNeverGrounds(unittest.TestCase):
         aeroplane he is meant to have."""
         st = H.State(on_ground=True, range_nm=0.1, inbound=False,
                      phase="taxi_in")
-        self.assertIsNone(H.due(P, self.GROUND, st))
+        self.assertIsNone(H.due(P(), self.GROUND, st))
 
     def test_and_a_track_radar_has_LOST_is_left_where_he_is(self):
         """`not on_ground` is not `airborne`. A track that has gone quiet
@@ -520,15 +637,15 @@ class TestAnAirborneAeroplaneIsNeverGrounds(unittest.TestCase):
         left the world."""
         st = H.State(on_ground=False, range_nm=None, inbound=False,
                      phase="taxi_in")
-        self.assertIsNone(H.due(P, self.GROUND, st))
+        self.assertIsNone(H.due(P(), self.GROUND, st))
 
     def test_the_ramp_seat_cannot_hold_him_either(self):
         """Airborne off a taxiway with no take-off clearance at all. Nobody
         would have written a special case for it; the invariant covers it."""
-        cl = R.station_for("clearance", field=R.ARRIVAL_FIELD)
+        cl = T.station("clearance")
         if cl is None:
             self.skipTest("no clearance seat at the arrival field")
-        v = H.due(P, cl, flying(1.0))
+        v = H.due(P(), cl, flying(1.0))
         self.assertIsNotNone(v)
         self.assertEqual(v.role, "tower")
 
@@ -543,7 +660,7 @@ class TestAnAirborneAeroplaneIsNeverGrounds(unittest.TestCase):
         """
         st = H.State(on_ground=False, range_nm=1.5, inbound=False,
                      phase="taxi_in")
-        v = H.due(P, TOWER, st)
+        v = H.due(P(), TOWER(), st)
         self.assertNotEqual(getattr(v, "role", None), "ground",
                             "phase ownership gave Ground a flying aeroplane")
 
@@ -552,6 +669,6 @@ class TestAnAirborneAeroplaneIsNeverGrounds(unittest.TestCase):
         Down and rolling, still on Tower: Ground is exactly right."""
         st = H.State(on_ground=True, range_nm=0.2, inbound=False,
                      phase="taxi_in")
-        v = H.due(P, TOWER, st)
+        v = H.due(P(), TOWER(), st)
         self.assertIsNotNone(v, "nobody sent him to Ground")
         self.assertEqual(v.role, "ground")

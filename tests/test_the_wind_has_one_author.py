@@ -37,26 +37,47 @@ from marshall.core import route as R
 from marshall.core import theatre as TH
 from marshall.core import units
 
-K = R.KOBULETI_FIELD
-BAT = R.BATUMI_FIELD
+from tests import theatre as T
+
+# `K = R.KOBULETI_FIELD` at module scope is what took this file down on the
+# second map -- the guard for "a wind is a field's and not a theatre's", unable
+# to be loaded at the field it would be about.
 
 
-def broadcasting(field="Kobuleti", runway=25, wind=270, kt=20):
+def K():
+    """The departure field, on whichever map is loaded."""
+    return T.departure()
+
+
+def BAT():
+    """The arrival field."""
+    return T.arrival()
+
+
+def broadcasting(field=None, runway=None, wind=270, kt=20):
     """An ATIS on the air with weather that is NOT the declared weather.
 
-    Every number here disagrees with `config/theatres/caucasus.toml`, which is
-    the whole method: if a controller quotes the declaration he is quoting
-    090 at 5 and the divergence is visible in the transcript.
+    Every number here disagrees with the theatre file, which is the whole
+    method: if a controller quotes the declaration he is quoting the declared
+    wind and the divergence is visible in the transcript. The RUNWAY defaults to
+    whichever end this field uses in the westerly above, so the fixture stays a
+    fixture about a disagreement rather than about Georgia.
     """
+    f = K() if field is None else field
+    if isinstance(f, str):
+        name, rwy = f, runway
+    else:
+        name = f.name
+        rwy = f.runway_in_use(wind) if runway is None else runway
     return mock.patch.object(
         store, "current",
-        return_value=store.Current(field=field, letter="Bravo", runway=runway,
+        return_value=store.Current(field=name, letter="Bravo", runway=rwy,
                                    wind_from_deg=wind, wind_kt=kt,
                                    on_the_air=True))
 
 
 def tower_at(field_station):
-    ctl = atc.Controller(R.BATUMI_ASR)
+    ctl = atc.Controller(T.the_arrival())
     ctl._me = field_station
     ctl.working = "tower"
     return ctl
@@ -72,30 +93,34 @@ class TestOneSentenceCannotCarryTwoWinds(unittest.TestCase):
     """
 
     def test_the_spoken_wind_is_the_one_on_the_air(self):
-        ctl = tower_at(R.KOB_TOWER)
+        ctl = tower_at(T.station("tower", K()))
         with broadcasting():
             said = ctl._wind_phrase()
         self.assertEqual(said, "wind two seven zero at twenty.")
-        self.assertNotIn("zero nine zero", said,
+        declared = atc.spell_hdg(int(TH.declared_wind()[0]))
+        self.assertNotIn(declared, said,
                          "the controller read the declared wind, not the ATIS")
 
     def test_the_landing_clearance_names_one_weather(self):
         """The runway and the wind, in one transmission, out of one row."""
-        ctl = tower_at(R.KOB_TOWER)
+        f = K()
+        ctl = tower_at(T.station("tower", f))
         ctl.report_beacon("Hoover 1-1", 4000)
         ctl.out.clear()
         with broadcasting():
             ctl.report_landed("Hoover 1-1")
         said = " ".join(t.text for t in ctl.out).lower()
-        self.assertIn("cleared to land runway two five", said)
+        rwy = atc.spell_rwy(f.runway_in_use(270))
+        self.assertIn(f"cleared to land runway {rwy}", said)
         self.assertIn("wind two seven zero at twenty", said)
 
     def test_the_take_off_clearance_does_too(self):
-        ctl = tower_at(R.KOB_TOWER)
+        f = K()
+        ctl = tower_at(T.station("tower", f))
         with broadcasting():
             ctl.request_takeoff("Hoover 1-1")
         said = " ".join(t.text for t in ctl.out).lower()
-        self.assertIn("runway two five", said)
+        self.assertIn(f"runway {atc.spell_rwy(f.runway_in_use(270))}", said)
         self.assertIn("wind two seven zero", said)
 
     def test_a_wind_is_a_field_and_not_a_theatre(self):
@@ -105,7 +130,10 @@ class TestOneSentenceCannotCarryTwoWinds(unittest.TestCase):
         wearing weather: a real measurement, from a real ATIS, forty miles from
         the aeroplane he is clearing.
         """
-        winds = {"Kobuleti": (270, 20), "Batumi": (120, 8)}
+        here, there = K(), BAT()
+        if here.name == there.name:
+            here, there = T.arrival(), T.other()
+        winds = {here.name: (270, 20), there.name: (120, 8)}
 
         def at(field, fallback_wind_deg=None):
             deg, kt = winds[field.name]
@@ -114,10 +142,10 @@ class TestOneSentenceCannotCarryTwoWinds(unittest.TestCase):
                                  wind_from_deg=deg, wind_kt=kt, on_the_air=True)
 
         with mock.patch.object(store, "current", side_effect=at):
-            kob = tower_at(R.KOB_TOWER)._wind_phrase()
-            bat = tower_at(R.TOWER)._wind_phrase()
-        self.assertIn("two seven zero", kob)
-        self.assertIn("one two zero", bat)
+            a = tower_at(T.station("tower", here))._wind_phrase()
+            b = tower_at(T.station("tower", there))._wind_phrase()
+        self.assertIn("two seven zero", a)
+        self.assertIn("one two zero", b)
 
 
 class TestCalmIsAWordInBothMouths(unittest.TestCase):
@@ -125,15 +153,15 @@ class TestCalmIsAWordInBothMouths(unittest.TestCase):
     because both of them ask `Wind.spoken` for the words."""
 
     def test_the_clearance_says_calm(self):
-        ctl = tower_at(R.KOB_TOWER)
+        ctl = tower_at(T.station("tower", K()))
         with broadcasting(wind=0, kt=0):
             said = ctl._wind_phrase()
         self.assertEqual(said, "wind calm.")
 
     def test_the_broadcast_and_the_clearance_phrase_one_measurement_alike(self):
-        obs = O.observe(K, 270, 20, 300, 0, 80000, 20.0, 29.92, 29.83)
+        obs = O.observe(K(), 270, 20, 300, 0, 80000, 20.0, 29.92, 29.83)
         spoken = B.spoken(obs, "Bravo", "1200")
-        ctl = tower_at(R.KOB_TOWER)
+        ctl = tower_at(T.station("tower", K()))
         with broadcasting(wind=obs.wind_from_deg, kt=obs.wind_kt):
             said = ctl._wind_phrase()
         self.assertIn(said.rstrip(".").capitalize(), spoken)
@@ -160,17 +188,18 @@ class TestWhereTheTrueWindLives(unittest.TestCase):
     def test_no_broadcast_falls_back_and_says_which_wind_it_is(self):
         """A field with no ATIS is an arrangement, not an error. Presenting the
         declaration as an observation is the error."""
+        f = K()
         with mock.patch.object(
                 store, "current",
-                return_value=store.Current(field="Kobuleti", letter=None,
-                                           runway=7, on_the_air=False)):
-            got = store.wind(K)
+                return_value=store.Current(field=f.name, letter=None,
+                                           runway=f.ends[0], on_the_air=False)):
+            got = store.wind(f)
         self.assertFalse(got.observed)
         self.assertEqual(got.from_deg, int(TH.declared_wind()[0]))
 
     def test_an_observed_wind_says_it_was_observed(self):
         with broadcasting():
-            got = store.wind(K)
+            got = store.wind(K())
         self.assertTrue(got.observed)
         self.assertEqual((got.from_deg, got.kt), (270, 20))
 
@@ -178,7 +207,7 @@ class TestWhereTheTrueWindLives(unittest.TestCase):
         """The engine is blind by design: nobody told it who is speaking. It
         must not answer with an exception on the radio."""
         self.assertFalse(store.wind(None).observed)
-        self.assertIn("wind", atc.Controller(R.BATUMI_ASR)._wind_phrase())
+        self.assertIn("wind", atc.Controller(T.the_arrival())._wind_phrase())
 
 
 class TestTheChartAndTheRadioAgree(unittest.TestCase):
@@ -190,6 +219,9 @@ class TestTheChartAndTheRadioAgree(unittest.TestCase):
     pilot has on his knee.
     """
 
+    @T.skip_unless("caucasus", why="`card.for_caucasus()` is the only card "
+                                   "builder there is; the declared wind of "
+                                   "another map has no page to be printed on")
     def test_the_card_carries_the_declared_wind(self):
         from marshall.kneeboard import card as C
         got = C.for_caucasus()
@@ -197,11 +229,13 @@ class TestTheChartAndTheRadioAgree(unittest.TestCase):
 
     def test_the_chart_and_the_broadcast_name_one_runway(self):
         deg, mph = TH.declared_wind()
-        obs = O.observe(K, deg, mph / R.MPH_PER_KT, 300, 0, 80000, 20.0,
-                        29.92, 29.83)
-        self.assertEqual(obs.runway, K.runway_in_use())
-        self.assertIn(f"Runway {atc.spell_rwy(K.runway_in_use())} in use",
-                      B.spoken(obs, "Alpha", "1200"))
+        for f in T.fields():
+            obs = O.observe(f, deg, mph / R.MPH_PER_KT, 300, 0, 80000, 20.0,
+                            29.92, 29.83)
+            with self.subTest(field=f.name):
+                self.assertEqual(obs.runway, f.runway_in_use())
+                self.assertIn(f"Runway {atc.spell_rwy(f.runway_in_use())} in use",
+                              B.spoken(obs, "Alpha", "1200"))
 
     def test_the_printed_wind_and_the_measured_one_are_the_same_speed(self):
         """Knots on the air, mph on the paper, ONE conversion between them --
@@ -217,10 +251,20 @@ class TestTheRunwayInUseHasNoConstantLeft(unittest.TestCase):
     map. Nevada's fields picked their end in a Georgian easterly."""
 
     def test_an_unasked_wind_is_the_maps_own(self):
-        with mock.patch.object(TH, "declared_wind", return_value=(270.0, 20.0)):
-            self.assertEqual(K.runway_in_use(), K.ends[1])
-        with mock.patch.object(TH, "declared_wind", return_value=(90.0, 5.0)):
-            self.assertEqual(K.runway_in_use(), K.ends[0])
+        """Every field on the map, and a wind from each end of its own runway --
+        the declaration is what an unasked `runway_in_use()` must consult, so
+        moving it must move every field."""
+        for f in T.fields():
+            head = f.ends[0] * 10
+            back = (head + 180) % 360
+            with (self.subTest(field=f.name, wind=back),
+                  mock.patch.object(TH, "declared_wind",
+                                    return_value=(float(back), 20.0))):
+                self.assertEqual(f.runway_in_use(), f.ends[1])
+            with (self.subTest(field=f.name, wind=head),
+                  mock.patch.object(TH, "declared_wind",
+                                    return_value=(float(head), 5.0))):
+                self.assertEqual(f.runway_in_use(), f.ends[0])
 
 
 if __name__ == "__main__":

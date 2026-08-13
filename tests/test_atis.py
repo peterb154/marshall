@@ -15,16 +15,30 @@ import unittest
 
 from marshall.atis import broadcast as B
 from marshall.atis import observation as O
-from marshall.core import route as R
+from tests import theatre as T
 
-K = R.KOBULETI_FIELD
-BAT = R.BATUMI_FIELD
+# `K = R.KOBULETI_FIELD` / `BAT = R.BATUMI_FIELD` stood here, at module scope,
+# and this file -- the guard for "the runway has one author" -- could not be
+# loaded on the second map because of it. The two fields are now asked for by
+# their JOB rather than by their name: `K()` is the field the sortie departs
+# from and `BAT()` the one it recovers into, whichever map is loaded.
 
 
-def obs(field=K, wind=90, kt=5, base_m=300, density=0, vis=80000, temp=20,
+def K():
+    """The departure field. Higher than the arrival on the Caucasus, which one
+    test below depends on and says so."""
+    return T.departure()
+
+
+def BAT():
+    """The arrival field."""
+    return T.arrival()
+
+
+def obs(field=None, wind=90, kt=5, base_m=300, density=0, vis=80000, temp=20,
         qfe_hpa=1010.9):
-    return O.observe(field, wind, kt, base_m, density, vis, temp,
-                     29.92, O.hpa_to_inhg(qfe_hpa))
+    return O.observe(K() if field is None else field, wind, kt, base_m, density,
+                     vis, temp, 29.92, O.hpa_to_inhg(qfe_hpa))
 
 
 class TestTheCeilingIsAboveTheFIELD(unittest.TestCase):
@@ -33,19 +47,32 @@ class TestTheCeilingIsAboveTheFIELD(unittest.TestCase):
     one name."""
 
     def test_the_field_elevation_comes_off_the_base(self):
-        o = obs(field=K, base_m=1000, density=9)
-        # 1000 m MSL over a 59 ft field: 3281 - 59 = 3222 ft AGL.
-        self.assertAlmostEqual(o.ceiling_ft_agl, 3222, delta=2)
+        """1,000 m MSL is 3,281 ft, less whatever the field stands at. Computed
+        from the field rather than written down: 3,222 over Kobuleti's 59 ft
+        and 1,431 over Tonopah's, and the arithmetic is the assertion."""
+        f = K()
+        o = obs(field=f, base_m=1000, density=9)
+        self.assertAlmostEqual(o.ceiling_ft_agl, 3280.84 - f.elevation_ft,
+                               delta=2)
 
     def test_two_fields_at_one_moment_report_different_ceilings(self):
-        """Which is the whole point of doing it per aerodrome."""
-        hi = obs(field=K, base_m=1000, density=9).ceiling_ft_agl
-        lo = obs(field=BAT, base_m=1000, density=9).ceiling_ft_agl
-        self.assertNotEqual(hi, lo)
-        self.assertLess(hi, lo, "Kobuleti is the higher field")
+        """Which is the whole point of doing it per aerodrome. The HIGHER field
+        gets the lower ceiling -- the cloud is where it is."""
+        by_field = {f.name: (f.elevation_ft,
+                             obs(field=f, base_m=1000, density=9).ceiling_ft_agl)
+                    for f in T.fields()}
+        elevs = {e for e, _ in by_field.values()}
+        if len(elevs) < 2:
+            raise unittest.SkipTest(
+                f"{T.name()}'s aerodromes are all at one elevation, so no two "
+                f"ceilings can differ: {by_field}")
+        ordered = sorted(by_field.values())
+        self.assertGreater(ordered[0][1], ordered[-1][1],
+                           f"the higher field did not get the lower ceiling: "
+                           f"{by_field}")
 
     def test_a_field_inside_the_cloud_reports_zero_not_a_negative(self):
-        o = obs(field=K, base_m=5, density=9)
+        o = obs(field=K(), base_m=5, density=9)
         self.assertEqual(o.ceiling_ft_agl, 0)
 
 
@@ -120,9 +147,11 @@ class TestTheLetterMeansSomething(unittest.TestCase):
 
 class TestWhatItSaysOutLoud(unittest.TestCase):
     def test_it_names_the_field_the_letter_and_the_runway(self):
+        from marshall.core.say import spell_rwy
+        f = K()
         said = B.spoken(obs(), "Bravo", "1450")
-        self.assertIn("Kobuleti information Bravo", said)
-        self.assertIn("Runway zero seven in use", said)
+        self.assertIn(f"{f.name} information Bravo", said)
+        self.assertIn(f"Runway {spell_rwy(f.runway_in_use(90))} in use", said)
         self.assertTrue(said.rstrip().endswith("information Bravo."))
 
     def test_calm_is_a_word_not_three_noughts(self):
@@ -152,7 +181,7 @@ class TestValidatingWhatThePilotHas(unittest.TestCase):
     def test_saying_nothing_is_not_the_same_as_saying_the_wrong_one(self):
         """They get different answers on the radio: one is a prompt, the other
         is a correction with the current weather attached."""
-        self.assertIsNone(B.said_letter("Kobuleti Clearance, Viper one one"))
+        self.assertIsNone(B.said_letter(f"{K().name} Clearance, Viper one one"))
         self.assertEqual(B.said_letter("with Alpha"), "Alpha")
 
 
@@ -176,12 +205,13 @@ class TestTheRunwayHasOneAuthor(unittest.TestCase):
         import unittest.mock as mock
         from marshall.atc import controller as atc
 
-        into_wind = K.runway_in_use(90)          # 07 with an easterly
-        published = K.ends[1]                    # 25, deliberately the other one
+        f = K()
+        into_wind = f.runway_in_use(90)          # 07 with an easterly
+        published = next(e for e in f.ends if e != into_wind)   # the other one
         self.assertNotEqual(into_wind, published)
 
-        ctl = atc.Controller(R.BATUMI_ASR)
-        ctl._me = R.KOB_GROUND
+        ctl = atc.Controller(T.the_arrival())
+        ctl._me = T.station("ground", f)
         with mock.patch("marshall.atis.store.runway_in_use",
                         return_value=published):
             said = ctl._runway_in_use()
@@ -246,17 +276,18 @@ class TestApproachConfirmsAndAsks(unittest.TestCase):
     def setUp(self):
         import unittest.mock as mock
         from marshall.atis import store
+        here = T.arrival()
         self.mock = mock.patch.object(
             store, "current",
-            return_value=store.Current(field="Batumi", letter="Bravo",
-                                       runway=13, on_the_air=True))
+            return_value=store.Current(field=here.name, letter="Bravo",
+                                       runway=here.ends[0], on_the_air=True))
         self.mock.start()
         self.addCleanup(self.mock.stop)
 
     def said(self, station, letter=""):
         from marshall.atc import controller as atc
         from marshall.atc import intents as I
-        ctl = atc.Controller(R.BATUMI_ASR)
+        ctl = atc.Controller(T.the_arrival())
         ctl.t = 0.0
         ctl._me = station
         I.dispatch(ctl, I.Intent(kind=I.IntentKind.CHECK_IN,
@@ -264,12 +295,13 @@ class TestApproachConfirmsAndAsks(unittest.TestCase):
         return " ".join(t.text for t in ctl.out)
 
     def test_the_right_letter_is_confirmed(self):
-        self.assertIn("Bravo is current", self.said(R.APPROACH, "Bravo"))
+        self.assertIn("Bravo is current",
+                      self.said(T.station("approach"), "Bravo"))
 
     def test_the_wrong_letter_is_corrected_and_NOT_refused(self):
         """He is working from weather that has moved, which is the entire point
         of the letter existing. He is told, and the sortie continues."""
-        got = self.said(R.APPROACH, "Alpha")
+        got = self.said(T.station("approach"), "Alpha")
         self.assertIn("Bravo", got)
         self.assertIn("not Alpha", got)
         for refusal in ("unable", "denied", "cannot", "before I can"):
@@ -277,7 +309,7 @@ class TestApproachConfirmsAndAsks(unittest.TestCase):
                 self.assertNotIn(refusal, got.lower())
 
     def test_saying_nothing_is_a_prompt_not_a_telling_off(self):
-        got = self.said(R.APPROACH, "")
+        got = self.said(T.station("approach"), "")
         self.assertIn("Advise you have information Bravo", got)
 
     def test_HE_IS_ALWAYS_ASKED_WHAT_HE_WANTS(self):
@@ -285,12 +317,13 @@ class TestApproachConfirmsAndAsks(unittest.TestCase):
         always available."""
         for letter in ("Bravo", "Alpha", ""):
             with self.subTest(letter=letter):
-                self.assertIn("Say your request", self.said(R.APPROACH, letter))
+                self.assertIn("Say your request",
+                              self.said(T.station("approach"), letter))
 
     def test_tower_does_not_ask_about_the_atis(self):
         """Asking a man on short final which information he has is noise at the
         worst possible moment."""
-        got = self.said(R.TOWER, "")
+        got = self.said(T.station("tower"), "")
         self.assertNotIn("information", got.lower())
 
     def test_a_controller_greets_as_HIMSELF(self):
@@ -298,13 +331,16 @@ class TestApproachConfirmsAndAsks(unittest.TestCase):
         greeted a pilot as "Georgia Center". The engine is blind by design and
         that was right while it had no idea who it was -- it has known since
         `_me` arrived."""
-        self.assertIn("Batumi Approach", self.said(R.APPROACH, "Bravo"))
-        self.assertIn("Kobuleti Clearance", self.said(R.KOB_CLEARANCE, ""))
+        app = T.station("approach")
+        clr = T.station("clearance", T.other())
+        self.assertIn(app.name, self.said(app, "Bravo"))
+        self.assertIn(clr.name, self.said(clr, ""))
 
     def test_a_ground_seat_does_not_ask_for_a_position_report(self):
         """"Report BATUMI inbound" from Clearance, to a man who has not started
         his engine, is a radar controller's line out of the wrong mouth."""
-        self.assertNotIn("report", self.said(R.KOB_CLEARANCE, "").lower())
+        self.assertNotIn("report",
+                         self.said(T.station("clearance", T.other()), "").lower())
 
 
 class TheLetterIsNotAlwaysAlpha(unittest.TestCase):
@@ -335,8 +371,13 @@ class TheLetterIsNotAlwaysAlpha(unittest.TestCase):
         self.assertNotEqual(letters, {"Alpha"})
 
     def test_two_fields_are_not_in_step(self):
-        # Real aerodromes' letters have nothing to do with each other.
+        # Real aerodromes' letters have nothing to do with each other. Asked of
+        # THIS map's aerodromes as well as of the two hard-coded names, because
+        # a hash that collides for the pair actually flying is the failure.
         self.assertNotEqual(self.first("Batumi", 13), self.first("Kobuleti", 13))
+        letters = {f.name: self.first(f.name, 13) for f in T.fields()}
+        self.assertEqual(len(set(letters.values())), len(letters),
+                         f"two aerodromes broadcast the same letter: {letters}")
 
     def test_it_advances_an_hour_at_a_time(self):
         from marshall.atis import broadcast
