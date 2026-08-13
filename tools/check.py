@@ -15,6 +15,11 @@ Two tiers, and the split is about what they need rather than what they cover:
   LIVE      the voice rehearsals and the sim-backed checks. They need DCS, the
             SRS server and the bridge, take minutes, and cost model calls.
 
+The offline tier runs the unit suite on ONE map and only checks that it LOADS on
+the others. Running it on all of them is `tools/both_maps.py --run`, which costs
+31 seconds against this tier's 7 -- see the comment on that entry for why that
+is not the default.
+
 **Skipped is reported, never silent.** A check that quietly does not run reads
 exactly like a check that passed, and that is worse than having no check --
 it is the same failure as a controller who goes quiet.
@@ -46,6 +51,27 @@ CHECKS = [
      "bugs the first time it ran", False),
     ("unit suite", [PY, "-m", "pytest", "-q"],
      "the separation engine, callsign identity, phraseology, the geometry", False),
+    # THE SUITE THAT IS RUN IS THE SUITE THAT IS TRUE. On 13 August the second
+    # map did not report failures -- it reported `Interrupted: 8 errors during
+    # collection`, and the eight were the two-aerodrome guard, the ILS guard,
+    # the ATIS guard, the handoff rule table and "the wind has one author". Each
+    # opened with a module-scope `P = R.BATUMI_ASR`, resolved at IMPORT against
+    # a theatre chosen by environment. A whole month, unnoticed, because nobody
+    # ran it there.
+    #
+    # COLLECT ONLY, and that is a deliberate line. Loading every module on every
+    # published map costs about 1.5 seconds a map and catches exactly the fault
+    # above. RUNNING both suites costs 31 seconds against the 7 this whole tier
+    # takes today, and Nevada is not green -- it carries a baseline of failures
+    # that are real `src/` defects on #137's list. Putting that in the default
+    # path would quadruple the runtime of the check people actually run, to show
+    # them a number that is red on purpose. `tools/both_maps.py --run` is one
+    # command away and is the thing to run before touching `core/theatre.py`.
+    ("every module loads on every map",
+     [PY, "tools/both_maps.py"],
+     "#137 — a test module that binds a Caucasus name at import cannot be "
+     "COLLECTED on another map, and a suite that will not load reads exactly "
+     "like a suite with nothing to say", False),
     ("nothing new is unwired", [PY, "tools/unwired.py"],
      "#69 — a thing that exists and nothing reaches. The dominant failure mode "
      "here: a complete state machine nobody called, an attribute read six times "
