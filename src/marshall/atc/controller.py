@@ -2647,6 +2647,35 @@ class Controller:
         ac = self.get(cs)
         ac.sortie_phase, ac.last_report_t = "holding_short", self.t
 
+    def _on_the_runway(self, ac=None) -> str | None:
+        """Who is physically on the strip at this aeroplane's field, if anybody.
+
+        NO GEOMETRY, AND THAT IS WHY THIS IS BUILDABLE. `report_down`'s
+        docstring records why runway occupancy was never built -- an aerodrome
+        row carries a position and a landing heading and no runway length or
+        thresholds, so there is no polygon to test a point against. That is
+        true and it is not the question. `phases.py` already DEFINES the state:
+
+            landed    "Down and still on the runway, which is Tower's."
+            taxi_in   "Off the runway, to a stand."
+
+        A phase is an observable that needs no survey, and the ladder already
+        moves an aeroplane between those two on facts the sim reports. So the
+        answer is a scan of the board, not a computation.
+
+        SCOPED TO HIS FIELD, via `_key`, because a man on the runway at
+        Kobuleti says nothing whatever about the runway at Batumi -- and a
+        check that ignored the field would refuse every take-off on the map
+        the moment anybody landed anywhere. [#170]
+        """
+        want = self._key(ac)
+        for other in self.aircraft.values():
+            if other is ac or self._key(other) != want:
+                continue
+            if (getattr(other, "sortie_phase", "") or "").lower() == "landed":
+                return other.callsign
+        return None
+
     def request_takeoff(self, cs: str) -> None:
         """Asking for the runway. TOWER ONLY, and the refusal is deliberate.
 
@@ -2659,6 +2688,25 @@ class Controller:
         ac.last_report_t = self.t
         if not self._owns("tower"):
             self._not_mine(ac, "tower", "Take-off")
+            return
+        # NOBODY IS CLEARED ONTO AN OCCUPIED RUNWAY. This asked exactly one
+        # question -- do I own Tower -- and never whether anybody was on the
+        # strip, so two aeroplanes on one runway was a thing the engine would
+        # do without noticing. The invariant says an LLM never invents
+        # separation between aircraft; it does not say somebody else does it
+        # instead, and here nobody did. [#170]
+        #
+        # A REFUSAL, NOT A DELAY. He is told what is on the runway and told to
+        # hold, which is what a controller says; the engine does not remember
+        # the request and issue it later, because a clearance that arrives
+        # without being asked for is one a pilot is not braced for.
+        occupied = self._on_the_runway(ac)
+        if occupied:
+            self.say(ac.callsign,
+                     f"{self._addr(ac)}, hold short runway "
+                     f"{self._runway_in_use(ac)}, traffic on the runway.",
+                     decided=D.Decision(kind="hold_short", to=ac.callsign,
+                                        runway=self._runway_in_use(ac)))
             return
         ac.sortie_phase = "departure"
         rwy = self._runway_in_use(ac)
