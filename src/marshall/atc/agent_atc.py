@@ -4915,6 +4915,55 @@ def _plan_row(plan: dict, flying_it: str, on_board: dict, track_of: dict,
     }
 
 
+def worked_from(profile, owner: str, scope, track: str, fix):
+    """What THIS AEROPLANE's position is measured from -- and the numbers to match.
+
+    A DATUM IS ONE PER `Scope` AND A BOARD IS NOT. The picture is drawn from a
+    single origin, so `datum_of(scope)` is one answer for every row on the page
+    -- and it is the SPEAKING seat's, which on a metronome tick is nobody's:
+    the tick fetches with no field at all and publishes the fallback for the
+    whole board. Most refreshes are that tick, so most of the time the board's
+    reference is the one nothing chose. [#169]
+
+    It is not a display nicety. With two aerodromes up, the four Kobuleti seats
+    work aeroplanes twenty-two miles from the point this page quotes them
+    against, which is the same shape as `station_for`, `channels_for` and
+    `field_origin` before each of them took a field: a real distance to a real
+    airport, belonging to the wrong one.
+
+    SO THE REFERENCE IS RESOLVED PER ROW, FROM WHOEVER IS WORKING HIM. `owner`
+    is the seat by NAME -- "Batumi Approach", never "approach" (see
+    `become_tracked`) -- refreshed from the frequency he was last heard on, and
+    it is already the value this row prints as `worked by`. Asking it, rather
+    than the picture, is the same door the hook path uses (`seat_named`) and
+    means the datum on a card cannot disagree with the seat named beside it.
+
+    AND THE NUMBER MOVES WITH THE NAME, which is the half that makes this
+    honest rather than decorative. `Datum.point` is "the lat/lon the arithmetic
+    actually used, so the name can never drift from the number: they are one
+    object" -- so a row that measures from somewhere else must be RE-MEASURED
+    there, from the contact's absolute position, not merely relabelled. A
+    relabelled number is the confidently-wrong failure this whole line of work
+    exists to prevent, and it would be worse than the fallback it replaced.
+
+    When the seat cannot be resolved, or the contact carries no position to
+    re-measure from, the picture's own answer stands: the number WAS computed
+    against that origin and must go on saying so. Never a guess.
+
+    Returns `(datum, range_nm, radial)` ready to publish.
+    """
+    _rng, _rad = getattr(fix, "range_nm", None), getattr(fix, "radial_deg", None)
+    seat = seat_named(owner or "", profile) if profile is not None else None
+    d = field_origin(profile, getattr(seat, "field", "") or "") if seat else None
+    if not d or d.point == getattr(scope, "origin", None):
+        return datum_of(scope), _rng, _rad
+    c = scope.of(track) if track and isinstance(scope, Scope) else None
+    if c is None or c.get("lat") is None:
+        return datum_of(scope), _rng, _rad
+    nm, radial = _range_radial(d.point, c["lat"], c["lon"])
+    return d.published() or None, round(nm, 1), round(radial)
+
+
 def publish_state(bridge, ctl, scope: str, session_id: str,
                   units=None, handed=None, names=None, plans=None) -> None:
     """Write down what THIS BRIDGE believes, for anything that wants to show it.
@@ -5044,6 +5093,12 @@ def publish_state(bridge, ctl, scope: str, session_id: str,
         fix = radar_fix_by_track(scope, track) if track else None
         if track:
             board_tracks.add(_key_name(track))
+        # WHERE HIS POSITION IS QUOTED FROM, decided per row by whoever is
+        # working HIM rather than per snapshot by whoever last spoke. The
+        # range and the radial come back with it, because a reference and the
+        # number it refers to are one object. See `worked_from`. [#169]
+        _datum, _range_nm, _radial = worked_from(
+            getattr(ctl, "profile", None), row.get("owner", ""), scope, track, fix)
         board.append({**row, "track": track,
                       "freq_mhz": bridge.heard_on.get(cs, 0) / 1e6 or None,
                       "authority": (auth_of.get(cs)
@@ -5059,16 +5114,19 @@ def publish_state(bridge, ctl, scope: str, session_id: str,
                       "owner": row.get("owner", ""),
                       "intent": row.get("intent", ""),
                       "type": getattr(u, "type", ""),
-                      "range_nm": getattr(fix, "range_nm", None),
-                      "radial": getattr(fix, "radial_deg", None),
+                      "range_nm": _range_nm,
+                      "radial": _radial,
                       # WHAT THAT RANGE IS MEASURED FROM, on the row that
                       # carries the range. Per aircraft rather than per
                       # snapshot, because that is the shape the answer takes
                       # once a controller measures to the field each man is
-                      # going to; today every row says the same thing and says
-                      # WHY -- "BATUMI, the loaded approach" -- which is the bug
-                      # printing its own name. [#160] [#155]
-                      "datum": datum_of(scope),
+                      # going to -- and the seats at the OTHER aerodrome take
+                      # it today, whatever the picture was drawn from. What is
+                      # still deferred is the CHOICE a fieldless seat makes: a
+                      # Center goes on falling back to the loaded approach and
+                      # saying so in words, until #160 points him at the field
+                      # his man is flying to. [#169] [#160] [#155]
+                      "datum": _datum,
                       "alt_ft": getattr(fix, "alt_ft", None),
                       "heading": getattr(fix, "heading_deg", None),
                       "speed_kt": getattr(fix, "speed_kt", None),
@@ -5184,6 +5242,44 @@ def publish_state(bridge, ctl, scope: str, session_id: str,
             # WHO OWNS HIM. Unowned while on the board is the contradiction --
             # he is being separated by nobody in particular.
             "owner": {"": "bad"},
+            # WHAT THE TWO PHASE COLUMNS MEASURE, because they print the same
+            # word and mean different things:
+            #
+            #     separation   UNKNOWN
+            #     ladder       enroute    <- one aeroplane, one instant
+            #
+            #     "in this case, wasnt the aircraft ENROUTE and with GA Center?
+            #      Why would separation say UNKNOWN?"
+            #
+            # Both were correct and the page gave him no way to know it.
+            # `phase` is where he sits in the ARRIVAL QUEUE, and `Phase.ENROUTE`
+            # has exactly one writer -- `check_in` -- which is checking in with
+            # the ARRIVAL controller, not being handed to a Center.
+            # `sortie_phase` is what he is DOING across the whole sortie and is
+            # the one input `handoff.py` reads. The distinction is right and
+            # must not be collapsed, so it is STATED instead.
+            #
+            # AND `UNKNOWN` GETS A READING IN ENGLISH. It is a real answer --
+            # nothing has ever put this man in the queue -- and it was printed
+            # in the page's own word for a fact that never arrived, on the one
+            # screen whose job is telling those apart. The words are published
+            # here for the same reason every other meaning is: a page that knows
+            # a queue has an UNKNOWN state is a page holding domain knowledge,
+            # and it will be wrong the first time the enum changes. [#171]
+            "column": {
+                "phase": {
+                    "label": "arrival queue",
+                    "gloss": "his place in the letdown, and nothing else",
+                    "values": {
+                        "UNKNOWN": "never admitted",
+                        "ENROUTE": "checked in with the arrival controller",
+                    },
+                },
+                "sortie_phase": {
+                    "label": "sortie",
+                    "gloss": "what he is doing; this is what hands him on",
+                },
+            },
             # WHICH BRAIN SAID IT. The stage says WHEN in the turn; this says
             # WHO, and they are different questions the page had no way to ask.
             #

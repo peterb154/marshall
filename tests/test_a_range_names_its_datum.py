@@ -364,5 +364,139 @@ class ThePageActuallyDrawsIt(unittest.TestCase):
                 self.assertNotIn(guess, page)
 
 
+class TheBoardMeasuresFromWhoeverIsWorkingHim(_Projected):
+    """#169. A datum is one per `Scope`, and a board is not.
+
+    `field_origin` takes the SPEAKING controller's field, and only the
+    transmission path ever passed one. The metronome tick -- which is what most
+    refreshes are -- fetches its picture with no field at all and publishes
+    that one fallback for every row on the page.
+
+    IT IS NOT A DISPLAY NICETY, and the issue's own "harmless today" was too
+    kind. It is true only of a Center, who has no field and would have used the
+    fallback anyway. With two aerodromes up, the four Kobuleti seats work
+    aeroplanes twenty miles from the point this page quoted them against:
+
+        Quiver 7-1, five miles west of Kobuleti, worked by Kobuleti Tower
+            before   20.4 nm on 019, from BATUMI, the loaded approach
+            after     5.0 nm on 270, from KOBULETI, his field
+
+    Every number in the first line is real and belongs to another airport,
+    which is the same shape as `station_for`, `channels_for` and `field_origin`
+    before each of them took a field.
+
+    WHAT IS DELIBERATELY NOT FIXED HERE: which field a FIELDLESS seat chooses.
+    A Center still falls back to the loaded approach and still says so in
+    words, because pointing him at his man's destination moves `CENTER_NM` and
+    therefore moves a handoff -- that is #160 and a ghost flight's worth of
+    verification. This is the plumbing that makes #160 visible instead of
+    silent: a per-row reference, resolved from whoever is working the row.
+    """
+
+    def publish(self, board, place=(("Kobuleti", 270.0, 5.0),
+                                    ("Batumi", 90.0, 20.0))):
+        """A METRONOME TICK: the picture fetched with NO FIELD AT ALL.
+
+        That is what `scheduler()` publishes, so it is what the board is
+        rendered from whenever nobody has just spoken.
+        """
+        tick = A.field_origin(R.BATUMI_ILS, "")
+        contacts = []
+        for row, (fld, brg, nm) in zip(board, place):
+            lat, lon = geo.project_true(
+                A.field_origin(R.BATUMI_ILS, fld).point, brg, nm)
+            contacts.append({"name": row["track"], "label": row["track"],
+                             "callsign": "", "type": "F-16C_50",
+                             "lat": lat, "lon": lon, "alt_ft": 3000,
+                             "heading": 90, "speed_kt": 250.0,
+                             "manned": True, "coalition": 3})
+        sc = A.Scope("", contacts=contacts, origin=tick.point, datum=tick)
+
+        class Ctl:
+            profile = R.BATUMI_ILS
+
+            def board(self):
+                return board
+
+        bridge = A.Bridge()
+        was = config.BUILD_DIR
+        with tempfile.TemporaryDirectory() as tmp:
+            config.BUILD_DIR = Path(tmp)
+            try:
+                A.publish_state(bridge, Ctl(), sc, "s")
+                got = json.loads(
+                    (Path(tmp) / "control" / "state.json").read_text())
+            finally:
+                config.BUILD_DIR = was
+        return {r["callsign"]: r for r in got["board"]}
+
+    def two_seats(self, **over):
+        return self.publish([
+            {**{"callsign": "Quiver 7-1", "track": "Quiver 7-1",
+                "phase": "UNKNOWN", "owner": "Kobuleti Tower"}, **over},
+            {"callsign": "Hoover 1-1", "track": "Hoover 1-1",
+             "phase": "UNKNOWN", "owner": "Georgia Center"}])
+
+    def test_a_row_worked_by_the_other_aerodrome_is_quoted_from_it(self):
+        """The seat that has him is Kobuleti Tower, and nobody spoke on this
+        tick -- so the reference is his, not the picture's."""
+        row = self.two_seats()["Quiver 7-1"]
+        self.assertEqual(row["datum"], {"name": "KOBULETI",
+                                        "why": A.WHY_FIELD})
+
+    def test_and_the_number_MOVES_WITH_THE_NAME(self):
+        """The half that makes it honest rather than decorative.
+
+        `Datum.point` is the lat/lon the arithmetic actually used, "so the name
+        can never drift from the number: they are one object". A row quoted
+        against another point must be RE-MEASURED there -- a relabelled number
+        is confidently wrong, which is worse than the fallback it replaces.
+        """
+        row = self.two_seats()["Quiver 7-1"]
+        self.assertAlmostEqual(row["range_nm"], 5.0, places=1)
+        self.assertAlmostEqual(row["radial"], 270, delta=1)
+        # And emphatically not the answer the tick's own picture holds.
+        self.assertNotAlmostEqual(row["range_nm"], 20.4, places=1)
+
+    def test_two_rows_on_one_board_can_name_different_references(self):
+        """THE REASON A FIELD CANNOT SIMPLY BE PASSED INTO THE TICK. One
+        picture is one origin, and the board shows aeroplanes worked by seats
+        at different aerodromes -- so handing the fetch a field would only pick
+        a different single wrong answer."""
+        got = self.two_seats()
+        self.assertNotEqual(got["Quiver 7-1"]["datum"]["name"],
+                            got["Hoover 1-1"]["datum"]["name"])
+
+    def test_a_fieldless_seat_still_falls_back_and_still_says_so(self):
+        """#160, untouched and still visible. A Center has no aerodrome, so he
+        lands on whichever arrival this radio was started with -- and the board
+        goes on printing the bug's own name until #160 points him at the field
+        his man is flying to."""
+        row = self.two_seats()["Hoover 1-1"]
+        self.assertEqual(row["datum"], {"name": "BATUMI",
+                                        "why": A.WHY_APPROACH})
+        self.assertAlmostEqual(row["range_nm"], 20.0, places=1)
+
+    def test_a_seat_nothing_can_resolve_keeps_the_pictures_own_answer(self):
+        """Never a guess. With no owner there is nobody whose reference this
+        could be, and the number WAS computed against the picture's origin --
+        so that is what it must go on saying."""
+        row = self.two_seats(owner="")["Quiver 7-1"]
+        self.assertEqual(row["datum"], {"name": "BATUMI",
+                                        "why": A.WHY_APPROACH})
+        self.assertAlmostEqual(row["range_nm"], 20.4, places=1)
+
+    def test_and_a_row_with_no_position_to_re_measure_is_not_RELABELLED(self):
+        """The failure this must never produce: a name that does not describe
+        the number beside it. If the contact cannot be found there is nothing
+        to re-measure, so the picture's reference stands."""
+        row = self.publish([{"callsign": "Quiver 7-1", "track": "not-on-radar",
+                             "phase": "UNKNOWN", "owner": "Kobuleti Tower"}],
+                           place=[])["Quiver 7-1"]
+        self.assertIsNone(row["range_nm"])
+        self.assertEqual(row["datum"], {"name": "BATUMI",
+                                        "why": A.WHY_APPROACH})
+
+
 if __name__ == "__main__":
     unittest.main()
