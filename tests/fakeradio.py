@@ -75,9 +75,15 @@ class FakeRadio:
     unchanged.
     """
 
-    def __init__(self, script, guid="atc-guid"):
-        self.script = list(script)
+    def __init__(self, script, guid="atc-guid", freq_hz=None):
+        # EACH LINE CARRIES THE CHANNEL IT WAS SAID ON. Scripted as
+        # `(guid, srs_name, transcript, hz)` with `hz=None` meaning "the
+        # frequency the bridge was started on", which is what every line meant
+        # before this parameter existed.
+        self.script = [tuple(line) + (None,) * (4 - len(line))
+                       for line in script]
         self.guid = guid
+        self.freq_hz = freq_hz
         # OUR OWN VOICES, ignored on the way back in. The real client grew this
         # when transmitting moved to a pool: the ear and the mouths are now
         # different clients, so SRS delivers our own words back to us and they
@@ -89,18 +95,39 @@ class FakeRadio:
         self.udp = _Sock()
         self.roster: dict[str, str] = {}
         self.turns = 0
+        self.heard: list[float | None] = []     # every channel a call came in on
 
     # --- what the loop calls -------------------------------------------------
     def connect(self, radios):
         return self
 
     def recv_utterance(self, max_wait=None, silence=None):
+        """Audio, and WHICH CHANNEL IT ARRIVED ON.
+
+        This returned `None` for the frequency unconditionally until 13 August,
+        and `Sortie(freq_mhz=124.0)` was never overridden -- so a hundred per
+        cent of the loop tests were one aerodrome on one channel, and the only
+        input that tells the bridge which aerodrome a pilot is at collapsed to
+        a constant.
+
+        `heard_hz` is read at eleven places in `agent_atc` -- who the seat is,
+        which voice answers, which station the log records, which agent the
+        director builds, which frequency the reply goes out on. The regression
+        `radio/client.py:401-430` records as having actually happened -- *"a
+        pilot transmitting on Ground 121.800 was logged, answered and
+        STATION-RESOLVED as though he were on Clearance 125.100"* -- could not
+        fail a single test in this repo.
+
+        `None` still means "the channel the bridge was started on", which is
+        what the loop does with it, so every existing script is unchanged.
+        """
         if not self.script:
             raise StopSortie(f"script exhausted after {self.turns} turns")
-        guid, name, _text = self.script[0]
+        guid, name, _text, hz = self.script[0]
         self.last_sender_guid = guid
         self._names[guid] = name
-        return Pcm(), None                      # heard_hz None => primary freq
+        self.heard.append(hz if hz is not None else self.freq_hz)
+        return Pcm(), hz
 
     def name_for(self, guid):
         return self._names.get(guid, "")
@@ -116,7 +143,7 @@ class FakeRadio:
     # --- what the harness calls ---------------------------------------------
     def consume(self) -> str:
         """Pop the current line. Called by the fake stt once it has read it."""
-        _guid, _name, text = self.script.pop(0)
+        _guid, _name, text, _hz = self.script.pop(0)
         self.turns += 1
         return text
 
@@ -184,25 +211,42 @@ class Sortie:
         from marshall.core import route as R
         self.profile = profile if profile is not None else R.BATUMI_ASR
         self.session, self.freq_mhz = session, freq_mhz
-        self.script: list[tuple[str, str, str]] = []
+        self.script: list[tuple[str, str, str, float | None]] = []
         self._radar: list[str] = []
-        self._replies: list[str] = []
+        self._replies: list[tuple[str, float]] = []
         self._due: list[list] = []
         self.radio: FakeRadio | None = None
         self.messages: list[str] = []          # what the director was asked
         self.error: BaseException | None = None
 
     # --- scripting -----------------------------------------------------------
-    def say(self, guid, srs_name, transcript):
-        self.script.append((guid, srs_name, transcript))
+    def say(self, guid, srs_name, transcript, on=None):
+        """One transmission. `on` is the MHz he said it on.
+
+        Omitted means the frequency the bridge was started on, which is what
+        every script written before 13 August meant and still means. Given, it
+        is the button the pilot actually pressed -- and since a role is only
+        unique within an aerodrome, that button is the ONLY thing in a
+        transmission that says which aerodrome he is at.
+        """
+        self.script.append((guid, srs_name, transcript,
+                            None if on is None else on * 1_000_000))
         return self
 
     def radar(self, picture):
         self._radar.append(picture)
         return self
 
-    def replies(self, text):
-        self._replies.append(text)
+    def replies(self, text, after=0.0):
+        """What the director says back, and HOW LONG IT TOOK HIM.
+
+        `after` is the model call's latency, in seconds. It is not decoration:
+        the whole reason the radio is a pool and the whole reason the director
+        has a busy-lock is that composing a transmission takes a median of 3.3
+        seconds and a worst case of 13.5. A test that wants to know whether one
+        controller thinking silences another needs a controller who thinks.
+        """
+        self._replies.append((text, after))
         return self
 
     def hooks_due(self, due):
@@ -218,7 +262,7 @@ class Sortie:
         from marshall.radio import client as srs_client
         from marshall.radio import stt, tts
 
-        radio = FakeRadio(self.script)
+        radio = FakeRadio(self.script, freq_hz=self.freq_mhz * 1_000_000)
         self.radio = radio
         saved = {}
 
@@ -240,8 +284,14 @@ class Sortie:
             return getattr(self, "_last_radar", "no contacts")
 
         def fake_ask(_session, message, tier="sonnet", url=None, *a, **k):
+            import time
             self.messages.append(message)
-            return self._replies.pop(0) if self._replies else "RADIO: (no call)"
+            if not self._replies:
+                return "RADIO: (no call)"
+            text, after = self._replies.pop(0)
+            if after:
+                time.sleep(after)
+            return text
 
         patch(srs_client, "SRSClient", lambda *a, **k: radio)
         # THE POOL TOO. It holds its OWN reference to SRSClient, imported at
@@ -351,6 +401,25 @@ class Sortie:
     def asked(self) -> list[str]:
         """Every message the director was handed. The prompt seam."""
         return self.messages
+
+    def answers_on(self) -> list[float]:
+        """The channel of every transmission, in MHz, in order.
+
+        A transmission names every frequency its facility owns, so this reports
+        the FIRST -- the published one -- which is what "he answered on" means
+        to a pilot holding one button.
+        """
+        out = []
+        for t in (self.radio.sent if self.radio else []):
+            got = t.hz if isinstance(t.hz, (list, tuple)) else [t.hz]
+            out.append(round(float(got[0]) / 1_000_000, 3))
+        return out
+
+    def heard_on(self) -> list[float]:
+        """The channel every scripted call arrived on, in MHz. The other half:
+        a test that asserts what was said without asserting where it was heard
+        cannot tell a right answer from the right answer to somebody else."""
+        return [round((hz or 0) / 1_000_000, 3) for hz in self.radio.heard]
 
     def transmitted_anything(self) -> bool:
         return bool(self.said())
