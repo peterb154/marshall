@@ -9206,3 +9206,70 @@ on a database that has been reset.
 Labels: needs-flight-test
 
 ---
+
+## [SEAM-21] The strip is blank in four places, and only one of them was fixed — #167
+
+`816c97e` claimed to fix the empty `strip` column on /diag. **It fixed one link
+of four.** A ghost flying Domino still shows `plan: null`, verified live on
+13 August during the #164 rehearsal. The whole chain, end to end:
+
+    approaches.list_flight_plans()   SELECT name, callsign FROM flight_plans
+                                     -- no `label`, no `legs`
+              v
+    GET /flightplans                 {"name": ..., "callsign": ...}
+              v
+    agent_atc.filed_plans()          names = {p["callsign"] for p in rows}
+                                     -- ALWAYS EMPTY: nothing writes that column
+              v
+    Identity.plan                    matched against `filed_plans()`, so never set
+              v
+    agent_atc.plan_of                keys on p["label"], which the payload has
+                                     never carried. Fixed in 816c97e, on a dict
+                                     that was already empty.
+
+**`callsign` is the column #142 retired.** A plan is `label` + `legs` + `task`;
+which aeroplane flies it is a fact about a CLEARANCE. The query, the endpoint
+and `filed_plans` all still ask for it, so the answer is `NULL` four times and
+the strip has been blank for every aeroplane that has ever been on that board.
+
+**A fifth, unfixed, 108 lines below the fix.** `agent_atc.py:4982` —
+`_plan_row(p, by_plan.get(p.get("callsign"), ""), ...)` — still joins on the
+plan row's own callsign. The identical join `816c97e` corrected one function up.
+
+**And the destination cannot render even on a match**: the served row carries no
+`legs`, so `derived()` has nothing to take `legs[-1]` from, and `Domino → BATUMI`
+is unreachable regardless.
+
+**What it wants.** The query selects `label` and `legs`; the endpoint serves
+them; `filed_plans` collects LABELS, which is the one word a pilot actually says
+and the thing `Identity.plan` was always matching against; `destination` is
+derived from `legs[-1]` where the strip is rendered rather than stored.
+
+**Why it stayed hidden.** Every link fails to an empty string or an empty set,
+never an error, and each looks locally reasonable — this is the "blank reads as
+blank" failure the whole /diag revamp (#155) was about. A pilot sees a board
+that says the system does not know which plan he is flying, while the controller
+is demonstrably getting it right on the radio. That is the third time that exact
+shape has been reported on that page.
+
+**Acceptance criteria.**
+
+- A ghost filing and flying a plan shows its label AND its destination on the
+  strip, proven from a rehearsal rather than a unit test.
+- `grep callsign` over the flight-plan path returns nothing that treats it as a
+  plan's identity.
+- A test constructs the whole chain — row, endpoint payload, `filed_plans`,
+  `Identity.plan`, `plan_of` — and fails if ANY link drops the label. Four
+  separate links failing the same way is what made a one-link fix look complete.
+
+Tests: needs one; the chain has never been tested end to end.
+Code: `src/marshall/atc/approaches.py` (`list_flight_plans`),
+`director/app.py` (`/flightplans`), `src/marshall/atc/agent_atc.py`
+(`filed_plans` ~3585, `plan_of` ~4874, `_plan_row` ~4982).
+
+Status: OPEN — diagnosed with the chain above; not fixed because
+`approaches.py` is mid-move under #147. This is the defect that started the
+13 August session.
+Labels: needs-flight-test
+
+---
