@@ -132,7 +132,7 @@ class EitherNevadaSortieCanBeSelected(_OnTheMap):
 
     def test_the_default_is_out_of_nellis_and_home_again(self):
         self.assertEqual(self.th.arrival, "Nellis")
-        self.assertEqual(self.th.approach_key, "nellis-ils")
+        self.assertEqual(self.th.approach_key, "nellis-ils-21")
         self.assertEqual(self.th.bootstrap_plan, "nevada-nellis-nellis")
 
     def test_the_one_way_transit_is_a_flag_away(self):
@@ -141,7 +141,7 @@ class EitherNevadaSortieCanBeSelected(_OnTheMap):
         try:
             th = self._theatre()
             self.assertEqual(th.arrival, "Tonopah")
-            self.assertEqual(th.approach_key, "tonopah-ils")
+            self.assertEqual(th.approach_key, "tonopah-ils-15")
         finally:
             if was is None:
                 os.environ.pop("MARSHALL_SORTIE", None)

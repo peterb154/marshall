@@ -159,14 +159,14 @@ class TestTonopahIsNotWorkedFromNellis(unittest.TestCase):
         self.addCleanup(self._env.stop)
 
     def test_an_arrival_at_tonopah_is_given_silverbow(self):
-        v = H.due(TH.approaches_now("nevada")["tonopah-ils"],
+        v = H.due(TH.approaches_now("nevada")["tonopah-ils-15"],
                   R.station_for("center"), INBOUND)
         self.assertEqual(("Silverbow Approach", 119.45),
                          (v.station.name, v.station.freq_mhz))
 
     def test_and_nellis_still_keeps_its_own(self):
         """The half that was right by accident must stay right."""
-        v = H.due(TH.approaches_now("nevada")["nellis-ils"],
+        v = H.due(TH.approaches_now("nevada")["nellis-ils-21"],
                   R.station_for("center"), INBOUND)
         self.assertEqual(("Nellis Approach", 118.125),
                          (v.station.name, v.station.freq_mhz))

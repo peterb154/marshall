@@ -407,7 +407,7 @@ manner = "Unhurried and a long way off, working in whole minutes and hundreds of
 # sim -- I-RVP to 15 and I-UVV on 111.700 to 33 -- and only 15 is built.
 
 [[approach]]
-key = "nellis-ils"
+key = "nellis-ils-21"
 field = "Nellis"
 controller = "Nellis Approach"
 outer_hold = "TONOPAH"
@@ -441,7 +441,7 @@ separation = "radar"
 era = "modern"
 
 [[approach]]
-key = "tonopah-ils"
+key = "tonopah-ils-15"
 field = "Tonopah"
 controller = "Silverbow Approach"
 # NO BEACON, AND THE DATUM MOVES EIGHTEEN MILES BECAUSE OF IT. This named

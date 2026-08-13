@@ -137,7 +137,7 @@ class TestTheMergedAnswerIsGone(unittest.TestCase):
     very thing that had over-fitted the system to 1944. It is `beacon` again,
     because the theatre file and the catalogue model always called it that:
 
-        [[approach]] key = "batumi-ndb"   beacon = "BATUMI"      <- the only one
+        [[approach]] key = "batumi-ndb-12"   beacon = "BATUMI"      <- the only one
         Approach.beacon: str = ""         <- optional, and always was in DATA
 
     One word across data, model and runtime, meaning exactly what it says.

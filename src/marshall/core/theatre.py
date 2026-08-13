@@ -558,8 +558,8 @@ def caucasus() -> Theatre:
 # The default CHANGED with this. A bridge started on Nevada used to load the
 # Tonopah recovery, which is the wrong end of the flight for a pilot going home.
 NEVADA_SORTIES = {
-    "nellis": ("nevada-nellis-nellis", "nellis-ils", "Nellis"),
-    "tonopah": ("nevada-nellis-tonopah", "tonopah-ils", "Tonopah"),
+    "nellis": ("nevada-nellis-nellis", "nellis-ils-21", "Nellis"),
+    "tonopah": ("nevada-nellis-tonopah", "tonopah-ils-15", "Tonopah"),
 }
 # The one flown when nobody has said. A Nellis there-and-back is what a range
 # sortie actually is, so it is the default and the transit is a flag away.

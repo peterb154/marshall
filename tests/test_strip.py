@@ -30,7 +30,7 @@ from marshall.atc.assembly import flight_strip
 
 CLEARED = {
     "callsign": "sockeye", "claimed_size": 1, "destination": "Batumi",
-    "origin": "Kobuleti", "procedure": "batumi-asr", "runway": "13",
+    "origin": "Kobuleti", "procedure": "batumi-asr-13", "runway": "13",
     "cleared": "cleared approach", "assigned_ft": 2000,
     "flight_plan": "362nd-kobuleti-batumi", "flight_plan_label": "Domino",
     "route": "KOBULETI, INITIAL, BATUMI", "cruise_ft": 5000,
@@ -67,7 +67,7 @@ class TestTheStripCarriesTheClearance(unittest.TestCase):
 
     def test_a_flight_with_no_plan_reads_as_it_always_did(self):
         said = flight_strip({"callsign": "Pony 1-1", "destination": "Batumi",
-                             "procedure": "batumi-asr", "runway": "13"})
+                             "procedure": "batumi-asr-13", "runway": "13"})
         self.assertIn("inbound Batumi", said)
         self.assertNotIn("as filed", said)
 

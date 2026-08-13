@@ -316,7 +316,7 @@ def sweep(profile, sloppy: bool = False,
 # state for one nobody has swept before: the numbers are on the screen, and
 # calling them a regression against another procedure's would be noise, which is
 # how a check stops being read. Record one here when it is worth defending.
-BASELINE_FOR = {"batumi-asr": "the recorded Batumi figures"}
+BASELINE_FOR = {"batumi-asr-13": "the recorded Batumi figures"}
 
 BASELINE = {
     "clean":  {"arrived": 1296, "dither": 0, "turns": 576},
@@ -352,7 +352,7 @@ TURN_SLACK = 0.05
 
 
 # THE AERODROME, not the beacon. A procedure is named `<field>-<kind>` --
-# "batumi-asr", "nellis-ils" -- and both helpers below read `beacon` for the
+# "batumi-asr-13", "nellis-ils-21" -- and both helpers below read `beacon` for the
 # field's name because that is where it lived until #163 split the slot. The
 # read went to a property, then to a renamed attribute, and `getattr` answered
 # "" both times: every key came out `"-asr"`, nothing matched, and the sweep
@@ -411,7 +411,7 @@ def main() -> int:
     # The baseline stays Batumi's, because a baseline is per-procedure by
     # definition and comparing an ILS at Nellis against an ASR at Batumi would
     # be meaningless. Named runs report their figures and do not move it.
-    ap.add_argument("--profile", default="batumi-asr",
+    ap.add_argument("--profile", default="batumi-asr-13",
                     help="which approach to fly (default: batumi-asr). "
                          "Names are the theatre's, e.g. nellis-ils")
     args = ap.parse_args()

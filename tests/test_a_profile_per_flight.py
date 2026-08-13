@@ -405,9 +405,9 @@ class TestTheBoardSaysWhichApproach(unittest.TestCase):
         self.ctl.request_approach("Sockeye")
 
     def test_assigning_it_puts_it_on_the_board(self):
-        self.ctl.assign_approach("Sockeye", RT.KOBULETI_ILS, named="kobuleti-ils")
+        self.ctl.assign_approach("Sockeye", RT.KOBULETI_ILS, named="kobuleti-ils-07")
         row, = [r for r in self.ctl.board() if r["callsign"] == "Sockeye"]
-        self.assertEqual(row["cleared_approach"], "kobuleti-ils")
+        self.assertEqual(row["cleared_approach"], "kobuleti-ils-07")
 
     def test_blank_until_somebody_assigns_one(self):
         # Different from "he is flying the bridge's default", which is what an
@@ -422,7 +422,7 @@ class TestTheBoardSaysWhichApproach(unittest.TestCase):
         # beside an aeroplane it is actively vectoring down an ILS.
         self.ctl.hydrate(
             [{"callsign": "Sockeye", "track_name": "362nd_sockeye",
-              "cleared_approach": "kobuleti-ils"}],
-            approach_named=lambda k: RT.KOBULETI_ILS if k == "kobuleti-ils" else None)
+              "cleared_approach": "kobuleti-ils-07"}],
+            approach_named=lambda k: RT.KOBULETI_ILS if k == "kobuleti-ils-07" else None)
         row, = [r for r in self.ctl.board() if r["callsign"] == "Sockeye"]
-        self.assertEqual(row["cleared_approach"], "kobuleti-ils")
+        self.assertEqual(row["cleared_approach"], "kobuleti-ils-07")

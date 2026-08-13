@@ -14,7 +14,7 @@ arrival = "Batumi"
 # that there should be no such thing: which approach you are flying is a fact
 # about your CLEARANCE, and until you have asked for one the honest answer is
 # that the controller has none for you.
-default_approach = "batumi-asr"
+default_approach = "batumi-asr-13"
 bootstrap_plan = "362nd-kobuleti-batumi"
 # FIVE KNOTS FROM THE EAST, and it is the runways that chose it. The wind is
 # what makes a runway the runway in use, and 180 favoured neither end of
@@ -370,7 +370,7 @@ manner = '''Command, not service. Crisp, directive and impersonal -- she gives a
 # claimed to happen at no aerodrome at all -- two questions, one key.
 
 [[approach]]
-key = "batumi-asr"
+key = "batumi-asr-13"
 field = "Batumi"
 controller = "Batumi Approach"
 outer_hold = "KOBULETI"
@@ -439,7 +439,7 @@ ident = "SW"
 mhz = 128.0
 
 [[approach]]
-key = "batumi-ils"
+key = "batumi-ils-13"
 field = "Batumi"
 controller = "Batumi Approach"
 outer_hold = "KOBULETI"
@@ -506,7 +506,7 @@ ident = "SW"
 mhz = 128.0
 
 [[approach]]
-key = "batumi-ndb"
+key = "batumi-ndb-12"
 field = "Batumi"
 # NO SURVEYED MINIMA, WHICH IS AN ERA AND NOT A GAP. This procedure predates
 # the MSA and MVA tables the modern approaches read off the aerodrome; it flies
@@ -590,7 +590,7 @@ ident = "SW"
 mhz = 128.0
 
 [[approach]]
-key = "kobuleti-ils"
+key = "kobuleti-ils-07"
 field = "Kobuleti"
 controller = "Kobuleti Departure"
 outer_hold = "INITIAL"

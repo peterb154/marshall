@@ -247,10 +247,10 @@ if __name__ == "__main__":
 # are shapes and behaviour; only the INSTANCES were data. That line is the whole
 # of docs/CONFIG.md in one sentence.
 _FROM_THEATRE = {
-    "BATUMI_ASR": ("approach", "batumi-asr"),
-    "BATUMI_ILS": ("approach", "batumi-ils"),
-    "BATUMI_APPROACH": ("approach", "batumi-ndb"),
-    "KOBULETI_ILS": ("approach", "kobuleti-ils"),
+    "BATUMI_ASR": ("approach", "batumi-asr-13"),
+    "BATUMI_ILS": ("approach", "batumi-ils-13"),
+    "BATUMI_APPROACH": ("approach", "batumi-ndb-12"),
+    "KOBULETI_ILS": ("approach", "kobuleti-ils-07"),
     # The controllers, by the names three hundred call sites already use.
     "STATIONS": ("stations", ""),
     "KOB_CLEARANCE": ("station", "Kobuleti Clearance"),

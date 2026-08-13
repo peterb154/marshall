@@ -29,6 +29,18 @@ import unittest
 import unittest.mock
 
 from marshall.atc import agent_atc as A
+from tests import theatre as TH
+
+# CAUCASUS ONLY, and named rather than left to fail. Every key in this
+# file is a Batumi or Kobuleti procedure -- `batumi-ils-13` is not a
+# thing Nevada publishes, and asking for it there is not a defect, it is
+# a question about another map. What the file GUARDS is theatre-neutral
+# and is asserted on whichever map is loaded by
+# `TestTwoILSApproachesAtOneField`, which builds its second procedure
+# rather than naming one. [#165]
+TH.only("caucasus",
+        why="every key asserted here names a Georgian procedure; the RULE is map-neutral and is guarded by the two-ILS class, which constructs its own")
+
 from marshall.atc import controller as C
 from marshall.core import route as R
 
@@ -36,21 +48,21 @@ from marshall.core import route as R
 class TestAPlanGetsTheProcedureItNames(unittest.TestCase):
 
     def test_each_batumi_procedure_resolves_to_itself(self):
-        for key, kind in (("batumi-ils", "ils"), ("batumi-asr", "asr"),
-                          ("batumi-ndb", "ndb")):
+        for key, kind in (("batumi-ils-13", "ils"), ("batumi-asr-13", "asr"),
+                          ("batumi-ndb-12", "ndb")):
             with self.subTest(key):
                 self.assertEqual(A._approach_named(key).kind, kind)
 
     def test_the_ils_is_not_the_surveillance_approach(self):
         # The failure in one assertion: both are vectored, both are at Batumi,
         # and they are not the same thing to fly.
-        ils, asr = A._approach_named("batumi-ils"), A._approach_named("batumi-asr")
+        ils, asr = A._approach_named("batumi-ils-13"), A._approach_named("batumi-asr-13")
         self.assertEqual(ils.guidance, "intercept")
         self.assertEqual(asr.guidance, "talkdown")
         self.assertIsNot(ils, asr)
 
     def test_another_aerodrome_is_untouched(self):
-        self.assertEqual(A._approach_named("kobuleti-ils").kind, "ils")
+        self.assertEqual(A._approach_named("kobuleti-ils-07").kind, "ils")
 
     def test_a_field_with_ONE_procedure_still_resolves_loosely(self):
         # The loose match stays as a SECOND pass, and is worth having exactly
@@ -165,4 +177,9 @@ class TestTwoILSApproachesAtOneField(unittest.TestCase):
             th, approaches=(*th.approaches, self.build_the_reciprocal()))
         with unittest.mock.patch.object(A, "_theatre",
                                         unittest.mock.Mock(current=lambda: both)):
+            # THE RUNWAY-LESS FORM, deliberately. A blanket rename of the old
+            # keys rewrote this line to `batumi-ils-13` and quietly inverted
+            # the test -- 13 resolves to itself and always will, which is the
+            # assertion above. What becomes ambiguous is the key that does not
+            # say which runway.
             self.assertIsNone(A._approach_named("batumi-ils"))

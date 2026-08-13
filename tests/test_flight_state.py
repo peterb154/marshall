@@ -39,14 +39,14 @@ class TestTheStrip(unittest.TestCase):
     has to ask a pilot who has already answered."""
 
     FULL = {"callsign": "Pony 1-1", "claimed_size": 3, "intent": "land",
-            "destination": "Batumi", "procedure": "batumi-asr", "runway": "13",
+            "destination": "Batumi", "procedure": "batumi-asr-13", "runway": "13",
             "cleared": "approach", "assigned_ft": 2000,
             "promised": "call him back in five"}
 
     def test_it_carries_what_the_next_controller_needs(self):
         s = agent_atc.flight_strip(self.FULL)
         for expected in ("Pony 1-1", "flight of 3", "land Batumi",
-                         "batumi-asr", "runway 13", "2,000", "promised"):
+                         "batumi-asr-13", "runway 13", "2,000", "promised"):
             self.assertIn(expected, s)
 
     def test_a_single_ship_is_not_called_a_flight(self):

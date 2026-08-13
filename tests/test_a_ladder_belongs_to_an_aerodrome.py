@@ -202,8 +202,8 @@ class TestTheOtherMapWasWorseAndSilent(unittest.TestCase):
 
     def test_tonopah_is_answered_by_silverbow_and_nellis_by_nellis(self):
         """124 nm apart. The named numbers are the published ones."""
-        want = {"nellis-ils": ("Nellis Tower", 132.55),
-                "tonopah-ils": ("Silverbow Tower", 124.75)}
+        want = {"nellis-ils-21": ("Nellis Tower", 132.55),
+                "tonopah-ils-15": ("Silverbow Tower", 124.75)}
         got = {k: p.station() for k, p in _laddered("nevada").items()}
         self.assertEqual(want, {k: v for k, v in got.items() if k in want})
 

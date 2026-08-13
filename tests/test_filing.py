@@ -25,7 +25,7 @@ from marshall.atc import filing as F
 
 FIXES = {"batumi", "kobuleti", "initial", "feet wet", "ingress", "tsutsnvati",
          "egress", "kutaisi"}
-APPROACHES = {"batumi-asr", "batumi-ndb"}
+APPROACHES = {"batumi-asr-13", "batumi-ndb-12"}
 TAKEN = {"domino": "362nd-kobuleti-batumi", "marlin": "362nd-coast-patrol"}
 
 # A PLAN IS A LABEL, ITS LEGS AND A TASK. Migration 031 dropped `origin`,
@@ -176,7 +176,7 @@ class TestWhatIsRefused(unittest.TestCase):
         # Not refused, IGNORED. An approach in the payload is a caller who has
         # not caught up, not a plan that is wrong -- and refusing it would
         # break every tool that still sends one while saying nothing useful.
-        bad, _ = check(approach="batumi-ils")
+        bad, _ = check(approach="batumi-ils-13")
         self.assertEqual(bad, [])
 
     def test_no_approach_at_all_is_allowed_too(self):

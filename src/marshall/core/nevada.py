@@ -58,8 +58,8 @@ _STATIONS = {
 }
 
 _APPROACHES = {
-    "NELLIS_ILS": "nellis-ils",
-    "TONOPAH_ILS": "tonopah-ils",
+    "NELLIS_ILS": "nellis-ils-21",
+    "TONOPAH_ILS": "tonopah-ils-15",
 }
 
 # The two published fixes, under the idents the profiles were written with.

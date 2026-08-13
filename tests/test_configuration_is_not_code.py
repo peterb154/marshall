@@ -332,7 +332,7 @@ class ThePublishedCatalogueIsCitable(unittest.TestCase):
         from marshall.core import theatre as T
         got = T.published_approaches(
             fields=T.published_fields("caucasus"), theatre="caucasus")
-        asr, ndb = got["batumi-asr"], got["batumi-ndb"]
+        asr, ndb = got["batumi-asr-13"], got["batumi-ndb-12"]
         self.assertEqual(asr.iaf.name, "INITIAL")
         self.assertEqual(ndb.arrival_fix.name, "INITIAL")
         self.assertEqual(asr.iaf.freq_mhz, 128.0)
@@ -355,8 +355,8 @@ class ThePublishedCatalogueIsCitable(unittest.TestCase):
         from marshall.core import theatre as T
         got = T.published_approaches(
             fields=T.published_fields("caucasus"), theatre="caucasus")
-        self.assertIsNone(got["batumi-asr"].arrival_fix)
-        self.assertIsNone(got["batumi-ndb"].iaf)
+        self.assertIsNone(got["batumi-asr-13"].arrival_fix)
+        self.assertIsNone(got["batumi-ndb-12"].iaf)
 
     def test_every_published_fix_cites_a_source(self):
         """Reference data is seeded, never authored. A fix nobody can cite is
@@ -558,8 +558,8 @@ class AMapIsAFileAndNotAFunction(unittest.TestCase):
         got = T.published_approaches(T.published_fields("caucasus"),
                                      "caucasus")
         self.assertEqual(sorted(got),
-                         ["batumi-asr", "batumi-ils", "batumi-ndb",
-                          "kobuleti-ils"])
+                         ["batumi-asr-13", "batumi-ils-13", "batumi-ndb-12",
+                          "kobuleti-ils-07"])
 
     def test_a_misspelt_map_is_said_out_loud_and_still_starts(self):
         """`THEATRES.get(want, caucasus)` swapped an unknown map for the
@@ -601,7 +601,7 @@ class AMapIsAFileAndNotAFunction(unittest.TestCase):
             with contextlib.redirect_stdout(buf):
                 th = T.current()
             self.assertIn("batumi-gca", buf.getvalue())
-            self.assertEqual(th.approach_key, "batumi-asr")
+            self.assertEqual(th.approach_key, "batumi-asr-13")
 
 
 class BothMapsAreRows(unittest.TestCase):
@@ -692,7 +692,7 @@ class BothMapsAreRows(unittest.TestCase):
             self.assertIn("range", buf.getvalue())
             self.assertIn("nellis, tonopah", buf.getvalue())
             self.assertEqual(th.arrival, "Nellis")
-            self.assertEqual(th.approach_key, "nellis-ils")
+            self.assertEqual(th.approach_key, "nellis-ils-21")
 
     def test_a_known_sortie_still_picks_its_own_recovery(self):
         from marshall.core import theatre as T
@@ -702,7 +702,7 @@ class BothMapsAreRows(unittest.TestCase):
             th = T.current()
         self.assertEqual(
             (th.arrival, th.approach_key, th.bootstrap_plan),
-            ("Tonopah", "tonopah-ils", "nevada-nellis-tonopah"))
+            ("Tonopah", "tonopah-ils-15", "nevada-nellis-tonopah"))
 
     def test_the_nevada_module_is_a_reader_and_no_longer_the_map(self):
         """`N.NELLIS_ILS` still resolves for the call sites that read it -- the
@@ -714,8 +714,8 @@ class BothMapsAreRows(unittest.TestCase):
 
         self.assertIs(N.NELLIS_FIELD, T.fields_now("nevada")[0])
         self.assertIs(N.NELLIS_CLEARANCE, T.stations_now("nevada")[0])
-        self.assertIs(N.NELLIS_ILS, T.approaches_now("nevada")["nellis-ils"])
-        self.assertIs(N.TONOPAH_ILS, T.approaches_now("nevada")["tonopah-ils"])
+        self.assertIs(N.NELLIS_ILS, T.approaches_now("nevada")["nellis-ils-21"])
+        self.assertIs(N.TONOPAH_ILS, T.approaches_now("nevada")["tonopah-ils-15"])
         # ...and the numbered route is ONE fix appearing twice, not two that
         # happen to agree. `NEVADA_ROUTE = [LSV, TPH, LSV]` was literally that,
         # and a conversion rebuilt per call would quietly make it two.
