@@ -136,6 +136,33 @@ def running() -> list[int]:
     return pids
 
 
+def approach_of(pids: list[int]) -> str:
+    """`MARSHALL_APPROACH` as the RUNNING bridge has it, or "".
+
+    A restart that changes the procedure is not a restart. `DEFAULT_ARGS` never
+    carried the approach -- only `--theatre` -- so it survived a restart solely
+    if the operator happened to have exported it in the shell he was restarting
+    from, and a restart from anywhere else silently reverted to the map's
+    default. `batumi-ils` became `batumi-asr` that way twice on 13 August: once
+    by accident during a rehearsal, which invalidated the run, and once
+    deliberately to reproduce it.
+
+    Read from `/proc/<pid>/environ` rather than remembered, for the reason this
+    whole file exists: what is RUNNING is the only thing that knows, and a
+    restart that consults a note instead of the process is a restart that is
+    right until somebody starts the bridge by hand. [#158]
+    """
+    for pid in pids:
+        try:
+            raw = Path(f"/proc/{pid}/environ").read_bytes()
+        except OSError:
+            continue
+        for item in raw.split(b"\0"):
+            if item.startswith(b"MARSHALL_APPROACH="):
+                return item.split(b"=", 1)[1].decode(errors="replace")
+    return ""
+
+
 def stop(timeout: float = 15.0) -> None:
     pids = running()
     if not pids:
@@ -276,6 +303,10 @@ def main() -> int:
     if "--theatre" in sys.argv:
         os.environ["MARSHALL_THEATRE"] = sys.argv[sys.argv.index("--theatre") + 1]
         DEFAULT_ARGS[-1] = os.environ["MARSHALL_THEATRE"]
+    # `bridge.py restart --approach kobuleti-ils-07`. Explicit beats inherited,
+    # and both beat the map's default -- the same precedence `--theatre` has.
+    if "--approach" in sys.argv:
+        os.environ["MARSHALL_APPROACH"] = sys.argv[sys.argv.index("--approach") + 1]
     if what == "status":
         return status()
     if what == "stop":
@@ -284,6 +315,19 @@ def main() -> int:
     if what == "start":
         return start()
     if what == "restart":
+        # CARRY THE PROCEDURE FORWARD. Read before the stop, because after it
+        # there is no process left to ask.
+        was = approach_of(running())
+        want = os.environ.get("MARSHALL_APPROACH", "")
+        if was and not want:
+            os.environ["MARSHALL_APPROACH"] = was
+            print(f"  carrying {was} forward")
+        elif was and want and was != want:
+            # SAY WHAT IS ABOUT TO CHANGE. The operator asked for something
+            # different; that is allowed, and doing it silently is not -- this
+            # is the stop sign #158's second criterion asks for.
+            print(f"  !! the running bridge is on {was} and this will start "
+                  f"{want}", flush=True)
         stop()
         return start()
     if what == "watch":
