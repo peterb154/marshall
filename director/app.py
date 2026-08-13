@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import logging
 import os
-import threading
 from pathlib import Path
 
 # Logging: so every iteration's transcript -- prompts, tool calls with args and
@@ -49,6 +48,7 @@ from tools.approaches import (
     upsert_approach,
     upsert_flight_plan,
 )
+from tools.busy import SeatLocks
 from tools.clearance import clearance_tools
 from tools.context import RadioContext, scrub
 from tools.frequencies import frequency_tools
@@ -256,13 +256,23 @@ _SMART = _bedrock(MODEL_ID)
 # every frequency under one session, so the seat is part of the key.
 _atc_agents: dict[tuple, Agent] = {}
 
-# One agent per session, and an agent cannot take two calls at once. The bridge
-# gives up on a slow answer and moves on; the agent does not, so the NEXT
-# transmission arrives while it is still thinking and strands raises
-# ConcurrencyException -- which surfaced as an HTTP 500. One slow call then
-# poisoned every transmission after it, and the pilot got silence with no way to
-# tell why. Seen in a dry run: one 30-second answer, then three 500s in a row.
-_atc_busy: dict[str, threading.Lock] = {}
+# An agent cannot take two calls at once. The bridge gives up on a slow answer
+# and moves on; the agent does not, so the NEXT transmission arrives while it is
+# still thinking and strands raises ConcurrencyException -- which surfaced as an
+# HTTP 500. One slow call then poisoned every transmission after it, and the
+# pilot got silence with no way to tell why. Seen in a dry run: one 30-second
+# answer, then three 500s in a row.
+#
+# ONE LOCK PER SEAT, NOT PER SESSION, and the line above used to say "one agent
+# per session" -- which stopped being true at #81, when the cache below became
+# seven or eight agents per session. Keyed on the session, Batumi Approach
+# thinking for 3.3 s dropped Kobuleti Ground's transmission in silence, forty
+# miles away, on another aerodrome's frequency. The radio serialises per
+# FREQUENCY for the same reason; see `tools/busy.py` and `radio/pool.py`.
+#
+# It takes the tuple the agent cache is keyed on, because the agent is the thing
+# that can only take one call at a time.
+_atc_busy = SeatLocks()
 
 
 def forget_sessions() -> int:
@@ -309,14 +319,23 @@ def atc_endpoint(body: dict) -> dict:
     # WHICH SEAT, by name. Two aerodromes have a Ground and a Tower each; the
     # role alone cannot tell them apart, and their conversations are not one.
     station = (body.get("station") or "").strip()
-    lock = _atc_busy.setdefault(session_id, threading.Lock())
+    # THE KEY IS COMPUTED BEFORE THE LOCK IS TAKEN, because the lock is keyed on
+    # it. The agent below is the thing that cannot take two calls at once, so
+    # its identity is what may be busy -- and while this said `session_id` the
+    # busy signal belonged to the whole theatre. Kobuleti Ground was dropped in
+    # silence for the length of Batumi Approach's answer.
+    _key = (session_id, station, role, also, mission)
+    lock = _atc_busy.lock_for(_key)
     # Non-blocking on purpose. QUEUEING would be worse on a radio than dropping:
     # the caller has already given up and moved on, so a queued answer arrives
     # after the next exchange has started and the controller replies to a
     # transmission two ago. Better to say nothing and let him ask again.
     if not lock.acquire(blocking=False):
-        log.warning("session %s is still answering the previous call; "
-                    "dropping this one rather than queueing it", session_id)
+        # NAMED, so a dropped transmission is attributable to a seat. "session X
+        # is busy" was true of eight controllers at two aerodromes at once and
+        # told you nothing about which pilot heard nothing.
+        log.warning("%s is still answering the previous call; dropping this one "
+                    "rather than queueing it", station or role or session_id)
         return {"session_id": session_id, "response": "", "busy": True,
                 "tier": tier}
     try:
@@ -329,7 +348,10 @@ def atc_endpoint(body: dict) -> dict:
         # ...AND THE MISSION, because it decides which board the clearance
         # tools read. A cached agent built under the previous sortie would go on
         # reading the previous sortie's flights.
-        _key = (session_id, station, role, also, mission)
+        #
+        # `_key` is built above rather than here, and that is the fix rather
+        # than tidiness: the lock guards this agent, so the two must be the
+        # same key or one of them is wrong. It was, for a fortnight.
         agent = _atc_agents.get(_key)
         # THE PLATE CAN CHANGE UNDER A CACHED AGENT. The bridge pushes a fresh
         # plate to /prompts at startup, built from route.py for the mission it
