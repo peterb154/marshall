@@ -34,6 +34,14 @@ DOCS = Path(__file__).resolve().parents[3] / "docs"
 GUIDS = {
     "ISSUES": "{1a7c9e30-5b42-4f81-9d63-0e5a24c71b90}",
     "A": "{2b8d0f41-6c53-4092-ae74-1f6b35d82ca1}",
+    # E IS RETIRED, 13 August -- "known broken, do not report these as new"
+    # emptied when its last two entries (#19, #20) were fixed, and the
+    # section went the way B, C, D and F went. The GUID stays and is NEVER
+    # reused: OpenKneeboard remembers the page a pilot was on, and handing
+    # an old identifier to a new document drops him somewhere he did not
+    # choose. The special-cases below (`m.group(1) == "E"`, `letter == "E"`)
+    # stay with it -- that section had a shape of its own, two cells and no
+    # test IDs, and if it ever comes back it comes back the same way.
     "E": "{6fc14385-a097-44d6-e2b8-5daf79bc60e5}",
     "G": "{81e365a7-c2b9-46f8-a4da-7fc19bde82a7}",
     "PLANS": "{92f476b8-d3ca-4709-b5eb-8ad2acef930b}",

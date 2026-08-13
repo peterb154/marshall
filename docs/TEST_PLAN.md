@@ -24,7 +24,7 @@ the sections are reordered.
 | 3 | **M — how fast he answers alone** | [#45] | solo | one radio check. Ground units stopped counting as traffic, so the classifier is off the path — you are judging a pause, and you can only judge it while you still remember the old one |
 | 4 | **J — who he thinks you are** | [#40] | solo | identity under stress: garble it, omit it, lose radar. N says he gets it right; J says he keeps it when things go wrong |
 | 5 | **G — clearance at the ramp** | [#1] | solo | the awkward half: a wrong read-back, a deliberate ambiguity, an amendment |
-| 6 | **H — the approach** | [#19] [#37] [#39] | solo | the main event, and where the open bugs live |
+| 6 | **H — the approach** | [R#19] [#37] [#39] | solo | the main event, and where the open bugs live |
 | 7 | **F — landing and the handoff** | [#41] | solo | the sim's own events now drive Tower. Never flown |
 | 8 | **K — does he remember** | [#43] | solo, better with two | shipped 30 July, never flown |
 | 9 | **R — ATIS and the letter** | [#17] | solo | built 2 August, never heard. Three transmissions on the ramp |
@@ -364,8 +364,8 @@ name in one sortie.
 | H4 | P1 | Once established, listen to how he corrects you | **"Turn left ten degrees"** — no heading at all, rounded to five. If he gives you an absolute heading inside the final approach course, that is the failure | [#37] |
 | H5 | P1 | While being vectored (before established), note the headings | Absolute, and ending in **0 or 5** — "heading three one five", never "three one three" | [#37] |
 | H6 | P1 | **Deliberately mis-set your DG by 20 degrees** before you turn inbound, then fly the approach on his corrections alone | You still arrive. This is the whole argument for relative corrections and it could not have been passed yesterday | [#37] |
-| H7 | P2 | Inbound, **2–3 nm off course, between 11 and 16 nm** — get yourself there on purpose | He gives you an intercept heading. If he sends you OUTBOUND to reposition, that is E1 and it is still open | [#19] |
-| H8 | P2 | Arrive from **behind the field**, 8–12 nm on the departure side, and ask for the approach | He takes you out and brings you round. Circling near the field is E2 | [#20] |
+| H7 | P2 | Inbound, **2–3 nm off course, between 11 and 16 nm** — get yourself there on purpose | He gives you an intercept heading. If he sends you OUTBOUND to reposition, that is E1 and it is still open | [R#19] |
+| H8 | P2 | Arrive from **behind the field**, 8–12 nm on the departure side, and ask for the approach | He takes you out and brings you round. Circling near the field is E2 | [R#20] |
 | H14 | P1 | **The ladder, step 1.** F-16, whole approach at **300 kt or less** | Clean. The sweep flies this exact grid at 300 kt: 1296/1296 arrive, **zero** dithering. Anything else here is new and matters more than H16 | [R#39] |
 | H15 | P1 | **The ladder, step 2.** Same approach in the **P-51** | Clean, and for a different reason than H14 — this is the speed the engine was built at, so a failure here is a regression, not a limit | [R#39] |
 | H16 | P1 | **The ladder, step 3.** F-16, **450 kt or more** inbound | **Predicted to fail**, and how: reversals. At 450 kt a 30° bank gives a 5.1 nm turn radius and the base leg is built around 3, so the engine orders a turn he cannot make and then orders the opposite. If it fails any OTHER way, that is new information and worth more than the expected one | [R#39] |
@@ -838,8 +838,8 @@ falsified from a transcript; this cannot, and I have no way to test it at all.
 | **S3** | *"Batumi"*, *"Kobuleti"* | Three and four syllables run together, not spelled out and not paused between. The old spellings used CAPITALS for stress, which Polly reads as an initialism, and SPACES between syllables, which it reads as word breaks | [R#17] | **P1** |
 | **S4** | The nine controllers across one sortie | Nine distinct voices and nine distinct manners. Batumi Ground is gruff, Kobuleti Clearance is a pedant, Batumi Approach is the calm one | [R#21] | P2 |
 | **S5** | Anything said twice — *"roger"*, *"readback correct"* | **Instant** the second time. It is cached after the first render; a pause there means the cache is not hitting | [R#17] | P3 |
-| **S6** | Any vector while being repositioned | A heading **in fives** — "two five zero", "two six five". Never "two six seven" | [#19] | **P1** |
-| **S7** | The final approach course | **NOT** rounded — it is 125, the number on the plate. Rounding a published course is the one place five degrees is wrong | [#19] | **P1** |
+| **S6** | Any vector while being repositioned | A heading **in fives** — "two five zero", "two six five". Never "two six seven" | [R#19] | **P1** |
+| **S7** | The final approach course | **NOT** rounded — it is 125, the number on the plate. Rounding a published course is the one place five degrees is wrong | [R#19] | **P1** |
 | **S8** | Several vectors in a row | The word **"amend"** should be rare. It belongs to changing a clearance already given, not to every turn — there were 25 in one sortie | [#45] | **P1** |
 | **S9** | A descent through the repositioning legs | **Steps**, not a slide. Roughly 6500 → 5500 → 3000, not seven numbers 500 ft apart. And no altitude repeated when it has not moved | [#45] | **P1** |
 | **S10** | **Every clearance, all sortie.** Taxi, take-off, the approach, landing, a hold, a handoff, a refusal | **The numbers are in it.** A taxi or take-off clearance names the runway; a hold names the level; a handoff or a refusal names the station **and** its frequency. What must never happen is a clearance arriving as a bare *"roger"* or *"go ahead"* — that is the whole test. On the last sortie *"runway one three, cleared for take-off"* reached the air as **"Sockeye, roger."**, and *"contact Kobuleti Tower one three three decimal zero"* as **"go ahead."** Both were flown | [#79] | **P1** |
@@ -921,58 +921,6 @@ the two differ, which is why they want a pilot and not a sweep.
 | **V2** | Recover into **Kobuleti** on the same sortie the radio was started for Batumi | Every range Center and Approach speak is measured from **Kobuleti**. This is the one that separates a chosen datum from a fallback: today the radio's loaded arrival decides it, and on this route that is the wrong field by forty miles | [#160] | **P1** |
 | **V3** | Ask Approach for the **ILS runway one three** by name | Cleared for that procedure, and the strip and the clearance both name the runway. Asking for "the ILS" when a field publishes two must get a question back, never whichever is listed first — that is #131, which cost a sortie on 12 August | [#165] | **P1** |
 | **V4** | With two aircraft recovering to **different fields**, listen to both | Each is worked on his own approach: his own minima, his own stack, his own tower's frequency. One radio, two arrivals. Nothing on the air should suggest the second aeroplane is flying the first one's procedure | [#162] | **P1** |
-
----
-
-## E — known broken. Do not report these as new
-
-Open bugs with repros. Seeing one means the world is as expected — they are on
-the card so you do not spend a sortie re-finding something already understood.
-
-**Each has an ID so you can still call it.** "E1 again, eighteen miles" is worth
-saying: it tells me the conditions, and I have never had a repro for E1 from a
-real aeroplane. What is *not* worth a call is discovering it.
-
-| ID | Prio | What you will see | Where the line is — what would be NEW | Issue |
-|----|------|-------------------|----------------------------------------|-------|
-| E1 | note | Inbound and **2 nm or more off course between 11 and 16 nm**: he sends you outbound to reposition instead of giving you an intercept. Mapped exactly — inside 1.5 nm off, or beyond 18 nm, it behaves | A turn away when you are **under 2 nm off**, or beyond 18 nm, or a REVERSAL rather than a reposition | [#19] |
-| E2 | note | After a go-around or arriving from behind the field: he circles you near the field instead of taking you out | Circling while you are **inbound and established** — E2 is a repositioning bug, not an approach one | [#20] |
-
-**What each one actually is**
-
-**E1** — The last reversal, and the one that has beaten four attempts. Between 20
-and 11 miles he is closing you onto the final approach course and each vector
-should bring you nearer to it; one that swings further out is this bug. Every fix
-tried made the synthetic sweep worse, so the geometry you are flying is
-deliberately the old known one. **Worth calling anyway** — your range and rough
-offset let me re-run the exact geometry afterwards, and four failed attempts is
-what having no repro costs.
-
-**E2** — Three starts in 1,296 on the sweep, all of them 8–12 nm *behind* the
-field on the departure side. The aircraft is sent to reposition, the bearing to
-the entry gate rotates the same way it is turning, and it chases it round — a
-stable orbit that, sampled once a revolution, looks like an aeroplane frozen in
-the sky. You are unlikely to meet it: it needs you to arrive from the wrong side
-at holding altitude. If you do, it will feel like being ignored rather than being
-turned.
-
-**E3** — The model inventing a procedure whole. Three have reached the air:
-clearing a Mustang with no ADF for a *beacon* approach and asking him to report a
-fix he had no receiver for; "landing assured", which is your determination and not
-his; and the Kobuleti handoff, which named a field, a frequency and a procedure
-that exist nowhere in the plan. **All three were caught by a pilot and none by
-anything here**, because a test can check that a call was made, not that it is
-something a controller would ever say. That is why every instance is worth
-reporting even though the class is known — the specific words are the evidence.
-
-**The go-around reversal is FIXED.** It sat on this list for three sessions and is
-now test B8. If it comes back, that is a regression and the most important thing
-you can tell me all sortie.
-
-**A reversal that is not E1 or E2 is new** — say what you were doing and roughly
-where. New is more valuable than confirming.
-
----
 
 ---
 

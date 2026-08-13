@@ -253,7 +253,7 @@ ILS profile and fly it with no code change.
 1. A Kobuleti ILS profile is loaded from data alone.
 2. The talkdown does NOT run (`guidance: "intercept"` — the aircraft has its own
    aid) and Tower takes him at the intercept, not at the missed approach point.
-3. The plate, the kneeboard and the ATC agree on the field, course and minima.
+3. ~~The plate, the kneeboard and the ATC agree on the field, course and minima.~~ **OBSOLETE 13 August** — the plate and the kneeboard were deleted (`69ce4dc`); the DTC carries the chart now. There is nothing left for the ATC to agree WITH, so this criterion has no subject rather than being unmet. Criteria 1, 2 and 4 stand and are met; what remains is a pilot, which is card section T.
 4. No file under `src/marshall/atc/` changes to make it work.
 
 **Criterion 4 held.** Adding a second approach, of a different kind, at a
@@ -605,7 +605,7 @@ Code: `agent_atc.claim_the_frequency`
 ## [BUG-1] Outbound vector at ~14 nm while inbound — #19
 labels: bug
 
-**Status:** OPEN — reproduced, narrowed, and now MAPPED. 27 July.
+**Status:** FIXED 13 August — commit `b09595f`. `in_position`'s angle test was `min(TURN_IN_NM, along * tan(30°))`, which is 2.0 nm at every range past three and a half miles: a fixed distance wearing an angle's clothes, under a docstring describing what it should have done. A real 17° cone now. Both realistic sweeps improved (clean 576→555 turns with establishment unchanged; sloppy 35→20 flips, 1535→944 turns); the deaf sweep went 94→100 and the trade is recorded in the baseline rather than hidden.
 
 **The remaining bug is the `in_position` room test, not the vectoring.** Inbound
 on the course, a heading that would fix it in thirty seconds, and instead he is
@@ -684,7 +684,7 @@ suite says so.
 ## [BUG-2] Three approaches orbit instead of arriving — #20
 labels: bug
 
-**Status:** OPEN
+**Status:** CLOSED 13 August — verified mechanically, not flown. #20's exact geometry reproduced: 8 and 12 nm on radial 305±60°, the reciprocal of Batumi's 125 final course, across all twelve headings — 144 starts, 144 arrivals, no orbits. Both criteria bettered: 1296/1296 on the clean sweep, 0 dithering against a ceiling of 1, 555 turns against ~582. It had been fixed by other work and nobody went back to look.
 
 Starts 8–12 nm behind the field on the departure side. The bearing to the entry
 gate rotates the same way the aircraft turns, so it chases it round — a stable
@@ -1250,7 +1250,7 @@ Related: [#40] (identity reads it), [#2] (ARCH-1, which this should precede),
 ## [CHART-1] Chart the enroute fixes, not just the letdown — #26
 labels: feature
 
-**Status:** TODO
+**Status:** CLOSED MOOT 13 August — the kneeboard's plate and route map were deleted in `69ce4dc`. A pilot gets his chart from the DTC in the aeroplane; there is no page left for enroute fixes to be missing from. Refile against whatever replaces it, if anything does.
 
 The kneeboard has the plate and the route map; the enroute fixes are not drawn
 to scale anywhere.
@@ -3588,7 +3588,7 @@ the pair described. A parallel-runway field wants an L/R designator on the end.
 ## [KB-3] A kneeboard page is a function of a Card — #71
 labels: architecture
 
-**Status:** FOUNDATION DONE 10 August. `comms` converted; the rest follow the
+**Status:** CLOSED MOOT 13 August — answered by deletion rather than migration. Five of the six pages named in its remaining scope are gone (`69ce4dc`); `site` survives as the renderer this issue put out of scope. The complaint that opened it — "hard coding batumi stuff isn't cool" — is answered, because there are no theatre-specific pages left to hard-code into. A real resolution of the concern, and not the one this issue proposed, so MOOT rather than FIXED.
 same pattern.
 
 **Remaining scope (10 Aug).** The Card, theatre-aware `comms` and the Nevada
@@ -5840,7 +5840,9 @@ aeroplane.
 ## [ASR-6] The Nellis ILS dithers, and three approaches never arrive — #117
 labels: bug, needs-flight-test
 
-**Status:** OPEN. Found the first time `asr_sweep.py` was ever pointed at an
+**Status:** HALF FIXED 13 August. **Arrivals: done.** Nellis went 1293/1296 to **1296/1296** and Tonopah 1291/1296 to **1296/1296** — the eight starts that never reached the missed approach point all do. **Dithering: not done.** Nellis was 103 flips and is now 67, helped by #19's angle fix; Batumi is 0. The geometry was tuned on a sea-level Georgian field and Nevada is a mile and a half up, which is the remaining half.
+
+Both Nevada approaches now carry their OWN sweep baseline — until today they reported and were judged against nothing, because the only baseline was Batumi's and judging Nellis against Georgian figures is noise. So the 67 is recorded rather than accepted, and a regression against it is now visible.
 approach other than Batumi's — which is #2 criterion 2, and the finding arrived
 in the same minute the capability did.
 

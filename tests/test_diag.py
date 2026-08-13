@@ -478,7 +478,21 @@ class TheFlightCardActuallyReachesTheCockpit(unittest.TestCase):
         # because its slice ran to end of file.
         got = {letter: [r["id"] for r in rows]
                for letter, _t, rows in self.sections()}
-        self.assertEqual(got.get("E"), ["E1", "E2"])
+        # SECTION E IS GONE, and this test used it as the fixture. Every entry
+        # on "known broken, do not report these as new" has been fixed -- E1 and
+        # E2 were #19 and #20 and went on 13 August, E3 in July -- so the
+        # section was removed the way B, C, D and F were when their rows closed.
+        #
+        # What it was really asserting is that a section's slice STOPS at the
+        # next heading, so a lettered section cannot swallow the ones after it.
+        # T is the fixture now: four rows, and the twelve retired ones that live
+        # below it must not appear in any of them.
+        self.assertEqual(got.get("T"), ["T1", "T2", "T3", "T4"])
+        self.assertNotIn("E", got)
+        for letter, ids in got.items():
+            for rid in ids:
+                self.assertFalse(rid.startswith("~~"),
+                                 f"{letter} shows retired row {rid}")
 
     def test_every_section_is_published(self):
         from marshall.kneeboard import flighttest
