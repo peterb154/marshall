@@ -1,7 +1,38 @@
 # Nevada (NTTR).
 #
+# THE MAP ITSELF IS A TABLE, as the Caucasus has been since the approaches
+# moved. This file was the navaids and nothing else while the fields, the
+# seats, the fixes and the two ILS procedures stayed in `core/nevada.py` --
+# so one map was rows and the other was code, and every rule in
+# docs/CONFIG.md applied to one of them. See #137.
+
+[theatre]
+name = "Nevada"
+terrain = "Nevada"
+departure = "Nellis"
+# NO `arrival`, NO `default_approach`, NO `bootstrap_plan`, and the absence is
+# the honest answer rather than an omission. Nevada has TWO filed sorties --
+# Nellis there-and-back, and the one-way transit to Tonopah -- and they recover
+# at different fields, so where you land is a fact about which sortie is being
+# flown and not about the map. `MARSHALL_SORTIE` picks one; see
+# `theatre.NEVADA_SORTIES`, and #111, which is per-flight selection and deletes
+# the choice entirely.
+#
+# Writing the Nellis recovery here as a "default" would put a second copy of it
+# beside that table, and two copies of one fact is what this whole migration is
+# for.
+#
+# NINE MILES AN HOUR FROM 210 -- eight knots -- AND IT PICKS BOTH RUNWAYS. Nellis lands 21
+# (209 magnetic) and Tonopah lands 15 (141 magnetic) in it -- the departure end
+# and the arrival end agree, without anybody special-casing either, which is
+# the same thing the Caucasus easterly buys at Batumi and Kobuleti. What this
+# IS: the wind the .miz is built with, and therefore the wind the ATIS then
+# measures. Anything spoken reads the measurement (`atis.store.wind`).
+wind_from_deg = 210.0
+wind_mph = 9.2
+
 # Nothing here yet needs respelling: Polly says "Nellis" and "Tonopah" the way
-# a controller does. The file exists rather than being absent on purpose --
+# a controller does. The table is present rather than absent on purpose --
 # `catalogue.py` treats a MISSING theatre file as an error, because a map with
 # no configuration is far more likely to be a typo in MARSHALL_THEATRE than a
 # map that genuinely needs none. An empty table says "checked, nothing needed".
@@ -11,6 +42,430 @@
 [recogniser]
 phrases = ["Nellis", "Tonopah", "Creech", "Groom Lake", "Las Vegas",
            "Nellis Approach", "Nellis Tower"]
+
+# --- published fixes -------------------------------------------------------
+#
+# WHAT MAKES A FIX PUBLISHED is that somebody else can look it up. Both of
+# these are: the aerodrome a pilot is going to, and the enroute VORTAC the leg
+# between the two fields is flown on. Nothing invented, and this map has no
+# strike route whose turning points could leak into the catalogue the way the
+# 362nd's did (#137).
+#
+# THE ONE THING THIS MIGRATION HAD TO ADD is lat/lon, because `PublishedFix`
+# requires them and the Python `Fix` objects carried grid metres and nothing
+# else -- which is the first finding of the #137 audit, arriving here a map
+# late. Neither figure is measured afresh: each is the projection this tree
+# already publishes for the SAME grid point, and each `source` says which and
+# admits the Python cited nothing. No other value below was touched.
+#
+# A BEACON IS NOT AN AIRFIELD, and NELLIS is the fault a68151353 named at
+# Batumi, on a second map. Its position is the aerodrome reference point, its
+# ident and note are the LSV TACAN's, and the real LSV sits 1,250 m away in the
+# [[navaid]] table of this same file. Preserved exactly as it was; see #163.
+
+[[fix]]
+name = "NELLIS"
+ident = "LSV"
+x = -398195
+z = -17233
+freq_mhz = 0.0
+sector = "Nellis Approach"
+lat = 36.2352
+lon = -115.0330
+source = "pydcs Nevada terrain, Nellis airport point -- the same x/z and the same lat/lon as the [[field]] below, because it IS the aerodrome reference. The Python this was migrated from carried no lat/lon at all."
+note = "Nellis TACAN 12X. Field reference for the ILS to 21L."
+
+[[fix]]
+name = "TONOPAH"
+ident = "TPH"
+x = -200809
+z = -196936
+freq_mhz = 117.2
+sector = "Silverbow Approach"
+lat = 38.030667
+lon = -117.0335
+source = "nevada-Beacons.lua: the TPH VORTAC's own positionGeo, at the same grid point to within a metre -- see the [[navaid]] TPH below. The Python this was migrated from carried no lat/lon at all."
+note = "Tonopah VORTAC, channel 119. Enroute, not an airfield beacon."
+
+# --- aerodromes ------------------------------------------------------------
+#
+# `runway` is the landing heading MAGNETIC; `ends` are the DESIGNATORS painted
+# on the tarmac, and they are separate data rather than the heading rounded.
+# Nevada proves the rule on a second map: Tonopah's heading is 141, which
+# rounds to 14, and the paint says 15.
+#
+# ORDER MATTERS IN `ends`: `ends[0]` is the end whose heading is `runway`. 209
+# is the 21 end, so Nellis is (21, 3) -- written the other way round first, and
+# `runway_in_use` then named runway 03 in a 210 wind, which is the downwind end
+# of its own ILS runway.
+#
+# NELLIS HAS TWO PARALLEL RUNWAYS, 03L/21R and 03R/21L, and one field row
+# models one pair. The ILS is on 21L, so that is the pair described. A
+# parallel-runway field wants an L/R designator on the end; noted rather than
+# papered over.
+#
+# BOTH MVA GRIDS WERE SURVEYED, 10 August, with `tools/survey_terrain.py` --
+# `land.getHeight` over twelve 30-degree spokes and rings at 5, 10, 15 and
+# 25 nm, highest ground in each cell plus a thousand feet, rounded up to the
+# next five hundred. Borrowing Batumi's cells would not have been conservative
+# here, it would have been fiction: Nellis has 2,000 ft under the approach and
+# 9,416 ft twenty-five miles north-west, and Tonopah has no ground below
+# 6,500 ft anywhere within twenty-five miles.
+#
+# Neither field publishes an MSA, so `msa_sectors` is absent rather than
+# invented, and `min_safe_ft` falls through to the surveyed cells.
+
+[[field]]
+name = "Nellis"
+x = -398195
+z = -17233
+lat = 36.2352
+lon = -115.033
+elevation_ft = 1869
+runway = 209
+ends = [21, 3]
+atis_mhz = 118.4
+atis_uhf_mhz = 281.0
+magvar_deg = 12.0
+grid_convergence_deg = 1.16
+note = "Nellis AFB (KLSV). Field elevation 1,869 ft -- a mile above Batumi, which is the first thing here that has never been exercised. 03R/21L 10,051 x 150 ft, ILS on 21L. TACAN LSV 12X. Parallel 03L/21R not modelled. MVA surveyed 10 August."
+mva_cells = [
+  [0.0, 30.0, 5.0, 3500],
+  [0.0, 30.0, 10.0, 5500],
+  [0.0, 30.0, 15.0, 5500],
+  [0.0, 30.0, 25.0, 7000],
+  [30.0, 60.0, 5.0, 3500],
+  [30.0, 60.0, 10.0, 4500],
+  [30.0, 60.0, 15.0, 4500],
+  [30.0, 60.0, 25.0, 5000],
+  [60.0, 90.0, 5.0, 4000],
+  [60.0, 90.0, 10.0, 4000],
+  [60.0, 90.0, 15.0, 5500],
+  [60.0, 90.0, 25.0, 6500],
+  [90.0, 120.0, 5.0, 4500],
+  [90.0, 120.0, 10.0, 4000],
+  [90.0, 120.0, 15.0, 3500],
+  [90.0, 120.0, 25.0, 6000],
+  [120.0, 150.0, 5.0, 5000],
+  [120.0, 150.0, 10.0, 4000],
+  [120.0, 150.0, 15.0, 4500],
+  [120.0, 150.0, 25.0, 6000],
+  [150.0, 180.0, 5.0, 5000],
+  [150.0, 180.0, 10.0, 4000],
+  [150.0, 180.0, 15.0, 5000],
+  [150.0, 180.0, 25.0, 5000],
+  [180.0, 210.0, 5.0, 3000],
+  [180.0, 210.0, 10.0, 3500],
+  [180.0, 210.0, 15.0, 4500],
+  [180.0, 210.0, 25.0, 6000],
+  [210.0, 240.0, 5.0, 3000],
+  [210.0, 240.0, 10.0, 3500],
+  [210.0, 240.0, 15.0, 4000],
+  [210.0, 240.0, 25.0, 7000],
+  [240.0, 270.0, 5.0, 3000],
+  [240.0, 270.0, 10.0, 3500],
+  [240.0, 270.0, 15.0, 5000],
+  [240.0, 270.0, 25.0, 9500],
+  [270.0, 300.0, 5.0, 3500],
+  [270.0, 300.0, 10.0, 3500],
+  [270.0, 300.0, 15.0, 4500],
+  [270.0, 300.0, 25.0, 8500],
+  [300.0, 330.0, 5.0, 3500],
+  [300.0, 330.0, 10.0, 6000],
+  [300.0, 330.0, 15.0, 7500],
+  [300.0, 330.0, 25.0, 10000],
+  [330.0, 360.0, 5.0, 3500],
+  [330.0, 360.0, 10.0, 6500],
+  [330.0, 360.0, 15.0, 8000],
+  [330.0, 360.0, 25.0, 10500],
+]
+
+[[field]]
+name = "Tonopah"
+x = -226613
+z = -174653
+lat = 37.7979
+lon = -116.7803
+elevation_ft = 5550
+runway = 141
+ends = [15, 33]
+atis_mhz = 118.6
+atis_uhf_mhz = 282.0
+magvar_deg = 16.0
+grid_convergence_deg = 0.13
+note = "Tonopah Test Range (KTNX). Field elevation 5,550 ft -- nearly a mile above Nellis and three above Batumi. 15/33, 12,001 x 150 ft, ILS to both ends. MVA surveyed 10 August: no cell below 6,500 ft."
+mva_cells = [
+  [0.0, 30.0, 5.0, 7000],
+  [0.0, 30.0, 10.0, 7000],
+  [0.0, 30.0, 15.0, 7500],
+  [0.0, 30.0, 25.0, 8500],
+  [30.0, 60.0, 5.0, 7000],
+  [30.0, 60.0, 10.0, 7000],
+  [30.0, 60.0, 15.0, 10000],
+  [30.0, 60.0, 25.0, 10500],
+  [60.0, 90.0, 5.0, 7000],
+  [60.0, 90.0, 10.0, 7000],
+  [60.0, 90.0, 15.0, 8500],
+  [60.0, 90.0, 25.0, 10500],
+  [90.0, 120.0, 5.0, 7000],
+  [90.0, 120.0, 10.0, 7000],
+  [90.0, 120.0, 15.0, 7500],
+  [90.0, 120.0, 25.0, 9500],
+  [120.0, 150.0, 5.0, 7000],
+  [120.0, 150.0, 10.0, 7000],
+  [120.0, 150.0, 15.0, 7000],
+  [120.0, 150.0, 25.0, 8000],
+  [150.0, 180.0, 5.0, 7000],
+  [150.0, 180.0, 10.0, 8000],
+  [150.0, 180.0, 15.0, 8000],
+  [150.0, 180.0, 25.0, 8000],
+  [180.0, 210.0, 5.0, 7500],
+  [180.0, 210.0, 10.0, 8500],
+  [180.0, 210.0, 15.0, 7500],
+  [180.0, 210.0, 25.0, 7500],
+  [210.0, 240.0, 5.0, 8000],
+  [210.0, 240.0, 10.0, 8000],
+  [210.0, 240.0, 15.0, 6500],
+  [210.0, 240.0, 25.0, 9000],
+  [240.0, 270.0, 5.0, 8000],
+  [240.0, 270.0, 10.0, 8000],
+  [240.0, 270.0, 15.0, 7500],
+  [240.0, 270.0, 25.0, 7500],
+  [270.0, 300.0, 5.0, 7500],
+  [270.0, 300.0, 10.0, 7500],
+  [270.0, 300.0, 15.0, 7000],
+  [270.0, 300.0, 25.0, 8000],
+  [300.0, 330.0, 5.0, 7000],
+  [300.0, 330.0, 10.0, 7500],
+  [300.0, 330.0, 15.0, 7500],
+  [300.0, 330.0, 25.0, 7500],
+  [330.0, 360.0, 5.0, 7000],
+  [330.0, 360.0, 10.0, 7500],
+  [330.0, 360.0, 15.0, 7500],
+  [330.0, 360.0, 25.0, 9000],
+]
+
+# --- controllers -----------------------------------------------------------
+#
+# THE LADDER, from the published plate, and IN LADDER ORDER -- `channels_for`
+# takes the first presets in file order and `"ABCD"[i]` indexes the buttons.
+# Nellis outbound is clearance, ground, tower, departure, approach; Tonopah is
+# written approach-first because that is the order a pilot arriving there
+# presses them, and tower-first put the recovery controller below the man who
+# takes you at four miles.
+#
+# DCS ITSELF MODELS ONE CONTROLLER AT NELLIS -- "NellisControl", ground, tower
+# and approach on 132.550 -- which happens to be the real Tower frequency. So
+# Tower's rung agrees with what the mission editor shows a pilot and the rest
+# are the positions that genuinely exist. Same happy accident at Tonopah, where
+# DCS's "Silverbow" on 124.750 is the real Tower.
+#
+# NELLIS GROUND ON 121.800 IS ALSO KOBULETI GROUND'S NUMBER. Harmless -- they
+# are on different maps and never loaded together -- but it is exactly the sort
+# of coincidence that makes a wrong answer look right, so it is written down.
+#
+# LOS ANGELES CENTER has no `field`, and that is not an omission: a Center owns
+# a REGION and hands you between aerodromes. Without it a departure worked
+# cleanly through Clearance, Ground, Tower and Departure and then simply stayed
+# with Departure for the rest of the sortie -- `handoff.RULES` routes an
+# outbound aircraft to `center` at 25 nm and there was nobody to route him to
+# (#110). 133.400 is one of ZLA's sector frequencies and is CHOSEN rather than
+# surveyed, like Georgia Center's number, and it is said here so nobody later
+# mistakes it for a plate value.
+#
+# NOT THE RANGE. Real NTTR range work is Nellis Control -- "Blackjack" -- a
+# different service with different phraseology and its own airspace, and none
+# of it is modelled. A range mission is not a transit.
+
+[[station]]
+name = "Nellis Clearance"
+freq_mhz = 120.9
+role = "clearance"
+field = "Nellis"
+also = ["delivery"]
+voice = "Gregory"
+manner = "Brisk and procedural. Reads a clearance the way a man reads a form, and will make you read it back again if you fumble it."
+
+[[station]]
+name = "Nellis Ground"
+freq_mhz = 121.8
+role = "ground"
+field = "Nellis"
+voice = "Joey"
+manner = "Unhurried and faintly amused. Knows every taxiway and expects you to know the one he just gave you."
+
+[[station]]
+name = "Nellis Tower"
+freq_mhz = 132.55
+role = "tower"
+field = "Nellis"
+channels = [327.0]
+voice = "Matthew"
+manner = "Clipped. Owns the runway and nothing else, and says so when asked for something that is not his."
+
+[[station]]
+name = "Nellis Departure"
+freq_mhz = 135.1
+role = "departure"
+field = "Nellis"
+voice = "Stephen"
+manner = "The same man as Approach, going the other way, and just as short about it."
+
+[[station]]
+name = "Nellis Approach"
+freq_mhz = 118.125
+role = "approach"
+field = "Nellis"
+voice = "Stephen"
+manner = "Calm and economical, the way somebody sounds when the terrain is high and he has done this a great many times."
+
+[[station]]
+name = "Silverbow Approach"
+freq_mhz = 119.45
+role = "approach"
+field = "Tonopah"
+also = ["departure"]
+channels = [233.95]
+voice = "Stephen"
+manner = "Careful about terrain and says so. The valley floor is high and the ridges are higher."
+
+[[station]]
+name = "Silverbow Tower"
+freq_mhz = 124.75
+role = "tower"
+field = "Tonopah"
+also = ["clearance", "delivery"]
+channels = [257.95]
+voice = "Matthew"
+manner = "Dry and unhurried. Works the runway and the clearances both, because nobody staffs a delivery position out here."
+
+[[station]]
+name = "Silverbow Ground"
+freq_mhz = 127.25
+role = "ground"
+field = "Tonopah"
+channels = [335.5]
+voice = "Joey"
+manner = "Laconic. It is a test range and there is rarely anybody else moving."
+
+[[station]]
+name = "Los Angeles Center"
+freq_mhz = 133.4
+role = "center"
+voice = "Brian"
+manner = "Unhurried and a long way off, working in whole minutes and hundreds of miles. A high-desert sector with very little in it, so he is never rushed and never chatty. Formal without being stiff."
+
+# --- approaches ------------------------------------------------------------
+#
+# ONE PROCEDURE PER TABLE, and the fixes are NAMED rather than repeated. Both
+# are `guidance = "intercept"`: an ILS puts the glidepath in the aeroplane, so
+# the controller vectors him to the localiser and stops flying it for him.
+# That one field is what separates these from the Batumi talkdown.
+#
+# `min_hat_ft = 200` is what says this is an ILS at all -- a Category I
+# decision height. Transcribing the ASR's seven hundred onto an ILS is the
+# mistake that field exists to prevent.
+#
+# THE HOLDING CEILINGS ARE NOT THE DEFAULT AND COULD NOT BE. `hold_top_ft`
+# defaults to 10,000 -- "P-51: oxygen, not airspace" -- which is right for a
+# Mustang and meaningless for an F-16 over Nevada. Nellis's own MVA reaches
+# 10,500 north-west, so the default ceiling sits BELOW the ground a holding
+# aircraft has to clear; and at Tonopah a base of 12,000 against a 10,000
+# ceiling makes `stack_ft` an EMPTY list, so the controller would have had no
+# level to give the first arrival at all.
+#
+# `final_crs_true_measured` comes out of the sim's own Beacons.lua: the
+# localiser antenna sits beyond the STOP end and radiates back up the approach,
+# so the course flown is its bearing plus 180. Nellis 40.11 -> 220.11 true,
+# which at 12 east is 208 magnetic on a runway painted 21; Tonopah's I-RVP
+# 337.08 -> 157.08, which at 16 east is 141 on a runway painted 15. The sim,
+# the plate and the arithmetic agree.
+#
+# `grid_convergence_deg` was measured per field, the way SCHEMA.md prescribes,
+# and CROSS-CHECKED: convergence on a transverse Mercator is
+# (lambda - lambda0) * sin(phi), so each field implies a central meridian.
+# Nellis gives -116.995 and Tonopah -116.992 -- two measurements a hundred and
+# twenty miles apart agreeing on a round -117, which is a check Batumi's single
+# value never had.
+#
+# WHAT IS DELIBERATELY ABSENT: `stations`, `msa_sectors` and `mva_cells`. The
+# minimum altitudes are composed back in from the FIELD named here, so there is
+# one copy and an approach cannot come to disagree with the aerodrome it
+# serves.
+#
+# STILL NOT MODELLED, and stated so it cannot be quietly forgotten: SIDs, STARs
+# and every other instrument procedure. Tonopah has an ILS to BOTH ends in the
+# sim -- I-RVP to 15 and I-UVV on 111.700 to 33 -- and only 15 is built.
+
+[[approach]]
+key = "nellis-ils"
+field = "Nellis"
+controller = "Nellis Approach"
+beacon = "NELLIS"
+outer_hold = "TONOPAH"
+iaf = "TONOPAH"
+hold_base_ft = 9000
+hold_top_ft = 16000
+kind = "ils"
+guidance = "intercept"
+final_intercept_nm = 12.0
+fap_nm = 7.0
+map_nm = 0.5
+touchdown_offset_nm = 0.83
+grid_convergence_deg = 1.16
+iaf_alt_ft = 11000
+field_thr_elev_ft = 1869
+chart_name = "KLSV ILS OR LOC X RWY 21L"
+altimeter_datum = "QNH"
+magvar_deg = 12.0
+final_crs_true_measured = 220.11
+final_crs = 209
+field_elev_ft = 1869
+runway = "21"
+platform_ft = 6000
+ceiling_ft = 400
+min_hat_ft = 200
+
+[approach.atc]
+radar = true
+dme = true
+separation = "radar"
+era = "modern"
+
+[[approach]]
+key = "tonopah-ils"
+field = "Tonopah"
+controller = "Silverbow Approach"
+beacon = "TONOPAH"
+outer_hold = "TONOPAH"
+iaf = "TONOPAH"
+hold_base_ft = 12000
+hold_top_ft = 20000
+kind = "ils"
+guidance = "intercept"
+final_intercept_nm = 12.0
+fap_nm = 7.0
+map_nm = 0.5
+touchdown_offset_nm = 0.99
+grid_convergence_deg = 0.13
+iaf_alt_ft = 13000
+field_thr_elev_ft = 5550
+chart_name = "KTNX ILS RWY 15 (I-RVP 108.30)"
+altimeter_datum = "QNH"
+magvar_deg = 16.0
+final_crs_true_measured = 157.08
+final_crs = 141
+field_elev_ft = 5550
+runway = "15"
+platform_ft = 9000
+ceiling_ft = 400
+min_hat_ft = 200
+
+[approach.atc]
+radar = true
+dme = true
+separation = "radar"
+era = "modern"
 
 # --- navaids ----------------------------------------------------------------
 #

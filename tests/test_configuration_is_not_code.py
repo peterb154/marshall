@@ -602,3 +602,152 @@ class AMapIsAFileAndNotAFunction(unittest.TestCase):
                 th = T.current()
             self.assertIn("batumi-gca", buf.getvalue())
             self.assertEqual(th.approach_key, "batumi-asr")
+
+
+class BothMapsAreRows(unittest.TestCase):
+    """#137's second half, and the reason it needed one: Nevada was not.
+
+    `config/theatres/caucasus.toml` held the fields, the seats, the fixes and
+    the approaches; Nevada held all four as module constants in
+    `core/nevada.py` and `theatre.nevada()` never opened a theatre file at all.
+    So one map was data and the other was code, and every rule in
+    docs/CONFIG.md applied to one of them. The two consequences are asserted
+    below rather than described, because both were invisible: a map that
+    published no `[[station]]` rows needed a fallback to have any controllers,
+    and a misspelt `MARSHALL_SORTIE` silently became Nellis.
+    """
+
+    MAPS = ("caucasus", "nevada")
+
+    def setUp(self):
+        catalogue.reload()
+        self.addCleanup(catalogue.reload)
+
+    def test_every_map_publishes_the_same_tables(self):
+        """The point of "the same path": not that the values match -- they must
+        not -- but that there is one reader and every map goes through it."""
+        for m in self.MAPS:
+            with self.subTest(theatre=m):
+                self.assertIsNotNone(catalogue.identity(m), "no [theatre]")
+                self.assertTrue(catalogue.aerodromes(m), "no [[field]]")
+                self.assertTrue(catalogue.controllers(m), "no [[station]]")
+                self.assertTrue(catalogue.published_fixes(m), "no [[fix]]")
+                self.assertTrue(catalogue.approaches(m), "no [[approach]]")
+                self.assertTrue(catalogue.navaids(m), "no [[navaid]]")
+
+    def test_the_theatre_is_built_from_those_tables_and_nothing_else(self):
+        """Identity rather than equality, which is the cheapest way to say "the
+        same object, not a copy that happens to agree". A theatre still holding
+        a Python constant would pass an equality check and fail this one."""
+        from marshall.core import theatre as T
+
+        for m in self.MAPS:
+            with self.subTest(theatre=m):
+                th = T.THEATRES[m]()
+                self.assertEqual(th.fields, T.fields_now(m))
+                self.assertEqual(th.stations, T.stations_now(m))
+                self.assertIs(th.fields[0], T.fields_now(m)[0])
+                self.assertIs(th.stations[0], T.stations_now(m)[0])
+                self.assertIn(th.approach_key, T.approaches_now(m))
+                self.assertIs(th.approach, T.approaches_now(m)[th.approach_key])
+
+    def test_no_map_needs_a_fallback_for_its_seats(self):
+        """`_stations_cached` used to answer out of `THEATRES[name]().stations`
+        when the file published none, because Nevada's nine controllers were
+        `Station` objects in Python -- and this is the ONE place a station is
+        looked up, so without it that map was silently stationless. The rows
+        exist now, and the fallback is gone: leaving it would recurse, since
+        `nevada()` reads `stations_now` itself."""
+        from marshall.core import theatre as T
+
+        for m in catalogue.maps():
+            with self.subTest(theatre=m):
+                self.assertTrue(T.published_stations(m),
+                                f"{m}.toml publishes no controllers")
+                self.assertEqual(T.published_stations(m), T.stations_now(m))
+
+    def test_every_published_fix_on_every_map_cites_a_source(self):
+        for m in self.MAPS:
+            for f in catalogue.published_fixes(m):
+                with self.subTest(theatre=m, fix=f.name):
+                    self.assertTrue(f.source.strip(), f"{f.name} cites nothing")
+
+    def test_an_unknown_sortie_is_NAMED_rather_than_silently_flown(self):
+        """`NEVADA_SORTIES.get(want, NEVADA_SORTIES["nellis"])`. The two filed
+        sorties recover at DIFFERENT FIELDS, so a misspelt `MARSHALL_SORTIE`
+        gave a bridge working a Nellis recovery while its operator believed he
+        was going to Tonopah -- every frequency and every minimum real and
+        belonging to the wrong airport. The same shape as the approach key,
+        which is how a pilot came to fly a talkdown after asking for an ILS."""
+        import contextlib
+        import io
+
+        from marshall.core import theatre as T
+
+        with mock.patch.dict(os.environ, {"MARSHALL_THEATRE": "nevada",
+                                          "MARSHALL_SORTIE": "range"}):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                th = T.current()
+            self.assertIn("range", buf.getvalue())
+            self.assertIn("nellis, tonopah", buf.getvalue())
+            self.assertEqual(th.arrival, "Nellis")
+            self.assertEqual(th.approach_key, "nellis-ils")
+
+    def test_a_known_sortie_still_picks_its_own_recovery(self):
+        from marshall.core import theatre as T
+
+        with mock.patch.dict(os.environ, {"MARSHALL_THEATRE": "nevada",
+                                          "MARSHALL_SORTIE": "tonopah"}):
+            th = T.current()
+        self.assertEqual(
+            (th.arrival, th.approach_key, th.bootstrap_plan),
+            ("Tonopah", "tonopah-ils", "nevada-nellis-tonopah"))
+
+    def test_the_nevada_module_is_a_reader_and_no_longer_the_map(self):
+        """`N.NELLIS_ILS` still resolves for the call sites that read it -- the
+        kneeboard card, the mission builder, the terrain survey -- and the
+        value comes out of the file. A literal would be a second copy, and
+        identity is what tells the two apart."""
+        from marshall.core import nevada as N
+        from marshall.core import theatre as T
+
+        self.assertIs(N.NELLIS_FIELD, T.fields_now("nevada")[0])
+        self.assertIs(N.NELLIS_CLEARANCE, T.stations_now("nevada")[0])
+        self.assertIs(N.NELLIS_ILS, T.approaches_now("nevada")["nellis-ils"])
+        self.assertIs(N.TONOPAH_ILS, T.approaches_now("nevada")["tonopah-ils"])
+        # ...and the numbered route is ONE fix appearing twice, not two that
+        # happen to agree. `NEVADA_ROUTE = [LSV, TPH, LSV]` was literally that,
+        # and a conversion rebuilt per call would quietly make it two.
+        route = N.NEVADA_ROUTE
+        self.assertIs(route[0], route[2])
+        self.assertIs(N.LSV, route[0])
+        self.assertIs(N.LSV, T.fixes_now("nevada")[0])
+
+    def test_the_module_defines_no_instances_at_all(self):
+        """"The old path is gone" is the criterion #2 was missing and #162
+        writes as greps, so it is written as one here: a `Field_`, `Station`,
+        `Fix` or `ApproachProfile` CONSTRUCTED in this module is the data
+        coming back."""
+        from pathlib import Path
+
+        from marshall.core import nevada as N
+
+        src = Path(N.__file__).read_text(encoding="utf-8")
+        code = "\n".join(ln for ln in src.splitlines()
+                         if not ln.lstrip().startswith("#"))
+        code = code.split('"""')[0] + '"""'.join(code.split('"""')[2:])
+        for shape in ("Field_(", "Station(", "Fix(", "ApproachProfile("):
+            with self.subTest(shape=shape):
+                self.assertNotIn(shape, code,
+                                 f"core/nevada.py builds a {shape[:-1]} again")
+
+    def test_a_name_nevada_does_not_publish_is_an_AttributeError(self):
+        from marshall.core import nevada as N
+
+        # Built rather than written, so neither ruff's "useless expression" nor
+        # its "constant getattr" rule applies -- both right about ordinary code
+        # and wrong about a test whose subject is attribute lookup.
+        missing = "TONOPAH" + "_NDB"
+        with self.assertRaises(AttributeError):
+            getattr(N, missing)

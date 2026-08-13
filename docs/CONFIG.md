@@ -212,9 +212,19 @@ hints) needs no table and gets none.
 ## Where we break this today
 
 Honest, and the list is the audit in #137: `core/fixes.py`, `core/fields.py`,
-`core/stations.py`, `core/approach.py`, `core/nevada.py`, `core/theatre.py`,
-`radio/tts.py`, `radio/stt.py`, five kneeboard pages binding an approach at
-import, and the five migrations above.
+`core/stations.py`, `core/approach.py`, `core/theatre.py`, `radio/tts.py`,
+`radio/stt.py`, five kneeboard pages binding an approach at import, and the
+five migrations above.
+
+`core/nevada.py` is off that list. It held two aerodromes with their surveyed
+MVA grids, nine controllers, two fixes and both ILS procedures while the
+Caucasus had been rows since the approaches moved — one map data, the other
+code, and this document applying to one of them. It is now a reader over
+`config/theatres/nevada.toml` and defines no instance of anything; `theatre.
+nevada()` reads the same tables `theatre.caucasus()` does. The seats are the
+measurable half: `published_stations("nevada")` answered with nothing, and
+`_stations_cached` carried a fallback to keep that map from going silently
+stationless. Both are gone.
 
 `core/route.py` stays — as a **typed reader over those tables**, not as their
 author. Its real virtue was never that it held the numbers; it was that the

@@ -270,19 +270,15 @@ def _map_name(theatre: str = "") -> str:
 # controller, not a copy that happens to match".
 @_lru_cache(maxsize=4)
 def _stations_cached(name: str) -> tuple:
-    got = published_stations(name)
-    if got:
-        return got
-    # A MAP WHOSE SEATS ARE STILL PYTHON. Nevada's controllers live in
-    # `core/nevada.py` rather than in `nevada.toml` (#137 has not reached it),
-    # and the theatre function hands them straight to `Theatre.stations`. Since
-    # this is now the ONE place a station is looked up, a map that publishes no
-    # `[[station]]` rows must still answer from wherever its seats do live --
-    # otherwise moving the table off the profile makes Nevada silently
-    # stationless, which is the same "correct by accident" shape the second
-    # aerodrome taught. Reached only when the file has nothing, so the Caucasus
-    # never recurses through it.
-    return tuple(THEATRES[name]().stations)
+    # THE FALLBACK THAT WAS HERE IS GONE, and its going is the point of #137's
+    # second half. It read a map's seats out of `THEATRES[name]().stations`
+    # when the file published none, because Nevada's controllers were nine
+    # `Station` objects in `core/nevada.py` and this became the one place a
+    # station is looked up -- so without it a map that publishes no
+    # `[[station]]` rows went silently stationless. Nevada's rows exist now, so
+    # nothing reaches it; and leaving it would be worse than dead code, because
+    # `nevada()` reads `stations_now` itself and the fallback would recurse.
+    return published_stations(name)
 
 
 @_lru_cache(maxsize=4)
@@ -293,6 +289,16 @@ def _fields_cached(name: str) -> tuple:
 @_lru_cache(maxsize=4)
 def _approaches_cached(name: str) -> dict:
     return published_approaches(_fields_cached(name), name)
+
+
+# ONE OBJECT PER FIX, for the same reason the seats and the fields get one:
+# `NEVADA_ROUTE = [LSV, TPH, LSV]` was one `Fix` appearing twice, and the
+# numbered route and the published table were the same objects. Rebuilt per
+# call they are two copies that happen to agree, which is how they come to
+# differ -- so the conversion is cached on the resolved map name like the rest.
+@_lru_cache(maxsize=4)
+def _fixes_cached(name: str) -> tuple:
+    return published_fixes(name)
 
 
 def stations_now(theatre: str = "") -> tuple:
@@ -350,6 +356,11 @@ def station_for(role: str, field: str = "", theatre: str = "", procedure=None):
 def station_on(freq_mhz: float, theatre: str = "", procedure=None):
     """Who is speaking on this frequency, on this map. See `station_for`."""
     return _stations.on_frequency(seats_now(procedure, theatre), freq_mhz)
+
+
+def fixes_now(theatre: str = "") -> tuple:
+    """The configured map's published fixes -- ONE object per fix."""
+    return _fixes_cached(_map_name(theatre))
 
 
 def approaches_now(theatre: str = "") -> dict:
@@ -480,24 +491,59 @@ NEVADA_SORTIES = {
     "nellis": ("nevada-nellis-nellis", "nellis-ils", "Nellis"),
     "tonopah": ("nevada-nellis-tonopah", "tonopah-ils", "Tonopah"),
 }
+# The one flown when nobody has said. A Nellis there-and-back is what a range
+# sortie actually is, so it is the default and the transit is a flag away.
+DEFAULT_SORTIE = "nellis"
+
+# THE ROUTE IS THE SORTIE'S, NOT THE MAP'S, which is why it is a list of names
+# here rather than a table in `nevada.toml`: a mission's turning points belong
+# to the mission (docs/CONFIG.md), and publishing them is exactly what put FEET
+# WET in front of every controller on the Caucasus. Names rather than
+# coordinates, so the route cannot come to disagree with the catalogue it is
+# drawn from. Nellis out to the VORTAC and home.
+NEVADA_ROUTE = ("NELLIS", "TONOPAH", "NELLIS")
 
 
 def nevada() -> Theatre:
-    """Out of Nellis and home to Nellis, or one-way to Tonopah. ILS either end."""
-    from marshall.core import nevada as N
-    want = os.environ.get("MARSHALL_SORTIE", "nellis").strip().lower()
-    plan, key, arrival = NEVADA_SORTIES.get(want, NEVADA_SORTIES["nellis"])
-    profile = N.NELLIS_ILS if arrival == "Nellis" else N.TONOPAH_ILS
+    """Out of Nellis and home to Nellis, or one-way to Tonopah. ILS either end.
+
+    A READER OVER `config/theatres/nevada.toml`, like `caucasus()` above. It
+    used to build this object out of `core/nevada.py` -- two `Field_`s, nine
+    `Station`s, two `Fix`es and two `ApproachProfile`s, all Python -- which is
+    the half of #137 that stopped at the Caucasus.
+    """
+    from marshall.core import catalogue
+    me = catalogue.identity("nevada")
+    fields, stations = fields_now("nevada"), stations_now("nevada")
+    procedures = approaches_now("nevada")
+    # WHICH SORTIE. Two are filed, they recover at different fields, and the
+    # bridge runs one arrival profile at a time -- so an unknown value is NAMED
+    # rather than silently swapped for the default. It used to be
+    # `NEVADA_SORTIES.get(want, NEVADA_SORTIES["nellis"])`, so `MARSHALL_SORTIE`
+    # misspelt gave a bridge recovering at Nellis while its operator believed
+    # he was going to Tonopah -- the same shape as the approach key, which is
+    # how a pilot came to fly a talkdown after asking for an ILS.
+    want = (os.environ.get("MARSHALL_SORTIE")
+            or DEFAULT_SORTIE).strip().lower()
+    if want not in NEVADA_SORTIES:
+        print(f"  !! no sortie {want!r} on this map; Nevada files "
+              f"{', '.join(sorted(NEVADA_SORTIES))} — falling back to "
+              f"{DEFAULT_SORTIE!r}", flush=True)
+        want = DEFAULT_SORTIE
+    plan, key, arrival = NEVADA_SORTIES[want]
+    # ONE CALL, so the numbered route and the published table hold the SAME
+    # objects -- `NEVADA_ROUTE = [LSV, TPH, LSV]` was one Fix appearing twice,
+    # and two copies that happen to agree is how they come to differ.
+    fixes = fixes_now("nevada")
+    at = {f.name: f for f in fixes}
     return Theatre(
-        name="Nevada", terrain="Nevada", fields=tuple(N.NEVADA_FIELDS),
-        stations=tuple(N.NEVADA_STATIONS), departure="Nellis",
-        arrival=arrival, approach=profile,
-        approaches=(N.NELLIS_ILS, N.TONOPAH_ILS),
-        wind_from_deg=210.0, wind_mph=9.2,
+        name=me.name, terrain=me.terrain, fields=fields, stations=stations,
+        departure=me.departure, arrival=arrival, approach=procedures[key],
+        approaches=tuple(procedures.values()),
+        wind_from_deg=me.wind_from_deg, wind_mph=me.wind_mph,
         bootstrap_plan=plan, approach_key=key,
-        # NEVADA_FIXES has existed since the map was added and nothing read it.
-        fixes=tuple(N.NEVADA_FIXES),
-        waypoints=tuple(enumerate(N.NEVADA_ROUTE, start=1)))
+        fixes=fixes,
+        waypoints=tuple(enumerate((at[n] for n in NEVADA_ROUTE), start=1)))
 
 
 THEATRES = {"caucasus": caucasus, "nevada": nevada}

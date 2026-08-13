@@ -3,8 +3,8 @@
     "How well do you think this system is going to transport to a totally
      different map and field?"
 
-Every number in `core/nevada.py` comes from the sim's own Beacons.lua and
-Radio.lua, cross-checked against the published plate. The two agree, which is
+Every number in `config/theatres/nevada.toml` comes from the sim's own
+Beacons.lua and Radio.lua, cross-checked against the published plate. The two agree, which is
 the useful part: DCS models Nellis Tower on 132.550 and that IS the real Tower
 frequency, and the localiser antenna bearings reproduce the painted runway
 numbers once you remember the antenna points back up the approach.

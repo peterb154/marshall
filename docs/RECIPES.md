@@ -18,7 +18,10 @@ you writing the same number in two places, stop; you have found the next issue.
 
 ## 1. Add an aerodrome
 
-**Owner of the fact:** `core/fields.py` (or `core/nevada.py` for that theatre).
+**Owner of the fact:** `config/theatres/<map>.toml`, as a `[[field]]` table.
+`core/fields.py` owns the SHAPE (`Field_`) and the lookups over it, and no
+instances at all — adding an aerodrome is adding a table, not editing Python.
+The fields below are that table's keys.
 
 1. **`Field_`** — name, sim `x`/`z`, elevation, the runway's *magnetic* heading,
    and `ends=(designator, reciprocal)`.
