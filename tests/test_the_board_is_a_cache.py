@@ -22,7 +22,7 @@ from __future__ import annotations
 import unittest
 
 from marshall.atc import controller as atc
-from marshall.core import route as R
+from tests import theatre as T
 
 
 def row(**kw):
@@ -39,7 +39,7 @@ def row(**kw):
 class ARestartLosesNothing(unittest.TestCase):
 
     def setUp(self):
-        self.c = atc.Controller(R.BATUMI_ASR)
+        self.c = atc.Controller(T.the_arrival())
 
     def test_the_rung_he_is_on(self):
         """`sortie_phase` is what `handoff.due` reads to decide who owns him.
@@ -79,14 +79,14 @@ class TheLetdownComesBackWithHim(unittest.TestCase):
     the man ON the approach, or the next arrival is cleared into him."""
 
     def test_a_cleared_aircraft_holds_the_letdown(self):
-        c = atc.Controller(R.BATUMI_ASR)
+        c = atc.Controller(T.the_arrival())
         c.hydrate([row(callsign="Lead 1", cleared="approach")])
         ac = c.get("Lead 1")
         self.assertIs(ac.phase, atc.Phase.CLEARED)
         self.assertEqual(c._in_letdown(ac), "Lead 1")
 
     def test_so_the_next_arrival_is_HELD_and_not_cleared_into_him(self):
-        c = atc.Controller(R.BATUMI_ASR)
+        c = atc.Controller(T.the_arrival())
         c.hydrate([row(callsign="Lead 1", cleared="approach")])
         c.report_beacon("Two 1", 9000)
         self.assertIs(c.get("Two 1").phase, atc.Phase.HOLDING,
@@ -106,7 +106,7 @@ class ItRestoresNoPosition(unittest.TestCase):
     def test_radar_identified_is_taken_from_the_scope_not_remembered(self):
         """It comes off the view's join against `tracks`, so it is current by
         construction rather than restored."""
-        c = atc.Controller(R.BATUMI_ASR)
+        c = atc.Controller(T.the_arrival())
         c.hydrate([row(radar_identified=True)])
         self.assertTrue(c.get("Pony 1-1").radar_identified)
 
@@ -149,14 +149,14 @@ class ARowFromAFinishedSortie(unittest.TestCase):
                  "sortie_phase": "approach", "updated_at": when.isoformat()}]
 
     def test_an_hour_old_row_is_not_somebody_flying(self):
-        ctl = atc.Controller(profile=R.BATUMI_ASR)
+        ctl = atc.Controller(profile=T.the_arrival())
         self.assertEqual(ctl.hydrate(self.rows(3600)), 0)
         self.assertEqual(ctl.aircraft, {})
         self.assertEqual(ctl.skipped_stale, ["Sockeye"])
 
     def test_a_bridge_restart_mid_sortie_is_still_invisible(self):
         """The reason the cache exists. Seconds old is a restart, not a sortie."""
-        ctl = atc.Controller(profile=R.BATUMI_ASR)
+        ctl = atc.Controller(profile=T.the_arrival())
         self.assertEqual(ctl.hydrate(self.rows(20)), 1)
         self.assertEqual(ctl.skipped_stale, [])
         self.assertEqual(ctl.aircraft[ctl._resolve("Sockeye")].wants,
@@ -165,6 +165,6 @@ class ARowFromAFinishedSortie(unittest.TestCase):
     def test_a_row_with_no_timestamp_is_restored(self):
         """Absence is 'we do not know', and the safe answer is what we did
         before -- every hand-built row in the tests and rehearsals omits it."""
-        ctl = atc.Controller(profile=R.BATUMI_ASR)
+        ctl = atc.Controller(profile=T.the_arrival())
         self.assertEqual(ctl.hydrate([{"callsign": "Sockeye"}]), 1)
         self.assertEqual(ctl.skipped_stale, [])

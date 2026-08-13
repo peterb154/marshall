@@ -19,7 +19,7 @@ import unittest
 
 from marshall.atc import agent_atc as A
 from marshall.atc import identity
-from marshall.core import route as R
+from tests import theatre as T
 
 DOWN = ("362nd_sockeye [Falcon 1-1] (F-16C_50, manned, on the ground): 0.5 nm "
         "on the 112 radial, 40 ft, heading 216, 8 knots")
@@ -55,7 +55,7 @@ class TestThePictureCarriesIt(unittest.TestCase):
 
 class TestTheEventOutranksTheGuess(unittest.TestCase):
     def _ctx(self, scope):
-        return A.asr_context(R.BATUMI_ASR, scope, "Falcon 1-1", "362nd_sockeye")
+        return A.asr_context(T.the_arrival(), scope, "Falcon 1-1", "362nd_sockeye")
 
     def test_a_landed_aeroplane_gets_no_guidance(self):
         self.assertEqual(self._ctx(DOWN), "")
@@ -83,7 +83,7 @@ class TestTouchingDownEndsTheApproach(unittest.TestCase):
 
     def _next(self, scope, role):
         return A.handoff_on_the_event(scope, "362nd_sockeye", _Me(role),
-                                      R.BATUMI_ASR)
+                                      T.the_arrival())
 
     def test_landing_hands_him_to_tower(self):
         got = self._next(DOWN, "approach")
@@ -102,10 +102,10 @@ class TestTouchingDownEndsTheApproach(unittest.TestCase):
 
     def test_an_unknown_track_hands_nobody_anywhere(self):
         self.assertIsNone(
-            A.handoff_on_the_event(ENROUTE, "", _Me("approach"), R.BATUMI_ASR))
+            A.handoff_on_the_event(ENROUTE, "", _Me("approach"), T.the_arrival()))
         self.assertIsNone(
             A.handoff_on_the_event(ENROUTE, "somebody-else", _Me("approach"),
-                                   R.BATUMI_ASR))
+                                   T.the_arrival()))
 
 
 if __name__ == "__main__":
@@ -130,17 +130,17 @@ class TestZeroIsTheCommonestGroundSpeed(unittest.TestCase):
 
     def test_a_parked_aeroplane_is_left_alone(self):
         self.assertEqual(
-            A.asr_context(R.BATUMI_ASR, self.RAMP, "", "362nd_sockeye"), "")
+            A.asr_context(T.the_arrival(), self.RAMP, "", "362nd_sockeye"), "")
 
     def test_a_taxiing_one_still_is(self):
         rolling = self.RAMP.replace("0 knots", "15 knots")
         self.assertEqual(
-            A.asr_context(R.BATUMI_ASR, rolling, "", "362nd_sockeye"), "")
+            A.asr_context(T.the_arrival(), rolling, "", "362nd_sockeye"), "")
 
     def test_and_flying_slow_and_low_is_still_flying(self):
         """Over the threshold at a hundred and forty knots is not parked."""
         slow = self.RAMP.replace("0 knots", "140 knots")
-        self.assertTrue(A.asr_context(R.BATUMI_ASR, slow, "", "362nd_sockeye"))
+        self.assertTrue(A.asr_context(T.the_arrival(), slow, "", "362nd_sockeye"))
 
 
 class TestATouchAndGoIsNotALanding(unittest.TestCase):
@@ -233,7 +233,7 @@ class TestDownIsNotAGuessAnyMore(unittest.TestCase):
                "116 radial, 45 ft, heading 130, 5 knots")
 
     def _pos(self, scope):
-        return A.radar_fix_by_track(scope, "362nd_sockeye", R.BATUMI_ASR)
+        return A.radar_fix_by_track(scope, "362nd_sockeye", T.the_arrival())
 
     def test_still_flying_in_the_flare(self):
         self.assertFalse(

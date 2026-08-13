@@ -29,6 +29,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from fakeradio import Sortie
+from tests import theatre as T
 
 # A manned contact ten miles out, tagged -- the shape the picture takes once the
 # agent has bound the callsign with `identify`.
@@ -225,9 +226,8 @@ class TestComposeMessageDirectly(unittest.TestCase):
 
     def compose(self, **over):
         from marshall.atc import agent_atc as A
-        from marshall.core import route as R
         args = dict(scope=SCOPE, known="Pony 1-1", transcript="ten miles",
-                    profile=R.BATUMI_ASR, me=None, fix=None, nxt=None,
+                    profile=T.the_arrival(), me=None, fix=None, nxt=None,
                     directive="", stack="", vectoring="", _flight={},
                     _flight_say="")
         args.update(over)

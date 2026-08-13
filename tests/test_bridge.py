@@ -15,6 +15,7 @@ import unittest
 from marshall.atc import agent_atc
 
 from marshall.atc import callsign as C
+from tests import theatre as T
 
 # One store per test module -- see agent_atc.Bridge. These used to be
 # module globals and every case had to remember to clear them.
@@ -145,9 +146,8 @@ class TestACallsignNobodyAnswersTo(unittest.TestCase):
 
     def setUp(self):
         from marshall.atc import controller as atc
-        from marshall.core import route as R
         self.b = agent_atc.Bridge()
-        self.ctl = atc.Controller(R.BATUMI_ASR)
+        self.ctl = atc.Controller(T.the_arrival())
 
     def said(self, claim, known="sockeye", who="sockeye"):
         return agent_atc.misnamed(self.b, self.ctl, claim, known, who)
@@ -329,9 +329,8 @@ class TestPositionRejection(unittest.TestCase):
 
     def setUp(self):
         from marshall.atc import bedrock_intent, controller as atc, intents
-        from marshall.core import route as R
         self.intents, self.bedrock = intents, bedrock_intent
-        self.ctl = atc.Controller(R.BATUMI_APPROACH)
+        self.ctl = atc.Controller(T.letdown())
         self._real = bedrock_intent.classify
 
     def tearDown(self):
@@ -388,8 +387,8 @@ class TestAsrContext(unittest.TestCase):
     def setUp(self):
         from marshall.core import route as R
         self.R = R
-        self.asr = R.BATUMI_ASR
-        self.ndb = R.BATUMI_APPROACH
+        self.asr = T.the_arrival()
+        self.ndb = T.letdown()
 
     def scope(self, nm, radial=None, alt=2000, tag="Pony one one"):
         """A radar line. `radial` defaults to the inbound centreline.
@@ -513,8 +512,7 @@ class TestAsrRangeCall(unittest.TestCase):
 
     def setUp(self):
         from marshall.atc import asr
-        from marshall.core import route as R
-        self.asr, self.p = asr, R.BATUMI_ASR
+        self.asr, self.p = asr, T.the_arrival()
 
     def g(self, nm, radial=None, heading=None):
         # A radar track always carries a heading, and the engine will not call
@@ -678,8 +676,7 @@ class TestCourseTalkOnlyWhenOnCourse(unittest.TestCase):
 
     def setUp(self):
         from marshall.atc import asr
-        from marshall.core import route as R
-        self.asr, self.p = asr, R.BATUMI_ASR
+        self.asr, self.p = asr, T.the_arrival()
 
     def g(self, nm, radial, hdg, alt=2000):
         return self.asr.guide(self.asr.Position(nm, radial, alt, hdg), self.p)
@@ -722,8 +719,7 @@ class TestOneAircraftOneInstruction(unittest.TestCase):
 
     def setUp(self):
         from marshall.atc import asr
-        from marshall.core import route as R
-        self.asr, self.p = asr, R.BATUMI_ASR
+        self.asr, self.p = asr, T.the_arrival()
 
     def g(self, nm, radial, hdg, alt=2000):
         return self.asr.guide(self.asr.Position(nm, radial, alt, hdg), self.p)
@@ -742,8 +738,7 @@ class TestOneAircraftOneInstruction(unittest.TestCase):
         # Established and inbound: on the centreline, pointing down it. Both
         # numbers come from the profile because both used to be written out --
         # 304 and 124 -- against a course that was six degrees off.
-        from marshall.core import route as _R
-        crs = _R.BATUMI_ASR.final_crs_true
+        crs = T.the_arrival().final_crs_true
         g = self.g(8, (crs + 180) % 360, crs)
         self.assertTrue(g.established or g.phase in ("final", "map"))
         directive, _, vectoring, dropped, _kept = agent_atc.reconcile(
@@ -1428,8 +1423,7 @@ class TestARelativeCorrection(unittest.TestCase):
 
     def setUp(self):
         from marshall.atc import asr
-        from marshall.core import route as R
-        self.asr, self.p = asr, R.BATUMI_ASR
+        self.asr, self.p = asr, T.the_arrival()
         self.inbound = (self.p.final_crs_true + 180) % 360
 
     def at(self, nm, off_deg, hdg):
@@ -1492,8 +1486,7 @@ class TestTheAltitudeCallIsAnInstruction(unittest.TestCase):
 
     def setUp(self):
         from marshall.atc import asr
-        from marshall.core import route as R
-        self.asr, self.p = asr, R.BATUMI_ASR
+        self.asr, self.p = asr, T.the_arrival()
         self.inbound = (self.p.final_crs_true + 180) % 360
 
     def call_at(self, miles_to_run):

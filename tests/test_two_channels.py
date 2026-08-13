@@ -209,7 +209,7 @@ class OneControllerThinkingDoesNotSilenceAnother(unittest.TestCase):
     """
 
     def test_a_slow_turn_on_one_channel_does_not_lose_the_next_on_another(self):
-        """Approach takes a quarter of a second to compose. The man on the ramp
+        """Approach takes an eighth of a second to compose. The man on the ramp
         is answered anyway, on his own channel, in full."""
         gnd, app = seats()
         s = (sortie(app)
@@ -217,7 +217,7 @@ class OneControllerThinkingDoesNotSilenceAnother(unittest.TestCase):
                   on=app.freq_mhz)
              .say("viper", "viper-1", f"{gnd.name}, Viper one one, request taxi",
                   on=gnd.freq_mhz)
-             .replies("RADIO: Pony one one, radar contact.", after=0.25)
+             .replies("RADIO: Pony one one, radar contact.", after=0.15)
              .replies("RADIO: Viper one one, taxi to runway zero seven.")
              .fly())
         self.assertEqual(len(s.asked()), 2,

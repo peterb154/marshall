@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from marshall.atc import phases as P
 from marshall.core import route as R
+from tests import theatre as T
 
 
 class TestTheSortieInOrder(unittest.TestCase):
@@ -134,12 +135,11 @@ class TestWhichPhasesHaveGuidanceAtAll(unittest.TestCase):
                 self.assertFalse(P.flies_geometry(phase))
 
     def test_the_dispatcher_returns_nothing_for_them(self):
-        from marshall.core import route as R
         from marshall.atc.geometry import Position
         pos = Position(range_nm=1.0, radial_deg=76.0, alt_ft=950,
                        heading_deg=71.0, speed_kt=403.0)
-        self.assertIsNone(P.guide("departure", pos, R.BATUMI_ASR))
-        self.assertIsNotNone(P.guide("approach", pos, R.BATUMI_ASR))
+        self.assertIsNone(P.guide("departure", pos, T.the_arrival()))
+        self.assertIsNotNone(P.guide("approach", pos, T.the_arrival()))
 
 
 
@@ -157,10 +157,9 @@ class TestTheDepartureFromTheNinthOfAugust(unittest.TestCase):
     def settle(self, phase, pos):
         from marshall.atc import agent_atc as A
         from marshall.atc import controller as C
-        from marshall.core import route as R
-        ctl = C.Controller(R.BATUMI_ASR)
+        ctl = C.Controller(T.the_arrival())
         ctl.get("Sockeye").sortie_phase = phase
-        return A.settle(A.Bridge(), "", "", "", pos, R.BATUMI_ASR, "Sockeye",
+        return A.settle(A.Bridge(), "", "", "", pos, T.the_arrival(), "Sockeye",
                         ctl, scope="", track="")
 
     def climbing_out(self):
@@ -355,7 +354,7 @@ class TakingOffIsNotBeingEstablishedOnFinal(unittest.TestCase):
         from marshall.atc import agent_atc as A, controller as atc
         from marshall.core import route as R
         self.A, self.R = A, R
-        self.p = R.BATUMI_ASR
+        self.p = T.the_arrival()
         self.ctl = atc.Controller(self.p)
 
     def climbing_off_kobuleti(self):

@@ -46,6 +46,7 @@ from marshall import config
 from marshall.atc import agent_atc as A
 from marshall.atc import callsign as C
 from marshall.atc import identity
+from tests import theatre as T
 
 # EXACTLY WHAT THE SIM REPORTS for a pilot who has just taken the slot and not
 # touched anything: cold on the ramp at Batumi, no callsign correlated to him by
@@ -185,8 +186,7 @@ class TestTheTranslationIsVisibleWhenTheTwoDisagree(unittest.TestCase):
 
 def controller(*callsigns):
     from marshall.atc.controller import Controller
-    from marshall.core import route as R
-    c = Controller(R.BATUMI_ASR)
+    c = Controller(T.the_arrival())
     for cs in callsigns:
         c.get(cs)
     return c
@@ -428,9 +428,8 @@ class TestHeIsBoundOnHisFirstCallNotHisSecond(unittest.TestCase):
     """
 
     def setUp(self):
-        from marshall.core import route as R
         from marshall.atc.controller import Controller
-        self.ctl = Controller(R.BATUMI_ASR)
+        self.ctl = Controller(T.the_arrival())
         self.ctl.working = "approach"
         self.scope = A.Scope("", contacts=[airborne()], origin=BATUMI,
                              bullseye=BULLSEYE)
@@ -559,9 +558,8 @@ class TestOneAeroplaneGetsOneRow(unittest.TestCase):
     """
 
     def setUp(self):
-        from marshall.core import route as R
         from marshall.atc.controller import Controller
-        self.ctl = Controller(R.BATUMI_ASR)
+        self.ctl = Controller(T.the_arrival())
         self.ctl.working = "approach"
 
     def test_the_second_name_for_one_track_is_refused(self):
@@ -684,8 +682,7 @@ class TestAGhostDoesNotOutliveTheSim(unittest.TestCase):
 
     def board(self):
         from marshall.atc.controller import Controller
-        from marshall.core import route as R
-        ctl = Controller(R.BATUMI_ASR)
+        ctl = Controller(T.the_arrival())
         for cs, tr in (("Check", "362nd_Check-1"), ("Sockeye", "362nd_sockeye")):
             ctl.get(cs)
             ctl.bind(cs, track=tr)

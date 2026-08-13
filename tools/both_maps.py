@@ -72,7 +72,7 @@ BASELINE = {
     #   * `core/fixes.py` is a Caucasus module re-exported through `route.py`
     #   * `briefing.py` / `mission/build.py` bind Caucasus names at import
     #   * neither Nevada field has a surveyed MSA or MVA grid
-    "nevada": 407,
+    "nevada": 306,
 }
 
 _TAIL = re.compile(
