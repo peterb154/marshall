@@ -23,14 +23,82 @@ just belonging to the wrong airport.
 import unittest
 
 from marshall.core import route as R
-from marshall.mission import build as mb
+from tests import theatre as T
 
-P = R.BATUMI_ASR
+# THE MISSION BUILDER CANNOT BE IMPORTED ON EVERY MAP, and that is a fact about
+# `src/`, not about this file. `mission/build.py:74` reads `R.TOWER.freq_mhz` in
+# a CLASS BODY -- evaluated at import -- so the module raises on any theatre
+# that does not publish a station called "Batumi Tower". It is finding 3's table
+# row in the 13 August inventory and it belongs to #137.
+#
+# Caught rather than left to explode, because an ImportError at module scope
+# takes the whole file down and this file's other 70 assertions have nothing to
+# do with the mission builder. `_mb()` skips, by name, with the line number.
+try:
+    from marshall.mission import build as mb
+except AttributeError as _e:                        # pragma: no cover - per map
+    mb, _MB_WHY = None, str(_e)
+
+
+def _mb():
+    if mb is None:
+        raise unittest.SkipTest(
+            f"`marshall.mission.build` will not import on {T.name()}: "
+            f"{_MB_WHY} -- a module constant bound at import "
+            f"(mission/build.py:74), src-side, #137")
+    return mb
+
+# `P = R.BATUMI_ASR` used to stand here, at module scope, and it is why this
+# file -- the two-aerodrome guard, of all of them -- could not be COLLECTED on
+# the second map. A module constant resolved at import chooses the theatre
+# before the runner does. It is a function now, and every use of it is inside a
+# test, where a map has been chosen.
+
+
+def P():
+    """The procedure this map's bridge is started on."""
+    return T.the_arrival()
 
 
 class TestARoleBelongsToAField(unittest.TestCase):
-    """The ambiguity itself."""
+    """The ambiguity itself -- and it is the same ambiguity on every map."""
 
+    def test_every_staffed_role_resolves_to_the_field_that_staffs_it(self):
+        """THE RULE, on whichever map is loaded. Walked off the station table
+        rather than written out, so a third aerodrome is covered the day it is
+        added -- and so the guard travels to Nevada, where `Silverbow Tower` and
+        `Nellis Tower` are the pair that can be confused.
+
+        Both the primary role and the hats a seat also wears, because
+        `role_at`'s two-pass search is exactly where first-match used to hide.
+        """
+        for s in R.STATIONS:
+            if not s.field:
+                continue
+            for role in (s.role, *(getattr(s, "also", ()) or ())):
+                with self.subTest(field=s.field, role=role):
+                    got = R.station_for(role, field=s.field)
+                    self.assertIsNotNone(got, f"{s.field} staffs no {role}")
+                    self.assertEqual(got.field, s.field,
+                                     f"{s.field}'s {role} is answered by a seat "
+                                     f"at {got.field}")
+
+    def test_no_field_is_answered_with_another_fields_seat(self):
+        """The wrong answer is never nonsense: it is a real controller at a real
+        aerodrome, forty miles (or a hundred and twenty) from this one."""
+        names = [f.name for f in T.fields()]
+        self.assertGreaterEqual(len(names), 2, "one aerodrome cannot be confused")
+        for fld in names:
+            for role in ("tower", "ground", "approach", "clearance", "departure"):
+                got = R.station_for(role, field=fld)
+                if got is None:
+                    continue                    # unstaffed, which is its own test
+                with self.subTest(field=fld, role=role):
+                    self.assertIn(got.field, (fld, ""),
+                                  f"{fld} {role} answered by {got.name}")
+
+    @T.skip_unless("caucasus", why="the Georgian ladder by name; the same rule "
+                                   "is asserted off the station table above")
     def test_each_field_resolves_to_its_own_controllers(self):
         for field, role, want in (
                 ("Kobuleti", "clearance", "Kobuleti Clearance"),
@@ -46,6 +114,8 @@ class TestARoleBelongsToAField(unittest.TestCase):
             with self.subTest(field=field, role=role):
                 self.assertEqual(R.station_for(role, field=field).name, want)
 
+    @T.skip_unless("caucasus", why="Kobuleti Tower and Batumi Ground by name; "
+                                   "the rule is asserted off the table above")
     def test_a_field_never_borrows_the_other_fields_seat(self):
         """Each field staffs its own, and the answer is HIS -- never the one
         forty miles away."""
@@ -59,18 +129,28 @@ class TestARoleBelongsToAField(unittest.TestCase):
         is worse than returning nothing: nothing is caught, a wrong controller
         is spoken to."""
         self.assertIsNone(R.station_for("approach", field="Nowhere"))
-        self.assertIsNone(R.station_for("nosuchrole", field="Batumi"))
+        self.assertIsNone(R.station_for("nosuchrole", field=T.arrival().name))
 
     def test_region_controllers_are_reachable_from_everywhere(self):
         """Center and Sentry own airspace, not an aerodrome. Asking which field
         they belong to is a category error, so they are fieldless and answer
-        from either end of the route."""
-        for field in ("Batumi", "Kobuleti"):
-            with self.subTest(field=field):
-                self.assertEqual(R.station_for("center", field=field).name,
-                                 "Georgia Center")
-        self.assertEqual(R.CENTER.field, "")
-        self.assertEqual(R.OVERLORD.field, "")
+        from either end of the route -- Georgia Center on one map, Los Angeles
+        Center on the other, and the same one from both ends of either."""
+        got = {f.name: R.station_for("center", field=f.name) for f in T.fields()}
+        self.assertTrue(all(got.values()), f"a field reaches no Center: {got}")
+        self.assertEqual(len({s.name for s in got.values()}), 1,
+                         f"two fields on one map reach different Centers: {got}")
+        for s in got.values():
+            with self.subTest(who=s.name):
+                self.assertEqual(s.field, "", "a region controller owns no field")
+        # ...and so does the airborne commander, wherever the map has one. Not
+        # every map staffs a Sentry, so this asserts about the seats that exist
+        # rather than naming one that may not.
+        for s in R.STATIONS:
+            if s.role in ("center", "overlord"):
+                with self.subTest(who=s.name):
+                    self.assertEqual(s.field, "",
+                                     f"{s.name} owns a region and was given a field")
 
     def test_an_unqualified_lookup_still_answers_for_the_simple_case(self):
         """Hundreds of call sites pass no field. They must keep working -- the
@@ -100,6 +180,19 @@ class TestEveryFrequencyReachesSomebody(unittest.TestCase):
                                      f"{s.name} collides with {seen.get(hz)}")
                     seen[hz] = s.name
 
+    def test_every_frequency_is_in_a_band_an_aeroplane_can_tune(self):
+        """VHF airband or UHF military. A number outside both is not a channel
+        anybody reaches -- it is a typo that looks like a frequency."""
+        for s in R.STATIONS:
+            for hz in s.freqs:
+                with self.subTest(station=s.name, mhz=hz):
+                    self.assertTrue(108.0 <= hz <= 156.0 or 225.0 <= hz <= 400.0,
+                                    f"{s.name} is on {hz}, which is neither VHF "
+                                    f"airband nor UHF")
+
+    @T.skip_unless("caucasus", why="the period theatre flies SCR-522s and every "
+                                   "seat on it is VHF; Nevada's seats carry UHF "
+                                   "channels for the F-16, which is correct there")
     def test_every_frequency_is_tunable_vhf(self):
         for s in R.STATIONS:
             for hz in s.freqs:
@@ -108,6 +201,85 @@ class TestEveryFrequencyReachesSomebody(unittest.TestCase):
                     self.assertLessEqual(hz, 156.0)
 
 
+class TestTheLadderIsWholeAndOrdered(unittest.TestCase):
+    """The ladder's SHAPE, which is a rule, on whichever map is loaded.
+
+    The literal eight rungs below are the Caucasus's and stay the Caucasus's.
+    What is asserted here is what made `stations[:4]` and `"ABCD"[i]` bugs: the
+    card carries every rung, the numbering has no holes, and a seat's preset is
+    the position it occupies. Nevada's ladder is nine rungs and had none of this
+    checked.
+    """
+
+    def test_every_preset_seat_is_on_the_ladder_exactly_once(self):
+        ladder = list(R.PRESET_LADDER)
+        self.assertEqual(len(ladder), len({s.name for s in ladder}),
+                         "a seat appears twice on the ladder")
+        for n, s in enumerate(ladder, 1):
+            with self.subTest(preset=n, who=s.name):
+                self.assertEqual(R.preset_of(s), n)
+
+    def test_the_card_the_mission_writes_carries_the_whole_ladder(self):
+        """The regression this replaces: `stations[:4]` silently dropped the
+        whole arrival. Asserted against the ladder's LENGTH rather than against
+        four, because four was the number that made it invisible."""
+        card = dict(_mb().channels_for(P()))
+        for n, s in enumerate(R.PRESET_LADDER, 1):
+            with self.subTest(preset=n, who=s.name):
+                self.assertIn(n, card, f"{s.name} is not on the card")
+                self.assertAlmostEqual(card[n], s.freq_mhz, places=3)
+
+    def test_a_seat_the_ladder_skips_still_gets_a_button_above_it(self):
+        """Sentry is not a rung -- he is a commander -- but he is still
+        reachable, and he used to fall off the end when the card was sliced.
+        Only asserted where the map staffs one."""
+        extra = [s for s in R.STATIONS
+                 if R.preset_of(s) is None and getattr(s, "preset", False)]
+        card = dict(_mb().channels_for(P()))
+        for s in extra:
+            with self.subTest(who=s.name):
+                self.assertIsNone(R.preset_of(s))
+                self.assertIn(s.freq_mhz, card.values(),
+                              f"{s.name} is reachable from nowhere")
+
+    def test_the_short_card_is_HIS_fields_four_at_every_field(self):
+        """An SCR-522 has four buttons and the first four are the wrong four --
+        the other aerodrome's, in table order. Asserted at EVERY field the map
+        works, which is the only way the guard survives a third one."""
+        for f in T.fields():
+            got = [hz for _, hz in _mb().channels_for(P(), limit=4, home=f.name)]
+            mine = {s.freq_mhz for s in R.STATIONS if s.field == f.name}
+            theirs = {s.freq_mhz for s in R.STATIONS
+                      if s.field not in ("", f.name)} - mine
+            with self.subTest(home=f.name):
+                self.assertTrue(mine & set(got),
+                                f"a warbird at {f.name} is given nobody at "
+                                f"{f.name}: {got}")
+                self.assertFalse(theirs & set(got),
+                                 f"a warbird at {f.name} is given another "
+                                 f"aerodrome's frequency: "
+                                 f"{sorted(theirs & set(got))}")
+
+    def test_the_region_controller_always_survives_the_cut(self):
+        """He is reachable from anywhere, which is exactly what makes him worth
+        one of only four buttons."""
+        ctr = R.station_for("center")
+        for f in T.fields():
+            with self.subTest(home=f.name):
+                got = [hz for _, hz in _mb().channels_for(P(), limit=4, home=f.name)]
+                self.assertIn(ctr.freq_mhz, got)
+
+    def test_a_four_button_radio_is_still_a_preset_panel(self):
+        """The bar that replaced "can it hold the WHOLE card".
+
+        All-or-nothing was safe at four rungs and silently disarmed every
+        warbird at seven -- no card at all, stock presets, kneeboard printing
+        something else. `MIN_PRESET_PANEL` is the smallest real bank."""
+        self.assertLessEqual(_mb().MIN_PRESET_PANEL, 4)
+
+
+@T.skip_unless("caucasus", why="the Georgian ladder rung by rung; its SHAPE is "
+                               "asserted on every map above")
 class TestTheLadder(unittest.TestCase):
     """Seven rungs, in the order the pilot was promised.
 
@@ -142,7 +314,7 @@ class TestTheLadder(unittest.TestCase):
         """The card, the aeroplane's radio and the kneeboard come from one
         source. A mismatch is a pilot transmitting to nobody, and it has
         happened."""
-        card = mb.channels_for(P)
+        card = _mb().channels_for(P())
         for n, _name, hz in self.EXPECTED:
             with self.subTest(preset=n):
                 self.assertAlmostEqual(dict(card)[n], hz, places=3)
@@ -152,50 +324,36 @@ class TestTheLadder(unittest.TestCase):
         the end when the card was sliced to four."""
         self.assertIsNone(R.preset_of(R.OVERLORD))
         last = len(R.PRESET_LADDER) + 1
-        self.assertAlmostEqual(dict(mb.channels_for(P))[last], 131.000, places=3)
+        self.assertAlmostEqual(dict(_mb().channels_for(P()))[last], 131.000, places=3)
 
     def test_the_card_is_no_longer_truncated_to_four(self):
         """The regression this replaces: `stations[:4]` silently dropped Batumi
         Approach, Tower and Ground -- the whole arrival."""
-        card = dict(mb.channels_for(P))
+        card = dict(_mb().channels_for(P()))
         self.assertGreaterEqual(len(card), 7)
         for hz in (124.425, 118.600, 121.900):
             with self.subTest(mhz=hz):
                 self.assertIn(hz, card.values())
 
 
+@T.skip_unless("caucasus", why="Georgian frequencies by number; the same cut is "
+                               "asserted at every field on every map above")
 class TestAShortRadioGetsTheRightFour(unittest.TestCase):
     """An SCR-522 has four buttons and the first four are the wrong four."""
 
     def test_a_warbird_at_batumi_gets_batumi(self):
-        got = [hz for _, hz in mb.channels_for(P, limit=4, home="Batumi")]
+        got = [hz for _, hz in _mb().channels_for(P(), limit=4, home="Batumi")]
         self.assertIn(124.425, got)          # his approach
         self.assertIn(118.600, got)          # his tower
         self.assertIn(139.000, got)          # and the region controller
         self.assertNotIn(125.100, got, "given the other field's clearance")
 
     def test_a_warbird_at_kobuleti_gets_kobuleti(self):
-        got = [hz for _, hz in mb.channels_for(P, limit=4, home="Kobuleti")]
+        got = [hz for _, hz in _mb().channels_for(P(), limit=4, home="Kobuleti")]
         self.assertIn(125.100, got)          # his clearance
         self.assertIn(121.800, got)          # his ground
         self.assertIn(133.000, got)          # his tower
         self.assertNotIn(124.425, got, "given the other field's approach")
-
-    def test_the_region_controller_always_survives_the_cut(self):
-        """He is reachable from anywhere, which is exactly what makes him worth
-        one of only four buttons."""
-        for home in ("Batumi", "Kobuleti"):
-            with self.subTest(home=home):
-                got = [hz for _, hz in mb.channels_for(P, limit=4, home=home)]
-                self.assertIn(139.000, got)
-
-    def test_a_four_button_radio_is_still_a_preset_panel(self):
-        """The bar that replaced "can it hold the WHOLE card".
-
-        All-or-nothing was safe at four rungs and silently disarmed every
-        warbird at seven -- no card at all, stock presets, kneeboard printing
-        something else. `MIN_PRESET_PANEL` is the smallest real bank."""
-        self.assertLessEqual(mb.MIN_PRESET_PANEL, 4)
 
 
 class TestTheButtonLabel(unittest.TestCase):
@@ -228,6 +386,53 @@ class TestTheButtonLabel(unittest.TestCase):
 # where the "ABCD"[i] bug actually lived. What is gone is the rendering, not
 # the rule.
 
+class TestEveryFieldPicksItsOwnRunway(unittest.TestCase):
+    """The computed runway, at EVERY aerodrome the map works.
+
+    The Georgian numbers below are Georgia's. What is asserted here is the rule
+    that made "cleared for take-off runway one three" come out of Kobuleti
+    Tower: the end in use is one of THIS field's published ends, it follows
+    THIS field's wind, and it never comes from the other aerodrome.
+    """
+
+    def test_the_end_in_use_is_one_this_field_publishes(self):
+        for f in T.fields():
+            with self.subTest(field=f.name):
+                self.assertIn(f.runway_in_use(), f.ends,
+                              f"{f.name} is using a runway it does not have")
+
+    def test_the_wind_turns_it_round_and_nothing_else_does(self):
+        """Reciprocal wind, reciprocal end. Two fields on one map may sit at
+        different angles, so each is asked about its own."""
+        for f in T.fields():
+            with self.subTest(field=f.name):
+                into = f.runway_in_use()
+                other_end = [e for e in f.ends if e != into]
+                self.assertTrue(other_end, f"{f.name} publishes one end")
+                self.assertEqual(f.runway_in_use((into * 10 + 180) % 360),
+                                 other_end[0])
+
+    def test_a_calm_wind_does_not_flip_the_runway(self):
+        """Ties go to the published end. A runway that oscillates on rounding
+        is worse than one that is occasionally downwind by a knot."""
+        for f in T.fields():
+            with self.subTest(field=f.name):
+                across = (f.runway + 90) % 360
+                self.assertEqual(f.runway_in_use(across), f.ends[0])
+
+    def test_no_two_fields_are_answered_with_one_runway(self):
+        """The wrong answer here is a real runway at a real aerodrome. If two
+        fields share an end designator the test is uninformative rather than
+        wrong, so it says which case it is looking at."""
+        by_field = {f.name: f.runway_in_use() for f in T.fields()}
+        for f in T.fields():
+            with self.subTest(field=f.name):
+                self.assertEqual(by_field[f.name], f.runway_in_use(),
+                                 "a field's runway depends on who asked")
+
+
+@T.skip_unless("caucasus", why="Batumi's 13/31 and Kobuleti's 07/25 by number; "
+                               "the rule holds at every field on every map above")
 class TestTheWindPicksTheRunways(unittest.TestCase):
     """The runway in use is COMPUTED, and it caught a live bug.
 
@@ -282,6 +487,9 @@ class TestTheWindPicksTheRunways(unittest.TestCase):
                          int(R.BATUMI_FIELD.runway_in_use()))
 
 
+@T.skip_unless("caucasus", why="`atc.briefing` binds R.BATUMI_ASR as a default "
+                               "argument at import and cannot be loaded on "
+                               "another map at all -- finding 3, src-side, #137")
 class TestThePlateKnowsAboutTheDepartureField(unittest.TestCase):
     """Three of seven controllers worked an aerodrome the plate never named."""
 
@@ -370,12 +578,26 @@ class TestTheControllerIsHandedHisOwnFrequencies(unittest.TestCase):
         from marshall.atc import assembly
         return assembly.compose_message(
             A.Bridge(), scope="", known="Viper 1-1", transcript="request taxi",
-            profile=R.BATUMI_ASR, me=me, fix=None, nxt=None, directive="",
+            profile=P(), me=me, fix=None, nxt=None, directive="",
             stack="", vectoring="", _flight={}, _flight_say="", claim="",
             name_say="")[0]
 
+    def ground_seats(self):
+        """One clearance-issuing seat per aerodrome the map staffs, so this runs
+        against BOTH fields rather than against whichever one is listed first --
+        which is the very mistake the class is about."""
+        out = []
+        for f in T.fields():
+            for role in ("clearance", "ground"):
+                s = R.station_for(role, field=f.name)
+                if s is not None:
+                    out.append(s)
+                    break
+        self.assertTrue(out, "the map staffs no ground seat anywhere")
+        return out
+
     def test_every_station_at_his_field_is_named(self):
-        for me in (R.KOB_CLEARANCE, R.GROUND):
+        for me in self.ground_seats():
             msg = self.compose(me)
             for s in R.STATIONS:
                 if getattr(s, "field", "") != me.field:
@@ -389,40 +611,52 @@ class TestTheControllerIsHandedHisOwnFrequencies(unittest.TestCase):
         belonging to the wrong airport, said in perfect phraseology, and the
         pilot has no way to tell."""
         from marshall.atc import controller
-        msg = self.compose(R.KOB_CLEARANCE)
-        block = [ln for ln in msg.split("\n") if ln.startswith("YOUR FIELD")]
-        self.assertTrue(block, "no field frequency block at all")
-        for s, hz in _foreign_numbers(R.KOB_CLEARANCE.field):
-            with self.subTest(stranger=f"{s.name} {hz}"):
-                self.assertNotIn(controller.spell_freq(hz), block[0])
+        for me in self.ground_seats():
+            msg = self.compose(me)
+            block = [ln for ln in msg.split("\n") if ln.startswith("YOUR FIELD")]
+            self.assertTrue(block, f"{me.name} gets no field frequency block")
+            for s, hz in _foreign_numbers(me.field):
+                with self.subTest(who=me.name, stranger=f"{s.name} {hz}"):
+                    self.assertNotIn(controller.spell_freq(hz), block[0])
 
     def test_the_worked_example_carries_no_frequency_of_its_own(self):
         """A number in an example is a number the model will say. This is what
         put Batumi Tower's channel in a Kobuleti clearance."""
         from marshall.atc import controller
-        msg = self.compose(R.KOB_CLEARANCE)
-        head = msg.split("YOUR FIELD")[0]
-        for s, hz in _foreign_numbers(R.KOB_CLEARANCE.field):
-            with self.subTest(stranger=f"{s.name} {hz}"):
-                self.assertNotIn(controller.spell_freq(hz), head,
-                                 f"{s.name}'s {hz} is quoted at Kobuleti")
+        for me in self.ground_seats():
+            msg = self.compose(me)
+            head = msg.split("YOUR FIELD")[0]
+            for s, hz in _foreign_numbers(me.field):
+                with self.subTest(who=me.name, stranger=f"{s.name} {hz}"):
+                    self.assertNotIn(controller.spell_freq(hz), head,
+                                     f"{s.name}'s {hz} is quoted at {me.field}")
 
     def test_departure_is_his_fields_and_not_the_first_in_the_list(self):
         """`station_for` was rewritten to stop taking the first role match;
         this lookup kept doing it. Kobuleti Departure is listed first, so
         Kobuleti was right by accident and Batumi was about to send a pilot
-        forty miles up the coast."""
-        msg = self.compose(R.GROUND)          # Batumi Ground issues clearances
-        want = R.station_for("departure", field="Batumi")
-        line = [ln for ln in msg.split("\n")
-                if ln.startswith("DEPARTURE FREQUENCY")]
-        self.assertTrue(line, "Batumi Ground is told no departure frequency")
-        self.assertIn(want.name, line[0])
-        self.assertNotIn("Kobuleti", line[0])
+        forty miles up the coast.
+
+        Asked of every field, because "first in the list" is only wrong for the
+        fields that are not first."""
+        for me in self.ground_seats():
+            want = R.station_for("departure", field=me.field)
+            if want is None:
+                continue
+            msg = self.compose(me)
+            line = [ln for ln in msg.split("\n")
+                    if ln.startswith("DEPARTURE FREQUENCY")]
+            with self.subTest(who=me.name):
+                self.assertTrue(line, f"{me.name} is told no departure frequency")
+                self.assertIn(want.name, line[0])
+                for f in T.fields():
+                    if f.name != me.field:
+                        self.assertNotIn(f.name, line[0])
 
     def test_the_atis_of_his_field_travels_with_them(self):
-        msg = self.compose(R.KOB_CLEARANCE)
-        self.assertIn("Kobuleti ATIS", msg)
+        for me in self.ground_seats():
+            with self.subTest(who=me.name):
+                self.assertIn(f"{me.field} ATIS", self.compose(me))
 
 
 class TestTheEngineIsToldWhichControllerItIs(unittest.TestCase):
@@ -446,17 +680,26 @@ class TestTheEngineIsToldWhichControllerItIs(unittest.TestCase):
 
     def controller(self, station):
         from marshall.atc import controller as C
-        c = C.Controller(R.BATUMI_ASR)
+        c = C.Controller(P())
         c._me = station
         return c
 
     def test_each_field_gets_its_own_runway(self):
-        for station, want in ((R.KOB_TOWER, "zero seven"),
-                              (R.KOB_GROUND, "zero seven"),
-                              (R.TOWER, "one three"),
-                              (R.GROUND, "one three")):
-            with self.subTest(who=station.name):
-                self.assertEqual(self.controller(station)._runway_in_use(), want)
+        """Spoken, and it must be HIS field's end -- on a bridge started on the
+        other field's approach, which is the condition that produced "cleared
+        for take-off runway one three" out of Kobuleti Tower."""
+        from marshall.core.say import spell_rwy
+        for s in R.STATIONS:
+            if s.role not in ("tower", "ground") or not s.field:
+                continue
+            fld = R.field_named(s.field)
+            if fld is None:
+                continue
+            with self.subTest(who=s.name):
+                self.assertEqual(self.controller(s)._runway_in_use(),
+                                 spell_rwy(fld.runway_in_use()),
+                                 f"{s.name} named a runway that is not "
+                                 f"{s.field}'s")
 
     def test_the_bridge_actually_sets_it(self):
         """The half that was missing. A controller that CAN be told its station
@@ -472,7 +715,7 @@ class TestTheEngineIsToldWhichControllerItIs(unittest.TestCase):
         """A role is unique only within an aerodrome, so the button he pressed
         is the only honest source. Taking it from the profile would name the
         arrival field's controller for every call of the sortie."""
-        for station in (R.KOB_TOWER, R.KOB_GROUND, R.TOWER, R.GROUND):
+        for station in R.STATIONS:
             with self.subTest(who=station.name):
                 self.assertIs(R.station_on(station.freq_mhz), station)
 
@@ -490,42 +733,74 @@ class TestNobodyIsSentToTheOtherAerodromesTower(unittest.TestCase):
     Kobuleti Tower cleared a landing on runway one three.
     """
 
-    def landed_on(self, station, profile=R.BATUMI_ASR):
+    def landed_on(self, station, profile=None):
         from marshall.atc import controller as C
-        c = C.Controller(profile)
+        c = C.Controller(profile if profile is not None else P())
         c._me, c.working = station, station.role
         ac = c.get("Sockeye")
         ac.phase = C.Phase.CLEARED
         c.report_landed("Sockeye")
         return " ".join(t.text for t in c.take_out())
 
-    def test_approach_hands_him_to_his_own_fields_tower(self):
-        said = self.landed_on(R.APPROACH)
-        self.assertIn("Batumi Tower", said)
-        self.assertNotIn("Kobuleti", said)
+    def approach_seats(self):
+        """One seat working arrivals at each aerodrome. Not `station_for` with
+        no field -- that is the bug."""
+        out = []
+        for f in T.fields():
+            s = R.station_for("approach", field=f.name)
+            if s is not None:
+                out.append((f, s))
+        self.assertGreaterEqual(len(out), 2,
+                                "fewer than two aerodromes work arrivals; "
+                                "there is nothing here to confuse")
+        return out
 
-    def test_a_kobuleti_seat_hands_him_to_kobuleti(self):
-        self.assertIn("Kobuleti Tower", self.landed_on(R.KOB_DEPARTURE))
+    def test_approach_hands_him_to_his_own_fields_tower(self):
+        """Findings 1 and 2 of the 13 August inventory, from the inside. The
+        wrong answer is a real Tower on a real frequency at the other end of the
+        map -- and it is what a pilot on final at Batumi was actually told."""
+        for f, s in self.approach_seats():
+            tower = R.station_for("tower", field=f.name)
+            if tower is None:
+                continue
+            said = self.landed_on(s)
+            with self.subTest(who=s.name):
+                self.assertIn(tower.name, said)
+                for g in T.fields():
+                    if g.name != f.name:
+                        self.assertNotIn(g.name, said,
+                                         f"{s.name} sent him to {g.name}")
 
     def test_the_landing_clearance_names_HIS_runway(self):
         """Not the approach profile's. All three ground clearances -- taxi,
         take-off and landing -- must name one runway, and it is the one in use
         at the field he is actually at."""
-        self.assertIn("runway one three", self.landed_on(R.TOWER))
-        self.assertIn("runway zero seven", self.landed_on(R.KOB_TOWER))
+        from marshall.core.say import spell_rwy
+        for s in R.STATIONS:
+            if s.role != "tower" or not s.field:
+                continue
+            fld = R.field_named(s.field)
+            if fld is None:
+                continue
+            with self.subTest(who=s.name):
+                self.assertIn(f"runway {spell_rwy(fld.runway_in_use())}",
+                              self.landed_on(s))
 
     def test_the_welcome_after_touchdown_is_his_own_tower(self):
         from marshall.atc import controller as C
-        for station, want, wrong in ((R.TOWER, "Batumi Tower", "Kobuleti"),
-                                     (R.KOB_TOWER, "Kobuleti Tower", "Batumi")):
-            with self.subTest(who=station.name):
-                c = C.Controller(R.BATUMI_ASR)
-                c._me = station
+        for s in R.STATIONS:
+            if s.role != "tower" or not s.field:
+                continue
+            with self.subTest(who=s.name):
+                c = C.Controller(P())
+                c._me = s
                 c.get("Sockeye")
                 c.report_down("Sockeye")
                 said = " ".join(t.text for t in c.take_out())
-                self.assertIn(want, said)
-                self.assertNotIn(wrong, said)
+                self.assertIn(s.name, said)
+                for g in T.fields():
+                    if g.name != s.field:
+                        self.assertNotIn(g.name, said)
 
     def test_no_unscoped_role_lookups_are_left_in_the_engine(self):
         """The class, not the instance. Five of these have been found one at a
@@ -556,17 +831,27 @@ class TestAnotherFieldsFrequencyIsLookedUpNotRecalled(unittest.TestCase):
     question a pilot asks twice a night.
     """
 
+    def seat(self):
+        """A seat at the aerodrome that is NOT the arrival, because the question
+        is what he is told about somewhere else."""
+        fld = T.other()
+        for role in ("clearance", "ground", "tower"):
+            s = R.station_for(role, field=fld.name)
+            if s is not None:
+                return s
+        raise AssertionError(f"{fld.name} is unstaffed")
+
     def brief(self, station):
         from marshall.atc import agent_atc as A
         from marshall.atc import assembly
         return assembly.compose_message(
             A.Bridge(), scope="", known="Sockeye",
-            transcript="say the frequency for Batumi Tower", profile=R.BATUMI_ASR,
-            me=station, fix=None, nxt=None, directive="", stack="",
+            transcript=f"say the frequency for {T.station('tower').name}",
+            profile=P(), me=station, fix=None, nxt=None, directive="", stack="",
             vectoring="", _flight={}, _flight_say="", claim="", name_say="")[0]
 
     def test_he_is_told_to_call_the_tool_for_anywhere_else(self):
-        said = self.brief(R.KOB_CLEARANCE)
+        said = self.brief(self.seat())
         self.assertIn("look_up_frequency", said)
         self.assertIn("must not", said.split("look_up_frequency")[1][:200])
 
@@ -574,16 +859,21 @@ class TestAnotherFieldsFrequencyIsLookedUpNotRecalled(unittest.TestCase):
         """Not replaced by the tool. A controller knows his own tower the way he
         knows his own name, and a round trip for it would be latency on the
         commonest question there is."""
-        said = self.brief(R.KOB_CLEARANCE)
-        self.assertIn("YOUR FIELD — Kobuleti", said)
-        self.assertIn("Kobuleti Tower", said)
+        me = self.seat()
+        said = self.brief(me)
+        self.assertIn(f"YOUR FIELD — {me.field}", said)
+        for s in R.STATIONS:
+            if s.field == me.field:
+                with self.subTest(names=s.name):
+                    self.assertIn(s.name, said)
 
     def test_and_no_other_aerodromes_numbers_are_carried(self):
         """The scaling half. If another field's frequency is in the prompt, the
         tool has bought nothing."""
         from marshall.atc import controller
-        head = self.brief(R.KOB_CLEARANCE)
-        for s, hz in _foreign_numbers(R.KOB_CLEARANCE.field):
+        me = self.seat()
+        head = self.brief(me)
+        for s, hz in _foreign_numbers(me.field):
             with self.subTest(stranger=f"{s.name} {hz}"):
                 self.assertNotIn(controller.spell_freq(hz), head)
 
@@ -604,48 +894,76 @@ class TestTheCheckInReplyDependsOnWhichWayHeIsGoing(unittest.TestCase):
 
     def greeting(self, station, phase):
         from marshall.atc import controller as C
-        c = C.Controller(R.BATUMI_ASR)
+        c = C.Controller(P())
         c._me = station
         c.get("Sockeye").sortie_phase = phase
         c.check_in("Sockeye")
         return " ".join(t.text for t in c.take_out())
 
+    def two_hatted(self):
+        """A seat wearing BOTH the departure and the approach hat, which is the
+        only kind that can confuse the two jobs. Kobuleti Departure on one map;
+        the test says so rather than skipping silently if a map has none."""
+        for s in R.STATIONS:
+            hats = {s.role, *(getattr(s, "also", ()) or ())}
+            if {"departure", "approach"} <= hats:
+                return s
+        raise unittest.SkipTest(
+            f"{T.name()} staffs no seat that works departures and arrivals both, "
+            f"so the two jobs cannot be confused here")
+
     def test_a_departing_aircraft_is_not_asked_for_the_field(self):
-        said = self.greeting(R.KOB_DEPARTURE, "departure")
+        said = self.greeting(self.two_hatted(), "departure")
         self.assertIn("radar contact", said)
         self.assertNotIn("field in sight", said)
+        self.assertNotIn(self.trigger(), said)
 
     def test_nor_for_an_information_letter_he_has_already_left_behind(self):
         """The ATIS he needs is the one where he is GOING. He read a clearance
         back four minutes ago; he has said what he wants."""
         self.assertNotIn("information",
-                         self.greeting(R.KOB_DEPARTURE, "departure").lower())
+                         self.greeting(self.two_hatted(), "departure").lower())
+
+    def trigger(self):
+        """WHAT THIS PROCEDURE'S ARRIVAL IS ASKED TO REPORT, which is not a
+        constant and is not the map's business either. On a talkdown it is the
+        field in sight -- a pilot with no localiser cannot know when he is
+        established; on an ILS it is the final approach course. Asked of the
+        engine so the test cannot drift from the rule it is guarding."""
+        from marshall.atc import controller as C
+        c = C.Controller(P())
+        return c._report_phrase(None)
 
     def test_the_same_seat_working_an_arrival_still_asks(self):
         """The half that must not be lost. Kobuleti Departure genuinely does
         work Kobuleti's arrivals."""
-        said = self.greeting(R.KOB_DEPARTURE, "arrival")
-        self.assertIn("field in sight", said)
+        said = self.greeting(self.two_hatted(), "arrival")
+        self.assertIn(self.trigger(), said)
 
     def test_center_does_not_ask_a_man_thirty_miles_out(self):
-        said = self.greeting(R.CENTER, "enroute")
+        said = self.greeting(R.station_for("center"), "enroute")
         self.assertNotIn("field in sight", said)
+        self.assertNotIn(self.trigger(), said)
 
     def test_a_ground_seat_asks_for_the_request_and_the_letter(self):
         """Clearance is one of the two positions that genuinely checks the
         ATIS, and a man on the ramp has not said what he wants yet."""
-        said = self.greeting(R.KOB_CLEARANCE, "clearance")
+        said = self.greeting(T.station("clearance", T.other()), "clearance")
         self.assertIn("Say your request", said)
         self.assertNotIn("field in sight", said)
+        self.assertNotIn(self.trigger(), said)
 
     def test_a_voice_out_of_nowhere_is_still_treated_as_arriving(self):
         """Every sortie looked like this until the ladder grew a ground half:
         no phase, inbound, wanting an approach. Being asked when you are not
         arriving is untidy; NOT being asked when you are is a controller who has
         not understood what you want."""
-        self.assertIn("field in sight", self.greeting(R.APPROACH, ""))
+        self.assertIn(self.trigger(), self.greeting(T.station("approach"), ""))
 
 
+@T.skip_unless("caucasus", why="the 1944 beacon letdown and the INITIAL fix; "
+                               "no other published map has a procedure that "
+                               "homes a navaid enroute")
 class AnArrivalFixIsNotEVIDENCEOFANYTHING(unittest.TestCase):
     """The fifth entry in this file's opening list, found the same way. [#145]
 
@@ -729,6 +1047,8 @@ Capabilities` below asserts `R.BATUMI_APPROACH.atc.radar` is True on purpose --
         self.assertIn("radar not available", said)
 
 
+@T.skip_unless("caucasus", why="the 1944 letdown is the only published "
+                               "procedure that has eyes and does not steer")
 class SeeingHimAndSteeringHimAreTwoCapabilities(unittest.TestCase):
     """`AtcCapability.radar` was answering two questions. [#53]
 
@@ -791,12 +1111,42 @@ class TheTalkdownSaysOnceThatSilenceIsExpected(unittest.TestCase):
         from marshall.atc import controller as atc
         return atc.Controller(profile)._no_acknowledgement_phrase(None)
 
+    def test_a_talkdown_says_it_and_nothing_else_does(self):
+        """Over every procedure the map publishes, keyed on the two facts the
+        engine keys on -- is the CONTROLLER navigating, and does he keep
+        navigating past the intercept. Both are facts about a procedure, not
+        about an aerodrome or a map, so this is the same assertion on Nevada
+        against nine ILS/letdown combinations that never ran there.
+
+        The beacon letdown is the case that makes it worth writing this way: it
+        is a talkdown AND is not vectored, so a rule keyed on `guidance` alone
+        would tell a man flying a published pattern not to report his beacon.
+        """
+        from marshall.atc import controller as atc
+        for key, p in sorted(T.approaches().items()):
+            c = atc.Controller(p)
+            wants = c._vectored(None) and p.guidance == "talkdown"
+            with self.subTest(procedure=key, guidance=p.guidance,
+                              vectored=c._vectored(None)):
+                said = self._said(p).lower()
+                if wants:
+                    self.assertIn("do not acknowledge", said)
+                else:
+                    self.assertEqual(said, "",
+                                     "the one call the procedure needs is "
+                                     "being suppressed")
+
+    @T.skip_unless("caucasus", why="the Batumi ASR; the rule is asserted over "
+                                   "every published procedure above")
     def test_the_surveillance_approach_says_it(self):
         self.assertIn("do not acknowledge", self._said(R.BATUMI_ASR).lower())
 
+    @T.skip_unless("caucasus", why="the Kobuleti ILS by name")
     def test_the_ils_does_not(self):
         self.assertEqual(self._said(R.KOBULETI_ILS), "")
 
+    @T.skip_unless("caucasus", why="the 1944 beacon letdown, which no other "
+                                   "published map has")
     def test_and_neither_does_the_beacon_letdown(self):
         """He is not being talked down -- he flies the pattern and reports the
         beacon, which is an acknowledgement the procedure wants."""
