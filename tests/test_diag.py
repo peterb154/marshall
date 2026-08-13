@@ -732,6 +732,86 @@ class TestTheCardSaysWhatTheBoardKnew(unittest.TestCase):
         self.assertIn("r.identified", diag.page())
 
 
+class TestTwoColumnsAreNotTwoSpellingsOfOneFact(unittest.TestCase):
+    """#171. One card, one instant, two rows, and both of them correct:
+
+        separation   UNKNOWN
+        ladder       enroute
+
+        "in this case, wasnt the aircraft ENROUTE and with GA Center? Why would
+         separation say UNKNOWN?"
+
+    `phase` is his place in the ARRIVAL QUEUE, which only checking in with the
+    arrival controller enters; `sortie_phase` is the rung of the whole sortie
+    that decides who has him next. The page printed neither question -- and
+    printed the queue's "nothing has ever put this man in it" in the same word
+    it uses for a fact that never arrived, on the one screen whose job is
+    telling those two apart.
+
+    ASSERTED AS A DISTINCTION, not as the presence of a string. The failure was
+    never a missing label; it was two labels a reader had no reason to tell
+    apart, so a test that a label exists would have passed on the broken page.
+    """
+
+    def column(self):
+        return publish("Pony 1-1", "362nd_sockeye")["legend"]["column"]
+
+    def test_each_column_says_which_question_it_answers(self):
+        col = self.column()
+        for key in ("phase", "sortie_phase"):
+            with self.subTest(key=key):
+                self.assertTrue(col[key]["label"])
+                self.assertTrue(col[key]["gloss"])
+
+    def test_and_the_two_have_no_word_in_common(self):
+        """Two labels sharing a word is how one fact printed twice reads, which
+        is the thing being fixed rather than a milder form of it."""
+        col = self.column()
+        first, second = (set(col[k]["label"].lower().split())
+                         for k in ("phase", "sortie_phase"))
+        self.assertEqual(first & second, set())
+        self.assertNotEqual(col["phase"]["gloss"],
+                            col["sortie_phase"]["gloss"])
+
+    def test_the_state_nothing_has_ever_entered_is_not_called_unknown(self):
+        """A real engine answer -- nobody has ever put this man in the queue --
+        printed in the page's own word for ignorance."""
+        said = self.column()["phase"]["values"]["UNKNOWN"]
+        self.assertTrue(said)
+        self.assertNotIn("unknown", said.lower())
+
+    def test_and_the_queue_says_what_its_own_ENROUTE_means(self):
+        """The collision that produced the question: `enroute` is a word BOTH
+        columns can print, and it answers a different question in each."""
+        said = self.column()["phase"]["values"]["ENROUTE"]
+        self.assertTrue(said)
+        self.assertNotEqual(said.lower(), "enroute")
+
+    def test_the_page_holds_none_of_those_words_itself(self):
+        """Same rule as every other meaning here: it arrives in the legend,
+        from the thing that defines it."""
+        page = diag.page()
+        self.assertIn("LEGEND.column", page)
+        for own in ("'separation'", "'ladder'", "'arrival queue'",
+                    "'never admitted'", "'UNKNOWN'"):
+            with self.subTest(own=own):
+                self.assertNotIn(own, page)
+
+    def test_and_renders_the_label_gloss_and_reading_it_is_given(self):
+        """Publishing a value is not showing it -- the lesson this file keeps
+        relearning from a pilot on the radio."""
+        page = diag.page()
+        for call in ("kvq('phase'", "kvq('sortie_phase'",
+                     "qval('phase', r.phase)"):
+            with self.subTest(call=call):
+                self.assertIn(call, page)
+
+    def test_a_value_with_no_reading_still_renders_blank(self):
+        """#155 criterion 2 stays green. This may EXPLAIN a fact; it must never
+        supply one, so anything unglossed falls through to the blank."""
+        self.assertIn("return said ? esc(said) : val(v);", diag.page())
+
+
 class TestPortrait(unittest.TestCase):
     """It is read on a knee, in a cockpit, by somebody with two seconds.
 

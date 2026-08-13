@@ -5184,6 +5184,44 @@ def publish_state(bridge, ctl, scope: str, session_id: str,
             # WHO OWNS HIM. Unowned while on the board is the contradiction --
             # he is being separated by nobody in particular.
             "owner": {"": "bad"},
+            # WHAT THE TWO PHASE COLUMNS MEASURE, because they print the same
+            # word and mean different things:
+            #
+            #     separation   UNKNOWN
+            #     ladder       enroute    <- one aeroplane, one instant
+            #
+            #     "in this case, wasnt the aircraft ENROUTE and with GA Center?
+            #      Why would separation say UNKNOWN?"
+            #
+            # Both were correct and the page gave him no way to know it.
+            # `phase` is where he sits in the ARRIVAL QUEUE, and `Phase.ENROUTE`
+            # has exactly one writer -- `check_in` -- which is checking in with
+            # the ARRIVAL controller, not being handed to a Center.
+            # `sortie_phase` is what he is DOING across the whole sortie and is
+            # the one input `handoff.py` reads. The distinction is right and
+            # must not be collapsed, so it is STATED instead.
+            #
+            # AND `UNKNOWN` GETS A READING IN ENGLISH. It is a real answer --
+            # nothing has ever put this man in the queue -- and it was printed
+            # in the page's own word for a fact that never arrived, on the one
+            # screen whose job is telling those apart. The words are published
+            # here for the same reason every other meaning is: a page that knows
+            # a queue has an UNKNOWN state is a page holding domain knowledge,
+            # and it will be wrong the first time the enum changes. [#171]
+            "column": {
+                "phase": {
+                    "label": "arrival queue",
+                    "gloss": "his place in the letdown, and nothing else",
+                    "values": {
+                        "UNKNOWN": "never admitted",
+                        "ENROUTE": "checked in with the arrival controller",
+                    },
+                },
+                "sortie_phase": {
+                    "label": "sortie",
+                    "gloss": "what he is doing; this is what hands him on",
+                },
+            },
             # WHICH BRAIN SAID IT. The stage says WHEN in the turn; this says
             # WHO, and they are different questions the page had no way to ask.
             #

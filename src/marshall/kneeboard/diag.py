@@ -705,6 +705,44 @@ function kv(k, v, cls) {
     + `<span class="v ${cls || ''}">${v}</span>`;
 }
 
+// A COLUMN THAT SAYS WHICH QUESTION IT ANSWERS.
+//
+//     separation   UNKNOWN
+//     ladder       enroute        <- one aeroplane, one instant, both correct
+//
+//     "in this case, wasnt the aircraft ENROUTE and with GA Center? Why would
+//      separation say UNKNOWN?"
+//
+// He was right to ask, and nothing on the page could answer him. Two columns
+// printed one word between them and neither said what it measured -- that the
+// first is his place in the ARRIVAL QUEUE, which only checking in with the
+// arrival controller enters, and the second is the rung of the whole sortie
+// that decides who has him next. The distinction is real and must not be
+// collapsed; what was missing is that the page never stated it.
+//
+// AND `UNKNOWN` IS NOT IGNORANCE. It is a real answer -- nothing has ever put
+// this man in the queue -- printed in the same word this page uses for a fact
+// it never received, on the one screen whose whole job is telling those two
+// apart.
+//
+// SO THE LABEL, THE GLOSS AND THE READING ALL ARRIVE IN THE LEGEND, published
+// by the thing that defines the words. The page is not allowed to know that a
+// queue has such a state, any more than it is allowed to know that `radar`
+// outranks `plan` -- same rule, same reason, same mechanism. Falls back to the
+// payload's own key, so a snapshot carrying no legend degrades to something
+// true rather than to a blank label. [#171]
+const col = k => (LEGEND.column || {})[k] || {};
+const kvq = (k, v, cls) => kv(col(k).label || k,
+  v + (col(k).gloss
+        ? ` <span class="dim">${DOT} ${esc(col(k).gloss)}</span>` : ''), cls);
+// The reading the bridge gives a value, when it gives one. Everything else
+// prints exactly as it arrived, and a MISSING value still renders blank --
+// this may explain a fact, never supply one.
+const qval = (k, v) => {
+  const said = (col(k).values || {})[v];
+  return said ? esc(said) : val(v);
+};
+
 // " from BATUMI - the loaded approach". The reference a range was measured
 // from, and why that point and not another.
 //
@@ -774,10 +812,13 @@ function card(r, reasons) {
     // cleared for the surveillance approach, or he is cleared for nothing at
     // all while being vectored. Neither is visible if only one is printed.
     + kv('cleared for', val(r.cleared_approach))
-    + kv('separation', line([val(r.phase),
+    // THE TWO PHASE COLUMNS, EACH NAMING ITS OWN QUESTION. See `kvq`: the
+    // labels used to read `separation` and `ladder`, which are two words for
+    // what a reader had no reason not to take as one fact. [#171]
+    + kvq('phase', line([qval('phase', r.phase),
         r.assigned_ft ? num(r.assigned_ft, 0, ' ft assigned') : '',
         r.approaches ? 'approaches ' + esc(r.approaches) : '']), 'num')
-    + kv('ladder', val(r.sortie_phase))
+    + kvq('sortie_phase', qval('sortie_phase', r.sortie_phase))
     // WHETHER THE ENGINE HAS BEEN TOLD RADAR SEES HIM, which is not the same
     // question as the `confirmed` pill above and can disagree with it. This one
     // decides whether he may take a place in the stack at all
