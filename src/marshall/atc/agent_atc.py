@@ -537,6 +537,20 @@ def load_and_push_plate(profile, base: str = BASE_URL):
               f"with no volumes every controller hands his traffic to the "
               f"Center: {e}", flush=True)
 
+    # AND THE SEATS, which the volumes are not: half the ladder owns no airspace
+    # and is absent from the sectors table. Until this existed the station list
+    # reached `look_up_frequency` only through `approaches.data->'stations'`, by
+    # accident, and #162 removed that channel without replacing it — so a reset
+    # database had a controller inventing frequencies again.
+    try:
+        n = push_stations(base, profile)
+        print(f"  pushed {n} controller seats (the map's station list)",
+              flush=True)
+    except Exception as e:
+        print(f"  !! station push failed — a controller asked for another "
+              f"field's frequency can only say he cannot look it up: {e}",
+              flush=True)
+
     try:
         _put_json(f"{base}/prompts/plate", {"body": briefing.plate(profile)})
         print(f"  pushed plate for {profile.controller} to the director", flush=True)
@@ -3907,6 +3921,45 @@ def push_sectors(base: str, profile) -> int:
     if not rows:
         return 0
     _put_json(f"{base}/sectors", {"sectors": rows})
+    return len(rows)
+
+
+def push_stations(base: str, profile) -> int:
+    """Publish the map's controllers: who they are and what they answer on.
+
+    THE SAME SENTENCE AS ABOVE, and it is why this is a push. The director
+    container has no `config/` -- `catalogue.maps()` is `[]` in there and
+    `route.STATIONS` raises FileNotFoundError -- so it cannot read a seat off
+    the theatre however much it would like to.
+
+    NOT THE SAME ROWS AS `push_sectors`, which is the whole reason this exists
+    separately. That publishes VOLUMES, so it publishes only the seats that own
+    airspace: five rows against nine on the Caucasus, with no Ground, no
+    Clearance and no Sentry. `look_up_frequency` is asked for ground far more
+    often than for approach.
+
+    A REGRESSION BEING PAID BACK. The seats used to arrive by ACCIDENT --
+    `ApproachProfile` carried a `stations` list, `profile_to_dict` is `asdict`,
+    and the whole profile is pushed into `approaches`, which is where the tool
+    read them from. #162 moved the list onto the theatre, correctly, and took
+    the channel with it: `'stations' in profile_to_dict(BATUMI_ASR)` is False,
+    so no row written since carries one and a reset database answers "no station
+    list is published" to every question about every field on both maps. See
+    `feed.tracks.set_stations` for why the push REPLACES the table, and
+    migration 032 for what may then be cleaned up.
+
+    `seats_now` and not `stations_now`, so the mode switch stays in one place:
+    a 1944 beacon letdown staffs no ladder -- the man you talk to IS the
+    frequency you home -- and publishing eight modern seats for it would put a
+    frequency directory in a Mustang.
+    """
+    from marshall.core import theatre as _th
+    rows = [{"name": s.name, "field": s.field, "role": s.role,
+             "freq_mhz": s.freq_mhz, "also": list(s.also)}
+            for s in _th.seats_now(profile) if s.name]
+    if not rows:
+        return 0
+    _put_json(f"{base}/stations", {"stations": rows})
     return len(rows)
 
 

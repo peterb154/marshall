@@ -20,43 +20,43 @@ silence and cannot tell that from a controller who has stopped answering. The
 brief now says to call this rather than guess, which is the same bargain as
 `vector`: an exact answer is available, so an estimate is never acceptable.
 
-THE DATA WAS ALREADY HERE, AND ITS WRITER IS GONE. That paragraph used to read
+THE DATA WAS ALREADY HERE, AND FOR THREE WEEKS ITS WRITER WAS GONE. This was
+built as #67 over `approaches.data->'stations'`, on the argument that
 "`load_and_push_plate` writes the approach profile into `approaches` on every
-bridge start, and the profile carries the whole station list" -- true when this
-was built as #67 and false since #162, which moved the station table out of the
-profile and onto the THEATRE. `profile_to_dict` is `asdict`, and
+bridge start, and the profile carries the whole station list". True then. False
+from #162, which moved the station table off the procedure and onto the THEATRE
+-- correctly, because a station is a property of the map and not of an arrival:
 
-    ApproachProfile has no `stations` field   ->  no row written from now on
-                                                  carries one
+    ApproachProfile has no `stations` field   ->  no row written from then on
+                                                  carried one
 
 Verified against the live database: `batumi-asr` and `batumi-ils`, written 25
-July, still hold nine stations each; `batumi-ndb`, written after the move, holds
-none. So on a fresh database this tool answers "no station list is published" to
-every frequency question for ever, and the controller falls back to the thing it
-was built to stop -- inventing a plausible number in correct phraseology.
+July, hold nine stations each; `batumi-ndb`, written after the move, holds none.
+So on a database that had been reset this tool answered "no station list is
+published" to every frequency question for ever, and the controller fell back to
+the thing it was built to stop -- inventing a plausible number in correct
+phraseology. The only reason it kept working was four rows that predate the
+change.
 
-WHERE THE ANSWER BELONGS IS A PUSH, and the language brain cannot start it. `marshall-atc`
-knows which map is loaded and the language brain does not; `push_sectors` says exactly
-that and pushes the controllers' VOLUMES for the same reason. Sectors are not
-the station table -- Ground, Clearance and Sentry have no airspace, so five of
-the theatre's nine seats are absent from it -- so the missing half is a
-`push_stations` beside it in `atc/agent_atc.py`. Until that exists this reads
-what is on the table.
+WHERE THE ANSWER BELONGS IS A PUSH, and the language brain cannot start it.
+`marshall-atc` knows which map is loaded and the language brain does not;
+`push_sectors` says exactly that and pushes the controllers' VOLUMES for the
+same reason. Sectors are not the station table -- Ground, Clearance and Sentry
+have no airspace, so five of the theatre's nine seats are absent from it -- so
+the missing half is `push_stations` beside it in `atc/agent_atc.py`. It exists
+now, it writes the `stations` table (migration 032), and this reads that.
 
-WHAT IS FIXED HERE is the wrong-map answer, which was live. The query took ONE
-row -- `ORDER BY name`, `fetchone` -- across rows accumulated from every theatre
-ever loaded, and the alphabetically first is `batumi-asr`. So on Nevada a pilot
-who asked Nellis Tower for Tonopah's frequency was told "There is no Tonopah
-tower position on the published list. Fields published: Batumi, Kobuleti", and
-asking for `position="ground"` read him two Georgian frequencies in correct
-phraseology.
+WHAT IS FIXED HERE is the wrong-map answer, which was live. The old query took
+ONE row -- `ORDER BY name`, `fetchone` -- across `approaches` rows accumulated
+from every theatre ever loaded, and the alphabetically first is `batumi-asr`. So
+on Nevada a pilot who asked Nellis Tower for Tonopah's frequency was told "There
+is no Tonopah tower position on the published list. Fields published: Batumi,
+Kobuleti", and asking for `position="ground"` read him two Georgian frequencies
+in correct phraseology.
 
-A profile is a PROCEDURE and the station list is the MAP's, so the question
-"which of these lists is mine" has an exact answer and it is not alphabetical:
-the one that names the seat doing the asking. `look_up_frequency` is bound to
-his station the way `hook_tools` and `memory_tools` are, and resolves against
-the list he appears in. Where no published list knows him, it says it cannot
-look it up -- which is the answer this tool exists to make sayable.
+The scan that fixed it -- walk every published list, take the one that names the
+asking seat -- is gone with the rows that needed it, and what it hardened into
+is not. See `_stations`.
 """
 
 from __future__ import annotations
@@ -83,27 +83,46 @@ except ImportError:                     # importable without strands (tests)
 def _stations(seat: str = "") -> list[dict]:
     """Every published station on the map THIS CONTROLLER is sitting on.
 
-    `seat` is his station name, handed down from `marshall-atc` -- the trusted side,
-    resolved from the frequency before the call was made. Rows in `approaches`
-    accumulate across theatres and nothing ever clears them, so "the list" is
-    not a question a `fetchone` can answer. The list that names him is.
+    `seat` is his station name, handed down from `marshall-atc` -- the trusted
+    side, resolved from the frequency before the call was made.
 
-    An empty answer is a real answer here. It means no published list knows this
+    THE SCAN IS GONE AND THE CHECK THAT SURVIVED IT IS NOT REDUNDANT, which is
+    the one thing worth reading here. This used to walk every `stations` list in
+    `approaches` and pick the one naming the asking seat, because those rows
+    accumulate a list per procedure per theatre and nothing has ever cleared
+    them: several lists, so "which is mine" was a real question. `stations` is
+    written by a push that REPLACES it (`feed.tracks.set_stations`), so there is
+    one list and the scan has nothing to scan.
+
+    What the scan was made of stays. `set_stations` refuses an EMPTY push --
+    a bridge that could not build the list must not wipe the last good one, and
+    a 1944 letdown legitimately staffs no ladder at all -- so the table can
+    still hold the previous run's map. The list is therefore trusted only where
+    it NAMES the man asking, and a Nevada seat reading a leftover Caucasus list
+    gets nothing. Failing safe upstream is what makes this check load-bearing
+    rather than ceremony.
+
+    An empty answer is a real answer. It means no published list knows this
     seat, and the tool must say so rather than read him somebody else's map.
+
+    Read straight off the table rather than through `feed.tracks.get_stations`,
+    which is the same SELECT: that module imports grpc and the DCS stubs at
+    module scope, and a frequency lookup should not need a simulator on the end
+    of it. This one stays importable by the suite -- see the note above `tool`.
     """
     with get_pool().connection() as c:
         rows = c.execute(
-            "SELECT name, data->'stations' FROM approaches "
-            "WHERE data ? 'stations' ORDER BY name").fetchall()
-    lists = [list(sts) for _name, sts in rows if sts]
+            "SELECT name, field, role, freq_mhz, also FROM stations "
+            "ORDER BY field, name").fetchall()
+    sts = [{"name": r[0], "field": r[1] or "", "role": r[2] or "",
+            "freq_mhz": r[3], "also": list(r[4] or [])} for r in rows]
     want = (seat or "").strip().lower()
-    for sts in lists:
-        if any(want == (s.get("name") or "").strip().lower() for s in sts):
-            return sts
-    # NOBODY TOLD US WHICH SEAT. An older voice process sends no station, and then
-    # there is no way to choose -- so one published list is the answer and
-    # several is not. Picking the first of several is what this was doing.
-    return lists[0] if not want and len(lists) == 1 else []
+    if not want:
+        # NOBODY TOLD US WHICH SEAT. An older voice process sends no station.
+        # One map is published now, so this is unambiguous where it never was.
+        return sts
+    return sts if any(want == (s["name"] or "").strip().lower()
+                      for s in sts) else []
 
 
 def _spoken(mhz: float) -> str:
@@ -123,8 +142,8 @@ def frequency_tools(station: str = ""):
     Bound at construction, like `hook_tools` and `memory_tools(namespace=...)`,
     and for the same reason: which map's frequencies a controller may read is a
     fact about where he is sitting, not something the model should be trusted to
-    supply. An older voice process sends nothing and the tool falls back to the only
-    published list, or to saying it cannot look one up.
+    supply. An older voice process sends nothing and the tool falls back to the
+    published list, which is one map's since the push replaced the table.
     """
 
     @tool
@@ -148,9 +167,11 @@ def frequency_tools(station: str = ""):
         useful; a number for a seat that does not exist is dangerous.
         """
         place, position = (place or "").strip().lower(), (position or "").strip().lower()
-        # HIS MAP, not the alphabetically first one ever loaded. See
-        # `_stations`: the rows accumulate across theatres and this used to take
-        # one of them, so a Nevada controller was read Georgian frequencies.
+        # HIS MAP, and empty unless the published list names him. See
+        # `_stations`: the old rows accumulated across theatres and this used to
+        # take one of them, so a Nevada controller was read Georgian
+        # frequencies. The table is per-run now and the check is what keeps a
+        # push that failed from doing the same thing again.
         rows = _stations(station)
         if not rows:
             return ("No station list is published for this field — say you "
