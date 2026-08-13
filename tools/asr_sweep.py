@@ -327,7 +327,26 @@ BASELINE = {
     # whether the CONTROLLER argues with itself when the geometry refuses to
     # improve: reversals and direction changes. That is #19, and it is invisible
     # to an obedient aeroplane.
-    "deaf":   {"arrived": 0, "dither": 94, "turns": 1945},
+    # 94 -> 100 ON 13 AUGUST, AND IT IS A REGRESSION I AM RECORDING RATHER THAN
+    # HIDING. #19's reported symptom -- an aeroplane 2.5 nm off at 14 miles, a
+    # ten degree offset, sent OUTBOUND to reposition instead of given a heading
+    # -- is fixed by making `in_position`'s angle test an actual angle. The two
+    # sweeps that model a pilot who flies what he is told got much better for
+    # it: clean 576 -> 555 turns with establishment unchanged at 11.4 nm, sloppy
+    # 35 -> 20 flips and 1535 -> 944 turns.
+    #
+    # This one got six worse, and it is the sweep that exists for #19. That is
+    # worth stating plainly rather than burying: a wider "in position" cone means
+    # a pilot who NEVER TURNS drifts across the boundary more often, and each
+    # crossing is the controller changing his mind.
+    #
+    # The real answer to that is hysteresis -- once established, stay established
+    # unless it is materially worse -- and `in_position` is stateless on purpose,
+    # so it cannot have any. Six extra reversals across 1,296 approaches by a
+    # pilot who complies with nothing, against a real cockpit report of being
+    # sent away at ten degrees off, is the trade taken here. If somebody builds
+    # the hysteresis, this number should come back down and this note should go.
+    "deaf":   {"arrived": 0, "dither": 100, "turns": 1983},
     # SPEED. The sweep only ever flew a warbird -- 1,296 approaches, all of
     # them at 200 mph -- so a green run meant "correct for a P-47" and was read
     # as "correct". These fly the identical grid at jet speeds, with the turn

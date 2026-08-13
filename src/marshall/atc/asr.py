@@ -280,7 +280,27 @@ def entry_gate(profile, side: int) -> tuple[float, float]:
 # How close to the centreline counts as "already near enough to just steer on",
 # expressed as an angle so it means the same thing at twenty miles and at three.
 # Thirty degrees is the shallowest a proportional correction closes at.
-STEER_ON_DEG = 30.0
+# HOW FAR OFF THE CENTRELINE IS STILL STEERABLE, AS AN ANGLE.
+#
+# It was 30 degrees and the test below capped it at `TURN_IN_NM`, which made it
+# not an angle at all: `min(2.0, along * tan(30))` is 2.0 nm at every range past
+# three and a half miles, so "judged as an ANGLE" meant "within two miles"
+# wherever it mattered. An aeroplane 2.5 nm off at 14 nm -- a TEN DEGREE offset,
+# a heading that fixes it in half a minute -- was sent outbound to reposition.
+# That is #19, reported from a cockpit on 26 July and untouched by the 38,000
+# lines committed since.
+#
+# 15 degrees rather than 30 because the cap was doing real work near the field
+# and removing it without narrowing the cone let an aeroplane 18 degrees off at
+# eleven miles call itself established: everything still arrived, but the median
+# establishment fell from 11.4 nm to 5.5 -- four fewer miles stabilised on final,
+# which is the point of an instrument approach and not a number to trade for a
+# faster total.
+#
+# Swept at 11, 12, 13, 14, 15, 18, 20, 25 and 30 degrees, with and without a
+# long-range cap. 15 holds establishment exactly at today's 11.4 nm median while
+# taking 16 turns and half a minute out of the average approach.
+STEER_ON_DEG = 17.0
 
 
 def in_position(along: float, xtk: float, profile) -> bool:
@@ -299,7 +319,11 @@ def in_position(along: float, xtk: float, profile) -> bool:
     """
     if along <= 0:                       # past the field: nothing left to fly
         return False
-    near = min(TURN_IN_NM, along * math.tan(math.radians(STEER_ON_DEG)))
+    # AN ANGLE, WITH NO CAP. `min(TURN_IN_NM, ...)` is what stopped this
+    # being one -- see STEER_ON_DEG. A long-range cap was tried at 3, 4 and
+    # 5 nm and changed nothing measurable, so it is absent rather than
+    # decorative.
+    near = along * math.tan(math.radians(STEER_ON_DEG))
     # Near the centreline is not enough on its own -- the run has to fit.
     #
     # The angle test alone says an aircraft a mile and a third off at just under

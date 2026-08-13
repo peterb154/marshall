@@ -912,3 +912,57 @@ class TestTheDescentPlanner(unittest.TestCase):
         unknown = D.miles_to_lose(2000, 0)
         self.assertAlmostEqual(unknown, D.miles_to_lose(2000, D.ASSUMED_KT))
         self.assertLess(unknown, D.miles_to_lose(2000, 300))
+
+
+class TestATenDegreeOffsetGetsAHeading(unittest.TestCase):
+    """#19, reported from a cockpit on 26 July and untouched until 13 August.
+
+    Inbound on the course, a heading that would fix it in thirty seconds, and
+    instead sent outbound to reposition. The table the issue recorded, and the
+    code reproduced unchanged through 38,000 lines of commits:
+
+                1.5 nm off   2.5 nm off   3.5 nm off
+        11 nm      in          AWAY         AWAY
+        14 nm      in          AWAY         AWAY
+
+    `in_position`'s docstring says the test "has to be judged as an ANGLE, since
+    half a mile off at thirteen miles is nothing" -- and the code was
+    `min(TURN_IN_NM, along * tan(STEER_ON_DEG))`, which is 2.0 nm at every range
+    past three and a half miles. It was not an angle. It was a fixed distance
+    wearing one, and a comment describing what the line should have done.
+
+    2.5 nm off at 14 nm is 10.1 degrees.
+    """
+
+    def setUp(self):
+        self.p = profile()
+
+    def test_ten_degrees_out_at_fourteen_miles_is_steerable(self):
+        self.assertTrue(asr.in_position(14.0, 2.5, self.p))
+
+    def test_and_so_is_the_same_offset_closer_in(self):
+        """12.8 degrees at eleven miles. The issue's second AWAY."""
+        self.assertTrue(asr.in_position(11.0, 2.5, self.p))
+
+    def test_but_a_wide_offset_close_in_is_still_a_reposition(self):
+        """3.5 nm off at 11 is 17.7 degrees and does not fit the room left --
+        the cone is not an excuse to turn anybody onto anything."""
+        self.assertFalse(asr.in_position(11.0, 3.5, self.p))
+
+    def test_the_go_around_case_is_untouched(self):
+        """A P-47 at three miles, 1.33 off, pointing away: "he turned me around
+        way, way, way too soon". The room test still catches it, and widening
+        the cone must not have quietly undone that."""
+        self.assertFalse(asr.in_position(3.0, 1.33, self.p))
+
+    def test_the_angle_is_an_angle_at_every_range(self):
+        """The property, not the table. Doubling the range must double the
+        offset that counts as steerable -- which a capped test cannot do, and
+        which is the whole of this defect."""
+        import math
+
+        def near(along):
+            return along * math.tan(math.radians(asr.STEER_ON_DEG))
+
+        self.assertAlmostEqual(near(20.0), 2 * near(10.0), places=6)
+        self.assertTrue(asr.in_position(20.0, near(20.0) - 0.01, self.p))
