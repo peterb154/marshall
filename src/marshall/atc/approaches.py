@@ -87,15 +87,40 @@ def upsert_flight_plan(name: str, callsign: str, approach: str,
 
 
 def list_flight_plans() -> list[dict]:
+    """Every filed plan, as the rest of the system speaks about one.
+
+    NO `callsign`, AND THAT IS THE FIX. This selected `name, callsign` and
+    nothing else, so the wire carried two strings of which one is NULL on every
+    row -- #142 retired the idea that a plan belongs to an aeroplane, because
+    which aircraft flies it is a fact about a CLEARANCE. Nothing has written
+    that column since, and four separate readers went on asking for it:
+
+        filed_plans()   built its whole set from it, so the set was empty
+        Identity.plan   matched against that set, so it was never assigned
+        plan_of         joined on the label the payload did not carry
+        _plan_row       still joins on it
+
+    The strip on /diag was therefore blank for every aeroplane that has ever
+    been on that board, and `816c97e` fixed only the third of the four. [#167]
+
+    `label` is what a pilot SAYS -- "request IFR clearance to Batumi, Domino
+    please" -- and is what `Identity.plan` was always matching against.
+    `derived` adds `route`, `destination` and `cruise_ft`, which are not
+    columns (migration 031) and have exactly one author; computing them here
+    means the wire and the board cannot come to disagree the way `route` and
+    `legs` did on the live board before they were removed.
+
+    NO `approach` AND NO `active` either, for the same reason as before: a plan
+    does not name an arrival (#2), and `active` was how `marshall-atc` used to
+    read its own procedure out of a plan row, which is #131.
+    """
+    from marshall.atc.filing import derived
     _ensure()
     with get_pool().connection() as c:
-        rows = c.execute("SELECT name, callsign FROM flight_plans "
+        rows = c.execute("SELECT name, label, legs, task FROM flight_plans "
                          "ORDER BY name").fetchall()
-    # NO `approach` AND NO `active`. A plan does not name an arrival -- which
-    # one you fly is a fact about your clearance (#2) -- and `active` was how
-    # `marshall-atc` used to read its own procedure out of a plan row, which is
-    # #131. Both columns are gone; see migration 031.
-    return [{"name": n, "callsign": cs} for n, cs in rows]
+    return [derived({"name": n, "label": lb or "", "legs": lg or [],
+                     "task": tk or ""}) for n, lb, lg, tk in rows]
 
 
 def active_flight_plan() -> dict | None:

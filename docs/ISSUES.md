@@ -9267,9 +9267,29 @@ Code: `src/marshall/atc/approaches.py` (`list_flight_plans`),
 `director/app.py` (`/flightplans`), `src/marshall/atc/agent_atc.py`
 (`filed_plans` ~3585, `plan_of` ~4874, `_plan_row` ~4982).
 
-Status: OPEN — diagnosed with the chain above; not fixed because
-`approaches.py` is mid-move under #147. This is the defect that started the
-13 August session.
+**FIXED 13 August, and there were FIVE links, not four.** The fifth is the one
+that would have kept the strip blank regardless of the other four:
+
+    _matches(claim, name)  is  _key(claim) == _key(name)
+
+an equality over the WHOLE transcript. So `Identity.plan` bound only for a pilot
+whose entire transmission was the single word "Domino". `_matches` is right for
+its own job — a callsign claim already pulled out of a sentence, against a
+roster name — and wrong the moment it is handed a whole transmission.
+`_names_plan` looks for the label as a contiguous run of words instead, which
+also matches the multi-word strips the pre-#142 model still flies in the tests.
+
+One thing that looked like a sixth link and is not: `Identity.plan` is set on
+the RADAR rung only, and that is deliberate. Saying a plan's name does not
+admit you and does not attach you to it — being seen on radar does. The comment
+beside the roster branch already says so, and it is the same door #133 and FEET
+WET were about: a SENTENCE must not create a fact.
+
+Each link was reverted independently and the chain test fails for each, only
+that one. Whole suite green at 2,115.
+
+Status: FIXED — needs a pilot to see a label and a destination on the strip.
+This is the defect that started the 13 August session.
 Labels: needs-flight-test
 
 ---

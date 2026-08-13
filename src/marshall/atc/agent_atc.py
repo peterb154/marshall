@@ -3558,7 +3558,11 @@ FILED_TTL_SEC = 45.0            # a plan can be filed mid-session
 
 def filed_plans(url: str = f"{BASE_URL}/flightplans",
                 now: float | None = None) -> list[str]:
-    """Callsigns on a filed flight plan. Never costs a transmission.
+    """The LABEL of every filed plan. Never costs a transmission.
+
+    Labels, not callsigns -- "Domino", the one word a pilot says when he asks
+    for a clearance. It collected `callsign` until #167, a column #142 retired
+    and nothing writes, so this returned an empty list on every poll.
 
     /flightplans, NOT /flights, and the difference is the whole value of this
     rung. `/flights` is the live board -- rows CREATED BY the binding this is
@@ -3582,8 +3586,13 @@ def filed_plans(url: str = f"{BASE_URL}/flightplans",
     try:
         rows = _get_json(url, timeout=2.5).get("flight_plans") or []
         _filed["rows"] = rows
-        _filed["names"] = sorted({p.get("callsign") for p in rows
-                                  if p.get("callsign")})
+        # LABELS, which is the one word a pilot says. This collected
+        # `callsign`, a column #142 retired and nothing has written since --
+        # so the set was empty on every poll, `Identity.plan` (its only
+        # consumer) was never assigned, and the strip was blank for every
+        # aeroplane that has ever been on the board. [#167]
+        _filed["names"] = sorted({p.get("label") for p in rows
+                                  if p.get("label")})
     except (urllib.error.URLError, TimeoutError, OSError, ValueError):
         pass                                   # keep the last good list
     return list(_filed["names"])               # type: ignore[arg-type]
@@ -4979,7 +4988,12 @@ def publish_state(bridge, ctl, scope: str, session_id: str,
         # a clearance waiting to be delivered, and the same strip attached to
         # something airborne is a controller's record of what he is working.
         # Unattributed says neither, and shows nothing rather than guessing.
-        "plans": [_plan_row(p, by_plan.get(p.get("callsign"), ""),
+        # BY LABEL. `by_plan` is keyed on the label a pilot spoke -- see
+        # `Identity.plan` -- and this joined on the plan row's own `callsign`,
+        # the same dead column `plan_of` was corrected for one function up.
+        # Fixing one of the two left the panel saying nobody was flying a plan
+        # while the strip beside it said somebody was. [#167]
+        "plans": [_plan_row(p, by_plan.get(p.get("label"), ""),
                             on_board, track_of, unit_of)
                   for p in (plans or [])],
         # RADIOS THAT TRANSMITTED AND NEVER BECAME AN AEROPLANE. Empty when

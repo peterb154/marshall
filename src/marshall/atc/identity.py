@@ -355,6 +355,49 @@ def _matches(claim: str, name: str) -> bool:
     return _key(claim) == _key(name)
 
 
+def _names_plan(spoken: str, label: str) -> bool:
+    """Did he SAY this plan's label, anywhere in the transmission?
+
+    Not `_matches`, and that distinction is the fifth link of #167. `_matches`
+    compares two whole strings, which is right for its own job -- a callsign
+    claim that has already been pulled out of a sentence, against a roster
+    name. Handed a whole transmission it is an equality test nobody can pass:
+
+        "Kobuleti Clearance, Sockeye, request IFR clearance to Batumi,
+         Domino please"   ==   "Domino"        ->  False, forever
+
+    So `Identity.plan` bound only for a pilot whose entire transmission was the
+    single word "Domino", which is not how anybody talks. Even with the label
+    on the wire and in the set -- the four links repaired above -- the strip
+    would still have been blank.
+
+    A WHOLE WORD, not a substring. `squash` strips the decoration two systems
+    disagree about, so the comparison happens between reduced forms; matching a
+    substring would let a plan called "Dom" bind on "Domino", and a controller
+    reading back the wrong sortie is what the label rules in `filing.py` exist
+    to prevent.
+    """
+    key = _key(label)
+    if not key:
+        return False
+    # A CONTIGUOUS RUN OF WORDS, because a label is not always one word.
+    # `squash` folds "Colt 2-1" to "colt21", so a single-word scan would miss
+    # every multi-word strip -- and those exist: the pre-#142 model keyed a plan
+    # on a filed callsign, and `tests/test_identity.py` still flies one.
+    #
+    # Joining the run and comparing keys rather than comparing word by word is
+    # what makes "Colt 2-1" match "Colt two dash one" reduced the same way; it
+    # is the same trick `_matches` uses on a whole string, applied to a window.
+    words = [w for w in re.split(r"[\s,.;:!?]+", spoken or "") if w]
+    for i in range(len(words)):
+        run = ""
+        for j in range(i, min(i + 4, len(words))):
+            run += words[j]
+            if _key(run) == key:
+                return True
+    return False
+
+
 @dataclass
 class Registry:
     """What each radio has been resolved to, and how confidently.
@@ -493,7 +536,7 @@ class Registry:
             label = self._handle_for(u, srs_name, prior)
             ident = Identity(label, u.name, "radar", why.format(repr(u.name)),
                              plan=next((n for n in plans or []
-                                        if spoken and _matches(spoken, n)), ""),
+                                        if spoken and _names_plan(spoken, n)), ""),
                              who=label)
             self.by_guid[guid] = ident
             return ident
