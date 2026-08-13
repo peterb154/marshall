@@ -9239,8 +9239,20 @@ once a bridge with the push has run, and a test asserts 032 contains no
 happens. Until then `SELECT count(*) FROM stations` is 0 and the lookup fails
 closed rather than answering off the wrong map.
 
-Status: FIXED in code, not deployed. Needs the migration applied and a bridge
-restart before it is true of the running system.
+**DEPLOYED 13 August and verified on the running system.** `docker compose up -d
+--build` applied `032` (`applied 1 migration(s)`), the existing rows survived
+(`approaches=5 plans=3`), and the radio's next start printed `pushed 9 controller
+seats (the map's station list)`. `/stations` serves all nine at full precision.
+
+The fossil rows in `approaches.data->'stations'` can now be cleaned, using the
+line migration 032 carries for it:
+
+    UPDATE approaches SET data = data - 'stations' WHERE data ? 'stations';
+
+Left for a moment when somebody is watching, because until it runs the fossils
+are a harmless second copy and after it runs the push is the only source.
+
+Status: **FIXED** and deployed.
 Labels: needs-flight-test
 
 ---
