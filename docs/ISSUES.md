@@ -9200,9 +9200,23 @@ pass; both bridge halves are untested because they do not exist.
 Code: `src/marshall/atc/agent_atc.py` (`push_sectors` neighbourhood, and
 `hook_frequency` at ~5812).
 
-Status: OPEN — found by fixing the director side, which could not reach either.
-The station half is a REGRESSION from #162 and should be fixed before a sortie
-on a database that has been reset.
+**HALF DONE, 13 August.** The HOOK half is fixed in `7312940`: the bridge reads
+`hook["station"]`, resolves that seat with a new by-name lookup, and uses his
+own frequency for the call and his own field for the ranges in it. A callback no
+longer goes out on the last channel anybody happened to speak on.
+
+That commit says `Closes #166` and it should not have — the STATION half is
+still open, and it is the one that matters more, because it is a regression I
+caused. Recorded here rather than silently amended: a trailer that overstates is
+exactly the drift `tools/issue_sync.py` exists to catch, and it caught this one.
+
+**Still open:** a `push_stations` beside `push_sectors`. Until it exists, a
+director database that has been reset answers "no station list is published" to
+every question about every field on both maps, and the only reason it works
+today is that four rows predate #162.
+
+Status: OPEN — the hook half is done; the station half is the regression and is
+not. Do not close on the hook commit.
 Labels: needs-flight-test
 
 ---
