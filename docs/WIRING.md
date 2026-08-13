@@ -666,7 +666,7 @@ That used to run inside `radio_lock`, which serialised the wrong thing entirely 
 
 One thing the coarse lock was protecting by accident: `handoff_due` is set by the receive loop immediately before this, and reading it after a long unlocked model call could pick up a *later* turn's authorisation. It is captured at entry.
 
-On the director: `atc_endpoint` (`director/app.py`) takes a **non-blocking** per-session lock. If the agent is still answering the previous transmission it returns `{"response": "", "busy": true}` and logs `session ... is still answering the previous call; dropping this one rather than queueing it` — **in the director's log, not the bridge's.** From the bridge that is indistinguishable from a model that chose to say nothing. The agent is Sonnet with thinking **disabled** (`app.py`), one Postgres session per channel, and tools `identify`, `vector`, `set_hook`, clearance, memory, `spawn_ground` (`app.py`). Its context is a `RadioContext` (`director/tools/context.py`, `app.py`) — see **What he is handed, and what he remembers** below, because the distinction decides what he can still know about a conversation five calls ago.
+On the director: `atc_endpoint` (`director/app.py`) takes a **non-blocking** per-session lock. If the agent is still answering the previous transmission it returns `{"response": "", "busy": true}` and logs `session ... is still answering the previous call; dropping this one rather than queueing it` — **in the director's log, not the bridge's.** From the bridge that is indistinguishable from a model that chose to say nothing. The agent is Sonnet with thinking **disabled** (`app.py`), one Postgres session per channel, and tools `identify`, `vector`, `set_hook`, clearance, memory, `spawn_ground` (`app.py`). Its context is a `RadioContext` (`src/marshall/atc/agent/context.py`, `app.py`) — see **What he is handed, and what he remembers** below, because the distinction decides what he can still know about a conversation five calls ago.
 
 **23. The reply, cleaned.** `for_voice(reply, agent=True)` (, defined). The rule that matters: the model's reply must contain a `RADIO:` marker, and everything before the last one is thinking. **A reply from the agent with no marker at all is treated as thinking and becomes silence**. Then markdown is stripped, newlines collapsed, and `Falcon 1-1` is rewritten to `Falcon one one` so Polly cannot say "Falcon one *to* one".
 
@@ -846,7 +846,7 @@ flowchart LR
  FLIGHT -->|"overrides Identity.callsign in the bridge"| KNOWN
 ```
 
-The silent chain, with no microphone anywhere in it — `src/marshall/radio/client.py` (`name_for`), `feed/tracks.py` (`_upsert`, `_unique_labels`, `_render`), `director/tools/identify.py` (`bind`, `bindings_for`, served by `director/app.py` on `/radar`), `src/marshall/atc/identity.py` (`units_on`, `unit_for_radio`, `_key`, `handle`, `Registry.by_elimination`) and `src/marshall/atc/flights.py` (`Roster.speaking_as`, applied at `agent_atc.py` line 3147). Two edges are worth knowing when a radio call goes wrong: the bracketed tag on the scope line is *corroboration written back by a previous correlation*, so believing it as primary is circular; and `_unique_labels` silently swaps a friendly DCS callsign for the raw unit name the moment two mission groups share one, which is why the scope sometimes prints `362nd_sockeye` where it printed `Enfield11` last sortie. Note that `identity.flatten_formation` is **not** on this path — `units_on` reads the formation prose itself, and `flatten_formation` exists only for the bridge's position regexes (`radar_fix`, the type and fix scanners).
+The silent chain, with no microphone anywhere in it — `src/marshall/radio/client.py` (`name_for`), `feed/tracks.py` (`_upsert`, `_unique_labels`, `_render`), `src/marshall/atc/identify.py` (`bind`, `bindings_for`, served by `director/app.py` on `/radar`), `src/marshall/atc/identity.py` (`units_on`, `unit_for_radio`, `_key`, `handle`, `Registry.by_elimination`) and `src/marshall/atc/flights.py` (`Roster.speaking_as`, applied at `agent_atc.py` line 3147). Two edges are worth knowing when a radio call goes wrong: the bracketed tag on the scope line is *corroboration written back by a previous correlation*, so believing it as primary is circular; and `_unique_labels` silently swaps a friendly DCS callsign for the raw unit name the moment two mission groups share one, which is why the scope sometimes prints `362nd_sockeye` where it printed `Enfield11` last sortie. Note that `identity.flatten_formation` is **not** on this path — `units_on` reads the formation prose itself, and `flatten_formation` exists only for the bridge's position regexes (`radar_fix`, the type and fix scanners).
 
 ```mermaid
 flowchart LR
@@ -1052,7 +1052,7 @@ one whose name contains it (`identity.py`, `tests/test_identity.py`).
 **Ambiguity is refused, never tie-broken**, at every pass. The reasoning is at `identity.py`: *a wrong identity is worse
 than none, because none produces "say again" and wrong produces a clearance for
 the wrong aeroplane*. `flights.near_name` (`flights.py`) and the agent's own
-radar-ID rule (`director/tools/identify.py`) follow the same rule.
+radar-ID rule (`src/marshall/atc/identify.py`) follow the same rule.
 
 Names shorter than 3 characters after `_key` return `None` — "too short to be
 evidence of anything".
@@ -1149,7 +1149,7 @@ with a `plan` identity whose `track` is `""` — losing the track, and with it
 `_who`, the flight machinery and `radar_fix_by_track`. The prior-identity
 fallback at is only reached when rungs 2 and 3 both miss.
 
-Also: `contacts` (the agent's own binding table, `director/tools/identify.py`) is
+Also: `contacts` (the agent's own binding table, `src/marshall/atc/identify.py`) is
 a **separate** identity store from `Registry`. It is what puts `[Pony 1-1]` in the
 scope brackets, it is written by the agent's `identify` tool on a position report,
 and it expires after `BINDING_TTL_SEC = 2h` (`identify.py`) — added after a tag
@@ -1762,7 +1762,7 @@ flowchart LR
  typ -->|"airframe through equipment.receivers"| ctl
 ```
 
-One prose string is the whole radar contract: `feed/tracks.py` builds it (`radar_cached` runs the PostGIS query, then `_render` calls `_clusters`, `_unique_labels` and `_other_ship`), `src/marshall/feed/dcs.py::radar_picture` joins the lines with ` | ` and `director/app.py::radar_endpoint` serves it after fetching this session's tags from `director/tools/identify.py::bindings_for`. `src/marshall/atc/agent_atc.py::fetch_radar` is the bridge's reader; the agent also calls the picture itself through the `dcs.radar` tool with no bindings, and `tools/whos_who.py` reads the same endpoint. A lone contact is literally `362nd_sockeye [Pony 1-1] (P-51D-30-NA, manned): 8.0 nm on the 273 radial, 4,000 ft, heading 090, 210 knots` — note the colon; a formation collapses to one line with **no colon at all**: `Pony11 [Pony 1 flight] (P-51D-30-NA, manned) IN FORMATION with Andre (P-51D-30-NA, manned, 0.3 nm) — 2 ships, lead 13.5 nm on the 095 radial, 6,000 ft, heading 270, 180 knots`. Two edges that bite: `flatten_formation` rewrites that span to `: ` before `_FIX`/`_FIX_BY_TRACK`/`_TYPE` run, because otherwise the first `nm` they see is a wingman's 0.3 nm offset and the flight lands three hundred yards off the runway; and `_FIX` matches only the bracketed `[tag]`, so an untagged blip is invisible to the vectoring path while `units_on` and `radar_fix_by_track` still see it. `_scope_geometry` re-uses `identity._FORMATION` and `identity._OTHER_SHIP` to recover a wingman as lead-plus-offset, which is why `miles_between` can answer for an aircraft with no line of its own. When the PostGIS cache is cold `radar_picture` falls back to `dcs.radar_live`, which emits the same grammar minus groundspeed, the manned flag, the on-the-ground flag and formations — every consumer field is therefore optional by construction.
+One prose string is the whole radar contract: `feed/tracks.py` builds it (`radar_cached` runs the PostGIS query, then `_render` calls `_clusters`, `_unique_labels` and `_other_ship`), `src/marshall/feed/dcs.py::radar_picture` joins the lines with ` | ` and `director/app.py::radar_endpoint` serves it after fetching this session's tags from `src/marshall/atc/identify.py::bindings_for`. `src/marshall/atc/agent_atc.py::fetch_radar` is the bridge's reader; the agent also calls the picture itself through the `dcs.radar` tool with no bindings, and `tools/whos_who.py` reads the same endpoint. A lone contact is literally `362nd_sockeye [Pony 1-1] (P-51D-30-NA, manned): 8.0 nm on the 273 radial, 4,000 ft, heading 090, 210 knots` — note the colon; a formation collapses to one line with **no colon at all**: `Pony11 [Pony 1 flight] (P-51D-30-NA, manned) IN FORMATION with Andre (P-51D-30-NA, manned, 0.3 nm) — 2 ships, lead 13.5 nm on the 095 radial, 6,000 ft, heading 270, 180 knots`. Two edges that bite: `flatten_formation` rewrites that span to `: ` before `_FIX`/`_FIX_BY_TRACK`/`_TYPE` run, because otherwise the first `nm` they see is a wingman's 0.3 nm offset and the flight lands three hundred yards off the runway; and `_FIX` matches only the bracketed `[tag]`, so an untagged blip is invisible to the vectoring path while `units_on` and `radar_fix_by_track` still see it. `_scope_geometry` re-uses `identity._FORMATION` and `identity._OTHER_SHIP` to recover a wingman as lead-plus-offset, which is why `miles_between` can answer for an aircraft with no line of its own. When the PostGIS cache is cold `radar_picture` falls back to `dcs.radar_live`, which emits the same grammar minus groundspeed, the manned flag, the on-the-ground flag and formations — every consumer field is therefore optional by construction.
 
 > **CHANGED 30 JULY — read this before the rest of the section.** Everything
 > below described the contract as *one prose string*, and that is no longer what
@@ -1867,7 +1867,7 @@ Note the separator is an em dash `—` (U+2014). `_FORM_SPAN` and `_FORMATION` a
 | field | source | who consumes it |
 |---|---|---|
 | `label` (leading name) | `player_name or callsign or name`, deduped by `_unique_labels` (`tracks.py`) | `identity.units_on` → `unit_for_radio` (the SRS-name→unit chain); `_FIX_BY_TRACK` |
-| `[callsign]` tag | `contacts` table via `bindings_for` (`director/tools/identify.py`), TTL **2 h** (`identify.py:BINDING_TTL_SEC`) | `_FIX` / `radar_fix`, `radar_fixes`, `_RANGE` / `radar_range_for`, `_TYPE` / `aircraft_type_on_scope`. **Only tagged contacts are visible to these.** |
+| `[callsign]` tag | `contacts` table via `bindings_for` (`src/marshall/atc/identify.py`), TTL **2 h** (`identify.py:BINDING_TTL_SEC`) | `_FIX` / `radar_fix`, `radar_fixes`, `_RANGE` / `radar_range_for`, `_TYPE` / `aircraft_type_on_scope`. **Only tagged contacts are visible to these.** |
 | `type` | sim's `u.type` | `aircraft_type_on_scope` → `equipment.receivers` → whether he can be sent to a beacon or must be vectored |
 | `manned` | non-empty `tracks.player` (`tracks.py`) | `identity.Unit.manned` → `Registry.by_elimination` (`identity.py`). **No `manned` markers anywhere = no guest can ever be identified by elimination.** |
 | `on the ground` | `events.on_the_ground` — the sim's land/takeoff **events**, not an altitude guess (`tracks.py`, `src/marshall/feed/events.py`) | `is_on_the_ground` (`agent_atc.py`) → silences approach guidance, drives the Tower handoff. Absent means "airborne **or** nothing has told us"; the caller keeps an alt/speed fallback |
@@ -2218,7 +2218,7 @@ The push path, `agent_atc.load_and_push_plate` (`agent_atc.py`), runs
 once per bridge start and does four things in order:
 
 1. `PUT /approaches/batumi-asr` with `profile_to_dict(profile)` —
- `director/tools/approaches.py:upsert_approach` does `ON CONFLICT DO UPDATE
+ `src/marshall/atc/approaches.py:upsert_approach` does `ON CONFLICT DO UPDATE
  SET data=EXCLUDED.data`
 2. `PUT /flightplans/362nd-batumi-asr`, then `GET /flightplan/active`, and
  **rebuilds the profile from the DB row** via `profile_from_dict`
@@ -2415,14 +2415,14 @@ Honest list, current as of today's source:
 
 ## Flight plans and clearances
 
-Clearance delivery is entirely a **director** concern. Nothing in `src/marshall/` composes a clearance; the bridge only carries the words. If a clearance sounded wrong, the suspect list is `director/tools/clearance.py`, `director/tools/plans.py`, the two Postgres tables, and — for the *wording* around the numbers — `director/prompts/rules.md` lines 131–166. The bridge is implicated in exactly two places, both named at the end of this section.
+Clearance delivery is entirely a **director** concern. Nothing in `src/marshall/` composes a clearance; the bridge only carries the words. If a clearance sounded wrong, the suspect list is `src/marshall/atc/clearance.py`, `src/marshall/atc/plans.py`, the two Postgres tables, and — for the *wording* around the numbers — `director/prompts/rules.md` lines 131–166. The bridge is implicated in exactly two places, both named at the end of this section.
 
 ### The two tables
 
 | | `flight_plans` | `assigned_plans` |
 |---|---|---|
 | what it is | what was **filed** — a template | what an aeroplane was **given** — a copy |
-| created | `tools/approaches.py` (name, callsign, approach, weather, active), extended by `migrations/009` (origin, destination, route, cruise_ft, task) and `010` (label) | `migrations/009_flight_plans_are_templates.sql` |
+| created | `src/marshall/atc/approaches.py` (name, callsign, approach, weather, active), extended by `migrations/009` (origin, destination, route, cruise_ft, task) and `010` (label) | `migrations/009_flight_plans_are_templates.sql` |
 | keyed on | `name` (a slug, `362nd-batumi-asr`) | `id`, with a **unique index on `flight_id`** (`assigned_plans_one_per_flight`) |
 | owner | nobody | one `flights.id` |
 | read by | `clearance.filed` (`clearance.py`), `GET /plans` | `clearance.assigned(flight_id)` (`clearance.py`), the `flight_with_plan` view |
@@ -2631,7 +2631,7 @@ call and never stored; only dialogue is remembered.**
 | SITUATION — radar, strip, phase, who you are | re-derived per call | no |
 | CONVERSATION — the pilot's words and the replies | the exchange itself | **yes, and only this** |
 
-`tools/context.py` does it in `apply_management`, which strands calls after every
+`src/marshall/atc/agent/context.py` does it in `apply_management`, which strands calls after every
 event-loop cycle. Two details worth knowing when reading it:
 
 **The newest situation-bearing message is never scrubbed.** `apply_management`
@@ -2822,7 +2822,7 @@ erDiagram
  CONTACTS }o..|| SESSIONS : "session_id is text not a FK"
 ```
 
-Solid lines are declared foreign keys; dotted lines are joins made by name only, and that is where the conflations live. Three columns hold a NAME for the same aeroplane and none of them are the same string: `flights.callsign` (spoken), `flights.track_name` and `contacts.track_label` (the sim's label, player-name-first), and `flights.srs_guid` (the radio). `flight_state` and `flight_airspace` both join `tracks` to `flights`, but migration `013_join_a_track_by_either_name.sql` widened only `flight_airspace` to `t.name = f.track_name OR t.label = f.track_name` — `flight_state` in `004_flights.sql` still joins on `name` alone, so a flight bound from the radar picture's label can be radar-identified in one view and not the other. Sources: `director/migrations/004_flights.sql`, `005_sectors.sql`, `009_flight_plans_are_templates.sql`, `013_join_a_track_by_either_name.sql`, `feed/tracks.py`, `director/tools/identify.py`, `director/tools/approaches.py`, `src/marshall/feed/events.py`.
+Solid lines are declared foreign keys; dotted lines are joins made by name only, and that is where the conflations live. Three columns hold a NAME for the same aeroplane and none of them are the same string: `flights.callsign` (spoken), `flights.track_name` and `contacts.track_label` (the sim's label, player-name-first), and `flights.srs_guid` (the radio). `flight_state` and `flight_airspace` both join `tracks` to `flights`, but migration `013_join_a_track_by_either_name.sql` widened only `flight_airspace` to `t.name = f.track_name OR t.label = f.track_name` — `flight_state` in `004_flights.sql` still joins on `name` alone, so a flight bound from the radar picture's label can be radar-identified in one view and not the other. Sources: `director/migrations/004_flights.sql`, `005_sectors.sql`, `009_flight_plans_are_templates.sql`, `013_join_a_track_by_either_name.sql`, `feed/tracks.py`, `src/marshall/atc/identify.py`, `src/marshall/atc/approaches.py`, `src/marshall/feed/events.py`.
 
 ```mermaid
 flowchart LR

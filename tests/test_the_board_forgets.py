@@ -73,9 +73,7 @@ class SrsNameIsABindingKey(unittest.TestCase):
 
     def test_bind_matches_on_it(self):
         import inspect
-        import sys
-        sys.path.insert(0, "director")
-        from tools import flights as F
+        from marshall.atc import board as F
         cols = self._cols(inspect.getsource(F._all_matching))
         self.assertIn("srs_name", cols)
 
@@ -84,9 +82,7 @@ class SrsNameIsABindingKey(unittest.TestCase):
         can pick the same one -- it is last precisely because it is worst, and
         it is present because the alternative was minting a row."""
         import inspect
-        import sys
-        sys.path.insert(0, "director")
-        from tools import flights as F
+        from marshall.atc import board as F
         cols = self._cols(inspect.getsource(F._all_matching))
         self.assertEqual(cols[-1], "srs_name")
         self.assertLess(cols.index("srs_guid"), cols.index("srs_name"))
@@ -97,9 +93,7 @@ class SrsNameIsABindingKey(unittest.TestCase):
         disagree about who an aeroplane is."""
         import inspect
         import re
-        import sys
-        sys.path.insert(0, "director")
-        from tools import flights as F
+        from marshall.atc import board as F
         # `find` pairs each column with its value, so take the column names.
         src = inspect.getsource(F.find)
         m = re.search(r"for col, val in \((.*?)\)\):", src, re.S)
@@ -118,9 +112,7 @@ class LeavingTheSlotEndsTheRow(unittest.TestCase):
 
     def test_and_the_director_can_forget_one(self):
         import inspect
-        import sys
-        sys.path.insert(0, "director")
-        from tools import flights as F
+        from marshall.atc import board as F
         src = inspect.getsource(F.forget)
         # ...with everything that hangs off it, or the orphans move down a level.
         self.assertIn("assigned_plans", src)
@@ -133,9 +125,7 @@ class SilenceExpiresIt(unittest.TestCase):
 
     def test_it_asks_both_questions(self):
         import inspect
-        import sys
-        sys.path.insert(0, "director")
-        from tools import flights as F
+        from marshall.atc import board as F
         src = inspect.getsource(F.expire)
         self.assertIn("updated_at", src, "the radio")
         self.assertIn("tracks", src, "and the scope")

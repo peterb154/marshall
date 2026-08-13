@@ -20,13 +20,10 @@ aerodrome, so keying on `ground` puts Kobuleti's promise and Batumi's in one
 bucket -- which is how `store_id` was got wrong the first time too.
 """
 
-import sys
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "director"))
-
-from tools import hooks as H
+from marshall.atc.agent import hooks as H
 
 SESSION = "hooks"          # what a bridge actually sends: one, for everybody
 

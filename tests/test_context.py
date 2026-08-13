@@ -17,13 +17,10 @@ The tests that matter here are not the arithmetic. They are:
   * that scrubbing is idempotent, since it runs on every cycle.
 """
 
-import sys
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "director"))
-
-from tools.context import WINDOW, RadioContext, scrub, strip_situation
+from marshall.atc.agent.context import WINDOW, RadioContext, scrub, strip_situation
 
 SITUATION = (
     "RADAR: 362nd_sockeye [Pony 1-1] (P-51D-30-NA, manned): 8.0 nm on the 281 "

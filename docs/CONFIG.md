@@ -199,7 +199,7 @@ Three shapes, and they are deliberately not one:
 The bridge and the director are separate deployables with a contract between
 them, and `push_fixes` says plainly that they *do not share code*. So a shared
 model across that seam would be the wrong kind of coupling — and the repo
-already has the right pattern for this: `director/tools/flights.py` duplicates
+already has the right pattern for this: `src/marshall/atc/board.py` duplicates
 `PHASES` from `phases.py` with the comment *"Duplicated deliberately: the
 director must be able to reject a phase it does not know without importing the
 ATC package"*.

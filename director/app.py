@@ -39,8 +39,8 @@ from marshall.feed.dcs import (
     spawn_ground,
     radar_picture,
 )
-from tools.capability import capabilities, describe
-from tools.approaches import (
+from marshall.atc.agent.capability import capabilities, describe
+from marshall.atc.approaches import (
     active_flight_plan,
     get_approach,
     list_approaches,
@@ -49,11 +49,11 @@ from tools.approaches import (
     upsert_flight_plan,
 )
 from tools.busy import SeatLocks
-from tools.clearance import clearance_tools
-from tools.context import RadioContext, scrub
-from tools.frequencies import frequency_tools
-from tools.hooks import due_hooks, hook_tools
-from tools.identify import bindings_for, identify_tools
+from marshall.atc.clearance import clearance_tools
+from marshall.atc.agent.context import RadioContext, scrub
+from marshall.atc.frequencies import frequency_tools
+from marshall.atc.agent.hooks import due_hooks, hook_tools
+from marshall.atc.identify import bindings_for, identify_tools
 from marshall.feed.events import start_events
 from marshall.feed.tracks import start_streamer, vector
 from datetime import UTC
@@ -524,7 +524,7 @@ def put_flightplan_endpoint(name: str, body: dict) -> dict:
 @app.get("/flights")
 def flights_endpoint(mission: str = "default",
                      controller: str = "") -> dict:
-    from tools import flights as F
+    from marshall.atc import board as F
     return {"flights": F.working(mission, controller or None)}
 
 
@@ -532,7 +532,7 @@ def flights_endpoint(mission: str = "default",
 def flights_bind_endpoint(body: dict) -> dict:
     """Attach a name to an aeroplane. Safe to call with partial information and
     safe to repeat -- which is how identity actually arrives."""
-    from tools import flights as F
+    from marshall.atc import board as F
     mission = body.pop("mission", "default")
     return F.bind(mission, **body)
 
@@ -540,20 +540,20 @@ def flights_bind_endpoint(body: dict) -> dict:
 @app.post("/flights/{flight_id}/agree")
 def flights_agree_endpoint(flight_id: int, body: dict) -> dict:
     """Record something that was AGREED. The only way state changes."""
-    from tools import flights as F
+    from marshall.atc import board as F
     return F.agree(flight_id, **body) or {}
 
 
 @app.post("/flights/{flight_id}/handoff")
 def flights_handoff_endpoint(flight_id: int, body: dict) -> dict:
-    from tools import flights as F
+    from marshall.atc import board as F
     return F.hand_off(flight_id, body["to"]) or {}
 
 
 @app.get("/flights/due-handoff")
 def flights_due_handoff_endpoint(mission: str = "default") -> dict:
     """Inside one controller's airspace, on another's frequency."""
-    from tools import flights as F
+    from marshall.atc import board as F
     return {"due": F.due_handoff(mission)}
 
 
@@ -565,7 +565,7 @@ def flight_forget_endpoint(flight_id: int) -> dict:
     and until now nothing freed the ROW -- so a callsign and a track name stayed
     claimed for ever by somebody who had gone home. See docs/STATE.md.
     """
-    from tools import flights as F
+    from marshall.atc import board as F
     return {"deleted": F.forget(flight_id)}
 
 
@@ -584,14 +584,14 @@ def flights_expire_endpoint(mission: str = "default",
     off the board mid-hold would be a far worse failure than leaving a stale row
     for a quarter of an hour.
     """
-    from tools import flights as F
+    from marshall.atc import board as F
     return {"expired": F.expire(mission, older_than_sec)}
 
 
 @app.delete("/flights")
 def flights_clear_endpoint(mission: str = "default") -> dict:
     """Forget the last sortie. Stale aircraft are worse than none."""
-    from tools import flights as F
+    from marshall.atc import board as F
     return {"deleted": F.clear_mission(mission)}
 
 
@@ -607,7 +607,7 @@ def active_flightplan_endpoint() -> dict:
 @app.get("/plans")
 def plans_endpoint() -> dict:
     """Everything on file. Unfiltered: any pilot may request any plan."""
-    from tools.clearance import filed
+    from marshall.atc.clearance import filed
     return {"plans": filed()}
 
 
@@ -618,7 +618,7 @@ def plans_endpoint() -> dict:
 @app.post("/plans")
 def file_plan_endpoint(body: dict) -> dict:
     """File a plan, or refuse it and say which part cannot be flown."""
-    from tools.filing import file_plan
+    from marshall.atc.filing import file_plan
     return file_plan(body, updating=body.get("updating", ""))
 
 
@@ -626,14 +626,14 @@ def file_plan_endpoint(body: dict) -> dict:
 def check_plan_endpoint(body: dict) -> dict:
     """What would be refused, without filing anything. Lets a form say so while
     somebody is still typing rather than after they have pressed the button."""
-    from tools.filing import check_live
+    from marshall.atc.filing import check_live
     bad, warn = check_live(body, updating=body.get("updating", ""))
     return {"refused": bad, "warnings": warn}
 
 
 @app.delete("/plans/{name}")
 def unfile_plan_endpoint(name: str) -> dict:
-    from tools.filing import unfile
+    from marshall.atc.filing import unfile
     return unfile(name)
 
 
@@ -641,14 +641,14 @@ def unfile_plan_endpoint(name: str) -> dict:
 def plan_fixes_endpoint() -> dict:
     """Every place a route may name. The form offers these and nothing else, so
     a typo is a thing you cannot make rather than a thing you are told about."""
-    from tools.filing import known_fixes
+    from marshall.atc.filing import known_fixes
     return {"fixes": sorted(known_fixes())}
 
 
 @app.get("/plans/approaches")
 def plan_approaches_endpoint() -> dict:
     """The procedures a filed plan may name on arrival."""
-    from tools.filing import known_approaches
+    from marshall.atc.filing import known_approaches
     return {"approaches": sorted(known_approaches())}
 
 
@@ -656,14 +656,14 @@ def plan_approaches_endpoint() -> dict:
 def resolve_plan_endpoint(said: str, callsign: str = "") -> dict:
     """Which plan he means, without assigning it. The dry run for the radio, and
     what the sweep script scores against."""
-    from tools.clearance import resolve
+    from marshall.atc.clearance import resolve
     return resolve(said, callsign or None)
 
 
 @app.post("/flights/{flight_id}/assign-plan")
 def assign_plan_endpoint(flight_id: int, body: dict) -> dict:
     """Copy a filed plan onto this flight, by name or by what he said."""
-    from tools.clearance import assign, filed, resolve
+    from marshall.atc.clearance import assign, filed, resolve
     plan = None
     if body.get("plan"):
         plan = next((p for p in filed() if p["name"] == body["plan"]), None)
@@ -681,7 +681,7 @@ def assign_plan_endpoint(flight_id: int, body: dict) -> dict:
 @app.post("/flights/{flight_id}/clearance-ack")
 def clearance_ack_endpoint(flight_id: int) -> dict:
     """He read it back. Cleared and agreed are not the same thing."""
-    from tools.clearance import ack
+    from marshall.atc.clearance import ack
     return ack(flight_id)
 
 

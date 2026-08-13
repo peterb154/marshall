@@ -5,13 +5,9 @@ sortie leaves Batumi, does something and comes back to Batumi. What separates
 plans is what a pilot would say anyway: what he is doing and where.
 """
 
-import sys
 import unittest
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "director"))
-
-from tools import plans as P
+from marshall.atc import plans as P
 
 FILED = [
     {"name": "asr", "label": "Samovar One", "destination": "Batumi",
@@ -322,7 +318,7 @@ class TestAPlanOnFileBelongsToNobody(unittest.TestCase):
 
     def test_the_column_is_not_even_read(self):
         """Filtered at the query, so it cannot come back by accident."""
-        from tools.clearance import _TEMPLATE_COLS
+        from marshall.atc.clearance import _TEMPLATE_COLS
         self.assertNotIn("callsign", _TEMPLATE_COLS)
 
     def test_one_plan_on_file_is_still_the_only_one_on_file(self):

@@ -796,9 +796,7 @@ class OnlyOneThingJudgesTheReadBack(unittest.TestCase):
         it REPORTS the state and cannot set it."""
         import inspect
 
-        import sys
-        sys.path.insert(0, "director")
-        from tools import clearance as C
+        from marshall.atc import clearance as C
         src = inspect.getsource(C.clearance_tools)
         self.assertNotIn("def clearance_read_back", src)
         self.assertIn("def clearance_state", src)

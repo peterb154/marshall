@@ -122,7 +122,7 @@ Three phases, each independently useful, each shippable alone.
 ### Phase 1 — file a plan without a migration — **DONE 8 August**
 
 `POST /plans` on the director, `/file` on the kneeboard, and
-`director/tools/filing.py` holding every rule — the narrowest thing that closes
+`src/marshall/atc/filing.py` holding every rule — the narrowest thing that closes
 #22, writing the row the schema already defines.
 
 Validation is the substance, not the form: a route naming a fix nobody holds

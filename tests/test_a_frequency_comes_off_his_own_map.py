@@ -26,14 +26,11 @@ reach for whatever list is left.
 The fixtures are the live rows, trimmed to the fields the tool reads.
 """
 
-import sys
 import unittest
 import unittest.mock as mock
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "director"))
-
-from tools import frequencies as F
+from marshall.atc import frequencies as F
 
 
 def _st(name, field, role, mhz, also=()):

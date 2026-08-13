@@ -211,15 +211,10 @@ class TestASessionFromAnOlderManagerDoesNotSilenceATC(unittest.TestCase):
     """
 
     def manager(self):
-        from tools.context import RadioContext
+        from marshall.atc.agent.context import RadioContext
         return RadioContext()
 
     def setUp(self):
-        import sys
-        from pathlib import Path
-        d = str(Path(__file__).resolve().parents[1] / "director")
-        if d not in sys.path:
-            sys.path.insert(0, d)
         try:
             self.m = self.manager()
         except Exception as e:              # strands absent -- the shim path

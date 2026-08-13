@@ -48,7 +48,7 @@ the same root cause.
 | "director" names a bundle of two unrelated things | **SUPERSEDED** | the bundle was unbundled; what is left is a smaller, more honest one |
 | Delete the `/radar` prose round trip | **PARTLY APPLIED** | `c6afa12` built the replacement; six callers still parse the prose (#47) |
 | Delete twelve CRUD endpoints | **STILL INTENT, going backwards** | 24 routes on 31 July, **34** today |
-| `director/tools/flights.py` — 326 lines of SQL | **STILL INTENT, going backwards** | 377 lines today |
+| the flights SQL module — 326 lines of SQL | **STILL INTENT for the deletion; it has MOVED** | `src/marshall/atc/board.py`, 377 lines |
 | Horizontal parts / vertical domains | **STILL INTENT** as a taxonomy | no `traffic`, `planner` or `opfor` |
 
 Two rows in that table are worth more than the rest, because they point the
@@ -482,7 +482,8 @@ vocabulary beats a correct one nobody says, and both now point here.
     between our own components. `_SCOPE_LINE`, `_FORMATION`, `_OTHER_SHIP`,
     `flatten_formation`, `_split_ships` go with it.
   * about twelve CRUD endpoints and the HTTP client functions that call them.
-  * `director/tools/flights.py` -- 326 lines of SQL wrapped in Python that the
+  * `src/marshall/atc/board.py`, the flights SQL module -- 326 lines
+    of SQL wrapped in Python that the
     schema and a session can do.
 
 > **This is the half that did not happen, and two of the three have gone
@@ -498,7 +499,9 @@ vocabulary beats a correct one nobody says, and both now point here.
 > * **Twelve CRUD endpoints: WORSE.** `director/app.py` had 24 routes when this
 >   was written and has **34** today. Every one was added for a good local
 >   reason, which is exactly how this shape grows.
-> * **`director/tools/flights.py`: WORSE.** 326 lines then, **377** now.
+> * **the flights SQL module: WORSE.** 326 lines then, **377** now. It has since
+>   moved to `src/marshall/atc/board.py` and is the same 377 lines; a move is
+>   not a deletion.
 >
 > A deletion nobody is accountable for does not happen. The endpoints and
 > `flights.py` are the concrete work item behind step 3 above.

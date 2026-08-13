@@ -18,6 +18,14 @@ keyed the mic. `bind` is how they get attached to one row, and it is written to
 be safe to call repeatedly with partial information, because that is how
 identity actually arrives -- a voice before a track, a track before a voice, a
 filed plan before either.
+
+WHY THIS IS `board` AND NOT `flights`. It was `director/tools/flights.py` until
+#147 moved it out of the deployable, and `marshall/atc/flights.py` was already
+taken by the in-memory ROSTER -- who is flying with whom, handles and flight
+names, no database anywhere in it. Two modules called `flights` in one package
+is the ambiguity this repo keeps paying for: the wrong answer is always
+plausible. This is the `flights` TABLE, which `clearance.not_on_the_board` and
+`docs/STATE.md` both already call the board.
 """
 
 from __future__ import annotations

@@ -31,9 +31,8 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "director"))
 
-from tools import plans as P
+from marshall.atc import plans as P
 
 # Mirrors migrations/012, 017 and 019. Kept here so the sweep runs with no database, no
 # container and no network -- the point of a tier-1 check is that there is

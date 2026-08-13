@@ -38,7 +38,7 @@ class TestTheMissionReachesTheTools(unittest.TestCase):
 
     def setUp(self):
         self.app = (ROOT / "director" / "app.py").read_text()
-        self.clr = (ROOT / "director" / "tools" / "clearance.py").read_text()
+        self.clr = (ROOT / "src" / "marshall" / "atc" / "clearance.py").read_text()
 
     def test_the_tools_are_bound_to_a_mission(self):
         # The bug in one line: `clearance_tools()` with no argument. It takes
@@ -66,7 +66,7 @@ class TestTheMissionReachesTheTools(unittest.TestCase):
     def test_finding_a_flight_still_filters_on_the_mission(self):
         # If this ever stops being true the wiring above is pointless, and the
         # rows of one sortie become visible to the next.
-        fl = (ROOT / "director" / "tools" / "flights.py").read_text()
+        fl = (ROOT / "src" / "marshall" / "atc" / "board.py").read_text()
         self.assertIn("WHERE mission = %s", fl)
 
 
@@ -77,7 +77,7 @@ class TestTheTwoBoardsAreDifferentThings(unittest.TestCase):
         # "I have no flight on the board" is true of the FLIGHTS board and says
         # nothing about what is FILED -- and a pilot hears it as his flight plan
         # having gone missing, which is what happened.
-        src = (ROOT / "director" / "tools" / "clearance.py").read_text()
+        src = (ROOT / "src" / "marshall" / "atc" / "clearance.py").read_text()
         self.assertIn("def not_on_the_board", src)
 
 

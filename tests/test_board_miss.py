@@ -21,13 +21,9 @@ return is the only instruction the controller gets, and one that can be
 paraphrased into a falsehood will be.
 """
 
-import sys
 import unittest
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "director"))
-
-from tools.clearance import not_on_the_board
+from marshall.atc.clearance import not_on_the_board
 
 
 class TestTheMissIsAboutTheManNotThePlan(unittest.TestCase):

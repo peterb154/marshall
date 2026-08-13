@@ -16,13 +16,10 @@ pilot can influence -- the same reason `station_on` decides who is speaking
 rather than anything in the transcript.
 """
 
-import sys
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "director"))
-
-from tools.capability import capabilities
+from marshall.atc.agent.capability import capabilities
 
 from marshall.core import route as R
 

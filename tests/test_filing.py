@@ -19,13 +19,9 @@ week the filer was written:
 container and no director. That is the point of the split -- see its docstring.
 """
 
-import sys
 import unittest
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "director"))
-
-from tools import filing as F
+from marshall.atc import filing as F
 
 FIXES = {"batumi", "kobuleti", "initial", "feet wet", "ingress", "tsutsnvati",
          "egress", "kutaisi"}

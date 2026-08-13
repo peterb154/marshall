@@ -158,7 +158,7 @@ to *different fields*. The bridge holds one `ApproachProfile` and the geometry,
 the controller and the plate all read it. The schema here will carry
 `destination` and `approach` from the start so that work needs no migration.
 
-Code: `director/tools/approaches.py`, `director/migrations/`, `flights` table
+Code: `src/marshall/atc/approaches.py`, `director/migrations/`, `flights` table
 (columns already exist and nothing writes them).
 
 ---
@@ -469,7 +469,7 @@ and the controller asks each aircraft to check in by name at the break-up.
 
 Tests: C4, C4a, C4b, F5
 Code: `agent_atc.transmitter_callsign`, `controller._identify_phrase`,
-`director/tools/identify.py`
+`src/marshall/atc/identify.py`
 
 ---
 
@@ -910,7 +910,7 @@ discharged are that list, and showing it to him closes a blindness nobody had
 noticed. `set_hook` is fire-and-forget today: the agent cannot see what it has
 already promised, so it cannot avoid promising twice, cannot say it is busy, and
 cannot tell you what it owes. `pending_hooks()` already exists in
-`director/tools/hooks.py` and nothing calls it.
+`src/marshall/atc/agent/hooks.py` and nothing calls it.
 
 WHERE EACH CONDITION IS EVALUATED IS A SPLIT, and worth deciding rather than
 discovering. Time is either. Geometry belongs to the DIRECTOR, where PostGIS can
@@ -1072,7 +1072,7 @@ labels: feature
 
 `plans.pick` matches a spoken request to a filed plan by word overlap, scored
 against `_NOISE` -- **a stop-word list with 126 hand-maintained entries**
-(`director/tools/plans.py`). It works until somebody says an ordinary thing that
+(`src/marshall/atc/plans.py`). It works until somebody says an ordinary thing that
 is not on the list, and then it fails in the worst available way: a request that
 names nothing scores zero, hits the "he named somewhere nobody filed for" branch,
 and the pilot is told nothing on file matches.
@@ -4265,7 +4265,7 @@ labels: architecture
 
 **Status:** DONE 10 August, verified against the running director.
 
-`director/tools/capability.py` maps a seat to what it may reach for, and
+`src/marshall/atc/agent/capability.py` maps a seat to what it may reach for, and
 `build_agent` constructs the tool list from it. **What is absent cannot be
 called** — the same argument that keeps an LLM out of separation: authority is
 structural, not advisory.
@@ -7834,7 +7834,7 @@ proposal about SHAPE landed; the parts about DELETION did not, and two went
 backwards:
 
     director/app.py routes         24  (31 July)  ->  34
-    director/tools/flights.py     326 lines       ->  377
+    the flights SQL module        326 lines       ->  377
     the /radar prose parsers      to be deleted   ->  replacement built
                                                      (c6afa12), old path
                                                      never switched off (#47)
@@ -8223,7 +8223,7 @@ From the same audit, 13 August, sweeping `director/` for the #146 shape. Three
 sites turn *"we do not know"* into a definite answer, and each one has a
 comment nearby stating the rule it breaks.
 
-**1. A merge treats `False` and `0` as "not known".** `director/tools/flights.py:176`
+**1. A merge treats `False` and `0` as "not known".** `src/marshall/atc/board.py:176`
 
     if keep.get(k) in (None, "", 0) and other.get(k) not in (None, ""):
 
@@ -8244,7 +8244,7 @@ read, which is what distinguishes 'cold cache' from 'empty sky'"*. The fallback
 discards exactly that. `picture` on the next line comes from a separate call, so
 the prose and the structured field can disagree inside one response.
 
-**3. Navigation capability from an absent airframe.** `director/tools/plans.py:452`
+**3. Navigation capability from an absent airframe.** `src/marshall/atc/plans.py:452`
 
     if not aircraft_type: return "dr"
 
@@ -8263,7 +8263,7 @@ reckoning only… he cannot tell you where he is."* There is no output meaning
 3. An unknown airframe produces a "we do not know what he is flying" answer
    rather than the most pessimistic capability.
 
-Code: `director/tools/flights.py`, `director/app.py`, `director/tools/plans.py`.
+Code: `src/marshall/atc/board.py`, `director/app.py`, `src/marshall/atc/plans.py`.
 
 Status: OPEN — diagnosed, not fixed.
 
@@ -9171,7 +9171,7 @@ exists to catch.
 
 ### A promise knows its seat, and the callback still guesses
 
-`director/tools/hooks.py` now keys hooks on `(session, seat)` and every hook
+`src/marshall/atc/agent/hooks.py` now keys hooks on `(session, seat)` and every hook
 carries its `station`, `role` and `seat`, so the promise is filed under the man
 who made it. The last step is the bridge's: `agent_atc.py:5812` calls
 `hook_frequency(why, bridge.heard_on, bridge.last_active_hz[0])`, which falls

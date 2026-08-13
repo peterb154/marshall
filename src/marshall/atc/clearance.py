@@ -23,7 +23,7 @@ from __future__ import annotations
 import logging
 import re
 
-from tools import plans as P
+from marshall.atc import plans as P
 from datetime import UTC
 
 log = logging.getLogger(__name__)
@@ -95,7 +95,7 @@ def filed() -> list[dict]:
         rows = c.execute(
             f"SELECT {', '.join(_TEMPLATE_COLS)} FROM flight_plans "
             f"ORDER BY label NULLS LAST, name").fetchall()
-    from tools.filing import derived
+    from marshall.atc.filing import derived
     plans = [derived(dict(zip(_TEMPLATE_COLS, r))) for r in rows]
     here = set(_known_fixes())
     if not here:
@@ -157,7 +157,7 @@ def assign(flight_id: int, plan: dict, *, mission: str = "default",
     # -- the state view, the plate, anything asking "where is he going". Written
     # in the same call as the copy so the two cannot drift; the copy keeps the
     # provenance and the read-back, the flight row keeps what was agreed.
-    from tools import flights as F
+    from marshall.atc import board as F
     F.agree(flight_id, flight_plan=row.get("name"),
             flight_plan_label=row.get("label"),
             destination=row.get("destination"),
@@ -173,7 +173,7 @@ def _squawk_for(flight_id: int) -> str:
     the words that were spoken -- `plans` composes the clearance from the same
     function."""
     try:
-        from tools.plans import squawk_for
+        from marshall.atc.plans import squawk_for
         return squawk_for(flight_id)
     except Exception:                       # never lose a clearance to this
         return ""
@@ -187,7 +187,7 @@ def ack(flight_id: int) -> dict:
                   (flight_id,))
     from datetime import datetime
 
-    from tools import flights as F
+    from marshall.atc import board as F
     # A timestamp, not a flag: WHEN he agreed is the useful part, and the column
     # has been a timestamptz since the flights table was written.
     F.agree(flight_id, clearance_ack=datetime.now(UTC))
@@ -354,7 +354,7 @@ def clearance_tools(mission: str = "default", station: str = "") -> list:
     here = field_of(station)
 
     def _flight(callsign: str) -> dict | None:
-        from tools import flights as F
+        from marshall.atc import board as F
         for cs in (canonical_callsign(callsign), callsign):
             got = F.find(mission, callsign=cs)
             if got:
@@ -362,7 +362,7 @@ def clearance_tools(mission: str = "default", station: str = "") -> list:
         return None
 
     def _not_on_the_board(callsign: str) -> str:
-        from tools import flights as F
+        from marshall.atc import board as F
         try:
             have = F.callsigns(mission)
         except Exception as e:                  # never lose the refusal to a query
