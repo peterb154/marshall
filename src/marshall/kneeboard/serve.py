@@ -1,4 +1,4 @@
-"""FastAPI server for the kneeboard pages -- and the seam the flight-planning
+"""FastAPI server for the in-cockpit pages -- and the seam the flight-planning
 app grows onto later.
 
 Layout of the site (room to grow):
@@ -170,13 +170,13 @@ _HOME = """<!doctype html><meta charset="utf-8"><title>Marshall</title>
 </style>
 <main>
   <h1>MARSHALL</h1>
-  <p>Procedural radio ATC &middot; kneeboard charts</p>
+  <p>Procedural radio ATC</p>
   <a href="/flighttest/">&rarr; flight test card</a>
   <a href="/file">&rarr; file a flight plan
     <span class="why">&mdash; a desk page; the board the controller reads</span></a>
   <a href="/diag">&rarr; live diagnostics</a>
   <a href="/docs">&rarr; documents</a>
-  <p class="why">charts, card and diagnostics are OpenKneeboard Web Dashboard
+  <p class="why">the card and the diagnostics are OpenKneeboard Web Dashboard
      pages &mdash; point a tab at each. The documents are for a desk.</p>
 </main>
 """
