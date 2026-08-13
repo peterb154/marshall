@@ -9215,8 +9215,32 @@ director database that has been reset answers "no station list is published" to
 every question about every field on both maps, and the only reason it works
 today is that four rows predate #162.
 
-Status: OPEN — the hook half is done; the station half is the regression and is
-not. Do not close on the hook commit.
+**BOTH HALVES DONE 13 August.** The station half is `push_stations` beside
+`push_sectors`, in the shape `/sectors` already had end to end, with
+`frequencies._stations` reading the new table instead of
+`approaches.data->'stations'`.
+
+Two decisions in it worth keeping. The per-seat SCAN is gone — the table is
+per-run, so there is one list and nothing to walk — but the membership CHECK it
+had hardened into stays, because `set_stations` refuses an empty push
+(`set_sectors`' rule verbatim: a bridge that could not build a list must not
+wipe the last good one, and a 1944 letdown legitimately staffs no ladder). So
+the table can still hold the PREVIOUS run's map, and trusting a list only where
+it names the seat asking is what keeps a Georgian frequency out of a Nevada
+cockpit.
+
+The four fossil rows are deliberately left. They are the only reason the live
+lookup answers anything today; migration 032 carries the one line to clean them
+once a bridge with the push has run, and a test asserts 032 contains no
+`UPDATE approaches`.
+
+**NOT DEPLOYED.** A human runs `cd director && docker compose up -d --build`
+(migrations run at container start), then restarts the radio so the first push
+happens. Until then `SELECT count(*) FROM stations` is 0 and the lookup fails
+closed rather than answering off the wrong map.
+
+Status: FIXED in code, not deployed. Needs the migration applied and a bridge
+restart before it is true of the running system.
 Labels: needs-flight-test
 
 ---
