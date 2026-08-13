@@ -166,10 +166,15 @@ class TestThePageDoesNotJoin(unittest.TestCase):
     def test_the_board_says_what_he_is_flying(self):
         """It carried the type all along and the table had no column for it, so
         the board named a man and never said what he was in -- while the
-        untracked panel showed the type for every contact on the scope."""
+        untracked panel showed the type for every contact on the scope.
+
+        The column became a CARD when the board went portrait, so this asks
+        what it always meant to ask -- that the page renders the field -- rather
+        than for one particular `<th>`.
+        """
         row = publish("Pony 1-1", "362nd_sockeye")["board"][0]
         self.assertEqual(row["type"], "P-51D-30-NA")
-        self.assertIn("<th>type</th>", diag.page())
+        self.assertIn("val(r.type)", diag.page())
 
     def test_and_its_own_owner_state_and_intent(self):
         """Three facts from three authorities, published separately so the page
@@ -495,3 +500,261 @@ class TheFlightCardActuallyReachesTheCockpit(unittest.TestCase):
         from marshall.kneeboard import flighttest
         vals = list(flighttest.GUIDS.values())
         self.assertEqual(len(vals), len(set(vals)))
+
+
+# --- the revamp: what the page could not say, and now must ------------------
+#
+#     "I feel like the diag page might need revamping. I feel like it might
+#      have been lying a little to console me. I want to make sure that it
+#      represents what atc is seeing and thinking so that I can rationalize why
+#      something is happening"
+#
+# Each class below is one way it consoled: a decision recorded and never shown,
+# a value nothing decided printed as an answer, one clock standing in for two,
+# and a panel that was published and never forwarded.
+
+
+def _with_build(fn):
+    """Run `fn(build_dir)` against a redirected build dir.
+
+    BOTH HALVES ARE REDIRECTED, which they were not until this file asked. The
+    snapshot path is resolved per call and the RECORDER path was a module
+    constant, so a test that pointed the build dir at a tempdir still read the
+    live `build/logs` -- passing for as long as nobody was flying and failing
+    the moment somebody was. See `diag._logs`.
+    """
+    old = config.BUILD_DIR
+    with tempfile.TemporaryDirectory() as d:
+        config.BUILD_DIR = Path(d)
+        try:
+            return fn(Path(d))
+        finally:
+            config.BUILD_DIR = old
+
+
+def _recorder(root: Path, session: str, rows: list[dict]) -> None:
+    import time as _t
+    (root / "logs").mkdir(parents=True, exist_ok=True)
+    with open(root / "logs" / f"flight-{session}.jsonl", "w") as fh:
+        for i, r in enumerate(rows):
+            fh.write(json.dumps({"t": _t.time() - (len(rows) - i), **r}) + "\n")
+
+
+def _snapshot(root: Path, **fields) -> None:
+    import time as _t
+    (root / "control").mkdir(parents=True, exist_ok=True)
+    (root / "control" / "state.json").write_text(
+        json.dumps({"at": _t.time(), "board": [], "legend": {}, **fields}))
+
+
+class TestTheReasonNothingHappened(unittest.TestCase):
+    """The single biggest gap, and it was never a missing measurement.
+
+    `watching_him` was written to record deciding NOTHING -- its docstring names
+    the sortie that cost, a pilot flying from four to thirty miles with no
+    handoff and three minutes of silent log -- and it writes a sentence saying
+    which controller kept him and why:
+
+        handoff/none  Georgia Center keeps him -- departure, 35 nm, inbound
+
+    The page read the recorder for the CONVERSATION and dropped every one of
+    these. So the answer to "why is nothing happening" was in the file the
+    diagnostics page already had open, and the diagnostics page did not print
+    it.
+    """
+
+    def state(self, rows):
+        return _with_build(lambda d: (_recorder(d, "s", rows),
+                                      diag.state(session="s"))[1])
+
+    def test_a_handoff_that_did_not_fire_reaches_the_page(self):
+        got = self.state([{"kind": "handoff/none", "callsign": "Sockeye",
+                           "text": "Batumi Approach keeps him -- approach, "
+                                   "20 nm, inbound"}])
+        self.assertEqual(len(got["quiet"]), 1)
+        self.assertIn("keeps him", got["quiet"][0]["text"])
+
+    def test_every_kind_of_no_is_carried(self):
+        """A refusal, a dropped figure, its repair and a release are all the
+        same question asked of different machinery."""
+        rows = [{"kind": k, "callsign": "Sockeye", "text": k}
+                for k in ("not_voiced", "repaired", "released", "dropped",
+                          "ship-to-ship", "atc/challenge", "atc/misnamed",
+                          "flight/refused")]
+        self.assertEqual(len(self.state(rows)["quiet"]), len(rows))
+
+    def test_the_newest_is_first_and_carries_its_age(self):
+        """`watching_him` records only when the answer CHANGES, so the top line
+        is the decision still standing."""
+        q = self.state([{"kind": "handoff/none", "callsign": "A", "text": "old"},
+                        {"kind": "handoff/none", "callsign": "A",
+                         "text": "new"}])["quiet"]
+        self.assertEqual(q[0]["text"], "new")
+        self.assertLess(q[0]["ago"], q[1]["ago"])
+
+    def test_it_is_grouped_by_the_callsign_the_recorder_wrote(self):
+        """Both sides of that lookup are the same variable in the bridge --
+        `record(callsign=cs)` and `ctl.board()`'s key -- so there is nothing to
+        fold, and no fifth copy of the name squasher goes near it."""
+        got = self.state([{"kind": "handoff/none", "callsign": "Sockeye",
+                           "text": "kept"}])
+        self.assertEqual(got["quiet_by"]["Sockeye"][0]["text"], "kept")
+
+    def test_a_record_matching_nothing_is_still_shown(self):
+        """THE MISS IS VISIBLE RATHER THAN SWALLOWED. A card with no reasons is
+        never the only account of a decision: the flat panel still has the line
+        with the name the recorder actually wrote, which is the difference
+        between a lookup that fails honestly and `|| {}`."""
+        got = self.state([{"kind": "handoff/none", "callsign": "dagger56",
+                           "text": "kept"}])
+        self.assertNotIn("Dagger 5-6", got["quiet_by"])
+        self.assertEqual(got["quiet"][0]["callsign"], "dagger56")
+
+    def test_the_page_renders_them_on_the_card_and_in_the_panel(self):
+        page = diag.page()
+        self.assertIn("quiet_by", page)
+        self.assertIn("not done", page)
+
+
+class TestTwoClocksNeverOne(unittest.TestCase):
+    """The page had one age, measuring the RECORDER, labelled and banner-ed as
+    though it measured the bridge:
+
+        "Recorder last moved 2 h ago -- this is the LAST sortie, not live
+         state. Is the bridge running?"
+
+    It was. It had published its snapshot one second earlier. The two sources
+    fail in opposite directions -- a quiet frequency ages the recorder while the
+    board is live, a stopped bridge ages the snapshot while somebody is still
+    talking -- and one number cannot say which happened.
+    """
+
+    def test_both_ages_are_published_separately(self):
+        def go(d):
+            _snapshot(d, board=[{"callsign": "A"}])
+            _recorder(d, "s", [{"kind": "pilot", "callsign": "A",
+                                "transcript": "hello"}])
+            return diag.state(session="s")
+        got = _with_build(go)
+        self.assertIsNotNone(got["sources"]["bridge"]["age"])
+        self.assertIsNotNone(got["sources"]["recorder"]["age"])
+
+    def test_a_missing_snapshot_ages_to_nothing_not_to_zero(self):
+        got = _with_build(lambda d: (_recorder(d, "s", [{"kind": "pilot"}]),
+                                     diag.state(session="s"))[1])
+        self.assertIsNone(got["bridge_age"])
+        self.assertIsNotNone(got["recorder_age"])
+
+    def test_the_page_shows_the_bridge_clock(self):
+        self.assertIn("bridge_age", diag.page())
+
+    def test_and_every_panel_says_which_source_it_came_from(self):
+        page = diag.page()
+        self.assertIn("function stamp(", page)
+        for panel in ("s-board", "s-quiet", "s-last", "s-plans"):
+            with self.subTest(panel=panel):
+                self.assertIn(panel, page)
+
+    def test_the_verdict_can_say_it_does_not_know(self):
+        """"board and radar agree" was printed for a bridge that had published
+        no board at all -- the same fault as the ghost count that could never go
+        red, one panel over."""
+        self.assertIn("no board published", diag.page())
+
+
+class TestNothingIsAnsweredThatNobodyAsked(unittest.TestCase):
+    """Three columns printed a value that no longer exists anywhere.
+
+    `flight_plans.approach` and `flight_plans.active` were deleted by migration
+    031 -- "a plan does not name an arrival ... `active` was how the bridge used
+    to read its own procedure out of a plan row" -- and the panel went on
+    printing a header for each. `x.active` was undefined on every row, so every
+    plan rendered "no", which is an ANSWER; `x.approach` was undefined and
+    rendered through `esc('&mdash;')`, so a reader saw the literal characters
+    "&mdash;" where a blank belonged.
+    """
+
+    def test_the_page_does_not_read_deleted_columns(self):
+        page = diag.page()
+        for gone in ("x.active", "x.approach"):
+            with self.subTest(field=gone):
+                self.assertNotIn(gone, page)
+
+    def test_an_em_dash_is_never_escaped(self):
+        """`esc` doing exactly its job to a string that should never have been
+        near it. The dash is a character now, in one place."""
+        import re
+        for call in re.findall(r"esc\(([^()]*)\)", diag.page()):
+            with self.subTest(call=call):
+                self.assertNotIn("&mdash;", call)
+
+    def test_a_missing_number_is_blank_and_never_zero(self):
+        """The console-lying failure in miniature: an altitude nobody published
+        shown as `0` reads as an aeroplane on the deck."""
+        page = diag.page()
+        self.assertIn("const val = v =>", page)
+        self.assertIn("(v === null || v === undefined)", page)
+        self.assertNotIn("|| 0", page)
+
+
+class TestThePanelThatCouldNotDrawARow(unittest.TestCase):
+    """`releases` is published by the bridge -- it is the only record that a
+    board entry ever existed, since a release destroys its own evidence -- and
+    `state()` never forwarded it. So the panel written to make nine wrong
+    releases visible could not render one, for the same reason `ghosts` could
+    not: the page asked for a key nothing ever gave it."""
+
+    def test_releases_reach_the_page(self):
+        def go(d):
+            _snapshot(d, releases=[{"callsign": "Dagger 1-6", "track": "t",
+                                    "scope": ["362nd_dagger"]}])
+            return diag.state(session="none")
+        self.assertEqual(_with_build(go)["releases"][0]["callsign"], "Dagger 1-6")
+
+
+class TestTheCardSaysWhatTheBoardKnew(unittest.TestCase):
+    """Two more facts the bridge published and the table had no column for.
+
+    `sortie_phase` is the rung of the ladder -- the ONE input `handoff.py`
+    reads to decide who has him next -- and the board printed only the
+    separation phase beside it. `plan` is the strip he was resolved from, joined
+    on by the bridge because it needs the identity registry to do it.
+    """
+
+    def test_the_card_renders_the_ladder_phase_and_the_strip(self):
+        page = diag.page()
+        self.assertIn("r.sortie_phase", page)
+        self.assertIn("r.plan", page)
+
+    def test_and_the_engine_s_own_view_of_radar_identification(self):
+        """Not the same question as the `confirmed` pill, and able to disagree
+        with it: this one decides whether he may take a place in the stack."""
+        self.assertIn("r.identified", diag.page())
+
+
+class TestPortrait(unittest.TestCase):
+    """It is read on a knee, in a cockpit, by somebody with two seconds.
+
+        "Yes, take liberty to re-imagine and revamp it. Ideally with a kneeboard
+         portrait layout."
+
+    The board was thirteen columns inside `<div class="scroll">` -- a class the
+    stylesheet never defined, so it did not scroll either -- and this file's own
+    comments admit what that cost: `intent` "scrolled out of sight, which reads
+    exactly like a column that was never added".
+    """
+
+    def test_the_board_is_not_a_wide_table_in_a_scroller(self):
+        page = diag.page()
+        self.assertNotIn('class="scroll"', page)
+        self.assertIn("function card(", page)
+
+    def test_the_page_itself_never_scrolls_sideways(self):
+        self.assertIn("overflow-x:hidden", diag.page())
+
+    def test_a_card_row_has_exactly_two_columns(self):
+        """Same rule the last-turn row learned the hard way: grid's answer to an
+        extra child is a new implicit column sized to min-content."""
+        page = diag.page()
+        self.assertIn(".kv{display:grid;grid-template-columns:6.4rem minmax(0,1fr)",
+                      page)

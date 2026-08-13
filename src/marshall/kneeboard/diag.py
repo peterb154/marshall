@@ -1,42 +1,69 @@
 """Live diagnostics: what the two brains believe, right now, on a kneeboard.
 
-    "I'll bet if I could see state machine info I'd know why / when things are
-     going wrong."
+    "I feel like the diag page might need revamping. I feel like it might have
+     been lying a little to console me. I want to make sure that it represents
+     what atc is seeing and thinking so that I can rationalize why something is
+     happening"
 
-Every sortie this month has been debugged the same way: fly, land, read a
-transcript, guess. The state that would have answered the question existed at
-the time and was gone by the time anybody looked. This puts it on a page in the
-cockpit while the aeroplane is still flying.
+CONSOLING IS THE FAULT THIS FILE IS ABOUT. Every panel here used to print a
+plausible value with no account of where it came from, how old it was, or
+whether anything had actually decided it -- and four of them printed a value
+nothing had decided at all:
 
-NOTHING NEW IS INSTRUMENTED, and that is the point. The bridge already appends a
-JSON line per transmission to `build/logs/flight-<session>.jsonl` -- identity
-with its authority, the deterministic engine's whole board, the computed
-directive, the roster verdicts, and the scope as it stood. This reads that file
-and the director's `/radar`, and renders. So it cannot perturb the thing it is
-measuring: a diagnostic that can break a sortie is one nobody dares run during
-one.
+    active            a column deleted from `flight_plans` by migration 031.
+                      `x.active` was undefined on every row, so the page
+                      rendered "no" for every plan, for ever. An answer.
+    filed as          `esc('&mdash;')` -- the em dash was escaped into the
+                      LITERAL TEXT "&mdash;", which is what a reader saw.
+    came off the board  `releases` is published by the bridge and `state()`
+                      never forwarded it, so the one panel that exists to make
+                      a wrong release visible could not draw a row.
+    recorder 8106.7s  the only clock on the page. It measures the RECORDER, and
+                      it was labelled and banner-ed as though it measured the
+                      bridge: "this is the LAST sortie, not live state. Is the
+                      bridge running?" -- printed while the bridge was running
+                      and had published its snapshot one second earlier.
 
-FOUR PANELS, chosen from what actually cost time:
+FOUR QUESTIONS, and the shape of the page is now just those four:
 
-  WHO      per radio: the SRS name, what Whisper made of the callsign, who the
-           ladder concluded, and on what AUTHORITY. Anything not `radar` is a
-           finding rather than a curiosity -- see atc/identity.py.
-  BOARD    what the deterministic engine believes is flying, beside what radar
-           shows, WITH THE DIVERGENCE MARKED. The engine is blind by design; it
-           knows only what pilots reported. Every ghost -- an aeroplane holding
-           a level in the stack that nobody was flying -- is these two lists
-           disagreeing, and there has never been a way to see it happen.
-  LAST     one transmission end to end: heard, which gate it passed, who it was
-           attributed to, what the engine computed, and what was said. The
-           two-brain seam in five lines.
-  FLIGHTS  the roster and the approach phase per aircraft: the state machines.
+  WHAT DOES ATC THINK IS TRUE   one card per aeroplane, every belief the bridge
+                                published about him, blanks left blank.
+  WHERE DID IT COME FROM        the provenance the bridge already publishes --
+                                `authority` (how the callsign was resolved) and
+                                `confirmed` (whether radar can still see him) --
+                                and, per panel, WHICH SOURCE it was read from.
+  HOW OLD IS IT                 two clocks, never one: the bridge's snapshot and
+                                the flight recorder age independently, and only
+                                the first says whether the board is live.
+  WHAT DID IT DECIDE NOT TO DO  `handoff/none` carries a sentence -- "Georgia
+                                Center keeps him -- departure, 35 nm, inbound"
+                                -- and it appeared nowhere. `watching_him` was
+                                written to record deciding NOTHING (read its
+                                docstring); the page then dropped it. That was
+                                the largest single gap and it is now the second
+                                panel down, because "why is nothing happening"
+                                is the question this page is opened to answer.
 
-THE DIVERGENCE COMPARISON IS THE DELICATE PART. The board is keyed on callsigns,
-handles and flight names; the scope prints unit names and labels. Comparing them
-directly is the exact bug the 29 July audit found in `release_stale` -- a set of
-printed radar names tested against board keys, so the test could never match and
-the entry was immortal. `_on_scope` below does the conversion properly, and it
-is the one piece of logic here worth a test.
+NOTHING NEW IS INSTRUMENTED, and that is still the point. The bridge publishes
+what it believes (`agent_atc.publish_state` -> `build/control/state.json`) and
+appends a JSON line per transmission to `build/logs/flight-<session>.jsonl`.
+This reads those two and renders. It cannot perturb the thing it is measuring:
+a diagnostic that can break a sortie is one nobody dares run during one.
+
+THE PAGE NEVER JUDGES AND NEVER COMPUTES. It renders what was recorded. Where a
+fact is missing the answer is to record it at the source, and #155 lists the
+five this page still cannot show honestly because nothing publishes them: which
+values were RESTORED from a database row rather than heard on the radio, whether
+a clearance was AGREED, which plan a pilot was CLEARED on, the anomalies the
+engine repaired, and the capability of the controller working him. Every one is
+known inside the bridge and stops at `publish_state`.
+
+PORTRAIT FIRST. It is read on a knee, in the air, by somebody with two seconds.
+The thirteen-column board lived in a horizontal scroller and this file's own
+comments admitted what that costs -- `intent` "scrolled out of sight, which
+reads exactly like a column that was never added" -- and the `.scroll` class it
+relied on was never defined in the stylesheet, so it did not scroll either. One
+aeroplane is one card now, and nothing on this page scrolls sideways.
 """
 
 from __future__ import annotations
@@ -50,7 +77,17 @@ import urllib.request
 from marshall import config
 from marshall.core import names as _names
 
-LOGS = config.BUILD_DIR / "logs"
+
+def _logs():
+    """Where the flight recorder writes. RESOLVED PER CALL, for exactly the
+    reason `published` is -- a module constant computed from `config.BUILD_DIR`
+    survives a test that redirects the build dir, so the test reads the LIVE
+    recorder and passes only for as long as nothing is flying. That fault was
+    found and fixed in the snapshot half of this file and left standing in this
+    one, which is the shape of most of the bugs it exists to display."""
+    return config.BUILD_DIR / "logs"
+
+
 # Same variable the PLANS page already reads, for the same reason: inside the
 # container `localhost` is the container, and the director is published on the
 # host. See kneeboard/plans.py and the extra_hosts note in the compose file.
@@ -63,12 +100,12 @@ TAIL_BYTES = 512_000
 
 
 def newest_session() -> str:
-    files = sorted(LOGS.glob("flight-*.jsonl"), key=lambda p: p.stat().st_mtime)
+    files = sorted(_logs().glob("flight-*.jsonl"), key=lambda p: p.stat().st_mtime)
     return files[-1].stem[len("flight-"):] if files else ""
 
 
 def _events(session: str) -> list[dict]:
-    path = LOGS / f"flight-{session}.jsonl"
+    path = _logs() / f"flight-{session}.jsonl"
     if not path.is_file():
         return []
     size = path.stat().st_size
@@ -102,10 +139,8 @@ _key = _names.squash
 
 PUBLISHED = config.BUILD_DIR / "control" / "state.json"
 
-# How stale the bridge's snapshot may be before the page stops believing it.
-# It publishes on every transmission, so on a quiet frequency this will be
-# minutes old and that is not an error -- it is reported, not hidden.
-def published(max_age: float = 3600.0) -> dict:
+
+def published() -> dict:
     """What the BRIDGE says it believes. The page renders this; it derives
     nothing from it.
 
@@ -117,6 +152,12 @@ def published(max_age: float = 3600.0) -> dict:
 
     The bridge knows, because it is the thing that decided. See
     `agent_atc.publish_state`.
+
+    THE AGE IS PART OF THE ANSWER. The bridge publishes on every transmission
+    and on its own tick, so on a quiet frequency this is seconds old and on a
+    stopped bridge it is hours old -- and the two look identical unless the
+    number travels with the values. It is reported, never hidden and never
+    silently believed.
     """
     # THE PATH IS RESOLVED PER CALL, not at import. `PUBLISHED` is a module
     # constant computed from `config.BUILD_DIR`, so a test that redirects the
@@ -141,46 +182,124 @@ _TRAIL = ("dropped", "ship-to-ship", "atc/challenge", "flight/created",
           "controller", "asr", "atc/pilot", "atc/simple", "atc/vector",
           "atc/range", "atc/landed", "board")
 
+# THE RECORDS OF DOING NOTHING, which is the half nothing displayed.
+#
+# A transmission leaves a trail of what was said. These are the other kind of
+# record -- a decision the system declined to take, took back, or refused --
+# and every one of them carries the reason in its own text:
+#
+#   handoff/none    "Batumi Approach keeps him -- approach, 20 nm, inbound"
+#   not_voiced      the engine issued a figure and the agent did not say it
+#   repaired        ...and the guard put it back afterwards
+#   released        he came off the board, and nothing afterwards can be asked
+#   dropped         the receive loop refused the call before either brain
+#   ship-to-ship    heard, and not addressed to us
+#   atc/challenge   answered with a question instead of a clearance
+#   atc/misnamed    he used a callsign that is not his
+#   flight/refused  a formation that was asked for and not formed
+#
+# A LIST, HERE, RATHER THAN A RULE. Like `_TRAIL` above it names recorder kinds
+# and nothing else -- no meaning is attached to them in this file and none is
+# attached in the page. If the bridge grows another kind of "no", it belongs in
+# this tuple and needs no other change.
+_QUIET = ("handoff/none", "not_voiced", "repaired", "released", "dropped",
+          "ship-to-ship", "atc/challenge", "atc/misnamed", "flight/refused")
+
+# How many of those to keep. A knee is not a log viewer: thirty of these filled
+# the page and pushed the last turn below the fold, which is the crowding the
+# one-column layout was asked for in the first place. Each aeroplane also
+# carries his own on his card, so this panel is the catch-all -- including for
+# a record whose callsign matches nothing on the board.
+QUIET_KEPT = 12
+# ...and per aeroplane, on his own card. The newest is the current answer --
+# `watching_him` only records when the answer CHANGES, so the top line of this
+# is what it decided most recently and is still deciding.
+QUIET_PER_AIRCRAFT = 3
+
+
+def _reasons(events: list[dict], now: float) -> tuple[list[dict], dict]:
+    """Everything the system recorded about NOT acting, newest first.
+
+    Returns the flat list and the same records grouped by the callsign the
+    RECORDER wrote on them.
+
+    THE GROUPING IS AN EXACT-STRING LOOKUP AND IT IS ALLOWED TO MISS. Both
+    sides of it are written by the bridge from the same board key -- `record(...
+    callsign=cs)` and `ctl.board()`'s `callsign` are the same variable -- so
+    there is nothing to fold, normalise or squash here, and no fourth copy of
+    the name squasher is going anywhere near it. That is the bug in
+    `HANDOFF-board.md` and this file has already had it once.
+
+    THE FLAT LIST IS THE SAFETY NET. Every record appears in it whether or not
+    its callsign matches anything on the board, so a card showing no reasons is
+    never the only account of a decision: the panel below it still has the line,
+    with the name the recorder actually wrote. A miss is visible rather than
+    silently swallowed, which is the difference between a lookup that fails
+    honestly and `|| {}`.
+    """
+    flat: list[dict] = []
+    for e in events:
+        if e.get("kind") not in _QUIET:
+            continue
+        flat.append({"kind": e.get("kind") or "",
+                     "callsign": e.get("callsign") or "",
+                     # `gate` is what the refusing kinds carry instead of prose.
+                     "text": (e.get("text") or e.get("gate") or "")[:300],
+                     "ago": round(now - e.get("t", now), 1)})
+    flat.reverse()                            # newest first
+    by: dict[str, list[dict]] = {}
+    for r in flat:
+        if not r["callsign"]:
+            continue
+        got = by.setdefault(r["callsign"], [])
+        if len(got) < QUIET_PER_AIRCRAFT:
+            got.append(r)
+    return flat[:QUIET_KEPT], by
+
 
 def state(session: str = "", scope: str | None = None) -> dict:
     """Everything the page draws. Read, not derived.
 
-    The recorder still supplies the CONVERSATION -- what was heard and what was
-    said, which is a history and belongs in a log. Everything about what the
-    system currently BELIEVES comes from the bridge's own snapshot.
+    TWO SOURCES AND THEY AGE SEPARATELY, which is the whole of the "how old is
+    it" question and was the whole of the lie:
+
+        the bridge's snapshot   what the system BELIEVES, now. If this is old,
+                                everything on the board is that old.
+        the flight recorder     what was SAID, and what was decided about it. A
+                                history. If this is old, the radio has been
+                                quiet -- which is not the same fault at all.
+
+    The page had one clock, measuring the second, labelled as though it measured
+    the first. So a running bridge with a quiet frequency was reported as a dead
+    bridge, and -- the direction that consoles -- a dead bridge's last board was
+    reported as the current one for as long as somebody was still talking.
     """
     session = session or newest_session()
     events = _events(session) if session else []
     now = time.time()
     live = published()
 
-    # WHO IS TALKING, from the registry that resolved them -- not from the
-    # recorder, and not by matching names here.
-    radios = []
-    for r in live.get("radios", []):
-        radios.append({"radio": r.get("guid", ""), "is": r.get("callsign", ""),
-                       "authority": r.get("authority", ""),
-                       "track": r.get("track", ""), "why": r.get("why", ""),
-                       "heard": "", "ago": live.get("age")})
-    # The words each radio last used, which only the recorder has.
-    for e in events:
-        if e.get("kind") != "pilot":
-            continue
-        for r in radios:
-            if r["is"] and r["is"] == e.get("callsign"):
-                r["heard"] = e.get("claimed") or ""
-                r["ago"] = round(now - e.get("t", now), 1)
-
     last = _last_turn(events, now)
+    quiet, quiet_by = _reasons(events, now)
+    recorder_age = (round(now - max((e.get("t", 0) for e in events), default=now), 1)
+                    if events else None)
     board = live.get("board", [])
     return {
         "session": session,
         "at": now,
-        "recorder_age": round(now - max((e.get("t", 0) for e in events),
-                                        default=now), 1) if events else None,
+        # WHERE EVERY PANEL BELOW CAME FROM, and how old that source is. Named
+        # by the thing that read them -- this module -- because this module is
+        # the only thing that knows which file each answer arrived in.
+        "sources": {
+            "bridge": {"name": "bridge", "age": live.get("age"),
+                       "at": live.get("at")},
+            "recorder": {"name": "recorder", "age": recorder_age,
+                         "at": (max((e.get("t", 0) for e in events), default=None)
+                                if events else None)},
+        },
+        "recorder_age": recorder_age,
         "bridge_age": live.get("age"),
         "radar_ok": bool(live.get("scope")),
-        "radios": radios,
         "board": board,
         "scope": live.get("scope", []),
         # Three answers, and the bridge decided all three. UNSEEN is the only
@@ -193,10 +312,18 @@ def state(session: str = "", scope: str | None = None) -> dict:
         # dropped here, which is the shape of most of this file's history: the
         # bridge decided something and the page did not carry it.
         "plans": live.get("plans", []),
+        # WHO CAME OFF THE BOARD. Published by the bridge since the day the
+        # panel was written and never forwarded by this function, so the panel
+        # could not draw a row -- see the header. A release destroys its own
+        # evidence; this is the only record that it happened.
+        "releases": live.get("releases", []),
         # What the controller was handed, block by block. Behaviour
         # follows from this and nothing else.
         "handed": live.get("handed", []),
         "unidentified": live.get("unidentified", []),
+        # WHAT WAS DECIDED AGAINST. See `_reasons`.
+        "quiet": quiet,
+        "quiet_by": quiet_by,
         # The MEANING of the values, from the thing that defines them.
         "legend": live.get("legend", {}),
         "last": last,
@@ -339,6 +466,10 @@ def page() -> str:
 # night approach, monospace because every column is data, and colour used for
 # exactly one thing: something disagreeing with something else. If the page is
 # all one colour, the two brains agree.
+#
+# ONE COLUMN, PORTRAIT, NO SIDEWAYS SCROLL ANYWHERE. Everything wide enough to
+# need a scroller has been turned into a card, because a fact that is off the
+# right-hand edge of a kneeboard reads exactly like a fact nobody published.
 _PAGE = """<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Marshall diagnostics</title>
@@ -350,22 +481,23 @@ _PAGE = """<!doctype html><html><head><meta charset="utf-8">
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--mono);
-    font-size:15px;line-height:1.45;-webkit-font-smoothing:antialiased}
-  header{display:flex;gap:1.2rem;align-items:baseline;flex-wrap:wrap;
-    padding:.6rem 1rem;border-bottom:1px solid var(--rule);background:var(--panel)}
+    font-size:15px;line-height:1.45;-webkit-font-smoothing:antialiased;
+    overflow-x:hidden}
+  header{display:flex;gap:.9rem;align-items:baseline;flex-wrap:wrap;
+    padding:.5rem 1rem;border-bottom:1px solid var(--rule);background:var(--panel)}
   header b{letter-spacing:.14em;font-size:.8rem;color:var(--dim);font-weight:600}
-  header .stat{font-size:.78rem;color:var(--dim)}
+  header .stat{font-size:.75rem;color:var(--dim)}
   header .stat i{font-style:normal;color:var(--ink)}
-  .grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--rule)}
-  /* SINGLE COLUMN on the kneeboard. A grid assumes a monitor; this is read in
-     the air. Wide enough to keep the board's twelve columns legible without
-     the page itself scrolling sideways -- the tables scroll, the page does
-     not. */
-  .stack{display:flex;flex-direction:column;gap:1px;background:var(--rule)}
-  .stack > section{width:100%}
-  section{background:var(--bg);padding:.75rem 1rem 1rem;min-width:0}
+  section{background:var(--bg);padding:.6rem 1rem .9rem;min-width:0;
+    border-top:1px solid var(--rule)}
   h2{font-size:.7rem;letter-spacing:.16em;text-transform:uppercase;color:var(--dim);
-    margin:0 0 .6rem;font-weight:600}
+    margin:0 0 .5rem;font-weight:600;display:flex;gap:.6rem;align-items:baseline;
+    flex-wrap:wrap}
+  /* WHICH SOURCE THIS PANEL WAS READ FROM, and how old it is. Every panel
+     carries one; a panel with no stamp would be the old page again. */
+  h2 .src{margin-left:auto;font-size:.62rem;letter-spacing:.08em;
+    text-transform:none;color:var(--dim);font-weight:400}
+  h2 .src.warn{color:var(--warn)} h2 .src.bad{color:var(--bad)}
   table{border-collapse:collapse;width:100%;font-size:.83rem;
     font-variant-numeric:tabular-nums}
   th{text-align:left;color:var(--dim);font-weight:400;font-size:.68rem;
@@ -377,8 +509,7 @@ _PAGE = """<!doctype html><html><head><meta charset="utf-8">
      transcript and wrong for a figure: in a narrow column it broke "2,000" and
      "1 1 5" across lines, so the board printed its digits vertically and was,
      in a pilot's words while flying it, "really hard to read".
-     A measurement is one token. Let the column scroll instead -- the table is
-     already inside `.scroll`, which is the right place to give way. */
+     A measurement is one token. */
   td.n{white-space:nowrap;word-break:normal;text-align:right;
     font-variant-numeric:tabular-nums}
   tr:last-child td{border-bottom:0}
@@ -387,9 +518,29 @@ _PAGE = """<!doctype html><html><head><meta charset="utf-8">
   .org-guard{background:#3a2a12;color:#E0A040;border-color:#5a4020}
   .ok{color:var(--ok)} .warn{color:var(--warn)} .bad{color:var(--bad)}
   .dim{color:var(--dim)} .acc{color:var(--accent)}
-  .ghost td{background:rgba(212,96,79,.10)}
   .pill{display:inline-block;padding:0 .4em;border:1px solid currentColor;
-    border-radius:2px;font-size:.7rem;letter-spacing:.05em}
+    border-radius:2px;font-size:.7rem;letter-spacing:.05em;white-space:nowrap}
+  /* --- one aeroplane, one card ------------------------------------------
+     A definition list, not a row: on a kneeboard the label has to sit beside
+     its value where a reader can find it, and thirteen headings across the top
+     of a scroller put the value four inches from anything that named it. */
+  .ac{border:1px solid var(--rule);border-radius:3px;margin:0 0 .55rem;
+    background:var(--panel);overflow:hidden}
+  .ac:last-child{margin-bottom:0}
+  .ac.ghost{border-color:#5a2b24}
+  .ac .hd{display:flex;gap:.5rem;align-items:baseline;flex-wrap:wrap;
+    padding:.35rem .6rem;border-bottom:1px solid var(--rule)}
+  .ac .cs{font-size:.95rem;letter-spacing:.05em}
+  .ac .hd .rt{margin-left:auto;font-size:.72rem;color:var(--dim)}
+  .kv{display:grid;grid-template-columns:6.4rem minmax(0,1fr);
+    gap:.1rem .7rem;padding:.35rem .6rem .45rem;font-size:.83rem;
+    background:var(--bg)}
+  .kv .k{color:var(--dim);font-size:.66rem;letter-spacing:.09em;
+    text-transform:uppercase;padding-top:.2rem}
+  .kv .v{min-width:0;word-break:break-word}
+  .kv .v .sep{color:var(--rule);padding:0 .35rem}
+  .kv .v.num{font-variant-numeric:tabular-nums}
+  .why{color:var(--warn)}
   .trail{margin:0;padding:0;list-style:none;font-size:.83rem}
   /* Column one is the stage label; column two is EVERYTHING else. Stated as a
      rule rather than left to child order, because grid's answer to an extra
@@ -403,22 +554,29 @@ _PAGE = """<!doctype html><html><head><meta charset="utf-8">
   .trail .k{color:var(--dim);font-size:.7rem;letter-spacing:.09em;
     text-transform:uppercase;padding-top:.15rem}
   .heard{color:var(--accent)}
-  section.wide{border-top:1px solid var(--rule)}
-  h2 .hint{text-transform:none;letter-spacing:0;font-weight:400;color:var(--dim)}
   h4{font-size:.66rem;letter-spacing:.14em;text-transform:uppercase;
     color:var(--dim);margin:.9rem 0 .3rem;font-weight:600}
   h4:first-child{margin-top:0}
   .blocks{display:grid;gap:1px;background:var(--rule);font-size:.8rem}
   .blk{background:var(--bg);padding:.4rem .6rem;display:grid;
-    grid-template-columns:7.5rem 1fr;gap:.7rem}
+    grid-template-columns:7.5rem minmax(0,1fr);gap:.7rem}
   .blk .n{color:var(--dim);font-size:.68rem;letter-spacing:.1em;
     text-transform:uppercase;padding-top:.15rem}
   .blk .v{white-space:pre-wrap;word-break:break-word}
   .blk .v.long{max-height:7rem;overflow:auto}
-  #stale{background:var(--warn);color:#0A0C0E;padding:.45rem 1rem;
-    font-size:.8rem;letter-spacing:.04em}
+  /* THE QUIET LOG: one line per decision not taken, with its age on the right
+     where the eye can run down them. */
+  .q{display:grid;grid-template-columns:minmax(0,1fr) 3.4rem;gap:.5rem;
+    padding:.22rem 0;border-bottom:1px solid #14191D;font-size:.82rem}
+  .q:last-child{border-bottom:0}
+  .q .t{text-align:right;color:var(--dim);font-size:.72rem;
+    font-variant-numeric:tabular-nums;white-space:nowrap}
+  .q .who{color:var(--accent)}
+  #stale{background:var(--warn);color:#0A0C0E;padding:.4rem 1rem;
+    font-size:.78rem;letter-spacing:.02em}
+  #stale div+div{margin-top:.2rem}
   #control{display:flex;align-items:center;gap:.55rem;flex-wrap:wrap;
-    padding:.5rem 1rem;border-bottom:1px solid var(--rule);background:var(--panel)}
+    padding:.4rem 1rem;border-bottom:1px solid var(--rule);background:var(--panel)}
   #control .lbl{font-size:.66rem;letter-spacing:.16em;color:var(--dim)}
   #control .sep{width:1px;height:1.1rem;background:var(--rule);margin:0 .35rem}
   #control button{font-family:var(--mono);font-size:.72rem;letter-spacing:.06em;
@@ -428,14 +586,25 @@ _PAGE = """<!doctype html><html><head><meta charset="utf-8">
   #control button:disabled{opacity:.35;cursor:not-allowed}
   #control button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   #cmsg{font-size:.72rem;color:var(--dim)}
-  .empty{color:var(--dim);font-size:.8rem;padding:.4rem 0}
-  @media (max-width:900px){.grid{grid-template-columns:1fr}}
+  .empty{color:var(--dim);font-size:.8rem;padding:.3rem 0}
+  /* A DESK GETS THE BONUS, not the design. The cards are laid out for a knee;
+     a wide monitor simply fits two of them side by side. */
+  @media (min-width:1200px){
+    #board,#untracked{display:grid;grid-template-columns:1fr 1fr;
+      gap:0 .55rem;align-items:start}
+    #board>*,#untracked>*{min-width:0}
+  }
 </style></head><body>
 <div id="stale" style="display:none"></div>
 <header>
   <b>MARSHALL DIAG</b>
-  <span class="stat">session <i id="sess">-</i></span>
+  <!-- TWO CLOCKS. The bridge's snapshot is the age of every belief below it;
+       the recorder is the age of the last thing anybody said. One number
+       standing for both is how a running bridge got reported as a dead one and
+       a dead one's board got reported as live. -->
+  <span class="stat">bridge <i id="bage">-</i></span>
   <span class="stat">recorder <i id="age">-</i></span>
+  <span class="stat">session <i id="sess">-</i></span>
   <span class="stat">contacts <i id="contacts">-</i></span>
   <span class="stat" id="verdict"></span>
 </header>
@@ -450,146 +619,185 @@ _PAGE = """<!doctype html><html><head><meta charset="utf-8">
   <button data-do="mission">reload current</button>
   <span id="cmsg"></span>
 </div>
-<!-- ONE COLUMN, ORDERED BY WHAT A PILOT NEEDS IN THE AIR.
+<!-- ORDERED BY WHAT A PILOT NEEDS IN THE AIR.
 
        "The diag page is pretty crowded on the kneeboard. We should probably
         just move to 1 column with the most important info on top - that is the
         board and the ATC attribution. The untracked and flight plans are things
-        I can scroll down to see on the ground easily. The board and attribution
-        is my primary diag instrument now."
+        I can scroll down to see on the ground easily."
 
-     A two-column grid assumes a monitor. This is read on a kneeboard, in the
-     air, at a glance -- so the two panels that answer "what does he think is
-     happening, and which brain decided it" come first and everything else is a
-     scroll away. Nothing is removed; the order is the feature. -->
-<div class="stack">
-  <section><h2>Tracked
-    <span class="hint">&mdash; on the board, and exactly one controller owns each</span></h2>
-    <div id="board"></div></section>
-  <section><h2>The last turn, stage by stage
-    <span class="hint">&mdash; who decided it: engine, agent or guard</span></h2>
-    <div id="last"></div></section>
-  <section><h2>Untracked
-    <span class="hint">&mdash; the sim knows who and where; nobody is working him</span></h2>
-    <div id="untracked"></div></section>
-  <section><h2>Flights</h2><div id="flights"></div></section>
-  <section><h2>Flight plans
-    <span class="sub">every strip on file, and who ATC can attach it to</span></h2>
-    <div id="plans"></div></section>
-  <section><h2>What the controller was handed
-    <span class="hint">&mdash; behaviour follows from this and nothing else</span></h2>
-    <div id="handed"></div></section>
-</div>
+     ...and then, the whole point of this revision:
+
+       "I want to make sure that it represents what atc is seeing and thinking
+        so that I can rationalize why something is happening"
+
+     So: who he thinks is flying, then what he decided NOT to do about them --
+     which is the answer when nothing is happening, and it is above the last
+     turn because a pilot asking that question has by definition not just had
+     one. -->
+<section><h2>Who ATC is working<span class="src" id="s-board"></span></h2>
+  <div id="board"></div></section>
+<section><h2>Decided against<span class="src" id="s-quiet"></span></h2>
+  <div id="quiet"></div></section>
+<section><h2>The last turn, stage by stage<span class="src" id="s-last"></span></h2>
+  <div id="last"></div></section>
+<section><h2>Untracked<span class="src" id="s-untracked"></span></h2>
+  <div id="untracked"></div></section>
+<section><h2>Flights<span class="src" id="s-flights"></span></h2>
+  <div id="flights"></div></section>
+<section><h2>Flight plans on file<span class="src" id="s-plans"></span></h2>
+  <div id="plans"></div></section>
+<section><h2>What the controller was handed<span class="src" id="s-handed"></span></h2>
+  <div id="handed"></div></section>
 <script>
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>]/g,
   c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+// AN EM DASH IS A CHARACTER, NOT AN ENTITY. Passing the entity through the
+// escaper rendered its literal text -- ampersand, m, d, a, s, h -- in three
+// columns of the plans table for the whole life of that panel, the escaper
+// doing exactly its job to a string that should never have been near it.
+const DASH = '\\u2014';
+// BLANK READS AS BLANK. A missing value is dimmed and dashed, never zeroed and
+// never guessed at: an altitude nobody published shown as `0` is this page's
+// whole failure in miniature.
+const val = v => (v === null || v === undefined || v === '')
+  ? `<span class="dim">${DASH}</span>` : esc(v);
+// A number, with its units, or nothing at all.
+const num = (v, dp, suffix) => (v === null || v === undefined)
+  ? `<span class="dim">${DASH}</span>`
+  : Number(v).toFixed(dp).replace(/\\B(?=(\\d{3})+(?!\\d))/, ',') + suffix;
+// HOW OLD, IN WORDS A GLANCE CAN TAKE. "8106.7s" is a number a reader has to do
+// arithmetic on, in an aeroplane, to find out that it means two hours.
+const ago = s => {
+  if (s === null || s === undefined) return DASH;
+  if (s < 90) return Math.round(s) + 's';
+  if (s < 5400) return Math.round(s / 60) + ' min';
+  return (s / 3600).toFixed(1) + ' h';
+};
+// Colour for an age. THE ONLY THRESHOLDS IN THIS FILE, and they decide a
+// colour and nothing else -- no value is hidden, rewritten or disbelieved
+// because of them.
+const OLD_WARN = 120, OLD_BAD = 900;
+const aged = s => s === null || s === undefined ? 'bad'
+  : s > OLD_BAD ? 'bad' : s > OLD_WARN ? 'warn' : '';
+const sep = '<span class="sep">|</span>';
 // THE PAGE KNOWS NOTHING. No player names, no phases, no frequencies, no
 // notion that `radar` outranks `plan`. Every meaning arrives in `legend`,
 // published by the thing that defines the words. All this file knows is how to
-// colour ok / warn / bad and how to lay out a table.
+// colour ok / warn / bad and how to lay out a card.
 let LEGEND = {};
 const lvl = (group, key) => (LEGEND[group] || {})[key] || '';
 
-function who(rs) {
-  if (!rs.length) return '<p class="empty">no transmissions recorded yet</p>';
-  return '<table><tr><th>radio</th><th>heard</th><th>is</th><th>auth</th>'
-    + '<th>track</th><th>ago</th></tr>' + rs.map(r => {
-      const cls = lvl('authority', r.authority);
-      return `<tr><td>${esc(r.radio)}</td>`
-        + `<td class="dim">${esc(r.heard) || '&mdash;'}</td>`
-        + `<td class="acc">${esc(r.is) || '&mdash;'}</td>`
-        + `<td class="${cls}"><span class="pill">${esc(r.authority) || 'none'}</span></td>`
-        + `<td class="dim">${esc(r.track) || '&mdash;'}</td>`
-        + `<td class="dim">${r.ago}s</td></tr>`
-        + (cls !== 'ok' && r.why
-            ? `<tr><td></td><td colspan="5" class="dim">${esc(r.why)}</td></tr>` : '');
-    }).join('') + '</table>';
+// Join the parts that have a value; drop the ones that do not, rather than
+// printing a row of dashes with separators between them.
+function line(parts) {
+  const got = parts.filter(p => p);
+  return got.length ? got.join(sep) : `<span class="dim">${DASH}</span>`;
+}
+
+function kv(k, v, cls) {
+  return `<span class="k">${esc(k)}</span>`
+    + `<span class="v ${cls || ''}">${v}</span>`;
+}
+
+// ONE AEROPLANE, EVERYTHING THE BRIDGE PUBLISHED ABOUT HIM.
+//
+// Nothing here is looked up, matched or worked out. This table used to open by
+// searching the scope list for the first contact whose squashed name equalled
+// the squashed track, falling back to an empty object -- the page doing the
+// board join itself, with its OWN copy of the name squasher. When it missed,
+// `|| {}` turned the miss into four blank columns and the page looked like a
+// working page reporting an aeroplane with no position.
+//
+// The three state fields stay APART on purpose, one row each: `state` is what
+// the sim observes, `intent` is what the pilot asked for, `phase`/`doing` is
+// where the separation engine has got to, and `sortie` is the rung of the
+// ladder that decides who has him next. Collapsing them into one word is how an
+// observation comes to overwrite something a man actually told a controller --
+// and `sortie` was published by the engine and shown nowhere, while being the
+// single input `handoff.py` reads.
+function card(r, reasons) {
+  const cls = lvl('confirmed', r.confirmed);
+  const rs = reasons || [];
+  return `<div class="ac ${cls === 'bad' ? 'ghost' : ''}">`
+    + '<div class="hd">'
+    + `<span class="cs ${cls}">${esc(r.callsign)}</span>`
+    + ((r.members && r.members.length)
+        ? `<span class="dim">+${r.members.map(esc).join(', +')}</span>` : '')
+    // TWO PILLS, TWO QUESTIONS, and they print the same word often enough that
+    // the first version showed a man two identical badges: `authority` is HOW
+    // HE CAME TO BE THIS CALLSIGN and `confirmed` is WHETHER ANYTHING CAN SEE
+    // HIM NOW. The words are the bridge's; only the "id" is added, and only so
+    // that two pills reading the same value cannot be read as one fact twice.
+    + `<span class="pill ${lvl('authority', r.authority)}">`
+    + `id ${esc(r.authority || 'none')}</span>`
+    + `<span class="pill ${cls}">${esc(r.confirmed || '')}</span>`
+    + (r.in_letdown ? '<span class="pill warn">letdown</span>' : '')
+    + (r.on_visual ? '<span class="pill">visual</span>' : '')
+    + `<span class="rt">${val(r.type)}</span>`
+    + '</div><div class="kv">'
+    // WHO IS WORKING HIM, and on what. Unowned while on the board is the
+    // contradiction the legend colours: he is being separated by nobody.
+    + kv('worked by', line([
+        `<span class="${lvl('owner', r.owner)}">${val(r.owner)}</span>`,
+        r.freq_mhz ? `<span class="dim">${r.freq_mhz.toFixed(3)}</span>` : '']))
+    + kv('he asked for', `<span class="${lvl('intent', r.intent)}">`
+        + `${val(r.intent)}</span>`)
+    // WHICH APPROACH HIS CLEARANCE NAMES, beside what he ASKED for -- the pair
+    // that matters, and the reason this is its own row rather than a note on
+    // `intent`:
+    //
+    //     "for the cleared_approach - shouldnt that be on the board i am
+    //      looking at? Isnt it in the database?"
+    //
+    // The interesting reading is the DISAGREEMENT: he asked for the ILS and is
+    // cleared for the surveillance approach, or he is cleared for nothing at
+    // all while being vectored. Neither is visible if only one is printed.
+    + kv('cleared for', val(r.cleared_approach))
+    + kv('separation', line([val(r.phase),
+        r.assigned_ft ? num(r.assigned_ft, 0, ' ft assigned') : '',
+        r.approaches ? 'approaches ' + esc(r.approaches) : '']), 'num')
+    + kv('ladder', val(r.sortie_phase))
+    // WHETHER THE ENGINE HAS BEEN TOLD RADAR SEES HIM, which is not the same
+    // question as the `confirmed` pill above and can disagree with it. This one
+    // decides whether he may take a place in the stack at all
+    // (`may_be_sequenced`), so a man the scope holds and the engine believes
+    // unidentified is a real state and one nothing displayed.
+    + kv('radar id', r.identified === undefined ? val(null)
+        : (r.identified ? 'yes' : '<span class="warn">no</span>'))
+    + kv('sim says', `<span class="${lvl('state', r.state)}">`
+        + `${val(r.state)}</span>`)
+    + kv('position', line([
+        r.range_nm === null || r.range_nm === undefined ? ''
+          : num(r.range_nm, 1, ' nm') + (r.radial === null
+              || r.radial === undefined ? '' : ' on ' + num(r.radial, 0, '')),
+        r.alt_ft === null || r.alt_ft === undefined ? '' : num(r.alt_ft, 0, ' ft'),
+        r.heading === null || r.heading === undefined ? ''
+          : num(r.heading, 0, '\\u00b0'),
+        r.speed_kt === null || r.speed_kt === undefined ? ''
+          : num(r.speed_kt, 0, ' kt')]), 'num')
+    + kv('track', val(r.track))
+    // THE STRIP HE WAS RESOLVED FROM, whole, as the bridge attached it to the
+    // row. Published on the board row since the plans panel was written and
+    // never once drawn.
+    + kv('strip', val(r.plan && (r.plan.label || r.plan.name)))
+    // WHAT WAS DECIDED ABOUT HIM AND NOT DONE. His own lines out of the quiet
+    // log -- the newest is the standing answer, because `watching_him` records
+    // only when the answer changes.
+    + kv('not done', rs.length
+        ? rs.map(q => `<span class="why">${esc(q.text)}</span>`
+            + ` <span class="dim">${esc(q.kind)}, ${ago(q.ago)}</span>`)
+            .join('<br>')
+        : `<span class="dim">${DASH}</span>`)
+    + '</div></div>';
 }
 
 function board(d) {
   const b = d.board || [];
   if (!b.length) return '<p class="empty">nobody on the board</p>';
-  // THE ROW, AS PUBLISHED. Nothing here is looked up, matched or worked out.
-  //
-  // This table used to open by searching the scope list for the first contact
-  // whose squashed name equalled the squashed track, falling back to an empty
-  // object -- the page doing the board join itself, with its OWN copy of the name
-  // squasher, against a track it had to match by string. That is a fourth
-  // implementation of the join that `HANDOFF-board.md` is about, in JavaScript,
-  // in the surface whose whole contract is that it decides nothing. When it
-  // missed, `|| {}` turned the miss into four blank columns and the page looked
-  // like a working page reporting an aeroplane with no position.
-  //
-  // The bridge already sends heading, altitude, speed and range on the row. It
-  // always did. The page was re-deriving what it had been handed.
-  //
-  // THREE COLUMNS, THREE AUTHORITIES, kept apart on purpose: `state` is what the
-  // sim observes, `intent` is what the pilot said, `doing` is where the
-  // separation engine has got to. Collapsing them into one word is how an
-  // observation comes to overwrite something a man actually told a controller.
-  return '<div class="scroll"><table>'
-    // WHAT IS HAPPENING, FIRST. The three state columns sit immediately after
-    // the callsign because they are the question the page is open to answer,
-    // and this table is twelve columns wide inside a horizontal scroller -- on
-    // a kneeboard-width display `intent` was in the middle and scrolled out of
-    // sight, which reads exactly like a column that was never added.
-    //
-    // Three authorities, still kept apart: `state` is what the sim observes,
-    // `intent` is what the pilot asked for, `doing` is where the separation
-    // engine has got to. Position follows, because it is context rather than
-    // the answer.
-    + '<tr><th>who</th><th>state</th><th>intent</th><th>cleared for</th>'
-    + '<th>doing</th>'
-    + '<th>owner</th><th>type</th><th>freq</th><th>hdg</th><th>alt</th>'
-    + '<th>gs</th><th>range</th><th>known by</th></tr>'
-    + b.map(r => {
-      const cls = lvl('confirmed', r.confirmed);
-      return `<tr class="${cls === 'bad' ? 'ghost' : ''}">`
-        + `<td class="${cls}">${esc(r.callsign)}${members(r)}`
-        + `${cls !== 'ok' ? ' <span class="pill">' + esc(r.confirmed) + '</span>' : ''}</td>`
-        // WHAT HE IS FLYING. The bridge has always sent this on the row and
-        // the table simply had no column for it, so the board named a man and
-        // never said what he was in -- while the untracked table two panels
-        // down showed the type for every contact.
-        //
-        // Printed exactly as the sim states it. Shortening "P-51D-30-NA" to
-        // something friendlier would be the page deciding what an airframe is
-        // called, and the type is what the engine reads to decide whether he
-        // can be sent to a beacon or needs a racetrack -- so what is displayed
-        // must be what was used.
-        + `<td class="${lvl('state', r.state)}">${esc(r.state) || '&mdash;'}</td>`
-        + `<td class="${lvl('intent', r.intent)}">${esc(r.intent)
-             || '<i class="dim">not established</i>'}</td>`
-        // WHICH APPROACH HIS CLEARANCE NAMES, beside what he ASKED for --
-        // which is the pair that matters and the reason this is its own column
-        // rather than a note on `intent`.
-        //
-        //     "for the cleared_approach - shouldnt that be on the board i am
-        //      looking at? Isnt it in the database?"
-        //
-        // It is, in `assigned_plans.approach`, and on the strip since migration
-        // 025. It was read on every transmission to pick the profile and then
-        // dropped, so the one fact answering "which approach am I flying"
-        // existed at every layer except the one a human looks at.
-        //
-        // The interesting reading is the DISAGREEMENT: he asked for the ILS and
-        // is cleared for the surveillance approach, or he is cleared for
-        // nothing at all while being vectored. Neither is visible if only one
-        // of the two is printed.
-        + `<td class="${r.cleared_approach ? '' : 'dim'}">`
-        + `${esc(r.cleared_approach) || '&mdash;'}</td>`
-        + `<td>${phase(r)}</td>`
-        + `<td class="${lvl('owner', r.owner)}">${esc(r.owner) || '&mdash;'}</td>`
-        + `<td class="dim">${esc(r.type)}</td>`
-        + `<td class="dim n">${r.freq_mhz ? r.freq_mhz.toFixed(3) : '&mdash;'}</td>`
-        + `<td class="dim n">${num(r.heading, 0, '&deg;')}</td>`
-        + `<td class="dim n">${num(r.alt_ft, 0, ' ft')}</td>`
-        + `<td class="dim n">${num(r.speed_kt, 0, ' kt')}</td>`
-        + `<td class="dim n">${num(r.range_nm, 1, ' nm')}</td>`
-        + `<td class="${lvl('authority', r.authority)}">${esc(r.authority || 'none')}</td>`
-        + '</tr>';
-    }).join('') + '</table></div>';
+  const by = d.quiet_by || {};
+  return b.map(r => card(r, by[r.callsign])).join('');
 }
 
 // WHO CAME OFF THE BOARD, AND WHAT THE SCOPE HELD AT THE TIME.
@@ -609,19 +817,37 @@ function releases(d) {
   return '<h4>came off the board</h4><table>'
     + '<tr><th>who</th><th>track</th><th>on the scope at the time</th></tr>'
     + rs.map(r => `<tr><td class="warn">${esc(r.callsign)}</td>`
-      + `<td class="dim">${esc(r.track) || '&mdash;'}</td>`
+      + `<td class="dim">${val(r.track)}</td>`
       + `<td class="dim">${(r.scope || []).map(esc).join(', ') || 'nothing'}</td>`
       + '</tr>').join('') + '</table>';
 }
 
-// "bullseye 185 for 35 (blue)" -- said the way it is said on the radio, bearing
-// first. An em dash when the sim has given us no bullseye or the contact has no
+// EVERY RECORD OF DECIDING NOTHING, newest first.
+//
+//   "why is nothing happening" is the question this page is opened to answer,
+//   and the answer was already being written down -- "Georgia Center keeps him
+//   -- departure, 35 nm, inbound" -- into a log nobody reads in the air.
+//
+// The page attaches no meaning to the kinds; it prints the word the recorder
+// used and the sentence the bridge wrote.
+function quiet(d) {
+  const q = d.quiet || [];
+  if (!q.length) return '<p class="empty">nothing declined, refused or taken '
+    + 'back this session</p>';
+  return q.map(r => '<div class="q"><span>'
+    + (r.callsign ? `<span class="who">${esc(r.callsign)}</span> ` : '')
+    + `<span class="dim">${esc(r.kind)}</span> ${esc(r.text)}</span>`
+    + `<span class="t">${ago(r.ago)}</span></div>`).join('');
+}
+
+// "185 for 35 (blue)" -- said the way it is said on the radio, bearing first.
+// An em dash when the sim has given us no bullseye or the contact has no
 // position: absent, never a plausible wrong number.
 function bulls(u) {
   const b = u.bulls || {};
-  if (b.range_nm === undefined || b.range_nm === null) return '&mdash;';
+  if (b.range_nm === undefined || b.range_nm === null) return '';
   const pad = String(Math.round(b.radial)).padStart(3, '0');
-  return `${pad}&deg; / ${b.range_nm.toFixed(1)} nm`
+  return `${pad}\\u00b0 / ${b.range_nm.toFixed(1)} nm`
     + (b.ref ? ` <span class="dim">${esc(b.ref)}</span>` : '');
 }
 
@@ -633,58 +859,71 @@ function untracked(d) {
   // published as `is_aircraft` -- the page does not know what a T-55 is.
   const loose = (d.scope || []).filter(u => !u.controlled && u.is_aircraft);
   const lost = d.unidentified || [];
+  // WHAT THIS PANEL IS NOT SHOWING, AND WHY, rather than a filtered list that
+  // reads as a complete one. The comment above claims tracked and untracked
+  // are complements -- every contact in exactly one -- and the filter quietly
+  // breaks that claim for anything the bridge does not call an aircraft. A
+  // contact in NEITHER table, while the header counts it, is the same fault as
+  // an indicator that cannot go red: the page said "every contact is on the
+  // board" with one on the scope and none on the board.
+  const hid = (d.scope || []).filter(u => !u.controlled && !u.is_aircraft);
+  const held = !hid.length ? '' : `<p class="empty">${hid.length} more on the `
+    + 'scope the bridge does not count as aircraft: '
+    + hid.map(u => esc(u.name)).join(', ') + '</p>';
   if (!loose.length && !lost.length)
-    return '<p class="empty">every contact is on the board</p>';
+    return (held || '<p class="empty">every contact is on the board</p>');
   let out = '';
-  if (loose.length) {
-    // FROM BULLSEYE, not from this controller's threshold. Nobody on this board
-    // is working these aircraft, so a range off one field's beacon says nothing
-    // -- and bullseye is the point everyone on the map shares, which is what the
-    // pilot's own HSI is referenced to. The bridge computes it against the
-    // contact's OWN coalition and names which one in `bulls.ref`; this prints
-    // what it was handed and knows nothing about coalitions or great circles.
-    // BOTH NAMES, SIDE BY SIDE.
-    //
-    //     "I want untracked to show the dcs callsign and the derived callsign -
-    //      so that I can see the translation."
-    //
-    // The left cell is the string the sim published; the right is the board key
-    // it derives to. They are one fact and its derivation, and printing only the
-    // answer is how a bad translation stays invisible until a controller uses
-    // the wrong name on the radio. The page does no deriving of its own -- the
-    // bridge sends `derived`, for the same reason it sends `bulls`.
-    //
-    // NEITHER CELL FALLS BACK TO THE OTHER. The first version of this printed
-    // `u.derived || u.callsign || '-'`, which is the page picking which of three
-    // values to believe -- and it would have shown a plausible name in the
-    // column whose entire purpose is to reveal that the derivation is broken.
-    // An empty cell is the honest answer and the one worth seeing.
-    out += '<div class="scroll"><table>'
-      + '<tr><th>dcs name</th><th>callsign</th><th>type</th><th>state</th>'
-      + '<th>hdg</th><th>alt</th><th>gs</th><th>from bullseye</th><th></th></tr>'
-      + loose.map(u => `<tr><td class="dim">${esc(u.name)}</td>`
-        + `<td class="${u.level || ''}">${esc(u.derived)}</td>`
-        + `<td class="dim">${esc(u.type || '')}</td>`
-        + `<td class="${lvl('state', u.state)}">${esc(u.state)}</td>`
-        + `<td class="dim n">${num(u.heading, 0, '&deg;')}</td>`
-        + `<td class="dim n">${num(u.alt_ft, 0, ' ft')}</td>`
-        + `<td class="dim n">${num(u.speed_kt, 0, ' kt')}</td>`
-        + `<td class="dim n">${bulls(u)}</td>`
-        + `<td>${(u.tags || []).map(t => '<span class="pill">' + esc(t)
-             + '</span>').join(' ')}</td></tr>`).join('') + '</table></div>';
-  }
+  // BOTH NAMES, SIDE BY SIDE.
+  //
+  //     "I want untracked to show the dcs callsign and the derived callsign -
+  //      so that I can see the translation."
+  //
+  // The left is the string the sim published; the right is the board key it
+  // derives to. They are one fact and its derivation, and printing only the
+  // answer is how a bad translation stays invisible until a controller uses the
+  // wrong name on the radio. The page does no deriving of its own -- the bridge
+  // sends `derived`, for the same reason it sends `bulls`.
+  //
+  // NEITHER FALLS BACK TO THE OTHER. The first version printed
+  // `u.derived || u.callsign || '-'`, which is the page picking which of three
+  // values to believe -- and it would have shown a plausible name in the field
+  // whose entire purpose is to reveal that the derivation is broken.
+  //
+  // FROM BULLSEYE, not from this controller's threshold: nobody on this board
+  // is working these aircraft, so a range off one field's beacon says nothing.
+  // The bridge computes it against the contact's OWN coalition and names which
+  // in `bulls.ref`.
+  loose.forEach(u => {
+    // THE SIM'S NAME, THEN THE KEY IT DERIVES TO, with the arrow the pilot
+    // asked to see. Printed in that order because that is the direction the
+    // derivation runs, and a translation shown backwards is one nobody can
+    // check.
+    out += '<div class="ac"><div class="hd">'
+      + `<span class="dim">${val(u.name)}</span>`
+      + `<span class="dim">\\u2192</span>`
+      + `<span class="cs ${u.level || ''}">${val(u.derived)}</span>`
+      + (u.tags || []).map(t => `<span class="pill">${esc(t)}</span>`).join(' ')
+      + `<span class="rt">${val(u.type)}</span></div><div class="kv">`
+      + kv('sim says', `<span class="${lvl('state', u.state)}">`
+          + `${val(u.state)}</span>`)
+      + kv('bullseye', bulls(u) || `<span class="dim">${DASH}</span>`, 'num')
+      + kv('position', line([
+          u.alt_ft === null || u.alt_ft === undefined ? '' : num(u.alt_ft, 0, ' ft'),
+          u.heading === null || u.heading === undefined ? ''
+            : num(u.heading, 0, '\\u00b0'),
+          u.speed_kt === null || u.speed_kt === undefined ? ''
+            : num(u.speed_kt, 0, ' kt')]), 'num')
+      + '</div></div>';
+  });
   if (lost.length) {
-    out += '<h4>heard on the radio, tied to no aeroplane</h4><table>'
-      + lost.map(r => `<tr><td class="bad">${esc(r.radio)}</td>`
-        + `<td class="dim">said &ldquo;${esc(r.heard) || '?'}&rdquo;</td>`
-        + `<td class="dim">${esc(r.why)}</td></tr>`).join('') + '</table>';
+    out += '<h4>heard on the radio, tied to no aeroplane</h4>'
+      + lost.map(r => '<div class="q"><span>'
+        + `<span class="bad">${esc(r.radio)}</span> `
+        + `<span class="dim">said</span> ${val(r.heard)} `
+        + `<span class="dim">${esc(r.why || '')}</span></span>`
+        + '<span class="t"></span></div>').join('');
   }
-  return out;
-}
-
-function num(v, dp, suffix) {
-  return (v === null || v === undefined) ? '&mdash;'
-    : Number(v).toFixed(dp) + suffix;
+  return out + held;
 }
 
 // `key()` LIVED HERE. It squashed a name to letters and digits so the page could
@@ -693,17 +932,6 @@ function num(v, dp, suffix) {
 // `diag._key` are the others) and the only one in a language nobody was testing.
 // It went with the join it existed for. If a lookup ever seems to be needed here
 // again, the field is missing from the snapshot and that is the bug.
-
-function members(r) {
-  return (r.members && r.members.length)
-    ? ' <span class="dim">+' + r.members.map(esc).join(', +') + '</span>' : '';
-}
-
-function phase(r) {
-  return esc(r.phase || '')
-    + (r.assigned_ft ? ' <span class="dim">' + r.assigned_ft + ' ft</span>' : '')
-    + (r.in_letdown ? ' <span class="pill warn">letdown</span>' : '');
-}
 
 function last(l) {
   if (!l || !l.heard) return '<p class="empty">nothing heard yet</p>';
@@ -756,7 +984,7 @@ function last(l) {
       + (t.seconds ? `<span class="dim"> ${t.seconds}s ${esc(t.tier || '')}</span>` : '')
       + '</span></li>';
   });
-  return out + `</ul><p class="empty">${l.ago}s ago on ${l.freq || '?'}</p>`;
+  return out + `</ul><p class="empty">${ago(l.ago)} ago on ${l.freq || '?'}</p>`;
 }
 
 function handed(blocks) {
@@ -774,15 +1002,23 @@ function handed(blocks) {
 }
 
 // Every strip the director holds, and whether anything is flying under it.
-// The page decides nothing here: `flying`, `is_flight` and `on_ground` are all
-// joined upstream, because working out that a plan filed as "Pony 1-1" belongs
-// to the man the board calls "sockeye" needs the identity registry, and a web
-// page has no business holding one.
+// The page decides nothing here: `attributed_to`, `is_flight` and `on_ground`
+// are all joined upstream, because working out that a plan filed as "Pony 1-1"
+// belongs to the man the board calls "sockeye" needs the identity registry, and
+// a web page has no business holding one.
+//
+// NO APPROACH COLUMN AND NO ACTIVE COLUMN. Both were deleted from
+// `flight_plans` by migration 031 -- "a plan does not name an arrival ...
+// `active` was how the bridge used to read its own procedure out of a plan
+// row" -- and this table went on printing a header for each. The approach cell
+// read an undefined key and rendered the literal string "&mdash;"; the active
+// cell read another and rendered "no", which is an ANSWER, to a question
+// nothing has asked since 12 August.
 function plans(d) {
   const p = d.plans || [];
   if (!p.length) return '<p class="empty">no flight plans on file</p>';
-  return '<table><tr><th>plan</th><th>filed as</th><th>approach</th>'
-    + '<th>active</th><th>flying it</th><th>where</th></tr>'
+  return '<table><tr><th>plan</th><th>filed for</th><th>flying it</th>'
+    + '<th>where</th></tr>'
     + p.map(x => {
       const who = x.attributed_to
         ? `<span class="acc">${esc(x.attributed_to)}</span>`
@@ -791,12 +1027,10 @@ function plans(d) {
       // Three states, not two: airborne, on the ground, or radar cannot see him
       // at all -- and "we do not know" must not render as "parked".
       const where = x.on_ground === null || x.on_ground === undefined
-        ? '<span class="dim">&mdash;</span>'
+        ? `<span class="dim">${DASH}</span>`
         : (x.on_ground ? 'on the ground' : 'airborne');
-      return `<tr><td>${esc(x.name || '')}</td>`
-        + `<td class="dim">${esc(x.callsign || '&mdash;')}</td>`
-        + `<td class="dim">${esc(x.approach || '&mdash;')}</td>`
-        + `<td>${x.active ? '<span class="ok">active</span>' : '<span class="dim">no</span>'}</td>`
+      return `<tr><td>${val(x.label || x.name)}</td>`
+        + `<td class="dim">${val(x.callsign)}</td>`
         + `<td>${who}</td><td class="dim">${where}</td></tr>`;
     }).join('') + '</table>';
 }
@@ -806,47 +1040,85 @@ function flights(d) {
   return f.length
     ? '<table><tr><th>flight</th><th>lead</th><th>members</th></tr>'
       + f.map(x => `<tr><td class="acc">${esc(x.name)}</td><td>${esc(x.lead)}</td>`
-        + `<td class="dim">${x.members.length ? esc(x.members.join(', ')) : '&mdash;'}`
+        + `<td class="dim">${x.members.length ? esc(x.members.join(', ')) : DASH}`
         + `</td></tr>`).join('') + '</table>'
     : '<p class="empty">no flights formed</p>';
+}
+
+// WHICH SOURCE A PANEL WAS READ FROM, AND HOW OLD IT IS.
+//
+// Stamped on every panel because the page's central fault was a value with no
+// account of where it came from. The two sources age independently and only one
+// of them is the board: a quiet frequency ages the recorder, a stopped bridge
+// ages the snapshot, and reading either as the other is what "lying a little to
+// console me" was.
+function stamp(id, src) {
+  const s = src || {};
+  const el = $(id);
+  el.textContent = `${s.name || '?'} ${ago(s.age)}`;
+  el.className = 'src ' + aged(s.age);
 }
 
 async function tick() {
   try {
     const d = await (await fetch('/diag.json', {cache: 'no-store'})).json();
     LEGEND = d.legend || {};
+    const S = d.sources || {};
     $('sess').textContent = d.session || 'none';
-    $('age').textContent = d.recorder_age == null ? 'no file' : d.recorder_age + 's';
-    $('age').className = (d.recorder_age != null && d.recorder_age > 120) ? 'warn' : '';
+    $('age').textContent = ago(d.recorder_age);
+    $('age').className = aged(d.recorder_age);
+    $('bage').textContent = d.bridge_age == null ? 'no snapshot'
+      : ago(d.bridge_age);
+    $('bage').className = aged(d.bridge_age);
     $('contacts').textContent = (d.scope || []).length;
     $('contacts').className = (d.scope || []).length ? 'ok' : 'warn';
-    // HISTORY MUST NOT READ AS STATE. With the bridge stopped the recorder
-    // stops moving and the last board sits there looking live -- which would
-    // have the page confidently reporting ghosts from a sortie that ended
-    // hours ago. Say so, loudly, above everything else.
-    const st = $('stale'), age = d.recorder_age;
-    if (age == null) {
-      st.style.display = 'block';
-      st.textContent = 'No flight recorder yet \u2014 the bridge has not run for this mission.';
-    } else if (age > 120) {
-      st.style.display = 'block';
-      const mins = Math.round(age / 60);
-      st.textContent = 'Recorder last moved ' + (mins > 90
-        ? Math.round(mins / 60) + ' h' : mins + ' min')
-        + ' ago \u2014 this is the LAST sortie, not live state. Is the bridge running?';
-    } else {
-      st.style.display = 'none';
+    // HISTORY MUST NOT READ AS STATE, and the two sources fail differently.
+    // With the bridge stopped the board sits there looking live; with the
+    // frequency quiet the recorder does, and the old page had one banner for
+    // both -- so it accused a running bridge of being dead while its snapshot
+    // was a second old.
+    const st = $('stale');
+    let notes = [];
+    if (d.bridge_age == null) {
+      notes.push('No snapshot from the bridge \\u2014 nothing below is state, '
+        + 'only history. Is it running?');
+    } else if (d.bridge_age > OLD_WARN) {
+      notes.push('The bridge last published ' + ago(d.bridge_age)
+        + ' ago \\u2014 the board is that old.');
     }
+    if (d.recorder_age == null) {
+      notes.push('No flight recorder yet \\u2014 nothing has been said on the '
+        + 'radio this mission.');
+    } else if (d.recorder_age > OLD_WARN) {
+      notes.push('Nothing heard on the radio for ' + ago(d.recorder_age)
+        + ' \\u2014 the last turn below is that old.');
+    }
+    st.style.display = notes.length ? 'block' : 'none';
+    st.innerHTML = notes.map(n => '<div>' + n + '</div>').join('');
+    // "BOARD AND RADAR AGREE" IS AN ANSWER, and with no snapshot there is no
+    // board to agree with anything -- so the green banner was reporting a
+    // clean scope for a bridge that had published nothing at all. Same fault as
+    // the ghost count that could never go red: a verdict has to be able to say
+    // it does not know.
     const g = (d.ghosts || []).length;
-    $('verdict').innerHTML = g
-      ? `<span class="bad">${g} on the board that radar cannot see</span>`
-      : '<span class="ok">board and radar agree</span>';
-    $('untracked').innerHTML = untracked(d);
+    $('verdict').innerHTML = d.bridge_age == null
+      ? '<span class="dim">no board published</span>'
+      : g ? `<span class="bad">${g} on the board that radar cannot see</span>`
+          : '<span class="ok">board and radar agree</span>';
     $('board').innerHTML = board(d) + releases(d);
+    $('quiet').innerHTML = quiet(d);
     $('last').innerHTML = last(d.last);
+    $('untracked').innerHTML = untracked(d);
     $('flights').innerHTML = flights(d);
     $('plans').innerHTML = plans(d);
     $('handed').innerHTML = handed(d.handed);
+    stamp('s-board', S.bridge);
+    stamp('s-quiet', S.recorder);
+    stamp('s-last', S.recorder);
+    stamp('s-untracked', S.bridge);
+    stamp('s-flights', S.bridge);
+    stamp('s-plans', S.bridge);
+    stamp('s-handed', S.bridge);
   } catch (e) {
     $('verdict').innerHTML = '<span class="bad">diag unreachable</span>';
   }

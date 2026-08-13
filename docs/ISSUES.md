@@ -8167,3 +8167,162 @@ Code: `src/marshall/atc/phases.py`, `src/marshall/atc/agent_atc.py`.
 Status: SHIPPED/UNVERIFIED — the unit suite is clean. A pilot still has to fly a
 recovery and taxi in, which is the behaviour it is about (card rows for #77 and
 #100).
+
+---
+
+## [KB-5] The diagnostics page consoled: a value with no source, no age, and no record of deciding nothing — #155
+labels: bug, needs-flight-test
+
+    "I feel like the diag page might need revamping. I feel like it might have
+     been lying a little to console me. I want to make sure that it represents
+     what atc is seeing and thinking so that I can rationalize why something is
+     happening"
+
+`/diag` printed plausible values with no account of where they came from, how old
+they were, or whether anything had decided them — and four of its panels printed
+a value nothing had decided at all.
+
+**Four things it answered that nobody had asked.** `active` was deleted from
+`flight_plans` by migration 031, so the plans table read an undefined key and
+rendered **"no"** for every plan for ever, which is an ANSWER. The neighbouring
+cell rendered the em dash entity THROUGH the HTML escaper, so a reader saw the
+literal characters `&mdash;`. `releases` — the only record that a board entry
+ever existed, since a release destroys its own evidence — is published by the
+bridge and `diag.state()` never forwarded it, so the panel written to make nine
+wrong releases visible could not draw a row. And the page had ONE clock,
+measuring the flight recorder, banner-ed as though it measured the bridge:
+*"Recorder last moved 2 h ago — this is the LAST sortie, not live state. Is the
+bridge running?"* It was. Its snapshot was one second old.
+
+**And the biggest gap was not a missing measurement.** `watching_him` was written
+to record deciding NOTHING — its docstring names the sortie it cost, a pilot
+flying from four to thirty miles with no handoff and three minutes of silent log
+— and it writes a sentence per decision: *"Georgia Center keeps him — departure,
+35 nm, inbound"*. The page read that same file for the CONVERSATION and dropped
+every one. So the answer to "why is nothing happening" was in the file the
+diagnostics page already had open, and the diagnostics page did not print it.
+
+**Rebuilt portrait-first.** One aeroplane is one card; nothing scrolls sideways.
+The board was thirteen columns inside `<div class="scroll">`, a class the
+stylesheet never defined — so it did not scroll either, and the file's own
+comment admits what that cost: `intent` *"scrolled out of sight, which reads
+exactly like a column that was never added"*. Each card carries what the bridge
+published about him INCLUDING the four facts the table had no column for —
+`sortie_phase` (the one input `handoff.py` reads), the strip he was resolved
+from, the engine's own `identified` flag, and his own lines out of the record of
+deciding nothing. Two clocks, never one. Every panel is stamped with which
+source it was read from and how old that source is.
+
+**Remaining scope — what the page still cannot say honestly, because nothing
+publishes it.** Deferred rather than derived, because a page that computes a
+fact is the failure this issue is about:
+
+1. **Which values were RESTORED rather than heard.** #136 is the case: `intent:
+   asr approach` displayed as fact while the pilot flew an ILS, off an hour-old
+   `flights` row restored by `Controller.hydrate`. The controller knows —
+   `hydrate` decides it row by row and keeps `skipped_stale` — and
+   `publish_state` carries neither, so the page cannot mark a restored value or
+   say how old the row was.
+2. **Whether a clearance was AGREED.** #105 made FILED / ISSUED / ACKNOWLEDGED
+   three real states and `clearance_ack` is a timestamp on the row;
+   `Controller.hydrate` reads it into `ac.clearance_agreed` and `board()` does
+   not carry it. Ground taxied an aircraft on an unagreed clearance and the board
+   said nothing.
+3. **Which plan he was CLEARED on.** `flights.flight_plan` and
+   `flight_plan_label` have existed since migration 021 — *"a strip names the
+   plan a pilot asked for"* — and `assigned_plans` holds the issued clearance.
+   The board row carries only the strip the IDENTITY ladder matched him from,
+   which is a different fact.
+4. **The anomalies and the refusals.** `Controller.anomalies` records impossible
+   states it repaired and its own comment says `/diag` shows them — it does not,
+   because they are not published. `note_unreachable` records why the engine
+   declined to act on a classified intent. Same for `skipped_stale`.
+5. **The capability of the controller working him.** A controller said "radar not
+   available" while its own capability said `radar=True` (fixed in `1e35bf9`) and
+   nothing on the page could have shown the contradiction.
+6. **What the controller was handed lasts about two seconds.** `publish_state`
+   takes `handed` per call, so the turn publishes the blocks and the scheduler's
+   next publish — two seconds later, with no `handed` argument — replaces them
+   with an empty list. The panel therefore reads *"nothing sent yet this
+   session"* within seconds of every transmission, which is the consoling shape
+   again: an emptiness that reads as a fact. The blocks are the INPUT the
+   controller's behaviour follows from, and they should survive until the next
+   turn replaces them.
+
+All six are one change in one place: `agent_atc.publish_state` puts them on the
+row (and stops discarding the last one), and the page renders them the way it
+renders everything else.
+
+**Acceptance criteria**
+1. No panel renders a value for a key the snapshot does not contain.  DONE
+2. A blank fact renders blank — never `0`, never a plausible substitute.  DONE
+3. The bridge's snapshot and the flight recorder are aged separately, and the
+   staleness banner names which one is old.  DONE
+4. Every `handoff/none`, refusal, unvoiced figure, repair and release in the
+   recorder is on the page, with its age.  DONE
+5. A contact on the scope that appears in neither the board nor the untracked
+   panel is named rather than silently filtered.  DONE
+6. Nothing on the page scrolls sideways at 1024 px.  DONE
+7. The five facts above are published by the bridge and shown per aircraft.
+8. **A pilot reads it on the knee, mid-sortie,** and can answer why nothing is
+   happening without opening a log.
+
+Tests: `tests/test_diag.py` — `TestTheReasonNothingHappened`,
+`TestTwoClocksNeverOne`, `TestNothingIsAnsweredThatNobodyAsked`,
+`TestThePanelThatCouldNotDrawARow`, `TestTheCardSaysWhatTheBoardKnew`,
+`TestPortrait`.
+Code: `src/marshall/kneeboard/diag.py`; the remaining scope is
+`src/marshall/atc/agent_atc.py` (`publish_state`) and
+`src/marshall/atc/controller.py` (`board`).
+
+Status: SHIPPED/UNVERIFIED for 1-6 — flown against the live bridge with
+`tools/ghost_flight.py --inbound` and read at 1024x1365. 7 is not built and 8 is
+a pilot's.
+
+---
+
+## [RAD-6] Every aeroplane is `is_aircraft: false`, because the feed names its category — #156
+labels: bug
+
+Found while flying a ghost arrival for [KB-5], 13 August.
+
+`agent_atc._contact` decides three things by asking whether the sim gave the
+contact a CATEGORY:
+
+    "derived":     _derived_callsign(u.name) if not u.category else "",
+    "state":       sim_state(scope, u.name, fix) if not u.category else "",
+    "is_aircraft": not u.category,
+
+The reading is *"a category means it is a tank"*. It is not: `feed/tracks.py`
+streams one subscription per category and stamps every row with the word —
+`airplane`, `helicopter`, `ground`, `ship` — so an aeroplane's category is
+`airplane`, which is truthy, and every aeroplane on the scope is published as
+`is_aircraft: false` with no derived callsign and no state.
+
+Measured, live, on a ghost the bridge was working: `category: "Airplane"`,
+`is_aircraft: false`, `derived: ""`, `state: ""`.
+
+**What it costs.** The untracked panel filters on `is_aircraft` — *"the page does
+not know what a T-55 is"*, which is right — so the panel that exists to show **a
+manned aeroplane radar can see that nobody is working** can never show one. That
+is the failure [ID-5] built it for, and it is the one that is invisible: a pilot
+who is talking, whose identity never closed, so every call is answered and
+nothing is ever sequenced. The `derived` column is empty for the same reason,
+which is the translation the pilot asked to be able to check
+(`362nd_Sockeye → Sockeye`).
+
+The older `feed/dcs.py` path sets `"category": ""` for everything, which is why
+this ever appeared to work.
+
+**Acceptance criteria**
+1. An aeroplane on the scope is published `is_aircraft: true` whatever the feed
+   called its category, and armour is not.
+2. It carries its derived callsign and its state.
+3. A test covers a contact whose category is the sim's own word for aeroplane.
+
+Code: `src/marshall/atc/agent_atc.py` (`_contact`), `src/marshall/feed/tracks.py`
+(`_CATEGORY`).
+
+Status: OPEN — diagnosed, not fixed. `/diag` names what it is hiding
+(*"N more on the scope the bridge does not count as aircraft"*) so the symptom is
+visible until it is.
