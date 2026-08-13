@@ -116,8 +116,52 @@ def key_for(label: str) -> str:
     `name` survives as the key rather than being replaced by an id because it
     is the FK target of `assigned_plans.template`, and because a URL somebody
     has open should keep working.
+
+    CONSULTED WHEN A PLAN IS CREATED AND NEVER AGAIN.
+
+        "maybe we should just be able to edit the label, but the name key is
+         immutable (unless deleted)"
+
+    The label is editable; the key is not. Re-deriving it on an edit would
+    move the row a clearance already points at -- `assigned_plans.template` is
+    `ON DELETE SET NULL`, so a re-key done as delete-and-insert quietly cuts a
+    pilot's clearance loose from the plan he was cleared on, and the old row
+    lingers under the old key either way. So after a rename the key no longer
+    matches the label, and that is the POINT of having one: it stays still
+    while the human-facing name moves. It is internal, nobody types it, and it
+    is shown nowhere.
     """
     return re.sub(r"[^a-z0-9]+", "-", (label or "").lower()).strip("-")[:63]
+
+
+def next_key(base: str, taken: set[str]) -> str:
+    """`base`, or the first free `base-2`, `base-3`, ... after it.
+
+    A KEY IS GENERATED ONCE AND A LABEL MOVES, so the two come apart -- and the
+    gap is a place a plan can be overwritten. File "Domino" (key `domino`),
+    rename it to "Marlin", and the label Domino is free again while the key
+    `domino` is not. The next plan filed as Domino derives the same key, and
+    `file_plan`'s ON CONFLICT DO UPDATE would then rewrite Marlin's label, legs
+    and task in place, report success, and change the plan under any clearance
+    pointing at that key.
+
+    Nobody types a key, so a suffix costs nothing and the LABEL -- the one
+    identifier a pilot says out loud -- stays unique on its own rules.
+    """
+    base = (base or "")[:60]
+    if base and base not in taken:
+        return base
+    for n in range(2, 1000):
+        cand = f"{base}-{n}"
+        if cand not in taken:
+            return cand
+    return base
+
+
+def taken_names() -> set[str]:
+    """Every key already on the board. See `next_key`."""
+    with get_pool().connection() as c:
+        return {n for (n,) in c.execute("SELECT name FROM flight_plans").fetchall()}
 
 
 def known_fixes() -> set[str]:
@@ -385,19 +429,41 @@ def _words(text: str) -> set[str]:
 
 
 def file_plan(plan: dict, updating: str = "") -> dict:
-    """Put it on the board, or say why not. Never partially."""
+    """Put it on the board, or say why not. Never partially.
+
+    `updating` NAMES THE ROW, and that is the whole of how an edit differs from
+    a filing. Everything else -- the label, the legs, the task -- may change;
+    the key may not.
+    """
+    updating = (updating or "").strip()
+    if updating and updating not in taken_names():
+        # An edit must edit something. Without this, an `updating` naming a row
+        # that has since been removed INSERTS it back under a key derived from
+        # nothing, and the caller is told it was filed.
+        return {"filed": False, "warnings": [],
+                "refused": [f"no plan called {updating} to update — it may have "
+                            f"been removed from the board"]}
     bad, warn = check_live(plan, updating=updating)
     if bad:
         return {"filed": False, "refused": bad, "warnings": warn}
 
     row = {k: (plan.get(k) or None) for k in FIELDS}
     row["label"] = row["label"].strip()
-    # THE KEY IS GENERATED, not typed. Two hand-authored identifiers for one
-    # plan was one too many, and the label is the one with a reason: it has to
-    # survive being said out loud through Whisper. A caller may still pass a
-    # name -- the DTC tool does, to update a plan it filed before -- and the
-    # slug is derived from the label when it does not.
-    row["name"] = (row["name"] or key_for(row["label"])).strip()
+    # THE KEY IS GENERATED, not typed, and generated ONCE. Two hand-authored
+    # identifiers for one plan was one too many, and the label is the one with a
+    # reason: it has to survive being said out loud through Whisper.
+    #
+    #     "maybe we should just be able to edit the label, but the name key is
+    #      immutable (unless deleted)"
+    #
+    # So an edit says WHICH ROW and the key comes from there, never from the new
+    # label. Deriving it again is the re-keying bug: the UPSERT below would
+    # insert a second row under the new slug, leave the original behind under
+    # the old one, and orphan every `assigned_plans.template` pointing at it --
+    # a pilot cleared on the plan, silently no longer on it.
+    row["name"] = (updating or row["name"] or "").strip()
+    if not row["name"]:
+        row["name"] = next_key(key_for(row["label"]), taken_names())
     # THE LEVEL PER LEG. Stored as given: it is the pilot's own profile and
     # nothing here is entitled to round it.
     row["legs"] = Json(plan.get("legs") or [])

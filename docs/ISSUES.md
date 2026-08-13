@@ -7409,6 +7409,34 @@ a pilot describes his own sortie — rather than defaulted to the string
 two Nevada plans that predated `legs` lost their routes. Recovered by hand and
 the migration now backfills first, so no other database repeats it.
 
+**Amended 13 August — a filed plan is now editable, and the key is not.**
+
+    "maybe we should just be able to edit the label, but the name key is
+     immutable (unless deleted)"
+
+Opening a row on `/file` gives you its label, its task, and a cartridge box
+that replaces its steerpoints. All three go back through `/plans/check` and
+`/plans` with `updating` naming the row, so the rules are the ones that refuse
+a new filing — renaming onto another plan's label is refused by the director,
+not by the page.
+
+`name` is generated from the label ONCE and never again. It is the FK target
+of `assigned_plans.template`, which is `ON DELETE SET NULL`, so a re-key done
+as delete-and-insert would quietly cut a pilot's clearance loose from the plan
+he was cleared on and leave the old row behind under the old key. After a
+rename the key no longer matches the label, and that is what a key is for: it
+stays still while the human-facing name moves. It is shown nowhere.
+
+**A bug that immutability creates, fixed in the same commit.** File Domino
+(key `domino`), rename it to Marlin: the LABEL Domino is free again while the
+KEY `domino` is not. The next plan filed as Domino derived the same key and
+`file_plan`'s `ON CONFLICT (name) DO UPDATE` rewrote Marlin's label, legs and
+task in place — reporting success, and changing the plan under any clearance
+pointing at that key. `filing.next_key` gives the new plan `domino-2`; nobody
+types a key, so a suffix costs nothing and the label stays the one identifier
+with rules. `file_plan` also refuses an `updating` that names no row, which
+otherwise re-created a deleted plan under a key derived from nothing.
+
 ---
 
 ## [FP-9] A private fix could silently take a published fix's name — #143

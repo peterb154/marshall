@@ -242,6 +242,59 @@ class TestWhatIsOnlyWarnedAbout(unittest.TestCase):
         self.assertTrue(any("round hundred" in w for w in warn), warn)
 
 
+class TestTheKeyIsGeneratedOnceAndNeverAgain(unittest.TestCase):
+    """The label is editable. The key is not.
+
+        "maybe we should just be able to edit the label, but the name key is
+         immutable (unless deleted)"
+
+    `name` is the FK target of `assigned_plans.template`, so re-deriving it
+    from an edited label would leave the original row behind under the old key
+    and cut every clearance pointing at it loose. The two therefore come apart
+    on purpose -- and that gap is what `next_key` exists to make safe.
+    """
+
+    def test_a_rename_does_not_move_the_key(self):
+        """Domino renamed to Marlin keeps the key `domino`. The check must not
+        object to the label it is being given, either."""
+        bad, _ = F.check(dict(GOOD, name="domino", label="Marlin"),
+                         fixes=FIXES, approaches=APPROACHES,
+                         taken={"domino": "domino"}, updating="domino", at=AT)
+        self.assertEqual(bad, [])
+        self.assertEqual(F.key_for("Marlin"), "marlin",
+                         "key_for is unchanged; it is simply not consulted")
+
+    def test_renaming_onto_another_plans_label_is_still_refused(self):
+        """Excluding the row being edited must not excuse it from the rest of
+        the board -- that is the one refusal a rename can produce."""
+        bad, _ = F.check(dict(GOOD, name="kestrel", label="Domino"),
+                         fixes=FIXES, approaches=APPROACHES, taken=TAKEN,
+                         updating="kestrel", at=AT)
+        self.assertTrue(any("already on the board" in b for b in bad), bad)
+
+    def test_a_freed_label_does_not_overwrite_the_plan_that_kept_the_key(self):
+        """The hazard the immutable key creates, and the reason for `next_key`.
+
+        File Domino (key `domino`), rename it to Marlin: the LABEL Domino is
+        free again, the KEY `domino` is not. A new plan filed as Domino derives
+        the same key, and an UPSERT would rewrite Marlin's legs and task in
+        place while reporting success.
+        """
+        self.assertEqual(F.next_key(F.key_for("Domino"), {"domino"}), "domino-2")
+
+    def test_an_untaken_key_is_left_alone(self):
+        self.assertEqual(F.next_key("domino", {"marlin"}), "domino")
+
+    def test_it_keeps_counting(self):
+        self.assertEqual(F.next_key("domino", {"domino", "domino-2"}),
+                         "domino-3")
+
+    def test_a_suffixed_key_is_still_a_usable_key(self):
+        """It goes in URLs and in `assigned_plans.template`, so it has to pass
+        the same shape check a typed one would."""
+        self.assertTrue(F._NAME_OK.match(F.next_key("domino", {"domino"})))
+
+
 class TestTheRouteIsNormalisedOnTheWayIn(unittest.TestCase):
 
     def test_spacing_is_made_uniform(self):

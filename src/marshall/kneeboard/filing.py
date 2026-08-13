@@ -34,6 +34,24 @@ because that catalogue was not loaded (#141). A colour that means two things
 means neither. The table shows what the plan holds; a leg with no position says
 so, in one place, in the row it belongs to.
 
+**A plan on the board is amendable, and its KEY is not.**
+
+    "maybe we should just be able to edit the label, but the name key is
+     immutable (unless deleted)"
+
+Opening a row gives you its label, its task and a cartridge box that REPLACES
+its steerpoints. All three go back through the same two calls a new plan makes
+-- `/plans/check` while you look at it, `/plans` when you press Save -- with
+`updating` naming the row, which is the only thing that distinguishes an
+amendment from a filing. The key was generated from the label once and stays
+put; it is what `assigned_plans.template` points at, and it appears nowhere on
+this page because nobody types it and there is nothing to do with it.
+
+While a cartridge is staged BOTH leg tables are on screen and the map draws the
+incoming one. Replacing the legs is the largest thing that can be done to a
+plan -- the legs ARE the plan -- so it is shown before it happens rather than
+reported after.
+
 No commentary in the rendered page. The reasoning lives here and in
 docs/ISSUES.md, which is where it was asked for.
 """
@@ -110,6 +128,8 @@ STYLE = """
   .file .row .rm { font-size: 12px; font-weight: normal; padding: 1px 8px;
     background: none; border: 1px solid #8a8069; }
   .file .exp { padding: 4px 0 16px; }
+  .file .exp h2 { margin: 16px 0 4px; }
+  .file .exp textarea { height: 58px; }
 """
 
 BODY = """
@@ -337,6 +357,9 @@ $('#draft').addEventListener('submit', async e => {
 // second column, which at kneeboard width is below the fold -- you clicked
 // something and nothing appeared to happen.
 let open_ = '';
+// The expanded plan, as the director last described it, and the legs a
+// cartridge has been read for but which are not filed yet.
+let OPEN = null, STAGED = null;
 async function board() {
   const plans = ((await (await fetch('/plans')).json()).plans || []);
   $('#board').innerHTML = `<h2>On the board — ${plans.length}</h2>`
@@ -355,17 +378,104 @@ async function board() {
         + `<div class="exp" id="exp-${esc(p.name)}"></div>`).join('')
        || '<p class="note">nothing filed</p>');
   if (open_ && !plans.some(p => p.name === open_)) open_ = '';
-  if (open_) expand(plans.find(p => p.name === open_));
+  OPEN = open_ ? plans.find(p => p.name === open_) : null;
+  if (OPEN) expand(OPEN);
 }
+
+// ---- amending a plan that is already on the board --------------------------
+//
+// THE ROW IS NAMED, NOT THE LABEL. `updating` says which plan this is, so the
+// director keys the write off that and never off the label being typed:
+//
+//     "maybe we should just be able to edit the label, but the name key is
+//      immutable (unless deleted)"
+//
+// Which is also why the label refusal still works while you rename: the check
+// drops THIS row from the board and compares against the rest, so renaming onto
+// somebody else's label is refused there, by the same rule that refuses it when
+// filing. Nothing here decides anything.
+const edited = () => ({name: OPEN.name, updating: OPEN.name,
+                       label: $('#ed-lab').value.trim(),
+                       task: $('#ed-tsk').value.trim(),
+                       legs: STAGED || OPEN.legs || []});
 
 function expand(p) {
   const el = document.getElementById('exp-' + p.name);
   if (!el) return;
-  el.innerHTML = legsTable(p.legs || []) + `<div class="map" id="m-${esc(p.name)}"></div>`;
-  drawMap(document.getElementById('m-' + p.name), p.legs || []);
+  el.innerHTML =
+      '<div class="two">'
+    + `<div><label for="ed-lab">Label</label>`
+    + `<input id="ed-lab" value="${esc(p.label || '')}"></div>`
+    + `<div><label for="ed-tsk">Task</label>`
+    + `<input id="ed-tsk" value="${esc(p.task || '')}"></div>`
+    + '</div>'
+    // BOTH TABLES WHILE ONE IS WAITING TO REPLACE THE OTHER. The legs are the
+    // plan, so replacing them is the largest thing this page can do to one --
+    // and the only honest way to show it is the outgoing list beside the
+    // incoming one, in the same table, before anything is written.
+    + (STAGED
+        ? '<h2>Steerpoints now</h2>' + legsTable(p.legs || [])
+          + `<h2>Replacing with — ${STAGED.length} from the cartridge</h2>`
+          + legsTable(STAGED)
+          + '<div class="acts"><button class="link" id="ed-keep" '
+          + 'type="button">keep the ones it has</button></div>'
+        : '<h2>Steerpoints</h2>' + legsTable(p.legs || []))
+    + '<h2>Replace steerpoints from a DKS data cartridge</h2>'
+    + '<textarea id="ed-dtc" spellcheck="false" '
+    + 'placeholder="RQsAAB+LCAAAAAAAAAPdVt..."></textarea>'
+    + '<div class="acts"><button id="ed-read" type="button">Read cartridge'
+    + '</button></div>'
+    + '<div class="out" id="ed-readout"></div>'
+    + '<div class="out" id="ed-verdict"></div>'
+    + '<div class="acts"><button id="ed-save" type="button">Save</button></div>'
+    + `<div class="map" id="m-${esc(p.name)}"></div>`;
+  // THE ROUTE THAT IS ABOUT TO BE FILED, which is the staged one when there is
+  // one -- a picture of the plan as it stands is not what he is deciding about.
+  drawMap(document.getElementById('m-' + p.name), STAGED || p.legs || []);
 }
 
+async function checkEdit() {
+  if (!OPEN || !$('#ed-save')) return;
+  const res = await post('/plans/check', edited());
+  $('#ed-save').disabled = verdict($('#ed-verdict'), res) > 0;
+}
+
+let epending;
+$('#board').addEventListener('input', e => {
+  if (e.target.id !== 'ed-lab' && e.target.id !== 'ed-tsk') return;
+  clearTimeout(epending);
+  epending = setTimeout(checkEdit, 350);
+});
+
 $('#board').addEventListener('click', async e => {
+  if (e.target.id === 'ed-keep') { STAGED = null; await board(); return; }
+  if (e.target.id === 'ed-read') {
+    // THE SAME DECODER THE NEW-PLAN BOX USES. A second cartridge path would
+    // read the same bytes into a different plan the first rule that changed.
+    const res = await post('/dtc', {cartridge: $('#ed-dtc').value});
+    if (res.refused) { verdict($('#ed-readout'), res); return; }
+    STAGED = (res.draft || {}).legs || [];
+    await board();
+    // The warnings belong to the legs he is about to file, not the ones he
+    // filed before -- so the check runs on the staged plan straight away.
+    await checkEdit();
+    return;
+  }
+  if (e.target.id === 'ed-save') {
+    const res = await post('/plans', edited());
+    if (!res.filed) {
+      $('#ed-save').disabled = verdict($('#ed-verdict'), res) > 0;
+      return;
+    }
+    STAGED = null;
+    await board();
+    // BESIDE THE THING THAT CHANGED. The board is a long page at kneeboard
+    // width and a confirmation at the top of it is a confirmation off screen.
+    const out = $('#ed-verdict');
+    if (out) out.innerHTML = '<p class="ok">Saved.</p>'
+      + (res.warnings || []).map(w => `<p class="warn">${esc(w)}</p>`).join('');
+    return;
+  }
   const rm = e.target.closest('.rm');
   if (rm) {
     const res = await (await fetch('/plans/' + encodeURIComponent(rm.dataset.n),
@@ -377,6 +487,8 @@ $('#board').addEventListener('click', async e => {
   const row = e.target.closest('.row');
   if (!row) return;
   open_ = open_ === row.dataset.n ? '' : row.dataset.n;
+  // A cartridge staged against one plan is not staged against the next one.
+  STAGED = null;
   board();
 });
 
