@@ -31,6 +31,9 @@ import unittest.mock
 from marshall.atc import agent_atc as A
 from tests import theatre as TH
 
+from marshall.atc import controller as C
+from marshall.core import route as R
+
 # CAUCASUS ONLY, and named rather than left to fail. Every key in this
 # file is a Batumi or Kobuleti procedure -- `batumi-ils-13` is not a
 # thing Nevada publishes, and asking for it there is not a defect, it is
@@ -41,8 +44,6 @@ from tests import theatre as TH
 TH.only("caucasus",
         why="every key asserted here names a Georgian procedure; the RULE is map-neutral and is guarded by the two-ILS class, which constructs its own")
 
-from marshall.atc import controller as C
-from marshall.core import route as R
 
 
 class TestAPlanGetsTheProcedureItNames(unittest.TestCase):
