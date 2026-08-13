@@ -9273,3 +9273,73 @@ Status: OPEN — diagnosed with the chain above; not fixed because
 Labels: needs-flight-test
 
 ---
+
+## [ARCH-32] `enroute` is unreachable, and it takes the whole task half with it — #168
+
+`phases._wanted` decides which phase an aeroplane should be in. Its complete set
+of returns:
+
+    "landed"  ·  current or ON_THE_GROUND[0]  ·  "landed"  ·  "departure"
+    "missed"  ·  "approach"  ·  "holding"  ·  "arrival"  ·  current
+
+**`"enroute"` is not among them.** The word appears in `phases.py` only inside
+comments and `follows` tuples, so the phase is declared, is owned by Center, is
+named in four other phases' `follows` — and nothing can ever put an aeroplane in
+it. Swept from `departure`, the reachable set is `{arrival, departure}`.
+
+**And `tasked` / `on_station` follow only from `enroute`**, so the entire
+out-and-do-something half of a sortie is unreachable by construction. A strike,
+a CAS check-in, a tanker join: the phase machine has vocabulary for none of it in
+practice, however it reads on the page.
+
+**Why nothing noticed.** Handoffs key on the controller's ROLE, not on the phase,
+so the ladder still runs correctly — a departing aeroplane reaches Center and is
+handed on properly while the board says `departure` the whole way. The phase was
+wrong and nothing downstream of it was, which is why this survived #63 (which
+fixed every other phase) and reads as fine on a recovery-only sortie.
+
+It is not #91's welding: no refusals were logged on the sortie where this was
+found. Nothing tried to move him and was blocked; nothing tried.
+
+**Acceptance criteria.**
+
+- A departing aircraft beyond the terminal area is `enroute`, and the board says
+  so while Center works him.
+- `tasked` and `on_station` are reachable from it, and a test walks the whole
+  outbound half the way `test_a_sortie_is_flown_end_to_end` walks the recovery.
+- The phase and the ladder agree: a test asserts that for every phase, the
+  controller `handoff.due` would give him is the controller `phases.owner_of`
+  names. Those two answering differently is what hid this.
+
+Tests: `tests/test_phases_derive.py` is the home.
+Code: `src/marshall/atc/phases.py` (`_wanted`).
+
+Status: OPEN — found by an agent answering questions about a live board, and
+confirmed by enumerating the returns.
+
+## [KB-6] The board's datum is the fallback whenever nobody has just spoken — #169
+
+`field_origin` takes the SPEAKING controller's field, and only the transmission
+path passes one: `agent_atc.py:5154` hands the seat's field in, while the
+hook-tick publishes at `:5753` and `:5796` fetch radar with no `field=` at all.
+
+So a board refreshed by the metronome — which is most refreshes — always renders
+the fallback datum, whatever the seat working him would have measured from.
+
+**Harmless today, and that is the trap.** Center is fieldless anyway, so the
+fallback is what he would have used; the number and the "why" both happen to be
+right. The moment #160 lands and a datum is chosen per aeroplane, this path will
+go on printing the loaded approach's field while the controller measures from the
+destination — and the page will be confidently wrong rather than honestly odd,
+which is the exact regression the datum work was written to prevent.
+
+**Acceptance criteria.** The datum a board row shows is the one the controller
+working him would use, on a tick with no transmission in it — asserted, because
+the failure is invisible while the two answers agree.
+
+Code: `src/marshall/atc/agent_atc.py` (the hook-tick publishes).
+
+Status: OPEN — belongs to #155's remaining scope; file it separately so it
+cannot be closed by the parts of #155 that are done.
+
+---
