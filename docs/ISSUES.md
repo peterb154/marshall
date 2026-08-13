@@ -6761,6 +6761,36 @@ nobody else judges a read-back of it.
 Proved against the recorded transcripts rather than a tidied version of them —
 see `tests/test_read_back.py`, which replays both transmissions verbatim.
 
+**Flown on 13 August, and two more of it came out.** `tools/ghost_flight.py
+--sortie` put a synthetic pilot on the ramp at Kobuleti and made him read a
+clearance back badly on purpose. The exchange still could not terminate, for two
+reasons neither of which the 12 August transcripts contained:
+
+*A radio says "tree" for three, and Whisper writes down what it hears.* The
+read-back came back as `1-2-3 decimal tree`, and on the next sortie as `123
+decimal tree` — every character of the right number, in three notations at
+once. The word form was not present (`tree` is not `three`, and `1 2 3` is not
+`one two three`) and the digit rejoin stopped at the `decimal`, because what
+followed it was a word, leaving a trailing point that was discarded. He was
+asked to say again a frequency he had just said. `_normalise` folds the four
+ICAO spellings onto the ordinary ones now, and a spoken digit may finish a run
+of written ones — ONLY a mixed run, because rejoining a run of pure words
+would satisfy a runway with a frequency, which `_said_words` exists to refuse.
+
+*And `clearance_ack` was never written, on any sortie, ever.* `_flight_id_of`
+asked `/flights` with no mission, so it walked the rows of a mission called
+"default" — which no real sortie is — found nobody, returned 0, and
+`_ack_the_clearance` gave up silently every time. Nothing had noticed because
+nothing downstream read the column: the engine's own `clearance_agreed` was set
+in memory by `clearance_read_back`. The moment #135 started reading the board,
+it mattered:
+
+    ATC  Marlin four two, readback correct, contact Kobuleti Ground
+    ATC  Marlin four two, your IFR clearance has STILL not been read back
+
+Both fixed and both flown. The next sortie read its clearance back sloppily, was
+corrected once, was agreed, and had `clearance_ack` on the row before it moved.
+
 **Still open, and it is the pilot's second sentence.** A clearance that was
 never agreed did not stop anything: Ground issued taxi to an aircraft with no
 IFR clearance and nobody said a word. That is #135.
@@ -6787,6 +6817,41 @@ say which state he is actually in: "your IFR clearance has not been read back,
 contact Clearance on one two five decimal one" is a controller doing his job.
 Silence is the failure mode this codebase keeps producing — an error that
 changes nothing and is therefore indistinguishable from success.
+
+**Built, and it was dead code until 13 August.** `Controller.request_taxi`
+refuses on `clearance_agreed is False`, and that field was written in exactly
+two places: `hydrate`, which runs once when the bridge starts, and
+`clearance_read_back`, which only ever sets it TRUE. Nothing in a live sortie
+could set it False, so the guard could not fire — and the unit tests kept it
+green by assigning the field themselves. A ghost flown down the ladder asked
+Ground for taxi on a clearance he had never read back, and was cleared to the
+runway.
+
+`note_clearance_agreed` is the writer that was missing: beside
+`note_cleared_level`, off the same board read, on every turn. The engine did not
+issue the clearance and cannot know one exists unless it is told.
+
+**And the refusal moved him on anyway.** `request_taxi` writes `sortie_phase =
+"taxi"` before it decides anything, which is right for a man on the wrong
+frequency and wrong for one who has just been refused: THE PHASE IS THE HANDOFF,
+so `taxi` means Ground has him. In consecutive transmissions:
+
+    ATC  your IFR clearance has not been read back, contact Kobuleti Clearance
+    ATC  readback correct, contact Kobuleti Ground one two one decimal eight
+
+which is this issue's own complaint back again, with the refusal audible and
+changing nothing. He stays on Clearance's rung now until Clearance is finished
+with him — #82's shape, one method over.
+
+Tests: `GroundCanActuallyRefuse` and `ARefusalDoesNotMoveHimOn` in
+`tests/test_a_sortie_is_flown_end_to_end.py`; the refusal itself is held by
+`GroundDoesNotMoveAnAircraftOnAnUnagreedClearance` in
+`tests/test_ground_procedure.py`.
+Code: `src/marshall/atc/controller.py`, `src/marshall/atc/agent_atc.py`.
+
+Status: SHIPPED/UNVERIFIED — flown by a synthetic pilot end to end: refused
+with the frequency at 01:17, agreed at 02:36, taxied. Whether it SOUNDS like one
+controller is still a pilot's.
 
 ---
 
@@ -8326,3 +8391,156 @@ Code: `src/marshall/atc/agent_atc.py` (`_contact`), `src/marshall/feed/tracks.py
 Status: OPEN — diagnosed, not fixed. `/diag` names what it is hiding
 (*"N more on the scope the bridge does not count as aircraft"*) so the symptom is
 visible until it is.
+
+## [SEAM-18] A read-back correction names what is missing in PROSE, so nothing checks it was said — #157
+labels: bug
+
+Found by `tools/ghost_flight.py --sortie` on 13 August — the first run in which
+one aeroplane climbed the whole ladder under one callsign.
+
+The engine decided this:
+
+    CONTROLLER: Marlin three one, negative — say again one zero thousand,
+                one two three decimal three.
+
+and what reached the air was this:
+
+    ATC[pilot/sonnet]: Marlin three one, negative — say again the altitude,
+                       one zero thousand.
+
+**One of the two missing items was dropped on the way to the radio, and nothing
+noticed.** The frequency he had never read back is now a fact he has not been
+asked for, so the exchange cannot terminate on the next transmission however
+carefully he answers — which is the shape of #134, arriving through a door that
+fix did not close.
+
+**Why the repair mechanism could not help.** `Controller.clearance_read_back`
+emits `Decision(kind="say_again", note=what)` and `note` is prose by
+construction: `Decision.facts()` excludes it deliberately, so `decision.verify`
+has nothing to check and `not_voiced`/`repaired` cannot fire. Every other
+number the engine decides is verified against the transmission and put back if
+it went missing. The one transmission whose entire purpose is to name numbers
+is the one with no numbers in it.
+
+`decision.verify` returns the missing items as SPOKEN FORMS -- strings -- which
+is why they land in `note`. To carry them as facts the verifier has to say
+which FIELDS were missed, not merely how they sound, and `_read_back_correct`
+has the original `Decision` in hand to rebuild a typed one from.
+
+**Acceptance criteria.**
+
+- A correction that the engine decided names N missing items, and the
+  transmission that goes out contains all N or is repaired to.
+- `not_voiced` fires when one is dropped, naming which.
+- A regression test drives the 13 August pair verbatim: two missing items in,
+  one voiced, and the check goes red.
+
+Tests: needs one; the sortie rehearsal counts corrections but cannot see which
+items each named.
+Code: `src/marshall/atc/controller.py` (`clearance_read_back`),
+`src/marshall/atc/decision.py` (`verify`, `Decision`),
+`src/marshall/atc/agent_atc.py` (`_read_back_correct`).
+
+Status: OPEN — a transcript and a repro, and it is one turn away from #134
+reopening in flight.
+
+---
+
+## [OPS-19] A bridge restart silently changes the approach the sortie is flying — #158
+labels: bug
+
+Found while flying the ladder end to end on 13 August, by doing it.
+
+The bridge was live on `batumi-ils`. `uv run python tools/bridge.py restart`
+brought it back on **`batumi-asr`** — a different procedure, a different final
+approach course, a talkdown instead of an intercept — and the only sign was one
+line eight lines up the log:
+
+    approach: batumi-asr (from the theatre)
+    flying: ASR runway 13, talkdown, Batumi Approach
+
+`theatre.caucasus` chooses the recovery from `MARSHALL_APPROACH` or the map's
+`default_approach`. The launcher carries `MARSHALL_THEATRE` deliberately — it is
+in `DEFAULT_ARGS` as `--theatre` — and carries the approach only by accident, if
+the operator happens to have exported it in the shell he is restarting from. A
+restart from anywhere else silently reverts to the map's default.
+
+`theatre.py` already knows why this matters and says so about a different
+mechanism: *"an unknown one is named rather than silently swapped for the
+default, which is how a pilot came to fly a talkdown after asking for an ILS."*
+The same sentence applies to a restart, which is the far more common way to get
+there — a live bridge is restarted several times in a sortie for a patch.
+
+**What it wants**, in order of preference:
+
+1. `restart` means restart. Read the running bridge's approach before stopping
+   it — `/proc/<pid>/environ` on this host, or the `approach:` line it printed —
+   and carry it forward. A restart that changes the procedure is not a restart.
+2. Failing that, `restart` must SAY what it is about to change: "the running
+   bridge is on batumi-ils and this will start batumi-asr" is a stop sign a
+   human can read, and silence is not.
+
+**Acceptance criteria.**
+
+- Starting the bridge on a non-default approach and restarting it leaves the
+  same approach loaded, and a test proves it without a sim.
+- If it cannot, it says so on the way past, naming both procedures.
+
+Tests: needs one; `tools/bridge.py` has no test today.
+Code: `tools/bridge.py` (`DEFAULT_ARGS`, `_env`, `restart`),
+`src/marshall/core/theatre.py`.
+
+Status: OPEN — reproduced twice today, once by accident and once deliberately.
+
+---
+
+## [SEAM-19] A man who asks for the ILS is written down as flying a talkdown — #159
+
+Every pilot who requested an ILS last night appeared on the board, two seconds
+later, as `intent: asr approach`. Three of them, one after another:
+
+    01:20:31  PILOT  "...information alpha, request the ILS runway one three"
+    01:20:33  BOARD  Rampart 8-2   intent='asr approach'
+    01:22:22  PILOT  "...information alpha, request the ILS runway one three"
+    01:22:24  BOARD  Ironside 9-7  intent='asr approach'
+    02:57:11  PILOT  "...information alpha, request the ILS runway one three"
+    02:57:14  BOARD  Marlin 5-7    intent='asr approach'
+
+**This is not #136 and not #131**, which is why it survived both. Those were a
+STALE row — an hour-old `flights` row restored over a live one — and the fix
+was hydration. This is a WRONG row, written fresh, two seconds after he spoke,
+and it would have been written the same way on an empty database.
+
+**Cause.** `agent_atc._INTENT_SAID` maps the classifier's *kind* to prose, and
+`request_approach` was spelled `"asr approach"`. A kind cannot carry which
+approach a pilot wants — that is not what a taxonomy is for — and the constant
+was written when ASR was the only approach that existed. The same shape as most
+of this month: something that was true while there was one of a thing.
+
+**What makes it a seam issue rather than a typo.** The right answer was never
+missing. `Intent.wants` is verbatim and short by design — the schema's own
+examples are `'VFR to Batumi, visual 13'` and `'ILS 21 left'` — the classifier
+fills it, and it already had a path across the seam (`_agreed["intent"]`). So
+`flights.intent` had TWO writers and the constant won. One column, one author.
+
+**Fixed** in the same commit as this entry: `intent_said` returns what he said
+and falls back to the kind only when he named nothing, and `request_approach`
+now reads `"an approach"` — the clearance is the thing that gets to name a
+procedure.
+
+**Acceptance criteria.**
+
+- A `request_approach` carrying `wants="ILS 13"` puts `ILS 13` on the strip, and
+  nothing anywhere turns it into ASR. Covered by
+  `tests/test_untracked.py::TestTheStripSaysWhatHeAskedFor`.
+- A request that names no approach reads as unnamed rather than as a talkdown.
+- A stated intention on any kind of transmission is recorded — `"VFR to Batumi"`
+  on a check-in is what he is here for.
+
+Tests: `tests/test_untracked.py` (5 cases).
+Code: `src/marshall/atc/agent_atc.py` (`_INTENT_SAID`, `intent_said`).
+
+Status: FIXED in code, needs a pilot to see the right words on the strip.
+Labels: needs-flight-test
+
+---

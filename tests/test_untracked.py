@@ -327,6 +327,56 @@ class TestTheBoardRowIsNotEmpty(unittest.TestCase):
                          "asr approach")
 
 
+class TestTheStripSaysWhatHeAskedFor(unittest.TestCase):
+    """A man who asks for the ILS is not flying a talkdown.
+
+    CAUGHT LIVE, three pilots in one night: every one of them said "request the
+    ILS runway one three" and the board read "asr approach" two seconds later.
+    Not a stale row -- #131 and #136 were both that, and both were fixed -- but
+    a WRONG one, written fresh each time from a constant.
+
+    `_INTENT_SAID` maps the classifier's KIND to prose, and a kind cannot carry
+    which approach he wants; `request_approach` was spelled "asr approach" from
+    the days when ASR was the only approach that existed. The recurring shape
+    this month: a thing that was true while there was one of something.
+
+    What he actually said was never missing -- `Intent.wants` is verbatim, the
+    classifier fills it, and it had its own path to `flights.intent`. There were
+    simply two writers for one column and the constant won.
+    """
+
+    def said(self, kind, wants=""):
+        from marshall.atc import agent_atc, intents
+        return agent_atc.intent_said(
+            intents.Intent(kind=intents.IntentKind.coerce(kind),
+                           callsign="Sockeye", wants=wants))
+
+    def test_the_ils_survives_to_the_strip(self):
+        self.assertEqual(
+            self.said("request_approach", wants="ILS 13"), "ILS 13")
+
+    def test_and_is_never_rewritten_as_a_talkdown(self):
+        """The live failure, as a test."""
+        self.assertNotIn("asr", self.said("request_approach",
+                                          wants="ILS runway one three").lower())
+
+    def test_unnamed_stays_unnamed(self):
+        """He asked for "the approach" and named none, so neither do we. The
+        clearance names the procedure -- it is the thing that gets to."""
+        self.assertEqual(self.said("request_approach"), "an approach")
+
+    def test_a_stated_intention_counts_whatever_he_was_doing(self):
+        """"VFR to Batumi" on a check-in is still what he is here for. This is
+        the column `flights.intent` was added for and that nothing wrote."""
+        self.assertEqual(self.said("check_in", wants="VFR to Batumi, visual 13"),
+                         "VFR to Batumi, visual 13")
+
+    def test_but_saying_nothing_still_says_nothing(self):
+        """A check-in with no stated intention leaves the blank alone, so a
+        request survives the read-backs that follow it."""
+        self.assertEqual(self.said("check_in"), "")
+
+
 class TestAFlightIsKeyedOnNobodysHandle(unittest.TestCase):
     """The case a case-insensitive join would still have missed.
 

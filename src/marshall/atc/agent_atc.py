@@ -4074,8 +4074,21 @@ def membership(bridge, _who, transcript, scope, _ident, session_id):
 # TRYING TO DO -- a position report and a check-in are things he is doing right
 # now, not what he wants, and overwriting "asr approach" with "check in" the
 # moment he reads a heading back would lose the very fact the column is for.
+#
+# THESE ARE THE FALLBACK, NOT THE ANSWER. A kind says he asked for an approach;
+# it cannot say WHICH, because that is not what a taxonomy is for. `request_approach`
+# read "asr approach" here from the day ASR was the only approach we had, so a man
+# asking for the ILS was written down as flying a talkdown -- three pilots in one
+# night, every one of them, and it survived #131 and #136 because both of those
+# were about a stale row rather than a wrong one.
+#
+# What he actually said is already captured: `Intent.wants` is verbatim and short
+# ('ILS 21 left'), the classifier fills it, and it has its own path across the seam
+# (`_agreed["intent"]`). Two writers for one column, and the constant was winning.
 _INTENT_SAID = {
-    "request_approach": "asr approach",
+    # He asked for the approach without naming one. Say that, and let the
+    # clearance name the procedure -- it is the thing that gets to.
+    "request_approach": "an approach",
     "request_visual": "visual approach",
     "request_breakup": "break up the flight",
     "report_missed": "going around",
@@ -4086,10 +4099,18 @@ _INTENT_SAID = {
 def intent_said(intent) -> str:
     """The standing intention this transmission establishes, if any.
 
+    HIS WORDS FIRST. The classifier already carries what he stated, verbatim,
+    and it is strictly better than anything derivable from the kind: "ILS 13"
+    against "an approach". The map below is what to write when he asked for
+    something without naming it.
+
     Empty for everything else, and `note_intent` ignores an empty -- so a
     request survives the twenty read-backs that follow it. That is what makes
     the column mean "what he is here for" rather than "the last thing he said".
     """
+    said = (getattr(intent, "wants", "") or "").strip()
+    if said:
+        return said
     return _INTENT_SAID.get(getattr(getattr(intent, "kind", None), "value", ""), "")
 
 
