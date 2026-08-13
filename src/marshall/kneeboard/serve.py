@@ -522,13 +522,26 @@ async def vendor(name: str):
 # THE STATIC CHART ROUTE WENT WITH THEM. It served generated pages from
 # KNEEBOARD_OUT and the scanned approach plates beside them; nothing is
 # generated into that tree any more.
-if __name__ == "__main__":
+def main(argv: list[str] | None = None) -> None:
+    """`marshall-kneeboard` -- the surfaces deployable, as a function.
+
+    A DEPLOYABLE IS AN ENTRYPOINT, NOT A DIRECTORY (#147, `docs/STRUCTURE.md`),
+    and until this existed the sentence had no referent here: the only way in
+    was a `__main__` block, which nothing can import, name in `pyproject.toml`,
+    or call from a test. The body is what that block did, unchanged --
+    `python -m marshall.kneeboard.serve 8362` still works and still means this.
+    """
     import sys
 
     import uvicorn
 
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else config.KNEEBOARD_PORT
+    argv = sys.argv[1:] if argv is None else argv
+    port = int(argv[0]) if argv else config.KNEEBOARD_PORT
     config.ensure_dirs()
     print(f"serving on http://localhost:{port}/  "
           f"(flight test card, diagnostics, documents, planner)")
     uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
+
+
+if __name__ == "__main__":
+    main()

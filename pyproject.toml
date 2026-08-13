@@ -31,8 +31,29 @@ mission = ["pydcs>=0.15.0"]
 dev = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "markdown>=3.5", "pydcs>=0.15.0",
        "luaparser>=3.2", "pytest>=8.0", "ruff>=0.6"]
 
-# Entry points are run as modules (python -m marshall.<pkg>.<mod>); no console
-# scripts yet.
+# --- entrypoints -------------------------------------------------------------
+#
+# A DEPLOYABLE IS AN ENTRYPOINT, NOT A DIRECTORY. `docs/STRUCTURE.md` argues it
+# and #147 sequences it: "bridge" and "director" are the names of two folders
+# that grew into processes, and naming a part after where a file happened to
+# sit is how `director/tools/` ended up holding the air traffic control.
+#
+# The four names are `marshall-radio` (L0, the SRS voice client), `marshall-atc`
+# (L4-L5, separation and procedure), `marshall-feed` (L1, the sim mirrored into
+# Postgres) and `marshall-kneeboard` (L7, the surfaces). ONE OF THEM IS HERE,
+# and the absences are not oversights:
+#
+#   marshall-radio   blocked on #55. The receive loop is `_run_srs` inside
+#   marshall-atc     `atc/agent_atc.py`'s own `__main__`, so there is no
+#                    function to name. Two entrypoints wait on one extraction.
+#   marshall-feed    not a process. `start_streamer` and `start_events` are
+#                    started by the agent's HTTP door; the day it is its own
+#                    process is the day it gets a line here.
+#
+# A name in this table is a promise that `pip install marshall` puts a working
+# command on the PATH. An aspirational one is worse than none.
+[project.scripts]
+marshall-kneeboard = "marshall.kneeboard.serve:main"
 
 [build-system]
 requires = ["hatchling"]
