@@ -66,15 +66,15 @@ class TestWhatHeCallsItOnTheRadio(unittest.TestCase):
     """It knew two procedures and there are more than two."""
 
     def test_an_ils_is_called_an_ils(self):
-        self.assertEqual(C.Controller(R.BATUMI_ILS)._approach_name(),
+        self.assertEqual(C.Controller(R.BATUMI_ILS)._approach_name(None),
                          "I-L-S approach")
 
     def test_a_surveillance_approach_keeps_its_name(self):
-        self.assertEqual(C.Controller(R.BATUMI_ASR)._approach_name(),
+        self.assertEqual(C.Controller(R.BATUMI_ASR)._approach_name(None),
                          "radar approach")
 
     def test_the_beacon_letdown_keeps_its_name(self):
-        self.assertEqual(C.Controller(R.BATUMI_APPROACH)._approach_name(),
+        self.assertEqual(C.Controller(R.BATUMI_APPROACH)._approach_name(None),
                          "beacon approach")
 
     def test_it_is_keyed_on_the_procedure_not_on_being_vectored(self):
@@ -83,8 +83,8 @@ class TestWhatHeCallsItOnTheRadio(unittest.TestCase):
         from marshall.core.approach import may_vector
         self.assertTrue(may_vector(R.BATUMI_ILS))
         self.assertTrue(may_vector(R.BATUMI_ASR))
-        self.assertNotEqual(C.Controller(R.BATUMI_ILS)._approach_name(),
-                            C.Controller(R.BATUMI_ASR)._approach_name())
+        self.assertNotEqual(C.Controller(R.BATUMI_ILS)._approach_name(None),
+                            C.Controller(R.BATUMI_ASR)._approach_name(None))
 
 
 if __name__ == "__main__":

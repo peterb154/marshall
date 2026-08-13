@@ -472,9 +472,8 @@ class Controller:
     # phraseology. Named procedures instead, until that flag is worth trusting.
     VECTORED_KINDS = ("asr", "ils")
 
-    @property
-    def _vectored(self) -> bool:
-        """Does this controller steer him, or does the pilot fly the procedure?
+    def _vectored(self, ac) -> bool:
+        """Does this controller steer HIM, or does he fly the procedure himself?
 
         ASKED OF THE CAPABILITY, and it used to be asked of the procedure's
         NAME. The obvious key -- `atc.radar` -- is wrong, and #53 exists because
@@ -484,9 +483,26 @@ class Controller:
         steering it are different capabilities, and one flag was answering both.
         `AtcCapability.vectors` separates them; `None` means ask the procedure,
         which is what this did all along.
+
+        ASKED OF ONE AEROPLANE, and it was a property over the radio's own
+        profile -- so it answered for the bridge and every caller inherited
+        that. Steering is not a property of a controller. Two aircraft on one
+        frequency, one on an ILS and one on the 1944 letdown, get opposite
+        answers from the same man in the same minute, and the whole of the
+        phraseology below hangs off this one boolean: what he calls the
+        procedure, how he phrases a hold, what he asks the pilot to report,
+        and whether he tells him not to acknowledge.
+
+        `ac` IS REQUIRED AND HAS NO DEFAULT. That is the point of the change
+        rather than a detail of it -- #2 landed `Aircraft.profile` beside the
+        singleton and 26 of 28 sites went on reading the singleton, because
+        nothing made them stop. An argument with no default is the grep that
+        acceptance criterion was missing: the interpreter enforces it. `None`
+        is the honest way to say "no aeroplane in view", and it falls back to
+        the radio's profile exactly as this always did.
         """
         from marshall.core.approach import may_vector
-        return may_vector(self.profile)
+        return may_vector(self._pro(ac))
 
     # WHAT A CONTROLLER CALLS THE PROCEDURE, out loud. It knew exactly two --
     # "radar approach" or "beacon approach" -- so an ILS was cleared as a radar
@@ -502,10 +518,18 @@ class Controller:
         "par": "precision approach", "ndb": "beacon approach",
         "vor": "V-O-R approach", "tacan": "TACAN approach"}
 
-    def _approach_name(self) -> str:
-        kind = (getattr(self.profile, "kind", "") or "").lower()
+    def _approach_name(self, ac) -> str:
+        """What THIS aeroplane is being cleared for, out loud.
+
+        His procedure, not the radio's. The one sentence this appears in is the
+        approach clearance, which is issued to one aeroplane about one arrival
+        -- so reading the bridge's profile here is how a man on the ILS gets
+        cleared for a radar approach while the aeroplane beside him, on the
+        radar approach, is told the same thing and is right.
+        """
+        kind = (getattr(self._pro(ac), "kind", "") or "").lower()
         return self._APPROACH_WORD.get(
-            kind, "radar approach" if self._vectored else "beacon approach")
+            kind, "radar approach" if self._vectored(ac) else "beacon approach")
 
     def release(self, callsign: str) -> bool:
         """Take him off the board. Nobody is sitting in that aeroplane.
@@ -741,7 +765,7 @@ class Controller:
         controller is procedural and works position reports, so being unseen is
         the normal condition and this cannot apply.
         """
-        return ac.radar_identified or not self._vectored
+        return ac.radar_identified or not self._vectored(ac)
 
     def identified(self) -> list[str]:
         """Aeroplanes something other than a voice has vouched for.
@@ -905,8 +929,16 @@ class Controller:
         if ac is not None:
             ac.kit = frozenset(kit)
 
-    def _hold_phrase(self, alt_ft: int, kit=None) -> str:
+    def _hold_phrase(self, ac, alt_ft: int, kit=None) -> str:
         """Where to wait, said in a way he can actually fly.
+
+        HIS procedure publishes the hold, not the radio's. Every one of the
+        four reads below was the bridge's arrival, so an aeroplane waiting for
+        Kobuleti was given Batumi's outbound heading and Batumi's leg time --
+        real numbers, flyable, and describing a racetrack over the wrong
+        aerodrome. Two aircraft holding for two fields is the ordinary case
+        this engine exists to serve, and it is the case the numbers came out
+        wrong for.
 
         Three cases, and the aircraft decides which:
 
@@ -940,15 +972,23 @@ class Controller:
         # can home the beacon by being in the procedure.
         from marshall.atc import equipment
 
-        # THE HOMER, and only a non-vectored procedure reaches here -- see
-        # `_a_letdown_always_has_a_homer` in the #163 tests, which is what
-        # makes these four reads safe without a guard each. `getattr` on a
-        # None still answers "ndb", which is the right default at a beacon
-        # field anyway.
-        kind = getattr(self.profile.navaid, "navaid_kind", "ndb")
+        pro = self._pro(ac)
+        # THE NAVAID, and only a non-vectored procedure reaches here -- see
+        # `_a_letdown_always_has_a_navaid` in the #163 tests, which is what
+        # makes these reads safe without a guard each. `getattr` on a None
+        # still answers "ndb", which is the right default at a beacon field
+        # anyway.
+        #
+        # A CONTROLLER WITH NO PROCEDURE AT ALL cannot offer a published hold,
+        # and must not invent one: `_pro` answers None on a bridge that was
+        # never handed an arrival, and there is no fix to name. He falls
+        # through to the racetrack, which is describable from nothing but a
+        # heading and a clock -- see the default below.
+        kind = getattr(getattr(pro, "navaid", None), "navaid_kind", "ndb")
         able = kit is None or equipment.can_hold_at(kit, kind)
-        if not self._vectored and able:
-            return (f"hold at {self.profile.navaid.name} as published, "
+        if (not self._vectored(ac) and able
+                and getattr(pro, "navaid", None) is not None):
+            return (f"hold at {pro.navaid.name} as published, "
                     f"maintain {spell_alt(alt_ft)}")
         # A SHAPE AND A CLOCK. He has no navaid, so he cannot hold OVER
         # anything -- and a heading with no leg time is not a hold, it is a
@@ -961,16 +1001,30 @@ class Controller:
         # Everything he needs, in one transmission and in the order he flies it:
         # the level that keeps him off the others, which way he turns, and the
         # two headings with the time on each.
-        out = self.profile.hold_outbound_hdg
-        mins = getattr(self.profile, "hold_leg_minutes", 1.0)
-        turns = getattr(self.profile, "hold_turns", "right")
+        #
+        # THE LEVEL IS OURS AND THE RACETRACK IS HIS PROCEDURE'S, and that is
+        # what decides what a controller with no procedure may say. Separation
+        # is this engine's own job and does not stop because nobody filed an
+        # arrival, so he still gets a level and still gets called. The pattern
+        # is published geometry -- aligned with an approach course, at a field
+        # -- and there is none to read, so nothing is said about it. A heading
+        # invented here is a real heading over real terrain and reads exactly
+        # like a right answer, which is #109's rule and the reason the
+        # dataclass defaults are NOT reached for: 180 and one minute belong to
+        # a procedure that declined to say, not to the absence of one.
+        if pro is None:
+            return (f"hold at {spell_alt(alt_ft)}, "
+                    f"expect vectors for the approach, I will call you")
+        out = pro.hold_outbound_hdg
+        mins = getattr(pro, "hold_leg_minutes", 1.0)
+        turns = getattr(pro, "hold_turns", "right")
         leg = spell_minutes(mins)
         return (f"hold at {spell_alt(alt_ft)}, {turns} turns, "
                 f"{spell_hdg(out)} outbound {leg}, then "
                 f"{spell_hdg((out + 180) % 360)} inbound {leg}, "
                 f"expect vectors for the approach, I will call you")
 
-    def _report_phrase(self, ac=None) -> str:
+    def _report_phrase(self, ac) -> str:
         """What he should call next. Never a trigger he cannot detect.
 
         This used to say "never a fix he cannot navigate to", which is the same
@@ -986,13 +1040,18 @@ class Controller:
         thing the pilot reports is what he can see out of the window.
         """
         pro = self._pro(ac)
-        if self._vectored:
+        if self._vectored(ac):
             if getattr(pro, "guidance", "") == "talkdown":
                 return "report the field in sight"
             return "report established on the final approach course"
+        # NO PROCEDURE, NO NAVAID TO REPORT OVER. The field in sight is the one
+        # trigger every pilot can detect without anything published, which is
+        # the same argument the talkdown branch makes one line up.
+        if getattr(pro, "navaid", None) is None:
+            return "report the field in sight"
         return f"report {pro.navaid.name} inbound"
 
-    def _no_acknowledgement_phrase(self) -> str:
+    def _no_acknowledgement_phrase(self, ac) -> str:
         """Said ONCE, with the approach clearance, on a talkdown. Then never.
 
             "on an ASR approach, you should tell me at the beginning of the
@@ -1008,7 +1067,8 @@ class Controller:
         DOES report established -- telling him not to acknowledge would be
         telling him not to make the one call the procedure needs. [#99]
         """
-        if self._vectored and getattr(self.profile, "guidance", "") == "talkdown":
+        if (self._vectored(ac)
+                and getattr(self._pro(ac), "guidance", "") == "talkdown"):
             return " Do not acknowledge further transmissions."
         return ""
 
@@ -1576,7 +1636,7 @@ class Controller:
                         f"{spell_freq(tower_freq)}{homing}.")
             else:
                 call = (f"{self._addr(ac)}, {here}, "
-                        f"{self._report_phrase()}.")
+                        f"{self._report_phrase(ac)}.")
         elif self._owns("departure") or self._owns("center"):
             # A DEPARTING AIRCRAFT IS NOT ASKED TO REPORT THE FIELD IN SIGHT.
             #
@@ -1785,7 +1845,7 @@ class Controller:
             # silently changed a separation decision two modules away. It reads
             # the kind now, which is why every holding path has to carry one.
             self.say(ac.callsign,
-                     f"{self._addr(ac)}, {self._hold_phrase(slot, ac.kit)}.",
+                     f"{self._addr(ac)}, {self._hold_phrase(ac, slot, ac.kit)}.",
                      decided=D.Decision(kind="hold", to=ac.callsign,
                                         altitude_ft=slot))
             self._try_clear()
@@ -1844,14 +1904,34 @@ class Controller:
         ac.phase, ac.assigned_ft = Phase.MISSED, self._pro(ac).missed_ft
         return False
 
-    def _missed_instruction(self, banished: bool) -> str:
+    def _missed_instruction(self, ac, banished: bool) -> str:
+        """THE NUMBER HE IS TOLD IS THE NUMBER HE WAS ASSIGNED, and it was not.
+
+        `_do_missed` right above sets `assigned_ft` off `_pro(ac)` -- HIS
+        procedure -- and this composed the sentence off `self.profile`, the
+        radio's. Two profiles, one go-around: the board recorded one level and
+        the controller read him another, in the same breath, and neither is
+        wrong on its face. A missed approach is the one moment in an arrival
+        when a pilot is busiest and least able to query a figure.
+
+        Nothing on the Caucasus showed it, because one bridge loaded one
+        arrival and both answers came from the same object. It needed a second
+        aeroplane recovering somewhere else, which is what #2 was FOR.
+
+        The outer hold goes the same way. `outer_hold` is where a twice-missed
+        aeroplane is sent to re-sequence, and a re-sequence is at HIS field --
+        being banished to the other aerodrome's escape fix, on the other
+        aerodrome's frequency, is the two-field fault this project keeps
+        meeting: a real fix, a real frequency, the wrong airport.
+        """
+        pro = self._pro(ac)
         if banished:
-            return (f"climb {spell_alt(self.profile.top_ft)}, proceed "
-                    f"{self.profile.outer_hold.name}, contact "
-                    f"{self.profile.outer_hold.sector or 'the outer hold'} "
-                    f"{spell_freq(self.profile.outer_hold.freq_mhz or 0)}, hold, "
+            return (f"climb {spell_alt(pro.top_ft)}, proceed "
+                    f"{pro.outer_hold.name}, contact "
+                    f"{pro.outer_hold.sector or 'the outer hold'} "
+                    f"{spell_freq(pro.outer_hold.freq_mhz or 0)}, hold, "
                     f"expect re-sequence. Traffic holding.")
-        return (f"climb {spell_alt(self.profile.missed_ft)}, "
+        return (f"climb {spell_alt(pro.missed_ft)}, "
                 f"return to the beacon. You are number one for the approach.")
 
     def report_missed(self, cs: str) -> None:
@@ -1859,7 +1939,7 @@ class Controller:
         banished = self._do_missed(ac)
         addr = self._addr(ac)
         prefix = f"{addr}, " if banished else f"{addr} roger, "
-        self.say(ac.callsign, prefix + self._missed_instruction(banished))
+        self.say(ac.callsign, prefix + self._missed_instruction(ac, banished))
         self._try_clear()
 
     def _station_passage(self, ac: Aircraft) -> None:
@@ -1867,7 +1947,7 @@ class Controller:
         missed. The pilot's own watch should already be prompting this -- the
         cone of silence is unreliable in the sim, so ATC backs the timing up."""
         banished = self._do_missed(ac)
-        inst = self._missed_instruction(banished)
+        inst = self._missed_instruction(ac, banished)
         self.say(ac.callsign, f"{self._addr(ac)}, heard a Mustang overhead, field is "
                               f"beneath you, go missed. " + inst[0].upper() + inst[1:])
         self._try_clear()
@@ -2125,7 +2205,7 @@ class Controller:
         place = len(self._holders(ac))
         words = ["", "one", "two", "three", "four", "five", "six"]
         self.say(ac.callsign,
-                 f"{self._addr(ac)}, {self._hold_phrase(ac.assigned_ft, ac.kit)}. "
+                 f"{self._addr(ac)}, {self._hold_phrase(ac, ac.assigned_ft, ac.kit)}. "
                  f"Expect the visual, you are number "
                  f"{words[place] if place < len(words) else place}.",
                  decided=D.Decision(kind="hold", to=ac.callsign,
@@ -2478,7 +2558,7 @@ class Controller:
             # Already cleared (e.g. the aircraft ahead just landed and freed the
             # letdown for him) -- re-affirm, don't send him back to the hold.
             self.say(ac.callsign,
-                     f"{self._addr(ac)}, cleared {self._approach_name()} runway "
+                     f"{self._addr(ac)}, cleared {self._approach_name(ac)} runway "
                      f"{self._pro(ac).runway or 'in use'}, continue.")
             return
         if not self.may_be_sequenced(ac):
@@ -2526,7 +2606,7 @@ class Controller:
                                         and self._next_up(ac) is ac):
             self.say(ac.callsign,
                      f"{self._addr(ac)}, {self._pro(ac).controller}, "
-                     f"{self._hold_phrase(held_at, ac.kit)}.",
+                     f"{self._hold_phrase(ac, held_at, ac.kit)}.",
                      decided=D.Decision(kind="hold", to=ac.callsign,
                                         altitude_ft=held_at,
                                         station=self._pro(ac).controller))
@@ -2633,14 +2713,14 @@ class Controller:
         ac.last_report_t = self.t
         self._set_letdown(ac, ac.callsign)
         self.say(ac.callsign,
-                 f"{self._addr(ac)}, cleared {self._approach_name()} runway "
+                 f"{self._addr(ac)}, cleared {self._approach_name(ac)} runway "
                  f"{self._pro(ac).runway or 'in use'}, "
                  f"{self._report_phrase(ac)}. "
                  f"Report missed approach or landing."
-                 f"{self._no_acknowledgement_phrase()}",
+                 f"{self._no_acknowledgement_phrase(ac)}",
                  decided=D.Decision(kind="cleared_approach", to=ac.callsign,
                                     runway=self._pro(ac).runway or "",
-                                    note=self._approach_name()))
+                                    note=self._approach_name(ac)))
         if was_bottom_holder:
             self._step_down(ac)
 

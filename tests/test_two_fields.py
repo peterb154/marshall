@@ -771,25 +771,25 @@ class SeeingHimAndSteeringHimAreTwoCapabilities(unittest.TestCase):
 
     def test_the_beacon_letdown_has_eyes_and_does_not_steer(self):
         self.assertTrue(R.BATUMI_APPROACH.atc.radar, "he can see him")
-        self.assertFalse(self._ctl(R.BATUMI_APPROACH)._vectored,
+        self.assertFalse(self._ctl(R.BATUMI_APPROACH)._vectored(None),
                          "and must not vector him round his own letdown")
 
     def test_and_says_so_rather_than_leaving_it_to_be_inferred(self):
         self.assertIs(R.BATUMI_APPROACH.atc.vectors, False)
 
     def test_the_surveillance_approach_still_vectors(self):
-        self.assertTrue(self._ctl(R.BATUMI_ASR)._vectored)
+        self.assertTrue(self._ctl(R.BATUMI_ASR)._vectored(None))
 
     def test_a_profile_that_says_nothing_is_asked_of_its_procedure(self):
         """`None` means "ask the procedure", which is what this did all along --
         an ASR or an ILS is vectored by construction."""
         self.assertIsNone(R.BATUMI_ASR.atc.vectors)
-        self.assertTrue(self._ctl(R.BATUMI_ASR)._vectored)
+        self.assertTrue(self._ctl(R.BATUMI_ASR)._vectored(None))
 
     def test_the_name_of_the_approach_follows_from_it(self):
-        self.assertEqual(self._ctl(R.BATUMI_APPROACH)._approach_name(),
+        self.assertEqual(self._ctl(R.BATUMI_APPROACH)._approach_name(None),
                          "beacon approach")
-        self.assertEqual(self._ctl(R.BATUMI_ASR)._approach_name(),
+        self.assertEqual(self._ctl(R.BATUMI_ASR)._approach_name(None),
                          "radar approach")
 
 
@@ -811,7 +811,7 @@ class TheTalkdownSaysOnceThatSilenceIsExpected(unittest.TestCase):
 
     def _said(self, profile):
         from marshall.atc import controller as atc
-        return atc.Controller(profile)._no_acknowledgement_phrase()
+        return atc.Controller(profile)._no_acknowledgement_phrase(None)
 
     def test_the_surveillance_approach_says_it(self):
         self.assertIn("do not acknowledge", self._said(R.BATUMI_ASR).lower())
@@ -830,7 +830,10 @@ class TheTalkdownSaysOnceThatSilenceIsExpected(unittest.TestCase):
         import inspect
         from marshall.atc import controller as atc
         src = inspect.getsource(atc.Controller)
-        # The empty parens match the CALL, not the `def`.
-        self.assertEqual(src.count("self._no_acknowledgement_phrase()"), 1,
+        # `self.` matches the CALL, not the `def`. The argument is the
+        # AEROPLANE now (#162) -- whether silence is expected is a fact about
+        # the procedure HE is flying, and two aircraft on one frequency get
+        # opposite answers.
+        self.assertEqual(src.count("self._no_acknowledgement_phrase(ac)"), 1,
                          "said more than once, which is the chatter it exists "
                          "to prevent")

@@ -347,12 +347,12 @@ class TestApproachVocabulary(unittest.TestCase):
         self.ndb = atc.Controller(R.BATUMI_APPROACH)
 
     def test_the_radar_approach_is_not_called_a_beacon_approach(self):
-        self.assertIn("radar", self.asr._approach_name())
-        self.assertNotIn("beacon", self.asr._approach_name())
-        self.assertIn("beacon", self.ndb._approach_name())
+        self.assertIn("radar", self.asr._approach_name(None))
+        self.assertNotIn("beacon", self.asr._approach_name(None))
+        self.assertIn("beacon", self.ndb._approach_name(None))
 
     def test_vectored_holding_is_an_altitude_not_a_fix(self):
-        hold = self.asr._hold_phrase(6000)
+        hold = self.asr._hold_phrase(None, 6000)
         # THE AERODROME, because the ASR has no beacon to name -- that is the
         # point of the test and #163 made it sayable. A vectored hold is an
         # altitude; it must not name a place at all.
@@ -363,12 +363,12 @@ class TestApproachVocabulary(unittest.TestCase):
         self.assertIn("call you", hold)
 
     def test_the_letdown_still_holds_at_its_beacon(self):
-        hold = self.ndb._hold_phrase(6000)
+        hold = self.ndb._hold_phrase(None, 6000)
         # ITS HOMER, and this is the one procedure that has one.
         self.assertIn(R.BATUMI_APPROACH.navaid.name, hold)
 
     def test_no_beacon_report_is_ever_asked_for_on_a_radar_approach(self):
-        self.assertNotIn("beacon", self.asr._report_phrase().lower())
+        self.assertNotIn("beacon", self.asr._report_phrase(None).lower())
 
     def test_AND_NOT_ESTABLISHED_EITHER_ON_A_TALKDOWN(self):
         """This test used to assert the opposite, which is how the bug lived.
@@ -387,11 +387,11 @@ class TestApproachVocabulary(unittest.TestCase):
         meant "never a trigger he cannot detect".
         """
         self.assertEqual(self.asr.profile.guidance, "talkdown")
-        self.assertNotIn("established", self.asr._report_phrase().lower())
+        self.assertNotIn("established", self.asr._report_phrase(None).lower())
 
     def test_he_reports_what_he_can_SEE(self):
         """The window is the only instrument the procedure gives him."""
-        self.assertIn("field in sight", self.asr._report_phrase())
+        self.assertIn("field in sight", self.asr._report_phrase(None))
 
     def test_but_an_ILS_pilot_IS_asked_to_report_established(self):
         """He has a localiser, so the trigger is one he can detect -- and this
@@ -399,8 +399,8 @@ class TestApproachVocabulary(unittest.TestCase):
         import dataclasses
         ils = atc.Controller(dataclasses.replace(self.asr.profile,
                                                  guidance="intercept"))
-        self.assertTrue(ils._vectored, "an ILS is vectored onto the localiser")
-        self.assertIn("established", ils._report_phrase().lower())
+        self.assertTrue(ils._vectored(None), "an ILS is vectored onto the localiser")
+        self.assertIn("established", ils._report_phrase(None).lower())
 
     def test_nothing_the_vectored_controller_says_names_the_beacon(self):
         # The belt-and-braces check: drive a whole arrival and read every
@@ -528,7 +528,7 @@ class TestHeadingsAreSpokenLikeHeadings(unittest.TestCase):
 
     def test_the_holding_racetrack_reads_back_sensibly(self):
         c = atc.Controller(R.BATUMI_ASR)
-        hold = c._hold_phrase(8000)
+        hold = c._hold_phrase(None, 8000)
         self.assertIn("one eight zero outbound", hold)
         self.assertIn("three six zero inbound", hold)
 
@@ -1002,7 +1002,7 @@ class TestAHoldHeCanActuallyFly(unittest.TestCase):
         self.beacon = atc.Controller(R.BATUMI_APPROACH)    # he can find the fix
 
     def test_it_carries_both_headings_and_the_time_on_each(self):
-        said = self.radar._hold_phrase(6000)
+        said = self.radar._hold_phrase(None, 6000)
         self.assertIn("one eight zero outbound", said)
         self.assertIn("three six zero inbound", said)
         self.assertEqual(said.count("one minute"), 2, said)
@@ -1010,18 +1010,18 @@ class TestAHoldHeCanActuallyFly(unittest.TestCase):
     def test_it_says_which_way_he_turns(self):
         """Everybody turning the same way keeps the pattern predictable when the
         only thing separating them is altitude."""
-        self.assertIn("right turns", self.radar._hold_phrase(6000))
+        self.assertIn("right turns", self.radar._hold_phrase(None, 6000))
 
     def test_it_still_carries_the_level(self):
-        self.assertIn("six thousand", self.radar._hold_phrase(6000))
+        self.assertIn("six thousand", self.radar._hold_phrase(None, 6000))
 
     def test_no_bare_digits_reach_the_voice(self):
-        said = self.radar._hold_phrase(6000)
+        said = self.radar._hold_phrase(None, 6000)
         self.assertNotRegex(said, r"\d")
 
     def test_a_field_with_a_beacon_holds_as_published(self):
         """He can find the place, so describing a racetrack at him is noise."""
-        said = self.beacon._hold_phrase(6000)
+        said = self.beacon._hold_phrase(None, 6000)
         self.assertIn("as published", said)
         self.assertNotIn("outbound", said)
 
@@ -1076,7 +1076,7 @@ class TestWhatHeIsFlyingDecidesTheHold(unittest.TestCase):
         c = atc.Controller(profile or R.BATUMI_APPROACH)
         c.report_beacon("Pony 1-1", 6000)
         c.note_equipment("Pony 1-1", kit)
-        return c._hold_phrase(6000, c.aircraft["Pony 1-1"].kit)
+        return c._hold_phrase(c.aircraft["Pony 1-1"], 6000, c.aircraft["Pony 1-1"].kit)
 
     def test_a_homer_may_hold_at_the_beacon(self):
         self.assertIn("as published", self.hold_for(E.receivers("P-51D-30-NA")))
