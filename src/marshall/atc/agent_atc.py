@@ -3177,6 +3177,28 @@ def his_station(bridge, ctl, profile, cs: str, fallback_hz: float = 0.0):
     return _theatre.station_on(hz / 1_000_000, procedure=profile)
 
 
+def seat_named(name: str, profile=None):
+    """The station with this NAME, or None.
+
+    `his_station` answers the same question from a FREQUENCY, which is right
+    when an aeroplane has checked in somewhere. A hook has no aeroplane and no
+    frequency -- it has the seat that made the promise, by name, because the
+    director records who set it (#166). This is the other door to the same
+    table.
+
+    Never a first-match over roles: a name is unique across the theatre in a
+    way a role is not, which is the whole of #51 and `test_two_fields`.
+    """
+    from marshall.core import route as _R
+    want = (name or "").strip().lower()
+    if not want:
+        return None
+    for s in _R.STATIONS:
+        if (getattr(s, "name", "") or "").strip().lower() == want:
+            return s
+    return None
+
+
 def his_field(bridge, ctl, profile, cs: str, fallback_hz: float = 0.0) -> str:
     """Which AERODROME is working this aeroplane.
 
@@ -5807,7 +5829,13 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                           plans=filed_plan_rows(),
                           names=getattr(client, "roster", None))
             for hook in fetch_due(session_id):
-                scope = (fetch_radar(session_id, profile=profile)
+                # THE SEAT THAT MADE THE PROMISE, which the director records
+                # and this used to throw away (#166). It decides two things a
+                # pilot notices: which field the ranges in the callback are
+                # measured from, and which channel it goes out on.
+                _seat = seat_named(hook.get("station") or "", profile)
+                scope = (fetch_radar(session_id, profile=profile,
+                                     field=getattr(_seat, "field", "") or "")
                          if radar_on else Scope(""))
                 why = hook.get("why") or ""
                 # WHICH CHANNEL THE PROMISE WAS MADE ON.
@@ -5823,7 +5851,15 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 # The frequency comes from the man it is owed to: the channel we
                 # last heard HIM on. Falling back to the last channel anybody
                 # spoke on, and only then to the primary.
-                on_hz = hook_frequency(why, bridge.heard_on, bridge.last_active_hz[0])
+                # HIS OWN CHANNEL FIRST. The fallbacks below are a guess --
+                # the man it is owed to, then the last channel ANYBODY spoke
+                # on -- and a guess was all there was until the director began
+                # recording the seat. Kobuleti Ground promising "I'll call you
+                # back for taxi" had its callback voiced by Batumi Approach on
+                # 124.425, which from the cockpit is a hook that never fired.
+                on_hz = ((getattr(_seat, "freq_mhz", 0.0) or 0.0) * 1e6
+                         or hook_frequency(why, bridge.heard_on,
+                                           bridge.last_active_hz[0]))
                 print(f"HOOK fired (+{hook.get('seconds')}s) on "
                       f"{(on_hz or freq_hz) / 1e6:.3f}: {why}", flush=True)
                 interact(

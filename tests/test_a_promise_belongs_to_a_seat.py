@@ -166,3 +166,47 @@ class TestTheDirectorBindsTheToolToTheSeat(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTheBridgeReadsTheSeatOffTheHook(unittest.TestCase):
+    """The other half of #166, and it is `marshall-atc`'s.
+
+    The director records which seat made a promise. Until this, the bridge
+    threw it away and guessed both things a pilot notices about a callback:
+
+        the channel   `hook_frequency(why, heard_on, last_active_hz[0])` --
+                      the man it is owed to, then THE LAST CHANNEL ANYBODY
+                      SPOKE ON. Kobuleti Ground promising "I'll call you back
+                      for taxi" was voiced by Batumi Approach on 124.425, and
+                      from the cockpit that is a hook that never fired.
+        the datum     the radar fetch passed no field, so every range in the
+                      callback was measured from the fallback rather than from
+                      the promising seat's own aerodrome (#169).
+
+    `seat_named` is the by-NAME door to the station table -- `his_station` is
+    the by-frequency one, and a hook has no aeroplane and no frequency, only
+    the seat.
+    """
+
+    def test_a_seat_is_found_by_its_name(self):
+        from marshall.atc.agent_atc import seat_named
+        got = seat_named("Kobuleti Ground")
+        self.assertIsNotNone(got, "the promising seat cannot be resolved")
+        self.assertEqual(got.field, "Kobuleti")
+        self.assertEqual(got.freq_mhz, 121.8)
+
+    def test_and_it_is_his_field_not_the_arrival_s(self):
+        """The point of the datum half: Ground at the DEPARTURE field must not
+        have his ranges measured from the field at the other end of the route."""
+        from marshall.atc.agent_atc import seat_named
+        self.assertEqual(seat_named("Kobuleti Ground").field,
+                         "Kobuleti")
+        self.assertEqual(seat_named("Batumi Ground").field, "Batumi")
+
+    def test_a_name_nobody_has_resolves_to_nothing(self):
+        """Not a first match, and not the primary. An unknown seat is an
+        unknown seat, and the caller falls back deliberately rather than being
+        handed somebody else's frequency."""
+        from marshall.atc.agent_atc import seat_named
+        self.assertIsNone(seat_named("Nellis Tower"))   # wrong map
+        self.assertIsNone(seat_named(""))
