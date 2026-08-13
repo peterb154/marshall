@@ -11,8 +11,8 @@ contributes is three things and only three:
                       course, an airway leg, an orbit, a runway centreline --
                       the same maths against a different line
     what may follow   the legal next phases, so "cleared for the approach while
-                      holding" is possible and "landed while enroute" is not,
-                      and nobody has to remember which
+                      holding" is possible and "landed while still on the ramp"
+                      is not, and nobody has to remember which
 
 The table below is deliberately COMPLETE while the code behind it is not. A
 pilot should eventually be able to fly a whole sortie under ATC -- clearance,
@@ -92,28 +92,46 @@ PHASES: dict[str, Phase] = {p.name: p for p in (
     # Departure hands him straight to Approach. Requiring `enroute` in between
     # meant the transition was refused as illegal and he stayed "departing"
     # while being vectored onto a final.
+    # AND `landed` FOLLOWS THIS, AND EVERY OTHER AIRBORNE PHASE. It used to
+    # follow `approach` alone, so the sim stating the one fact nobody argues
+    # with lost to the table: a departure that comes straight back, a straight-in
+    # nobody formally cleared, a pilot who breaks off a hold and lands were each
+    # refused and kept their phase. `derive`'s own reasoning opens with "DOWN IS
+    # THE ONE FACT NOBODY ARGUES WITH" and `may_follow` argued with it.
+    #
+    # Touching down is an OBSERVATION, not a procedural transition, and an
+    # observation cannot be illegal. What stays refused is `landed` out of a
+    # GROUND phase -- which is the case `follows` was written to protect, and
+    # the reason a parked aeroplane that has never flown is not "landed".
+    #
+    # It is spelled out per phase rather than special-cased inside `may_follow`,
+    # because this table is meant to be READ: a reader asking what may follow an
+    # arrival should see the answer here and not in a predicate two hundred
+    # lines down. `test_phases_derive` sweeps `has_flown` against these tuples
+    # so the two cannot drift when a phase is added. [#151]
     Phase("departure", owner="departure", aims_at="course",
-          follows=("enroute", "arrival"),
+          follows=("enroute", "arrival", "landed"),
           note="Rolling and climbing out on the runway heading, then turned "
                "on course. The same intercept geometry as an approach, flown "
                "the other way."),
 
     Phase("enroute", owner="center", aims_at="point",
-          follows=("tasked", "arrival", "rtb", "holding"),
+          follows=("tasked", "arrival", "rtb", "holding", "landed"),
           note="The long middle. Direct to a fix or to the destination -- "
                "the geometry's simplest case, a point to fly at."),
 
     Phase("tasked", owner="overlord", aims_at="point",
-          follows=("on_station", "rtb", "enroute"),
+          follows=("on_station", "rtb", "enroute", "landed"),
           note="Given a job rather than a heading: an area, and something in "
                "it. Overlord's business."),
 
     Phase("on_station", owner="overlord", aims_at="orbit",
-          follows=("tasked", "rtb"),
+          follows=("tasked", "rtb", "landed"),
           note="Working the area. An orbit is a point with a radius, which the "
                "geometry already knows how to fly."),
 
-    Phase("rtb", owner="center", aims_at="point", follows=("arrival", "enroute"),
+    Phase("rtb", owner="center", aims_at="point",
+          follows=("arrival", "enroute", "landed"),
           note="Going home. Enroute again, with the destination as the point."),
 
     # THE SAME GEOMETRY AS THE APPROACH, and saying otherwise was a lie by
@@ -123,12 +141,13 @@ PHASES: dict[str, Phase] = {p.name: p for p in (
     # handler here is what lets the dispatcher fly the arrival without the
     # arrival's guidance being smuggled in as the approach's.
     Phase("arrival", owner="approach", aims_at="course",
-          follows=("holding", "approach"),
+          follows=("holding", "approach", "landed"),
           note="Descending and being vectored into position. Same geometry as "
                "the approach, flown before the clearance rather than after.",
           handler="marshall.atc.asr:guide"),
 
-    Phase("holding", owner="approach", aims_at="orbit", follows=("approach",),
+    Phase("holding", owner="approach", aims_at="orbit",
+          follows=("approach", "landed"),
           note="Waiting his turn, in clear air, at a level of his own. The "
                "hold is a chance to regroup, not something to sweat -- what "
                "has to be right is the sequencing out of it."),
@@ -141,7 +160,7 @@ PHASES: dict[str, Phase] = {p.name: p for p in (
           handler="marshall.atc.asr:guide"),
 
     Phase("missed", owner="approach", aims_at="course",
-          follows=("holding", "approach", "enroute"),
+          follows=("holding", "approach", "enroute", "landed"),
           note="Went around. The PUBLISHED missed approach, not a vector -- "
                "the plate's track is the one certified to clear the ground, "
                "and vectoring instead flew an aeroplane into the Caucasus.",
@@ -307,8 +326,13 @@ def derive(current: str, *, on_ground: bool | None = None,
 
     NOTHING IS SKIPPED SILENTLY. A transition the table calls illegal is
     refused and the current phase kept, because "cleared for the approach while
-    holding" is legal and "landed while enroute" is not, and the one place that
-    knows is this table.
+    holding" is legal and "landed while still on the ramp" is not, and the one
+    place that knows is this table.
+
+    AND AN OBSERVATION IS NOT A TRANSITION. `landed` follows every airborne
+    phase, because the sim saying the wheels are down is a fact and not a
+    proposal -- see the table. A phase machine that refuses an observed fact is
+    asserting something it cannot know. [#151]
 
     `refused(current, wanted)` is called when that happens, so the refusal
     appears in the log instead of only its consequences. A phase that will not
