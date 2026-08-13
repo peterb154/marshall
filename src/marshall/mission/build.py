@@ -58,7 +58,29 @@ class F4U_1D(PlaneType):
 
     Same four-channel VHF card as the rest, because the comms ladder is the
     whole point and an aircraft that cannot tune the controllers is a seat
-    nobody can use.
+    nobody can use. That card is `panel_radio` plus `set_channels`, and it is
+    written when the GROUP is built.
+
+    WHICH IS WHY `radio_frequency` IS THE MUSTANG'S AND NOT A CONTROLLER'S.
+    It said `R.TOWER.freq_mhz` -- a class body, so it was evaluated at IMPORT,
+    against whichever theatre the environment named before anybody had chosen
+    one. `import marshall.mission.build` therefore raised on Nevada:
+
+        AttributeError: TOWER names station 'Batumi Tower', which the
+        configured theatre does not have.
+
+    and took `mission/nevada.py` with it, which imports `channels_for`,
+    `set_channels` and `write_presets` from here -- so the Nevada mission could
+    not be built with the theatre correctly set. `core/route.py` already argues
+    this exact point in its own docstring: "a default argument is bound at
+    import, which on a theatre that is chosen by environment is a fact captured
+    before anybody has chosen."
+
+    Nothing is lost by dropping it. This attribute is pydcs's come-up frequency
+    for the TYPE, and every group in this file is given its own a line after it
+    is created -- from the seat at the field that aeroplane is standing on,
+    which is where that fact belongs. A frequency baked into an airframe is a
+    fact about an airport wearing an aeroplane's clothes.
     """
 
     id = "F4U-1D"
@@ -71,7 +93,7 @@ class F4U_1D(PlaneType):
     category = "Air"
     task_default = P_51D_30_NA.task_default
     tasks = P_51D_30_NA.tasks
-    radio_frequency = R.TOWER.freq_mhz
+    radio_frequency = P_51D_30_NA.radio_frequency
     panel_radio = P_51D_30_NA.panel_radio
 
 

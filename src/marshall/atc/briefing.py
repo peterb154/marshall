@@ -345,10 +345,33 @@ def _threats() -> list[str]:
     ]
 
 
-def plate(profile: R.ApproachProfile = R.BATUMI_ASR,
+def plate(profile: R.ApproachProfile,
           flight: str = R.FLIGHT_CALLSIGN,
           size: int = R.FLIGHT_SIZE) -> str:
     """The field-specific facts, as the procedure being flown decides them.
+
+    THE PROCEDURE IS REQUIRED, and it used to default to `R.BATUMI_ASR`. A
+    default argument is evaluated at `def` time -- at module IMPORT -- and
+    `route.__getattr__` resolves that name against the configured theatre, so
+    the map was chosen before anybody had chosen it:
+
+        MARSHALL_THEATRE=nevada  import marshall.atc.briefing
+          -> AttributeError: BATUMI_ASR names approach 'batumi-asr', which the
+             configured theatre does not publish.
+
+    `agent_atc.load_and_push_plate` imports this module unguarded and `_run_srs`
+    calls it unguarded, so THE SRS BRIDGE -- the live ATC -- died during
+    start-up on the second map. Not a wrong number: no controller at all.
+
+    `core/route.py:126-138` had already written the lesson down, about a
+    different function, in its own docstring: "a default argument is bound at
+    import, which on a theatre that is chosen by environment is a fact captured
+    before anybody has chosen." It was not applied one file over.
+
+    There is no sensible default here anyway. Which approach is being flown is
+    a fact about a CLEARANCE -- `flights.cleared_approach` is the column that
+    holds it -- and a caller who has not got one is not asking for the Batumi
+    surveillance approach, he is asking a question with no answer. [#162]
 
     THREE PROCEDURES, THREE BRIEFINGS, and the difference is WHO NAVIGATES.
 
@@ -479,4 +502,17 @@ def _ndb_plate(profile: R.ApproachProfile,
 
 
 if __name__ == "__main__":
-    print(plate())
+    # NAMED, not defaulted. This is the demo that used to be the reason `plate`
+    # had a default argument at all, and one convenience import-bound a fact
+    # for every caller in the process. It asks the configured map instead, and
+    # says what that map publishes when asked for something it has not got.
+    import sys as _sys
+
+    from marshall.core import theatre as _t
+
+    _pubs = _t.approaches_now()
+    _key = _sys.argv[1] if len(_sys.argv) > 1 else _t.current().approach_key
+    if _key not in _pubs:
+        raise SystemExit(f"{_t.current().name} publishes {sorted(_pubs)}, "
+                         f"not {_key!r}")
+    print(plate(_pubs[_key]))
