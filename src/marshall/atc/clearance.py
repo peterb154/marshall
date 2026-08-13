@@ -83,10 +83,10 @@ def filed() -> list[dict]:
     wrong field, the wrong WORLD.
 
     THE PUBLISHED FIX TABLE IS THE WORLD. `push_fixes` writes this theatre's
-    catalogue at every bridge start and now replaces rather than merges, so a
+    catalogue at every voice-process start and now replaces rather than merges, so a
     plan whose origin is not a published fix is not somewhere this controller
-    can see. No new configuration, no theatre flag in the director, and it
-    cannot drift from what the bridge actually published.
+    can see. No new configuration, no theatre flag in the language brain, and it
+    cannot drift from what `marshall-atc` actually published.
 
     A plan with no origin is kept. That is a filing gap rather than another
     map's sortie, and the filing checks already report it.
@@ -197,13 +197,13 @@ def ack(flight_id: int) -> dict:
 # --- the numbers the clearance needs, from what is published ----------------
 
 def departure_freq(field: str = "") -> float:
-    """Whom he calls after he rolls, off the SECTORS this bridge published.
+    """Whom he calls after he rolls, off the SECTORS this voice process published.
 
     IT USED TO READ THE ACTIVE FLIGHT PLAN'S APPROACH BLOB and take the first
     departure station in it. Two faults in one line.
 
     The first is that `flight_plans.active` is not a fact about a flight plan --
-    it is the bridge's note-to-self about which arrival it is running -- and
+    it is `marshall-atc`'s note-to-self about which arrival it is running -- and
     reading world state off it is what made a finished route undeletable:
 
         "i dont understand this active business. sounds like mis-alignment
@@ -215,7 +215,7 @@ def departure_freq(field: str = "") -> float:
     could be given the other's departure frequency. Real number, wrong airport;
     the shape this project keeps finding, and the fourth place it has appeared.
 
-    `sectors` is pushed by the bridge from the theatre (migration 027) and
+    `sectors` is pushed by `marshall-atc` from the theatre (migration 027) and
     carries the field on every row, so the question can be asked properly:
     whose departure frequency, at WHICH aerodrome. Approach and Departure are
     one seat on one frequency -- see `Station.also` -- so the approach sector IS
@@ -265,7 +265,7 @@ def canonical_callsign(said: str) -> str:
     dry run of clearance delivery did.
 
     Deliberately a second, smaller copy of what `atc/callsign.py` does, for the
-    same reason `PHASES` is duplicated here: the director must not have to import
+    same reason `PHASES` is duplicated here: the language brain's HTTP door must not have to import
     the ATC package, which lives in a different deployable.
     """
     words = re.findall(r"[A-Za-z]+|\d", said or "")
@@ -328,8 +328,8 @@ def field_of(station: str) -> str:
 
     The last word is the SEAT and the rest is the field, which is how every
     station in this system is named. Deliberately not a table lookup: the
-    director has no theatre (see the `/atis` endpoint on why), and the one fact
-    needed here is already in the string the bridge sent.
+    language brain has no theatre (see the `/atis` endpoint on why), and the one fact
+    needed here is already in the string `marshall-atc` sent.
     """
     words = (station or "").split()
     return " ".join(words[:-1]).strip() if len(words) > 1 else ""
@@ -439,7 +439,7 @@ def clearance_tools(mission: str = "default", station: str = "") -> list:
                 f"Every element above is read out -- the departure frequency is "
                 f"not optional.\n"
                 f"HIS NEXT TRANSMISSION WILL BE THE READ-BACK, and you do not "
-                f"judge it. The bridge verifies it against this clearance, "
+                f"judge it. `marshall-atc` verifies it against this clearance, "
                 f"element by element, and hands you the verdict -- say "
                 f"\"readback correct\" when it says so, and when it names an "
                 f"element he missed, ask for THAT one again and nothing else. "
@@ -473,7 +473,7 @@ def clearance_tools(mission: str = "default", station: str = "") -> list:
             return (f"ISSUED, NOT ACKNOWLEDGED. {callsign} was read a clearance "
                     f"({got.get('label') or 'as filed'}) and has not read it "
                     f"back correctly yet. Do not say his read-back was correct. "
-                    f"If he has just read it back, the bridge has already "
+                    f"If he has just read it back, `marshall-atc` has already "
                     f"judged it and told you the verdict -- use that.")
         return (f"ACKNOWLEDGED. {callsign} was cleared on "
                 f"{got.get('label') or 'the filed plan'} and read it back "

@@ -8,7 +8,7 @@ armour in a valley. **Prose is not a permission system.** It costs tokens on
 every call describing capabilities the seat may not use, and it relies on the
 model obeying an instruction rather than on the capability being absent.
 
-The station is known deterministically -- the bridge resolves who is speaking
+The station is known deterministically -- `marshall-atc` resolves who is speaking
 from the frequency before the call is ever made -- so it is the natural key.
 
 WHAT IS ABSENT CANNOT BE CALLED, and that is the whole argument. The failure this
@@ -26,8 +26,8 @@ covers, and a capability is granted if any of them qualifies. Getting this wrong
 in the safe direction (a seat missing a tool it needs) is a controller who
 cannot do his job; in the unsafe direction it is the thing we are removing.
 
-UNKNOWN MEANS EVERYTHING, deliberately. If the bridge does not say who is
-speaking -- an old bridge, a direct call, a test -- the agent gets the full set
+UNKNOWN MEANS EVERYTHING, deliberately. If the caller does not say who is
+speaking -- an old voice process, a direct call, a test -- the agent gets the full set
 and behaves exactly as it did before. A capability system that silently
 disarmed a controller because a field was missing would be worse than none.
 """
@@ -64,7 +64,7 @@ _UNIVERSAL = {"identify", "vector", "hooks", "frequency", "memory"}
 def capabilities(role: str = "", also=()) -> set[str]:
     """The capability names this seat may use.
 
-    Empty `role` means "the bridge did not say", and returns everything -- see
+    Empty `role` means "the caller did not say", and returns everything -- see
     the note at the top of this module. Anything else is the union of what the
     primary role and every additional role allow, plus the universal set.
     """

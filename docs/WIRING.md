@@ -150,7 +150,20 @@ flowchart TD
 
 ## Vocabulary
 
-Fourteen name-like things. A bug in any one of them sounds, from the cockpit, exactly like a bug in any other — this table is the antidote.
+**First, the PARTS — and two words this document still says that you should not.** Each part is named for what it does and sits at a layer in `LAYERS.md`; the canonical table is [`STRUCTURE.md` → What to call the parts](STRUCTURE.md#what-to-call-the-parts).
+
+| say this | layer | what it does | runs in |
+|---|---|---|---|
+| `marshall-radio` | 0 transport | the SRS voice client: one ear on every frequency, ten mouths | the voice process |
+| `marshall-atc` | 4–5 control + procedure | separation, the board, approaches, clearances, handoffs, the ground | the voice process |
+| `marshall-feed` | 1 world | the sim mirrored into Postgres | the agent container |
+| the **language brain** | 6 language | the prompts, the conversation window, the tools a seat is handed | the agent container |
+| the **stores** | 1–3 | Postgres + PostGIS + pgvector, and the migrations | the agent container |
+| `marshall-kneeboard` | 7 surfaces | the page server | its own container |
+
+**"the bridge" and "the director" are DIRECTORY names, and are deprecated as vocabulary.** They say where a file happened to sit after a subtree merge on 25 July, and a folder name carries no layer — so a reader cannot tell whether a thing belongs where it is. This page has ~290 of them in prose written before that was decided; **read "the bridge" as `marshall-radio` + `marshall-atc` in one host process, and "the director" as the language brain plus the stores plus `marshall-feed`'s threads in one container.** The folders themselves have not moved and will not until #147 item 5; the words are not waiting for them.
+
+**Then fourteen name-like things.** A bug in any one of them sounds, from the cockpit, exactly like a bug in any other — this table is the antidote.
 
 | Term | What it actually is | Where it comes from | Said out loud? |
 |---|---|---|---|
@@ -190,11 +203,11 @@ Fourteen name-like things. A bug in any one of them sounds, from the cockpit, ex
 
 ## The two deployables, and running them
 
-One repo, two processes that must both be up before a pilot keys a mic. They are not peers: the **director** is a long-lived service that survives sorties; the **bridge** is a foreground Python process you start and stop around each flight. Nearly every "the radio went strange" report resolves to *which of these two produced the words*, so start by knowing what each one is.
+One repo, two processes that must both be up before a pilot keys a mic. They are not peers: the **agent container** ("the director") is a long-lived service that survives sorties and holds the language brain, the stores and `marshall-feed`; the **voice process** ("the bridge") is a foreground Python process you start and stop around each flight, and it is `marshall-radio` and `marshall-atc` running together. Nearly every "the radio went strange" report resolves to *which of these two produced the words*, so start by knowing what each one is.
 
-### The bridge — `marshall.atc.agent_atc`
+### The voice process — `marshall.atc.agent_atc`
 
-A single Python process. It owns the radio, the Whisper model, the deterministic `controller.Controller` (the separation board lives **in this process's memory**, not in Postgres), and every timer. It has no HTTP server of its own; it is a client of the director.
+A single Python process, and `marshall-radio` (layer 0) and `marshall-atc` (layers 4–5) both live in it; splitting them into two commands waits on `_run_srs` becoming importable (#55). It owns the radio, the Whisper model, the deterministic `controller.Controller` (the separation board lives **in this process's memory**, not in Postgres), and every timer. It has no HTTP server of its own; it is a client of the language brain.
 
 `__main__` is thirteen lines (`agent_atc.py`) and the argument order is positional, no flags:
 

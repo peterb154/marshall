@@ -30,7 +30,7 @@ injected fresh on every call and never stored; only DIALOGUE is remembered.
     SITUATION      radar, strip, phase, who you are     re-derived, never kept
     CONVERSATION   the pilot's words and the replies    kept, and only this
 
-Which is the pattern the bridge already used for RADAR and CONTROLLER, extended
+Which is the pattern `marshall-atc` already used for RADAR and CONTROLLER, extended
 one step further: it re-derives them per call anyway, so keeping the old copies
 was never buying anything.
 
@@ -77,11 +77,11 @@ except ImportError:                     # importable without strands (tests),
                 if isinstance(state, dict) else 0)
             return None
 
-# Where the pilot's words start in an assembled bridge message. Everything
+# Where the pilot's words start in a message assembled by `marshall-atc`. Everything
 # before it is situation, re-derived on the next call and worthless afterwards.
 _PILOT = "PILOT:"
 
-# A hook firing is the other shape the bridge sends. Its RADAR line is situation
+# A hook firing is the other shape `marshall-atc` sends. Its RADAR line is situation
 # for exactly the same reason; the promise itself is the part worth keeping.
 _EVENT_RADAR = re.compile(r"\nRADAR:.*?(?=\nMake the radio call now|\Z)", re.S)
 

@@ -35,8 +35,8 @@ none. So on a fresh database this tool answers "no station list is published" to
 every frequency question for ever, and the controller falls back to the thing it
 was built to stop -- inventing a plausible number in correct phraseology.
 
-WHERE THE ANSWER BELONGS IS A PUSH, and the director cannot start it. The bridge
-knows which map is loaded and the director does not; `push_sectors` says exactly
+WHERE THE ANSWER BELONGS IS A PUSH, and the language brain cannot start it. `marshall-atc`
+knows which map is loaded and the language brain does not; `push_sectors` says exactly
 that and pushes the controllers' VOLUMES for the same reason. Sectors are not
 the station table -- Ground, Clearance and Sentry have no airspace, so five of
 the theatre's nine seats are absent from it -- so the missing half is a
@@ -83,7 +83,7 @@ except ImportError:                     # importable without strands (tests)
 def _stations(seat: str = "") -> list[dict]:
     """Every published station on the map THIS CONTROLLER is sitting on.
 
-    `seat` is his station name, handed down from the bridge -- the trusted side,
+    `seat` is his station name, handed down from `marshall-atc` -- the trusted side,
     resolved from the frequency before the call was made. Rows in `approaches`
     accumulate across theatres and nothing ever clears them, so "the list" is
     not a question a `fetchone` can answer. The list that names him is.
@@ -100,7 +100,7 @@ def _stations(seat: str = "") -> list[dict]:
     for sts in lists:
         if any(want == (s.get("name") or "").strip().lower() for s in sts):
             return sts
-    # NOBODY TOLD US WHICH SEAT. An older bridge sends no station, and then
+    # NOBODY TOLD US WHICH SEAT. An older voice process sends no station, and then
     # there is no way to choose -- so one published list is the answer and
     # several is not. Picking the first of several is what this was doing.
     return lists[0] if not want and len(lists) == 1 else []
@@ -123,7 +123,7 @@ def frequency_tools(station: str = ""):
     Bound at construction, like `hook_tools` and `memory_tools(namespace=...)`,
     and for the same reason: which map's frequencies a controller may read is a
     fact about where he is sitting, not something the model should be trusted to
-    supply. An older bridge sends nothing and the tool falls back to the only
+    supply. An older voice process sends nothing and the tool falls back to the only
     published list, or to saying it cannot look one up.
     """
 

@@ -27,11 +27,32 @@ Blind, non-radar, 1944-phraseology flying is a *handicap* you dial in per
 mission (`AtcCapability`), not the baseline. If you read otherwise anywhere,
 that document is out of date.
 
+## What to call the parts
+
+**Each part is named for what it does and sits at a layer.** Use these words;
+"the bridge" and "the director" are DIRECTORY names and are deprecated, because
+a folder name carries no layer and a reviewer cannot then tell whether a change
+landed at the right altitude.
+
+| say this | layer | what it does |
+|---|---|---|
+| `marshall-radio` | 0 transport | the SRS voice client: one ear, ten mouths, no aviation in it |
+| `marshall-atc` | 4–5 control + procedure | separation, the board, approaches, clearances, handoffs, the ground |
+| `marshall-feed` | 1 world | the sim mirrored into Postgres |
+| `marshall-kneeboard` | 7 surfaces | the page server (and a real command) |
+| the **language brain** | 6 language | what we ask Bedrock and in what words; the conversation, the tools a seat is handed |
+| the **stores** | 1–3 | Postgres + PostGIS + pgvector and the migrations |
+
+Today `marshall-radio` and `marshall-atc` are one host process, and the language
+brain, the stores and `marshall-feed` share one container. That is a DEPLOYMENT
+fact, not a design; the canonical table with the reasoning is
+[`STRUCTURE.md` → What to call the parts](STRUCTURE.md#what-to-call-the-parts).
+
 ## The invariant, which nothing may break
 
 > **An LLM never invents separation between aircraft.**
 
-- The **agent** (Bedrock Sonnet, in `director/`) owns language, judgment,
+- The **language brain** (Bedrock Sonnet, layer 6) owns language, judgment,
   radar-grounded guidance, identity correlation and hooks.
 - The deterministic **`atc/controller.py`** owns separation — the holding stack,
   one-in-the-letdown, sequencing.
@@ -44,17 +65,20 @@ to the wrong airport.
 
 ## What runs, and where
 
-| | what | how it starts |
+| | what runs in it | how it starts |
 |---|---|---|
-| **SRS bridge** | the live ATC. One ear on every frequency, ten mouths | `python -m marshall.atc.agent_atc --srs <host> <freq> <voice> <session> --theatre nevada` — normally via `tools/bridge.py watch` |
-| **director** | the Bedrock agent + Postgres/PostGIS/pgvector. Prompts, identity, tracks, plans | `cd director && docker compose up -d` |
-| **kneeboard** | charts + `/diag`, in a container. Generates pages **at start** | `docker restart marshall-kneeboard` after any `core/` change |
-| **ATIS** | one client per broadcasting field; decides the runway in use | a thread inside the bridge |
+| **the voice process** | `marshall-radio` + `marshall-atc` + ATIS, together | `python -m marshall.atc.agent_atc --srs <host> <freq> <voice> <session> --theatre nevada` — normally via `tools/bridge.py watch` |
+| **the agent container** | the language brain's HTTP door, the stores, and `marshall-feed`'s threads | `cd director && docker compose up -d` |
+| **`marshall-kneeboard`** | the page server, in its own container. Generates pages **at start** | `docker restart marshall-kneeboard` after any `core/` change |
 | **DCS server** | the sim, on another box, gRPC on 50051 | `tools/deploy_mission.sh`, which restarts and unpauses it |
 
-**Which map is a flag, not a guess.** The bridge and the kneeboard both take
-`MARSHALL_THEATRE` / `--theatre`; the bridge then *confirms* it against the sim
-by converting a known field. See `core/theatre.py`.
+Three processes, six parts. **Which process a part runs in is a deployment
+choice and changes nothing about which layer it is** — `marshall-radio` is
+layer 0 whether or not it shares a PID with the controller.
+
+**Which map is a flag, not a guess.** The voice process and the kneeboard both
+take `MARSHALL_THEATRE` / `--theatre`; the voice process then *confirms* it
+against the sim by converting a known field. See `core/theatre.py`.
 
 **A paused sim is the quietest failure here.** It boots paused and joining does
 not unpause it; while paused every mission-Lua query hangs while the server
@@ -67,10 +91,10 @@ looks healthy. `uv run python tools/sim.py status`.
 | fields, fixes, frequencies, approaches, MVA/MSA | `src/marshall/core/` | anywhere else |
 | which theatre | `MARSHALL_THEATRE`, via `core/theatre.py` | inferred from the mission |
 | the runway in use | the `atis` table — controllers **read** it | each controller's own reading of the wind |
-| separation, the stack, sequencing | `atc/controller.py`, in the bridge process | the agent |
+| separation, the stack, sequencing | `atc/controller.py` — `marshall-atc`, layer 4 | the language brain |
 | who has him next | `agent_atc.next_controller` — sim events, then `handoff.py`, then PostGIS volumes | any second mechanism |
-| identity (radio ↔ track ↔ callsign) | the director's `contacts` | a Whisper transcript |
-| prompts, sessions, plans, tracks | the director's Postgres | files |
+| identity (radio ↔ track ↔ callsign) | the stores' `contacts` table | a Whisper transcript |
+| prompts, sessions, plans, tracks | the stores (Postgres) | files |
 
 ## Testing, cheapest first
 
@@ -85,7 +109,7 @@ does not run reads exactly like one that passed. The sweeps gate on a recorded
 baseline, not on zero failures, because a check that is always red is a check
 nobody reads.
 
-Below that: `tools/atc_dryrun.py` (the bridge without the radio),
+Below that: `tools/atc_dryrun.py` (`marshall-atc` without the radio),
 `tools/classify_bench.py` (the intent classifier), `radio/rehearsal.py`
 (synthetic pilots over real SRS), then a live mission.
 
@@ -117,7 +141,7 @@ When two sources disagree, believe them in this order:
 | `PHRASEOLOGY.md` | current reference | where the controller's words come from |
 | `PLANNER.md` | current reference | the flight planner, phase 1 built |
 | `SCHEMA.md` | **superseded proposal** | kept for its argument only |
-| `STRUCTURE.md` | **proposal, reconciled** | why the parts are named as they are. Every claim marked applied / partly / intent / superseded, with the commit. **Read it before renaming a directory** |
+| `STRUCTURE.md` | **proposal, reconciled** — its *What to call the parts* section is current reference | **the canonical vocabulary: each part, what it does, its layer**, plus why the parts are named as they are. Every other claim marked applied / partly / intent / superseded, with the commit. **Read it before renaming a directory** |
 | `BACKLOG.md` | pointer | superseded by `ISSUES.md` |
 | `AUDIT-2026-07-29.md` | historical debrief | a dated audit; findings are issues now |
 | `HANDOFF-board.md` | historical debrief | a session handoff |
@@ -161,15 +185,15 @@ ever answer them. See CLAUDE.md for the full line.
 
 ## Known limits, so you do not rediscover them
 
-- **One approach per bridge.** `load_and_push_plate` takes a single profile, so
-  a bridge works one arrival at a time (#2).
+- **One approach per voice process.** `load_and_push_plate` takes a single
+  profile, so one process works one arrival at a time (#2).
 - **`agent_atc.py` is 6,656 lines** (12 August; it was ~4,950 on 10 August and
   3,688 on 30 July, and three documents each quoted a different figure until
   the `STRUCTURE.md` reconciliation) and its loop functions are not directly
   callable by tests (#55).
 - **SIDs and STARs are not modelled**; departures are vectors and a cruise
   level (#70).
-- **The director API is unauthenticated** and published on the LAN (#74).
+- **The language brain's HTTP door is unauthenticated** and published on the LAN (#74).
 - **The regex fallbacks in the radar path still exist** beside the structured
   one (#47).
 - **Nothing hands a landed aircraft to Batumi Ground** (#77).

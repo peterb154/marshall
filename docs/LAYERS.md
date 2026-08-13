@@ -10,6 +10,13 @@
 This says what may depend on what, so complexity can be built on foundations
 that are already trusted rather than beside them.
 
+**The layers below are also the PART NAMES.** `marshall-radio` is layer 0,
+`marshall-atc` is 4–5, `marshall-feed` is 1, the language brain is 6 and
+`marshall-kneeboard` is 7 — so naming a part names its altitude, which is the
+whole reason "the bridge" and "the director" are deprecated as words: a folder
+name says nothing about what may depend on it. The canonical table is
+[`STRUCTURE.md` → What to call the parts](STRUCTURE.md#what-to-call-the-parts).
+
 Written 30 July 2026, after three days in which most of the bugs turned out to
 be one shape: **something reaching sideways or upward for a fact it should have
 been handed.**
@@ -38,17 +45,17 @@ seconds with no sim, no network and no model.
 | | layer | owns | today |
 |---|---|---|---|
 | **7** | **Surfaces** | kneeboard charts, the plate, `/diag`, these documents | `kneeboard/` |
-| **6** | **Language** | turning decisions into English and back. Owns nothing it says | the director agent, prompts, `context.py` |
+| **6** | **Language** | turning decisions into English and back. Owns nothing it says | the language brain: `atc/agent/` (prompts, `capability`, `context`, `hooks`) + the HTTP door |
 | **5** | **Procedure** | what a controller DOES: approaches, clearances, handoffs, the ground | `handoff.py`, `phases.py`, `asr.py`, `decision.py`, `phrasebook.py` |
 | **4** | **Control** | separation. The board, the stack, sequencing | `controller.py`, `geometry.py` |
-| **3** | **Membership** | who is flying with whom | `flights.py` |
-| **2** | **Identity** | which radio is which aeroplane is which person | `identity.py` |
+| **3** | **Membership** | who is flying with whom | `atc/flights.py` (the roster), `atc/board.py` (the table) |
+| **2** | **Identity** | which radio is which aeroplane is which person | `atc/identity.py`, `atc/identify.py` (the persisted correlation) |
 | **1** | **World** | what exists, where it is, what is published | `tracks`, `events`, the catalogue tables read through `core/route.py`, `atis/` |
 | **0** | **Transport** | audio, frequencies, GUIDs, client names. No aviation | `radio/client.py`, `radio/pool.py`, `radio/stt.py`, `radio/tts.py`, `core/say.py` |
 
 **`decision.py` is the seam between 5 and 6.** The engine decides; the agent
-says. A decision is verifiable and a sentence is not, which is what lets the
-bridge check mechanically that the pilot heard the number the engine chose —
+says. A decision is verifiable and a sentence is not, which is what lets
+`marshall-atc` check mechanically that the pilot heard the number the engine chose —
 `phrasebook.py` is the fallback renderer for when he did not. Moving the prose
 out of `controller.py` is in progress: 5 of 32 sites converted, and the
 remaining 27 behave exactly as they did.
@@ -190,10 +197,10 @@ Each is an issue, and each is the same defect wearing different clothes.
 
 | violation | why it is one | issue |
 |---|---|---|
-| The geometry parses the radar **prose** — six regexes over a string the director renders from data it already holds | L2/L4 depending on L7's rendering. A low layer reading a high layer's presentation | [#47] |
+| The geometry parses the radar **prose** — six regexes over a string `marshall-feed` renders from data it already holds | L2/L4 depending on L7's rendering. A low layer reading a high layer's presentation | [#47] |
 | `flatten_formation` deletes the wingmen, so no aircraft but a lead has a position | a workaround for the above, not a fix | [#47] |
 | `count_contacts` cannot tell a T-55 from an F-16 | L1 discards the category the streamer already knows, so L4 has to guess | [#45] |
-| One `profile` per bridge; 15 module globals including the identity registry and the flight roster | L1 and L2 are process singletons, so there can never be two of anything | [#2] |
+| One `profile` per voice process; 15 module globals including the identity registry and the flight roster | L1 and L2 are process singletons, so there can never be two of anything | [#2] |
 | `release_stale` compares radar names to board keys | L4 doing L2's job, badly | audit 1.1 |
 | Visual approaches implemented as a paragraph in the system prompt | L5 procedure implemented by asking L6 nicely | this document |
 | The intent classifier runs on Sonnet, on the hot path, and fires for a lone pilot | cost and latency, and a consequence of the `count_contacts` violation | [#45] |

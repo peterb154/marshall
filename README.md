@@ -52,24 +52,33 @@ the third confirmed.
 ```
 src/marshall/
   core/        route, fields, stations, ApproachProfile, theatre (the truth)
-  atc/         the SRS bridge (agent_atc), the deterministic controller,
-               intents, phases, the generated plate
-  radio/       two-way SRS client, STT, TTS, the transmit pool, rehearsal
+  atc/         marshall-atc: separation, procedure, clearances, the board,
+               identity, the receive loop, and agent/ — what we ask a model
+  radio/       marshall-radio: two-way SRS client, STT, TTS, transmit pool
   atis/        per-field broadcast; decides the runway in use
-  feed/        DCS-gRPC: live tracks, events, sim control
+  feed/        marshall-feed: DCS-gRPC live tracks, events, sim control
   mission/     .miz generators (pydcs) + terrain survey tools
-  kneeboard/   HTTP server: flight test card, live diagnostics, docs, planner
-director/      its own container stack: the Bedrock agent on strands-pg
-               (Postgres + PostGIS + pgvector), prompts, identity, tools
+  kneeboard/   marshall-kneeboard: flight test card, diagnostics, docs, planner
+director/      a container stack: the language brain's HTTP door and the
+               stores (Postgres + PostGIS + pgvector) with their migrations
 deploy/        docker-compose + env template
 tools/         render.sh — screenshot a chart with headless Edge/Chrome
 ```
 
+**The parts are named for what they do, not for the folder they grew in.**
+`marshall-radio` (transport), `marshall-atc` (separation and procedure),
+`marshall-feed` (the sim mirrored into Postgres) and `marshall-kneeboard` (the
+pages) — with the language brain above them. "Bridge" and "director" are
+directory names, deprecated as vocabulary; the canonical table, with the layer
+each part sits at, is in
+[`docs/STRUCTURE.md`](docs/STRUCTURE.md#what-to-call-the-parts).
+
 ## Status
 
 Flying. The ATC state machine, the intent parser, the chart generators and the
-mission generator all run and are testable in plain text. The **SRS voice bridge
-is built and live** (`marshall.atc.agent_atc`, `marshall/radio/`) — Whisper STT,
+mission generator all run and are testable in plain text. **The voice path is
+built and live** — `marshall-radio` and `marshall-atc` in one host process today
+(`marshall.atc.agent_atc`, `marshall/radio/`) — Whisper STT,
 Polly TTS and a ten-client transmit pool — and sorties are flown against it on
 two theatres, Caucasus and Nevada. See `deploy/` for how the pieces run beside a
 sim server, and `docs/WIRING.md` for what actually talks to what.

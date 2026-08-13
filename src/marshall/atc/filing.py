@@ -39,7 +39,7 @@ from psycopg.types.json import Json
 from marshall.core.db import pool as get_pool
 
 # The columns a filed plan is made of. `active` is deliberately NOT among them:
-# it says which approach the bridge loads at start-up, it is set by the bridge's
+# it says which approach `marshall-atc` loads at start-up, it is set by its own
 # own bootstrap, and letting a form move it means a filed plan can silently
 # change the procedure a controller is running.
 # WHAT A PLAN IS MADE OF, after migration 031. Everything else that used to be
@@ -169,7 +169,7 @@ def known_fixes() -> set[str]:
 
     The `fixes` table is the authority because it is what the SIM projected --
     `agent_atc.push_fixes` writes it from `route.py` through the sim's own
-    coordinate conversion on every bridge start. A fix that is in `route.py` but
+    coordinate conversion on every voice-process start. A fix that is in `route.py` but
     has never been pushed is a fix the controller cannot give a range to, so
     refusing it here is right rather than pedantic.
     """
@@ -481,24 +481,24 @@ def unfile(name: str) -> dict:
     """Take a plan off the board. A flight plan is a route somebody filed.
 
     IT USED TO REFUSE WHILE THE ROW WAS `active`, because that was how the
-    bridge found the approach it runs -- so finishing with a route and trying
+    voice process found the approach it runs -- so finishing with a route and trying
     to remove it produced:
 
-        "362nd-kobuleti-batumi is the ACTIVE plan -- the bridge reads the
+        "362nd-kobuleti-batumi is the ACTIVE plan -- the voice process reads the
          approach it runs from this row. Make another plan active first."
 
     Every part of which was a problem. There was no way to make another plan
     active -- no endpoint, no button -- and anything set by hand was overwritten
-    at the next bridge start, so the instruction named an action that could not
+    at the next voice-process start, so the instruction named an action that could not
     be taken and would not have held. And it should never have been the pilot's
     concern in the first place:
 
         "i dont understand this active business. sounds like mis-alignment
          between you and me"
 
-    There was. `active` is not a fact about a flight plan; it was this bridge's
+    There was. `active` is not a fact about a flight plan; it was one voice process's
     note-to-self about which arrival it is running, parked on a route somebody
-    else owns. The bridge reads its own theatre now and the director reads
+    else owns. `marshall-atc` reads its own theatre now and the language brain reads
     `sectors`, so nothing consults the column and there is nothing left to
     guard. See #131.
 

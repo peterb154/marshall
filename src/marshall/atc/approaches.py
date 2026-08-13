@@ -93,7 +93,7 @@ def list_flight_plans() -> list[dict]:
                          "ORDER BY name").fetchall()
     # NO `approach` AND NO `active`. A plan does not name an arrival -- which
     # one you fly is a fact about your clearance (#2) -- and `active` was how
-    # the bridge used to read its own procedure out of a plan row, which is
+    # `marshall-atc` used to read its own procedure out of a plan row, which is
     # #131. Both columns are gone; see migration 031.
     return [{"name": n, "callsign": cs} for n, cs in rows]
 
@@ -109,7 +109,7 @@ def active_flight_plan() -> dict | None:
     Right on both counts. This read `flight_plans` for a row with `active` set
     and joined it to the approach that row named -- two columns that are gone
     (migration 031) because neither was a fact about a flight plan. Which
-    arrival is being flown is a property of a CLEARANCE (#2), and the bridge
+    arrival is being flown is a property of a CLEARANCE (#2), and `marshall-atc`
     reading its own procedure out of a plan row is #131, which cost a sortie.
 
     KEPT AS A FUNCTION rather than deleted, because callers ask it a reasonable

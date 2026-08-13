@@ -75,7 +75,7 @@ plausible: a real controller, a real frequency, a real distance, belonging to
 the wrong airport. See `tests/test_two_fields.py`.
 
 ## Two brains (the invariant)
-- The **agent** (the strands-pg director, its own repo/container) owns language,
+- The **language brain** (Bedrock on strands-pg, its own container) owns language,
   judgment, radar-grounded guidance, three-way identity correlation, and hooks.
 - The deterministic **`atc/controller.py`** owns *separation* — the holding stack,
   one-in-the-letdown, sequencing — which must never be an LLM's guess when there
@@ -123,24 +123,62 @@ One repo, two deployables. They are a single system with a contract between them
 so a change that spans the seam (a new clearance the agent must voice, say) lands
 as one commit.
 
+### Say the part, not the folder
+
+**The parts are named for what they DO and each one sits at a layer.** A part
+named for the folder it grew in cannot say what layer it is, which is a review
+cost paid every time — *"i'm having a hard time validating the work you are
+doing and at what layer when it's all lumped into 'bridge' and 'director'."*
+
+| say this | layer (`docs/LAYERS.md`) | what it does | code |
+|---|---|---|---|
+| `marshall-radio` | 0, transport | the SRS voice client: one ear, ten mouths, no aviation | `radio/` |
+| `marshall-atc` | 4–5, control + procedure | separation, the board, approaches, clearances, handoffs, the ground | `atc/` |
+| `marshall-feed` | 1, world | the sim mirrored into Postgres | `feed/` |
+| `marshall-kneeboard` | 7, surfaces | the page server, and a real command since #147 | `kneeboard/` |
+| the **language brain** | 6, language | what we ask Bedrock, in what words; the conversation, the tools a seat is handed | `atc/agent/` + the HTTP door in `director/app.py` |
+| the **stores** | 1–3 | Postgres + PostGIS + pgvector and the migrations | `director/db`, `director/migrations`, read through `marshall.atc.*` |
+
+**"Bridge" and "director" are DIRECTORY names and are deprecated as words.**
+Both are folders that grew into processes — the director was a separate
+repository merged in by subtree on 25 July, and the folder is the seam. Say the
+layer you mean instead: `marshall-radio` for audio, GUIDs and frequencies;
+`marshall-atc` for separation, procedure and clearances; "the language brain"
+for the model half; "the stores" for Postgres. The canonical table, with the
+reasoning, is `docs/STRUCTURE.md` → **What to call the parts**.
+
+**The FOLDERS have not moved and the rename is still deferred**, for the pin
+below and not for the vocabulary: the two questions were treated as one, and
+that is what kept the words unsaid for a fortnight (#147).
+
+### Where the code is
+
 - **`src/marshall/`** — `core/route.py` (the façade over `units`, `airspace`,
-  `fixes`, `fields`, `stations`, `approach`), `atc/` (the SRS bridge
+  `fixes`, `fields`, `stations`, `approach`), `atc/` (the receive loop
   `agent_atc.py`, the deterministic `controller.py`, `intents`/`bedrock_intent`,
-  `briefing.py` which generates the plate, and `agent/prompts/` — the
-  controller's own words, `soul`/`plate`/`rules`), `radio/` (two-way SRS voice
-  client, STT, TTS, plus the synthetic-pilot + multi-ship rehearsal test
-  harness — it was `srs/` until 31 July, and SRS is a vendor's name for a
-  transport), `feed/` (the sim mirrored into Postgres), `mission/` (pydcs `.miz`
-  builder + `ai_control.lua`), `kneeboard/` (charts).
-- **`director/`** (its own container stack) — the Bedrock agent on strands-pg
-  (Postgres + PostGIS + pgvector). Holds the identity graph (`contacts`), the
-  live PostGIS track cache (`tracks`), the `approaches` + `flight_plans` tables,
-  and the DCS-gRPC tools. The bridge talks to it over HTTP (`/atc`, `/radar`,
-  `/hooks/due`, `/prompts`, ...). Run it with
-  `cd director && docker compose up -d`. The **prompts are no longer here** —
-  they moved to `src/marshall/atc/agent/prompts/`, because how a controller says
-  an ILS clearance belongs beside the logic that decides it, not in a container's
-  directory next to a Dockerfile.
+  `briefing.py` which generates the plate, the domain modules that came out of
+  the container in #147 — `board`, `approaches`, `clearance`, `filing`, `plans`,
+  `frequencies`, `identify` — and `agent/`, the language brain's half: the
+  prompts `soul`/`plate`/`rules` plus `capability`, `context` and `hooks`),
+  `radio/` (two-way SRS voice client, STT, TTS, plus the synthetic-pilot +
+  multi-ship rehearsal test harness — it was `srs/` until 31 July, and SRS is a
+  vendor's name for a transport), `feed/` (the sim mirrored into Postgres),
+  `mission/` (pydcs `.miz` builder + `ai_control.lua`), `kneeboard/` (charts).
+- **`director/`** (its own container stack) — the language brain's HTTP door and
+  the stores on strands-pg (Postgres + PostGIS + pgvector): the identity graph
+  (`contacts`), the live PostGIS track cache (`tracks`), the `approaches` +
+  `flight_plans` tables, and the DCS-gRPC tools. `marshall-atc` talks to it over
+  HTTP (`/atc`, `/radar`, `/hooks/due`, `/prompts`, ...). Run it with
+  `cd director && docker compose up -d`.
+
+  **The ATC is no longer in here, and neither are the prompts.** The words moved
+  to `src/marshall/atc/agent/prompts/` in `ebea93a`; the twelve modules of
+  domain reasoning under `director/tools/` followed them in #147, ten into
+  `marshall.atc.*`. What is left in `director/tools/` is `busy` (one lock per
+  agent identity) and `ops` (`escalate`) — properties of running an agent behind
+  HTTP, not of controlling aeroplanes. Nothing redirects: the old
+  `tools.<name>` spelling raises, and `tests/test_the_atc_is_not_in_a_container.py`
+  keeps it that way.
 
   Its compose project name is **pinned to `marshall-director`** — it predates the
   merge and its Postgres volume is `marshall-director_pgdata`. Don't let compose
@@ -149,25 +187,12 @@ as one commit.
   `strands-pgsql-agent-framework`; `diff -r /tmp/fresh-stamp director/` still
   works for pulling upstream changes.
 
-**"Bridge" and "director" are directory names, not a design.** Both are
-deployables that grew out of where a file happened to sit — the director was a
-separate repository merged in by subtree on 25 July, and the folder is the seam.
-`docs/STRUCTURE.md` argues they should be *entrypoints* named for what they do
-(`marshall-radio`, `marshall-atc`, `marshall-feed`, `marshall-kneeboard`), and
-that argument is still right. **The rename is deferred, deliberately, and the
-reason is the pin above:** compose derives the project from the directory, so a
-folder rename that forgets `name: marshall-director` points the live agent at an
-empty volume. The valuable half — `director/tools/` is twelve modules of ATC
-domain logic living inside a container's directory, exactly as the prompts were
-before `ebea93a` moved them — needs no rename at all. Read STRUCTURE.md's
-decision section before touching a directory name; it is reconciled against the
-tree claim by claim, so you can tell the target from what is built (#147).
-
 ## How it runs
-The **SRS bridge** (`python -m marshall.atc.agent_atc --srs <host> <freq> <voice>
-<session>`) is the live ATC; it injects radar + any controller directive and POSTs
-each call to the director's `/atc`. The **director** runs under `docker compose`
-in `marshall-director/`. Model tier is all-Sonnet by default (thinking disabled
+**`marshall-radio` + `marshall-atc` are one host process today**
+(`python -m marshall.atc.agent_atc --srs <host> <freq> <voice> <session>`): it
+injects radar plus any controller directive and POSTs each call to the language
+brain's `/atc`. Splitting them into two commands waits on #55. The language
+brain and the stores run under `docker compose` in `director/`. Model tier is all-Sonnet by default (thinking disabled
 for speed); a Haiku fast tier is wired but dormant (`MARSHALL_FAST_TIER=1`).
 Deterministic separation engages only with real traffic (or `MARSHALL_SEP_ALWAYS=1`
 for the voice-only rehearsal).
@@ -188,7 +213,7 @@ Ruff's config lists what is switched OFF and why: this codebase catches broadly
 on purpose in the voice threads, and binds the gRPC stub path before importing
 from it, and neither is a defect. `--live`
 adds the voice rehearsals and the sim-backed checks, which need DCS, SRS and the
-bridge and cost model calls, so they are run before a session rather than on
+voice process running, and cost model calls, so they are run before a session rather than on
 every edit.
 
 **Skipped is reported, never silent**, and it names what is unguarded — a check
@@ -210,7 +235,7 @@ their card row and their script stay — that is what tells us if a fix rots.
    phrasing pilots actually use, per model. Run it after touching the schema or
    the system prompt; the taxonomy wording moves the score more than the model
    does.
-3. **`tools/atc_dryrun.py`** — the bridge without the radio. Same message
+3. **`tools/atc_dryrun.py`** — `marshall-atc` without the radio. Same message
    assembly as the live loop, typed input, so the two-brain seam (does the agent
    VOICE the controller's altitudes or paraphrase them?) is testable in seconds.
 4. **`radio/rehearsal.py` / `radio/pilot.py`** — synthetic pilots over real SRS with

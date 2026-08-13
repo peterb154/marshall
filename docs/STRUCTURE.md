@@ -25,6 +25,63 @@ the same root cause.
 
 ---
 
+## What to call the parts
+
+> **This section is CURRENT REFERENCE, inside a document that is otherwise a
+> proposal.** The rest of the file argues; this table is the agreed vocabulary
+> and is what `CLAUDE.md`, `START_HERE.md`, `WIRING.md` and `LAYERS.md` point
+> at. Written 13 August, when the pilot said what the naming argument had cost
+> him and it turned out not to be aesthetics:
+>
+>     "i'm having a hard time validating the work you are doing and at what
+>      layer when it's all lumped into 'bridge' and 'director' -- which are
+>      legacy names."
+>
+> A part named for the folder it grew in cannot say what layer it is, so a
+> reviewer cannot tell whether a change landed at the right altitude. That is a
+> review cost, paid every time, and the deferral below priced only the
+> technical risks.
+
+**Say these.** The layer column is `LAYERS.md`'s stack, and it is the point of
+the table: a part that cannot name its layer cannot be reviewed at one.
+
+| say this | layer | what it does | the code |
+|---|---|---|---|
+| **`marshall-radio`** | **0 Transport** | the SRS voice client — one ear on every frequency, ten mouths, serialised per frequency. Knows nothing of aerodromes; a frequency is a number | `src/marshall/radio/` |
+| **`marshall-atc`** | **4–5 Control + Procedure** | separation, the board, the holding stack, sequencing, approaches, clearances, handoffs, the ground. The half that must never be a model's guess | `src/marshall/atc/` |
+| **`marshall-feed`** | **1 World** | the sim mirrored into Postgres: the unit stream, events, the reconciling sweep, the world reset | `src/marshall/feed/` |
+| **`marshall-kneeboard`** | **7 Surfaces** | the page server. Plate, route map, E6B, plans, the test card, `/diag`, the documents | `src/marshall/kneeboard/` |
+| **the language brain** | **6 Language** | what we ask Bedrock and in what words: the prompts, the conversation window, the tools a seat is handed, the promises it makes. Owns nothing it says | `src/marshall/atc/agent/` + the HTTP door |
+| **the stores** | **1–3** | Postgres + PostGIS + pgvector, and the migrations: tracks, contacts, flights, approaches, flight plans, sessions | `director/{db,migrations}/`, read through `marshall.atc.*` and `marshall.core.db` |
+| **ATIS** | **1 World** | observes the wind at each field, decides the runway in use, writes it down. A sibling of ATC, not a layer under it | `src/marshall/atis/` |
+
+**Do not say these.** They are DIRECTORY names. They name where a file happened
+to sit after a git subtree merge on 25 July, and they are deprecated as
+vocabulary even while the folders keep their names.
+
+| deprecated | what it actually is | say instead |
+|---|---|---|
+| "the bridge" | one host process that today runs `marshall-radio`, `marshall-atc` and ATIS together, and calls the language brain over HTTP | name the LAYER you mean: `marshall-radio` for anything about audio, GUIDs or frequencies; `marshall-atc` for anything about separation, procedure or a clearance |
+| "the director" | one container that today runs the language brain's HTTP door, the stores, and `marshall-feed`'s threads | "the language brain" for the model half, "the stores" for Postgres, `marshall-feed` for the sim mirror |
+| "`director/tools/`" | it held the air traffic control until #147 | `marshall.atc.*` — see the module table in the entry for item 3 |
+
+**A deployable is an entrypoint, not a directory**, which is why the first
+column is a command name rather than a folder. One of the four exists today
+(`marshall-kneeboard`); `marshall-radio` and `marshall-atc` wait on `_run_srs`
+coming out of `agent_atc.py` (#55), and `marshall-feed` is not yet its own
+process. Whether they end up as four containers or one is a deployment choice,
+made in compose, that moves no files.
+
+**And the folders keep their names, deliberately.** `director/` is pinned to
+`name: marshall-director` in its compose file because its Postgres volume is
+`marshall-director_pgdata`; compose otherwise derives the project from the
+DIRECTORY and a rename that forgets the pin brings the stores up EMPTY while
+looking entirely healthy. See the decision section below. **The vocabulary does
+not wait for the folder** — it never did, and treating the two as one question
+is what kept this unsaid for a fortnight.
+
+---
+
 ## The scoreboard
 
 | the claim | status | evidence |
@@ -44,7 +101,8 @@ the same root cause.
 | A procedure INSTANCE is data | **APPLIED**, as files not rows | `03edb35`, `311028a`, `118a9e6` — `[[approach]]` in TOML |
 | A procedure KIND is a module carrying its own words | **STILL INTENT** | `ApproachProfile.kind` is a string tested with `if` |
 | `atc` minus the radio loop | **STILL INTENT** | `_run_srs` is still `agent_atc.py:5044`; the file is 6,656 lines |
-| Deployables are entrypoints, not directories | **STILL INTENT** — and see the decision below | `pyproject.toml`: "no console scripts yet" |
+| Deployables are entrypoints, not directories | **PARTLY APPLIED** — and see the decision below | `[project.scripts]` exists; `marshall-kneeboard` is real, the other three are blocked on #55 or are not processes |
+| `director/tools/` holds no ATC domain reasoning | **APPLIED** | #147 item 3 — ten modules into `marshall.atc.*`, `busy` and `ops` left; `tests/test_the_atc_is_not_in_a_container.py` is the grep |
 | "director" names a bundle of two unrelated things | **SUPERSEDED** | the bundle was unbundled; what is left is a smaller, more honest one |
 | Delete the `/radar` prose round trip | **PARTLY APPLIED** | `c6afa12` built the replacement; six callers still parse the prose (#47) |
 | Delete twelve CRUD endpoints | **STILL INTENT, going backwards** | 24 routes on 31 July, **34** today |
@@ -89,12 +147,14 @@ rule" possible or impossible.
 > July (`574906a`, `src/marshall/feed/`). The prompts left on the same axis
 > (`ebea93a`, `src/marshall/atc/agent/prompts/`). What remains behind the name
 > "director" is the agent's HTTP door, Postgres, the migrations, the vendored
-> upstream stamp, and `director/tools/` — twelve modules of ATC domain logic
-> (`approaches`, `clearance`, `flights`, `identify`, `plans`, `frequencies`,
-> `capability`, `filing`, `hooks`, `context`, `ops`) that are the prompts'
-> problem one layer down: **domain reasoning living in a deployable's
-> directory, findable only by somebody who already knows to look in a
-> container.** That, not the word, is what is left of this complaint.
+> upstream stamp, and — until 13 August — `director/tools/`, twelve modules of
+> ATC domain logic (`approaches`, `clearance`, `flights`, `identify`, `plans`,
+> `frequencies`, `capability`, `filing`, `hooks`, `context`, `ops`) that were
+> the prompts' problem one layer down: **domain reasoning living in a
+> deployable's directory, findable only by somebody who already knows to look
+> in a container.** That, not the word, was what was left of this complaint,
+> and #147 item 3 answered it: ten are `marshall.atc.*`, and the two that
+> stayed serve the agent over HTTP rather than controlling aeroplanes.
 
 "Director" describes a bundle, not a responsibility. It was, when this was
 written, two unrelated things sharing a container:
@@ -454,16 +514,22 @@ sequence is:
 
 1. `console_scripts` in `pyproject.toml` for what already exists:
    `marshall-kneeboard` → `marshall.kneeboard.serve`, `marshall-radio` →
-   the bridge. Costs nothing, changes no directory, and makes the four names
-   real for the first time.
-2. `_run_srs` out of `agent_atc.py` (#55). Until the bridge's entrypoint is a
-   function somebody can import, "the deployable is an entrypoint" is a
-   sentence with no referent.
+   the voice client. Costs nothing, changes no directory, and makes the four
+   names real for the first time. **DONE, 13 August**, for the one of the four
+   that has an importable entrypoint; the table says why the others do not.
+2. `_run_srs` out of `agent_atc.py` (#55). Until the voice loop's entrypoint is
+   a function somebody can import, "the deployable is an entrypoint" is a
+   sentence with no referent. **STILL THE BLOCKER**, now for two names rather
+   than one: `marshall-radio` and `marshall-atc` are the same process today.
 3. `director/tools/` into `src/marshall/atc/`, the same move the prompts made
    in `ebea93a`, and for the same reason. This is the part with real value:
-   domain logic stops living in a container's directory.
+   domain logic stops living in a container's directory. **DONE, 13 August** —
+   ten modules moved, `busy` and `ops` left because they serve the agent over
+   HTTP rather than control aeroplanes, and nothing redirects.
 4. Only then does the directory hold nothing but deployment artefacts, and
-   only then is its name uninteresting enough to change safely.
+   only then is its name uninteresting enough to change safely. **NOT DONE, and
+   the vocabulary did not wait for it** — see *What to call the parts* at the
+   top of this file. The folder rename buys nothing the words did not.
 
 Steps 1–3 are worth doing on their own merits and none of them requires the
 name to change. Which is the actual finding: **the naming argument was a proxy
@@ -472,8 +538,12 @@ Tracked as **[ARCH-26] #147**.
 
 **Meanwhile, say what the words mean.** "Bridge" and "director" are the names
 of two DIRECTORIES that grew into deployables, not two designed
-responsibilities. `CLAUDE.md` and `START_HERE.md` use them because a shared
-vocabulary beats a correct one nobody says, and both now point here.
+responsibilities. This paragraph used to end *"`CLAUDE.md` and `START_HERE.md`
+use them because a shared vocabulary beats a correct one nobody says"*, and
+that was the wrong trade: the pilot could not tell which LAYER a change had
+landed at, because the folder name carries no layer. **The vocabulary is now
+the table at the top of this file, the folder names are deprecated as words,
+and the folders themselves have not moved.**
 
 ## What this deletes on the way
 

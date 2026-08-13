@@ -36,9 +36,12 @@ from marshall.core.db import pool as get_pool
 
 log = logging.getLogger(__name__)
 
-# Kept in step with phases.py on the bridge side. Duplicated deliberately: the
-# director must be able to reject a phase it does not know without importing
-# the ATC package, which lives in a different deployable.
+# Kept in step with `atc/phases.py`. Duplicated because the language brain's
+# HTTP door had to reject a phase it did not know without importing the ATC
+# package, which lived in a different deployable -- a reason that EXPIRED when
+# #147 moved this module into `marshall.atc`, beside the list it copies. The
+# duplication is now just duplication; collapsing it is a behaviour change and
+# is not part of the move.
 PHASES = ("filed", "clearance", "taxi", "departure", "enroute", "tasked",
           "on_station", "rtb", "arrival", "holding", "approach", "missed",
           "landed", "unknown")
@@ -257,7 +260,7 @@ def working(mission: str = "default", controller: str | None = None) -> list[dic
 def save_board(mission: str, rows: list[dict]) -> dict:
     """Make the table say exactly what the separation engine believes.
 
-    THE TABLE WAS A WRITE-ONLY MIRROR. The bridge POSTed `bind` and `agree` and
+    THE TABLE WAS A WRITE-ONLY MIRROR. `marshall-atc` POSTed `bind` and `agree` and
     never read a row back, so the real board lived in a dict in one process:
     lost on restart, invisible to anything else, and free to diverge. It did --
     eight live-looking rows survived from missions that had ended days earlier,
