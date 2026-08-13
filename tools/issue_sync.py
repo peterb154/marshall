@@ -229,7 +229,14 @@ def main() -> int:
         if not _i["num"]:
             continue
         _seg = text[_i["span"][0]:_i["span"][1]]
-        _lm = re.search(r"^labels:\s*(.+)$", _seg, re.M)
+        # CASE-INSENSITIVELY, and nine entries needed it. A human writing
+        # `Labels:` means what `labels:` means, and matching only the lower
+        # case made those nine invisible -- their labels never reached
+        # GitHub, so the check that finds "needs a pilot and is on no card
+        # row" has been blind to every one of them. A parser that silently
+        # ignores a line it half-recognises is the same fault as a check
+        # whose skip reads as a pass.
+        _lm = re.search(r"^labels:\s*(.+)$", _seg, re.M | re.I)
         if _lm:
             declared_labels[int(_i["num"])] = {
                 x.strip() for x in _lm.group(1).split(",") if x.strip()}

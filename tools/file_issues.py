@@ -93,10 +93,11 @@ def parse(text: str) -> list[dict]:
                 break
         body = "\n".join(lines[i + 1:end]).strip()
         labels = []
-        lm = re.search(r"^labels:\s*(.+)$", body, re.M)
+        lm = re.search(r"^labels:\s*(.+)$", body, re.M | re.I)
         if lm:
             labels = [x.strip() for x in lm.group(1).split(",") if x.strip()]
-            body = re.sub(r"^labels:.*$", "", body, count=1, flags=re.M).strip()
+            body = re.sub(r"^labels:.*$", "", body, count=1,
+                          flags=re.M | re.I).strip()
         out.append({"slug": slug, "title": title, "body": body,
                     "labels": labels, "number": number, "line": i})
     return out

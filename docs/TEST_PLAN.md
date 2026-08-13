@@ -907,6 +907,23 @@ everything between the fixes. [#113]
 | **U7** | Being vectored, check every altitude against the chart minima | Never below them. Nellis and Tonopah carry their own 48-cell surveys, and the terrain here is a mile and a half up — a Caucasus-shaped assumption is not a small error over the Spring Mountains | [R#110] | **P1** |
 | **U8** | After landing, the taxi in | Ground has you and nothing hands you back to Tower. Same rung as F6 on the Caucasus, on a map where none of it has ever been flown | [R#100] | P2 |
 
+## V — the radio has no arrival of its own
+
+**Never flown, and the point is what a machine cannot check.** All three rows
+below are things that are *correct by luck* on a Kobuleti-to-Batumi sortie —
+the radio is loaded with Batumi's ILS and Batumi is where you are going, so a
+wrong reference and a right one give the same number. They separate only when
+the two differ, which is why they want a pilot and not a sweep.
+
+| id | do this | expected | issue | pri |
+|---|---|---|---|---|
+| **V1** | On Georgia Center, ask for a range or bearing | It is measured from **where you are going**, and he SAYS so — "twenty three miles from Batumi". A Center has no aerodrome of its own, so a datum that goes unstated is one you cannot check; if he gives a bare "twenty three miles", that is the defect | [#160] | **P1** |
+| **V2** | Recover into **Kobuleti** on the same sortie the radio was started for Batumi | Every range Center and Approach speak is measured from **Kobuleti**. This is the one that separates a chosen datum from a fallback: today the radio's loaded arrival decides it, and on this route that is the wrong field by forty miles | [#160] | **P1** |
+| **V3** | Ask Approach for the **ILS runway one three** by name | Cleared for that procedure, and the strip and the clearance both name the runway. Asking for "the ILS" when a field publishes two must get a question back, never whichever is listed first — that is #131, which cost a sortie on 12 August | [#165] | **P1** |
+| **V4** | With two aircraft recovering to **different fields**, listen to both | Each is worked on his own approach: his own minima, his own stack, his own tower's frequency. One radio, two arrivals. Nothing on the air should suggest the second aeroplane is flying the first one's procedure | [#162] | **P1** |
+
+---
+
 ## E — known broken. Do not report these as new
 
 Open bugs with repros. Seeing one means the world is as expected — they are on

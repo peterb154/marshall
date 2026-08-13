@@ -6434,7 +6434,7 @@ been bound to a track, so it is the seat where that confusion is guaranteed.
 Open: the refusal should say which board it means, and should look at what is
 filed before it decides it cannot help.
 
-**Status:** CLOSED 13 August — `471c0a7`, `Closes #126`, attested by claude. The
+**Status:** REOPENED 13 August — the mission wiring `471c0a7` fixed was real, and the symptom this issue is NAMED for is not: `request_clearance` still returns `_not_on_the_board` before it ever calls `resolve(said, callsign)`. Clearance delivery still decides it cannot help without looking at what is filed.
 mission travels on the `/atc` body, `director/app.py` calls
 `clearance_tools(mission, station)` and keys the agent cache on it, and
 `tests/test_the_clearance_reads_this_sortie.py` pins all four legs of that
@@ -6689,7 +6689,7 @@ to a Kobuleti station — the DESTINATION's Approach is unreachable from the rul
 table. That is why the airspace branch exists and why it is the only mechanism
 that can move him between fields.
 
-**Status:** CLOSED 13 August on GitHub, and recorded here with the caveat this
+**Status:** REOPENED 13 August — the geometry never moved. `handoff.py` fires `departure -> center` at a flat 25 nm while `airspace.py` derives 11 nm per field. What answered the SYMPTOM was #168, `enroute` being unreachable, and that is a different fact — a symptom explained by another cause is not this one fixed.
 file should keep: **the geometry did not move.** `handoff.py` still fires
 `departure → center` at a flat `CENTER_NM = TERMINAL_NM = 25.0` while
 `core/airspace.py` derives an eleven-mile area for each of the two fields, and
@@ -9709,7 +9709,7 @@ trigger. An overlord has to task him and there is no seat doing that. A test
 asserts they remain underivable, so building the trigger will fail it and force
 the claim to be updated.
 
-**Status:** CLOSED UNVERIFIED 13 August — flight-test bankruptcy, not a pilot's word. The title complaint is fixed and two of the three criteria
+**Status:** REOPENED 13 August — closed by me on one of three criteria. `enroute` is reachable and tested. `tasked` and `on_station` still have no trigger, and nothing asserts `handoff.due`'s controller agrees with `phases.owner_of` — which is the test that would have caught the original defect and is the half that generalises.
 are not. `phases._wanted` returns `enroute` when Center works a departing
 aeroplane, deliberately not from `rtb` (`33c616a`, a real `Closes #168`), and
 `tests/test_every_phase_can_be_entered.py` holds the general guard. But

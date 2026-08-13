@@ -72,6 +72,13 @@ GUIDS = {
     "S": "{911a0a23-a5b8-58ca-91f0-a4ba16a94a9f}",
     "T": "{f70ee367-2201-53fa-85b7-c0f74a483eef}",
     "U": "{b5a2d5b8-0933-5b38-88ff-358d9bdcfb5c}",
+    # V ONWARDS IS `guid_for`'s, and is still WRITTEN DOWN here. The recipe
+    # below is how a new one is computed; this table is the registry, and a
+    # test asserts every section is in it. A derivable identifier that is not
+    # recorded cannot be checked for a collision, and a collision hands a pilot
+    # a page he did not choose -- which is the reason the retired sections'
+    # GUIDs are never reused either.
+    "V": "{89cd3cb6-560f-5972-83c5-5bbd01dd3084}",   # == guid_for("V")
 }
 
 # THE RECIPE, WRITTEN DOWN. The comment above says these are "derived from a
@@ -98,7 +105,7 @@ def guid_for(section: str) -> str:
 # remembers the page a pilot was on, and handing an old identifier to a new
 # document would drop him somewhere he did not choose.
 SHORT = {"A": "PREFLT", "E": "KNOWN", "G": "CLNC", "H": "APPROACH",
-         "U": "NEVADA",
+         "U": "NEVADA", "V": "DATUM",
          "J": "WHO", "D": "FLIGHTS", "F": "LAND", "K": "MEMORY", "L": "CHANNEL",
          "M": "SPEED", "N": "NAMES", "P": "TRACKED", "Q": "LADDER",
          "R": "ATIS", "S": "SOUND", "T": "ILS"}
