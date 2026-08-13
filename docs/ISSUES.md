@@ -9996,8 +9996,7 @@ own words.
 Tests: `tests/test_identity.py::TestWhisperBreakingHisCallsignIsNotHimUsingTheWrongOne`.
 Code: `src/marshall/atc/addressing.py` (`_mangled_form_of`, `misnamed`).
 
-**Status:** FIXED 13 August — needs a pilot to hear one sentence where there
-were two.
+**Status:** FIXED 13 August, NEEDS A PILOT — card row S13. Closed by a `Closes #172` trailer and reopened within the hour: this project's rule is that a `needs-flight-test` issue is closed by a pilot flying the card and never by a green suite, and I broke it on the same day I caught three others doing so. The fix and its tests stand; what has not happened is somebody hearing one sentence where there were two.
 labels: bug, needs-flight-test
 
 ---
