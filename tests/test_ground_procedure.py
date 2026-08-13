@@ -30,7 +30,7 @@ DEP = R.DEPARTURE_FIELD
 
 
 def station(name):
-    return next(s for s in P.stations if s.name == name)
+    return next(s for s in R.STATIONS if s.name == name)
 
 
 class GroundCase(unittest.TestCase):
@@ -217,7 +217,7 @@ class TestThePhaseTableIsCoherent(unittest.TestCase):
         for name in ("clearance", "taxi", "holding_short"):
             with self.subTest(phase=name):
                 self.assertIsNotNone(
-                    P.station_for(PH.owner_of(name), field=DEP),
+                    R.station_for(PH.owner_of(name), field=DEP),
                     f"nobody at {DEP} works {name}")
 
 
@@ -589,7 +589,7 @@ class ReadingBackTheTaxiClearanceIsNotArrivingAtTheHold(unittest.TestCase):
         from marshall.core import route as R
         self.A, self.intents, self.bedrock = A, intents, bedrock_intent
         self.ctl = atc.Controller(R.BATUMI_ASR)
-        self.ctl._me = R.BATUMI_ASR.station_on(121.800)     # Kobuleti Ground
+        self.ctl._me = R.station_on(121.800)     # Kobuleti Ground
         self._real = bedrock_intent.classify
 
     def tearDown(self):
@@ -861,7 +861,7 @@ class GroundDoesNotMoveAnAircraftOnAnUnagreedClearance(unittest.TestCase):
 
     def ground(self):
         ctl = atc.Controller(profile=R.BATUMI_ASR)
-        ctl._me = R.BATUMI_ASR.station_for("ground", field="Kobuleti")
+        ctl._me = R.station_for("ground", field="Kobuleti")
         return ctl
 
     def test_taxi_is_refused_until_the_clearance_is_read_back(self):

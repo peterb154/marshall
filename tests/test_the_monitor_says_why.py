@@ -137,8 +137,8 @@ class TestOneHandoffDoesNotEndTheSortie(unittest.TestCase):
 
     def setUp(self):
         self.profile = R.BATUMI_ASR
-        self.departure = self.profile.station_for("departure", field="Kobuleti")
-        self.center = self.profile.station_for("center", field="Kobuleti")
+        self.departure = R.station_for("departure", field="Kobuleti")
+        self.center = R.station_for("center", field="Kobuleti")
         self.said: dict[str, str] = {}
 
     def test_the_first_offer_is_made(self):

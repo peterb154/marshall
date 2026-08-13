@@ -353,7 +353,6 @@ NELLIS_ILS = ApproachProfile(
     outer_hold=TPH,
     kind="ils",
     guidance="intercept",
-    stations=list(NEVADA_STATIONS),
     # THE CEILING IS A WARBIRD'S, AND HAD TO MOVE. `hold_top_ft` defaults to
     # 10,000 -- "P-51: oxygen, not airspace", which is exactly right for a
     # Mustang and meaningless for an F-16 over Nevada. Nellis's own MVA reaches
@@ -400,7 +399,6 @@ TONOPAH_ILS = ApproachProfile(
     outer_hold=TPH,
     kind="ils",
     guidance="intercept",
-    stations=list(NEVADA_STATIONS),
     # AND AT TONOPAH IT WAS FATAL TO THE STACK ENTIRELY. Base 12,000 against a
     # 10,000 ceiling is an EMPTY list -- `stack_ft` is `range(base, top+1)` --
     # so the controller had no level to give anybody and `_free_slot` would have

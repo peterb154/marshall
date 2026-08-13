@@ -419,19 +419,19 @@ class TestStations(unittest.TestCase):
     # Read the frequencies off the stations rather than hardcoding them: these
     # tests broke the moment the numbers moved, which is noise, not signal.
     def freq(self, role):
-        return self.p.station_for(role).freq_mhz
+        return R.station_for(role).freq_mhz
 
     def test_identity_by_frequency(self):
         # The bridge listens on every channel at once; the pilot must never be
         # able to hear that.
         for role in ("center", "approach", "tower"):
-            s = self.p.station_for(role)
-            self.assertEqual(self.p.station_on(s.freq_mhz).name, s.name)
+            s = R.station_for(role)
+            self.assertEqual(R.station_on(s.freq_mhz).name, s.name)
 
     def test_an_unmanned_frequency_has_nobody_on_it(self):
         unused = 118.25
-        self.assertNotIn(unused, [s.freq_mhz for s in self.p.stations])
-        self.assertIsNone(self.p.station_on(unused))
+        self.assertNotIn(unused, [s.freq_mhz for s in R.STATIONS])
+        self.assertIsNone(R.station_on(unused))
 
     def test_every_controller_is_tunable_by_a_period_set(self):
         # These are the field's real published frequencies, not the airframe's
@@ -440,7 +440,7 @@ class TestStations(unittest.TestCase):
         # a frequency in the air. A preset write that silently fails leaves the
         # aircraft unable to talk to anybody, which is how the Jugs spent a
         # sortie mute. The band check is what keeps an untunable number out.
-        for s in self.p.stations:
+        for s in R.STATIONS:
             self.assertGreaterEqual(s.freq_mhz, 100.0, s.name)   # SCR-522 VHF AM
             self.assertLessEqual(s.freq_mhz, 156.0, s.name)
             self.assertEqual(s.freq_mhz, round(s.freq_mhz, 3), s.name)
@@ -448,7 +448,7 @@ class TestStations(unittest.TestCase):
     def test_the_mission_writes_a_preset_for_every_controller(self):
         from marshall.mission import build as mb
         presets = {mhz for _, mhz in mb.channels_for(self.p)}
-        for s in self.p.stations:
+        for s in R.STATIONS:
             self.assertIn(s.freq_mhz, presets, f"{s.name} has no radio button")
 
     # MIGRATED OFF `handoff_from`, which is deleted -- see route.py. These
@@ -458,7 +458,7 @@ class TestStations(unittest.TestCase):
     # is INBOUND, and whether he is DOWN. Both were being assumed. [#51]
 
     def _due(self, role, nm, inbound=True, on_ground=False, field="Batumi"):
-        me = self.p.station_for(role, field=field) if role else None
+        me = R.station_for(role, field=field) if role else None
         v = H.due(self.p, me, H.State(on_ground=on_ground, range_nm=nm,
                                       inbound=inbound))
         return None if (v is None or v.same_station) else v.station
@@ -511,7 +511,7 @@ class TestStations(unittest.TestCase):
         Approach to do. The row that must not break when Kobuleti's ILS lands.
         """
         ils = dataclasses.replace(self.p, guidance="intercept")
-        me = ils.station_for("approach", field="Batumi")
+        me = R.station_for("approach", field="Batumi")
         v = H.due(ils, me, H.State(False, 4.0, True))
         self.assertIsNotNone(v)
         self.assertEqual(v.station.role, "tower")
@@ -669,7 +669,7 @@ class TestLeavingMyAirspace(unittest.TestCase):
         from marshall.atc import agent_atc
         self.A = agent_atc
         self.p = R.BATUMI_ASR
-        self.approach = self.p.station_for("approach")
+        self.approach = R.station_for("approach")
 
     def at(self, nm):
         return asr.Position(range_nm=nm, radial_deg=304, alt_ft=2000,
@@ -704,7 +704,7 @@ class TestHandoffPhraseWithoutARadarFix(unittest.TestCase):
     def setUp(self):
         from marshall.atc import agent_atc
         self.A = agent_atc
-        self.tower = R.BATUMI_ASR.station_for("tower", field=R.ARRIVAL_FIELD)
+        self.tower = R.station_for("tower", field=R.ARRIVAL_FIELD)
 
     def test_with_no_fix_it_still_hands_him_over(self):
         said = self.A.handoff_phrase(self.tower, None)

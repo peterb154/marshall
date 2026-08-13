@@ -20,6 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from marshall.atc import phases as P
+from marshall.core import route as R
 
 
 class TestTheSortieInOrder(unittest.TestCase):
@@ -367,7 +368,7 @@ class TakingOffIsNotBeingEstablishedOnFinal(unittest.TestCase):
 
     def test_the_seed_is_refused_for_a_departing_aircraft(self):
         from marshall.atc import intents
-        self.ctl._me = self.p.station_on(133.000)      # Kobuleti Tower
+        self.ctl._me = R.station_on(133.000)      # Kobuleti Tower
         self.ctl.check_in("sockeye")
         ac = self.ctl.get("sockeye")
         ac.sortie_phase = "departure"

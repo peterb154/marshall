@@ -275,6 +275,28 @@ _FROM_THEATRE = {
 }
 
 
+def station_for(role: str, field: str = "", theatre: str = "", procedure=None):
+    """Who works this role, at this aerodrome. THE ONE PLACE IT IS ANSWERED.
+
+    Through the façade, because that is what every caller already imports --
+    `R.station_for("tower", field=...)` reads the way `profile.station_for` did
+    and comes off the THEATRE, which is where a controller belongs. A role is
+    unique only within an aerodrome, so the field argument is not decoration:
+    omitting it returns a real controller at the wrong airport. [#162]
+
+    `procedure` is the beacon-letdown switch and is documented on
+    `theatre.seats_now`; it is asked one boolean and returns no station. [#152]
+    """
+    from marshall.core import theatre as _th
+    return _th.station_for(role, field, theatre, procedure)
+
+
+def station_on(freq_mhz: float, theatre: str = "", procedure=None):
+    """Who is speaking on this frequency. See `station_for`."""
+    from marshall.core import theatre as _th
+    return _th.station_on(freq_mhz, theatre, procedure)
+
+
 def __getattr__(name: str):
     """Resolve a published name against the configured theatre.
 
@@ -288,7 +310,7 @@ def __getattr__(name: str):
     kind, key = want
     from marshall.core import theatre as _th
     # ONE OBJECT PER THING, which is why these go through the cached loaders
-    # rather than rebuilding. `R.KOB_CLEARANCE is profile.stations[0]` was true
+    # rather than rebuilding. `R.KOB_CLEARANCE is R.STATIONS[0]` was true
     # when both were one module constant, and tests assert exactly that -- an
     # identity check is the cheapest way to say "the same controller, not a
     # copy that happens to match".

@@ -8,10 +8,11 @@ procedural separation, and everything downstream reads the capability rather
 than checking which mission is loaded.
 
 `ApproachProfile` is the procedure itself -- the fixes, the final approach
-course, the minimums, the missed approach, the holding stack, and the station
-list that goes with it. THE PROFILE IS THE SINGLE SOURCE: the mission builder,
-the kneeboard plate and the controller all read the same one, so they cannot
-disagree about where the final approach point is.
+course, the minimums, the missed approach and the holding stack. THE PROFILE IS
+THE SINGLE SOURCE FOR THE PROCEDURE: the mission builder, the kneeboard plate
+and the controller all read the same one, so they cannot disagree about where
+the final approach point is. It is not the source for anything else, and the
+station list is the one that proved it -- see the class docstring.
 
 It serialises to a plain dict for the database at the bottom of this file.
 Properties recompute from the fields, so only the fields are stored.
@@ -24,7 +25,6 @@ from dataclasses import asdict, dataclass, field, fields
 from marshall.core.airspace import msa_for, mva_for
 from marshall.core.fields import (ARRIVAL_FIELD)
 from marshall.core.fixes import Fix
-from marshall.core.stations import (Station)
 from marshall.core.units import MAGVAR, MPH_PER_KT
 
 
@@ -100,11 +100,37 @@ def _round_up(value: int, step: int) -> int:
 class ApproachProfile:
     """One field's approach, in one place.
 
-    The controller (atc.py) is field-agnostic: it reads the beacon, the
-    controller name and the altitude ladder from here and nothing else. The
-    plate (build_plate.py) reads the same beacon and ladder plus the geometry
-    it needs to draw. Change a stack level here and both the clearances and the
-    plate's table move together, because they share this one definition.
+    WHAT IS ACTUALLY IN HERE, because this docstring used to claim the
+    controller "reads the beacon, the controller name and the altitude ladder
+    from here and nothing else" -- and that stopped being true the day a
+    station table was added, which review kept believing anyway:
+
+        the fixes       beacon, outer hold, arrival fix, IAF
+        the geometry    final approach course, IF, FAP, MAP, glidepath, the
+                        descent table, the missed approach, the touchdown offset
+        the heights     platform, minima, MSA/MVA tables, the holding stack
+        the speeds      pattern and approach, and the descent limit
+        the capability  `atc: AtcCapability` -- what this controller may DO
+        the paperwork   runway, plate, chart name, altimeter datum
+
+    All of it is one PROCEDURE at one field, which is the test for whether
+    something belongs here. `theatre_stations` is the one bit that looks like
+    an exception and is not: it says how this procedure's controllers are
+    REACHED, not who they are.
+
+    WHAT IS NOT IN HERE, AND WHY IT MATTERS. The station table was, and it made
+    this object the whole ATC world model: `station_for("tower")` on a Batumi
+    arrival answered for Kobuleti Ground, so the comms ladder of both
+    aerodromes was reached through one procedure. A station is a property of
+    the THEATRE -- a role is unique only within an aerodrome, and neither the
+    aerodrome nor the role changes because a different approach was loaded. Ask
+    `theatre.station_for` / `theatre.station_on` (or `route.station_for`,
+    `route.station_on`, which is the same thing through the façade). [#162]
+
+    The plate (build_plate.py) reads the same beacon and ladder plus the
+    geometry it needs to draw. Change a stack level here and both the
+    clearances and the plate's table move together, because they share this one
+    definition.
     """
     controller: str                 # radio callsign, e.g. "Batumi Approach"
     beacon: Fix                     # the approach beacon (ident + freq)
@@ -369,9 +395,24 @@ class ApproachProfile:
     def briefed_msa_ft(self, bearing_deg: float) -> int:
         """The published figure, for the plate and for what the pilot is told."""
         return msa_for(bearing_deg, self.msa_sectors) if self.msa_sectors else 0
-    # The controllers who work this approach, enroute inwards. Empty falls back
-    # to the beacon-derived stations the NDB letdown uses.
-    stations: list[Station] = field(default_factory=list)
+    # HOW THIS PROCEDURE'S CONTROLLERS ARE REACHED -- not who they are.
+    #
+    # True: the theatre's comms ladder, which is the normal case. Clearance,
+    # Ground, Tower, Departure, Center, Approach; ask `theatre.station_for`.
+    #
+    # False: the beacons. On an ARA-8 the set homes whatever it is tuned to, so
+    # the pilot cannot listen to a controller on one channel while homing a
+    # beacon on another, and a phase's controller must therefore LIVE on the
+    # beacon flown in that phase -- see `arrival_fix` above and `station`
+    # below. That is a property of the aeroplane's radio and of the era, which
+    # is why it is a bit on the procedure and not a list.
+    #
+    # It carried this meaning before as `stations == []`, which is #152: an
+    # emptiness read as a statement about the era, in two places, and the
+    # reason #140 cannot be fixed by data alone. Moving the table out (#162)
+    # does not fix that -- it just stops the switch being invisible. The bit
+    # keeps the same name the theatre file already uses for it.
+    theatre_stations: bool = True
     # Magnetic variation at this field, degrees EAST. On the profile rather than
     # a module constant because it belongs to a PLACE: point route.py at another
     # theatre and the variation changes with it, and a controller who carries the
@@ -598,9 +639,15 @@ class ApproachProfile:
 
         On a beacon letdown it is not free. The ARA-8 homes on whatever the set
         is tuned to, so the controller has to sit on the beacon being flown in
-        that phase, and the "station" is derived from the fix instead.
+        that phase, and the "station" is derived from the fix instead. Which of
+        the two this procedure is, is `theatre_stations` -- it used to be
+        whether the profile's own station list happened to be empty (#152).
         """
-        if self.stations:
+        # THE SEATS ARE THE THEATRE'S. Imported here rather than at the top
+        # because `theatre` reads `route`, which re-exports this module.
+        from marshall.core import theatre as _th
+        seats = _th.stations_now() if self.theatre_stations else ()
+        if seats:
             # By ROLE, not by position in the list. Picking the last one was
             # fine while the list ended at Tower, and quietly wrong the moment a
             # mission commander was appended -- it would have sent a pilot to
@@ -620,11 +667,11 @@ class ApproachProfile:
             # because it takes no role and so did not look like a lookup.
             fld = ARRIVAL_FIELD
             if enroute or banished:
-                s = self.station_for("center", field=fld) or self.stations[0]
+                s = _th.station_for("center", field=fld) or seats[0]
             else:
-                s = (self.station_for("tower", field=fld)
-                     or self.station_for("approach", field=fld)
-                     or self.stations[0])
+                s = (_th.station_for("tower", field=fld)
+                     or _th.station_for("approach", field=fld)
+                     or seats[0])
             return s.name, s.freq_mhz
         if banished:
             fix = self.outer_hold
@@ -635,65 +682,20 @@ class ApproachProfile:
         return (fix.sector or self.controller,
                 fix.freq_mhz if fix.freq_mhz else 0.0)
 
-    def station_for(self, role: str, field: str = "") -> Station | None:
-        """Who works this phase of flight, AT A GIVEN AERODROME.
-
-        Primary role first, then anyone who also covers it -- so asking for
-        "departure" finds Approach at a field where the two share a seat, and
-        would find a dedicated Departure controller at one where they do not,
-        without either caller knowing which kind of field it is.
-
-        `field` IS NOT OPTIONAL IN SPIRIT. It defaults to empty so the hundreds
-        of single-field call sites still read cleanly, but the moment a route
-        has two aerodromes on it, omitting it is a bug that cannot announce
-        itself: every role resolves to whichever field happens to be listed
-        first, and a Kobuleti departure is handed to Batumi Tower forty miles
-        away. Both answers are a real Station, so nothing raises and nothing
-        looks wrong -- the aeroplane simply talks to the wrong airport.
-
-        A station with no field of its own -- Center, Sentry -- is reachable
-        from anywhere, because that is what owning a region rather than an
-        aerodrome means. So the search is: this field first, then the
-        fieldless, and NEVER another aerodrome's controller.
-        """
-        def hit(s, want_primary):
-            if want_primary and s.role != role:
-                return False
-            if not want_primary and role not in getattr(s, "also", ()):
-                return False
-            if not field:
-                return True
-            # His, or nobody's. Another field's Tower is not an answer.
-            return getattr(s, "field", "") in (field, "")
-
-        for want_primary in (True, False):
-            # Two passes so a station whose PRIMARY role this is beats one who
-            # merely also covers it -- at the same field, before falling out to
-            # the region controllers.
-            for prefer_field in ((True, False) if field else (False,)):
-                for s in self.stations:
-                    if prefer_field and getattr(s, "field", "") != field:
-                        continue
-                    if hit(s, want_primary):
-                        return s
-        return None
-
-    def station_on(self, freq_mhz: float) -> Station | None:
-        """Who the controller IS on this frequency.
-
-        The bridge listens on every channel at once, which is a convenience of
-        the implementation and not something the pilot should ever be able to
-        hear. Without this the same voice answers as "Batumi Approach" on
-        Center's frequency, and the sector split is decoration.
-        """
-        # ANY of his frequencies, not just the published one. A facility can be
-        # heard on several -- see `Station.channels` -- and a warbird checking in
-        # on the SCR-522 channel is talking to the same controller as a jet on
-        # the AIP frequency. Matching only the primary answers him with nobody.
-        for s in self.stations:
-            if s.hears(freq_mhz):
-                return s
-        return None
+    # `station_for` AND `station_on` WERE HERE AND ARE DELETED. They live in
+    # `core/stations.py` as `role_at` and `on_frequency`, bound to the map by
+    # `theatre.station_for` and `theatre.station_on`.
+    #
+    # They were methods on a PROCEDURE, so the comms ladder of every aerodrome
+    # on the map was reached through one arrival: `report_landed` found Batumi
+    # Tower through the profile the bridge happened to load, and Kobuleti
+    # Ground's frequency came out of Batumi's ILS. Neither the aerodrome nor
+    # the role changes when a different approach is loaded, so neither can be
+    # the approach's to answer.
+    #
+    # THE FIELD ARGUMENT SURVIVED THE MOVE UNCHANGED, and had to: a role is
+    # unique only within an aerodrome, and an unqualified lookup returns a real
+    # controller at the wrong airport. See tests/test_two_fields.py. [#162]
 
     # `handoff_from` WAS HERE AND IS DELETED. See `atc/handoff.py`, which is
     # now the only place that answers "who has him next".
@@ -940,11 +942,14 @@ def profile_from_dict(d: dict) -> ApproachProfile:
     for key in ("beacon", "outer_hold", "arrival_fix"):
         if isinstance(d.get(key), dict):
             d[key] = Fix(**d[key])
-    # Same trap one level down: a list of dicts passes every check and fails at
-    # the moment somebody asks a Station for its name -- which, for a stored
-    # profile, is while the bridge is starting up in front of a waiting pilot.
-    d["stations"] = [s if isinstance(s, Station) else Station(**s)
-                     for s in (d.get("stations") or [])]
+    # A STORED `stations` LIST IS DROPPED, and there is no rebuilding of it any
+    # more. It used to be rebuilt here -- a list of dicts passes every check and
+    # fails only when somebody asks a Station for its name, which for a stored
+    # profile is during bridge start-up in front of a waiting pilot. The table
+    # is the theatre's now (#162), so a row written before the move carries a
+    # copy of a table nobody reads, and the `known` filter at the bottom is what
+    # discards it. `theatre_stations` is what the row should have carried; a row
+    # that predates it keeps the default, which is the ladder.
     d["atc"] = AtcCapability(**d.get("atc", {}))
 
     # stack_ft used to be a stored list; it is now derived from base/step/ceiling.

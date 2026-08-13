@@ -33,7 +33,9 @@ def build(profile: R.ApproachProfile = P) -> str:
     inbound = profile.final_crs
     outbound = (inbound + 180) % 360
     field = profile.beacon           # the radar reference point IS the field
-    stations = profile.stations or []
+    # THE THEATRE'S SEATS. They used to hang off the profile, so a plate for
+    # one approach carried the comms ladder of both aerodromes (#162).
+    stations = R.STATIONS
 
     freqs = "".join(
         f'<tr><th>{s.name}</th><td class="v">{s.freq_mhz:.3f}</td>'

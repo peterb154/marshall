@@ -44,22 +44,22 @@ class TestARoleBelongsToAField(unittest.TestCase):
                 ("Batumi", "ground", "Batumi Ground"),
                 ("Batumi", "clearance", "Batumi Ground")):
             with self.subTest(field=field, role=role):
-                self.assertEqual(P.station_for(role, field=field).name, want)
+                self.assertEqual(R.station_for(role, field=field).name, want)
 
     def test_a_field_never_borrows_the_other_fields_seat(self):
         """Each field staffs its own, and the answer is HIS -- never the one
         forty miles away."""
-        self.assertEqual(P.station_for("tower", field="Kobuleti").name,
+        self.assertEqual(R.station_for("tower", field="Kobuleti").name,
                          "Kobuleti Tower")
-        self.assertEqual(P.station_for("ground", field="Batumi").name,
+        self.assertEqual(R.station_for("ground", field="Batumi").name,
                          "Batumi Ground")
 
     def test_an_unstaffed_role_is_none_rather_than_somebody_elses(self):
         """The failure that has to stay a failure. Returning ANY station here
         is worse than returning nothing: nothing is caught, a wrong controller
         is spoken to."""
-        self.assertIsNone(P.station_for("approach", field="Nowhere"))
-        self.assertIsNone(P.station_for("nosuchrole", field="Batumi"))
+        self.assertIsNone(R.station_for("approach", field="Nowhere"))
+        self.assertIsNone(R.station_for("nosuchrole", field="Batumi"))
 
     def test_region_controllers_are_reachable_from_everywhere(self):
         """Center and Sentry own airspace, not an aerodrome. Asking which field
@@ -67,7 +67,7 @@ class TestARoleBelongsToAField(unittest.TestCase):
         from either end of the route."""
         for field in ("Batumi", "Kobuleti"):
             with self.subTest(field=field):
-                self.assertEqual(P.station_for("center", field=field).name,
+                self.assertEqual(R.station_for("center", field=field).name,
                                  "Georgia Center")
         self.assertEqual(R.CENTER.field, "")
         self.assertEqual(R.OVERLORD.field, "")
@@ -75,25 +75,25 @@ class TestARoleBelongsToAField(unittest.TestCase):
     def test_an_unqualified_lookup_still_answers_for_the_simple_case(self):
         """Hundreds of call sites pass no field. They must keep working -- the
         default is permissive on purpose, and the docstring says why."""
-        self.assertIsNotNone(P.station_for("tower"))
-        self.assertIsNotNone(P.station_for("center"))
+        self.assertIsNotNone(R.station_for("tower"))
+        self.assertIsNotNone(R.station_for("center"))
 
 
 class TestEveryFrequencyReachesSomebody(unittest.TestCase):
     """A preset that reaches nobody is discovered in the air."""
 
     def test_every_frequency_the_bridge_monitors_resolves(self):
-        for s in P.stations:
+        for s in R.STATIONS:
             for hz in s.freqs:
                 with self.subTest(mhz=hz):
-                    self.assertIsNotNone(P.station_on(hz),
+                    self.assertIsNotNone(R.station_on(hz),
                                          f"{hz} reaches nobody")
 
     def test_no_two_facilities_share_a_frequency(self):
         """Two controllers on one number means one of them is unreachable, and
         which one depends on list order."""
         seen = {}
-        for s in P.stations:
+        for s in R.STATIONS:
             for hz in s.freqs:
                 with self.subTest(mhz=hz):
                     self.assertNotIn(hz, seen,
@@ -101,7 +101,7 @@ class TestEveryFrequencyReachesSomebody(unittest.TestCase):
                     seen[hz] = s.name
 
     def test_every_frequency_is_tunable_vhf(self):
-        for s in P.stations:
+        for s in R.STATIONS:
             for hz in s.freqs:
                 with self.subTest(station=s.name, mhz=hz):
                     self.assertGreaterEqual(hz, 108.0)
@@ -435,7 +435,7 @@ class TestTheControllerIsHandedHisOwnFrequencies(unittest.TestCase):
         Kobuleti was right by accident and Batumi was about to send a pilot
         forty miles up the coast."""
         msg = self.compose(R.GROUND)          # Batumi Ground issues clearances
-        want = R.BATUMI_ASR.station_for("departure", field="Batumi")
+        want = R.station_for("departure", field="Batumi")
         line = [ln for ln in msg.split("\n")
                 if ln.startswith("DEPARTURE FREQUENCY")]
         self.assertTrue(line, "Batumi Ground is told no departure frequency")
@@ -496,7 +496,7 @@ class TestTheEngineIsToldWhichControllerItIs(unittest.TestCase):
         arrival field's controller for every call of the sortie."""
         for station in (R.KOB_TOWER, R.KOB_GROUND, R.TOWER, R.GROUND):
             with self.subTest(who=station.name):
-                self.assertIs(R.BATUMI_ASR.station_on(station.freq_mhz), station)
+                self.assertIs(R.station_on(station.freq_mhz), station)
 
 
 class TestNobodyIsSentToTheOtherAerodromesTower(unittest.TestCase):

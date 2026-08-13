@@ -628,7 +628,7 @@ Logs ` ATC[who] Station calling ..., say your callsign. (out of the blue, no cal
 
 **19. Guard: debug note.** `debug_note(transcript)` (, defined). "debug", "debug log", "debug note" anywhere in the transmission. Writes to `build/debug-notes.md`, logs ` DEBUG NOTE [hh:mm:ss] ...`, and stays entirely off the air.
 
-**20. Who is answering, and to whom he hands off.** `me = profile.station_on(on_mhz)` — which controller owns the channel this arrived on, matched against every frequency a facility holds (`Station.hears`), and scoped to his FIELD, because a role is only unique within an aerodrome.
+**20. Who is answering, and to whom he hands off.** `me = station_on(on_mhz)` — which controller owns the channel this arrived on, matched against every frequency a facility holds (`Station.hears`), and scoped to his FIELD, because a role is only unique within an aerodrome. The table is the THEATRE's (`core/theatre.py`) and was the arrival profile's until #162, which is how a Batumi ILS came to answer for Kobuleti Ground.
 
 The handoff itself is `next_controller`, one function and a cascade of three kinds of evidence in priority order:
 

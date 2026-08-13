@@ -6,10 +6,12 @@ ONE LINE, and everything downstream flowed from it:
 
     profile = load_and_push_plate(R.BATUMI_ASR)
 
-That object is not just an approach. It carries the station list, so it decides
-which frequencies the ear opens; `station_on` resolves it to whoever is speaking;
-its geometry, minima and vectoring cells are the arrival. Beside it the ATIS
-served `R.FIELDS` and the bootstrap wrote a Kobuleti-to-Batumi flight plan.
+That object is not just an approach. Its geometry, minima and vectoring cells
+are the arrival, and until #162 it carried the station list as well -- so the
+approach decided which frequencies the ear opens and `station_on` resolved a
+channel to a controller through it. The seats are the THEATRE's now, and
+`station_for` / `station_on` below are where they are asked for. Beside it the
+ATIS served `R.FIELDS` and the bootstrap wrote a Kobuleti-to-Batumi flight plan.
 
 So on the Nevada mission the bridge was DEAF and, worse, occasionally wrong:
 
@@ -40,6 +42,8 @@ from __future__ import annotations
 import os
 from functools import lru_cache as _lru_cache
 from dataclasses import dataclass, field
+
+from marshall.core import stations as _stations
 
 
 @dataclass(frozen=True)
@@ -120,20 +124,24 @@ class Theatre:
 # editing here as well as there. The keys are the file's now. See #137.
 
 
-def published_approaches(fields=(), stations=(), theatre: str = "") -> dict:
+def published_approaches(fields=(), theatre: str = "") -> dict:
     """The map's procedures, keyed, with the theatre's data composed back in.
 
     THIS IS WHERE THE TWO THINGS ARE PUT BACK TOGETHER, in one place and
-    visibly. `ApproachProfile` carries `stations`, `msa_sectors` and
-    `mva_cells` as well as the procedure, so every profile is the theatre's
-    reference data welded to one arrival -- the unfinished half of #2, and the
-    reason the bridge cannot hold the first without defaulting the second.
+    visibly. `ApproachProfile` carries `msa_sectors` and `mva_cells` as well as
+    the procedure, so a profile is still the theatre's reference data welded to
+    one arrival -- the unfinished half of #2, and the reason the bridge cannot
+    hold the first without defaulting the second.
 
-    The FILE holds only the procedure. The stations come from the theatre's own
-    list and the minimum altitudes from the aerodrome the procedure names, so
-    there is one copy of each and an approach cannot come to disagree with the
-    field it serves. When #2 is finished this function is where the welding
-    stops.
+    THE STATION TABLE IS NO LONGER WELDED ON. It used to be, and it was the
+    worst of the welds: a procedure at Batumi carried Kobuleti's ground seats,
+    so every caller who wanted a controller went through an arrival. The seats
+    are the theatre's and are read from `station_for` / `station_on`; what
+    survives here is one bit -- `theatre_stations` -- saying whether a
+    procedure's controllers are the ladder at all or the beacons the pilot
+    homes. See #162, and #152 on that bit. The minimum altitudes still come
+    from the aerodrome the procedure names, so there is one copy and an
+    approach cannot come to disagree with the field it serves.
     """
     from marshall.core import catalogue
     from marshall.core import route as R
@@ -202,7 +210,7 @@ def published_approaches(fields=(), stations=(), theatre: str = "") -> dict:
             beacon=role(a.beacon), outer_hold=role(a.outer_hold),
             arrival_fix=role(a.arrival_fix), iaf=role(a.iaf),
             atc=R.AtcCapability(**a.atc.model_dump(exclude_none=True)),
-            stations=list(stations) if a.theatre_stations else [],
+            theatre_stations=a.theatre_stations,
             msa_sectors=[tuple(s) for s in (f.msa_sectors if f else [])],
             mva_cells=[tuple(c) for c in (f.mva_cells if f else [])],
             **knobs)
@@ -257,12 +265,24 @@ def _map_name(theatre: str = "") -> str:
 # RESOLVE THE NAME BEFORE THE CACHE, not inside it. `lru_cache` keys on the
 # ARGUMENT, so `stations_now("")` and `stations_now("caucasus")` were two
 # entries holding two sets of equal-but-distinct objects -- and
-# `R.KOB_CLEARANCE is profile.stations[0]` went false, which several tests
+# `R.KOB_CLEARANCE is R.STATIONS[0]` went false, which several tests
 # assert precisely because identity is the cheapest way to say "the same
 # controller, not a copy that happens to match".
 @_lru_cache(maxsize=4)
 def _stations_cached(name: str) -> tuple:
-    return published_stations(name)
+    got = published_stations(name)
+    if got:
+        return got
+    # A MAP WHOSE SEATS ARE STILL PYTHON. Nevada's controllers live in
+    # `core/nevada.py` rather than in `nevada.toml` (#137 has not reached it),
+    # and the theatre function hands them straight to `Theatre.stations`. Since
+    # this is now the ONE place a station is looked up, a map that publishes no
+    # `[[station]]` rows must still answer from wherever its seats do live --
+    # otherwise moving the table off the profile makes Nevada silently
+    # stationless, which is the same "correct by accident" shape the second
+    # aerodrome taught. Reached only when the file has nothing, so the Caucasus
+    # never recurses through it.
+    return tuple(THEATRES[name]().stations)
 
 
 @_lru_cache(maxsize=4)
@@ -272,8 +292,7 @@ def _fields_cached(name: str) -> tuple:
 
 @_lru_cache(maxsize=4)
 def _approaches_cached(name: str) -> dict:
-    return published_approaches(_fields_cached(name), _stations_cached(name),
-                                name)
+    return published_approaches(_fields_cached(name), name)
 
 
 def stations_now(theatre: str = "") -> tuple:
@@ -284,6 +303,53 @@ def stations_now(theatre: str = "") -> tuple:
 def fields_now(theatre: str = "") -> tuple:
     """The configured map's aerodromes -- ONE object per field."""
     return _fields_cached(_map_name(theatre))
+
+
+def seats_now(procedure=None, theatre: str = "") -> tuple:
+    """The controllers on the air, for a procedure the ladder actually staffs.
+
+    THE ONE PLACE THE MODE SWITCH LIVES, and `procedure` is here for that and
+    for nothing else -- it is asked one boolean about ITSELF and never yields a
+    Station. A beacon letdown's controllers are not on the ladder at all: the
+    ARA-8 homes whatever the set is tuned to, so the man you talk to IS the
+    frequency you home, and `ApproachProfile.theatre_stations` is False.
+
+    That used to be spelt "the profile's own station list is empty", in two
+    places by #152's count and in about a dozen by consequence -- every role
+    lookup through the 1944 profile answered None because the list it walked
+    was that profile's. The table has moved to the map (#162) and the emptiness
+    would have moved with it, so the letdown would have silently acquired eight
+    modern seats. PRESERVED, NOT ENDORSED, which is the same words
+    `config/theatres/caucasus.toml` uses about the flag itself. #152 is where
+    it gets said properly, as a capability; this argument goes with it.
+
+    `procedure=None` means the ladder, which is every other caller.
+    """
+    if procedure is not None and not getattr(procedure, "theatre_stations", True):
+        return ()
+    return stations_now(theatre)
+
+
+def station_for(role: str, field: str = "", theatre: str = "", procedure=None):
+    """Who works this role, at this aerodrome, on this map.
+
+    THE ONE PLACE THIS IS ANSWERED. It was `ApproachProfile.station_for`, so
+    the comms ladder for every aerodrome on the map was reached through one
+    arrival procedure -- Kobuleti Ground's frequency came out of Batumi's ILS,
+    and a departure and a recovery forty miles apart shared a table because
+    they shared a profile. A station belongs to the THEATRE. [#162]
+
+    `field` carries the same warning it always did: a role is only unique
+    within an aerodrome, and an unqualified lookup returns a real controller at
+    the wrong airport. See `stations.role_at`. `procedure` is the #152 switch
+    and is explained on `seats_now`.
+    """
+    return _stations.role_at(seats_now(procedure, theatre), role, field)
+
+
+def station_on(freq_mhz: float, theatre: str = "", procedure=None):
+    """Who is speaking on this frequency, on this map. See `station_for`."""
+    return _stations.on_frequency(seats_now(procedure, theatre), freq_mhz)
 
 
 def approaches_now(theatre: str = "") -> dict:

@@ -191,6 +191,7 @@ def compose_message(bridge, scope, known, transcript, profile, me, fix, nxt,
     """
     from marshall.atc import controller
     from marshall.core import route as R
+    from marshall.core import theatre as _theatre
 
     parts = []
     if scope:
@@ -310,7 +311,11 @@ def compose_message(bridge, scope, known, transcript, profile, me, fix, nxt,
         # over is not a hint, it is the correction of an omission -- and it is
         # the same list the comms card prints and the aeroplane's presets are
         # built from, so the card, the radio and the man cannot disagree.
-        mine = [s for s in (getattr(profile, "stations", None) or [])
+        # OFF THE THEATRE, not off the arrival. This read `profile.stations`,
+        # so which controllers a man on the Kobuleti ramp was told about came
+        # out of a Batumi procedure -- see #162. His field is `me.field`, which
+        # was always the thing doing the work here.
+        mine = [s for s in _theatre.seats_now(profile)
                 if getattr(s, "field", "") == getattr(me, "field", "")
                 and getattr(me, "field", "")]
         if mine:
@@ -408,7 +413,8 @@ def compose_message(bridge, scope, known, transcript, profile, me, fix, nxt,
         _mine = {getattr(me, "role", ""), *(getattr(me, "also", ()) or ())}
         _on_the_ground = bool(_mine & {"ground", "clearance", "delivery"})
         if "tower" not in _mine and _on_the_ground:
-            _twr = profile.station_for("tower", field=getattr(me, "field", ""))
+            _twr = R.station_for("tower", field=getattr(me, "field", ""),
+                                 procedure=profile)
             _where = (f" — that is {_twr.name} on "
                       f"{controller.spell_freq(_twr.freq_mhz)}"
                       if _twr is not None else "")
@@ -422,7 +428,8 @@ def compose_message(bridge, scope, known, transcript, profile, me, fix, nxt,
                 f"there is no Tower, and do not agree that you are also Tower. "
                 f"If he insists, repeat the frequency.")
         if "ground" not in _mine and getattr(me, "role", "") != "clearance":
-            _gnd = profile.station_for("ground", field=getattr(me, "field", ""))
+            _gnd = R.station_for("ground", field=getattr(me, "field", ""),
+                                 procedure=profile)
             if _gnd is not None:
                 parts.append(
                     f"NOT YOURS: THE GROUND. Taxi and parking are "
@@ -442,7 +449,7 @@ def compose_message(bridge, scope, known, transcript, profile, me, fix, nxt,
         # cannot disagree.
         # AND IT IS HIS FIELD'S DEPARTURE, not the first one in the list.
         #
-        # This walked `profile.stations` for anything whose role was
+        # This walked the profile's own station list for anything whose role was
         # "departure" and took the first match -- the same first-match mistake
         # `station_for` was rewritten to stop making, surviving in one more
         # place because a one-aerodrome mission cannot expose it. Kobuleti
@@ -455,8 +462,9 @@ def compose_message(bridge, scope, known, transcript, profile, me, fix, nxt,
         # reach across the theatre for a plausible stranger.
         if getattr(me, "role", "") in ("tower", "ground", "delivery") or (
                 "delivery" in [r for r in (getattr(me, "also", ()) or ())]):
-            _dep = profile.station_for("departure",
-                                       field=getattr(me, "field", ""))
+            _dep = R.station_for("departure",
+                                 field=getattr(me, "field", ""),
+                                 procedure=profile)
             if _dep is not None:
                 parts.append(
                     f"DEPARTURE FREQUENCY: {_dep.name} on "

@@ -36,12 +36,12 @@ class TestItIsAnILSAndNotACopyOfTheRadarApproach(unittest.TestCase):
         there is nothing left for Approach to do. The ASR keeps him, because
         the man on the frequency is the approach aid.
         """
-        me = ILS.station_for("approach", field=R.DEPARTURE_FIELD)
+        me = R.station_for("approach", field=R.DEPARTURE_FIELD)
         v = H.due(ILS, me, H.State(False, 4.0, True))
         self.assertIsNotNone(v, "the ILS never released him")
         self.assertEqual(v.station.role, "tower")
 
-        mb = ASR.station_for("approach", field=R.ARRIVAL_FIELD)
+        mb = R.station_for("approach", field=R.ARRIVAL_FIELD)
         self.assertIsNone(H.due(ASR, mb, H.State(False, 4.0, True)),
                           "the talkdown handed him away mid-procedure")
 
@@ -126,14 +126,18 @@ class TestNothingUnderATCHadToChange(unittest.TestCase):
     """
 
     def test_the_profile_is_reachable_and_complete(self):
+        # `stations` used to be on this list and is not on the profile any
+        # more -- the seats belong to the theatre (#162), and the assertion
+        # that this field is staffed is `test_its_controller_is_staffed`
+        # below, which asks the table rather than the procedure.
         for attr in ("controller", "beacon", "runway", "final_crs", "guidance",
-                     "kind", "stations", "msa_sectors", "mva_cells"):
+                     "kind", "msa_sectors", "mva_cells"):
             with self.subTest(field=attr):
                 self.assertTrue(getattr(ILS, attr, None) not in (None, "", []),
                                 f"{attr} is empty")
 
     def test_its_controller_is_staffed(self):
-        self.assertIsNotNone(ILS.station_on(
+        self.assertIsNotNone(R.station_on(
             R.KOB_DEPARTURE.freq_mhz))
 
     def test_the_two_approaches_share_every_mechanism(self):
@@ -141,8 +145,8 @@ class TestNothingUnderATCHadToChange(unittest.TestCase):
         that differs is the numbers -- which is what 'data-driven' has to mean
         if it means anything."""
         self.assertIs(type(ILS), type(ASR))
-        for me, prof in ((ILS.station_for("approach", field=R.DEPARTURE_FIELD), ILS),
-                         (ASR.station_for("approach", field=R.ARRIVAL_FIELD), ASR)):
+        for me, prof in ((R.station_for("approach", field=R.DEPARTURE_FIELD), ILS),
+                         (R.station_for("approach", field=R.ARRIVAL_FIELD), ASR)):
             with self.subTest(profile=prof.kind):
                 # Same call, same table, different answer from the data alone.
                 H.due(prof, me, H.State(False, 4.0, True))

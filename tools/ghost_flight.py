@@ -707,12 +707,13 @@ def _inbound(args, th, field, recorder) -> int:
     marched outbound with a shrinking number would satisfy every range in the
     table and be inbound in none of them.
     """
+    from marshall.core import route as _r
     profile = th.approach
     radial, hdg = arrival_geometry(field, profile)
     track = f"362nd_{args.name}"
-    apr = profile.station_for("approach", field=field.name)
-    twr = profile.station_for("tower", field=field.name)
-    ctr = profile.station_for("center", field=field.name)
+    apr = _r.station_for("approach", field=field.name)
+    twr = _r.station_for("tower", field=field.name)
+    ctr = _r.station_for("center", field=field.name)
     if apr is None or twr is None:
         print(f"!! {field.name} has no approach or tower to arrive at",
               file=sys.stderr)
@@ -1847,10 +1848,10 @@ def main(argv: list[str] | None = None) -> int:
             # ON DEPARTURE'S FREQUENCY, because who he is talking to is what
             # decides which rung of the ladder he is on. Checking in with
             # Approach would be a different test.
-            # HIS FIELD'S DEPARTURE, asked of the profile -- a role is only
+            # HIS FIELD'S DEPARTURE, asked of the THEATRE -- a role is only
             # unique within an aerodrome, and Kobuleti and Batumi both have one.
             from marshall.core import route as _r
-            dep = _r.BATUMI_ASR.station_for("departure", field=field.name)
+            dep = _r.station_for("departure", field=field.name)
             mhz = getattr(dep, "freq_mhz", 0.0) or 123.3
             if args.from_tower:
                 # THE RUNG BEFORE THE ONE UNDER TEST. Tower hands him to
@@ -1858,7 +1859,7 @@ def main(argv: list[str] | None = None) -> int:
                 # so this run asks whether the SECOND handoff of a sortie can
                 # happen at all, which is the question the pilot's flight
                 # answered "no" to for three minutes.
-                twr = _r.BATUMI_ASR.station_for("tower", field=field.name)
+                twr = _r.station_for("tower", field=field.name)
                 check_in(args, getattr(twr, "freq_mhz", 0.0) or 133.0,
                          f"{field.name} Tower, {args.name}, airborne off zero "
                          f"seven, passing one thousand.")

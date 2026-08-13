@@ -40,6 +40,7 @@ from marshall.atc import controller as _controller
 from marshall.atc import intents as _intents
 from marshall.atc import talkdown as _talkdown
 from marshall.core import theatre as _theatre
+from marshall.core import stations as _stations
 from marshall.atc import handoff as _handoff
 from marshall.atc import decision as _decision
 from marshall.atc import flights as fl
@@ -3140,9 +3141,9 @@ def his_field(bridge, ctl, profile, cs: str, fallback_hz: float = 0.0) -> str:
     so is a beacon.
     """
     hz = bridge.heard_on.get(ctl._resolve(cs)) or fallback_hz
-    if not hz or not hasattr(profile, "station_on"):
+    if not hz:
         return ""
-    st = profile.station_on(hz / 1_000_000)
+    st = _theatre.station_on(hz / 1_000_000, procedure=profile)
     return getattr(st, "field", "") if st is not None else ""
 
 
@@ -3186,8 +3187,7 @@ def watching_him(bridge, ctl, profile, cs, pos, scope, fallback_hz=0.0,
     # offered anything. `heard_on` is where he actually checked in, which is the
     # only thing that says whose aeroplane he is.
     hz = bridge.heard_on.get(key) or fallback_hz
-    me = (profile.station_on(hz / 1_000_000)
-          if hasattr(profile, "station_on") else None)
+    me = _theatre.station_on(hz / 1_000_000, procedure=profile)
     phase = getattr(who, "sortie_phase", "") or ""
     if me is None:
         _no = f"nobody owns him -- {hz / 1_000_000:.3f} is not a station"
@@ -3317,14 +3317,14 @@ def handoff_on_the_event(scope: str, track: str, me, profile,
     # HIS field, not the first role match -- see `Controller._runway_in_use`.
     fld = getattr(me, "field", "")
     if unit.on_ground and role == "approach":
-        return profile.station_for("tower", field=fld)
+        return _theatre.station_for("tower", field=fld, procedure=profile)
     if not unit.on_ground and role == "tower":
         # Airborne again: Tower owns the runway, not the departure -- unless he
         # is pointed AT the runway, in which case he is an arrival on final and
         # Tower is the man who owns him.
         if coming_towards_us(fix):
             return None
-        return profile.station_for("approach", field=fld)
+        return _theatre.station_for("approach", field=fld, procedure=profile)
     return None
 
 
@@ -3458,8 +3458,8 @@ def leaving_my_airspace(base: str, session_id: str, callsign: str, me,
     # one, so an aircraft leaving Batumi Approach's airspace was handed to a
     # tower forty miles up the coast. The third place this same fault has
     # surfaced; the direction of the fix is always to say which field you mean.
-    nxt = (profile.station_for(role, field=getattr(me, "field", ""))
-           if hasattr(profile, "station_for") else None)
+    nxt = _theatre.station_for(role, field=getattr(me, "field", ""),
+                               procedure=profile)
     # Outbound only: hand him DOWN the ladder (approach -> center), never up.
     # Climbing the ladder is an arrival, and arrivals belong to route.py.
     # DEPARTURE SITS WITH APPROACH, because it is the same man -- see
@@ -3608,7 +3608,7 @@ def whisper_vocabulary(bridge, profile, roster=None) -> str:
                 spoken.append(C.parse(cs).spoken)
             except Exception:
                 spoken.append(cs)
-    stations = [s.name for s in (getattr(profile, "stations", None) or [])]
+    stations = [s.name for s in _theatre.seats_now(profile)]
     # THE LOADED THEATRE'S FIXES. This primed Whisper with `core.route`'s --
     # the Caucasus strike route -- whatever map was up, so on Nevada the
     # recogniser was told to expect INGRESS and TSUTSNVATI and never NELLIS or
@@ -3732,8 +3732,7 @@ def push_sectors(base: str, profile) -> int:
     """
     from marshall.core import airspace as _air
     from marshall.core import theatre as _th
-    rows = _air.sectors_for(_th.current().fields,
-                            getattr(profile, "stations", []) or [])
+    rows = _air.sectors_for(_th.current().fields, _th.seats_now(profile))
     if not rows:
         return 0
     _put_json(f"{base}/sectors", {"sectors": rows})
@@ -5171,8 +5170,15 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
     # different person -- that is most of what makes a sector split feel real,
     # and it costs nothing but picking the right Voice before transmitting.
     voice = tts.Voice(voice_id=voice_id)
+    # THE SEATS THIS BRIDGE IS WORKING. The theatre's ladder, unless the loaded
+    # procedure says its controllers live on the beacons instead -- an ARA-8
+    # homes whatever it is tuned to, so on a 1944 letdown the man you talk to
+    # IS the frequency you home. That switch used to be "is the profile's
+    # station list empty", which is #152; it is a bit on the procedure now, and
+    # the list itself belongs to the map (#162).
+    _seats = tuple(_theatre.stations_now()) if profile.theatre_stations else ()
     voices: dict[float, tts.Voice] = {}
-    for _s in getattr(profile, "stations", None) or []:
+    for _s in _seats:
         voices[round(_s.freq_mhz, 3)] = tts.Voice(voice_id=_s.voice)
 
     def voice_for(hz: float | None):
@@ -5192,7 +5198,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         capability system that silently disarmed a controller because a lookup
         missed would be worse than none.
         """
-        st = profile.station_on(round((hz or freq_hz) / 1_000_000, 3))
+        st = _stations.on_frequency(_seats, round((hz or freq_hz) / 1_000_000, 3))
         if st is None:
             return "", (), ""
         return (getattr(st, "role", "") or "",
@@ -5210,8 +5216,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         Falls back to the single channel when no station claims it, which is the
         engineering line and anything else off the plate.
         """
-        st = (profile.station_on((hz or freq_hz) / 1_000_000)
-              if hasattr(profile, "station_on") else None)
+        st = _stations.on_frequency(_seats, (hz or freq_hz) / 1_000_000)
         if st is None:
             return hz or freq_hz
         return [f * 1_000_000 for f in st.freqs]
@@ -5230,12 +5235,12 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
     # nobody on them, and the failure is silent from both ends. He calls into an
     # empty frequency; we hear nothing and assume he has not called.
     channels: list[float] = []
-    if getattr(profile, "stations", None):
+    if _seats:
         # EVERY frequency of every facility, not one each. A station can be
         # heard on several -- the published one a modern radio tunes and the
         # rounded one an SCR-522 can reach -- and a warbird checking in on the
         # channel we are not listening to is a pilot talking to nobody.
-        channels = [f for st in profile.stations for f in st.freqs if f]
+        channels = [f for st in _seats for f in st.freqs if f]
     else:
         for fix in (profile.arrival_fix, profile.beacon, profile.outer_hold):
             if fix is not None and fix.freq_mhz and fix.freq_mhz not in channels:
@@ -5384,7 +5389,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
     # out with other things to think about. Addressing a station by name is an
     # unambiguous statement about who he is talking to, and the system should not
     # need it said twice.
-    _station_names = [s.name for s in (getattr(profile, "stations", None) or [])]
+    _station_names = [s.name for s in _seats]
     _ADDRESSING = (re.compile("|".join(re.escape(n) for n in _station_names), re.I)
                    if _station_names else None)
 
@@ -5442,8 +5447,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # NOBODY IS SENT AWAY WITHOUT THE BRIDGE SAYING SO. The rules ask
         # the model not to invent a handoff and it did anyway, live, to a
         # pilot parked on the ramp. Guidance where a guarantee was needed.
-        _me_here = (profile.station_on((on_hz or freq_hz) / 1_000_000)
-                    if hasattr(profile, "station_on") else None)
+        _me_here = _stations.on_frequency(_seats, (on_hz or freq_hz) / 1_000_000)
         reply, sent = strip_unauthorised_handoff(
             reply, _authorised,
             # HIS NAME AS IT IS SAID, not the board's key for him. The key is
@@ -5655,19 +5659,17 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # rule in route.py, which now keeps him here to the missed approach
         # point. On any other approach the aeroplane has its own aid and Tower
         # genuinely does take him at the intercept, so the old behaviour stands.
-        _final = None
-        if hasattr(profile, "station_for"):
-            # The ARRIVAL field's, explicitly. This is the frequency the
-            # talkdown goes out on, so a first-role-match answer would put the
-            # mile calls on another aerodrome's channel.
-            # THE LOADED THEATRE'S arrival field, not `core.route`'s. This was
-            # the Caucasus constant, so on Nevada it asked for a station at
-            # "Batumi", got None, and the talkdown fell back to whatever channel
-            # this thread happened to transmit on. [CODEX_NTTR_AUDIT]
-            _fld = _theatre.current().arrival
-            _final = (profile.station_for("approach", field=_fld)
-                      if getattr(profile, "guidance", "") == "talkdown"
-                      else profile.station_for("tower", field=_fld))
+        # The ARRIVAL field's, explicitly. This is the frequency the
+        # talkdown goes out on, so a first-role-match answer would put the
+        # mile calls on another aerodrome's channel.
+        # THE LOADED THEATRE'S arrival field, not `core.route`'s. This was
+        # the Caucasus constant, so on Nevada it asked for a station at
+        # "Batumi", got None, and the talkdown fell back to whatever channel
+        # this thread happened to transmit on. [CODEX_NTTR_AUDIT]
+        _fld = _theatre.current().arrival
+        _final = (_stations.role_at(_seats, "approach", _fld)
+                  if getattr(profile, "guidance", "") == "talkdown"
+                  else _stations.role_at(_seats, "tower", _fld))
         final_hz = (_final.freq_mhz * 1_000_000) if _final else freq_hz
         called: dict[str, int] = {}
         vectored: dict[str, int] = {}      # last heading issued, per aircraft
@@ -6208,8 +6210,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # every range is measured from -- an aeroplane on Kobuleti's ramp
         # read as 23 miles out while Kobuleti's own controllers were being
         # handed Batumi's geometry.
-        _me_fld = profile.station_on((heard_hz or freq_hz) / 1_000_000) \
-            if hasattr(profile, "station_on") else None
+        _me_fld = _stations.on_frequency(_seats,
+                                         (heard_hz or freq_hz) / 1_000_000)
         scope, claim, _ident, known, _who = attribute(
             bridge, client, transcript, srs, session_id, radar_on, ctl,
             field=getattr(_me_fld, "field", "") or "")
@@ -6310,8 +6312,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # WHO THE ENGINE IS BEING, from the frequency this call arrived on. The
         # engine is blind by design, and this is the one fact it cannot do
         # without: only Tower may clear a landing.
-        _me_now = (profile.station_on((heard_hz or freq_hz) / 1_000_000)
-                   if hasattr(profile, "station_on") else None)
+        _me_now = _stations.on_frequency(_seats,
+                                         (heard_hz or freq_hz) / 1_000_000)
         ctl.working = getattr(_me_now, "role", None)
         # AND WHICH ONE OF HIM, WHICH IS NOT THE SAME QUESTION.
         #
@@ -6404,8 +6406,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # The frequency is the only honest source: a role is unique only within
         # an aerodrome, and the button he pressed is what says which aerodrome.
         _on_mhz = (heard_hz or freq_hz) / 1_000_000
-        ctl._me = (profile.station_on(_on_mhz)
-                   if hasattr(profile, "station_on") else None)
+        ctl._me = _stations.on_frequency(_seats, _on_mhz)
 
         # Deterministic short-circuit: a radio check or a closing acknowledgement
         # gets an instant canned reply -- the rich agent adds nothing. Not mid-
@@ -6501,9 +6502,10 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 "cruise_ft": _flight.get("cruise_ft"),
                 "squawk": _flight.get("squawk") or "",
                 "departure_mhz": getattr(
-                    profile.station_for("departure",
-                                        field=getattr(getattr(ctl, "_me", None),
-                                                      "field", "")),
+                    _theatre.station_for("departure",
+                                         field=getattr(getattr(ctl, "_me", None),
+                                                       "field", ""),
+                                         procedure=profile),
                     "freq_mhz", None),
                 # THE SAME TWO THE DURABLE READ CARRIES. This cache is consulted
                 # BEFORE `_cleared_plan_now`, so a field missing here is a field

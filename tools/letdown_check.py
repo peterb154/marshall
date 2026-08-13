@@ -35,7 +35,7 @@ from marshall.core import route as R
 
 def main() -> int:
     p = R.BATUMI_ASR
-    hz = p.station_for("approach").freq_mhz * 1e6
+    hz = R.station_for("approach").freq_mhz * 1e6
     ok = True
 
     def check(name: str, got: bool, expect: bool) -> None:

@@ -152,7 +152,11 @@ def main() -> int:
         from marshall.radio import tts
         from marshall.radio.client import AM, SRSClient, radio
 
-        station = profile.station_for("approach") or profile.stations[0]
+        # UNQUALIFIED, and it was before the seats moved off the profile
+        # too. A role is unique only within an aerodrome, so this returns
+        # whichever Approach the theatre lists first. Left exactly as it
+        # was rather than quietly given a field -- see #162.
+        station = R.station_for("approach") or R.STATIONS[0]
         hz = station.freq_mhz * 1_000_000
         srs = SRSClient(args.srs, name=f"{station.name} (ASR)").connect(
             [radio(hz, AM)])

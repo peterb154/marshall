@@ -83,7 +83,7 @@ class TestNobodyIsHandedOffFromTheRamp(unittest.TestCase):
         rather than an `if` somewhere upstream.
         """
         import dataclasses
-        me = self.p.station_for("approach", field="Batumi")
+        me = R.station_for("approach", field="Batumi")
         # A distance and a direction, with the ground fact withheld.
         ils = dataclasses.replace(self.p, guidance="intercept")
         v = H.due(ils, me, H.State(on_ground=False,
@@ -93,7 +93,7 @@ class TestNobodyIsHandedOffFromTheRamp(unittest.TestCase):
 
     def test_and_the_ground_fact_is_what_stops_it(self):
         """The same aeroplane, with the truth included."""
-        me = self.p.station_for("approach", field="Batumi")
+        me = R.station_for("approach", field="Batumi")
         st = A._handoff_state(self.scope, "362nd_sockeye", self.fix)
         self.assertTrue(st.on_ground, "the ramp fact never reached the rules")
         v = H.due(self.p, me, st)
@@ -103,7 +103,7 @@ class TestNobodyIsHandedOffFromTheRamp(unittest.TestCase):
         self.assertTrue(v is None or v.station.role == "tower")
 
     def freq(self, role):
-        return self.p.station_for(role).freq_mhz
+        return R.station_for(role).freq_mhz
 
     def test_a_departure_request_is_not_leaving_the_airspace(self):
         """CAUSE 2. The ramp guard set the handoff to None and the "is he on his
@@ -116,7 +116,7 @@ class TestNobodyIsHandedOffFromTheRamp(unittest.TestCase):
     def test_tower_hands_off_to_nobody_anyway(self):
         """The half that was always right: an arrival at Tower is the end of
         the line. His only rule is outbound, and a parked jet is not that."""
-        me = self.p.station_for("tower", field="Batumi")
+        me = R.station_for("tower", field="Batumi")
         st = A._handoff_state(self.scope, "362nd_sockeye", self.fix)
         self.assertIsNone(H.due(self.p, me, st))
 
@@ -145,7 +145,7 @@ class TestTheAgentMayNotInventAHandoff(unittest.TestCase):
         self.assertIn("go ahead", out)
 
     def test_an_authorised_handoff_passes_untouched(self):
-        tower = R.BATUMI_ASR.station_for("tower")
+        tower = R.station_for("tower")
         out, gone = A.strip_unauthorised_handoff(self.LOOP, tower)
         self.assertEqual(out, self.LOOP)
         self.assertEqual(gone, "")

@@ -19,8 +19,8 @@ P = R.BATUMI_ASR
 # Kobuleti's the moment the departure field got a Tower of its own, and every
 # assertion below would have been about the wrong aerodrome while still
 # passing for some of them. [#51]
-TOWER = P.station_for("tower", field=R.ARRIVAL_FIELD)
-APPROACH = P.station_for("approach", field=R.ARRIVAL_FIELD)
+TOWER = R.station_for("tower", field=R.ARRIVAL_FIELD)
+APPROACH = R.station_for("approach", field=R.ARRIVAL_FIELD)
 
 
 def flying(nm, inbound=False):
@@ -134,18 +134,18 @@ class TestApproachAndDepartureAreOneMan(unittest.TestCase):
         raised. The expectation is qualified now because the question was always
         ambiguous and only ever had one possible answer by accident.
         """
-        self.assertEqual(P.station_for("departure", field="Batumi").name,
+        self.assertEqual(R.station_for("departure", field="Batumi").name,
                          "Batumi Approach")
-        self.assertEqual(P.station_for("departure", field="Batumi").freq_mhz,
-                         P.station_for("approach", field="Batumi").freq_mhz)
+        self.assertEqual(R.station_for("departure", field="Batumi").freq_mhz,
+                         R.station_for("approach", field="Batumi").freq_mhz)
 
     def test_the_same_role_at_the_other_field_is_a_different_man(self):
         """The bug this whole change exists to make impossible."""
-        self.assertEqual(P.station_for("departure", field="Kobuleti").name,
+        self.assertEqual(R.station_for("departure", field="Kobuleti").name,
                          "Kobuleti Departure")
         self.assertNotEqual(
-            P.station_for("departure", field="Kobuleti").freq_mhz,
-            P.station_for("departure", field="Batumi").freq_mhz)
+            R.station_for("departure", field="Kobuleti").freq_mhz,
+            R.station_for("departure", field="Batumi").freq_mhz)
 
     def test_a_field_never_borrows_another_fields_controller(self):
         """Each field staffs its own Tower now, and the answer must be HIS.
@@ -158,14 +158,14 @@ class TestApproachAndDepartureAreOneMan(unittest.TestCase):
         Who owns the runway is the one piece of separation on an aerodrome and
         is not an economy to make at a quiet field.
         """
-        self.assertEqual(P.station_for("tower", field="Kobuleti").name,
+        self.assertEqual(R.station_for("tower", field="Kobuleti").name,
                          "Kobuleti Tower")
-        self.assertEqual(P.station_for("tower", field="Batumi").name,
+        self.assertEqual(R.station_for("tower", field="Batumi").name,
                          "Batumi Tower")
 
     def test_ground_does_not_cover_the_tower_anywhere(self):
         """Structural, so the economy cannot creep back in at a new field."""
-        for s in P.stations:
+        for s in R.STATIONS:
             if s.role == "ground":
                 with self.subTest(station=s.name):
                     self.assertNotIn("tower", getattr(s, "also", ()),
@@ -178,7 +178,7 @@ class TestApproachAndDepartureAreOneMan(unittest.TestCase):
         falls out to the fieldless rather than restricting hard."""
         for fld in ("Batumi", "Kobuleti"):
             with self.subTest(field=fld):
-                self.assertEqual(P.station_for("center", field=fld).name,
+                self.assertEqual(R.station_for("center", field=fld).name,
                                  "Georgia Center")
 
     def test_a_rule_reaching_his_own_station_is_flagged_not_spoken(self):
@@ -205,7 +205,7 @@ class TestTheTableIsTheInterface(unittest.TestCase):
     def test_every_rule_names_a_role_the_field_can_resolve(self):
         for r in H.RULES:
             with self.subTest(rule=f"{r.frm}->{r.to}"):
-                self.assertIsNotNone(P.station_for(r.to),
+                self.assertIsNotNone(R.station_for(r.to),
                                      f"no station covers {r.to!r}")
 
     def test_a_role_nobody_staffs_is_silently_skipped(self):
@@ -219,7 +219,7 @@ class TestTheTableIsTheInterface(unittest.TestCase):
         field is the honest one -- Georgia Center is fieldless on purpose, and
         no aerodrome employs him.
         """
-        self.assertIsNone(P.station_for("approach", field="Nowhere"))
+        self.assertIsNone(R.station_for("approach", field="Nowhere"))
         v = H.due(P, TOWER, flying(6.0))
         self.assertIsNotNone(v, "the staffed rules still work alongside it")
 
@@ -233,7 +233,7 @@ class TestTheTableIsTheInterface(unittest.TestCase):
         for i, s in enumerate(R.PRESET_LADDER, start=1):
             with self.subTest(preset=i, station=s.name):
                 self.assertTrue(s.role, f"preset {i} has no role")
-                self.assertIs(P.station_for(s.role, field=s.field), s)
+                self.assertIs(R.station_for(s.role, field=s.field), s)
                 self.assertEqual(R.preset_of(s), i)
 
 
@@ -251,7 +251,7 @@ class TestTheLadderRunsEndToEnd(unittest.TestCase):
     """
 
     def me(self, name):
-        return next(s for s in P.stations if s.name == name)
+        return next(s for s in R.STATIONS if s.name == name)
 
     def nxt(self, name, st):
         v = H.due(P, self.me(name), st)
@@ -346,12 +346,12 @@ class TestRangeWithoutDirectionIsAmbiguous(unittest.TestCase):
     """
 
     def test_an_inbound_aircraft_is_never_sent_out_to_center(self):
-        approach = P.station_for("approach", field="Batumi")
+        approach = R.station_for("approach", field="Batumi")
         self.assertIsNone(H.due(P, approach, H.State(False, 25.0, True)),
                           "an arrival was handed away from his own field")
 
     def test_but_an_outbound_one_is(self):
-        approach = P.station_for("approach", field="Batumi")
+        approach = R.station_for("approach", field="Batumi")
         v = H.due(P, approach, H.State(False, 30.0, False))
         self.assertIsNotNone(v)
         self.assertEqual(v.station.name, "Georgia Center")

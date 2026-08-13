@@ -331,8 +331,7 @@ class ThePublishedCatalogueIsCitable(unittest.TestCase):
         same place, on the same frequency, under the same name."""
         from marshall.core import theatre as T
         got = T.published_approaches(
-            fields=T.published_fields("caucasus"),
-            stations=T.published_stations("caucasus"), theatre="caucasus")
+            fields=T.published_fields("caucasus"), theatre="caucasus")
         asr, ndb = got["batumi-asr"], got["batumi-ndb"]
         self.assertEqual(asr.iaf.name, "INITIAL")
         self.assertEqual(ndb.arrival_fix.name, "INITIAL")
@@ -355,8 +354,7 @@ class ThePublishedCatalogueIsCitable(unittest.TestCase):
         an approach. `briefing.py` guards on the same None."""
         from marshall.core import theatre as T
         got = T.published_approaches(
-            fields=T.published_fields("caucasus"),
-            stations=T.published_stations("caucasus"), theatre="caucasus")
+            fields=T.published_fields("caucasus"), theatre="caucasus")
         self.assertIsNone(got["batumi-asr"].arrival_fix)
         self.assertIsNone(got["batumi-ndb"].iaf)
 
@@ -501,7 +499,7 @@ class TheFilesAreTheOnlyCopy(unittest.TestCase):
         self.assertEqual([f.name for f in R.FIELDS], ["Batumi", "Kobuleti"])
 
     def test_one_object_per_thing(self):
-        """`R.KOB_CLEARANCE is profile.stations[0]` was true when both were one
+        """`R.KOB_CLEARANCE is R.STATIONS[0]` was true when both were one
         module constant, and several tests assert exactly that -- identity is
         the cheapest way to say "the same controller, not a copy that happens
         to match". The caches are keyed on a RESOLVED map name for this reason:
@@ -509,7 +507,7 @@ class TheFilesAreTheOnlyCopy(unittest.TestCase):
         entries holding two equal-but-distinct sets."""
         from marshall.core import route as R
 
-        self.assertIs(R.KOB_CLEARANCE, R.BATUMI_ASR.stations[0])
+        self.assertIs(R.KOB_CLEARANCE, R.STATIONS[0])
         self.assertIs(R.BATUMI_FIELD, R.FIELDS[0])
 
     def test_a_name_nobody_publishes_is_an_AttributeError(self):
@@ -558,7 +556,6 @@ class AMapIsAFileAndNotAFunction(unittest.TestCase):
         from marshall.core import theatre as T
 
         got = T.published_approaches(T.published_fields("caucasus"),
-                                     T.published_stations("caucasus"),
                                      "caucasus")
         self.assertEqual(sorted(got),
                          ["batumi-asr", "batumi-ils", "batumi-ndb",

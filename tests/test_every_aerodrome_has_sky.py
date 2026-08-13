@@ -30,7 +30,7 @@ from marshall.core import airspace as A, nevada as N, route as R, theatre as T
 # other than the one in front of them -- and Nevada had it too, unflown and
 # unnoticed, right up until this file.
 THEATRES = (
-    ("caucasus", T.THEATRES["caucasus"](), R.BATUMI_ASR.stations),
+    ("caucasus", T.THEATRES["caucasus"](), R.STATIONS),
     ("nevada", T.THEATRES["nevada"](), N.NEVADA_STATIONS),
 )
 

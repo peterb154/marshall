@@ -514,7 +514,7 @@ The teardown leak is fixed (atexit plus SIGTERM/SIGINT/SIGHUP). The structural
 problem is not: **the frequency has no owner.**
 
 What it should be: the bridge owns the microphone for every channel in
-`profile.stations`, and anything else with something to say hands it text and
+the theatre's station table, and anything else with something to say hands it text and
 lets it queue. That is already the shape of the agent path — the agent returns
 words, the bridge transmits them — so this is extending an existing seam rather
 than inventing one, probably a small local endpoint on the bridge. It also buys

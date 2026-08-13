@@ -41,8 +41,11 @@ from marshall.core import route as R
 
 def main() -> int:
     p = R.BATUMI_ASR
-    approach = p.station_for("approach").freq_mhz * 1e6
-    center = p.station_for("center").freq_mhz * 1e6
+    # No field on either, which is what they have always been: a role is
+    # unique only within an aerodrome and this asks the theatre for the
+    # first one it lists. Unchanged by the move in #162.
+    approach = R.station_for("approach").freq_mhz * 1e6
+    center = R.station_for("center").freq_mhz * 1e6
 
     ctl = atc.Controller(p)
     ctl.report_beacon("Pony 1-1", 4000)          # known, cleared, being worked

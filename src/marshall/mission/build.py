@@ -371,8 +371,8 @@ def add_session_slots(m, usa, air_alt_ft: dict | None = None,
         # clearance seat at the field he is standing on. Coming up on Tower
         # meant the very first call of the sortie was on the wrong frequency,
         # which is a poor way to start testing a comms ladder.
-        first = (R.BATUMI_ASR.station_for("clearance", field=home)
-                 or R.BATUMI_ASR.station_for("ground", field=home))
+        first = (R.station_for("clearance", field=home)
+                 or R.station_for("ground", field=home))
         grp.frequency = first.freq_mhz
         for n, unit in enumerate(grp.units, start=1):
             unit.name = f"{name} 1-{n}"
@@ -769,7 +769,7 @@ def _brief_text() -> str:
     p = R.BATUMI_ASR
     chans = "\n".join(
         f"    {R.preset_label(i + 1)}   {s.freq_mhz:7.3f}   {s.name}"
-        for i, s in enumerate(p.stations))
+        for i, s in enumerate(R.STATIONS))
     return f"""OPERATION SAMOVAR
 362nd Fighter Squadron - Batumi - Autumn 1945
 
@@ -823,12 +823,14 @@ RADIO - the comms ladder, in the order you press it
 
 def channels_for(profile=None, limit: int | None = None,
                  home: str = "") -> list[tuple[int, float]]:
-    """The radio card: (button, frequency) for this approach's controllers.
+    """The radio card: (button, frequency) for the THEATRE's controllers.
 
     One function so the mission, the kneeboard and the tests cannot disagree
     about what is on button two -- a mismatch there is a pilot transmitting to
-    nobody, and it has happened. Derived from the profile's own station list,
-    so a different field simply produces a different card.
+    nobody, and it has happened. Derived from the map's own station list, so a
+    different map simply produces a different card; it used to come off the
+    profile handed in, which made the comms ladder a property of the arrival
+    procedure (#162).
 
     FOUR WAS AN AIRFRAME LIMIT WEARING A CARD'S CLOTHES. This used to take
     `stations[:4]` and pad to four, because every aeroplane that had ever been
@@ -841,18 +843,23 @@ def channels_for(profile=None, limit: int | None = None,
     radio being written (see `set_channels`), where the number of buttons is
     actually known. A P-51 still gets four; an F-16 gets all seven.
     """
-    profile = profile or R.BATUMI_ASR
-    stations = list(getattr(profile, "stations", None) or R.STATIONS)
+    # THE THEATRE'S SEATS, and the `profile` argument no longer chooses them.
+    # It used to: the card was built from `profile.stations`, so which
+    # controllers a pilot's radio was loaded with came out of the arrival
+    # procedure the builder happened to hold. A comms ladder belongs to the map
+    # (#162). The argument stays because callers pass it and the rest of the
+    # card still reads the procedure.
+    stations = list(R.STATIONS)
     # THE LADDER FIRST AND IN ITS OWN ORDER, because which button a controller
     # is on is a fact about the sortie that `route.PRESET_LADDER` owns. Anyone
-    # the profile carries who is not a rung -- Sentry, who is a commander rather
+    # in the table who is not a rung -- Sentry, who is a commander rather
     # than a step in the ladder -- keeps a button after it rather than losing
     # one, so "every controller is reachable" stays true without disturbing the
     # seven the pilot was promised.
     ladder = [s for s in R.PRESET_LADDER if s in stations]
-    # ...AND WHEN NONE OF THEM IS A RUNG, THE PROFILE'S OWN ORDER IS THE LADDER.
+    # ...AND WHEN NONE OF THEM IS A RUNG, THE TABLE'S OWN ORDER IS THE LADDER.
     #
-    # `PRESET_LADDER` names Caucasus stations. A Nevada profile matches none of
+    # `PRESET_LADDER` names Caucasus stations. A Nevada table matches none of
     # them, so every Nellis controller fell into `rest` and the card came out in
     # whatever order the list happened to be built in -- which is the same
     # inaudibility failure as a dropped rung, arrived at from the other side.

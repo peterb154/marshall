@@ -1083,7 +1083,7 @@ class TestCallingAControllerLetsYouGo(unittest.TestCase):
     def setUp(self):
         from marshall.core import route as R
         import re as _re
-        names = [s.name for s in R.BATUMI_ASR.stations]
+        names = [s.name for s in R.STATIONS]
         self.rx = _re.compile("|".join(_re.escape(n) for n in names), _re.I)
 
     def test_naming_a_controller_releases(self):
@@ -1113,7 +1113,7 @@ class TestShipToShipIsNotOurs(unittest.TestCase):
     def setUp(self):
         from marshall.core import route as R
         self.f = agent_atc.addressed_to_another_aircraft
-        self.st = [s.name for s in R.BATUMI_ASR.stations]
+        self.st = [s.name for s in R.STATIONS]
 
     def test_opening_with_another_aircraft_is_theirs(self):
         for said in ("Pony one two, Pony one one, join up",

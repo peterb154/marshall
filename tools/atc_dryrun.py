@@ -150,7 +150,7 @@ def run(script, session_id: str, sep_always: bool = True,
     # Kobuleti's -- so a Batumi clearance script was about to be answered by a
     # controller at the other end of the route, in the right words, with the
     # wrong frequencies in them.
-    me = profile.station_for(station, field=field)
+    me = R.station_for(station, field=field)
     print(f"\n=== dry run: {session_id} ===", flush=True)
 
     # The plans on file, registered so their spoken names cannot be read as

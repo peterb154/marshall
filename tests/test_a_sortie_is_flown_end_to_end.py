@@ -200,7 +200,7 @@ class ARefusalDoesNotMoveHimOn(unittest.TestCase):
     def refused(self):
         from marshall.atc import handoff as H
         ctl = atc.Controller(profile=R.BATUMI_ASR)
-        me = R.BATUMI_ASR.station_for("ground", field="Kobuleti")
+        me = R.station_for("ground", field="Kobuleti")
         ctl._me = me
         ctl.get("Sockeye")
         ctl.note_clearance_agreed("Sockeye", False)
@@ -222,7 +222,7 @@ class ARefusalDoesNotMoveHimOn(unittest.TestCase):
 
     def test_and_an_agreed_clearance_still_moves_him(self):
         ctl = atc.Controller(profile=R.BATUMI_ASR)
-        ctl._me = R.BATUMI_ASR.station_for("ground", field="Kobuleti")
+        ctl._me = R.station_for("ground", field="Kobuleti")
         ctl.get("Sockeye")
         ctl.note_clearance_agreed("Sockeye", True)
         ctl.request_taxi("Sockeye")
@@ -241,7 +241,7 @@ class GroundCanActuallyRefuse(unittest.TestCase):
 
     def ground(self):
         ctl = atc.Controller(profile=R.BATUMI_ASR)
-        ctl._me = R.BATUMI_ASR.station_for("ground", field="Kobuleti")
+        ctl._me = R.station_for("ground", field="Kobuleti")
         return ctl
 
     def test_the_engine_takes_the_verdict_from_the_board(self):
@@ -329,7 +329,7 @@ class TheLadderKnowsWhichTower(unittest.TestCase):
 
     class Theatre:
         departure, arrival = "Kobuleti", "Batumi"
-        stations = R.BATUMI_ASR.stations
+        stations = R.STATIONS
 
     def setUp(self):
         self.th = self.Theatre()
@@ -415,7 +415,7 @@ class EveryReplyOnItsOwnFieldsFrequency(unittest.TestCase):
 
     class Theatre:
         departure, arrival = "Kobuleti", "Batumi"
-        stations = R.BATUMI_ASR.stations
+        stations = R.STATIONS
 
     def atc(self, mhz: float, text: str) -> dict:
         return {"kind": "atc/pilot", "t": 1.0, "freq_mhz": mhz, "text": text}

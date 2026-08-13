@@ -86,9 +86,18 @@ class TestTheLadderTransports(unittest.TestCase):
         """`PRESET_LADDER` names Caucasus stations, so every Nellis controller
         fell into the leftovers and the card came out in whatever order the list
         happened to be built in -- the same inaudibility as a dropped rung,
-        reached from the other side."""
+        reached from the other side.
+
+        THE MAP IS SELECTED HERE AND USED TO BE IMPLIED BY THE PROFILE. The
+        card came off `profile.stations`, so handing it the Nellis ILS was
+        enough to get Nevada's controllers whatever map was configured. A
+        station belongs to the theatre (#162), so the theatre has to be said.
+        """
+        import os
+        from unittest import mock
         from marshall.mission.build import channels_for
-        card = [hz for _, hz in channels_for(N.NELLIS_ILS)]
+        with mock.patch.dict(os.environ, {"MARSHALL_THEATRE": "nevada"}):
+            card = [hz for _, hz in channels_for(N.NELLIS_ILS)]
         self.assertEqual(card[:5], [120.900, 121.800, 132.550, 135.100, 118.125])
 
     def test_the_caucasus_card_is_unchanged(self):
@@ -118,7 +127,7 @@ class TestTheLadderTransports(unittest.TestCase):
         for field, want in (("Nellis", "Nellis Tower"),
                             ("Tonopah", "Silverbow Tower")):
             with self.subTest(field=field):
-                got = N.NELLIS_ILS.station_for("tower", field=field)
+                got = R.station_for("tower", field=field, theatre="nevada")
                 self.assertEqual(got.name, want)
 
 

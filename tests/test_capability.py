@@ -165,7 +165,7 @@ class TheBridgeSendsTheSeat(unittest.TestCase):
 
     def test_the_seat_is_resolved_from_the_frequency(self):
         self.assertIn("def seat_on(", self.src)
-        self.assertIn("profile.station_on(", self.src)
+        self.assertIn("_stations.on_frequency(_seats, ", self.src)
 
     def test_an_unclaimed_channel_reports_no_seat(self):
         # Which the director reads as "the bridge did not say".

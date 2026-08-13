@@ -1887,8 +1887,9 @@ class Controller:
         # Kobuleti Tower one three three decimal zero for landing", and then
         # welcomed on the ground by Kobuleti Tower, forty miles from where he
         # had parked.
-        twr = self.profile.station_for(
-            "tower", field=getattr(getattr(self, "_me", None), "field", ""))
+        twr = R.station_for(
+            "tower", field=getattr(getattr(self, "_me", None), "field", ""),
+            procedure=self.profile)
         if self.working and twr is not None and self.working != "tower":
             self.say(ac.callsign,
                      f"{self._addr(ac)}, roger, field in sight, contact "
@@ -1937,9 +1938,9 @@ class Controller:
             self._set_letdown(ac, None)
         # HIS field. This welcomed a pilot who had just landed at Batumi as
         # "Kobuleti Tower" -- the last thing said on the whole sortie.
-        twr = (self.profile.station_for(
-                   "tower", field=getattr(getattr(self, "_me", None), "field", ""))
-               if hasattr(self.profile, "station_for") else None)
+        twr = R.station_for(
+            "tower", field=getattr(getattr(self, "_me", None), "field", ""),
+            procedure=self.profile)
         who = f"{twr.name}, " if twr else ""
         # "TAXI TO PARKING" IS NOT TOWER'S TO SAY, and this said it on every
         # landing. Tower owns the runway; the taxiways are Ground's. A pilot
@@ -2145,10 +2146,10 @@ class Controller:
         if not self._owns("ground"):
             # Not his to give. Same shape as Ground refusing a take-off: name
             # the man who owns it rather than answering for him.
-            gnd = (self.profile.station_for(
-                       "ground", field=getattr(getattr(self, "_me", None),
-                                               "field", ""))
-                   if hasattr(self.profile, "station_for") else None)
+            gnd = R.station_for(
+                "ground", field=getattr(getattr(self, "_me", None),
+                                        "field", ""),
+                procedure=self.profile)
             if gnd is not None:
                 self.say(ac.callsign,
                          f"{self._addr(ac)}, parking is Ground's, contact "
@@ -2209,9 +2210,10 @@ class Controller:
             # go" -- with the refusal audible and changing nothing. He is on
             # Clearance's rung until Clearance is finished with him. [#82]
             ac.sortie_phase = "clearance"
-            who = self.profile.station_for(
+            who = R.station_for(
                 "clearance", field=getattr(getattr(self, "_me", None),
-                                           "field", ""))
+                                           "field", ""),
+                procedure=self.profile)
             where = (f", contact {who.name} {spell_freq(who.freq_mhz)}"
                      if who is not None else "")
             self.say(ac.callsign,
@@ -2247,7 +2249,8 @@ class Controller:
         naming the frequency is the difference between a handoff and a hint.
         """
         me = getattr(self, "_me", None)
-        who = self.profile.station_for(role, field=getattr(me, "field", ""))
+        who = R.station_for(role, field=getattr(me, "field", ""),
+                            procedure=self.profile)
         where = (f", contact {who.name} {spell_freq(who.freq_mhz)}"
                  if who is not None else "")
         self.say(ac.callsign,

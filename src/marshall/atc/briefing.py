@@ -127,7 +127,10 @@ def _asr_plate(profile: R.ApproachProfile, flight: str, size: int) -> str:
     """
     inbound = profile.final_crs
     rwy = profile.runway or "in use"
-    stations = "; ".join(f"**{s.name} {s.freq_mhz:.1f}**" for s in profile.stations)
+    # THE THEATRE'S CONTROLLERS, not the procedure's. A seat belongs to an
+    # aerodrome and the aerodrome does not change when another approach is
+    # loaded, which is why the table came off the profile (#162).
+    stations = "; ".join(f"**{s.name} {s.freq_mhz:.1f}**" for s in R.STATIONS)
     return "\n".join([
         "# This mission's plate (the field-specific facts)",
         "",
@@ -238,7 +241,7 @@ def _mission() -> list[str]:
     tasking.
     """
     overlord = None
-    for s in (getattr(R.BATUMI_ASR, "stations", None) or R.STATIONS):
+    for s in R.STATIONS:
         if getattr(s, "role", "") == "overlord":
             overlord = s
     tgt = getattr(R, "TARGET_AREA", None)
@@ -372,7 +375,10 @@ def _ils_plate(profile: R.ApproachProfile, flight: str, size: int) -> str:
     th = _t.current()
     rwy = profile.runway or "in use"
     inbound = profile.final_crs
-    stations = "; ".join(f"**{s.name} {s.freq_mhz:.1f}**" for s in profile.stations)
+    # THE THEATRE'S CONTROLLERS, not the procedure's. A seat belongs to an
+    # aerodrome and the aerodrome does not change when another approach is
+    # loaded, which is why the table came off the profile (#162).
+    stations = "; ".join(f"**{s.name} {s.freq_mhz:.1f}**" for s in R.STATIONS)
     dh = profile.mda_ft - profile.field_elev_ft
     return "\n".join([
         "# This mission's plate (the field-specific facts)",

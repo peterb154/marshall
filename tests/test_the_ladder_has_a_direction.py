@@ -51,7 +51,7 @@ class AnInboundAircraftIsNotLeaving(unittest.TestCase):
 
     def test_tower_does_not_give_a_man_on_final_back_to_approach(self):
         """05:03:42, 05:04:16, 05:04:20, 05:04:47 -- four times, inside 5 nm."""
-        tower = self.p.station_for("tower", field="Batumi")
+        tower = R.station_for("tower", field="Batumi")
         for nm in (5.0, 4.0, 2.0, 1.0):
             with self.subTest(nm=nm):
                 self.assertIsNone(
@@ -61,7 +61,7 @@ class AnInboundAircraftIsNotLeaving(unittest.TestCase):
     def test_approach_keeps_an_arrival_at_twenty_seven_miles(self):
         """04:54:45. He had checked in with Batumi Approach ninety seconds
         earlier and was handed back to Center."""
-        approach = self.p.station_for("approach", field="Batumi")
+        approach = R.station_for("approach", field="Batumi")
         self.assertIsNone(
             A.leaving_my_airspace(NOWHERE, "s", "Sockeye", approach, self.p,
                                   self.at(27.0, 328, 213, alt=10000)))
@@ -87,7 +87,7 @@ class AnInboundAircraftIsNotLeaving(unittest.TestCase):
         is not listening, so it returns None rather than a station, and that is
         the check: it got far enough to try.
         """
-        dep = self.p.station_for("departure", field="Kobuleti")
+        dep = R.station_for("departure", field="Kobuleti")
         # ON the 040 radial and heading 040 is straight out from the field.
         # The first version of this fixture said heading 220, which is the
         # reciprocal -- an aeroplane flying home, asserted to be leaving.
@@ -104,7 +104,7 @@ class AnInboundAircraftIsNotLeaving(unittest.TestCase):
                            heading_deg=None)
         self.assertIsNone(
             A.leaving_my_airspace(NOWHERE, "s", "Sockeye",
-                                  self.p.station_for("approach", field="Batumi"),
+                                  R.station_for("approach", field="Batumi"),
                                   self.p, pos))
 
 
@@ -137,7 +137,7 @@ class AirborneIsNotAnEvent(unittest.TestCase):
 
     def setUp(self):
         self.p = R.BATUMI_ILS
-        self.tower = self.p.station_for("tower", field="Batumi")
+        self.tower = R.station_for("tower", field="Batumi")
 
     def at(self, nm, radial, heading, alt=1350):
         return asr.Position(range_nm=nm, radial_deg=radial, alt_ft=alt,
@@ -179,7 +179,7 @@ class AirborneIsNotAnEvent(unittest.TestCase):
         down = ("362nd_sockeye [Sockeye] (F-16C_50, manned, on the ground): "
                 "0.5 nm on the 112 radial, 40 ft, heading 131, 8 knots")
         got = A.handoff_on_the_event(
-            down, "362nd_sockeye", self.p.station_for("approach", field="Batumi"),
+            down, "362nd_sockeye", R.station_for("approach", field="Batumi"),
             self.p, self.at(0.5, 112, 131, alt=40))
         self.assertIsNotNone(got)
         self.assertIn("tower", got.name.lower())
@@ -239,7 +239,7 @@ class NobodyIssuesAClearanceThatIsNotHis(unittest.TestCase):
 
     def working(self, role, field="Batumi"):
         ctl = atc.Controller(profile=self.p)
-        ctl._me = self.p.station_for(role, field=field)
+        ctl._me = R.station_for(role, field=field)
         return ctl
 
     def test_center_may_not_clear_an_approach(self):

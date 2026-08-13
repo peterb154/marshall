@@ -35,8 +35,9 @@ you writing the same number in two places, stop; you have found the next issue.
    borrow another field's** — Batumi's cells over Nevada are not conservative,
    they are fiction. Sample at 5° and half a mile: a 10°/1 nm pass missed 400 ft
    at Kobuleti and a peak between two samples is a peak nobody sees.
-5. **Stations** in `core/stations.py`, each carrying its `field`. A role is only
-   unique *within* an aerodrome; `station_for` takes a field for that reason.
+5. **Stations** in the theatre file, each carrying its `field`. A role is only
+   unique *within* an aerodrome; `theatre.station_for` takes a field for that
+   reason, and it is the theatre's table — never an approach's (#162).
 6. **Add it to `FIELDS`** and to the theatre in `core/theatre.py`.
 
 **Test:** `tests/test_two_fields.py` is the model — every test there names the

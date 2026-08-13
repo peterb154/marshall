@@ -64,6 +64,7 @@ from dataclasses import dataclass
 
 from marshall.atc import phases as _phases
 from marshall.core import airspace as _airspace
+from marshall.core import route as _route
 
 # How far out he must be before Tower is finished with him, and how close before
 # Approach gives him back. Defaults, in nautical miles.
@@ -296,7 +297,8 @@ def due(profile, me, st: State) -> Verdict | None:
         aims = getattr(_phases.get(st.phase), "aims_at", "")
         if want and aims == "none" and want != role \
                 and want not in getattr(me, "also", ()):
-            nxt = profile.station_for(want, field=getattr(me, "field", ""))
+            nxt = _route.station_for(want, field=getattr(me, "field", ""),
+                                     procedure=profile)
             if nxt is not None:
                 same = (getattr(nxt, "name", None) == getattr(me, "name", None))
                 return Verdict(station=nxt, role=want, same_station=same)
@@ -318,7 +320,8 @@ def due(profile, me, st: State) -> Verdict | None:
         # departure on Batumi Departure's frequency, forty miles from the man
         # who actually had him, and nothing raised: both answers are a real
         # Station. See `station_for`, which is why it takes a field at all.
-        nxt = profile.station_for(rule.to, field=getattr(me, "field", ""))
+        nxt = _route.station_for(rule.to, field=getattr(me, "field", ""),
+                                 procedure=profile)
         if nxt is None:
             continue
         same = (getattr(nxt, "name", None) == getattr(me, "name", None))

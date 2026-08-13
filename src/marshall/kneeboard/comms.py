@@ -98,8 +98,13 @@ def build(card: Card | None = None, profile=None) -> str:
     #
     # A theatre's station list is already written in the order the buttons
     # are pressed, so it IS the ladder.
-    stations = [s for s in card.stations
-                if s in (getattr(profile, "stations", None) or card.stations)]
+    #
+    # AND IT IS ONLY THE CARD'S NOW. This intersected the card's list with the
+    # PROFILE's, which was the same theatre table reached through an arrival
+    # procedure -- a no-op when the profile carried it and a no-op when it did
+    # not, so the intersection never removed anything and only obscured where
+    # the list came from. The table came off the profile in #162.
+    stations = list(card.stations)
 
     rows = []
     last_field = None

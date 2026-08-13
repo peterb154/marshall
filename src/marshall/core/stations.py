@@ -8,8 +8,8 @@ A ROLE IS ONLY UNIQUE WITHIN AN AERODROME. That is the lesson the second field
 taught, and it cost four bugs to learn: there is no such thing as "the tower",
 there is Kobuleti Tower and there is Batumi Tower, and a lookup that finds "a
 station whose role is tower" will hand a departing pilot the controller at the
-field he is flying to. `ApproachProfile.station_for` takes a field for that
-reason, and `Station.field` is what it matches on.
+field he is flying to. `role_at` takes a field for that reason, and
+`Station.field` is what it matches on.
 
 `Station.field` is a STRING and not a `Field_`. Pointing it at the object would
 make the two definitions circular; `fields.field_named` is the join.
@@ -320,6 +320,81 @@ class Station:
 PRESET_LETTERS = "ABCD"
 
 
+# --- the two lookups, over a table somebody hands in --------------------------
+#
+# THEY USED TO BE METHODS ON `ApproachProfile`, which is how the comms ladder for
+# BOTH aerodromes came to be reached through one arrival procedure: Kobuleti
+# Ground's frequency was read off Batumi's ILS. A station is a property of the
+# THEATRE and an approach is one procedure at one field, so the table belongs
+# here and the profile no longer carries it. [#162]
+#
+# They take the table rather than fetching it, so this module keeps depending on
+# nothing: `theatre.station_for` and `theatre.station_on` are the bound versions
+# every caller actually uses, and a test can pass a list of its own.
+
+
+def role_at(stations, role: str, field: str = "") -> Station | None:
+    """Who works this phase of flight, AT A GIVEN AERODROME.
+
+    Primary role first, then anyone who also covers it -- so asking for
+    "departure" finds Approach at a field where the two share a seat, and
+    would find a dedicated Departure controller at one where they do not,
+    without either caller knowing which kind of field it is.
+
+    `field` IS NOT OPTIONAL IN SPIRIT. It defaults to empty so the hundreds
+    of single-field call sites still read cleanly, but the moment a route
+    has two aerodromes on it, omitting it is a bug that cannot announce
+    itself: every role resolves to whichever field happens to be listed
+    first, and a Kobuleti departure is handed to Batumi Tower forty miles
+    away. Both answers are a real Station, so nothing raises and nothing
+    looks wrong -- the aeroplane simply talks to the wrong airport.
+
+    A station with no field of its own -- Center, Sentry -- is reachable
+    from anywhere, because that is what owning a region rather than an
+    aerodrome means. So the search is: this field first, then the
+    fieldless, and NEVER another aerodrome's controller.
+    """
+    def hit(s, want_primary):
+        if want_primary and s.role != role:
+            return False
+        if not want_primary and role not in getattr(s, "also", ()):
+            return False
+        if not field:
+            return True
+        # His, or nobody's. Another field's Tower is not an answer.
+        return getattr(s, "field", "") in (field, "")
+
+    for want_primary in (True, False):
+        # Two passes so a station whose PRIMARY role this is beats one who
+        # merely also covers it -- at the same field, before falling out to
+        # the region controllers.
+        for prefer_field in ((True, False) if field else (False,)):
+            for s in stations:
+                if prefer_field and getattr(s, "field", "") != field:
+                    continue
+                if hit(s, want_primary):
+                    return s
+    return None
+
+
+def on_frequency(stations, freq_mhz: float) -> Station | None:
+    """Who the controller IS on this frequency.
+
+    The bridge listens on every channel at once, which is a convenience of
+    the implementation and not something the pilot should ever be able to
+    hear. Without this the same voice answers as "Batumi Approach" on
+    Center's frequency, and the sector split is decoration.
+    """
+    # ANY of his frequencies, not just the published one. A facility can be
+    # heard on several -- see `Station.channels` -- and a warbird checking in
+    # on the SCR-522 channel is talking to the same controller as a jet on
+    # the AIP frequency. Matching only the primary answers him with nobody.
+    for s in stations:
+        if s.hears(freq_mhz):
+            return s
+    return None
+
+
 def preset_label(n: int, letters: bool = False) -> str:
     """The label for button `n`, one-based."""
     if letters and 1 <= n <= len(PRESET_LETTERS):
@@ -351,7 +426,8 @@ def preset_of(station) -> int | None:
 # That is the right model -- two sets, one live per mission, no interoperation
 # needed. But the beacon letdown does not read a station list at all today: it
 # derives its controllers from the beacons, because on an ARA-8 the man you talk
-# to IS the frequency you home (see `stations` on ApproachProfile). So declaring
+# to IS the frequency you home (see `theatre_stations` on ApproachProfile, and
+# #152, which is about that flag being a mode switch). So declaring
 # a WW2 list now would be a name nothing reads, which is the exact fault
 # `AtcCapability.era` has -- declared, never consulted, and wrong without
 # anything noticing. It gets written when the profile that selects it does.

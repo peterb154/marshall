@@ -301,8 +301,8 @@ class TestProfileRoundTrip(unittest.TestCase):
         # a Station for its name -- which for a stored profile is during bridge
         # start-up, in front of a waiting pilot. It did exactly that.
         rt = R.profile_from_dict(R.profile_to_dict(R.BATUMI_ASR))
-        self.assertTrue(rt.stations)
-        for s in rt.stations:
+        self.assertTrue(R.STATIONS)
+        for s in R.STATIONS:
             self.assertIsInstance(s, R.Station)
         twr, ctr = R.TOWER, R.CENTER
         self.assertEqual(rt.station(), (twr.name, twr.freq_mhz))
@@ -525,6 +525,66 @@ class TestHeadingsAreSpokenLikeHeadings(unittest.TestCase):
         self.assertIn("three six zero inbound", hold)
 
 
+class AStationIsTheTheatresAndNotTheApproachs(unittest.TestCase):
+    """The station table came off `ApproachProfile`. [#162]
+
+    It had become the whole ATC world model. `report_landed` found Batumi Tower
+    through `self.profile.station_for(...)`, and Kobuleti GROUND's frequency was
+    therefore read off Batumi's ILS -- the comms ladder of two aerodromes
+    reached through one arrival procedure. Neither the aerodrome nor the role
+    changes because a different approach was loaded, so neither can be the
+    approach's to answer.
+    """
+
+    def test_no_procedure_carries_a_station_table(self):
+        """The class, not one instance. This fails on the next profile that
+        grows one back."""
+        import dataclasses as dc
+        names = {f.name for f in dc.fields(R.ApproachProfile)}
+        self.assertNotIn("stations", names)
+        for attr in ("station_for", "station_on"):
+            self.assertFalse(hasattr(R.BATUMI_ASR, attr),
+                             f"the profile answers {attr} again")
+
+    def test_the_theatre_answers_and_still_wants_a_field(self):
+        """The field argument survived the move, and had to: a role is unique
+        only within an aerodrome, so an unqualified answer is a real controller
+        at the wrong airport."""
+        self.assertEqual(R.station_for("ground", field="Kobuleti").name,
+                         "Kobuleti Ground")
+        self.assertEqual(R.station_for("ground", field="Batumi").name,
+                         "Batumi Ground")
+        self.assertIs(R.station_on(R.KOB_TOWER.freq_mhz), R.KOB_TOWER)
+
+    def test_which_approach_is_loaded_changes_none_of_it(self):
+        """The point of the move, asserted. Ask through the ILS, the ASR and
+        the letdown and get the same man, because he is the map's."""
+        for role, fld in (("ground", "Kobuleti"), ("tower", "Batumi"),
+                          ("center", "Batumi")):
+            with self.subTest(role=role, field=fld):
+                self.assertIs(R.station_for(role, field=fld),
+                              R.station_for(role, field=fld, theatre="caucasus"))
+
+    def test_the_beacon_letdown_still_reaches_nobody_on_the_ladder(self):
+        """PRESERVED, NOT ENDORSED -- the same words the theatre file uses.
+
+        `BATUMI_APPROACH` carries `theatre_stations = false`, which is #152's
+        mode switch: its controllers live on the BEACONS, because an ARA-8
+        homes whatever the set is tuned to. Under the old shape that was spelt
+        "its own station list is empty", so every role lookup through it
+        answered None. Moving the table to the map would have handed the 1944
+        letdown eight modern seats if the bit had not moved with it.
+        """
+        self.assertFalse(R.BATUMI_APPROACH.theatre_stations)
+        self.assertTrue(R.BATUMI_ASR.theatre_stations)
+        self.assertIsNone(R.station_for("tower", field="Batumi",
+                                        procedure=R.BATUMI_APPROACH))
+        self.assertIsNone(R.station_on(R.TOWER.freq_mhz,
+                                       procedure=R.BATUMI_APPROACH))
+        # ...and his controller still comes off the fix he is homing.
+        self.assertEqual(R.BATUMI_APPROACH.station(), ("Batumi Tower", 132.0))
+
+
 class TestStationsAreChosenByRole(unittest.TestCase):
     """Who works an arrival is a fact about their job, not their list index.
 
@@ -546,9 +606,14 @@ class TestStationsAreChosenByRole(unittest.TestCase):
             self.assertNotEqual(R.BATUMI_ASR.station(**kwargs)[0], R.OVERLORD.name)
 
     def test_a_field_with_no_tower_falls_back_to_approach(self):
-        no_twr = dataclasses.replace(
-            R.BATUMI_ASR, stations=[R.CENTER, R.APPROACH, R.OVERLORD])
-        self.assertEqual(no_twr.station()[0], R.APPROACH.name)
+        """A field with no Tower is now made by taking one out of the MAP's
+        table, not by handing the profile a shorter list of its own -- the
+        seats stopped being the procedure's in #162."""
+        from unittest import mock
+        from marshall.core import theatre as T
+        thin = (R.CENTER, R.APPROACH, R.OVERLORD)
+        with mock.patch.object(T, "stations_now", lambda *a, **k: thin):
+            self.assertEqual(R.BATUMI_ASR.station()[0], R.APPROACH.name)
 
 
 class TestNobodyClearedNobodyVectored(unittest.TestCase):

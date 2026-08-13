@@ -27,6 +27,7 @@ needs a server and lives in the rehearsal tools.
 import struct
 import unittest
 
+from marshall.core import route as R
 from marshall.radio.client import AM, SRSClient
 
 
@@ -108,7 +109,6 @@ class TestAFacilityOwnsItsFrequencies(unittest.TestCase):
     """
 
     def setUp(self):
-        from marshall.core import route as R
         self.p = R.BATUMI_ASR
         # The arrival field, because there are two Towers on the map now and an
         # unqualified lookup returns whichever is listed first.
@@ -118,12 +118,12 @@ class TestAFacilityOwnsItsFrequencies(unittest.TestCase):
         """AIP Georgia AD 2.UGSB-IAC-12-ILSy: APP 124.425, TWR 118.600. The
         scanned plate on the kneeboard prints these, so they are what a pilot
         reads and expects to dial."""
-        self.assertEqual(self.p.station_for("approach", field=self.fld).freq_mhz, 124.425)
-        self.assertEqual(self.p.station_for("tower", field=self.fld).freq_mhz, 118.600)
+        self.assertEqual(R.station_for("approach", field=self.fld).freq_mhz, 124.425)
+        self.assertEqual(R.station_for("tower", field=self.fld).freq_mhz, 118.600)
 
     def test_the_tunable_channel_is_carried_beside_it(self):
-        self.assertIn(124.000, self.p.station_for("approach", field=self.fld).freqs)
-        self.assertIn(118.000, self.p.station_for("tower", field=self.fld).freqs)
+        self.assertIn(124.000, R.station_for("approach", field=self.fld).freqs)
+        self.assertIn(118.000, R.station_for("tower", field=self.fld).freqs)
 
     def test_either_one_reaches_the_same_controller(self):
         """The whole point. A warbird on the rounded channel and a jet on the
@@ -131,11 +131,11 @@ class TestAFacilityOwnsItsFrequencies(unittest.TestCase):
         or one of them is answered by nobody."""
         for mhz in (124.425, 124.000):
             with self.subTest(mhz=mhz):
-                self.assertEqual(self.p.station_on(mhz).name, "Batumi Approach")
+                self.assertEqual(R.station_on(mhz).name, "Batumi Approach")
         for mhz in (118.600, 118.000):
             with self.subTest(mhz=mhz):
-                self.assertEqual(self.p.station_on(mhz).name, "Batumi Tower")
+                self.assertEqual(R.station_on(mhz).name, "Batumi Tower")
 
     def test_a_frequency_nobody_owns_still_reaches_nobody(self):
         """Widening the match must not make every frequency somebody's."""
-        self.assertIsNone(self.p.station_on(121.500))
+        self.assertIsNone(R.station_on(121.500))
