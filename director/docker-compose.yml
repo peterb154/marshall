@@ -14,7 +14,15 @@ services:
       POSTGRES_PASSWORD: strands
       POSTGRES_DB: strands
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # Bind-mounted to a DEDICATED LVM volume (CT 123 mp1 -> /srv/pgdata),
+      # NOT a docker named volume on the rootfs. The rootfs is shared with
+      # vscode-servers, Claude Code versions, uv caches and the docker build
+      # cache; when it filled, Postgres lost the ability to write and the
+      # symptom was the agent producing bugs, not an obvious 'disk full'.
+      # A fixed host path also cannot be silently re-derived into an empty
+      # volume the way a project-name-scoped named volume can.
+      # mp1 carries backup=1, so vzdump still captures the database.
+      - /srv/pgdata/data:/var/lib/postgresql/data
     ports:
       # PUBLISHED SO THE BRIDGE CAN REACH IT. The bridge is a host process, not
       # a container, so without this it could not query Postgres at all -- every
@@ -141,5 +149,3 @@ services:
   #     - "3000:3000"
   #   restart: unless-stopped
 
-volumes:
-  pgdata:
