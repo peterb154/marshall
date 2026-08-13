@@ -175,7 +175,13 @@ def build_agent(session_id: str, role: str = "", also=(),
         tools=[
             *(identify_tools(session_id) if "identify" in may else []),
             *([vector] if "vector" in may else []),
-            *(hook_tools(session_id) if "hooks" in may else []),
+            # BOUND TO THE SEAT, like the memory namespace below it and for the
+            # same reason. A hook is a PROMISE, and a promise made by Kobuleti
+            # Ground on 121.800 was coming back with nothing on it to say so --
+            # so the bridge guessed the channel from whoever had spoken last and
+            # Batumi Approach voiced the taxi callback on 124.425, to a jet on
+            # the ramp. See tools/hooks.py.
+            *(hook_tools(session_id, station, role) if "hooks" in may else []),
             # Clearance delivery. The words come back finished because the
             # numbers in a clearance — route, altitude, frequency, squawk — are
             # facts about what was filed, and a controller who improvises them
