@@ -3132,6 +3132,22 @@ def a_fresh_offer(handed_off: dict, cs: str, station) -> bool:
     return bool(name) and handed_off.get(cs) != name
 
 
+def his_station(bridge, ctl, profile, cs: str, fallback_hz: float = 0.0):
+    """WHO is working this aeroplane, off the frequency he checked in on.
+
+    The same lookup `watching_him` does to find `me`, extracted because the
+    monitor needs it too. `Controller._me` cannot answer this from a background
+    thread: it is set once per RECEIVED transmission, so on a poll it names
+    whoever spoke last, who may be another aeroplane's controller at the other
+    aerodrome. Anything the monitor makes a controller SAY has to be told whose
+    aeroplane it is rather than reading that.
+    """
+    hz = bridge.heard_on.get(ctl._resolve(cs)) or fallback_hz
+    if not hz:
+        return None
+    return _theatre.station_on(hz / 1_000_000, procedure=profile)
+
+
 def his_field(bridge, ctl, profile, cs: str, fallback_hz: float = 0.0) -> str:
     """Which AERODROME is working this aeroplane.
 
@@ -3140,10 +3156,7 @@ def his_field(bridge, ctl, profile, cs: str, fallback_hz: float = 0.0) -> str:
     one level up. A role is unique within an aerodrome and not across one, and
     so is a beacon.
     """
-    hz = bridge.heard_on.get(ctl._resolve(cs)) or fallback_hz
-    if not hz:
-        return ""
-    st = _theatre.station_on(hz / 1_000_000, procedure=profile)
+    st = his_station(bridge, ctl, profile, cs, fallback_hz)
     return getattr(st, "field", "") if st is not None else ""
 
 
@@ -5879,10 +5892,29 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                         print(f"  {cs} is on the ground — approach complete",
                               flush=True)
                         try:
-                            ctl.report_down(cs)
-                            bye = for_voice(" ".join(tx.text for tx in ctl.take_out()))
+                            # WHOSE AEROPLANE HE IS, handed in rather than read
+                            # off `ctl._me` -- which this thread never sets and
+                            # which the receive path last set for whoever spoke
+                            # most recently. This transmission names two
+                            # stations, his Tower and his Ground, and both are
+                            # unique only within his aerodrome.
+                            ctl.report_down(cs, me=his_station(
+                                bridge, ctl, profile, cs, final_hz))
+                            _txs = ctl.take_out()
+                            bye = for_voice(" ".join(tx.text for tx in _txs))
                         except Exception:
-                            bye = ""          # a stale stack is not fatal
+                            _txs, bye = [], ""    # a stale stack is not fatal
+                        # THE HANDOFF THIS GOODBYE CARRIES, if it carried one.
+                        # `report_down` gives him Ground on the roll-out (#77),
+                        # so the last transmission of an arrival is now BOTH the
+                        # end of the approach and a frequency change -- and the
+                        # two are separate events to everything that reads the
+                        # recorder. `atc/landed` alone is what a rehearsal reads
+                        # as "no handoff fired", which is exactly the row a ghost
+                        # is supposed to be able to judge.
+                        _ho = next((tx.decision for tx in _txs
+                                    if getattr(tx.decision, "kind", "") == "handoff"),
+                                   None)
                         called.pop(cs, None)
                         vectored.pop(cs, None)
                         pending.pop(cs, None)
@@ -5892,6 +5924,16 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                                 print(f"  ATC[down] {bye}", flush=True)
                                 record(session_id, kind="atc/landed",
                                        callsign=cs, text=bye)
+                                if _ho is not None:
+                                    # ...and he was told a NUMBER, which he will
+                                    # read back. Without this the read-back is a
+                                    # transmission with no instruction behind it
+                                    # and gets parsed as a callsign (#52).
+                                    note_issued(bridge, cs, bye)
+                                    handed_off[cs] = _ho.station
+                                    record(session_id, kind="atc/handoff",
+                                           callsign=cs, text=bye,
+                                           to=_ho.role)
                                 _pool.transmit(voice_for(final_hz).frames(bye),
                                                 channels_of(final_hz), AM)
                         continue

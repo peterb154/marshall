@@ -908,8 +908,9 @@ class TestTheEndOfAnApproachIsAudible(unittest.TestCase):
         direction, and the same invariant refuses both.
 
         So what Tower owes him is the runway: get off it. Where to go afterwards
-        is the next controller's, and `sortie_phase = "landed"` is what hands
-        him over.
+        is the next controller's -- and since #77 that controller is NAMED in
+        the same breath, with his frequency, which is a handoff and still not a
+        taxi clearance. Tower does not say where to park; he says who does.
         """
         self.ctl.report_down("Hoover 1-1")
         said = " ".join(t.text for t in self.ctl.out).lower()
@@ -923,6 +924,14 @@ class TestTheEndOfAnApproachIsAudible(unittest.TestCase):
         `Phase.LANDED` is the SEPARATION engine's enum -- where he sits in the
         arrival queue. `sortie_phase` is what he is DOING, and it is the one the
         ladder reads.
+
+        `landed` HERE BECAUSE THIS ENGINE HAS NO SEAT. Nothing has told it which
+        controller it is, so it has no aerodrome, so there is no ground station
+        it may name -- a role is unique only within a field and an unqualified
+        answer is a real controller at the wrong airport. `landed` is the honest
+        rung for that: down, still on the strip, still Tower's. With a seat he
+        goes to `taxi_in` and is given Ground by name; that half lives in
+        `test_ground_procedure.py`, where the engine knows who it is.
         """
         self.ctl.report_down("Hoover 1-1")
         ac = self.ctl.get("Hoover 1-1")

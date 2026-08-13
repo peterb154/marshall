@@ -1909,8 +1909,49 @@ class Controller:
                  f"{self._runway_in_use()}, {self._wind_phrase()}")
         self._try_clear()
 
-    def report_down(self, cs: str) -> None:
-        """Radar shows him stopped on the aerodrome. Get him off the runway.
+    def _ground_at(self, fld: str):
+        """The Ground seat at this aerodrome, or None if there is not one.
+
+        Two ways the answer is nobody, and each is a controller declining to say
+        something that is not true:
+
+            no field        a role is unique only within an aerodrome, so an
+                            unqualified lookup of the ground role answers with a
+                            real controller at the wrong airport -- and a real
+                            frequency, which is the kind of wrong number a pilot
+                            dials before anybody notices
+            no ground seat  a field where Tower works the taxiways has nobody to
+                            hand to, and the old sentence is still right
+        """
+        if not fld:
+            return None
+        return R.station_for("ground", field=fld, procedure=self.profile)
+
+    def _must_be_told(self, ac, me, gnd) -> bool:
+        """Is naming this station a FREQUENCY CHANGE, or is he already there?
+
+        The rung moves either way -- he is Ground's the moment the roll is over,
+        and that is what the ladder has to record -- but the transmission is
+        only owed when the man changes. Telling a pilot to contact the person he
+        is talking to is nonsense on the radio, and `handoff.due` returns exactly
+        this case as `same_station` and says nothing.
+
+        Two shapes of "already there": the seat covers the ground role itself
+        (Batumi Ground also works clearance, and a small field may fold Tower and
+        Ground into one person), or he was given the frequency on an earlier
+        look -- a radar poll every four seconds, and `report_landed` routing a
+        man who says "I'm down" back into here, both reach this twice.
+        """
+        if gnd is None:
+            return False
+        if (getattr(ac, "sortie_phase", "") or "").lower() == "taxi_in":
+            return False
+        if "ground" in (getattr(me, "role", ""), *getattr(me, "also", ())):
+            return False
+        return getattr(gnd, "name", None) != getattr(me, "name", None)
+
+    def report_down(self, cs: str, me=None) -> None:
+        """Radar shows him down. Get him off the runway, and give him Ground.
 
         Distinct from `report_landed`, which answers a pilot who has the field
         in sight and is still flying -- what he is owed there is the clearance
@@ -1918,30 +1959,86 @@ class Controller:
         the runway is a controller who has not noticed the aeroplane arrive.
 
         What a tower actually says once the roll is over is where to go: off the
-        runway, then to parking. It is also the transmission that tells him he
+        runway, and who to call. It is also the transmission that tells him he
         has been SEEN to land, which is the only difference between "he has me
-        down" and "he has crashed" -- and this is the last thing that happens on
+        down" and "he has crashed" -- and it is the last thing Tower says on
         every flight.
+
+        THE FREQUENCY CHANGE GOES OUT ON THE ROLL-OUT, and that is what closes
+        #77.
+
+            "We can just have tower say something like -- 'sockeye, batumi
+             tower, welcome, exit runway and contact ground' once it's on the
+             ground"
+
+        Which is what a real tower does. The alternative was to WATCH him vacate
+        and hand him over afterwards, and there is no honest observable for it:
+        an aerodrome row carries a position, an elevation and a landing heading,
+        and no runway polygon -- so "he is clear of the strip" comes down to a
+        threshold over a cross-track measured from a point that is only
+        approximately on the centreline. Tuned to fire late that is a handoff
+        that never comes; tuned to fire early it is Tower losing an aeroplane on
+        the active, which is the invariant this engine exists to hold. Saying it
+        during the roll-out deletes the question rather than tuning it.
+
+        `taxi_in` IS THE RUNG, not `landed`, and that is the whole handoff. A
+        phase with no geometry is owned outright by the controller `phases.py`
+        names, so moving into Ground's phase IS the transition -- `handoff.due`
+        then reads an aeroplane who is already Ground's, and there is nothing
+        after Ground to hand him to (#100). `landed` remains what it says: down,
+        still on the strip, still Tower's -- and it is where this leaves him at
+        a field with no ground seat to pass him to.
+
+        ONE PLACE DECIDES THE WORDS AND THE RUNG TOGETHER. The frequency he is
+        TOLD and the frequency the ladder RECORDS come from one `station_for`
+        here, because a handoff spoken by one authority and booked by another is
+        two answers to one question -- the class of fault #115 is about.
+
+        `me` IS WHO IS SPEAKING, and it is an argument because the proactive
+        monitor is not the receive path. `self._me` is set from the frequency of
+        the last transmission the bridge HEARD, which for a landing nobody has
+        spoken on is another aeroplane's controller -- possibly at the other
+        aerodrome. The monitor knows whose he is (`his_station`) and hands it in;
+        everything else keeps reading `_me` and behaves exactly as before.
         """
         ac = self.get(cs)
         ac.phase, ac.last_report_t = Phase.LANDED, self.t
-        # THE SORTIE PHASE, TOO, and leaving it out is why nothing could hand a
-        # landed aeroplane to Ground (#77). `Phase.LANDED` is the SEPARATION
-        # engine's enum -- where he sits in the arrival queue. `sortie_phase` is
-        # what he is DOING, and it is the one the ladder reads: `handoff.due`
-        # gives a phase whose `aims_at` is "none" to the controller the phase
-        # table names, and `landed` is Tower's. Without it he stayed in whatever
-        # phase the approach left him in and the ground ladder never resumed.
-        ac.sortie_phase = "landed"
         ac.map_t = None
         if self._in_letdown(ac) == ac.callsign:
             self._set_letdown(ac, None)
+        me = me if me is not None else getattr(self, "_me", None)
         # HIS field. This welcomed a pilot who had just landed at Batumi as
         # "Kobuleti Tower" -- the last thing said on the whole sortie.
-        twr = R.station_for(
-            "tower", field=getattr(getattr(self, "_me", None), "field", ""),
-            procedure=self.profile)
-        who = f"{twr.name}, " if twr else ""
+        fld = getattr(me, "field", "")
+        # AND A CONTROLLER INTRODUCES HIMSELF, which this did not: it named the
+        # field's TOWER whoever was speaking. Right for the ILS, where Tower is
+        # who you land with, and wrong for the two seats that also reach here --
+        # a talkdown keeps the radar controller to the ground (#7), so Approach
+        # was introducing himself as Tower on Approach's own frequency; and a
+        # man who reports himself down after switching had GROUND say "Kobuleti
+        # Tower, welcome". Nobody speaks under another controller's name.
+        #
+        # `_me` unset is still the tower lookup, because an engine that has not
+        # been told which seat it is has no better answer, and that is the case
+        # every dry run and most of the unit suite is in.
+        speaker = (me if me is not None
+                   else R.station_for("tower", field=fld,
+                                      procedure=self.profile))
+        who = f"{speaker.name}, " if speaker else ""
+        gnd = self._ground_at(fld)
+        # ASKED BEFORE THE RUNG MOVES, because one of the answers is "he is
+        # already on it" -- this transmission is reachable twice.
+        tell = self._must_be_told(ac, me, gnd)
+        # THE RUNG MOVES BECAUSE THE ROLL IS OVER, not because anybody spoke.
+        # If the field has a ground seat at all then he is Ground's from here,
+        # and that is what the ladder has to record whether or not a frequency
+        # change is owed with it -- otherwise a seat that covers both roles
+        # leaves him on Tower's rung and hands him BACKWARDS to Tower the next
+        # time anything asks, which is the fault #100 is named after.
+        if gnd is not None:
+            ac.sortie_phase = "taxi_in"
+        elif (ac.sortie_phase or "").lower() != "taxi_in":
+            ac.sortie_phase = "landed"
         # "TAXI TO PARKING" IS NOT TOWER'S TO SAY, and this said it on every
         # landing. Tower owns the runway; the taxiways are Ground's. A pilot
         # reported it from the cockpit:
@@ -1951,10 +2048,18 @@ class Controller:
         #
         # Exactly the fault that made Ground clear an aircraft for take-off, in
         # the other direction -- a seat answering for something it does not own.
-        # What Tower owes him is the runway: get off it. Where to go afterwards
-        # is the next controller's, and the phase above is what hands him over.
-        self.say(ac.callsign,
-                 f"{self._addr(ac)}, {who}welcome. Exit the runway when able.")
+        # What Tower owes him is the runway and the next frequency: get off it,
+        # and here is the man who owns where you go afterwards.
+        if not tell:
+            self.say(ac.callsign,
+                     f"{self._addr(ac)}, {who}welcome. Exit the runway when able.")
+        else:
+            self.say(ac.callsign,
+                     f"{self._addr(ac)}, {who}welcome. Exit the runway and "
+                     f"contact {gnd.name} {spell_freq(gnd.freq_mhz)}.",
+                     decided=D.Decision(kind="handoff", to=ac.callsign,
+                                        role="ground", station=gnd.name,
+                                        frequency_mhz=gnd.freq_mhz))
         self._try_clear()
 
     def request_visual(self, cs: str, field_in_sight: bool = False) -> None:

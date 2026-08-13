@@ -813,29 +813,30 @@ class GroundIsTheEndOfTheLadder(GroundCase):
         self.assertIn("ground", said)
         self.assertNotIn("taxi to parking, your discretion", said)
 
-    def test_a_landed_aeroplane_is_still_towers_until_he_asks_to_move(self):
-        """He is stopped on the runway, which is Tower's, and Tower keeps him.
+    def test_a_ground_seat_does_not_hand_him_to_itself(self):
+        """He landed talking to Ground, so there is nobody to TELL him about.
 
-        THE HANDOFF IS THE TAXI REQUEST, not the touchdown. `landed` is Tower's
-        by design -- the aeroplane is on his strip and "exit the runway when
-        able" is his to say -- and the rung that belongs to Ground is `taxi_in`,
-        which the pilot enters by asking for a stand. That is #77's criterion
-        reached through the ladder rather than as a special case.
+        The rung still moves -- the roll is over and he is Ground's -- but a
+        controller who reads out his own frequency has told a pilot to contact
+        the man he is talking to. `handoff.due` returns that case as
+        `same_station` and says nothing; this is the same rule one level down.
+
+        And the rung MUST move even here, which is the trap: leave him on
+        Tower's phase because the seat happened to be Ground, and the next thing
+        that asks hands him BACKWARDS to Tower -- the fault this class is named
+        after, reached by a different road.
         """
-        me = station("Kobuleti Tower")
+        me = station("Kobuleti Ground")
         self.ctl._me = me
         self.ctl.report_down("Sockeye")
+        said = " ".join(t.text for t in self.ctl.out).lower()
         ac = self.ctl.aircraft[self.ctl._resolve("Sockeye")]
-        self.assertEqual(ac.sortie_phase, "landed")
+        self.assertEqual(ac.sortie_phase, "taxi_in")
         self.assertIsNone(H.due(P, me, H.State(True, 0.2, False,
-                                               phase=ac.sortie_phase)),
-                          "handed off the runway before he had left it")
-        # ...and asking for a stand is what gives him to Ground.
-        self.ctl.out.clear()
-        I.dispatch(self.ctl, I.Intent(kind=I.IntentKind.REQUEST_TAXI,
-                                      callsign="Sockeye"))
-        v = H.due(P, me, H.State(True, 0.2, False, phase=ac.sortie_phase))
-        self.assertEqual(v.station.name, "Kobuleti Ground")
+                                               phase=ac.sortie_phase)))
+        self.assertIn("exit the runway when able", said)
+        self.assertNotIn("contact", said)
+        self.assertIn("kobuleti ground", said, "he spoke under Tower's name")
 
     def test_taxiing_OUT_is_untouched(self):
         """The same words, the other direction, from a man who has not flown."""
@@ -843,6 +844,201 @@ class GroundIsTheEndOfTheLadder(GroundCase):
                                       I.IntentKind.REQUEST_TAXI)
         self.assertEqual(phase, "taxi")
         self.assertIn("hold short", said.lower())
+
+
+class TowerGivesHimGroundOnTheRollOut(GroundCase):
+    """#77 -- "Nothing hands you to Batumi Ground."
+
+        F5. After landing and clearing the runway, wait. Say nothing.
+            Nothing hands you to Batumi Ground.
+
+    The seat worked and the rule that SENDS you there did not, so preset 8 had a
+    live controller on it that nothing ever handed you to -- and in the air a
+    preset nobody hands you to is indistinguishable from having been forgotten.
+
+    THE TRIGGER IS THE TOUCHDOWN, NOT THE TAXI REQUEST, and that is the whole
+    change. #100 closed the ladder by making a taxi request from a landed
+    aeroplane a taxi IN, which was true and was also a convenient trigger rather
+    than a designed one: it left the PILOT responsible for advancing the last
+    rung of his own sortie. #100's own text has the right principle two
+    paragraphs earlier -- the ENGINE knows which rung he is on -- and applied it
+    only to telling the two journeys apart.
+
+        "We can just have tower say something like -- 'sockeye, batumi tower,
+         welcome, exit runway and contact ground' once it's on the ground"
+
+    Which is what a real tower does: the frequency change goes out DURING the
+    roll-out. It needs no observable for "he has vacated" -- there is no honest
+    one, since an aerodrome row carries a landing heading and no runway polygon
+    -- and `report_down` already fires off the radar poll with no pilot in it.
+
+    Nothing about #100 is reverted; the class above still passes. One trigger
+    moved from the pilot's mouth to the sim.
+    """
+
+    def landed_under(self, station_name):
+        me = station(station_name)
+        self.ctl._me = me
+        self.ctl.report_down("Sockeye")
+        ac = self.ctl.aircraft[self.ctl._resolve("Sockeye")]
+        said = " | ".join(t.text for t in self.ctl.out)
+        return me, ac, said
+
+    def test_the_touchdown_names_ground_and_the_frequency(self):
+        """Criterion 1, and the pilot said nothing to earn it."""
+        _me, _ac, said = self.landed_under("Kobuleti Tower")
+        self.assertIn("Kobuleti Ground", said)
+        self.assertIn(atc.spell_freq(station("Kobuleti Ground").freq_mhz), said)
+        self.assertIn("exit the runway", said.lower())
+        # ...and the OTHER field's ground frequency is the plausible wrong one.
+        self.assertNotIn(atc.spell_freq(station("Batumi Ground").freq_mhz),
+                         said)
+
+    def test_it_is_the_ARRIVAL_fields_ground(self):
+        """Criterion 2. A role is unique only within an aerodrome, and the
+        wrong answer here is a real controller on a real frequency."""
+        _me, _ac, said = self.landed_under("Batumi Tower")
+        self.assertIn("Batumi Ground", said)
+        self.assertNotIn("Kobuleti", said)
+
+    def test_whoever_says_it_says_it_under_his_own_name(self):
+        """This named the field's TOWER whoever was speaking.
+
+        Right for the ILS, where Tower is who you land with, and wrong for both
+        of the other seats that reach here. A talkdown keeps the radar
+        controller to the ground (#7), so Approach introduced himself as Tower
+        on Approach's own frequency; and a man who reports himself down after
+        switching got GROUND saying "Kobuleti Tower, welcome". Nobody speaks
+        under another controller's name -- it is the same rule as a seat not
+        issuing a clearance that is not his, one level down.
+        """
+        _me, _ac, said = self.landed_under("Batumi Approach")
+        self.assertIn("Batumi Approach", said)
+        self.assertNotIn("Tower", said)
+        self.assertIn("Batumi Ground", said, "and he still gets the next man")
+
+    def test_the_phase_moves_to_grounds_rung_in_the_same_breath(self):
+        """Criterion 3. The words and the rung are decided in one place.
+
+        A handoff SPOKEN by one authority and BOOKED by another is two answers
+        to one question, which is the shape of #115 -- so the station named in
+        the transmission and the station the ladder resolves have to be the same
+        object, not two lookups that currently agree.
+        """
+        me, ac, said = self.landed_under("Kobuleti Tower")
+        self.assertEqual(ac.sortie_phase, "taxi_in")
+        v = H.due(P, me, H.State(True, 0.2, False, phase=ac.sortie_phase))
+        self.assertIsNotNone(v, "landing did not authorise a handoff")
+        self.assertEqual(v.station.name, "Kobuleti Ground")
+        self.assertIn(v.station.name, said)
+        self.assertIn(atc.spell_freq(v.station.freq_mhz), said)
+
+    def test_the_decision_carries_the_frequency_it_spoke(self):
+        """What the recorder and the verifier read, rather than the prose."""
+        me, _ac, _said = self.landed_under("Kobuleti Tower")
+        d = next((t.decision for t in self.ctl.out
+                  if getattr(t.decision, "kind", "") == "handoff"), None)
+        self.assertIsNotNone(d, "the goodbye carried no handoff decision")
+        self.assertEqual(d.role, "ground")
+        self.assertEqual(d.station, "Kobuleti Ground")
+        self.assertEqual(d.frequency_mhz,
+                         R.station_for("ground",
+                                       field=me.field).freq_mhz)
+
+    def test_nothing_hands_him_on_once_he_is_with_ground(self):
+        """#100 criterion 1 and 3, from the far side of the new trigger.
+
+        The failure this replaced was a rung that handed BACKWARDS -- Ground
+        reading Tower's phase and returning him to a controller who had finished
+        with him. Moving the phase EARLIER must not reopen it.
+        """
+        _me, ac, _said = self.landed_under("Kobuleti Tower")
+        gnd = station("Kobuleti Ground")
+        self.assertIsNone(H.due(P, gnd, H.State(True, 0.2, False,
+                                                phase=ac.sortie_phase)),
+                          "Ground handed a landed aeroplane somewhere")
+        self.assertEqual(PH.get("taxi_in").follows, ())
+
+    def test_ground_still_owns_the_parking_instruction(self):
+        """#100 criterion 2. He arrives on the frequency already on Ground's
+        rung, and Ground must still answer for the stand rather than decline."""
+        self.landed_under("Kobuleti Tower")
+        self.ctl._me = station("Kobuleti Ground")
+        self.ctl.out.clear()
+        I.dispatch(self.ctl, I.Intent(kind=I.IntentKind.REQUEST_TAXI,
+                                      callsign="Sockeye"))
+        said = " | ".join(t.text for t in self.ctl.out).lower()
+        self.assertIn("parking", said)
+        self.assertNotIn("contact", said)
+
+    def test_and_it_is_said_once(self):
+        """A second radar look must not re-issue a handoff already given.
+
+        The monitor polls every four seconds and `report_landed` routes a man
+        who says "I'm down" straight back into `report_down` -- so the same
+        transmission is reachable more than once, and on GROUND's frequency it
+        would be an instruction to contact himself.
+        """
+        self.landed_under("Kobuleti Tower")
+        self.ctl._me = station("Kobuleti Ground")
+        self.ctl.out.clear()
+        self.ctl.report_down("Sockeye")
+        said = " | ".join(t.text for t in self.ctl.out)
+        self.assertNotIn("contact", said.lower())
+        self.assertIn("exit the runway", said.lower())
+
+    def test_a_field_with_no_ground_seat_keeps_the_old_sentence(self):
+        """Tower keeps him, and says exactly what he said before.
+
+        Not every aerodrome splits Ground off, and a controller who names a
+        station that is not there is worse than one who says nothing. `landed`
+        is still a real rung: down, on the strip, Tower's.
+        """
+        me = station("Georgia Center")       # no field, therefore no ground seat
+        self.ctl._me = me
+        self.ctl.report_down("Sockeye")
+        ac = self.ctl.aircraft[self.ctl._resolve("Sockeye")]
+        said = " | ".join(t.text for t in self.ctl.out).lower()
+        self.assertEqual(ac.sortie_phase, "landed")
+        self.assertIn("exit the runway when able", said)
+        self.assertNotIn("contact", said)
+
+    def test_asking_for_taxi_still_works_exactly_as_it_did(self):
+        """This ADDS a path; it does not replace one.
+
+        A pilot who asks for a stand -- because he missed the call, or because
+        he is quicker than the radar poll -- gets what he got yesterday.
+        """
+        self.ctl._me = station("Kobuleti Ground")
+        I.dispatch(self.ctl, I.Intent(kind=I.IntentKind.REQUEST_CLEARANCE,
+                                      callsign="Sockeye"))
+        ac = self.ctl.aircraft[self.ctl._resolve("Sockeye")]
+        ac.sortie_phase = "landed"           # down, and nobody has moved him
+        self.ctl.out.clear()
+        I.dispatch(self.ctl, I.Intent(kind=I.IntentKind.REQUEST_TAXI,
+                                      callsign="Sockeye"))
+        said = " | ".join(t.text for t in self.ctl.out).lower()
+        self.assertEqual(ac.sortie_phase, "taxi_in")
+        self.assertIn("parking", said)
+
+    def test_A_DEPARTURE_TAXIING_OUT_GETS_NONE_OF_THIS(self):
+        """The gate is having LANDED, and a taxiing departure is on the ground
+        and stationary and looks identical to radar.
+
+        Two guards, and both are needed. The engine reaches this transmission
+        only through `report_down`, whose caller must have seen him airborne;
+        and the phase deriver refuses to call a parked aeroplane that has never
+        flown "landed" no matter what the sim says about his wheels.
+        """
+        self.assertEqual(PH.derive("clearance", on_ground=True), "clearance")
+        self.assertEqual(PH.derive("taxi", on_ground=True), "taxi")
+        self.assertEqual(PH.derive("", on_ground=True), "clearance")
+        # ...and the words he gets are the outbound ones, to the runway.
+        phase, _nxt, said = self.turn("Kobuleti Ground",
+                                      I.IntentKind.REQUEST_TAXI)
+        self.assertEqual(phase, "taxi")
+        self.assertNotIn("welcome", said.lower())
+        self.assertNotIn("exit the runway", said.lower())
 
 
 class GroundDoesNotMoveAnAircraftOnAnUnagreedClearance(unittest.TestCase):

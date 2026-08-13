@@ -28,7 +28,11 @@ LADDER = [
     ("Enroute, transit", ("enroute", "rtb")),
     ("Tasking, on station", ("tasked", "on_station")),
     ("Recovery, approach", ("arrival", "holding", "approach", "missed")),
-    ("Landing, taxi in", ("landed",)),
+    # BOTH RUNGS, because the recovery ends with two controllers and not one.
+    # `landed` is Tower's -- down, still on the strip -- and `taxi_in` is
+    # Ground's, and listing only the first is what left the man who parks you
+    # owning no phase at all on the card. See below.
+    ("Landing, taxi in", ("landed", "taxi_in")),
 ]
 
 # WHICH HALF OF THE SORTIE A LABEL BELONGS TO.
@@ -131,18 +135,23 @@ def build(card: Card | None = None, profile=None) -> str:
         elif fld == card.arrival:
             when = [w for w in when if w in INBOUND]
         if not when:
-            # A SEAT THE PHASE MACHINE CANNOT REACH, and Batumi Ground is one.
+            # A SEAT THE PHASE MACHINE CANNOT REACH.
             #
-            # `phases` gives "landed" to Tower, which was correct while Tower
-            # also wore the ground hat -- there was nobody else to give it to.
-            # Splitting Ground off left a real controller, on a real preset,
-            # owning no phase at all, so this column rendered a dash for the man
-            # who takes you to the ramp.
+            # BATUMI GROUND USED TO BE ONE, and is not any more. `phases` gives
+            # "landed" to Tower, which was correct while Tower also wore the
+            # ground hat -- there was nobody else to give it to. Splitting
+            # Ground off left a real controller, on a real preset, owning no
+            # phase at all, so this column rendered a dash for the man who takes
+            # you to the ramp, and the note here said that until "landed" could
+            # hand on to a ground seat no automatic handoff would ever send
+            # anybody to this frequency and the pilot had to ask.
             #
-            # The card says what he does. The gap is in the phase machine and
-            # papering over it here does not close it: until "landed" can hand
-            # on to a ground seat, no automatic handoff will ever send anybody
-            # to this frequency and the pilot has to ask.
+            # It does now: Tower gives him Ground on the roll-out and the phase
+            # moves to `taxi_in`, which is Ground's and is on the ladder above
+            # (#77). The fallback stays for the seat that genuinely owns no
+            # phase -- the card says what a controller does, and inventing a
+            # phase here to fill a column would be the papering-over this
+            # comment was written to refuse.
             when = ["Taxi in" if fld == card.arrival else s.role.title()]
         # EVERY FREQUENCY HE IS ON, because a facility can own several and the
         # card is the only place a pilot finds that out. The second one is what

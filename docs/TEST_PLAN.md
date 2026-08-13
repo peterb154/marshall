@@ -461,13 +461,19 @@ told to climb to three thousand. **Never flown.** See [#41].
 
 **F6 is struck, flown by a ghost on 13 August at `49953cd`** — Ground said
 *"taxi to parking, your discretion"* and nothing was handed anywhere after him.
-The rest of this section still needs a pilot, and **F5 wants reading before you
-fly it**: it expects the handoff to Ground *unprompted* once you are clear of
-the runway, and what ships is the pilot ASKING for a stand — `taxi_in` is
-entered by the request, which is #77's criterion reached through the ladder
-rather than as a special case (see `tests/test_ground_procedure.py`). If you sit
-still and say nothing and nobody comes, that may be the design rather than the
-bug, and saying which is worth a line in your report.
+The rest of this section still needs a pilot. **F5 and F5b changed on 13 August
+and are now ordinary rows**: the handoff to Ground is issued during the
+ROLL-OUT rather than after anybody watches you vacate — *"welcome, exit the
+runway and contact Batumi Ground one two one decimal niner"* — so you do not
+have to be clear, and you do not have to ask. The note that used to stand here,
+warning that the card and the design disagreed because `taxi_in` was entered by
+the pilot's request, is settled: the trigger moved from your mouth to the sim
+and the request still works if you get there first.
+
+**Listen for the timing rather than the words**, because that is the half no
+rehearsal can score. It arrives while you are still rolling, which is what a
+real tower does — and if it lands on top of you at a moment that makes no sense,
+that is the finding.
 
 | ID | Prio | Test | What should happen | Fix under test |
 |----|------|------|--------------------|----------------|
@@ -476,8 +482,8 @@ bug, and saying which is worth a line in your report.
 | F3 | P2 | Touch and go | You are **not** handed to Tower for the few seconds you are on the runway — `runway_touch` is deliberately not acted on | [#41] `DOWN` |
 | F4b | **P1** | **Say something Whisper will mangle** — a hurried call, a name half-swallowed, someone else's callsign — then check `/diag` | **No aeroplane appeared that does not exist.** One P-47 once entered the stack as "Hammer 1-1", "Hammer 1-3", "All 4" and "Maintained 2" — four aircraft, three imaginary, each with a place in the queue. With one ship that is untidy; with two a ghost at the head holds real pilots for an aeroplane that will never arrive. The identity work since means a radio is bound by RADAR and a mangled name should reach nothing, but the closure condition here has always been a live sortie and nobody has flown one | [#13] | ghosts |
 | F4 | P2 | Land, stop, leave the slot, take a new aeroplane and check in | The old callsign is **gone from the board**. Watch `/diag` — a leftover here is the ghost that held a real pilot in the stack for a whole approach | [#41] `player_leave_unit` |
-| F5 | **P1** | After landing and clearing the runway, wait. Say nothing | He hands you to **Batumi Ground, 121.900**, unprompted. This was the last dead end in the ladder: `report_down` set the separation enum but not the sortie phase, and the phase branch that hands a parked aeroplane over could not run while he was on the ground. Tower should also **not** clear you to taxi to parking — that is Ground's; he says *exit the runway when able* | [#88] |
-| **F5b** | **The moment you are stopped and clear of the runway**, wait for the handoff to Ground | It comes, unprompted, and it is the ARRIVAL field's Ground — Batumi **121.900**, never Kobuleti's (this row said 118.600 until 13 August, which is Batumi *Tower* — the wrong number for the right controller, on the row about naming the right one). A landed aircraft used to reach the end of the flight and be handed nowhere, so a pilot sat on a taxiway on Tower's frequency with the sortie over. Fixed on 10 August as one of three symptoms of a branch that could not be reached from the ground; this is the one of the three nobody has flown | [#77] | **P1** |
+| F5 | **P1** | **Land, and say nothing at all for the rest of the sortie** | On the roll-out Tower says *"welcome, exit the runway and contact Batumi Ground one two one decimal niner"*, and you reach a stand without ever keying the mic. This was the last dead end in the ladder. Tower should **not** clear you to taxi to parking — that is Ground's; he names the man who owns it | [#88], [#77] |
+| **F5b** | **P1** | Check WHICH Ground, and when | It is the ARRIVAL field's — Batumi **121.900**, never Kobuleti's **121.800** (this row said 118.600 until 13 August, which is Batumi *Tower* — the wrong number for the right controller, on the row about naming the right one). And it arrives **during the roll-out**, not after you are clear: there is no runway polygon in the aerodrome table, so "he has vacated" is not a fact this system can observe, and issuing it early is what a real tower does anyway | [#77] |
 | ~~F8~~ | **Mid-sortie, ask me to restart the bridge**, then carry on talking | **He knows you.** Same rung, same level, same approach, and if you were cleared he still has you on it — not a controller meeting you for the first time. The board was built only by transmissions until 11 August, so a restart forgot every rung climbed and every level assigned while the aeroplanes went on flying, and with an empty letdown would clear somebody else onto your approach | [#120] | **P1** |
 | ~~F7~~ | **Fly two sorties back to back without anybody touching the database.** On the second, ask Clearance for a clearance and then check `/diag` | **The board holds you, once.** One row, your callsign on it, and the intent you stated — *"VFR to Batumi, visual 13"* — carried to every controller after the one you said it to. On 11 August a single sortie made THREE rows in thirty seconds, none bound to the pilot, because a transmission carrying only an SRS name matched nothing and inserted; and nothing had ever written `intent` at all, so each controller met him for the first time. Leave the slot and your row should go with you | [#119] | **P1** |
 | ~~F6~~ | After Ground has you and you are taxiing in, wait | **He parks you** — *"taxi to parking, your discretion"* — and hands you nowhere. | **He does not hand you anywhere.** Ground is the end of the ladder; there is nothing after him. On 11 August he sent the pilot back to Batumi Tower — a rung that hands BACKWARDS, onto a controller who has already finished with him. He should also give a **parking instruction**, which is his, not decline to own one | [#100] | **P1** |
