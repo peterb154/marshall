@@ -215,7 +215,13 @@ def build_agent(session_id: str, role: str = "", also=(),
             # for a frequency it had not been given, the controller invented one,
             # confidently and in correct phraseology, and a pilot sent to an
             # invented frequency calls into silence.
-            *(frequency_tools() if "frequency" in may else []),
+            #
+            # ...AND WHICH MAP HE IS ON, which is the seat again. The rows this
+            # reads accumulate across every theatre ever loaded and it used to
+            # take the alphabetically first, so a Nellis controller asked for
+            # Tonopah's tower was told there is no such position and offered
+            # Batumi and Kobuleti instead.
+            *(frequency_tools(station) if "frequency" in may else []),
             *(memory_tools(namespace=store) if "memory" in may else []),
             # THE OVERLORD'S HANDS, AND ONLY HIS. This was given to every seat,
             # with the overlord brief left to say who might use it -- an
