@@ -145,7 +145,7 @@ repository merged in by subtree on 25 July, and the folder is the seam. Say the
 layer you mean instead: `marshall-radio` for audio, GUIDs and frequencies;
 `marshall-atc` for separation, procedure and clearances; "the language brain"
 for the model half; "the stores" for Postgres. The canonical table, with the
-reasoning, is `docs/STRUCTURE.md` → **What to call the parts**.
+reasoning, is [`docs/STRUCTURE.md` → **What to call the parts**](docs/STRUCTURE.md#what-to-call-the-parts).
 
 **The FOLDERS have not moved and the rename is still deferred**, for the pin
 below and not for the vocabulary: the two questions were treated as one, and
