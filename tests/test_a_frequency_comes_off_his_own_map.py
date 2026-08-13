@@ -15,15 +15,23 @@ names the seat doing the asking. The seat comes from the bridge, which resolved
 it from the frequency, which is the one fact about a transmission no pilot can
 influence.
 
-AND THE SOURCE IS GONE, which is the other half and is not fixed here. #162 took
-the station list off `ApproachProfile` and gave it to the theatre;
-`profile_to_dict` is `asdict`, so no row written from now on carries one. The
-rows below are the real ones out of the live database -- two of them fossils
-from before the move -- and `TestTheApproachRowIsNotTheStationTable` is what
-says so out loud. The tool must fail closed and SAY it cannot look one up, never
-reach for whatever list is left.
+AND THE SOURCE WAS GONE, which was the other half. #162 took the station list
+off `ApproachProfile` and gave it to the theatre; `profile_to_dict` is `asdict`,
+so no row written after it carried one. The writer is `push_stations` now and
+the reader is the `stations` table, which a push REPLACES -- so the several
+lists this file was written against are one list, and the question changes shape
+without changing answer:
 
-The fixtures are the live rows, trimmed to the fields the tool reads.
+    was    which of these accumulated lists is mine?  (the alphabetically first
+           is `batumi-asr`, and that is how Nevada got Georgia)
+    is     does the one published list name me at all?
+
+The second is not ceremony. `set_stations` refuses an EMPTY push, deliberately,
+so a bridge that could not build a list leaves the last good one alone -- which
+means the table can still hold the previous run's map, and the check is the only
+thing between that and a Nevada controller reading Georgian frequencies again.
+
+The fixtures are the live seats, trimmed to the fields the tool reads.
 """
 
 import unittest
@@ -62,17 +70,18 @@ NEVADA = [
     _st("Los Angeles Center", "", "center", 133.4),
 ]
 
-# Alphabetical, which is what the old query sorted by: the Caucasus rows come
-# first and there is no third answer to the question it was asking.
-LIVE = [("batumi-asr", CAUCASUS), ("batumi-ils", CAUCASUS),
-        ("batumi-ndb", None), ("nellis-ils", NEVADA), ("tonopah-ils", NEVADA)]
+# WHAT THE TABLE HOLDS IS ONE MAP'S, because the push replaces it. Nevada here,
+# so every test below is asking a Nevada question of a Nevada table -- and the
+# stale case, which is the one that bit, gets Caucasus explicitly.
+LIVE = NEVADA
 
 
 class FakePool:
-    """Just enough of psycopg to answer one SELECT."""
+    """Just enough of psycopg to answer the `stations` SELECT."""
 
-    def __init__(self, rows):
-        self.rows = [(n, s) for n, s in rows if s is not None]
+    def __init__(self, stations):
+        self.rows = [(s["name"], s["field"], s["role"], s["freq_mhz"],
+                      list(s["also"])) for s in stations]
 
     def connection(self):
         return self
@@ -91,8 +100,8 @@ class FakePool:
         return list(self.rows)
 
 
-def look_up(seat, **kw):
-    with mock.patch.object(F, "get_pool", lambda: FakePool(LIVE)):
+def look_up(seat, rows=LIVE, **kw):
+    with mock.patch.object(F, "get_pool", lambda: FakePool(rows)):
         (tool,) = F.frequency_tools(seat)
         return tool(**kw)
 
@@ -110,7 +119,8 @@ class TestNobodyIsReadAnotherMapsFrequencies(unittest.TestCase):
                          [s["name"] for s in NEVADA])
 
     def test_a_batumi_seat_gets_the_caucasus_list(self):
-        self.assertEqual([s["name"] for s in stations("Batumi Approach")],
+        self.assertEqual([s["name"] for s in stations("Batumi Approach",
+                                                      rows=CAUCASUS)],
                          [s["name"] for s in CAUCASUS])
 
     def test_tonopah_tower_exists_when_nellis_tower_asks(self):
@@ -139,10 +149,43 @@ class TestNobodyIsReadAnotherMapsFrequencies(unittest.TestCase):
         self.assertNotIn("Kobuleti", said)
 
     def test_the_query_no_longer_takes_one_row(self):
-        # `fetchone` cannot be right here: the rows are per PROCEDURE and the
-        # station list is per MAP, so the row count is not the answer's count.
+        # `fetchone` cannot be right here: the old rows were per PROCEDURE and
+        # the station list is per MAP, so the row count is not the answer's.
         src = Path(F.__file__).read_text(encoding="utf-8")
         self.assertNotIn("fetchone()", src)
+
+
+class TestALeftoverListIsNotHisMap(unittest.TestCase):
+    """The push replaces the table, and one case still leaves the wrong map on
+    it: `set_stations` REFUSES AN EMPTY PUSH, so a bridge that could not build a
+    list -- or a 1944 letdown, which staffs no ladder at all -- leaves the last
+    run's seats in place rather than wiping them.
+
+    That is deliberate and it is why the reader still checks. Without the check
+    the fix would restore the exact fault it is replacing: a real controller
+    with a real frequency, over the wrong desert.
+    """
+
+    def test_a_nevada_seat_is_refused_a_caucasus_list(self):
+        self.assertEqual(stations("Nellis Tower", rows=CAUCASUS), [])
+
+    def test_and_he_is_told_to_say_he_cannot_look_it_up(self):
+        said = look_up("Nellis Tower", rows=CAUCASUS, place="Tonopah",
+                       position="tower")
+        self.assertIn("cannot look it up", said)
+        # Not one Georgian number, and not one Georgian aerodrome offered as a
+        # near miss. Either would be read out in correct phraseology.
+        self.assertNotIn("decimal", said)
+        for georgian in ("Batumi", "Kobuleti", "Georgia"):
+            self.assertNotIn(georgian, said)
+
+    def test_the_seat_that_owns_the_table_still_gets_it(self):
+        # The check must not be a blanket refusal: the whole point is that the
+        # man the list names reads it.
+        said = look_up("Batumi Approach", rows=CAUCASUS, place="Kobuleti",
+                       position="ground")
+        self.assertIn("Kobuleti Ground", said)
+        self.assertIn("one two one decimal eight", said)
 
 
 class TestItSaysItCannotRatherThanGuessing(unittest.TestCase):
@@ -158,30 +201,24 @@ class TestItSaysItCannotRatherThanGuessing(unittest.TestCase):
         self.assertIn("cannot look it up", said)
         self.assertNotIn("decimal", said)
 
-    def test_a_fresh_database_publishes_nothing(self):
-        """#162 stopped the writer, so this is every database from now on."""
-        self.assertEqual(stations("Batumi Approach", rows=[("batumi-ndb", None)]),
-                         [])
+    def test_a_database_no_bridge_has_pushed_to_publishes_nothing(self):
+        """A fresh table until a bridge starts, which is 027's bargain: with no
+        bridge there is no controller, and no list is honest."""
+        self.assertEqual(stations("Batumi Approach", rows=[]), [])
 
-    def test_an_older_bridge_that_names_no_seat_is_given_the_only_list(self):
-        one = [("batumi-asr", CAUCASUS)]
-        self.assertEqual([s["name"] for s in stations("", rows=one)],
+    def test_an_older_bridge_that_names_no_seat_is_given_the_published_list(self):
+        self.assertEqual([s["name"] for s in stations("", rows=CAUCASUS)],
                          [s["name"] for s in CAUCASUS])
-
-    def test_but_never_the_first_of_several(self):
-        # This is the bug in one line: with no seat and more than one map on
-        # the table, there is no answer, and picking one is how Batumi's list
-        # ended up in a Nevada cockpit.
-        self.assertEqual(stations(""), [])
 
 
 class TestTheApproachRowIsNotTheStationTable(unittest.TestCase):
-    """The source is gone, and the docstring must not claim otherwise.
+    """The tool reads the `stations` table, and must never go back.
 
-    This tool was built as #67 over `approaches.data->'stations'`, on the
-    argument that "the profile carries the whole station list". #162 moved the
-    station table onto the THEATRE and took the field off the profile. Nothing
-    has written a `stations` list since; the rows that have one are fossils.
+    Built as #67 over `approaches.data->'stations'`, on the argument that "the
+    profile carries the whole station list". #162 moved the station table onto
+    the THEATRE and took the field off the profile, so nothing has written a
+    `stations` key since and the rows that have one are fossils. Four of them
+    are the only reason the tool answered anything at all between #162 and this.
     """
 
     def test_a_profile_carries_no_station_list(self):
@@ -189,17 +226,29 @@ class TestTheApproachRowIsNotTheStationTable(unittest.TestCase):
 
         from marshall.core.approach import ApproachProfile
         self.assertNotIn("stations", {f.name for f in fields(ApproachProfile)},
-                         "the writer is back — say so in tools/frequencies.py")
+                         "the writer is back — say so in atc/frequencies.py")
 
     def test_what_the_bridge_pushes_has_none_either(self):
+        # WHICHEVER MAP IS LOADED. This named `R.BATUMI_ASR`, which does not
+        # exist on Nevada -- so the guard on the regression that broke Nevada
+        # could not be run there.
         from marshall.core import route as R
-        self.assertNotIn("stations", R.profile_to_dict(R.BATUMI_ASR))
+        from tests import theatre as T
+        self.assertNotIn("stations", R.profile_to_dict(T.the_arrival()))
 
-    def test_the_module_says_the_writer_is_missing(self):
+    def test_the_module_names_its_writer(self):
         src = Path(F.__file__).read_text(encoding="utf-8")
         self.assertIn("push_stations", src,
-                      "the missing half must be named, or it is a tool that "
+                      "the writing half must be named, or this is a tool that "
                       "quietly stops working on a fresh database")
+
+    def test_it_does_not_read_the_fossils(self):
+        # The fossils outlive this change on purpose -- dropping them before the
+        # push is deployed would break the lookup for real -- so the guard is
+        # that nothing here reaches for them any more.
+        src = Path(F.__file__).read_text(encoding="utf-8")
+        self.assertNotIn("FROM approaches", src)
+        self.assertIn("FROM stations", src)
 
 
 class TestTheDirectorBindsItToTheSeat(unittest.TestCase):

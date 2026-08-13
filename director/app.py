@@ -760,6 +760,24 @@ def get_sectors_endpoint() -> dict:
     return {"sectors": known_sectors()}
 
 
+# AND THE SEATS THEMSELVES, which the volumes are not. A sector exists for a
+# controller who owns airspace, so the Caucasus ladder's nine seats are five
+# rows here and Ground, Clearance and Sentry are absent -- and `ground` is what
+# a pilot asks `look_up_frequency` for. That tool read the station list out of
+# `approaches.data->'stations'` until #162 took the list off `ApproachProfile`
+# and left it with no writer; this is the writer. See migration 032.
+@app.put("/stations")
+def set_stations_endpoint(body: dict) -> dict:
+    from marshall.feed.tracks import set_stations
+    return {"stations": set_stations(body.get("stations") or [])}
+
+
+@app.get("/stations")
+def get_stations_endpoint() -> dict:
+    from marshall.feed.tracks import get_stations
+    return {"stations": get_stations()}
+
+
 # Which sector actually contains him, versus which controller is working him.
 # The disagreement IS the handoff trigger -- see migrations/005 and 008. Whether
 # to act on it is the controller's judgement, which is why this reports and does

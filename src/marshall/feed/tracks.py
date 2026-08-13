@@ -1114,3 +1114,57 @@ def known_sectors() -> list[dict]:
         ).fetchall()
     return [{"name": r[0], "label": r[1], "role": r[2], "field": r[3],
              "rank": r[4], "ceiling_ft": r[5], "unbounded": r[6]} for r in rows]
+
+
+def set_stations(rows: list) -> int:
+    """Load the map's controllers -- every seat, not only those with a volume.
+
+    THE STATION LIST IS THE MAP'S, and `sectors` is not a substitute for it. A
+    sector exists for a seat that owns AIRSPACE, so Ground, Clearance and Sentry
+    are not in it: five rows against the Caucasus ladder's nine. The half that
+    is missing is the half a pilot most often asks about.
+
+    THE PUSHED SET REPLACES THE TABLE, on `set_sectors`' bargain one screen up
+    and for the identical reason: whatever the push no longer has, the table no
+    longer has. A table added to rather than reconciled keeps the LAST map's
+    answers, and Batumi Approach left behind on a Nevada run is a controller
+    with a real name and a real frequency over the wrong desert -- which is the
+    live fault `frequencies._stations` was written to work around, because
+    `approaches` accumulates a row per procedure per theatre and nothing has
+    ever cleared it.
+
+    An empty push is not a replacement, exactly as there. That is a bridge that
+    could not build the list -- a 1944 letdown staffs no ladder at all, so
+    `seats_now` is legitimately empty for it -- and wiping on that would take
+    the tool from a stale list to no list. Failing safe here means failing
+    SILENT, so the reader does not trust the table blindly: it answers only a
+    seat the published list actually names.
+    """
+    from marshall.core import db
+    clean = [r for r in (rows or []) if r.get("name")]
+    if not clean:
+        return 0
+    with db.pool().connection() as c:
+        for r in clean:
+            c.execute(
+                "INSERT INTO stations (name, field, role, freq_mhz, also) "
+                "VALUES (%s, %s, %s, %s, %s::jsonb) "
+                "ON CONFLICT (name) DO UPDATE SET "
+                "  field = EXCLUDED.field, role = EXCLUDED.role, "
+                "  freq_mhz = EXCLUDED.freq_mhz, also = EXCLUDED.also",
+                (r["name"], r.get("field") or "", r.get("role") or "",
+                 r.get("freq_mhz"), json.dumps([str(a) for a in (r.get("also") or [])])))
+        c.execute("DELETE FROM stations WHERE NOT (name = ANY(%s))",
+                  ([r["name"] for r in clean],))
+    return len(clean)
+
+
+def get_stations() -> list[dict]:
+    """The published seats, for `look_up_frequency`, /diag and the checks."""
+    from marshall.core import db
+    with db.pool().connection() as c:
+        rows = c.execute(
+            "SELECT name, field, role, freq_mhz, also FROM stations "
+            "ORDER BY field, name").fetchall()
+    return [{"name": r[0], "field": r[1] or "", "role": r[2] or "",
+             "freq_mhz": r[3], "also": list(r[4] or [])} for r in rows]
