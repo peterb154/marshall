@@ -945,10 +945,10 @@ class Controller:
         # makes these four reads safe without a guard each. `getattr` on a
         # None still answers "ndb", which is the right default at a beacon
         # field anyway.
-        navaid = getattr(self.profile.homer, "navaid", "ndb")
+        navaid = getattr(self.profile.beacon, "navaid", "ndb")
         able = kit is None or equipment.can_hold_at(kit, navaid)
         if not self._vectored and able:
-            return (f"hold at {self.profile.homer.name} as published, "
+            return (f"hold at {self.profile.beacon.name} as published, "
                     f"maintain {spell_alt(alt_ft)}")
         # A SHAPE AND A CLOCK. He has no navaid, so he cannot hold OVER
         # anything -- and a heading with no leg time is not a hold, it is a
@@ -990,7 +990,7 @@ class Controller:
             if getattr(pro, "guidance", "") == "talkdown":
                 return "report the field in sight"
             return "report established on the final approach course"
-        return f"report {pro.homer.name} inbound"
+        return f"report {pro.beacon.name} inbound"
 
     def _no_acknowledgement_phrase(self) -> str:
         """Said ONCE, with the approach clearance, on a talkdown. Then never.
@@ -1569,8 +1569,8 @@ class Controller:
                 # nothing said it wrongly in the air. The sentence is now
                 # conditional on the fact it asserts, which is what it should
                 # always have been.
-                homing = (f" -- you will be homing {pro.homer.name} from there"
-                          if getattr(pro, "homer", None) is not None else "")
+                homing = (f" -- you will be homing {pro.beacon.name} from there"
+                          if getattr(pro, "beacon", None) is not None else "")
                 call = (f"{self._addr(ac)}, {here}, {blind}"
                         f"report {fix.name}. At {fix.name} contact {tower} "
                         f"{spell_freq(tower_freq)}{homing}.")

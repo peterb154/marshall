@@ -3941,9 +3941,9 @@ def push_fixes(base: str, profile) -> int:
     fixes = {f.name: f for f in _th.fixes}
     fixes.update({f.name: f for _, f in _th.waypoints})
     # BOTH SLOTS. `beacon` was one field and is two: the aerodrome is always
-    # there and a homer only sometimes, and each is a place the controller
+    # there and a beacon only sometimes, and each is a place the controller
     # may need to resolve by name.
-    for attr in ("aerodrome", "homer", "outer_hold", "arrival_fix"):
+    for attr in ("aerodrome", "beacon", "outer_hold", "arrival_fix"):
         f = getattr(profile, attr, None)
         if f is not None and getattr(f, "name", None):
             fixes.setdefault(f.name, f)
@@ -5427,11 +5427,11 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # channel we are not listening to is a pilot talking to nobody.
         channels = [f for st in _seats for f in st.freqs if f]
     else:
-        # THE TUNABLE ONES. `homer` rather than the old merged `beacon`: what
+        # THE TUNABLE ONES. `beacon` rather than the old merged `beacon`: what
         # this wants is frequencies a pilot might call on, and an aerodrome
-        # reference point is not a transmitter. A procedure with no homer
+        # reference point is not a transmitter. A procedure with no beacon
         # contributes nothing, which the `is not None` already handles.
-        for fix in (profile.arrival_fix, profile.homer, profile.outer_hold):
+        for fix in (profile.arrival_fix, profile.beacon, profile.outer_hold):
             if fix is not None and fix.freq_mhz and fix.freq_mhz not in channels:
                 channels.append(fix.freq_mhz)
     if freq_mhz not in channels:

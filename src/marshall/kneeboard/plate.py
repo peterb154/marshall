@@ -29,9 +29,9 @@ P = R.BATUMI_APPROACH
 
 # THE BEACON, and this chart is the one page in the tree that genuinely means
 # one: the letdown is flown ON it and station passage over it is the missed
-# approach point. `homer` is the profile's name for it since #163, where the
+# approach point. `beacon` is the profile's name for it since #163, where the
 # other three procedures stopped claiming to have one.
-BEACON = P.homer
+BEACON = P.beacon
 FINAL_CRS = P.final_crs
 HOLD_TURNS = P.hold_turns
 SPEED_KT = P.speed_kt          # nm/h, derived from the MPH the ASI reads

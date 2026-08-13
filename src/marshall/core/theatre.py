@@ -267,7 +267,7 @@ def published_approaches(fields=(), theatre: str = "") -> dict:
                 f"See docs/CONFIG.md")
         mins = a.published_minima
         out[a.key] = R.ApproachProfile(
-            aerodrome=datum(a, f), homer=role(a.beacon),
+            aerodrome=datum(a, f), beacon=role(a.beacon),
             outer_hold=role(a.outer_hold),
             arrival_fix=role(a.arrival_fix), iaf=role(a.iaf),
             atc=R.AtcCapability(**a.atc.model_dump(exclude_none=True)),

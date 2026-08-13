@@ -28,7 +28,7 @@ WHAT IS NOT HERE, deliberately:
     against them and the pilot never tunes one. See `docs/CONFIG.md`.
 
 THE 1944 BEACONS ARE NOT THIS. `BATUMI` on `OS` at 132.0 was invented for the
-period scenario -- the real Batumi homer is `LU` on 0.430 and its TACAN is
+period scenario -- the real Batumi beacon is `LU` on 0.430 and its TACAN is
 `BTM`. Fiction is allowed; passing it off as surveyed is not, which is what the
 required `source` field exists to stop.
 """

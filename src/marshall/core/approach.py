@@ -108,7 +108,7 @@ class ApproachProfile:
         the place       `aerodrome` -- the field this procedure arrives at, and
                         the datum every range, radial and plate is measured
                         from. Required. See #163: it used to be called `beacon`
-        the fixes       homer (only where one is flown), outer hold, arrival
+        the fixes       beacon (only where one is flown), outer hold, arrival
                         fix, IAF
         the geometry    final approach course, IF, FAP, MAP, glidepath, the
                         descent table, the missed approach, the touchdown offset
@@ -132,7 +132,7 @@ class ApproachProfile:
     `route.station_on`, which is the same thing through the façade). [#162]
 
     The plates read the same aerodrome and ladder plus the geometry they need
-    to draw -- and the letdown's plate reads the same homer. Change a stack
+    to draw -- and the letdown's plate reads the same beacon. Change a stack
     level here and both the clearances and the plate's table move together,
     because they share this one definition.
     """
@@ -168,11 +168,11 @@ class ApproachProfile:
     # perfectly well with no approach attached -- 122 of them per map sit in
     # `[[navaid]]` rows that no procedure mentions.
     #
-    # Named `homer` and not `beacon` for one reason, and it is a transitional
+    # Named `beacon` and not `beacon` for one reason, and it is a transitional
     # one: `beacon` is still a property below, kept alive for the call sites in
     # `atc/agent_atc.py` and `atc/controller.py` that this change was not
     # allowed to touch. See that property.
-    homer: Fix | None = None
+    beacon: Fix | None = None
 
     # Where the flight is worked BEFORE it reaches the beacon. None means one
     # controller owns the whole arrival.
@@ -718,11 +718,11 @@ class ApproachProfile:
         else:
             # THE HOMER, and the aerodrome only if there is none. A procedure
             # that reaches this branch is one whose controllers live on the
-            # beacons rather than on the ladder, so it has a homer by
+            # beacons rather than on the ladder, so it has a beacon by
             # definition; the fallback is there so that a mis-configured
             # procedure gives its own controller on no frequency rather than
             # raising on a None halfway through an arrival.
-            fix = self.homer or self.aerodrome
+            fix = self.beacon or self.aerodrome
         return (fix.sector or self.controller,
                 fix.freq_mhz if fix.freq_mhz else 0.0)
 
@@ -983,24 +983,29 @@ def profile_from_dict(d: dict) -> ApproachProfile:
     # A ROW WRITTEN BEFORE #163 CARRIES `beacon` AND NO `aerodrome`, and what
     # that field held on such a row was the aerodrome reference point -- that
     # is the whole finding. So it becomes the datum, and the procedure comes
-    # back with no homer, which is right for the three of four that never had
+    # back with no beacon, which is right for the three of four that never had
     # one and wrong only for a stored letdown, whose beacon and whose field are
     # the same point anyway. Dropping it instead would leave `aerodrome`
     # missing, and it is required: the profile would not rebuild at all.
+    # A LEGACY ROW IS ONE WITH NO `aerodrome`, and that is the only safe way to
+    # tell the two meanings of this key apart. Before #163 `beacon` was the
+    # merged slot and held the aerodrome; after it, `beacon` is a beacon and
+    # rows carry both. The discriminator is the presence of the new key, not
+    # the old one -- and getting that wrong un-beacons every current letdown,
+    # which is exactly what an unconditional `pop` here did for one commit.
     if "beacon" in d and "aerodrome" not in d:
         d["aerodrome"] = d["beacon"]
-        # ...AND THE HOMER TOO, but only on a letdown. `kind` is on the row, so
-        # the question "was that stored beacon a real beacon?" is answerable
-        # rather than guessed: on `ndb` it was one and the procedure is flown on
-        # it, on an ILS or an ASR it was the aerodrome wearing an invented ident
-        # and the profile must come back with no beacon at all.
-        if (d.get("kind") or "").strip().lower() == "ndb":
-            d["homer"] = d["beacon"]
-    d.pop("beacon", None)
+        # WAS THAT STORED BEACON A REAL BEACON? `kind` is on the row, so this
+        # is answerable rather than guessed: on `ndb` it was one and the
+        # procedure is flown on it, so it stays. On an ILS or an ASR it was the
+        # aerodrome wearing an invented ident, and the profile must come back
+        # with no beacon at all.
+        if (d.get("kind") or "").strip().lower() != "ndb":
+            d.pop("beacon", None)
     # Every nested Fix has to be rebuilt, not just the two obvious ones -- a dict
     # left in arrival_fix survives every check and only fails at the moment the
     # controller asks which frequency to talk on, which is mid-approach.
-    for key in ("aerodrome", "homer", "outer_hold", "arrival_fix"):
+    for key in ("aerodrome", "beacon", "outer_hold", "arrival_fix"):
         if isinstance(d.get(key), dict):
             d[key] = Fix(**d[key])
     # A STORED `stations` LIST IS DROPPED, and there is no rebuilding of it any

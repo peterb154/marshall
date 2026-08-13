@@ -11,7 +11,7 @@ from, and the origin `field_origin` fell back to. Only the first is a beacon's.
 
 What it actually held was the AERODROME REFERENCE POINT wearing an ident and a
 frequency that `tools/import_beacons.py` says outright were invented for the
-1944 scenario -- the real Batumi homer is `LU` on 0.430 and sits 0.72 nm away,
+1944 scenario -- the real Batumi beacon is `LU` on 0.430 and sits 0.72 nm away,
 in the same theatre file, imported from the sim's own tables.
 
 THREE ISSUES WERE THIS ONE DEFECT, which is why it was worth splitting rather
@@ -30,8 +30,6 @@ The tests below are the ones the original change did not live to write.
 
 from __future__ import annotations
 
-import pathlib
-import re
 import unittest
 
 from marshall.core import route as R
@@ -43,9 +41,6 @@ PROCEDURES = ("BATUMI_ASR", "BATUMI_ILS", "BATUMI_APPROACH", "KOBULETI_ILS")
 # points the nose at it, and station passage over it IS the missed approach
 # point. It is the reason the concept exists at all.
 THE_LETDOWN = "BATUMI_APPROACH"
-
-SRC = pathlib.Path(__file__).resolve().parent.parent / "src"
-
 
 def profiles():
     for name in PROCEDURES:
@@ -90,21 +85,21 @@ class TestMostApproachesHaveNoBeacon(unittest.TestCase):
             if p is None:
                 continue
             with self.subTest(name):
-                self.assertIsNone(getattr(p, "homer", None))
+                self.assertIsNone(getattr(p, "beacon", None))
 
     def test_nor_does_the_surveillance_approach(self):
         """An ASR is a man reading a radar and talking. There is nothing in the
         aeroplane to tune."""
-        self.assertIsNone(getattr(R.BATUMI_ASR, "homer", None))
+        self.assertIsNone(getattr(R.BATUMI_ASR, "beacon", None))
 
     def test_but_the_letdown_does_and_keeps_it(self):
         p = getattr(R, THE_LETDOWN)
-        h = getattr(p, "homer", None)
+        h = getattr(p, "beacon", None)
         self.assertIsNotNone(h, "the one procedure that IS a beacon lost it")
-        self.assertTrue(getattr(h, "freq_mhz", 0), "a homer he cannot tune")
+        self.assertTrue(getattr(h, "freq_mhz", 0), "a beacon he cannot tune")
 
     def test_exactly_one_procedure_on_this_map_has_a_beacon(self):
-        got = [n for n, p in profiles() if getattr(p, "homer", None) is not None]
+        got = [n for n, p in profiles() if getattr(p, "beacon", None) is not None]
         self.assertEqual(got, [THE_LETDOWN])
 
 
@@ -131,58 +126,63 @@ class TestTheDatumIsTheField(unittest.TestCase):
 
 
 class TestTheMergedAnswerIsGone(unittest.TestCase):
-    """`ApproachProfile.beacon` is DELETED, not deprecated.
+    """`beacon` means a beacon now, and nothing else.
 
-        "Should we remove the shim? I don't like the sound of shim. Sounds like
-         a temporary hack"
+        "Homer is a new term. Why is beacon such an issue?"
 
-    It was one. It returned the homer where a procedure had one and the
-    aerodrome otherwise -- precisely the merged answer that was wrong -- and it
-    existed only because the split could not edit two files other work held at
-    the time. Keeping it would have left every future caller able to ask the
-    old question and get an airfield on three of this map's four procedures.
+    It was not the word. It was that one slot held two things, so `beacon`
+    returned an AIRFIELD on three of this map's four procedures. The split gave
+    the datum its own name (`aerodrome`); the navaid briefly got the period word
+    `homer`, which was the wrong instinct -- the 1944 vocabulary describing the
+    very thing that had over-fitted the system to 1944. It is `beacon` again,
+    because the theatre file and the catalogue model always called it that:
 
-    REMOVING IT FOUND A SEVENTH READER that a rename never would have.
-    `_approach_named` builds a procedure key as `<field>-<kind>` and read the
-    field through `getattr(p, "beacon", None)` -- so with the property in place
-    it would have gone on working, silently, off the merged answer. It is also
-    why this test now looks for BOTH spellings: the first version searched for
-    `.beacon` and walked straight past a `getattr`.
+        [[approach]] key = "batumi-ndb"   beacon = "BATUMI"      <- the only one
+        Approach.beacon: str = ""         <- optional, and always was in DATA
 
-    This is the criterion #162 found missing on #2, where four acceptance
-    criteria were met while the old path kept 26 of 28 call sites, because none
-    of them asked what still READ the thing being replaced. So it is a grep,
-    and it allows nothing.
+    One word across data, model and runtime, meaning exactly what it says.
+
+    WHAT THIS CLASS GUARDS is the property the merge destroyed: asking a
+    procedure with no beacon for its beacon must FAIL, loudly, rather than
+    hand back a plausible airfield. That is the difference between a bug
+    somebody finds in an hour and one that survives from the first sortie to
+    the hundredth, which is what #160, #141 and #163 all were.
     """
 
-    # Two spellings, because the seventh reader used the second one.
-    PATTERNS = (re.compile(r"\.beacon\b"),
-                re.compile(r"""getattr\([^,]+,\s*["']beacon["']"""))
+    def test_asking_an_ILS_for_a_beacon_raises(self):
+        """It used to answer "BATUMI" -- a real fix, at a real place, with a
+        real frequency, belonging to a procedure that has no beacon at all."""
+        for name in ("BATUMI_ILS", "KOBULETI_ILS", "BATUMI_ASR"):
+            p = getattr(R, name, None)
+            if p is None:
+                continue
+            with self.subTest(name), self.assertRaises(AttributeError):
+                _ = p.beacon.name
 
-    def test_the_property_no_longer_exists(self):
+    def test_and_the_letdown_still_answers(self):
+        self.assertEqual(getattr(R, THE_LETDOWN).beacon.name, "BATUMI")
+
+    def test_the_datum_never_raises_because_every_approach_has_one(self):
         for name, p in profiles():
             with self.subTest(name):
-                self.assertFalse(hasattr(p, "beacon"),
-                                 "the merged answer is still reachable")
+                self.assertTrue(p.aerodrome.name)
 
-    def test_and_nothing_asks_for_it(self):
-        found = set()
-        for path in SRC.rglob("*.py"):
-            for line in path.read_text().splitlines():
-                code = line.split("#", 1)[0]
-                if not any(pat.search(code) for pat in self.PATTERNS):
-                    continue
-                rel = path.relative_to(SRC / "marshall").as_posix()
-                # `a.beacon` on the CATALOGUE row is a string key naming a
-                # published fix -- how the theatre file says which navaid to
-                # resolve. A different thing that happens to share a word.
-                if rel.startswith("core/"):
-                    continue
-                found.add(f"{rel}: {code.strip()[:60]}")
-        self.assertEqual(found, set(),
-                         "someone is asking a profile for its `beacon`. Use "
-                         "`aerodrome` for the datum or `homer` for the navaid; "
-                         "the merged answer was deleted in #163.")
+    def test_they_are_two_slots_and_not_an_alias(self):
+        """On the letdown both resolve to the same published point, which is a
+        fact about Batumi in 1944 -- not evidence that one field would do. The
+        real beacon LU is 0.72 nm from the aerodrome; the fiction sits on it."""
+        import dataclasses
+        p = getattr(R, THE_LETDOWN)
+        names = {f.name for f in dataclasses.fields(type(p))}
+        self.assertIn("aerodrome", names)
+        self.assertIn("beacon", names)
+        for name in ("BATUMI_ILS", "KOBULETI_ILS", "BATUMI_ASR"):
+            q = getattr(R, name, None)
+            if q is None:
+                continue
+            with self.subTest(name):
+                self.assertIsNone(q.beacon)
+                self.assertIsNotNone(q.aerodrome)
 
 
 if __name__ == "__main__":

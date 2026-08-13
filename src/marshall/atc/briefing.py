@@ -65,11 +65,11 @@ def _channels(profile: R.ApproachProfile) -> list[str]:
     # `profile.arrival_fix.name` on a None -- which is how this was found.
     #
     # AND THE BEACON IS GUARDED FOR THE SAME REASON, not because a procedure
-    # exists today with an arrival fix and no homer, but because the paragraph
+    # exists today with an arrival fix and no beacon, but because the paragraph
     # below is about homing one and there is now such a thing as an approach
     # that homes nothing at all (#163). Two Nones, one lesson.
     if (getattr(profile, "arrival_fix", None) is None
-            or getattr(profile, "homer", None) is None):
+            or getattr(profile, "beacon", None) is None):
         return []
     enr_name, enr_freq = profile.station(enroute=True)
     twr_name, twr_freq = profile.station()
@@ -78,7 +78,7 @@ def _channels(profile: R.ApproachProfile) -> list[str]:
         out.append(
             f"- **Channels.** Enroute he homes {profile.arrival_fix.name} and is "
             f"on **{enr_freq:.1f}** ({enr_name}); the letdown is flown homing "
-            f"{profile.homer.name}, so it belongs to {twr_name} on "
+            f"{profile.beacon.name}, so it belongs to {twr_name} on "
             f"**{twr_freq:.1f}**. Hand him over as he leaves "
             f"{profile.arrival_fix.name}. He physically cannot hear you on a "
             "channel he is not homing.")
@@ -435,7 +435,7 @@ def _ndb_plate(profile: R.ApproachProfile,
                size: int = R.FLIGHT_SIZE) -> str:
     """The field-specific facts, as the markdown 'plate' prompt part."""
     cap = profile.atc
-    b = profile.homer
+    b = profile.beacon
     inbound = _inbound_hdg(profile)
     outbound = (inbound + 180) % 360
     hold, platform = profile.stack_ft[0], profile.platform_ft
