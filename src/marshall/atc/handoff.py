@@ -133,6 +133,34 @@ RULES: tuple[Rule, ...] = (
     # he has landed and nobody noticed, or he never left. Either way Tower.
     Rule("approach", "tower", "on_ground"),
     Rule("departure", "tower", "on_ground"),
+    # AND THE MIRROR: AN AIRBORNE AEROPLANE IS NEVER GROUND'S.
+    #
+    #     "Yes, an airborne airplane is never ground's. Just have tower take
+    #      him back if he's flying - even if he already said welcome go to
+    #      ground"
+    #
+    # These rows exist because `report_down` now names Ground in the roll-out
+    # transmission (#77), which is right, and which makes a TOUCH-AND-GO worse
+    # than it was. The poll runs every four seconds against a ten to twenty
+    # second roll, so it fires: he is told to call Ground, put on `taxi_in` --
+    # and then he flies. Nothing could retrieve him. `handoff_on_the_event`
+    # covers only approach and tower, `phases.derive` refuses `taxi_in ->
+    # landed`, and there was no row out of a ground seat at all, so he sat on
+    # Ground's frequency, airborne, with only the airspace volumes able to move
+    # him.
+    #
+    # Written as an INVARIANT rather than as a touch-and-go case, deliberately.
+    # Stated as "an airborne aeroplane is never Ground's" it also catches the
+    # go-around that happens after the goodbye, and the aeroplane that gets
+    # airborne off a taxiway with no take-off clearance at all -- neither of
+    # which anybody would have thought to write a special case for.
+    #
+    # Tower, not Departure: the man who just left the runway is the runway
+    # controller's until he is clear of the circuit, and the tower->departure
+    # row above then does its normal job. A touch-and-go REQUEST is a thing to
+    # ask Tower for one day; this is only the retrieval.
+    Rule("ground", "tower", "airborne"),
+    Rule("clearance", "tower", "airborne"),
     # THE GROUND TRANSITIONS ARE NOT ROWS, and that is the design rather than
     # an omission. These two used to be listed here as deliberately-absent:
     #
@@ -212,11 +240,35 @@ def _on_ground(st, nm: float | None, profile=None, rule=None) -> bool:
     return bool(st.on_ground)
 
 
+def _airborne(st, nm: float | None, profile=None, rule=None) -> bool:
+    """He is flying, POSITIVELY -- not merely "not known to be down".
+
+    `not on_ground` is the wrong test and there is a scar for it: an aircraft
+    radar has stopped seeing answers False to `on_ground` -- no unit, no
+    position, so the geometry fallback is false too -- and reading that as
+    "airborne" put an aeroplane which had LEFT THE WORLD onto the board as
+    flying. Here the same mistake would tear a parked aeroplane off Ground
+    every time his track went quiet.
+
+    So it requires radar to actually have him: a range means the scope holds a
+    contact. Same guard `_outbound_beyond` uses, for the same reason. "We
+    cannot tell" leaves him exactly where he is, which is the answer a
+    controller would give.
+    """
+    return bool(not st.on_ground and st.range_nm is not None)
+
+
 CONDITIONS = {
     "outbound_beyond": _outbound_beyond,
     "inbound_within": _inbound_within,
     "on_ground": _on_ground,
+    "airborne": _airborne,
 }
+
+# THE SEATS THAT CANNOT HAVE A FLYING AEROPLANE. Named once, because the
+# invariant is enforced in two places -- the rule rows above and the
+# phase-ownership guard in `due` -- and two lists would drift.
+_GROUND_SEATS = ("ground", "clearance")
 
 
 @dataclass(frozen=True)
@@ -295,6 +347,17 @@ def due(profile, me, st: State) -> Verdict | None:
     if st.phase:
         want = _phases.owner_of(st.phase)
         aims = getattr(_phases.get(st.phase), "aims_at", "")
+        # ...UNLESS HE IS FLYING. A phase owned by a ground seat cannot own an
+        # airborne aeroplane, and outright ownership is exactly what would make
+        # that stick: `taxi_in` aims at nothing, so without this the phase hands
+        # a flying aircraft to Ground on every poll and the rule table below --
+        # which now says an airborne aeroplane is Tower's -- is never consulted.
+        #
+        # This is the guard rather than a rule because the branch above it wins
+        # by design. The invariant has to be stated in both places or it is not
+        # an invariant, it is a row that something else outranks.
+        if want in _GROUND_SEATS and _airborne(st, None):
+            want = ""
         if want and aims == "none" and want != role \
                 and want not in getattr(me, "also", ()):
             nxt = _route.station_for(want, field=getattr(me, "field", ""),

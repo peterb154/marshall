@@ -468,3 +468,90 @@ class TheGroundLadderCanActuallyLetGo(unittest.TestCase):
         self.assertLess(i_down, i_due)
         self.assertIn("if nxt is None and me is not None:", src,
                       "the phase branch must not be gated on being airborne")
+
+
+class TestAnAirborneAeroplaneIsNeverGrounds(unittest.TestCase):
+    """The touch-and-go, and everything else shaped like it.
+
+        "Yes, an airborne airplane is never ground's. Just have tower take him
+         back if he's flying - even if he already said welcome go to ground"
+
+    #77 made `report_down` name Ground in the roll-out transmission, which is
+    right and is what a real tower does. It also made a touch-and-go worse: the
+    radar poll runs every four seconds against a ten to twenty second roll, so
+    it fires, he is told to call Ground and put on `taxi_in` -- and then he
+    flies. Before these rows nothing could retrieve him. There was no row out of
+    a ground seat at all, and `taxi_in` aims at nothing, so PHASE OWNERSHIP --
+    which wins by design -- handed a flying aeroplane back to Ground on every
+    poll.
+
+    That is why the invariant is asserted twice below. A rule that a stronger
+    branch outranks is not an invariant.
+    """
+
+    GROUND = R.station_for("ground", field=R.ARRIVAL_FIELD)
+
+    def test_tower_takes_him_back_when_he_is_flying(self):
+        v = H.due(P, self.GROUND, flying(1.5))
+        self.assertIsNotNone(v, "nothing retrieved him")
+        self.assertEqual(v.role, "tower")
+
+    def test_even_after_the_goodbye_put_him_on_grounds_phase(self):
+        """The phase branch owns him outright, so this is the assertion that
+        matters -- the one that failed before the guard existed."""
+        st = H.State(on_ground=False, range_nm=1.5, inbound=False,
+                     phase="taxi_in")
+        v = H.due(P, self.GROUND, st)
+        self.assertIsNotNone(v, "phase ownership kept a flying aeroplane")
+        self.assertEqual(v.role, "tower")
+
+    def test_but_a_parked_aeroplane_stays_with_ground(self):
+        """The invariant is about FLYING, not about the phase. Ground keeps the
+        aeroplane he is meant to have."""
+        st = H.State(on_ground=True, range_nm=0.1, inbound=False,
+                     phase="taxi_in")
+        self.assertIsNone(H.due(P, self.GROUND, st))
+
+    def test_and_a_track_radar_has_LOST_is_left_where_he_is(self):
+        """`not on_ground` is not `airborne`. A track that has gone quiet
+        answers False to on_ground -- no unit, no position -- and reading that
+        as flying would tear every parked aeroplane off Ground the moment the
+        stream hiccuped. Same scar as the board entry for an aeroplane that had
+        left the world."""
+        st = H.State(on_ground=False, range_nm=None, inbound=False,
+                     phase="taxi_in")
+        self.assertIsNone(H.due(P, self.GROUND, st))
+
+    def test_the_ramp_seat_cannot_hold_him_either(self):
+        """Airborne off a taxiway with no take-off clearance at all. Nobody
+        would have written a special case for it; the invariant covers it."""
+        cl = R.station_for("clearance", field=R.ARRIVAL_FIELD)
+        if cl is None:
+            self.skipTest("no clearance seat at the arrival field")
+        v = H.due(P, cl, flying(1.0))
+        self.assertIsNotNone(v)
+        self.assertEqual(v.role, "tower")
+
+    def test_the_case_the_guard_exists_for_he_has_not_switched_yet(self):
+        """He is still on TOWER's frequency, has been told to call Ground, and
+        gets airborne before he switches.
+
+        This is the one phase ownership actually reaches: the phase names
+        Ground, he is with Tower, so `want != role` and the branch fires --
+        handing a flying aeroplane to Ground unprompted. The rule rows cannot
+        help here, because the row is keyed on the seat he is WITH.
+        """
+        st = H.State(on_ground=False, range_nm=1.5, inbound=False,
+                     phase="taxi_in")
+        v = H.due(P, TOWER, st)
+        self.assertNotEqual(getattr(v, "role", None), "ground",
+                            "phase ownership gave Ground a flying aeroplane")
+
+    def test_and_on_the_ground_that_same_handoff_is_correct(self):
+        """The other side of it, so the guard cannot be 'never hand to Ground'.
+        Down and rolling, still on Tower: Ground is exactly right."""
+        st = H.State(on_ground=True, range_nm=0.2, inbound=False,
+                     phase="taxi_in")
+        v = H.due(P, TOWER, st)
+        self.assertIsNotNone(v, "nobody sent him to Ground")
+        self.assertEqual(v.role, "ground")

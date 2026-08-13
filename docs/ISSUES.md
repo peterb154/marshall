@@ -8942,3 +8942,61 @@ Status: OPEN — the decision is made. Blocks the clean version of #160.
 Labels: needs-flight-test
 
 ---
+
+## [HO-8] An airborne aeroplane is never Ground's — #164
+
+    "Yes, an airborne airplane is never ground's. Just have tower take him back
+     if he's flying - even if he already said welcome go to ground"
+
+#77 made `report_down` name Ground in the roll-out transmission, which is right
+and is what a real tower does. It also made a **touch-and-go** worse than it was.
+
+The radar poll runs every four seconds against a ten to twenty second roll, so
+it fires: he is told to call Ground, put on `taxi_in` — and then he flies.
+Nothing could retrieve him. `handoff_on_the_event` covers only approach and
+tower, `phases.derive` refuses `taxi_in -> landed`, and there was **no row out
+of a ground seat at all**. He sat on Ground's frequency, airborne, with only the
+airspace-volume branch able to move him.
+
+**Written as an invariant, not as a touch-and-go case.** Stated as "an airborne
+aeroplane is never Ground's" it also catches the go-around that happens after
+the goodbye, and the aeroplane that gets airborne off a taxiway with no take-off
+clearance at all — neither of which anybody would have written a special case
+for. Tower rather than Departure, because the man who just left the runway is
+the runway controller's until he is clear of the circuit, and the existing
+tower->departure row then does its normal job.
+
+**Enforced in TWO places, and that is the point.** The rule rows are not enough:
+`due` gives a phase whose `aims_at` is "none" outright ownership, by design and
+correctly, so `taxi_in` handed a flying aeroplane to Ground before the table was
+ever consulted. A rule a stronger branch outranks is not an invariant. So the
+phase-ownership branch carries the same guard, and `_GROUND_SEATS` is named once
+so the two cannot drift.
+
+**`not on_ground` is not `airborne`.** A track radar has stopped seeing answers
+False to `on_ground` — no unit, no position, so the geometry fallback is false
+too — and reading that as flying would tear every parked aeroplane off Ground
+the moment the stream hiccuped. Same scar as the board entry for an aeroplane
+that had left the world. The condition requires radar to positively hold him;
+"we cannot tell" leaves him where he is.
+
+**Acceptance criteria.**
+
+- A flying aeroplane on a ground seat is retrieved by Tower — asserted both
+  through the rule table and from Ground's own phase.
+- A flying aeroplane on TOWER whose phase names Ground is NOT sent to Ground.
+- A parked aeroplane stays with Ground, and a landed one still gets the roll-out
+  handoff to Ground. The guard is about flying, not about the phase.
+- A track radar has lost is left where it is.
+- The tests fail with the fix removed. Verified: 4 of 7 go red, and the 3 that
+  pass are the negative cases.
+
+Tests: `tests/test_handoff_rules.py::TestAnAirborneAeroplaneIsNeverGrounds`.
+Code: `src/marshall/atc/handoff.py` (`_airborne`, `_GROUND_SEATS`, two rule
+rows, the phase-ownership guard in `due`).
+
+Status: FIXED. Retrieval only — a touch-and-go REQUEST to Tower is a separate
+thing the owner has put at very low priority, and is not built.
+Labels: needs-flight-test
+
+---
