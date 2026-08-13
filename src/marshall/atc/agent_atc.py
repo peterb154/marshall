@@ -151,7 +151,13 @@ def fetch_radar(session_id: str = "", url: str = RADAR_URL,
     # It is a second SOURCE, not a second copy: the same rows either way.
     # THE SPEAKING CONTROLLER'S FIELD, not the profile's. See `field_origin`:
     # without it Kobuleti's controllers measure every range from Batumi.
-    origin = field_origin(profile, field) if profile is not None else None
+    #
+    # AND THE REFERENCE COMES BACK WITH IT. Asked as a `Datum` rather than as a
+    # bare point, so everything downstream of this line -- the board, the RADAR
+    # block, the handoff phrase -- can name what it measured from instead of
+    # working it out again from data it does not have. [#160]
+    datum = field_origin(profile, field) if profile is not None else Datum()
+    origin = datum.point
     got = None
     try:
         from marshall.core import scope as _scope
@@ -209,7 +215,7 @@ def fetch_radar(session_id: str = "", url: str = RADAR_URL,
         print("  !! no projected origin for this controller -- the picture "
               "carries no ranges", flush=True)
     return Scope(drawn or got.get("picture", "").strip(),
-                 contacts=contacts, origin=origin,
+                 contacts=contacts, origin=origin, datum=datum,
                  bullseye=got.get("bullseye"))
 
 
@@ -1586,6 +1592,15 @@ def asr_context(profile, scope: str, cs: str, track: str = "") -> str:
 
     g = asr.guide(pos, profile)
     rng = asr.spoken_range(g.range_nm)
+    # AND WHAT THAT RANGE IS MEASURED FROM, in the same clause as the number.
+    #
+    # `g.range_nm` is `pos.range_nm`, and `pos` was computed against the Scope's
+    # origin -- so this is the one place that knows both, and the agent is handed
+    # the pair rather than a bare figure it would have to attribute itself.
+    # Blank when the scope could not name its origin, because a guessed datum is
+    # worse than none: it is a real distance to a real airport. [#160]
+    _d = getattr(scope, "datum", None)
+    frm = f" {_d.spoken}" if _d else ""
     # ON AN ILS, ESTABLISHED IS WHERE THE CONTROLLER STOPS.
     #
     # He has a localiser and a glidepath and is flying both. Ranges every mile
@@ -1614,7 +1629,7 @@ def asr_context(profile, scope: str, cs: str, track: str = "") -> str:
         # agent ALSO reports range and heading on each transmission the pilot
         # hears the same numbers twice from the same controller -- which is what
         # "too chatty on final" meant. Acknowledge and get off the air.
-        return (f"ASR: he is on final, {rng} miles, {spoken_deviation(g)}. The talk-down "
+        return (f"ASR: he is on final, {rng} miles{frm}, {spoken_deviation(g)}. The talk-down "
                 f"is being transmitted automatically every mile — do NOT repeat "
                 f"his range, heading or altitude. Acknowledge what he said in a "
                 f"few words and stop.")
@@ -1622,7 +1637,7 @@ def asr_context(profile, scope: str, cs: str, track: str = "") -> str:
         # He has flown the approach and not landed. What he needs is the
         # PUBLISHED missed approach, and he must not be told anything about the
         # final approach course -- he is deliberately leaving it.
-        return (f"ASR: he has gone around, {rng} miles. Missed approach: fly "
+        return (f"ASR: he has gone around, {rng} miles{frm}. Missed approach: fly "
                 f"heading {g.heading:03d}, climb {g.altitude_ft}. Do NOT tell "
                 f"him he is off course — he is flying the missed approach and "
                 f"is exactly where he should be. Re-sequence him after the "
@@ -1667,13 +1682,13 @@ def asr_context(profile, scope: str, cs: str, track: str = "") -> str:
         # owns. Same geometry as the ASR's repositioning legs -- headings and a
         # descent onto the centreline -- and it ends at the clearance rather
         # than continuing to the runway.
-        return (f"ILS: he is being vectored to intercept, {rng} miles{turn}. "
+        return (f"ILS: he is being vectored to intercept, {rng} miles{frm}{turn}. "
                 f"The turns and altitudes are transmitted automatically — do "
                 f"NOT issue a heading or an altitude yourself. Clear him for "
                 f"the approach when he is closing on the centreline, ask him "
                 f"ONCE to report established, and then say nothing until he "
                 f"does.")
-    return (f"ASR: he is being vectored, {rng} miles{turn}. The turns and "
+    return (f"ASR: he is being vectored, {rng} miles{frm}{turn}. The turns and "
             f"altitudes are transmitted automatically — do NOT issue a heading "
             f"or an altitude yourself, and do NOT repeat the one he was just "
             f"given. Acknowledge what he said in a few words and stop.")
@@ -2576,8 +2591,15 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
                 and nm is not None and nm > OVERHEAD_NM):
             print(f"  !! rejected: claims the beacon, radar shows {nm:.1f} nm",
                   flush=True)
+            # NAMED, because this range is quoted back AT a pilot who has just
+            # said he is somewhere else. Contradicting a man's position report
+            # with an unattributed number gives him nothing to check it against,
+            # and he is the one person in the loop who can catch a wrong datum
+            # while it still matters. [#160]
+            _rej = getattr(scope, "datum", None)
+            _rfrm = f" {_rej.spoken}" if _rej else " out"
             return (f"POSITION REJECTED: he reports over the beacon but radar "
-                    f"shows him {nm:.0f} miles out. Correct him and have him "
+                    f"shows him {nm:.0f} miles{_rfrm}. Correct him and have him "
                     f"continue inbound; he has NOT reached the fix.", "")
 
         # WHAT HE IS FLYING, before the engine decides anything about him.
@@ -3644,8 +3666,97 @@ def whisper_vocabulary(bridge, profile, roster=None) -> str:
 PROJECTED: dict[str, tuple] = {}
 
 
-def field_origin(profile, field: str = "") -> tuple | None:
-    """Where THIS controller measures from.
+# WHY A DATUM WAS CHOSEN, and the five answers are deliberately distinct
+# strings rather than a boolean or a rank. This is the AUDIT TRAIL for #160: a
+# range measured from the wrong point is a real distance to a real airport and
+# sounds exactly like a right answer, so the only thing that ever makes it
+# falsifiable -- on the board or on the air -- is the reference saying which
+# question it answered.
+#
+# The bullseye's phrase names the CIRCUMSTANCE rather than the point, because
+# the point is already in the name and "nobody is working him" is the fact a
+# reader needs: a contact on the board is quoted off a field, and one on nobody's
+# board is quoted off the bullseye precisely BECAUSE no controller owns him.
+WHY_DESTINATION = "his destination"      # the field his plan ends at
+WHY_FIELD = "his field"                  # the aerodrome of the speaking seat
+WHY_APPROACH = "the loaded approach"     # ...whatever the bridge was started on
+WHY_BULLSEYE = "nobody is working him"   # display only, never spoken
+WHY_NONE = ""                            # and a blank renders blank
+
+
+@dataclasses.dataclass(frozen=True)
+class Datum:
+    """What a range is measured FROM, and why that point and not another.
+
+    A RANGE WITHOUT ONE IS NOT WRONG, IT IS UNFALSIFIABLE, which is the whole of
+    #160 in a sentence. `field_origin` has answered "where does this controller
+    measure from" since the first sortie and the answer went nowhere but into
+    the arithmetic -- so every Center range in the project's history was measured
+    from Batumi, nothing chose that, and no screen or transmission anywhere said
+    so.
+
+        "I don't really care which airfield is the reference for center's bra,
+         should probably be the flight plans destination airfield, but that
+         doesn't matter as much as we show / say from where. Else that bra is
+         senseless."
+
+    So the reference travels WITH the number -- into the Scope, onto the board
+    row, into the RADAR block the controller reads -- rather than being looked
+    up again by whoever is about to speak. A datum re-derived at the point of
+    speaking is a second answer to a question that already has one, which is the
+    shape of most of this month's bugs.
+
+    `point` is the lat/lon the arithmetic actually used, so the name can never
+    drift from the number: they are one object.
+    """
+
+    name: str = ""                       # BATUMI, KOBULETI, BULLSEYE
+    why: str = WHY_NONE
+    point: tuple | None = None
+
+    def __bool__(self) -> bool:
+        """Truthy only when it can be BOTH measured from and named.
+
+        A point with no name is what every range has had until now, and it must
+        render and speak as nothing rather than as a guess -- #109 settled that
+        an origin-less picture is not a picture, and this is the same rule for
+        an anonymous one.
+        """
+        return bool(self.name and self.point)
+
+    @property
+    def spoken(self) -> str:
+        """"from Batumi" -- the clause that goes on the end of a range.
+
+        Title case because it is going to a speech synthesiser and a shouted
+        BATUMI is not how a controller says his own field's name.
+        """
+        return f"from {self.name.title()}" if self else ""
+
+    def published(self) -> dict:
+        """The two fields a surface needs, or nothing at all.
+
+        Empty rather than `{"name": "", "why": ""}`, because `/diag`'s first
+        rule is that no panel renders a value for a key the snapshot does not
+        contain -- and a blank string is a value.
+        """
+        return {"name": self.name, "why": self.why} if self else {}
+
+
+def datum_of(scope) -> dict | None:
+    """A Scope's reference, as a surface should publish it -- or nothing.
+
+    `None` rather than an empty dict, because `/diag`'s first rule is that no
+    panel renders a value for a key the snapshot does not contain: a blank datum
+    must render blank, and the only reliable way to say "blank" to a renderer is
+    not to send it a value at all.
+    """
+    d = getattr(scope, "datum", None)
+    return (d.published() or None) if d else None
+
+
+def field_origin(profile, field: str = "") -> Datum:
+    """Where THIS controller measures from, AND WHY.
 
     The beacon when the field has one, because that is the published reference
     every range on the plate is quoted against; the arrival fix otherwise. Not a
@@ -3659,6 +3770,22 @@ def field_origin(profile, field: str = "") -> tuple | None:
     from Batumi. Every range and radial that controller spoke would have been
     measured from an airport forty miles away, and each one is a plausible
     number, so nothing looks wrong until a pilot flies it.
+
+    IT RETURNS A `Datum` AND NOT A POINT, and that is the change. This function
+    has known which aerodrome it picked and why since it was written, and it
+    threw both away on the way out -- so the reason lived only in this docstring
+    and every Center range in the project's history was quoted off Batumi with
+    nothing anywhere saying so. A caller that needs the bare co-ordinates asks
+    for `.point`; a caller that is going to SHOW or SAY the number now has what
+    it needs to name it. [#160]
+
+    THE CHOICE ITSELF IS UNCHANGED, deliberately. His own field first, then the
+    loaded approach's beacon -- the fallback nobody chose, which now prints its
+    own name instead of hiding in the arithmetic. `WHY_DESTINATION` is what a
+    controller working an aeroplane should get (the field HE is going to,
+    `legs[-1]` of his plan) and is not wired here: choosing differently MOVES A
+    NUMBER, `CENTER_NM` is computed against this same origin, and that is a
+    ghost flight's worth of verification and its own commit.
     """
     if field:
         # His own field first. PROJECTED is keyed by fix name and the fields are
@@ -3666,13 +3793,13 @@ def field_origin(profile, field: str = "") -> tuple | None:
         # KOBULETI, BATUMI -- resolves directly.
         got = PROJECTED.get(field.upper())
         if got:
-            return got
+            return Datum(field.upper(), WHY_FIELD, got)
     for attr in ("beacon", "arrival_fix", "outer_hold"):
         f = getattr(profile, attr, None)
         name = getattr(f, "name", "") if f is not None else ""
         if name and name.upper() in PROJECTED:
-            return PROJECTED[name.upper()]
-    return None
+            return Datum(name.upper(), WHY_APPROACH, PROJECTED[name.upper()])
+    return Datum()
 
 
 class Scope(str):
@@ -3701,12 +3828,23 @@ class Scope(str):
     contacts: list
     origin: tuple | None
     bullseye: dict
+    # WHAT THE ORIGIN IS CALLED, AND WHY IT IS THAT ONE. `origin` is the two
+    # numbers the arithmetic needs and says nothing about whose point they are;
+    # this is the half that reaches a pilot. See `Datum` and [#160].
+    datum: object
 
-    def __new__(cls, picture: str = "", contacts=None, origin=None, bullseye=None):
+    def __new__(cls, picture: str = "", contacts=None, origin=None,
+                bullseye=None, datum=None):
         self = super().__new__(cls, picture or "")
         self.contacts = list(contacts or [])
         self.origin = origin
         self.bullseye = dict(bullseye or {})
+        # AN UNNAMED ORIGIN IS STILL AN ORIGIN, and it renders and speaks as
+        # nothing. A caller that has a point but no name for it -- every test
+        # fixture, and anything built before this existed -- gets a datum that
+        # is falsy, which is what makes "blank renders blank" the default rather
+        # than something each surface has to remember.
+        self.datum = datum if datum is not None else Datum(point=origin)
         return self
 
     def of(self, track: str):
@@ -4547,6 +4685,11 @@ def _contact(u, scope: str, board_tracks: set) -> dict:
         "level": "warn" if u.manned and not controlled and not u.category else "",
         "range_nm": getattr(fix, "range_nm", None),
         "radial": getattr(fix, "radial_deg", None),
+        # ...AND WHAT THOSE TWO ARE MEASURED FROM. Published beside them, never
+        # derived by the page, for the same reason `bulls` is: a surface that
+        # works out its own reference has a second opinion about it. Absent
+        # entirely when the scope could not name its origin. [#160]
+        "datum": datum_of(scope),
         "alt_ft": getattr(fix, "alt_ft", None),
         "heading": getattr(fix, "heading_deg", None),
         "speed_kt": getattr(fix, "speed_kt", None),
@@ -4590,7 +4733,14 @@ def _from_bullseye(scope, track: str) -> dict:
     if not b:
         return {}
     nm, radial = _range_radial((b["lat"], b["lon"]), c["lat"], c["lon"])
-    return {"ref": ref, "range_nm": round(nm, 1), "radial": round(radial)}
+    # NAMED AND JUSTIFIED like every other reference on the page. The bullseye
+    # is not a fallback here, it is the RIGHT answer for this table and the
+    # reason is worth printing: quoting a contact nobody is working off one
+    # controller's threshold says nothing, so the point everyone shares is the
+    # one that means anything. Display only -- see `Datum`, and #160's note that
+    # a bullseye is a tactical reference an IFR controller would never speak.
+    return {"ref": ref, "range_nm": round(nm, 1), "radial": round(radial),
+            "name": "BULLSEYE", "why": WHY_BULLSEYE}
 
 
 def _plan_row(plan: dict, flying_it: str, on_board: dict, track_of: dict,
@@ -4771,6 +4921,14 @@ def publish_state(bridge, ctl, scope: str, session_id: str,
                       "type": getattr(u, "type", ""),
                       "range_nm": getattr(fix, "range_nm", None),
                       "radial": getattr(fix, "radial_deg", None),
+                      # WHAT THAT RANGE IS MEASURED FROM, on the row that
+                      # carries the range. Per aircraft rather than per
+                      # snapshot, because that is the shape the answer takes
+                      # once a controller measures to the field each man is
+                      # going to; today every row says the same thing and says
+                      # WHY -- "BATUMI, the loaded approach" -- which is the bug
+                      # printing its own name. [#160] [#155]
+                      "datum": datum_of(scope),
                       "alt_ft": getattr(fix, "alt_ft", None),
                       "heading": getattr(fix, "heading_deg", None),
                       "speed_kt": getattr(fix, "speed_kt", None),

@@ -660,6 +660,8 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>]/g,
 const DASH = '\\u2014';
 // The arrow a strip uses between a route and where it ends.
 const TO = '\\u2192';
+// The separator between a reference point and the reason it is the reference.
+const DOT = '\\u00b7';
 // BLANK READS AS BLANK. A missing value is dimmed and dashed, never zeroed and
 // never guessed at: an altitude nobody published shown as `0` is this page's
 // whole failure in miniature.
@@ -701,6 +703,21 @@ function line(parts) {
 function kv(k, v, cls) {
   return `<span class="k">${esc(k)}</span>`
     + `<span class="v ${cls || ''}">${v}</span>`;
+}
+
+// " from BATUMI - the loaded approach". The reference a range was measured
+// from, and why that point and not another.
+//
+// A BLANK DATUM RENDERS BLANK. Not "from the field", not the aerodrome this
+// page happens to know about: a guessed reference is a real distance to a real
+// airport and reads exactly like a right answer, which is the entire reason
+// #160 survived from the first sortie. The page never supplies one -- if the
+// bridge could not name its origin, the number stands alone and says so by
+// saying nothing. Same rule as `bulls` and as every other cell here.
+function datum(d) {
+  if (!d || !d.name) return '';
+  return ` <span class="dim">from</span> ${esc(d.name)}`
+    + (d.why ? ` <span class="dim">${DOT} ${esc(d.why)}</span>` : '');
 }
 
 // ONE AEROPLANE, EVERYTHING THE BRIDGE PUBLISHED ABOUT HIM.
@@ -770,10 +787,20 @@ function card(r, reasons) {
         : (r.identified ? 'yes' : '<span class="warn">no</span>'))
     + kv('sim says', `<span class="${lvl('state', r.state)}">`
         + `${val(r.state)}</span>`)
+    // A RANGE MUST NAME WHAT IT IS MEASURED FROM, or it is not wrong -- it is
+    // unfalsifiable, which is this page's whole subject in its purest form.
+    // Every Center range in this project's history was measured from Batumi
+    // because a fallback chose it, and no screen anywhere said so: you had to
+    // read `field_origin` to find out. [#160]
+    //
+    // The bridge publishes the name AND why that point, and the page prints
+    // both without judging either -- so today's card reads "from BATUMI, the
+    // loaded approach", which is the bug printing its own name.
     + kv('position', line([
         r.range_nm === null || r.range_nm === undefined ? ''
           : num(r.range_nm, 1, ' nm') + (r.radial === null
-              || r.radial === undefined ? '' : ' on ' + num(r.radial, 0, '')),
+              || r.radial === undefined ? '' : ' on ' + num(r.radial, 0, ''))
+            + datum(r.datum),
         r.alt_ft === null || r.alt_ft === undefined ? '' : num(r.alt_ft, 0, ' ft'),
         r.heading === null || r.heading === undefined ? ''
           : num(r.heading, 0, '\\u00b0'),
@@ -866,8 +893,13 @@ function bulls(u) {
   const b = u.bulls || {};
   if (b.range_nm === undefined || b.range_nm === null) return '';
   const pad = String(Math.round(b.radial)).padStart(3, '0');
+  // NAMED LIKE EVERY OTHER RANGE ON THIS PAGE, through the same function. This
+  // row has always carried `ref` -- which bullseye, red or blue -- and that is
+  // WHOSE, not WHAT: a reader still had to know that a bullseye is what these
+  // two numbers are off. It is the one reference on the page that was already
+  // half honest, and the datum makes it say the rest. [#160] [#155]
   return `${pad}\\u00b0 / ${b.range_nm.toFixed(1)} nm`
-    + (b.ref ? ` <span class="dim">${esc(b.ref)}</span>` : '');
+    + datum(b) + (b.ref ? ` <span class="dim">(${esc(b.ref)})</span>` : '');
 }
 
 function untracked(d) {

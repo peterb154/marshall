@@ -127,8 +127,16 @@ def vector(d, last: LastSaid | None = None, amended: bool = False) -> str:
     # miles from the field" with no instruction is a position report the pilot
     # can read off his own scope, and on the talkdown the metronome is already
     # calling range every mile.
-    if d.range_nm is not None and bits:
-        bits.append(f"{d.range_nm:.0f} miles from the field")
+    #
+    # ...AND ONLY WHEN IT CAN SAY WHICH FIELD. "From the field" is a datum only
+    # while there is one field: with two aerodromes on the map it names neither,
+    # and a Center -- which has no field at all -- was quoting Batumi. So the
+    # reference comes off the decision and an unnamed range is not spoken. That
+    # is #109's rule applied to a sentence rather than to a picture: an
+    # origin-less range is not a range, and the pilot loses nothing, because
+    # this clause has never carried an instruction. [#160]
+    if d.range_nm is not None and bits and d.datum:
+        bits.append(f"{d.range_nm:.0f} miles from {d.datum.title()}")
     return ", ".join(bits)
 
 

@@ -107,6 +107,18 @@ class Decision:
     runway: str = ""
     frequency_mhz: float | None = None
     range_nm: float | None = None
+    # WHAT THE RANGE IS MEASURED FROM. A range is the only number here that is
+    # meaningless on its own: an altitude is an altitude and a heading is a
+    # heading, but "twenty three miles" is a fact about a point nobody named,
+    # and every Center range this project has ever spoken was measured from
+    # Batumi because a fallback in `field_origin` chose it. [#160]
+    #
+    # IT RIDES ON THE DECISION rather than being looked up by whoever renders
+    # it, for the same reason every other fact here does: a datum re-derived at
+    # the point of speaking is a second answer to a question the engine has
+    # already answered, and the two can differ by forty miles without either
+    # looking wrong. The bridge's `Datum.name` is what goes in it.
+    datum: str = ""
 
     # WHO, for a handoff or a refusal. A name rather than a Station, so a
     # decision can be logged, stored and compared without dragging the whole

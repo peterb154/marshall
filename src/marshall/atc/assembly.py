@@ -139,7 +139,7 @@ def flight_strip(f: dict) -> str:
     return "STRIP: " + ", ".join(b for b in bits if b) + "."
 
 
-def handoff_phrase(nxt, fix) -> str:
+def handoff_phrase(nxt, fix, datum=None) -> str:
     """Hand him over, whether or not we have a radar fix of our own.
 
     `fix` is optional and that is the entire point of this function existing.
@@ -151,14 +151,60 @@ def handoff_phrase(nxt, fix) -> str:
 
     No phrase should be able to do that. Wording is the least important thing
     here and it took down the most important one.
+
+    `datum` IS OPTIONAL FOR THE SAME REASON and behaves the same way: named when
+    the scope could name its origin, and "out" -- which is what it has always
+    said -- when it could not. It is never guessed. [#160]
     """
     from marshall.atc import controller
-    where = (f"he is {fix.range_nm:.0f} miles out and past your boundary"
+    out = f" {datum.spoken}" if datum else " out"
+    where = (f"he is {fix.range_nm:.0f} miles{out} and past your boundary"
              if fix is not None else "he has left your airspace")
     return (f"HANDOFF: {where} — hand him to {nxt.name} on "
             f"{controller.spell_freq(nxt.freq_mhz)} and say goodbye.")
 
 
+
+
+def radar_datum(scope) -> str:
+    """What every range and radial on that RADAR line is measured FROM.
+
+    THE SPOKEN HALF OF #160, and it is the more serious half. Each contact is
+    drawn as "23.4 nm on the 033 radial" and the picture has never said off
+    WHAT -- so the controller reading it has been quoting a distance to a point
+    nobody named, and a pilot hearing "twenty three miles" has a number he can
+    neither use nor check. Unlike the board there is nothing to go back and look
+    at.
+
+        "I don't really care which airfield is the reference for center's bra
+         ... but that doesn't matter as much as we show / say from where. Else
+         that bra is senseless."
+
+    ONE STATEMENT, NOT ONE PER LINE. `picture.render` produces a format the
+    agent's prompt has been written around for weeks and `tests/test_picture.py`
+    pins it byte for byte -- the reference belongs to the whole picture, because
+    one origin drew all of it, so it is said once at the end where it cannot
+    disturb a line.
+
+    AND IT ARRIVES AS DATA, not as a rule the model applies. The datum rides on
+    the Scope from the same lookup that produced the origin, so the two cannot
+    disagree; asking the agent to work out which field a range came from would
+    be exactly the re-derivation this is meant to remove.
+
+    Empty when the scope cannot name its origin -- a fixture, an older path, a
+    controller with no projected field. `picture.unranged` already says plainly
+    that there are no ranges in that case, and a guessed reference would be
+    worse than the silence: a real distance to a real airport.
+    """
+    d = getattr(scope, "datum", None)
+    if not d:
+        return ""
+    return (f"\nMEASURED FROM: every range and radial above is {d.spoken} "
+            f"({d.why}). SAY IT WITH THE NUMBER -- \"twenty three miles "
+            f"{d.spoken}\", never a bare \"twenty three miles\". A range with "
+            f"no reference is one he cannot use and cannot check, and if the "
+            f"reference is the wrong one he is the only person who can catch "
+            f"it. Do not name any other point as the origin of these numbers.")
 
 
 _plan_labels: list[str] = []
@@ -195,7 +241,7 @@ def compose_message(bridge, scope, known, transcript, profile, me, fix, nxt,
 
     parts = []
     if scope:
-        parts.append(f"RADAR: {scope}")
+        parts.append(f"RADAR: {scope}{radar_datum(scope)}")
     if not known:
         parts.append("TRANSMITTER: a radio you have not identified yet.")
     else:
@@ -477,7 +523,7 @@ def compose_message(bridge, scope, known, transcript, profile, me, fix, nxt,
         if getattr(me, "role", "") == "overlord":
             parts.append(OVERLORD_BRIEF)
     if nxt:
-        parts.append(handoff_phrase(nxt, fix))
+        parts.append(handoff_phrase(nxt, fix, getattr(scope, "datum", None)))
     elif (me and getattr(me, "role", "") == "approach"
             and getattr(profile, "guidance", "") == "talkdown"
             and fix is not None and fix.range_nm <= profile.final_intercept_nm):

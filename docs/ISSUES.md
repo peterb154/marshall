@@ -7291,7 +7291,7 @@ number stays high because most of what is left is not configuration:
     transmission sounds like. Teaching material, not facts about today.
   * **`core/fixes.py`** still holds the strike's turning points, which is
     correct: they are the sortie's, and publishing them was the original bug.
-  * **`core/nevada.py`** is genuinely unconverted, blocked on #141.
+  * **`core/nevada.py`** was genuinely unconverted, blocked on #141. **BOTH CLEARED 13 August** — #141 turned out to have measured against the wrong VORTAC (see there), and `9275c81` moved Nevada's fields, stations, fixes and approaches into `config/theatres/nevada.toml` behind the same pydantic models. `nevada()` is a reader now, like `caucasus()`.
 
 ### Still to move
 
@@ -7480,6 +7480,37 @@ loaded. `vendor/dcs/nevada-Beacons.lua` pairs `position` with `positionGeo` for
 all 45 beacons, so once the right point is known the seeding is mechanical --
 and the same file makes Caucasus verifiable without a running server too, which
 is worth doing whichever way this goes.
+
+---
+
+**RESOLVED 13 August, without a sortie. This issue compared the fix against the
+wrong VORTAC.**
+
+`nevada-Beacons.lua` carries TWO Tonopah-area VORTACs, and only one of them is
+in the text above:
+
+    Silverbow   TQQ   113.000   (-227436.9, -174559.0)   <- what #141 measured
+    Tonopah     TPH   117.200   (-200809.97, -196936.80)  channel 119
+
+`core/nevada.py`'s fix is `x = -200809  z = -196936  freq_mhz = 117.2`. That is
+**1.3 m from TPH and on TPH's exact frequency**; the geo positions agree to
+zero. There were never two candidates. Position and frequency each identify TPH
+on their own, and together they leave nothing to choose between.
+
+**What made it look wrong is #163.** The reasoning was "a fix named TONOPAH is
+34 km from Tonopah airfield, so one of them is wrong" — and that is exactly the
+conflation #163 is about. TPH is an ENROUTE VORTAC that carries the town's name.
+It is not the airfield's beacon and was never meant to be near it. A beacon is
+not an airfield; #141 is the same defect wearing a coordinate.
+
+So Nevada's fixes were never blocked, and the block was the only reason #137
+listed Nevada as unconverted. Both are cleared: `9275c81` publishes them with
+`nevada-Beacons.lua` cited as the source.
+
+**Status: CLOSED 13 August** — resolved from the sim's own vendored data, not
+from a flight. The remaining Nevada caution is in #163: the NELLIS fix wears the
+LSV TACAN's ident while sitting at the aerodrome reference point, which is the
+same conflation in the other direction and is that issue's to fix.
 
 ---
 
