@@ -9053,3 +9053,80 @@ thing the owner has put at very low priority, and is not built.
 Labels: needs-flight-test
 
 ---
+
+## [ARCH-31] An approach is identified by its runway, and a navaid by its ident — #165
+
+Two findings from reading one table out loud:
+
+    "An airdrome is batumi, a navaid is a specific transmitter (vor, tcb, ndb)
+     and batumi_ils … I don't know what that is. There could be multiple ils
+     approaches into a field"
+
+Both are right, and the second is live rather than theoretical.
+
+### A key of `<field>-<kind>` cannot name two ILS approaches at one field
+
+Every procedure is keyed `batumi-ils`, `kobuleti-ils`, `nellis-ils`. **Batumi's
+runway is 13/31.** An ILS to 31 is an ordinary thing to add — it is the same
+localiser from the other end — and the moment it exists:
+
+    _approach_named("batumi-ils")   ->  two candidates, returns the FIRST
+
+That is #131's bug exactly, one axis over. `startswith(f"{name}-")` matching
+every approach at an aerodrome is what cleared a pilot for a "radar approach"
+while his plate said ILS on 12 August; the comment recording that sortie sits
+directly above the line that would now do it again on the runway axis instead of
+the kind axis. The fix then was to match exactly first. The key simply cannot
+express the distinction.
+
+Real procedures are named for the runway they serve — ILS RWY 13, ILS Z RWY 13,
+VOR RWY 31 — because the runway is what makes two approaches at one field
+different things. The key must carry it:
+
+    batumi-asr-13   batumi-ils-13   batumi-ndb-12   kobuleti-ils-07
+    nellis-ils-21   tonopah-ils-32
+
+And an ambiguous request must ASK rather than pick. That principle is already
+built for flight plans — "which plan a spoken request means, and when to ASK
+instead of picking one", #1 G3/G4 — and is exactly as true here.
+
+### A navaid is a transmitter, not a place
+
+The 1944 letdown's navaid resolves to:
+
+    name='BATUMI'  ident='OS'  freq=132.0  kind='ndb'
+
+A navaid is identified by its IDENT — `OS`, `LU`, `BTM`, `TPH`. `BATUMI` is an
+aerodrome. #163 gave the datum its own slot and stopped the two sharing one
+field, but the navaid it left behind is still *named for the airfield*, which is
+the same conflation wearing its last disguise. The sim's own table has the real
+transmitters at that field: `LU` (NDB 0.430) and `BTM` (TACAN 16X).
+
+Note this one changes what is SPOKEN — "hold at BATUMI as published" becomes
+"hold at the OS beacon" or similar — so it is a phraseology decision as well as
+a data one, and wants a human's ear rather than a green suite.
+
+**Acceptance criteria.**
+
+- Two ILS approaches to opposite ends of one runway can both be published, and
+  each resolves to itself. A test adds `batumi-ils-31` and proves it.
+- An ambiguous approach request is refused with the candidates named, never
+  resolved by list order.
+- The navaid a procedure names is a transmitter with an ident, and no procedure
+  names a navaid whose name is an aerodrome.
+- Nothing a pilot hears changes for the runway-key work (it is an identifier);
+  the navaid work DOES change phraseology and is flown before it is closed.
+
+Tests: `tests/test_the_right_approach_by_name.py` is the home for the first;
+the second wants `tests/test_a_beacon_is_not_an_airfield.py`.
+Code: `config/theatres/*.toml`, `src/marshall/atc/agent_atc.py`
+(`_approach_named`), `src/marshall/core/theatre.py`, and the stored
+`flights.cleared_approach` / `assigned_plans.approach` values, which carry the
+old keys and must migrate.
+
+Status: OPEN — the runway key lands as soon as `agent_atc.py` is free (an agent
+holds it for #162 step 2). The navaid rename is separated deliberately because
+it changes what a controller says.
+Labels: needs-flight-test
+
+---
