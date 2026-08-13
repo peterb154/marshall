@@ -216,39 +216,17 @@ class TestTheButtonLabel(unittest.TestCase):
         self.assertEqual(R.preset_label(5, letters=True), "5")
 
 
-class TestTheKneeboardSurvivesSevenStations(unittest.TestCase):
-    """Rendered, not imported. The bug was in an f-string."""
-
-    def test_every_page_renders(self):
-        import importlib
-        for mod in ("comms", "navlog", "brief", "asr_plate", "plate", "plans"):
-            with self.subTest(page=mod):
-                m = importlib.import_module(f"marshall.kneeboard.{mod}")
-                self.assertTrue(m.build(), f"{mod} rendered nothing")
-
-    def test_the_comms_card_lists_every_rung(self):
-        from marshall.kneeboard import comms
-        html = comms.build()
-        for s in R.PRESET_LADDER:
-            with self.subTest(station=s.name):
-                self.assertIn(s.name, html)
-                self.assertIn(f"{s.freq_mhz:.3f}", html)
-
-    def test_the_comms_card_says_which_field_each_seat_is_at(self):
-        from marshall.kneeboard import comms
-        html = comms.build()
-        self.assertIn(R.DEPARTURE_FIELD, html)
-        self.assertIn(R.ARRIVAL_FIELD, html)
-
-    def test_the_nav_log_shows_the_flight_being_flown(self):
-        """It has been wrong about the journey twice, both times by continuing
-        to show a route somebody used to fly."""
-        from marshall.kneeboard import navlog
-        html = navlog.build()
-        for fix in R.FIXES:
-            with self.subTest(fix=fix.name):
-                self.assertIn(fix.name, html)
-
+# THE CHART PAGES WENT, AND SO DID THEIR TESTS.
+#
+# `TestTheKneeboardSurvivesSevenStations` rendered the comms card, the nav log,
+# the brief and the plates to prove a seven-rung ladder did not crash an
+# f-string. The DTC gives a pilot his frequencies and his plate in the
+# aeroplane now, so those pages are deleted and there is nothing to render.
+#
+# The INVARIANT they were guarding is not deleted with them: `preset_label`
+# past D is asserted directly by `TestThePresetsGoBeyondFour` above, which is
+# where the "ABCD"[i] bug actually lived. What is gone is the rendering, not
+# the rule.
 
 class TestTheWindPicksTheRunways(unittest.TestCase):
     """The runway in use is COMPUTED, and it caught a live bug.

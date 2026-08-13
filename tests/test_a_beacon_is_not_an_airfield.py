@@ -118,11 +118,11 @@ class TestTheDatumIsTheField(unittest.TestCase):
                 self.assertGreater(asr.iaf_nm(p), 0.0,
                                    "the IAF is zero miles from itself")
 
-    def test_the_asr_plate_draws_from_the_aerodrome(self):
-        """Its own comment said "the radar reference point IS the field" while
-        the code read the beacon -- a comment correcting its own line."""
-        from marshall.kneeboard import asr_plate
-        self.assertIn("BATUMI", asr_plate.build())
+    # THE PLATE ASSERTION WENT WITH THE PLATE. It read "the radar reference
+    # point IS the field" -- a comment correcting its own line -- and was the
+    # clearest statement of this issue anywhere in the tree. The page is
+    # deleted; `test_the_IAF_distance_is_from_the_aerodrome` above still holds
+    # the rule, measured rather than rendered.
 
 
 class TestTheMergedAnswerIsGone(unittest.TestCase):

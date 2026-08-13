@@ -1,4 +1,4 @@
-"""Build index.html -- one OpenKneeboard tab, one page per chart.
+"""Render an OpenKneeboard multi-page document from a list of tabs.
 
 OpenKneeboard's page API, confirmed by probing the running instance rather than
 from documentation:
@@ -17,86 +17,33 @@ rendered the outer document but never painted the same-origin iframes, giving
 three blank pages of the correct background colour. Each chart's CSS is scoped
 to its own section so the three documents cannot collide.
 
-    uv run python build_site.py
 """
 
 import re
 from pathlib import Path
 
-from marshall import config
-
-from marshall.kneeboard import e6b as build_e6b
-from marshall.kneeboard import asr_plate
-from marshall.kneeboard import aip_plate
-from marshall.kneeboard import brief as build_brief
-from marshall.kneeboard import routemap as build_routemap
-from marshall.kneeboard import comms as build_comms
-from marshall.kneeboard import navlog as build_kneeboard
-from marshall.kneeboard import plans as build_plans
-from marshall.kneeboard import plate as build_plate
-
-from marshall.core import route as R
 
 HERE = Path(__file__).parent
 
 # Stable GUIDs: OpenKneeboard remembers the current page, so these must not
 # change between builds or the pilot loses their place every time.
-def pages(profile: R.ApproachProfile = R.BATUMI_ASR):
-    """The kneeboard's tabs, for whichever approach is loaded.
-
-    Derived from the profile rather than written out, so pointing route.py at
-    another field gives that field's kneeboard -- its runway in the tab, its
-    scanned chart on the AIP page -- with no edit here. The tab for the real
-    chart only appears when we actually hold a scan of it; an empty tab reads
-    as a missing page rather than as "there is no published plate".
-    """
-    rwy = profile.runway or "--"
-    out = [
-        # First tab on purpose: it is the one page a pilot needs before he has
-        # done anything at all, and the one that makes the radio usable.
-        ("{b4e8c1a7-5f39-4d82-9e04-7a2b16d3f508}", "BRIEF", "brief",
-         lambda: build_brief.build(profile)),
-        ("{c9d20e51-8a34-4b76-bf15-2e6407a9d813}", "ROUTE", "routemap",
-         lambda: build_routemap.build(profile)),
-        # BY KEYWORD, and this is why. `comms.build` takes `(card, profile)`
-        # and every other page here takes `(profile)`, so the positional call
-        # put the procedure into the CARD slot and `card.profile` raised --
-        # which OpenKneeboard renders as "No Pages". No brief, no comms card,
-        # no plate: the whole kneeboard, gone, from one argument in the wrong
-        # position, and nothing tested that the site builds at all.
-        ("{f7a1b3c9-2d45-4e60-8a71-3c9d05e2b641}", "COMMS", "comms",
-         lambda: build_comms.build(profile=profile)),
-        ("{a1c8e0f2-3b47-4d91-9f2a-6c5e10b74d01}", "NAV LOG", "navlog",
-         build_kneeboard.build),
-        # WHAT IS ON FILE, which the pilot has to be able to READ before he can
-        # ask for it. `plans.py` was written for exactly this and was never
-        # given a tab, so the board existed in the database, on the controller's
-        # side of the radio, and nowhere the pilot could see it.
-        #
-        # Its own docstring says the reason plainly: he cannot ask for "Marlin"
-        # if he cannot remember what is on the board. Clearance delivery is the
-        # first exchange of the sortie and it opens with him naming a plan.
-        #
-        # Built LIVE on every page turn, not baked at container start -- plans
-        # are filed by migration and by hand between sorties, and a page built
-        # at boot shows last night's board with no way to tell.
-        ("{9f3c7b21-0e84-4a6d-b57f-1d2043c8ea96}", "PLANS", "plans",
-         build_plans.build),
-        ("{b2d9f103-4c58-4ea2-a03b-7d6f21c85e02}", f"{profile.kind.upper()} {rwy}",
-         "asr", lambda: asr_plate.build(profile)),
-    ]
-    if aip_plate.has_plate(profile):
-        out.append(("{e5fb2436-7a80-4d15-c36e-af9254fb18a5}", f"PLATE {rwy}",
-                    "aip", lambda: aip_plate.build(profile)))
-    out += [
-        ("{d4fb1325-6e7a-40c4-c25d-9f8143ea7f04}", "NDB 13", "plate",
-         build_plate.build),
-        ("{c3ea0214-5d69-4fb3-b14c-8e7032d96f03}", "E6B", "e6b", build_e6b.build),
-    ]
-    return out
-
-
-PAGES = pages()
+# THE CHART PAGES ARE GONE, and this is the seam they hung on.
+#
+#     "we can remove the kneeboard code that shows the flight plan, plates and
+#      comm ladders for now. We are getting all that from dks now"
+#     "https://marshall.epetersons.com/kneeboard/ can go"
+#     "i still want the flight test cards, the diag and documents"
+#
+# `build()` was always parameterised by its page list, on the argument that the
+# flight-test card "is the same shape of thing as the charts and should not grow
+# a parallel renderer that drifts". That is what makes this a deletion of PAGES
+# rather than of the renderer: /flighttest, /diag, /docs and /file are untouched
+# and go on using it.
+#
+# The tabs that went -- BRIEF, ROUTE, COMMS, NAV LOG, PLANS, the approach plate
+# and E6B -- are in git. The DTC gives a pilot his steerpoints, his frequencies
+# and his plate in the aeroplane, so a second copy on a web page was one more
+# thing that could disagree with the jet.
 
 PAGE_W, PAGE_H = 1024, 1365
 PAGE_FEATURE_VERSION = 2024073001
@@ -169,14 +116,15 @@ def scope(css: str, sel: str) -> str:
     return "\n".join(out)
 
 
-def build(page_list=None) -> str:
+def build(page_list) -> str:
     """Render one OpenKneeboard multi-page document from a list of tabs.
 
     Takes the list so a SECOND kneeboard can be built from the same machinery --
     the flight-test card is the same shape of thing as the charts and should not
-    grow a parallel renderer that drifts.
+    grow a parallel renderer that drifts. It is now the ONLY caller shape: the
+    charts are gone and there is no default document, so a caller says what it
+    wants rendered or gets a TypeError rather than a surprise.
     """
-    page_list = PAGES if page_list is None else page_list
     styles, sections, scripts = [], [], []
     for guid, name, slug, builder in page_list:
         css, html, js = split(builder())
@@ -323,9 +271,5 @@ def build(page_list=None) -> str:
 """
 
 
-if __name__ == "__main__":
-    config.ensure_dirs(); out = config.KNEEBOARD_OUT / "index.html"
-    out.write_text(build(), encoding="utf-8")
-    print(f"wrote {out}  ({out.stat().st_size} B, charts inlined)")
-    for _, name, slug, _ in PAGES:
-        print(f"  page {name:11} #p-{slug}")
+# NO `__main__` ANY MORE. It wrote the chart document to disk, and there is no
+# chart document. `/flighttest` and `/diag` are served, not written out.

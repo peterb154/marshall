@@ -1,12 +1,12 @@
 # Marshall
 
-Procedural radio ATC, mission generation and kneeboard charts for flight sims.
+Procedural radio ATC and mission generation for flight sims.
 
 Marshall makes a flight sim feel like real instrument flying: a full radio ATC
 service that talks to human pilots over
 [SRS](https://github.com/ciribob/DCS-SimpleRadioStandalone), missions generated
-from a single route definition, and matching kneeboard charts served straight to
-the cockpit. It is sim-, map- and aircraft-agnostic — a P-51 beacon letdown at
+from a single route definition, and a live flight-test card and diagnostics
+board served straight to the cockpit. It is sim-, map- and aircraft-agnostic — a P-51 beacon letdown at
 Batumi and an F-16 ILS into Tonopah are different *profiles* driving the same
 controller.
 
@@ -58,7 +58,7 @@ src/marshall/
   atis/        per-field broadcast; decides the runway in use
   feed/        DCS-gRPC: live tracks, events, sim control
   mission/     .miz generators (pydcs) + terrain survey tools
-  kneeboard/   Card-driven chart generators + HTTP server
+  kneeboard/   HTTP server: flight test card, live diagnostics, docs, planner
 director/      its own container stack: the Bedrock agent on strands-pg
                (Postgres + PostGIS + pgvector), prompts, identity, tools
 deploy/        docker-compose + env template
@@ -95,8 +95,7 @@ cp deploy/.env.example .env        # optional; defaults write into ./build
 
 uv run python -m marshall.atc.controller        # four-ship arrival, in text
 uv run python -m marshall.atc.intents           # the intent parser
-uv run python -m marshall.kneeboard.plate       # generate an approach plate
-uv run python -m marshall.kneeboard.serve       # serve charts for OpenKneeboard
+uv run python -m marshall.kneeboard.serve       # flight test card, diagnostics, planner
 ```
 
 Every machine-specific path is an environment variable with a safe default

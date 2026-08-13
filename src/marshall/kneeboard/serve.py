@@ -4,7 +4,6 @@ app grows onto later.
 Layout of the site (room to grow):
 
     /               a small home page (placeholder; the flight planner lands here)
-    /kneeboard/     the OpenKneeboard multi-page charts (point the Web Dashboard here)
     /diag           live diagnostics -- what the two brains believe, now
     /control/       start, stop and restart the bridge; reload the mission
     /docs           WIRING.md and the audit, rendered to read at a desk
@@ -32,7 +31,7 @@ Run it as a module (unchanged from before) or point uvicorn at the app object:
 
 When the flight-planning app is added it goes on THIS app -- a home page at /
 and authed routes for the planner (it shells out to pydcs and deploys files, so
-an open endpoint is remote code execution). The static charts under /kneeboard/
+an open endpoint is remote code execution). The read-only pages
 stay public; mutating routes get a dependency guard, or an access list on the
 external Nginx Proxy Manager that fronts this host. See deploy/docker-compose.yml.
 """
@@ -172,7 +171,6 @@ _HOME = """<!doctype html><meta charset="utf-8"><title>Marshall</title>
 <main>
   <h1>MARSHALL</h1>
   <p>Procedural radio ATC &middot; kneeboard charts</p>
-  <a href="/kneeboard/">&rarr; kneeboard charts</a>
   <a href="/flighttest/">&rarr; flight test card</a>
   <a href="/file">&rarr; file a flight plan
     <span class="why">&mdash; a desk page; the board the controller reads</span></a>
@@ -189,17 +187,19 @@ async def home() -> HTMLResponse:
     return HTMLResponse(_HOME, headers=NO_CACHE)
 
 
-@app.get("/kneeboard")
-async def kneeboard_root() -> RedirectResponse:
-    # Normalise the no-slash form so OpenKneeboard (and humans) land on index.html.
-    return RedirectResponse(url="/kneeboard/", headers=NO_CACHE)
+# THE CHART ROUTES ARE GONE. `/kneeboard/` served the brief, the route map, the
+# comms card, the nav log, the plans board, the approach plate and the E6B, and
+# the DTC gives a pilot every one of those in the aeroplane -- so a second copy
+# on a web page was one more thing that could disagree with the jet.
+#
+#     "https://marshall.epetersons.com/kneeboard/ can go"
+#     "i still want the flight test cards, the diag and documents"
+#
+# Those three are untouched and go on using the same renderer.
 
 
-def _render(page_list=None) -> str:
-    """One multi-page document, built fresh. See the note on freshness."""
-    refresh()
-    from marshall.kneeboard import site
-    return site.build(page_list)
+# `_render` WENT WITH THE ROUTE THAT USED IT. `/flighttest` builds its own page
+# list and calls `site.build` directly, which is one indirection fewer.
 
 
 @app.get("/flighttest")
@@ -224,7 +224,7 @@ async def flighttest() -> HTMLResponse:
 # --- control -----------------------------------------------------------------
 #
 # MUTATING ROUTES, and the repo already has a rule about them: "the static
-# charts under /kneeboard/ are safe to serve openly... an open mutating
+# read-only pages are safe to serve openly... an open mutating
 # endpoint is remote code execution. Its write routes MUST be behind auth
 # before marshall.epetersons.com is reachable from the internet"
 # (deploy/docker-compose.yml). This is that.
@@ -519,35 +519,9 @@ async def vendor(name: str):
     return FileResponse(path, headers=NO_CACHE)
 
 
-@app.get("/kneeboard/{path:path}")
-async def chart(path: str = ""):
-    """Serve a generated chart from KNEEBOARD_OUT, no-cache, always 200.
-
-    A bare `/kneeboard/` is the multi-page index.html OpenKneeboard points at.
-    Path traversal out of the build tree is refused.
-    """
-    # The multi-page document itself is generated, never read from disk, so it
-    # cannot go stale. Everything else under /kneeboard/ is a real file (the
-    # scanned plates), and those are served as before.
-    if path in ("", "index.html"):
-        return HTMLResponse(_render(), headers=NO_CACHE)
-
-    root = ROOT.resolve()
-    target = (root / (path or "index.html")).resolve()
-
-    # Refuse anything resolving outside the build tree (../ escapes, symlinks).
-    if target != root and root not in target.parents:
-        raise HTTPException(status_code=404)
-    if target.is_dir():
-        target = target / "index.html"
-    if not target.is_file():
-        raise HTTPException(status_code=404)
-
-    # FileResponse always returns the body (never a 304), which is what the
-    # no-cache contract needs; the headers ride along on top.
-    return FileResponse(target, headers=NO_CACHE)
-
-
+# THE STATIC CHART ROUTE WENT WITH THEM. It served generated pages from
+# KNEEBOARD_OUT and the scanned approach plates beside them; nothing is
+# generated into that tree any more.
 if __name__ == "__main__":
     import sys
 
@@ -555,5 +529,6 @@ if __name__ == "__main__":
 
     port = int(sys.argv[1]) if len(sys.argv) > 1 else config.KNEEBOARD_PORT
     config.ensure_dirs()
-    print(f"serving {ROOT} on http://localhost:{port}/kneeboard/  (FastAPI, no-cache)")
+    print(f"serving on http://localhost:{port}/  "
+          f"(flight test card, diagnostics, documents, planner)")
     uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")

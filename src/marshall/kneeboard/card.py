@@ -124,16 +124,12 @@ def for_nevada() -> Card:
 THEATRES = {"caucasus": for_caucasus, "nevada": for_nevada}
 
 
-def current() -> Card:
-    """The card this kneeboard is serving.
+# `current()` WENT WITH THE COMMS CARD, its only caller. It answered "which
+# theatre is this kneeboard serving" from MARSHALL_THEATRE, and there are no
+# theatre-specific pages left to serve -- the flight test card, the diagnostics
+# and the documents are all one thing per system rather than one per map.
+#
+# `for_caucasus()` and `for_nevada()` stay: they are the declared wind and the
+# runway that ATIS is measured against, which is a fact about a MAP and not
+# about a page. See `test_the_wind_has_one_author`.
 
-    ONE ENVIRONMENT VARIABLE, and it is deliberately not cleverer than that.
-    Deriving the theatre from whatever mission happens to be loaded sounds
-    better and is worse: the kneeboard container generates its pages at start,
-    so it would be reading the sim at exactly the moment nobody has told the sim
-    anything yet, and a page that guesses wrong is a chart that disagrees with
-    the aeroplane -- which is the failure this whole project is about.
-    """
-    import os
-    want = os.environ.get("MARSHALL_THEATRE", "caucasus").strip().lower()
-    return THEATRES.get(want, for_caucasus)()

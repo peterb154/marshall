@@ -1,23 +1,30 @@
-"""The pilot's kneeboard exists, and every page on it renders.
+"""The pages that are still served, render. And a frequency keeps its digits.
 
-There was no test for this. Not a weak one -- none, for the whole of
-`kneeboard/`, which is every page a pilot reads: the brief, the route map, the
-comms card, the nav log, the plans board, the plate, the E6B.
-
-So this was true on `main`, on both maps, for an unknown length of time:
+There was no test for any of this. Not a weak one -- none -- and that is how
+`site.build()` came to raise on both maps for an unknown length of time:
 
     >>> site.build()
     AttributeError: 'ApproachProfile' object has no attribute 'profile'
 
-`comms.build` takes `(card, profile)` and every other page takes `(profile)`.
-The call passed the procedure positionally, it landed in the CARD slot, and
-`card.profile` raised. OpenKneeboard renders that as **"No Pages"** -- so the
-pilot had no brief, no frequencies, no plate and no flight plan, from one
-argument in the wrong position, and the suite was entirely green.
+`comms.build` took `(card, profile)` and every other page took `(profile)`, so
+the procedure was passed positionally into the CARD slot. OpenKneeboard renders
+that as "No Pages" -- the pilot had nothing at all -- and the suite was green.
+
+WHAT IS LEFT TO TEST, after the charts were removed:
+
+    /flighttest   the test card and the issue numbers
+    /diag         what the two brains believe, now
+    /docs         the documents
+    /file         the planner
+
+The brief, route map, comms card, nav log, plans board, approach plate and E6B
+are gone: a pilot gets his steerpoints, his frequencies and his plate from the
+DTC in the aeroplane, and a second copy on a web page was one more thing that
+could disagree with the jet.
 
 WHAT MAKES THIS THE RIGHT TEST rather than a regression test for that bug: it
 does not check the argument, it checks that the page comes out. A test written
-against the mistake would pass while some other page broke the same way.
+against the mistake would pass while another page broke the same way.
 """
 
 from __future__ import annotations
@@ -26,42 +33,53 @@ import re
 import unittest
 from pathlib import Path
 
-from marshall.core import route as R
 
-# One page per tab a pilot can turn to. Named here rather than discovered, so
-# DELETING a page is a decision somebody makes on purpose and not something a
-# refactor does quietly.
-PAGES = ("brief", "routemap", "comms", "navlog", "plans", "e6b")
+class TestTheServedPagesRender(unittest.TestCase):
 
+    def test_the_flight_test_card_builds(self):
+        """The one a pilot actually flies with, and the reason `site.build`
+        survived the charts: it was always parameterised by its page list."""
+        from marshall.kneeboard import flighttest, site
+        out = site.build(flighttest.pages())
+        self.assertTrue(out, "the flight test card is empty")
+        self.assertGreater(len(out), 5_000,
+                           "a card that short is a stack trace")
 
-class TestEveryPageRenders(unittest.TestCase):
+    def test_the_diagnostics_page_builds(self):
+        from marshall.kneeboard import diag
+        self.assertTrue(diag.page().strip(), "the diag board is blank")
 
-    def test_the_site_builds_at_all(self):
-        """The one that was failing, and the cheapest thing that would have
-        caught it."""
+    def test_the_documents_index_builds(self):
+        from marshall.kneeboard import docs
+        self.assertTrue(docs.index().strip(), "the documents index is blank")
+
+    def test_every_slug_the_index_offers_actually_renders(self):
+        """The index and the renderer must agree. A slug listed but unservable
+        is a link a pilot taps to a stack trace -- the same shape as the tab
+        that started this file, one layer down."""
+        from marshall.kneeboard import docs
+        slugs = re.findall(r'href="/docs/([a-z0-9-]+)"', docs.index())
+        self.assertTrue(slugs, "the index offers no documents at all")
+        for slug in slugs:
+            with self.subTest(slug=slug):
+                self.assertTrue(docs.render(slug).strip(), f"{slug} is blank")
+
+    def test_the_planner_builds(self):
+        from marshall.kneeboard import filing
+        build = getattr(filing, "page", None) or getattr(filing, "build", None)
+        self.assertIsNotNone(build, "filing has no entry point")
+        self.assertTrue(str(build()).strip(), "the planner is blank")
+
+    def test_the_renderer_refuses_to_guess(self):
+        """`build()` used to default to the chart document. There is no default
+        now -- a caller says what it wants rendered or gets a TypeError, which
+        is the honest failure for a page list that does not exist."""
         from marshall.kneeboard import site
-        out = site.build()
-        self.assertTrue(out, "the kneeboard is empty")
-        self.assertGreater(len(out), 10_000,
-                           "a kneeboard that short is a stack trace")
-
-    def test_each_page_on_its_own(self):
-        """So a failure names the page rather than the whole site."""
-        import importlib
-        for page in PAGES:
-            with self.subTest(page):
-                mod = importlib.import_module(f"marshall.kneeboard.{page}")
-                build = getattr(mod, "build", None)
-                self.assertIsNotNone(build, f"{page} has no build()")
-                out = build()
-                self.assertTrue(out and str(out).strip(), f"{page} is blank")
-
-    def test_the_plate_renders_for_the_procedure_that_has_one(self):
-        from marshall.kneeboard import asr_plate
-        self.assertIn("BATUMI", asr_plate.build())
+        with self.assertRaises(TypeError):
+            site.build()
 
 
-class TestAFrequencyIsSpokenInFull(unittest.TestCase):
+class TestAFrequencyKeepsItsDigits(unittest.TestCase):
     """A clearance names a channel a pilot can actually tune.
 
     `director/tools/plans.py` rendered the departure frequency with
@@ -72,16 +90,27 @@ class TestAFrequencyIsSpokenInFull(unittest.TestCase):
         118.125  ->  "one one eight decimal one"      Tower is on .125
         132.55   ->  "one three two decimal six"      not even the same number
 
-    `core.say.spell_freq` is the one renderer for this and `frequencies.py`, one
-    module over in the same package, already called it. Two spellings of one
-    number is how they come to disagree.
+    Eight more places did the same in writing, and the worst was not a page:
+    `assembly.py` composes what the AGENT is told about itself -- "YOU ARE:
+    Batumi Approach on 124.4". That is #23's shape with the right field and the
+    wrong number.
+
+    There was a renderer for a SPOKEN frequency and none for a WRITTEN one,
+    which is why nine sites each independently invented the same rounding.
     """
 
-    def test_spell_freq_keeps_every_digit(self):
+    def test_spoken_keeps_every_digit(self):
         from marshall.core.say import spell_freq
         self.assertIn("four two five", spell_freq(124.425))
         self.assertIn("one two five", spell_freq(118.125))
         self.assertIn("five five", spell_freq(132.55))
+
+    def test_written_keeps_every_digit_and_always_has_one(self):
+        from marshall.core.say import freq_text
+        self.assertEqual(freq_text(124.425), "124.425")
+        self.assertEqual(freq_text(118.125), "118.125")
+        self.assertEqual(freq_text(132.55), "132.55")
+        self.assertEqual(freq_text(133.0), "133.0", "a bare 133 is not a freq")
 
     def test_no_frequency_is_rendered_to_one_decimal(self):
         """A grep, because the defect is a FORMAT and the wrong answer is a
@@ -101,18 +130,9 @@ class TestAFrequencyIsSpokenInFull(unittest.TestCase):
                     bad.append(f"{path.relative_to(root)}:{i}")
         self.assertEqual(bad, [],
                          "a frequency rendered to one decimal place. Use "
-                         "core.say.spell_freq -- .425 and .125 are real "
-                         "channels and rounding them loses a real station.")
-
-
-class TestThePagesAskTheAerodromeTheyMean(unittest.TestCase):
-    """Each page is drawn for ONE procedure at ONE field, and says which."""
-
-    def test_the_comms_card_names_a_field(self):
-        from marshall.kneeboard import comms
-        out = comms.build(profile=R.BATUMI_ILS)
-        self.assertTrue(out.strip())
-        self.assertIn("Batumi", out)
+                         "core.say.freq_text in writing or spell_freq on the "
+                         "air -- .425 and .125 are real channels and rounding "
+                         "them loses a real station.")
 
 
 if __name__ == "__main__":
