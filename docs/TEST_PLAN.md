@@ -459,6 +459,16 @@ The sim now states what used to be inferred from altitude and speed: `land`,
 release. A taxiing aeroplane used to read as a go-around, and a parked one was
 told to climb to three thousand. **Never flown.** See [#41].
 
+**F6 is struck, flown by a ghost on 13 August at `49953cd`** — Ground said
+*"taxi to parking, your discretion"* and nothing was handed anywhere after him.
+The rest of this section still needs a pilot, and **F5 wants reading before you
+fly it**: it expects the handoff to Ground *unprompted* once you are clear of
+the runway, and what ships is the pilot ASKING for a stand — `taxi_in` is
+entered by the request, which is #77's criterion reached through the ladder
+rather than as a special case (see `tests/test_ground_procedure.py`). If you sit
+still and say nothing and nobody comes, that may be the design rather than the
+bug, and saying which is worth a line in your report.
+
 | ID | Prio | Test | What should happen | Fix under test |
 |----|------|------|--------------------|----------------|
 | F1 | P1 | Fly the approach to a full stop | Handed to **Tower over the runway**, not at a range on final, and nothing tells you to climb once you are down | [#41] `land` |
@@ -467,10 +477,10 @@ told to climb to three thousand. **Never flown.** See [#41].
 | F4b | **P1** | **Say something Whisper will mangle** — a hurried call, a name half-swallowed, someone else's callsign — then check `/diag` | **No aeroplane appeared that does not exist.** One P-47 once entered the stack as "Hammer 1-1", "Hammer 1-3", "All 4" and "Maintained 2" — four aircraft, three imaginary, each with a place in the queue. With one ship that is untidy; with two a ghost at the head holds real pilots for an aeroplane that will never arrive. The identity work since means a radio is bound by RADAR and a mangled name should reach nothing, but the closure condition here has always been a live sortie and nobody has flown one | [#13] | ghosts |
 | F4 | P2 | Land, stop, leave the slot, take a new aeroplane and check in | The old callsign is **gone from the board**. Watch `/diag` — a leftover here is the ghost that held a real pilot in the stack for a whole approach | [#41] `player_leave_unit` |
 | F5 | **P1** | After landing and clearing the runway, wait. Say nothing | He hands you to **Batumi Ground, 121.900**, unprompted. This was the last dead end in the ladder: `report_down` set the separation enum but not the sortie phase, and the phase branch that hands a parked aeroplane over could not run while he was on the ground. Tower should also **not** clear you to taxi to parking — that is Ground's; he says *exit the runway when able* | [#88] |
-| **F5b** | **The moment you are stopped and clear of the runway**, wait for the handoff to Ground | It comes, unprompted, and it is the ARRIVAL field's Ground — Batumi 118.600, never Kobuleti's. A landed aircraft used to reach the end of the flight and be handed nowhere, so a pilot sat on a taxiway on Tower's frequency with the sortie over. Fixed on 10 August as one of three symptoms of a branch that could not be reached from the ground; this is the one of the three nobody has flown | [#77] | **P1** |
+| **F5b** | **The moment you are stopped and clear of the runway**, wait for the handoff to Ground | It comes, unprompted, and it is the ARRIVAL field's Ground — Batumi **121.900**, never Kobuleti's (this row said 118.600 until 13 August, which is Batumi *Tower* — the wrong number for the right controller, on the row about naming the right one). A landed aircraft used to reach the end of the flight and be handed nowhere, so a pilot sat on a taxiway on Tower's frequency with the sortie over. Fixed on 10 August as one of three symptoms of a branch that could not be reached from the ground; this is the one of the three nobody has flown | [#77] | **P1** |
 | ~~F8~~ | **Mid-sortie, ask me to restart the bridge**, then carry on talking | **He knows you.** Same rung, same level, same approach, and if you were cleared he still has you on it — not a controller meeting you for the first time. The board was built only by transmissions until 11 August, so a restart forgot every rung climbed and every level assigned while the aeroplanes went on flying, and with an empty letdown would clear somebody else onto your approach | [#120] | **P1** |
 | ~~F7~~ | **Fly two sorties back to back without anybody touching the database.** On the second, ask Clearance for a clearance and then check `/diag` | **The board holds you, once.** One row, your callsign on it, and the intent you stated — *"VFR to Batumi, visual 13"* — carried to every controller after the one you said it to. On 11 August a single sortie made THREE rows in thirty seconds, none bound to the pilot, because a transmission carrying only an SRS name matched nothing and inserted; and nothing had ever written `intent` at all, so each controller met him for the first time. Leave the slot and your row should go with you | [#119] | **P1** |
-| **F6** | After Ground has you and you are taxiing in, wait | **He parks you** — *"taxi to parking, your discretion"* — and hands you nowhere. | **He does not hand you anywhere.** Ground is the end of the ladder; there is nothing after him. On 11 August he sent the pilot back to Batumi Tower — a rung that hands BACKWARDS, onto a controller who has already finished with him. He should also give a **parking instruction**, which is his, not decline to own one | [#100] | **P1** |
+| ~~F6~~ | After Ground has you and you are taxiing in, wait | **He parks you** — *"taxi to parking, your discretion"* — and hands you nowhere. | **He does not hand you anywhere.** Ground is the end of the ladder; there is nothing after him. On 11 August he sent the pilot back to Batumi Tower — a rung that hands BACKWARDS, onto a controller who has already finished with him. He should also give a **parking instruction**, which is his, not decline to own one | [#100] | **P1** |
 
 ---
 
@@ -669,9 +679,22 @@ not have it, and that is worth reporting rather than squinting past.
 Q10 and Q11 passed and are struck — their scripts stay as the regression record.
 Attested at `be7fefb`.
 
+**And flown end to end by a synthetic pilot, 13 August, at `49953cd`.**
+`uv run --extra voice python tools/ghost_flight.py --sortie` puts a ghost on the
+stand at Kobuleti, speaks every rung over real SRS through real Whisper, flies
+him to Batumi and stops him on a stand there. Two runs, twenty-four and
+twenty-nine minutes. What it closed here is **Q3**, **Q3c** and **Q6** — three
+structural facts a machine may judge: a handoff was authorised, a phase moved,
+and the number that went out was the right field's. The board went
+`clearance -> taxi -> holding_short -> departure -> arrival -> approach ->
+landed -> taxi_in`, which is the first time anything has reached the last two.
+
+What it did NOT close, and cannot: whether it sounded like one person, whether
+a seam was audible, whether a transmission arrived at a moment that made sense.
+Those are section S's and stay yours.
+
 Still live: **Q1** (he offered both plans instead of picking Domino — see #89),
-**Q3** and **Q6** (the ground handoffs, fixed since and unflown — #88), and
-**Q12/Q13**, which were not reached.
+and **Q12/Q13**, which were not reached.
 
 **Never flown. This is the new test bed and the reason the card changed.**
 
@@ -699,13 +722,14 @@ have been answered with "nothing on file for you" — see [#56].
 | **Q1a** | With **both** Domino and Silverstate on the board, ask Kobuleti Clearance for a clearance | **Domino, unasked.** Silverstate departs *Nellis*, three thousand miles away, and is not even active — a plan that is not from your field is not yours, and offering it as a choice is the resolver ignoring what it knows. On 10 August he offered both and made the pilot pick | [#89] | **P1** |
 | **Q1b** | Instead say *"...request IFR clearance to Batumi."* | He should **ask which** and Domino must be among the ones he offers. Every plan on the board ends at Batumi, so naming the destination narrows nothing — a controller who picks one confidently here has guessed. Before 7 August this resolved to *Anvil*: a real plan, someone else's sortie, because "Kobuleti" in your callsign line scored against Anvil's task | [R#57] | **P1** |
 | ~~Q2~~ | Read the clearance back, deliberately getting the departure frequency wrong — say *"departure one two four decimal four two five"* | He corrects it. 124.425 is Batumi Approach: a real controller, wrong field. This is the exact failure the field-scoping was built to prevent | [#1] | **P1** |
-| **Q3** | Read it back **correctly** | He hands you to **Kobuleti Ground, 121.800**. A correct read-back is what ends Delivery's business — a wrong one leaves you exactly where you are, which is the point of reading it back | [#1] [#90] | **P1** |
+| ~~Q3~~ | Read it back **correctly** | He hands you to **Kobuleti Ground, 121.800**. A correct read-back is what ends Delivery's business — a wrong one leaves you exactly where you are, which is the point of reading it back | [#1] [#90] | **P1** |
+| ~~Q3c~~ | Read it back **badly** — the level and the destination, no frequency and no squawk — then ask **Ground** for taxi before fixing it | **He refuses, and says which state you are in:** *"your IFR clearance has not been read back, contact Kobuleti Clearance one two five decimal one."* No taxi clearance in the reply, and **nobody hands you to Ground** — a refusal that moves you on anyway is the same error with better manners. Then correct only the missing items and he takes it: *"readback correct, contact Kobuleti Ground one two one decimal eight"* | [#134] [#135] | **P1** |
 | **Q0** | **Before saying anything else**, ask Kobuleti Clearance for a clearance on a sortie you have not flown yet | He **issues** one. He must not say you are *already* cleared, and must not say your read-back was correct — you have not read anything back. A plan **on file** is not a clearance **issued**, and not a clearance **acknowledged**; "read-back correct" is the phrase that ends Delivery's business and hands you to Ground, so asserting it unprompted skips the rung it exists to close. Found by the ladder rehearsal on a deliberately clean board | [#105] | **P1** |
 | **Q3b** | On check-in with **any** controller, listen for the ATIS | He asks: *"advise you have information Alpha"*, or tells you which letter is current if you named one. On 10 August the engine asked on three consecutive transmissions and **not one reached the air** — it carried no decision, so nothing checked it had been said | [#90] | **P1** |
 | **Q4b** | **Read the taxi clearance back** — *"taxi to runway zero seven, holding short of runway zero seven"* | **Nothing moves.** He acknowledges and you stay with Ground. On 11 August that read-back was heard as a REPORT of holding short, so the phase moved and the ladder sent you to Tower before you had taxied an inch. Then, at three miles, say a debug note — it must reach the recorder and **not** the controller; one at 1,900 ft was classified as "I have landed" and suppressed the whole approach | [#121] | **P1** |
 | ~~Q4~~ | Preset 2. *"Kobuleti Ground, ready to taxi."* | *"Taxi to runway zero seven, hold short of runway zero seven."* **Runway 07** — the wind is 090/5. If he offers 25 the runway is not following the weather | [#41] | **P1** |
 | ~~Q5~~ | Still on preset 2, ask **Ground** for take-off | **He refuses**, politely, and sends you to Tower with the frequency: *"take-off is Tower's, contact Kobuleti Tower one three three decimal zero."* Ground owning the runway is the one thing on an aerodrome that must not be shared. If he clears you, that is the most serious finding on this card | [#65] | **P1** |
-| **Q6** | Report holding short | He hands you to **Kobuleti Tower, 133.000** | [R#16] | **P1** |
+| ~~Q6~~ | Report holding short | He hands you to **Kobuleti Tower, 133.000** | [R#16] | **P1** |
 | ~~Q7~~ | Preset 3. Ask Tower for take-off | Cleared, with the runway and the wind | [#41] | **P1** |
 | ~~Q8~~ | Airborne. Say nothing and climb straight ahead | At about **5 nm** he hands you to **Kobuleti Departure, 123.300**, unprompted. Not Batumi. Not on request | [R#16] | **P1** |
 | ~~Q9~~ | Preset 4, check in with Departure | He answers as **Kobuleti Departure**. Ask your range from the field: it must be *your* field. On the ramp this read 23 miles because everything was measured from Batumi | [R#16] | **P1** |
