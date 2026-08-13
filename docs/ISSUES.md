@@ -7347,6 +7347,15 @@ Related and probably the same absent rule: no landing clearance was ever issued
 (Tower's whole transmission at 05:03:36 was "Sockeye, Batumi Tower"), and after
 he parked, Ground sent him back to Tower "for landing" — which is #100.
 
+**Status:** SHIPPED/UNVERIFIED — both halves are in code and guarded, and no
+commit closes it. `Controller.request_approach` refuses a clearance the speaker
+does not own and names who does (`_owns("approach")` / `_not_mine`, `88bbc6e`),
+and the direction test is now ONE function — `agent_atc.coming_towards_us`,
+read by all three rungs (`655bf90`) — with
+`NobodyIssuesAClearanceThatIsNotHis` and `AnInboundAircraftIsNotLeaving` in
+`tests/test_the_ladder_has_a_direction.py` green. The airspace half still rests
+on that heuristic until #139 lands, and no pilot has flown an arrival since.
+
 ---
 
 ## [ARCH-24] A terminal area does not contain the approach it serves — #139
@@ -7406,6 +7415,13 @@ Tower-to-Approach offers at one to four miles on final and the Center bounce at
 27 nm, and it is exactly the brittle direction test the pilot objected to. It
 comes out when the volumes are right.
 
+**Status:** OPEN — `core/airspace.py` still computes the published reach as
+`min(TERMINAL_NM, nearest / 2.0)`, so Batumi and Kobuleti are still eleven-mile
+circles around a procedure that holds twenty-two miles out. Nothing derives a
+volume from the fixes its approaches use, leaving the volume is still not an
+event, and the interim inbound heuristic above is the only thing between that
+and the bounce.
+
 ---
 
 ## [ASR-8] The 1944 letdown profile carries no controllers at all — #140
@@ -7440,6 +7456,13 @@ stations at all; it should name the field it serves and let the theatre answer
 "who works here". Then this profile has controllers because Batumi has
 controllers, and the question cannot be answered differently by two procedures
 at one aerodrome.
+
+**Status:** OPEN — `config/theatres/caucasus.toml` still carries
+`theatre_stations = false` on the selectable `batumi-ndb-12`, and `agent_atc.py`
+still yields no seats for it, so that controller can still name no frequency.
+What HAS changed is that #152 turned the emptiness into an explicit bit, which
+is what makes this the one-line data change its own criterion asked for — the
+line has not been changed.
 
 ---
 
@@ -7747,6 +7770,15 @@ what actually turned a latent bug into four red tests.
     citable, so the question is only whether the TONOPAH steerpoint was ever a
     navaid at all.
 
+**Status:** PARTLY — the importer and the catalogue are real and in:
+`tools/import_beacons.py`, 122 navaids on Caucasus and 27 on Nevada, and INITIAL
+retired out of the published fixes into `[approach.own_point]` (`a9e8b34`,
+`1e35bf9`), with `AnArrivalFixIsNotEVIDENCEOFANYTHING` in
+`tests/test_two_fields.py` guarding the `check_in` bug that came out with it.
+The "still to do" above is untouched: KOBULETI is still published as the
+invented `MG` on 124.0 and KUTAISI as `KT`, and the localiser/glideslope pair is
+not a procedure.
+
 ---
 
 ## [HO-7] Tower gives a man on final back to Approach, because "airborne" is a state read as an event — #146
@@ -7797,9 +7829,12 @@ Tests: `AirborneIsNotAnEvent` and `OneDefinitionOfInbound` in
 by `tests/test_ghost_flies_an_arrival.py`.
 Code: `src/marshall/atc/agent_atc.py`, `tools/ghost_flight.py`.
 
-Status: SHIPPED/UNVERIFIED — a ghost flew it, structurally, and the rerun is
+**Status:** SHIPPED/UNVERIFIED — a ghost flew it, structurally, and the rerun is
 clean. A pilot still has to fly a real arrival and hear whether the frequency
-he is left on is the right one.
+he is left on is the right one. Re-checked 13 August: `handoff_on_the_event`
+still declines the tower-to-approach direction for an aircraft
+`coming_towards_us`, and `AirborneIsNotAnEvent`, `OneDefinitionOfInbound` and
+`tests/test_ghost_flies_an_arrival.py` are green. Nothing has moved.
 
 ---
 
@@ -7918,7 +7953,14 @@ or subtree moving.
 Code: `docs/STRUCTURE.md`, `CLAUDE.md`, `docs/START_HERE.md`, `pyproject.toml`,
 `director/`.
 
-Status: OPEN — the reconciliation shipped; items 3–5 are not built.
+**Status:** PARTLY — 1, 2 and 4 are met, and the line that said otherwise was
+already stale when it was written: `docs/STRUCTURE.md` dates every claim,
+`CLAUDE.md` records the `marshall-director_pgdata` constraint, and `969d02e`
+took the ATC reasoning out of the container, leaving `director/tools/` holding
+`busy.py` and `ops.py`. 3 is not built — `pyproject.toml` still declares
+`marshall-kneeboard` alone, the other three blocked on #55 — and 5 has gone
+BACKWARDS: `director/app.py` is 36 routes today against the 34 this was written
+about.
 
 ---
 
@@ -7988,7 +8030,8 @@ always plausible" is the same shape.
 Code: `src/marshall/core/units.py`, `src/marshall/atc/controller.py`,
 `src/marshall/atis/`, `src/marshall/kneeboard/`.
 
-Status: CLOSED, 13 August — the wind has one author per aerodrome and it is the
+**Status:** FIXED 13 August — commit `b55c589`, the one entry in this run with a
+real `Closes` trailer. The wind has one author per aerodrome and it is the
 row the runway came out of. `Controller._wind_phrase` asks `atis.store.wind(his
 field)`, beside `_runway_in_use`, so the sentence cannot carry two winds; the
 broadcast and the clearance are phrased by one renderer (`Wind.spoken`), so
@@ -8079,7 +8122,13 @@ Tests: beside `tests/test_events.py` and `tests/test_the_ladder_has_a_direction.
 Code: `src/marshall/core/scope.py`, `src/marshall/atc/identity.py`,
 `src/marshall/atc/agent_atc.py`, `src/marshall/feed/tracks.py`.
 
-Status: OPEN — diagnosed, not fixed.
+**Status:** OPEN — diagnosed, not fixed, and re-checked 13 August: not one of
+the four criteria is met. `core/scope.py` still writes
+`"on_ground": (t.in_air is False)` directly beneath the comment explaining the
+third answer, `identity.Unit` still carries a two-state `on_ground: bool = False`
+with no `in_air: bool | None` anywhere, `handoff_on_the_event` still guards only
+on `unit is None`, and `feed/tracks.py` still carries the same comment beside the
+same collapse.
 
 ---
 
