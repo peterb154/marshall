@@ -242,6 +242,32 @@ their card row and their script stay — that is what tells us if a fix rots.
    Polly and Whisper in the loop.
 5. **A live mission** with AI flights, driven by `mission/ai_control.lua`.
 
+## Committing while somebody else is working
+
+`git commit` commits the **whole index**, and on a shared tree the index is not
+yours. Staging your own files with an explicit `git add` does NOT protect you:
+another process's staged work rides along into your commit, under your message.
+That happened five times on 13 August, in both directions, between agents that
+were each adding paths explicitly.
+
+    git commit --only <paths> -m ...     commits those paths and nothing else
+
+Use it whenever anything else might be writing. The same trap has a sharper
+edge: `git commit --allow-empty` is **not** empty on a shared tree — it commits
+the index too, and swept up 23 of another agent's staged files. An empty commit
+has to be empty by construction (`git commit-tree` off HEAD's own tree), not by
+flag.
+
+Nothing was ever lost, because the content is still committed — but
+`git log --follow` names the wrong commit and the issue trailer belongs to
+somebody else's work, so "what changed for this, and why" stops being one click.
+That correlation is the whole reason the trailers exist.
+
+For parallel agents the real answer is a worktree each (`isolation: "worktree"`),
+which turns a silent clobber into a visible merge conflict. Keep the
+file-ownership briefs anyway: a conflict you have to resolve is cheaper than a
+clobber you never see, but it is not free.
+
 ## Every commit names an issue
 Work is tracked in **`docs/ISSUES.md`** and mirrored to GitHub issues; the
 flight test card (`docs/TEST_PLAN.md`) cites the same numbers. So a commit ends
