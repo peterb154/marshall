@@ -5431,7 +5431,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # this wants is frequencies a pilot might call on, and an aerodrome
         # reference point is not a transmitter. A procedure with no beacon
         # contributes nothing, which the `is not None` already handles.
-        for fix in (profile.arrival_fix, profile.beacon, profile.outer_hold):
+        for fix in (profile.arrival_fix, profile.navaid, profile.outer_hold):
             if fix is not None and fix.freq_mhz and fix.freq_mhz not in channels:
                 channels.append(fix.freq_mhz)
     if freq_mhz not in channels:

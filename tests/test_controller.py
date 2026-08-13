@@ -297,7 +297,7 @@ class TestProfileRoundTrip(unittest.TestCase):
         # profile is the letdown, so it is the one that has both -- and a
         # round trip that dropped either would put an approach back with
         # no datum or no navaid and nothing would say so. [#163]
-        for key in ("aerodrome", "beacon", "outer_hold", "arrival_fix"):
+        for key in ("aerodrome", "navaid", "outer_hold", "arrival_fix"):
             self.assertIsInstance(getattr(rt, key), R.Fix, key)
 
     def test_stations_survive_the_round_trip(self):
@@ -365,7 +365,7 @@ class TestApproachVocabulary(unittest.TestCase):
     def test_the_letdown_still_holds_at_its_beacon(self):
         hold = self.ndb._hold_phrase(6000)
         # ITS HOMER, and this is the one procedure that has one.
-        self.assertIn(R.BATUMI_APPROACH.beacon.name, hold)
+        self.assertIn(R.BATUMI_APPROACH.navaid.name, hold)
 
     def test_no_beacon_report_is_ever_asked_for_on_a_radar_approach(self):
         self.assertNotIn("beacon", self.asr._report_phrase().lower())

@@ -85,21 +85,21 @@ class TestMostApproachesHaveNoBeacon(unittest.TestCase):
             if p is None:
                 continue
             with self.subTest(name):
-                self.assertIsNone(getattr(p, "beacon", None))
+                self.assertIsNone(getattr(p, "navaid", None))
 
     def test_nor_does_the_surveillance_approach(self):
         """An ASR is a man reading a radar and talking. There is nothing in the
         aeroplane to tune."""
-        self.assertIsNone(getattr(R.BATUMI_ASR, "beacon", None))
+        self.assertIsNone(getattr(R.BATUMI_ASR, "navaid", None))
 
     def test_but_the_letdown_does_and_keeps_it(self):
         p = getattr(R, THE_LETDOWN)
-        h = getattr(p, "beacon", None)
+        h = getattr(p, "navaid", None)
         self.assertIsNotNone(h, "the one procedure that IS a beacon lost it")
         self.assertTrue(getattr(h, "freq_mhz", 0), "a beacon he cannot tune")
 
     def test_exactly_one_procedure_on_this_map_has_a_beacon(self):
-        got = [n for n, p in profiles() if getattr(p, "beacon", None) is not None]
+        got = [n for n, p in profiles() if getattr(p, "navaid", None) is not None]
         self.assertEqual(got, [THE_LETDOWN])
 
 
@@ -149,7 +149,7 @@ class TestTheMergedAnswerIsGone(unittest.TestCase):
     the hundredth, which is what #160, #141 and #163 all were.
     """
 
-    def test_asking_an_ILS_for_a_beacon_raises(self):
+    def test_asking_an_ILS_for_a_navaid_raises(self):
         """It used to answer "BATUMI" -- a real fix, at a real place, with a
         real frequency, belonging to a procedure that has no beacon at all."""
         for name in ("BATUMI_ILS", "KOBULETI_ILS", "BATUMI_ASR"):
@@ -157,10 +157,10 @@ class TestTheMergedAnswerIsGone(unittest.TestCase):
             if p is None:
                 continue
             with self.subTest(name), self.assertRaises(AttributeError):
-                _ = p.beacon.name
+                _ = p.navaid.name
 
     def test_and_the_letdown_still_answers(self):
-        self.assertEqual(getattr(R, THE_LETDOWN).beacon.name, "BATUMI")
+        self.assertEqual(getattr(R, THE_LETDOWN).navaid.name, "BATUMI")
 
     def test_the_datum_never_raises_because_every_approach_has_one(self):
         for name, p in profiles():
@@ -175,13 +175,13 @@ class TestTheMergedAnswerIsGone(unittest.TestCase):
         p = getattr(R, THE_LETDOWN)
         names = {f.name for f in dataclasses.fields(type(p))}
         self.assertIn("aerodrome", names)
-        self.assertIn("beacon", names)
+        self.assertIn("navaid", names)
         for name in ("BATUMI_ILS", "KOBULETI_ILS", "BATUMI_ASR"):
             q = getattr(R, name, None)
             if q is None:
                 continue
             with self.subTest(name):
-                self.assertIsNone(q.beacon)
+                self.assertIsNone(q.navaid)
                 self.assertIsNotNone(q.aerodrome)
 
 

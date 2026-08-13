@@ -172,7 +172,7 @@ class ApproachProfile:
     # one: `beacon` is still a property below, kept alive for the call sites in
     # `atc/agent_atc.py` and `atc/controller.py` that this change was not
     # allowed to touch. See that property.
-    beacon: Fix | None = None
+    navaid: Fix | None = None
 
     # Where the flight is worked BEFORE it reaches the beacon. None means one
     # controller owns the whole arrival.
@@ -722,7 +722,7 @@ class ApproachProfile:
             # definition; the fallback is there so that a mis-configured
             # procedure gives its own controller on no frequency rather than
             # raising on a None halfway through an arrival.
-            fix = self.beacon or self.aerodrome
+            fix = self.navaid or self.aerodrome
         return (fix.sector or self.controller,
                 fix.freq_mhz if fix.freq_mhz else 0.0)
 
@@ -982,30 +982,31 @@ def profile_from_dict(d: dict) -> ApproachProfile:
     d = dict(d)
     # A ROW WRITTEN BEFORE #163 CARRIES `beacon` AND NO `aerodrome`, and what
     # that field held on such a row was the aerodrome reference point -- that
-    # is the whole finding. So it becomes the datum, and the procedure comes
-    # back with no beacon, which is right for the three of four that never had
-    # one and wrong only for a stored letdown, whose beacon and whose field are
-    # the same point anyway. Dropping it instead would leave `aerodrome`
-    # missing, and it is required: the profile would not rebuild at all.
-    # A LEGACY ROW IS ONE WITH NO `aerodrome`, and that is the only safe way to
-    # tell the two meanings of this key apart. Before #163 `beacon` was the
-    # merged slot and held the aerodrome; after it, `beacon` is a beacon and
-    # rows carry both. The discriminator is the presence of the new key, not
-    # the old one -- and getting that wrong un-beacons every current letdown,
-    # which is exactly what an unconditional `pop` here did for one commit.
-    if "beacon" in d and "aerodrome" not in d:
-        d["aerodrome"] = d["beacon"]
-        # WAS THAT STORED BEACON A REAL BEACON? `kind` is on the row, so this
-        # is answerable rather than guessed: on `ndb` it was one and the
-        # procedure is flown on it, so it stays. On an ILS or an ASR it was the
-        # aerodrome wearing an invented ident, and the profile must come back
-        # with no beacon at all.
-        if (d.get("kind") or "").strip().lower() != "ndb":
+    # TWO LEGACY SHAPES NOW, and they are told apart by `aerodrome`.
+    #
+    #   before #163   `beacon` was the MERGED slot and held the aerodrome
+    #                 reference point -- that is the whole finding. There is no
+    #                 `aerodrome` on such a row.
+    #   after #163,   `beacon` meant a beacon and rows carried both. That name
+    #   before this   lasted about an hour: a beacon is an NDB, and an ILS, a
+    #                 visual and a TACAN approach have none, so the NDB word
+    #                 could not name the general thing.
+    #
+    # Approaches are persisted, so both shapes outlive the code that wrote them.
+    if "beacon" in d:
+        if "aerodrome" not in d:
+            d["aerodrome"] = d.pop("beacon")
+            # WAS THAT STORED POINT A REAL NAVAID? `kind` is on the row, so it
+            # is answerable rather than guessed: on `ndb` the procedure is flown
+            # on it and it stays, and on an ILS or an ASR it was the aerodrome
+            # wearing an invented ident and the profile comes back with none.
+            if (d.get("kind") or "").strip().lower() == "ndb":
+                d["navaid"] = d["aerodrome"]
+        else:
+            # The short-lived shape: it already meant the navaid.
+            d.setdefault("navaid", d.pop("beacon"))
             d.pop("beacon", None)
-    # Every nested Fix has to be rebuilt, not just the two obvious ones -- a dict
-    # left in arrival_fix survives every check and only fails at the moment the
-    # controller asks which frequency to talk on, which is mid-approach.
-    for key in ("aerodrome", "beacon", "outer_hold", "arrival_fix"):
+    for key in ("aerodrome", "navaid", "outer_hold", "arrival_fix"):
         if isinstance(d.get(key), dict):
             d[key] = Fix(**d[key])
     # A STORED `stations` LIST IS DROPPED, and there is no rebuilding of it any

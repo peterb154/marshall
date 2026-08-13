@@ -90,7 +90,7 @@ lat = 41.609594
 lon = 41.600234
 freq_mhz = 132.0
 sector = "Batumi Tower"
-navaid = "ndb"
+navaid_kind = "ndb"
 source = "UGSB aerodrome reference point (the runway centre, which is what Airbase:getRunways() returns). THE BEACON ON IT IS FICTION: `OS` on 132.0 was INVENTED for the 1944 scenario, because an ARA-8 homes VHF and the real Batumi homer is `LU`, a 430 kHz LF NDB the adapter cannot steer on -- see the [[navaid]] rows below, which are the sim's own. Kept because the period letdown is flown on it; declared here because a fictional ident on a real aerodrome's row is exactly what this field exists to prevent. #163"
 note = "Field elevation 32 ft. Landing runway 12 (charted 13/31 today -- magnetic drift renamed it; we fly the period AIP designation)."
 
@@ -103,7 +103,7 @@ lat = 41.929922
 lon = 41.863275
 freq_mhz = 124.0
 sector = "Kobuleti Departure"
-navaid = "ndb"
+navaid_kind = "ndb"
 source = "UG5X aerodrome reference. THE BEACON ON IT IS FICTION, like Batumi's: `MG` on 124.0 was INVENTED for the 1944 scenario -- Kobuleti's real homers are `KT` on 0.870 and `T` on 0.490 and its TACAN is `KBL` 67X, all in the [[navaid]] rows below. Kept because the letdown holds its banished aircraft here on that channel. #163"
 note = "Field elevation 59 ft. Departure end. This point is 0.61 nm from the [[field]] row's own position, on the runway axis -- see #163, which measured it: one of the two is the runway centre and the other is the 07 threshold."
 
@@ -114,7 +114,7 @@ x = -284887
 z = 683859
 lat = 42.177619
 lon = 42.481296
-navaid = "ndb"
+navaid_kind = "ndb"
 source = "UGKO. Aerodrome; NDB KT."
 note = "Red field. The transit turning point, not a diversion -- Batumi is the only blue aerodrome on the map."
 
@@ -525,7 +525,7 @@ controller = "Batumi Approach"
 # concept exists at all: the pilot tunes `OS` on 132.0, the ARA-8 points the
 # nose at it, and station passage over it IS the missed approach point. The
 # beacon is fiction and the [[fix]] row above says so; the procedure is real.
-beacon = "BATUMI"
+navaid = "BATUMI"
 outer_hold = "KOBULETI"
 arrival_fix = "INITIAL"
 hold_base_ft = 4000

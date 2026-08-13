@@ -179,7 +179,7 @@ def published_approaches(fields=(), theatre: str = "") -> dict:
         coordinates under its own name, which is this project's favourite
         failure shape: a real-looking number belonging somewhere else.
         """
-        want = [n for n in (a.beacon, a.outer_hold, a.arrival_fix, a.iaf)
+        want = [n for n in (a.navaid, a.outer_hold, a.arrival_fix, a.iaf)
                 if n and n not in at]
         if not want:
             return None
@@ -235,13 +235,13 @@ def published_approaches(fields=(), theatre: str = "") -> dict:
         got = at.get((a.field or "").upper())
         if got is not None and _nm(got.x, got.z, f.x, f.z) <= ON_THE_FIELD_NM:
             return R.Fix(got.name, "", got.x, got.z, None,
-                         note=got.note, navaid="", lat=got.lat, lon=got.lon)
+                         note=got.note, navaid_kind="", lat=got.lat, lon=got.lon)
         return R.Fix(f.name, "", f.x, f.z, None,
-                     note=f.note, navaid="", lat=f.lat, lon=f.lon)
+                     note=f.note, navaid_kind="", lat=f.lat, lon=f.lon)
 
     out = {}
     for a in catalogue.approaches(theatre):
-        knobs = a.model_dump(exclude={"key", "field", "atc", "beacon",
+        knobs = a.model_dump(exclude={"key", "field", "atc", "navaid",
                                       "outer_hold", "arrival_fix", "iaf",
                                       "theatre_stations", "own_point",
                                       "published_minima"})
@@ -267,7 +267,7 @@ def published_approaches(fields=(), theatre: str = "") -> dict:
                 f"See docs/CONFIG.md")
         mins = a.published_minima
         out[a.key] = R.ApproachProfile(
-            aerodrome=datum(a, f), beacon=role(a.beacon),
+            aerodrome=datum(a, f), navaid=role(a.navaid),
             outer_hold=role(a.outer_hold),
             arrival_fix=role(a.arrival_fix), iaf=role(a.iaf),
             atc=R.AtcCapability(**a.atc.model_dump(exclude_none=True)),
@@ -476,7 +476,7 @@ def published_fixes(theatre: str = "") -> tuple:
     from marshall.core import route as R
     return tuple(
         # WHAT KIND OF STATION IT IS, IF ANY, AND THE FILE IS BELIEVED. This
-        # read `f.navaid or "ndb"`, so a fix that named no kind got a homing
+        # read `f.navaid_kind or "ndb"`, so a fix that named no kind got a homing
         # beacon it does not have -- which is how `TONOPAH`, a VORTAC, and
         # `NELLIS`, an aerodrome reference point with no transmitter at all,
         # both came to be non-directional beacons as far as `atc/equipment.py`
@@ -485,7 +485,7 @@ def published_fixes(theatre: str = "") -> tuple:
         # strength of an ADF needle pointing at nothing. Empty means a point in
         # space, which `equipment.can_use` already answers correctly. [#163]
         R.Fix(f.name, f.ident, f.x, f.z, f.freq_mhz or None,
-              sector=f.sector, note=f.note, navaid=f.navaid,
+              sector=f.sector, note=f.note, navaid_kind=f.navaid_kind,
               lat=f.lat, lon=f.lon)
         for f in catalogue.published_fixes(theatre))
 

@@ -115,7 +115,7 @@ class PublishedFix(_File):
     lon: float
     ident: str = ""
     freq_mhz: float = 0.0
-    navaid: str = ""
+    navaid_kind: str = ""
     # WHICH CONTROLLER OWNS THIS FREQUENCY. A beacon is somebody's, and the
     # charts print it beside the ident -- a pilot tuning 132.0 is listening to
     # Batumi Tower's beacon, not to an anonymous tone.
@@ -284,7 +284,11 @@ class Approach(_File):
     field: str
     # The navaid the pilot HOMES on, if the procedure is flown on one. Empty is
     # the normal case: only the 1944 letdown is.
-    beacon: str = ""
+    # THE NAVAID THE PROCEDURE IS FLOWN ON, by published name, or empty.
+    # `beacon` is an NDB; an ILS is a localiser and a glideslope and a
+    # TACAN approach is flown on a TACAN, so the NDB word could not name
+    # the general thing.
+    navaid: str = ""
     # WHETHER THIS FIELD'S SURVEYED MINIMA APPLY, which is not the same
     # question as which field it is -- and one key was answering both. `field`
     # was empty on the letdown to say "no published minimum altitudes", so a

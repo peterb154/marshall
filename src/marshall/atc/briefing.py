@@ -78,7 +78,7 @@ def _channels(profile: R.ApproachProfile) -> list[str]:
         out.append(
             f"- **Channels.** Enroute he homes {profile.arrival_fix.name} and is "
             f"on **{enr_freq:.1f}** ({enr_name}); the letdown is flown homing "
-            f"{profile.beacon.name}, so it belongs to {twr_name} on "
+            f"{profile.navaid.name}, so it belongs to {twr_name} on "
             f"**{twr_freq:.1f}**. Hand him over as he leaves "
             f"{profile.arrival_fix.name}. He physically cannot hear you on a "
             "channel he is not homing.")
@@ -435,7 +435,7 @@ def _ndb_plate(profile: R.ApproachProfile,
                size: int = R.FLIGHT_SIZE) -> str:
     """The field-specific facts, as the markdown 'plate' prompt part."""
     cap = profile.atc
-    b = profile.beacon
+    b = profile.navaid
     inbound = _inbound_hdg(profile)
     outbound = (inbound + 180) % 360
     hold, platform = profile.stack_ft[0], profile.platform_ft

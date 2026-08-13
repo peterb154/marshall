@@ -31,7 +31,7 @@ P = R.BATUMI_APPROACH
 # one: the letdown is flown ON it and station passage over it is the missed
 # approach point. `beacon` is the profile's name for it since #163, where the
 # other three procedures stopped claiming to have one.
-BEACON = P.beacon
+BEACON = P.navaid
 FINAL_CRS = P.final_crs
 HOLD_TURNS = P.hold_turns
 SPEED_KT = P.speed_kt          # nm/h, derived from the MPH the ASI reads

@@ -35,7 +35,12 @@ class Fix:
     # ladder: the DCS F-16 carries TACAN and an inertial platform and NO ADF, so
     # it cannot home the NDB that a 1944 Mustang homes without difficulty.
     # See atc/equipment.py.
-    navaid: str = "ndb"
+    # WHAT KIND OF TRANSMITTER THIS FIX IS, if it is one at all -- "ndb",
+    # "vor", "tacan", "". Not the navaid itself: this is a fix that may
+    # happen to carry a station, and the string says which sort. It was
+    # `navaid`, which is the name the THING wants, and holding it here
+    # blocked calling a navaid a navaid one layer up.
+    navaid_kind: str = "ndb"
     # THE SIM'S OWN PROJECTION, when we have it. Optional because a Fix built
     # in a test or by the mission builder has grid metres and nothing else, and
     # None means "ask the sim" exactly as before.
