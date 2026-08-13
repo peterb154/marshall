@@ -1140,10 +1140,38 @@ class Controller:
         if not self._arriving(ac) and not _on_the_ramp:
             return ""
         from marshall.core import route as _R
+        # WHOSE ATIS. The speaking seat's, and ONLY his.
+        #
+        # It read `me.field or _R.ARRIVAL_FIELD`, and that fallback is the
+        # defect rather than the lookup. `ARRIVAL_FIELD` is the literal
+        # "Batumi", so on Nevada it named an aerodrome on the OTHER MAP,
+        # `field_named` answered None, and this returned the empty string --
+        # whereupon `request_clearance` returns early on a missing letter and
+        # THE FIRST CONTROLLER OF THE SORTIE SAYS NOTHING AT ALL to a pilot
+        # asking for his IFR clearance. Not a wrong number: silence, which from
+        # the cockpit reads as a broken radio and is the harder thing to
+        # diagnose. [#162, #137]
+        #
+        # An unnamed seat is not an aerodrome to guess at -- #109 settled that
+        # a value with no owner renders nothing rather than a guess. But
+        # "nothing" here is the LETTER, not the transmission: "Say your
+        # request" contains no weather, no runway and no field, so it needs no
+        # aerodrome to be true and the man on the radio still gets an answer.
+        # That is the same wording the no-broadcast branch below uses, because
+        # to the pilot the two mean the same thing -- I have no letter for you,
+        # go ahead.
         me = getattr(self, "_me", None)
-        fld = _R.field_named(getattr(me, "field", "") or _R.ARRIVAL_FIELD)
+        mine = getattr(me, "field", "")
+        fld = _R.field_named(mine) if mine else None
         if fld is None:
-            return ""
+            # ...AND WHERE THEY DIFFER IS NOT SILENT EITHER. A seat that names
+            # a field this map does not publish is a broken theatre file, not
+            # a quiet sortie, and it must not look identical to a controller
+            # nobody has told who he is.
+            if mine:
+                self._anomaly(f"{getattr(me, 'name', '?')} works {mine!r}, "
+                              f"which this theatre does not publish")
+            return "Say your request."
         from marshall.atis import store as _atis
         now = _atis.current(fld)
         if not now.on_the_air or not now.letter:
@@ -2370,7 +2398,7 @@ class Controller:
         from marshall.atis import store as _atis
         from marshall.core import route as _R
         me = getattr(self, "_me", None)
-        fld = _R.field_named(getattr(me, "field", "") or _R.ARRIVAL_FIELD)
+        fld = _R.field_named(getattr(me, "field", ""))
         return f"{_atis.wind(fld).spoken}."
 
     # -- the ground half ---------------------------------------------------
@@ -2409,16 +2437,31 @@ class Controller:
         The words are `_atis_phrase`'s, so the four shapes -- current,
         superseded, not yet advised, no broadcast at all -- stay in one place
         rather than being written twice.
+
+        AND NO LETTER IS NOT NOTHING TO SAY. This returned early whenever
+        `_atis_phrase` produced no letter, which folded three different
+        situations into one silence: no broadcast at this field, and -- once
+        `_atis_phrase` stopped falling back to the Caucasus literal
+        `ARRIVAL_FIELD` -- a controller nobody has told which aerodrome he
+        works. The pilot has asked for an IFR clearance either way, and from
+        the cockpit a controller who says nothing is a broken radio, which is
+        much harder to diagnose than a wrong number.
+
+        So the WORDS go out whenever there are any, and the DECISION is
+        attached only when there is a letter to check him against. That split
+        is the point: a decision asserts a fact the agent must voice and
+        `decision.verify` will catch it dropping, and "say your request" is
+        not a fact.
         """
         ac = self.get(cs)
         ac.sortie_phase, ac.last_report_t = "clearance", self.t
         extra = self._atis_phrase(ac)
+        if not extra:
+            return                      # not his seat, or not his phase
         letter = _atis_letter_in(extra)
-        if not letter:
-            return                      # no broadcast here; nothing to confirm
         self.say(ac.callsign, f"{self._addr(ac)}, {extra}",
-                 decided=D.Decision(kind="advise_atis", to=ac.callsign,
-                                    atis_letter=letter))
+                 decided=(D.Decision(kind="advise_atis", to=ac.callsign,
+                                     atis_letter=letter) if letter else None))
 
     def clearance_read_back(self, cs: str, correct: bool | None = True,
                             missed: tuple = ()) -> None:
@@ -2643,7 +2686,7 @@ class Controller:
         # name Kobuleti's runway; the profile describes the approach at the
         # other end of the route and its runway is 13.
         me = getattr(self, "_me", None)
-        fld = _R.field_named(getattr(me, "field", "") or _R.ARRIVAL_FIELD)
+        fld = _R.field_named(getattr(me, "field", ""))
         if fld is None:
             # NO FIELD AND NO BROADCAST -- the map does not publish the
             # aerodrome this seat claims to be at. The last thing left is the

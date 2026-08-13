@@ -565,6 +565,11 @@ class TheAtisLetterCrossesTheSeam(unittest.TestCase):
         from marshall.atc import controller as atc
         from marshall.atis import store
         c = atc.Controller(P())
+        # THE SEAT, because an ATIS letter belongs to an AERODROME and the
+        # speaking controller is what names one. This used to be answered by
+        # `ARRIVAL_FIELD`, a Caucasus literal, so a seatless controller read
+        # Batumi's letter out on any map (#162).
+        c._me = seat("approach", AWAY())
         with mock.patch.object(store, "current",
                                return_value=mock.Mock(on_the_air=True,
                                                       letter="Alpha")):
@@ -706,6 +711,10 @@ class DeliveryAsksAboutTheWeatherToo(unittest.TestCase):
         from marshall.atc import controller as atc
         from marshall.atis import store
         c = atc.Controller(P())
+        # Delivery is a seat at a field, and which field decides whose letter
+        # he is confirming. See `_atis_phrase`: with nobody named there is no
+        # aerodrome, and Batumi is not a default (#162).
+        c._me = seat("clearance")
         with mock.patch.object(store, "current",
                                return_value=mock.Mock(on_the_air=on_air,
                                                       letter=letter)):
@@ -726,7 +735,23 @@ class DeliveryAsksAboutTheWeatherToo(unittest.TestCase):
     def test_a_field_with_no_broadcast_is_not_asked_about(self):
         # Asking a pilot to confirm an ATIS that does not exist is how you get a
         # confused read-back -- the rule `_atis_phrase` already states.
-        self.assertEqual(self.clearance_with("", on_air=False), [])
+        #
+        # NOT ASKED IS NOT UNANSWERED, and this used to assert `== []`, which
+        # is `request_clearance` returning early on a missing letter rather
+        # than the rule above. The rule's own words for this case are "Say your
+        # request" -- it declines to ask about a broadcast that does not exist
+        # and still answers the man, which is what `_atis_phrase` returns. The
+        # early return folded it in with a controller who does not know which
+        # aerodrome he works (#162), and a pilot who has just asked for his IFR
+        # clearance heard silence either way. Silence from the cockpit is a
+        # broken radio, which is harder to diagnose than a wrong number.
+        out = self.clearance_with("", on_air=False)
+        said = " ".join(t.text for t in out)
+        self.assertTrue(out, "he asked for a clearance and got nothing")
+        self.assertIn("Say your request", said)
+        self.assertNotIn("information", said.lower())
+        self.assertEqual([], [t.decision for t in out if t.decision],
+                         "a decision with no letter is worse than no decision")
 
     def test_the_words_come_from_the_one_place(self):
         # `_atis_phrase` has four shapes -- current, superseded, not yet

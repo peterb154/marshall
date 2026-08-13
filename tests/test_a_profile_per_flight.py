@@ -228,10 +228,27 @@ class AControllerWithNoArrivalAtAll(unittest.TestCase):
 
     def test_the_runway_and_the_wind_come_off_the_broadcast(self):
         """Neither is the profile's, and neither ever was -- they belong to the
-        field the speaking controller is at. With no profile they are simply
-        the only answer there is."""
+        field the speaking controller is at.
+
+        SO THERE HAS TO BE ONE. This asked with no profile AND no seat, and was
+        answered because both lookups fell back to `ARRIVAL_FIELD` -- the
+        literal "Batumi", which is a real aerodrome on one map and nothing at
+        all on the other (#162, #137). The seat is what names the field, and
+        the live bridge always has one: `_me` comes off the frequency the
+        transmission arrived on.
+        """
+        self.c._me = RT.KOB_TOWER
         self.assertNotIn("in use", self.c._runway_in_use())
         self.assertIn("wind", self.c._wind_phrase())
+
+    def test_and_with_no_seat_the_runway_is_not_named_from_a_literal(self):
+        """The complement. No arrival and no seat is no aerodrome, and the
+        runway in use at an aerodrome nobody named is not a thing that can be
+        said -- "in use" commits to nothing, which is what a controller says
+        when the runway is not his to name."""
+        self.assertEqual("in use", self.c._runway_in_use())
+        self.assertIn("wind", self.c._wind_phrase(),
+                      "he is still answered; the wind is simply not a field's")
 
     def test_a_transmission_still_has_a_channel(self):
         """`say` chose the frequency off the radio's arrival. A comms ladder
