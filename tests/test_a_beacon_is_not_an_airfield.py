@@ -130,39 +130,59 @@ class TestTheDatumIsTheField(unittest.TestCase):
         self.assertIn("BATUMI", asr_plate.build())
 
 
-class TestTheTransitionalShimDoesNotSpread(unittest.TestCase):
-    """`ApproachProfile.beacon` survives as a property, and must not grow.
+class TestTheMergedAnswerIsGone(unittest.TestCase):
+    """`ApproachProfile.beacon` is DELETED, not deprecated.
 
-    It returns the homer where there is one and the aerodrome otherwise --
-    which is precisely the merged answer that was wrong. It exists only because
-    the change could not edit `agent_atc.py`, which another agent held at the
-    time, and `controller.py`'s letdown phrases.
+        "Should we remove the shim? I don't like the sound of shim. Sounds like
+         a temporary hack"
 
-    This is the criterion #162 found missing on #2: four acceptance criteria
-    were met while the old path stayed in 26 of 28 call sites, because none of
-    them asked what still READ the thing being replaced. So this one is a grep.
+    It was one. It returned the homer where a procedure had one and the
+    aerodrome otherwise -- precisely the merged answer that was wrong -- and it
+    existed only because the split could not edit two files other work held at
+    the time. Keeping it would have left every future caller able to ask the
+    old question and get an airfield on three of this map's four procedures.
+
+    REMOVING IT FOUND A SEVENTH READER that a rename never would have.
+    `_approach_named` builds a procedure key as `<field>-<kind>` and read the
+    field through `getattr(p, "beacon", None)` -- so with the property in place
+    it would have gone on working, silently, off the merged answer. It is also
+    why this test now looks for BOTH spellings: the first version searched for
+    `.beacon` and walked straight past a `getattr`.
+
+    This is the criterion #162 found missing on #2, where four acceptance
+    criteria were met while the old path kept 26 of 28 call sites, because none
+    of them asked what still READ the thing being replaced. So it is a grep,
+    and it allows nothing.
     """
 
-    ALLOWED = {"atc/agent_atc.py", "atc/controller.py"}
+    # Two spellings, because the seventh reader used the second one.
+    PATTERNS = (re.compile(r"\.beacon\b"),
+                re.compile(r"""getattr\([^,]+,\s*["']beacon["']"""))
 
-    def test_only_the_known_readers_remain(self):
+    def test_the_property_no_longer_exists(self):
+        for name, p in profiles():
+            with self.subTest(name):
+                self.assertFalse(hasattr(p, "beacon"),
+                                 "the merged answer is still reachable")
+
+    def test_and_nothing_asks_for_it(self):
         found = set()
         for path in SRC.rglob("*.py"):
             for line in path.read_text().splitlines():
                 code = line.split("#", 1)[0]
-                if re.search(r"\.beacon\b", code) and "def beacon" not in code:
-                    rel = path.relative_to(SRC / "marshall").as_posix()
-                    # `a.beacon` on the catalogue row is a STRING KEY naming a
-                    # published fix, not the profile property. Different thing,
-                    # and it is how the file says which navaid to resolve.
-                    if rel.startswith("core/"):
-                        continue
-                    found.add(rel)
-        new = found - self.ALLOWED
-        self.assertEqual(new, set(),
-                         f"new readers of the transitional shim: {sorted(new)}. "
-                         "Use `aerodrome` for the datum or `homer` for the "
-                         "navaid; do not add a caller to the merged answer.")
+                if not any(pat.search(code) for pat in self.PATTERNS):
+                    continue
+                rel = path.relative_to(SRC / "marshall").as_posix()
+                # `a.beacon` on the CATALOGUE row is a string key naming a
+                # published fix -- how the theatre file says which navaid to
+                # resolve. A different thing that happens to share a word.
+                if rel.startswith("core/"):
+                    continue
+                found.add(f"{rel}: {code.strip()[:60]}")
+        self.assertEqual(found, set(),
+                         "someone is asking a profile for its `beacon`. Use "
+                         "`aerodrome` for the datum or `homer` for the navaid; "
+                         "the merged answer was deleted in #163.")
 
 
 if __name__ == "__main__":

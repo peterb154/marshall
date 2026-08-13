@@ -293,7 +293,11 @@ class TestProfileRoundTrip(unittest.TestCase):
 
     def test_every_nested_fix_is_rebuilt(self):
         rt = R.profile_from_dict(R.profile_to_dict(R.BATUMI_APPROACH))
-        for key in ("beacon", "outer_hold", "arrival_fix"):
+        # `aerodrome` AND `homer`, which is what `beacon` was two of. This
+        # profile is the letdown, so it is the one that has both -- and a
+        # round trip that dropped either would put an approach back with
+        # no datum or no navaid and nothing would say so. [#163]
+        for key in ("aerodrome", "homer", "outer_hold", "arrival_fix"):
             self.assertIsInstance(getattr(rt, key), R.Fix, key)
 
     def test_stations_survive_the_round_trip(self):
@@ -349,7 +353,10 @@ class TestApproachVocabulary(unittest.TestCase):
 
     def test_vectored_holding_is_an_altitude_not_a_fix(self):
         hold = self.asr._hold_phrase(6000)
-        self.assertNotIn(R.BATUMI_ASR.beacon.name.lower(), hold.lower())
+        # THE AERODROME, because the ASR has no beacon to name -- that is the
+        # point of the test and #163 made it sayable. A vectored hold is an
+        # altitude; it must not name a place at all.
+        self.assertNotIn(R.BATUMI_ASR.aerodrome.name.lower(), hold.lower())
         self.assertIn("six thousand", hold)
         # and he is told the wait ends with a call from the controller, since
         # there is no fix for him to arrive at and report
@@ -357,7 +364,8 @@ class TestApproachVocabulary(unittest.TestCase):
 
     def test_the_letdown_still_holds_at_its_beacon(self):
         hold = self.ndb._hold_phrase(6000)
-        self.assertIn(R.BATUMI_APPROACH.beacon.name, hold)
+        # ITS HOMER, and this is the one procedure that has one.
+        self.assertIn(R.BATUMI_APPROACH.homer.name, hold)
 
     def test_no_beacon_report_is_ever_asked_for_on_a_radar_approach(self):
         self.assertNotIn("beacon", self.asr._report_phrase().lower())
@@ -406,7 +414,7 @@ class TestApproachVocabulary(unittest.TestCase):
         # The controller is CALLED "Batumi Approach", so the bare word proves
         # nothing -- what must not appear is the beacon used as a place: a fix
         # to fly to, hold at, or report over. Strip his own name, then look.
-        beacon = R.BATUMI_ASR.beacon.name.lower()
+        beacon = R.BATUMI_ASR.aerodrome.name.lower()
         for line in said:
             bare = line.lower().replace(R.BATUMI_ASR.controller.lower(), "")
             self.assertNotIn("beacon", bare, line)

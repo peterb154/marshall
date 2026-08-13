@@ -479,38 +479,6 @@ class ApproachProfile:
     final_crs_true_measured: float | None = None
 
     @property
-    def beacon(self) -> Fix:
-        """TRANSITIONAL, AND IT IS THE CONFLATION ITSELF. Do not add a caller.
-
-        `beacon` was the stored field and did three jobs; #163 split it into
-        `aerodrome` (the datum, always) and `homer` (the navaid, sometimes).
-        This property returns the homer where the procedure has one and the
-        aerodrome otherwise -- which is precisely the merged answer that was
-        wrong, kept for exactly as long as it takes to migrate the readers this
-        change was not permitted to edit:
-
-            agent_atc.load_and_push_plate   `{"field": profile.beacon.name}` --
-                                            wants the AERODROME, and would
-                                            raise on a None at bridge start
-            agent_atc.field_origin          the Center fallback, which is #160's
-                                            to replace with the destination
-            agent_atc, the channel list     the letdown's tuned frequencies --
-                                            wants the HOMER
-            controller._hold_phrase         "hold at BATUMI as published" --
-                                            the HOMER; letdown-only branch
-            controller._report_phrase       "report BATUMI inbound" -- likewise
-            controller, the tower handoff   "you will be homing BATUMI" --
-                                            likewise
-
-        Every one of those is unchanged by construction: on the letdown it is
-        the homer, on everything else it is the point the old field held. What
-        it must never do is acquire a SEVENTH reader, because a new caller
-        asking for `beacon` gets an airfield on three of this map's four
-        procedures.
-        """
-        return self.homer or self.aerodrome
-
-    @property
     def vectored(self) -> bool:
         """True when the CONTROLLER owns navigation.
 

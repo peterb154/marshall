@@ -940,10 +940,15 @@ class Controller:
         # can home the beacon by being in the procedure.
         from marshall.atc import equipment
 
-        navaid = getattr(self.profile.beacon, "navaid", "ndb")
+        # THE HOMER, and only a non-vectored procedure reaches here -- see
+        # `_a_letdown_always_has_a_homer` in the #163 tests, which is what
+        # makes these four reads safe without a guard each. `getattr` on a
+        # None still answers "ndb", which is the right default at a beacon
+        # field anyway.
+        navaid = getattr(self.profile.homer, "navaid", "ndb")
         able = kit is None or equipment.can_hold_at(kit, navaid)
         if not self._vectored and able:
-            return (f"hold at {self.profile.beacon.name} as published, "
+            return (f"hold at {self.profile.homer.name} as published, "
                     f"maintain {spell_alt(alt_ft)}")
         # A SHAPE AND A CLOCK. He has no navaid, so he cannot hold OVER
         # anything -- and a heading with no leg time is not a hold, it is a
@@ -985,7 +990,7 @@ class Controller:
             if getattr(pro, "guidance", "") == "talkdown":
                 return "report the field in sight"
             return "report established on the final approach course"
-        return f"report {pro.beacon.name} inbound"
+        return f"report {pro.homer.name} inbound"
 
     def _no_acknowledgement_phrase(self) -> str:
         """Said ONCE, with the approach clearance, on a talkdown. Then never.
@@ -1216,12 +1221,18 @@ class Controller:
         return c.spoken_flight if ac.is_flight else c.spoken
 
     def _key(self, ac=None) -> str:
-        """Which letdown/stack this aeroplane belongs to. The beacon's name.
+        """Which letdown/stack this aeroplane belongs to. The AERODROME's name.
+
+        It said "the beacon's name" and read `beacon`, which held the field
+        until #163 -- so this was already keying on the aerodrome and calling
+        it something else. A stack belongs to a FIELD: two aircraft recovering
+        to one runway contend for the same levels whatever they are flying,
+        and a beacon would have keyed the ILS arrivals to nothing at all.
 
         Empty for a controller with no profile at all, which is the unit-test
         and dry-run case -- one unnamed letdown, exactly as before.
         """
-        return getattr(getattr(self._pro(ac), "beacon", None), "name", "") or ""
+        return getattr(getattr(self._pro(ac), "aerodrome", None), "name", "") or ""
 
     def _in_letdown(self, ac=None) -> str | None:
         return self._letdown_by.get(self._key(ac))
@@ -1250,8 +1261,8 @@ class Controller:
         """
         if ref is None:
             return True
-        mine = getattr(getattr(self._pro(ref), "beacon", None), "name", "")
-        his = getattr(getattr(self._pro(a), "beacon", None), "name", "")
+        mine = getattr(getattr(self._pro(ref), "aerodrome", None), "name", "")
+        his = getattr(getattr(self._pro(a), "aerodrome", None), "name", "")
         return (not mine) or (not his) or mine == his
 
     def _holders(self, ref=None) -> list[Aircraft]:
@@ -1546,10 +1557,23 @@ class Controller:
                 # profiles are worked at once and only one of them is his.
                 blind = ("" if getattr(pro.atc, "radar", True)
                          else "radar not available, ")
+                # "YOU WILL BE HOMING X" IS ONLY TRUE IF THERE IS AN X, and
+                # until #163 this said it unconditionally. `pro.beacon` never
+                # returned None -- it fell back to the aerodrome -- so a
+                # procedure with an arrival fix and no beacon promised a pilot
+                # he would be homing an AIRFIELD, which is not a thing you can
+                # home. The merged answer did not prevent the bug, it printed
+                # a plausible one.
+                #
+                # Only the letdown has an arrival fix on this map today, so
+                # nothing said it wrongly in the air. The sentence is now
+                # conditional on the fact it asserts, which is what it should
+                # always have been.
+                homing = (f" -- you will be homing {pro.homer.name} from there"
+                          if getattr(pro, "homer", None) is not None else "")
                 call = (f"{self._addr(ac)}, {here}, {blind}"
                         f"report {fix.name}. At {fix.name} contact {tower} "
-                        f"{spell_freq(tower_freq)} -- you will be homing "
-                        f"{pro.beacon.name} from there.")
+                        f"{spell_freq(tower_freq)}{homing}.")
             else:
                 call = (f"{self._addr(ac)}, {here}, "
                         f"{self._report_phrase()}.")

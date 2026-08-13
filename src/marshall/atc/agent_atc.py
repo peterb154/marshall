@@ -463,7 +463,8 @@ def load_and_push_plate(profile, base: str = BASE_URL):
     _th = _theatre.current()
     try:
         _put_json(f"{base}/approaches/{_th.approach_key}",
-                  {"field": profile.beacon.name, "data": R.profile_to_dict(profile)})
+                  {"field": profile.aerodrome.name,
+                   "data": R.profile_to_dict(profile)})
         # THE THEATRE ALREADY SAID WHICH PROCEDURE. It is not asked for back.
         #
         #     "whyt would the bridge load a default approach column?? doesnt
@@ -2144,7 +2145,13 @@ def _approach_named(key: str):
     # procedure still wants that field's default rather than nothing.
     cands = []
     for p in getattr(th, "approaches", ()) or ():
-        name = (getattr(getattr(p, "beacon", None), "name", "") or "").lower()
+        # THE AERODROME, which is what the key has always spelled: a procedure
+        # is named `<field>-<kind>` -- "batumi-ils", "kobuleti-ils". It read
+        # `beacon` because that is where the field's name lived before #163,
+        # and it was reached through `getattr(..., "beacon")` rather than
+        # `.beacon`, so neither the grep that found the other six readers nor
+        # the test that pins them saw it. Both now look for either spelling.
+        name = (getattr(getattr(p, "aerodrome", None), "name", "") or "").lower()
         kind = (getattr(p, "kind", "") or "").lower()
         if key == f"{name}-{kind}":
             return p
@@ -3655,7 +3662,7 @@ def whisper_vocabulary(bridge, profile, roster=None) -> str:
     # fact leaking into a theatre-neutral path; the theatre knows its own
     # arrival field and an empty string primes nothing rather than the wrong
     # thing.
-    field = (getattr(getattr(profile, "beacon", None), "name", "")
+    field = (getattr(getattr(profile, "aerodrome", None), "name", "")
              or _th.arrival or "")
     return stt.domain_prompt(stations, fixes, spoken, field, plan_labels())
 
@@ -3794,7 +3801,11 @@ def field_origin(profile, field: str = "") -> Datum:
         got = PROJECTED.get(field.upper())
         if got:
             return Datum(field.upper(), WHY_FIELD, got)
-    for attr in ("beacon", "arrival_fix", "outer_hold"):
+    # THE AERODROME FIRST, and it is the same point this always returned --
+    # `beacon` held the field until #163. Naming it correctly is what lets
+    # the `why` above be honest: this is the LOADED APPROACH's field, not
+    # this aeroplane's, which is the whole of #160.
+    for attr in ("aerodrome", "arrival_fix", "outer_hold"):
         f = getattr(profile, attr, None)
         name = getattr(f, "name", "") if f is not None else ""
         if name and name.upper() in PROJECTED:
@@ -3929,7 +3940,10 @@ def push_fixes(base: str, profile) -> int:
     _th = _theatre.current()
     fixes = {f.name: f for f in _th.fixes}
     fixes.update({f.name: f for _, f in _th.waypoints})
-    for attr in ("beacon", "outer_hold", "arrival_fix"):
+    # BOTH SLOTS. `beacon` was one field and is two: the aerodrome is always
+    # there and a homer only sometimes, and each is a place the controller
+    # may need to resolve by name.
+    for attr in ("aerodrome", "homer", "outer_hold", "arrival_fix"):
         f = getattr(profile, attr, None)
         if f is not None and getattr(f, "name", None):
             fixes.setdefault(f.name, f)
@@ -5413,7 +5427,11 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # channel we are not listening to is a pilot talking to nobody.
         channels = [f for st in _seats for f in st.freqs if f]
     else:
-        for fix in (profile.arrival_fix, profile.beacon, profile.outer_hold):
+        # THE TUNABLE ONES. `homer` rather than the old merged `beacon`: what
+        # this wants is frequencies a pilot might call on, and an aerodrome
+        # reference point is not a transmitter. A procedure with no homer
+        # contributes nothing, which the `is not None` already handles.
+        for fix in (profile.arrival_fix, profile.homer, profile.outer_hold):
             if fix is not None and fix.freq_mhz and fix.freq_mhz not in channels:
                 channels.append(fix.freq_mhz)
     if freq_mhz not in channels:

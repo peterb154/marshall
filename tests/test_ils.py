@@ -130,8 +130,11 @@ class TestNothingUnderATCHadToChange(unittest.TestCase):
         # more -- the seats belong to the theatre (#162), and the assertion
         # that this field is staffed is `test_its_controller_is_staffed`
         # below, which asks the table rather than the procedure.
-        for attr in ("controller", "beacon", "runway", "final_crs", "guidance",
-                     "kind", "msa_sectors", "mva_cells"):
+        # `aerodrome`, not `beacon`: an ILS HAS no beacon, and requiring one
+        # to be non-empty was the conflation asserting itself in a test.
+        # #163 split the slot; the datum is what every procedure has.
+        for attr in ("controller", "aerodrome", "runway", "final_crs",
+                     "guidance", "kind", "msa_sectors", "mva_cells"):
             with self.subTest(field=attr):
                 self.assertTrue(getattr(ILS, attr, None) not in (None, "", []),
                                 f"{attr} is empty")
