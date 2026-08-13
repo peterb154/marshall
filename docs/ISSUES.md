@@ -8691,6 +8691,31 @@ restart onto another procedure.
 is not "teach `field_origin` about bullseyes", it is "stop asking the radio, ask
 the aeroplane" — the same sentence as every other item tonight.
 
+**PRIORITY, set by the owner 13 August — the datum matters more than the
+choice.**
+
+    "I don't really care which airfield is the reference for center's bra,
+     should probably be the flight plans destination airfield, but that doesn't
+     matter as much as we show / say from where. Else that bra is senseless."
+
+That reorders this issue. Picking the right field is the smaller half and it has
+a sensible default (his destination, `legs[-1]`). **Stating the reference is the
+half that must land**, and it is required in BOTH directions:
+
+    show   the board prints the datum beside the position       -> #155
+    say    a range on the air names what it is measured from
+
+The spoken half is the more serious one and was not previously captured
+anywhere. A controller who says "twenty three miles" and nothing else has said a
+number a pilot cannot use or check — and unlike the board, there is nothing to
+go back and look at. Whether the datum is the right field is then a question a
+PILOT can catch in the air, which is the property this issue has lacked from the
+start: today a wrong reference produces a real range to a real airport and
+sounds exactly like a right one.
+
+So: say the datum first, choose the field second. A stated wrong reference is a
+bug somebody finds; an unstated right one is luck.
+
 **Why it is not a one-line change.** `CENTER_NM` — the range at which Center
 hands over — is computed against this same origin, so fixing the reference also
 moves a handoff boundary. It changes numbers a pilot hears AND when he changes
