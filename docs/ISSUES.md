@@ -9996,7 +9996,6 @@ own words.
 Tests: `tests/test_identity.py::TestWhisperBreakingHisCallsignIsNotHimUsingTheWrongOne`.
 Code: `src/marshall/atc/addressing.py` (`_mangled_form_of`, `misnamed`).
 
-**Status:** FIXED 13 August, NEEDS A PILOT — card row S13. Closed by a `Closes #172` trailer and reopened within the hour: this project's rule is that a `needs-flight-test` issue is closed by a pilot flying the card and never by a green suite, and I broke it on the same day I caught three others doing so. The fix and its tests stand; what has not happened is somebody hearing one sentence where there were two.
-labels: bug, needs-flight-test
+**Status:** FIXED 13 August, NEEDS A PILOT — card row S14. Closed and reopened twice in five minutes, and the second closure is the one worth recording. `552d4c7` carried a closing trailer, which this project's own rule forbids on a `needs-flight-test` issue. `1fb846a` was the commit APOLOGISING for that, and quoted the offending trailer in prose inside backticks to say what not to do — GitHub does not read markdown, saw the keyword, and shut the issue again thirty seconds after the reopen. There is now a `commit-msg` hook (`tools/commit_msg_check.py`) that refuses a closing keyword outside the trailer block, tested against the very message that did it. The fix and its tests stand; what has not happened is somebody hearing one sentence where there were two.
 
 ---

@@ -1,0 +1,10 @@
+#!/bin/sh
+# Refuse a closing keyword outside the trailer block. See
+# tools/commit_msg_check.py for what this costs when it is missing.
+#
+# Enable it (once, per clone -- git does not do this for you):
+#     git config core.hooksPath .githooks
+#
+# No `uv` here on purpose: a hook runs in whatever environment the commit was
+# made from, including an editor's, and this check imports nothing but stdlib.
+exec python3 "$(dirname "$0")/../tools/commit_msg_check.py" "$1"

@@ -87,6 +87,10 @@ CHECKS = [
      "#78 -- every document says what it is, and the endpoints, commands and "
      "links in prose resolve. The README described the INVERSE of the "
      "architecture for weeks", False),
+    ("the commit-msg hook is wired", [PY, "tools/hook_check.py"],
+     "#172 — a hook in the tree is inert until core.hooksPath points at it, and "
+     "nothing announces that it is not running. Quoting a closing trailer in "
+     "prose closes the issue", False),
     ("issues and the card in step", [PY, "tools/issue_sync.py"],
      "#27 — that ISSUES.md, GitHub and the cockpit card still agree. Twenty of "
      "thirty-seven had drifted before anyone looked", False),
