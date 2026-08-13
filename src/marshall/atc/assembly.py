@@ -21,6 +21,8 @@ test than it does on the night.
 
 from __future__ import annotations
 
+from marshall.core.say import freq_text
+
 from marshall.atc.addressing import readback_due
 from marshall.atc.talkdown import reads_back_what_we_said
 
@@ -316,7 +318,7 @@ def compose_message(bridge, scope, known, transcript, profile, me, fix, nxt,
             "approach is the bad-weather procedure, not the only one.")
     if me:
         parts.append(
-            f"YOU ARE: {me.name} on {me.freq_mhz:.1f}. Identify as that and "
+            f"YOU ARE: {me.name} on {freq_text(me.freq_mhz)}. Identify as that and "
             "NOTHING else, even if he calls you by another name. A pilot "
             "who calls you by some other position's name has the "
             "wrong button pressed, and agreeing with him puts that position "

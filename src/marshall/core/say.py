@@ -173,6 +173,30 @@ def spell_time(t: float) -> str:
     return " ".join(d[c] for c in f"{(int(t) // 60) % 60:02d}")
 
 
+def freq_text(mhz: float) -> str:
+    """124.425 -> '124.425', 133.0 -> '133.0'. A frequency WRITTEN down.
+
+    The sibling of `spell_freq`, and it exists for the same reason that one
+    does: there was no renderer for a frequency on a page, so seven places in
+    `briefing.py` and one in `assembly.py` reached for `f"{mhz:.1f}"` and each
+    of them silently lost a real channel.
+
+        124.425 -> "124.4"    Batumi Approach
+        118.125 -> "118.1"    Batumi Tower
+        132.55  -> "132.6"    not even the same number
+
+    The worst of them was `assembly.py`, which is what the AGENT is told about
+    itself -- "YOU ARE: Batumi Approach on 124.4" -- and the plate's station
+    list, which is what a pilot copies onto his kneeboard. Neither is spoken,
+    so `spell_freq` is the wrong tool and rounding was the easy one.
+
+    Always at least one decimal place, for the reason `spell_freq` argues at
+    length: a bare "133" has to be recognised as a frequency from context.
+    """
+    out = f"{float(mhz):.3f}".rstrip("0")
+    return out + "0" if out.endswith(".") else out
+
+
 def spell_freq(mhz: float) -> str:
     """132.0 -> 'one three two decimal zero', 128.5 -> 'one two eight decimal five'.
 

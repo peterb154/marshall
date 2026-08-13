@@ -58,8 +58,14 @@ def pages(profile: R.ApproachProfile = R.BATUMI_ASR):
          lambda: build_brief.build(profile)),
         ("{c9d20e51-8a34-4b76-bf15-2e6407a9d813}", "ROUTE", "routemap",
          lambda: build_routemap.build(profile)),
+        # BY KEYWORD, and this is why. `comms.build` takes `(card, profile)`
+        # and every other page here takes `(profile)`, so the positional call
+        # put the procedure into the CARD slot and `card.profile` raised --
+        # which OpenKneeboard renders as "No Pages". No brief, no comms card,
+        # no plate: the whole kneeboard, gone, from one argument in the wrong
+        # position, and nothing tested that the site builds at all.
         ("{f7a1b3c9-2d45-4e60-8a71-3c9d05e2b641}", "COMMS", "comms",
-         lambda: build_comms.build(profile)),
+         lambda: build_comms.build(profile=profile)),
         ("{a1c8e0f2-3b47-4d91-9f2a-6c5e10b74d01}", "NAV LOG", "navlog",
          build_kneeboard.build),
         # WHAT IS ON FILE, which the pilot has to be able to READ before he can

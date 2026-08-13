@@ -354,8 +354,17 @@ def clearance(plan: dict, *, flight_id: int, departure_freq: float,
         parts.append(f"expect {_spell_alt(cruise)} one zero minutes "
                      f"after departure")
     if departure_freq:
-        whole, _, frac = f"{departure_freq:.1f}".partition(".")
-        parts.append(f"departure frequency {_spell(whole)} decimal {_spell(frac)}")
+        # ONE DECIMAL PLACE LOSES A REAL FREQUENCY. `f"{124.425:.1f}"` is
+        # "124.4", and Batumi Approach is on 124.425 -- so a pilot copying his
+        # IFR clearance wrote down a channel nobody is listening on, in the
+        # first exchange of the sortie. 118.125 came out "one one eight decimal
+        # one" and 132.55 as "decimal six", which is not even the same number.
+        #
+        # `spell_freq` is the one renderer for this and `frequencies.py`, one
+        # module over in this same package, already calls it. Two spellings of
+        # one number is how they come to disagree.
+        from marshall.core.say import spell_freq
+        parts.append(f"departure frequency {spell_freq(float(departure_freq))}")
     parts.append(f"squawk {_spell(squawk_for(flight_id))}")
     return ", ".join(parts) + "."
 

@@ -12,6 +12,8 @@ ever disagreeing, since all three read the one profile.
 
 from __future__ import annotations
 
+from marshall.core.say import freq_text
+
 from marshall.core import route as R
 
 _PHON = {"A": "Alpha", "B": "Bravo", "C": "Charlie", "D": "Delta", "E": "Echo",
@@ -77,9 +79,9 @@ def _channels(profile: R.ApproachProfile) -> list[str]:
     if enr_freq and enr_freq != twr_freq:
         out.append(
             f"- **Channels.** Enroute he homes {profile.arrival_fix.name} and is "
-            f"on **{enr_freq:.1f}** ({enr_name}); the letdown is flown homing "
+            f"on **{freq_text(enr_freq)}** ({enr_name}); the letdown is flown homing "
             f"{profile.navaid.name}, so it belongs to {twr_name} on "
-            f"**{twr_freq:.1f}**. Hand him over as he leaves "
+            f"**{freq_text(twr_freq)}**. Hand him over as he leaves "
             f"{profile.arrival_fix.name}. He physically cannot hear you on a "
             "channel he is not homing.")
     return out
@@ -136,7 +138,7 @@ def _asr_plate(profile: R.ApproachProfile, flight: str, size: int) -> str:
     # THE THEATRE'S CONTROLLERS, not the procedure's. A seat belongs to an
     # aerodrome and the aerodrome does not change when another approach is
     # loaded, which is why the table came off the profile (#162).
-    stations = "; ".join(f"**{s.name} {s.freq_mhz:.1f}**" for s in R.STATIONS)
+    stations = "; ".join(f"**{s.name} {freq_text(s.freq_mhz)}**" for s in R.STATIONS)
     return "\n".join([
         "# This mission's plate (the field-specific facts)",
         "",
@@ -210,7 +212,7 @@ def _departure_field() -> list[str]:
         return []
     rwy = f.runway_in_use(th.wind_from_deg)
     here = [s for s in th.stations if s.field == f.name]
-    who = ", ".join(f"**{s.name} {s.freq_mhz:.1f}**" for s in here) or "nobody"
+    who = ", ".join(f"**{s.name} {freq_text(s.freq_mhz)}**" for s in here) or "nobody"
     arr = th.field_named(th.arrival)
     out = [
         f"- **DEPARTURE FIELD — {f.name.upper()}.** Field elevation "
@@ -266,7 +268,7 @@ def _mission() -> list[str]:
     ]
     if overlord:
         lines.append(
-            f"- **{overlord.name} on {overlord.freq_mhz:.1f} owns the "
+            f"- **{overlord.name} on {freq_text(overlord.freq_mhz)} owns the "
             "tasking**, not you. Targets, time on station and what is down "
             "there are his to give. If a pilot asks you for a target, send him "
             f"to {overlord.name} — and if he is coming home early, that is "
@@ -384,7 +386,7 @@ def _ils_plate(profile: R.ApproachProfile, flight: str, size: int) -> str:
     # THE THEATRE'S CONTROLLERS, not the procedure's. A seat belongs to an
     # aerodrome and the aerodrome does not change when another approach is
     # loaded, which is why the table came off the profile (#162).
-    stations = "; ".join(f"**{s.name} {s.freq_mhz:.1f}**" for s in R.STATIONS)
+    stations = "; ".join(f"**{s.name} {freq_text(s.freq_mhz)}**" for s in R.STATIONS)
     dh = profile.mda_ft - profile.field_elev_ft
     return "\n".join([
         "# This mission's plate (the field-specific facts)",
@@ -446,7 +448,7 @@ def _ndb_plate(profile: R.ApproachProfile,
         "# This mission's plate (the field-specific facts)",
         "",
         f"- Controller **{profile.controller}**, recovering to runway **{rwy}**.",
-        f"- Beacon **{b.name}**, **{b.freq_mhz:.1f}**, Morse ident "
+        f"- Beacon **{b.name}**, **{freq_text(b.freq_mhz)}**, Morse ident "
         f"**{_phonetic(b.ident)}** — the pilot homes it.",
         *_channels(profile),
         f"- Capability: radar **{'ON' if cap.radar else 'OFF'}**, "
