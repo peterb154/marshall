@@ -23,7 +23,6 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field, fields
 
 from marshall.core.airspace import msa_for, mva_for
-from marshall.core.fields import (ARRIVAL_FIELD)
 from marshall.core.fixes import Fix
 from marshall.core.units import MAGVAR, MPH_PER_KT
 
@@ -65,50 +64,77 @@ class AtcCapability:
     vectors: bool | None = None
 
 
-def ladder_station(enroute: bool = False,
+def ladder_station(field: str, enroute: bool = False,
                    banished: bool = False) -> tuple[str, float] | None:
-    """Who works this phase of an arrival, off the THEATRE's comms ladder.
+    """Who works this phase of an arrival AT `field`, off the THEATRE's ladder.
 
-    Extracted out of `ApproachProfile.station`, unchanged, because it never
-    read the procedure it was a method on -- it asks the map for a role at the
-    arrival field and nothing else. That made it unreachable to a controller
-    who has no procedure, which is the state a bridge is in before anybody has
-    been cleared for anything (#162). A ladder is a property of the map; you do
-    not need an arrival to be told who works Tower.
+    Extracted out of `ApproachProfile.station` because it never read the
+    procedure it was a method on -- it asks the map for a role at an aerodrome
+    and nothing else. That made it unreachable to a controller who has no
+    procedure, which is the state a bridge is in before anybody has been
+    cleared for anything (#162). A ladder is a property of the map; you do not
+    need an arrival to be told who works Tower.
 
-    `None` means the map staffs no seats at all, and the caller falls through
-    to the beacons -- the #152 arrangement, where the man you talk to IS the
-    frequency you home.
+    `None` means it cannot be answered: either the map staffs no seats at all
+    -- and the caller falls through to the beacons, the #152 arrangement where
+    the man you talk to IS the frequency you home -- or NOBODY SAID WHICH
+    AERODROME.
+
+    THE AERODROME IS AN ARGUMENT, and it used to be the module constant
+    `ARRIVAL_FIELD`. That is the whole of #162's second fault: this function
+    answers "who works this phase of the ARRIVAL", the arrival happens at one
+    specific aerodrome, and the one it asked about was whichever field the
+    theatre file happens to call the arrival. So `KOBULETI_ILS.station()`
+    returned **Batumi** Tower on 118.600 -- a real controller, a real
+    frequency, forty miles from the runway the aeroplane was landing on -- and
+    on Nevada, where no field is named Batumi, every procedure fell out to
+    `seats[0]` and every landing clearance was stamped Nellis CLEARANCE
+    DELIVERY. The comment that used to sit here made the correct argument
+    ("AT THE ARRIVAL FIELD, and the qualifier is not decoration") and then
+    supplied the wrong aerodrome.
+
+    An empty `field` is answered with None rather than with a guess. Unqualified
+    it would return whichever Tower is listed first, which is a real controller
+    at the wrong airport, and `Controller.say` uses this to choose the channel
+    it transmits on -- so the aeroplane on short final would simply not have
+    heard it. Nothing here knows enough to pick; #109 settled that a picture
+    with no origin renders nothing rather than a guess.
 
     By ROLE, not by position in the list. Picking the last one was fine while
     the list ended at Tower, and quietly wrong the moment a mission commander
     was appended -- it would have sent a pilot to land on the overlord's
     frequency. A list order is not a fact about who works an arrival.
-
-    AT THE ARRIVAL FIELD, and the qualifier is not decoration. This answers
-    "who works this phase of the ARRIVAL", and the arrival happens at one
-    specific aerodrome. Unqualified it returns whichever Tower is listed first
-    -- which became Kobuleti's the moment the departure field got one, so a
-    Batumi landing clearance would have gone out on Kobuleti's frequency.
-    `Controller.say` uses this to choose the channel it transmits on, so the
-    aeroplane on short final would simply not have heard it. Same fault
-    `station_for` had, in a function that takes no role and so did not look
-    like a lookup.
     """
+    if not field:
+        return None
     # THE SEATS ARE THE THEATRE'S. Imported here rather than at the top
     # because `theatre` reads `route`, which re-exports this module.
     from marshall.core import theatre as _th
     seats = _th.stations_now()
     if not seats:
         return None
-    fld = ARRIVAL_FIELD
+    # THE AERODROME'S OWN SPELLING OF ITS NAME, because the two catalogues do
+    # not agree on it and `Station.field` is matched EXACTLY. A procedure's
+    # datum is a Fix and the fixes are shouted -- 'BATUMI', 'KOBULETI',
+    # 'NELLIS' -- while the aerodrome rows are 'Batumi', 'Kobuleti', 'Nellis',
+    # 'Tonopah'. Handing the fix's spelling straight to `station_for` matches
+    # no seat at all, which is the same wrong answer as asking about the wrong
+    # field and is harder to see. `field_named` is the documented join between
+    # the two and is case-insensitive; a name it does not know is passed
+    # through unchanged so that an unknown field fails to match rather than
+    # silently matching everything.
+    known = _th.current().field_named(field)
+    field = known.name if known is not None else field
     if enroute or banished:
-        s = _th.station_for("center", field=fld) or seats[0]
+        s = _th.station_for("center", field=field)
     else:
-        s = (_th.station_for("tower", field=fld)
-             or _th.station_for("approach", field=fld)
-             or seats[0])
-    return s.name, s.freq_mhz
+        s = (_th.station_for("tower", field=field)
+             or _th.station_for("approach", field=field))
+    # NO `or seats[0]`. That fallback is what turned "this map publishes no
+    # Center" into "the first seat in the file", and on Nevada it read a
+    # ground delivery position out as the tower to call at the missed
+    # approach point. A field with no such seat has no such seat.
+    return (s.name, s.freq_mhz) if s is not None else None
 
 
 def may_vector(profile) -> bool:
@@ -726,9 +752,14 @@ class ApproachProfile:
         that phase, and the "station" is derived from the fix instead. Which of
         the two this procedure is, is `theatre_stations` -- it used to be
         whether the profile's own station list happened to be empty (#152).
+
+        AT `self.aerodrome`, which this object has been holding all along. It
+        used to ask about `fields.ARRIVAL_FIELD`, so the Kobuleti ILS named
+        Batumi's Tower and Nevada named nobody's.
         """
         if self.theatre_stations:
-            got = ladder_station(enroute=enroute, banished=banished)
+            got = ladder_station(self.aerodrome.name,
+                                 enroute=enroute, banished=banished)
             if got is not None:
                 return got
         if banished:

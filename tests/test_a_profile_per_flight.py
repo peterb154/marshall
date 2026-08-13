@@ -237,10 +237,43 @@ class AControllerWithNoArrivalAtAll(unittest.TestCase):
         """`say` chose the frequency off the radio's arrival. A comms ladder
         belongs to the MAP -- you do not need an arrival to be told who works
         Tower -- so it comes off the theatre and the aeroplane is still
-        reachable."""
+        reachable.
+
+        BUT A LADDER IS LOOKED UP AT AN AERODROME, which is what this asked
+        for without saying so. It used to be answered at `ARRIVAL_FIELD`, a
+        module constant, so a seatless controller with no arrival named Batumi
+        Tower on a map that may not have one -- see #162 and the sibling test
+        below. The seat is the aerodrome here, and the live bridge always has
+        one: `_me` is set from the frequency the transmission arrived on.
+        """
+        self.c._me = RT.KOB_TOWER
         self.c.check_in("Pony 1-1")
         self.assertTrue(all(tx.freq_mhz for tx in self.c.out))
         self.assertTrue(all(tx.controller for tx in self.c.out))
+        for tx in self.c.out:
+            with self.subTest(tx.text):
+                # His, or nobody's -- `role_at`'s own rule. A Center owns a
+                # region and is reachable from anywhere; ANOTHER AERODROME's
+                # seat is never an answer, and used to be the only answer.
+                self.assertIn(RT.station_on(tx.freq_mhz).field, ("Kobuleti", ""),
+                              "his own field's ladder, not the other one's")
+
+    def test_and_with_no_seat_either_no_aerodrome_is_invented(self):
+        """The complement, and the reason the one above needed a seat.
+
+        No arrival and no seat is no aerodrome at all, and a comms ladder
+        cannot be read without one -- "who works Tower" has as many answers as
+        the map has fields. The old answer was Batumi's, from a constant, and
+        it was a REAL controller on a REAL frequency at the wrong airport,
+        which is the failure shape that cannot announce itself. Zero is what
+        `Tx` has always carried for "not decided". [#109 #162]
+        """
+        self.assertIsNone(self.c._me if hasattr(self.c, "_me") else None)
+        self.c.check_in("Pony 1-1")
+        self.assertTrue(self.c.out, "he is still answered")
+        self.assertEqual([0.0], sorted({tx.freq_mhz for tx in self.c.out}))
+        self.assertEqual([""], sorted({tx.controller for tx in self.c.out}))
+        self.assertNotIn(", ,", " ".join(tx.text for tx in self.c.out))
 
     def test_a_clearance_that_is_not_his_is_still_refused(self):
         """The aerodrome half of the invariant does not need a procedure: only

@@ -1251,12 +1251,24 @@ class Controller:
         no sector and no frequency. A map with no seats at all and no arrival
         gets ('', 0.0) -- nothing invented, and `Tx` has always carried a
         frequency of zero for "not decided".
+
+        AND A LADDER NEEDS AN AERODROME. With a procedure the field is the one
+        it arrives at; without one the only aerodrome anybody here knows about
+        is the SPEAKING SEAT's, which is the honest answer for the ground half
+        of a sortie -- a pilot talking to Kobuleti Tower is on Kobuleti Tower's
+        frequency and on nobody else's. It used to resolve at
+        `fields.ARRIVAL_FIELD` instead, so Kobuleti Tower's roll-out goodbye
+        was stamped Batumi Tower 118.600. A fieldless seat (Center, Sentry) with
+        no arrival either names no aerodrome at all, and gets the same ('', 0.0)
+        as a map with no seats.
         """
         pro = self._pro(ac)
         if pro is not None:
             return pro.station(enroute=enroute, banished=banished)
         from marshall.core.approach import ladder_station
-        return ladder_station(enroute=enroute, banished=banished) or ("", 0.0)
+        mine = getattr(getattr(self, "_me", None), "field", "")
+        return ladder_station(mine, enroute=enroute,
+                              banished=banished) or ("", 0.0)
 
     def _resolve(self, cs: str) -> str:
         """Which entity owns this callsign.
@@ -1656,6 +1668,13 @@ class Controller:
             here, here_freq = me.name, me.freq_mhz
         else:
             here, here_freq = self._channel(ac, enroute=True)
+        # AND AN ANONYMOUS CONTROLLER SAYS NOTHING RATHER THAN A BARE COMMA,
+        # which is `_introduce`'s rule (#109) reaching the one greeting that
+        # did not share it. A Controller with no arrival AND no seat has no
+        # aerodrome to look a ladder up at and therefore no name to give; the
+        # separator belongs to the name, so the sentence closes up when there
+        # is none rather than reaching Polly as "Pony one one, , report".
+        whoami = f", {here}" if here else ""
         tower, tower_freq = self._channel(ac)
         fix = getattr(pro, "arrival_fix", None)
         # A CAPABILITY IS DECLARED, NEVER INFERRED FROM THE SHAPE OF THE DATA,
@@ -1723,11 +1742,11 @@ class Controller:
                 # always have been.
                 homing = (f" -- you will be homing {pro.navaid.name} from there"
                           if getattr(pro, "navaid", None) is not None else "")
-                call = (f"{self._addr(ac)}, {here}, {blind}"
+                call = (f"{self._addr(ac)}{whoami}, {blind}"
                         f"report {fix.name}. At {fix.name} contact {tower} "
                         f"{spell_freq(tower_freq)}{homing}.")
             else:
-                call = (f"{self._addr(ac)}, {here}, "
+                call = (f"{self._addr(ac)}{whoami}, "
                         f"{self._report_phrase(ac)}.")
         elif self._owns("departure") or self._owns("center"):
             # A DEPARTING AIRCRAFT IS NOT ASKED TO REPORT THE FIELD IN SIGHT.
@@ -1744,7 +1763,7 @@ class Controller:
             # The PHASE is. One man works both, and what he says depends on
             # which way the aeroplane is going -- see `phases.py`, which has
             # said so since it was written.
-            call = f"{self._addr(ac)}, {here}, radar contact."
+            call = f"{self._addr(ac)}{whoami}, radar contact."
         else:
             # A GROUND SEAT DOES NOT ASK FOR A POSITION REPORT. "Report BATUMI
             # inbound" from Clearance, to a man who has not started his engine,
@@ -1752,7 +1771,7 @@ class Controller:
             # it only became reachable when the ladder grew seats below
             # Approach. What Clearance and Ground want is the request, which
             # `_atis_phrase` asks for.
-            call = f"{self._addr(ac)}, {here}."
+            call = f"{self._addr(ac)}{whoami}."
         # THE ATIS AND HIS INTENTIONS, and neither of them gates anything.
         #
         #     "Approach should confirm they have information Bravo and ask what
