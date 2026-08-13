@@ -88,10 +88,18 @@ class TestTheSortieInOrder(unittest.TestCase):
 class TestItRefusesTheImpossible(unittest.TestCase):
 
     def test_an_illegal_transition_is_refused_and_the_phase_kept(self):
-        """`follows` says what may come next. "landed while enroute" is not a
-        thing, and the one place that knows is the table."""
-        self.assertFalse(P.may_follow("enroute", "landed"))
-        self.assertEqual(P.derive("enroute", separation="landed"), "enroute")
+        """`follows` says what may come next, and the one place that knows is
+        the table.
+
+        THIS USED TO BE `enroute` WANTING `landed`, which is no longer illegal
+        and never should have been: touching down is an observation, not a
+        transition, and refusing it welded an aeroplane out of the last two
+        rungs of the ladder (#151). `taxi_in` is the end of the ladder --
+        nothing follows it -- so a clearance still sitting in the separation
+        engine must not pull a man on a stand back onto an approach.
+        """
+        self.assertFalse(P.may_follow("taxi_in", "approach"))
+        self.assertEqual(P.derive("taxi_in", separation="cleared"), "taxi_in")
 
     def test_a_legal_one_is_allowed(self):
         self.assertTrue(P.may_follow("arrival", "approach"))
@@ -291,17 +299,19 @@ class ARefusedTransitionIsNotSilent(unittest.TestCase):
     def test_an_illegal_transition_calls_back(self):
         from marshall.atc import phases
         seen = []
-        # `enroute` may lead to rtb or arrival, never straight to landed.
+        # `taxi_in` is the END OF THE LADDER: `follows` is empty, so nothing
+        # legally comes after a man on a stand.
         #
-        # THIS USED TO BE `departure` ON THE GROUND WANTING `taxi`, which was a
-        # refusal of a transition nothing should have proposed: the deriver
-        # invented `taxi` for anything parked, including an aeroplane rolling
-        # for take-off. That is fixed, so it is no longer an illegal transition
-        # -- it is not a transition at all -- and this needs a real one.
-        got = phases.derive("enroute", separation="landed",
+        # THIS HAS NOW BEEN REWRITTEN TWICE, and both times for the same reason
+        # -- it was pinned on a transition that turned out to be legal after
+        # all. First `departure` on the ground wanting `taxi`, which the deriver
+        # should never have proposed; then `enroute` wanting `landed`, which the
+        # TABLE should never have refused (#151). The example has to be a
+        # transition that is genuinely impossible rather than merely unwired.
+        got = phases.derive("taxi_in", separation="cleared",
                             refused=lambda cur, want: seen.append((cur, want)))
-        self.assertEqual(got, "enroute", "an illegal transition must not happen")
-        self.assertEqual(seen, [("enroute", "landed")],
+        self.assertEqual(got, "taxi_in", "an illegal transition must not happen")
+        self.assertEqual(seen, [("taxi_in", "approach")],
                          "the refusal that pins the phase left no trace")
 
     def test_a_legal_transition_does_not(self):
@@ -314,9 +324,8 @@ class ARefusedTransitionIsNotSilent(unittest.TestCase):
 
     def test_no_callback_is_fine(self):
         from marshall.atc import phases
-        self.assertEqual(
-            phases.derive("departure", on_ground=True, was_airborne=False),
-            "departure")
+        self.assertEqual(phases.derive("taxi_in", separation="cleared"),
+                         "taxi_in")
 
     def test_the_bridge_reports_who_is_working_him(self):
         # The verdict without its inputs is what made this undiagnosable: the
@@ -493,33 +502,80 @@ class HavingFlownIsAPhaseAndNotACounter(unittest.TestCase):
                          "has been airborne")
 
 
-class LandingOutOfAnArrivalIsRefusedByTheTable(unittest.TestCase):
-    """Characterised, not fixed, because it is the next question along.
+class TouchingDownIsObservedAndNotProposed(unittest.TestCase):
+    """The table used to argue with the sim, and this class used to record it.
 
-    With `has_flown` reading the phase, an aeroplane the sim says is down now
-    WANTS `landed` from wherever he is. `approach` may lead there and every
-    other airborne phase may not -- so a straight-in that was never formally
-    cleared, or a departure that comes back and lands, is refused and keeps its
-    phase. That is the behaviour it had before this fix, with one difference
-    that is the whole point: the refusal is now REPORTED instead of never being
-    proposed.
+    It was written as `LandingOutOfAnArrivalIsRefusedByTheTable`, and what it
+    asserted was the DEFECT: `may_follow(phase, "landed")` false for arrival,
+    departure, enroute, holding and missed, and `derive("arrival",
+    on_ground=True)` keeping `arrival` with a refusal in the log. A test that
+    records a fault is not a test that guards a fix, and it is what #151 was
+    filed to remove.
 
-    Filed separately. `derive`'s own docstring says down is the fact nobody
-    argues with, and `may_follow` argues with it.
+    Every one of those five is a thing an aeroplane does. A straight-in nobody
+    formally cleared is in `arrival` when the wheels touch; a departure that
+    comes straight back is in `departure`; a pilot who breaks off a hold and
+    lands is in `holding`. In each case the sim stated the fact, `derive` wanted
+    `landed`, and the table refused.
+
+    What it COST is the end of the sortie. `landed` is Tower's and `taxi_in`
+    follows it, so a phase that never reaches `landed` cannot hand him to Ground
+    (#77), and `intents` reads the same field to tell "taxi to parking" from
+    "ready to taxi" (#100) -- so the last request of a flight was answered as
+    though it were the first.
     """
 
-    def test_approach_may_land(self):
-        self.assertTrue(P.may_follow("approach", "landed"))
+    # `has_flown` is the existing predicate for "he has been off the ground on
+    # this sortie", and it is the one the deriver already uses. Naming the nine
+    # here would be a second list to drift.
+    AIRBORNE = tuple(n for n in P.PHASES if P.has_flown(n))
+    # `landed` itself is left out: he HAS flown, and an aeroplane already in it
+    # who is still down is in exactly the right phase.
+    ON_THE_GROUND = tuple(n for n in P.PHASES
+                          if not P.has_flown(n) and n != "landed")
 
-    def test_and_the_others_may_not_yet(self):
-        for phase in ("arrival", "departure", "enroute", "holding", "missed"):
+    def test_every_airborne_phase_may_land(self):
+        """Acceptance 1. `approach` was the only one, and touching down is not
+        a procedural transition that can be illegal."""
+        self.assertIn("arrival", self.AIRBORNE)     # the sweep is not empty
+        for phase in self.AIRBORNE:
+            with self.subTest(phase=phase):
+                self.assertTrue(P.may_follow(phase, "landed"))
+
+    def test_and_the_table_says_so_where_a_reader_looks(self):
+        """THE DRIFT GUARD, and the reason this is data rather than a special
+        case inside `may_follow`. A phase added later is airborne or it is not,
+        and either way its `follows` has to agree with `has_flown` -- otherwise
+        the next `arrival` is one nobody notices for a fortnight."""
+        for name, phase in P.PHASES.items():
+            with self.subTest(phase=name):
+                self.assertEqual(P.has_flown(name), "landed" in phase.follows,
+                                 "an airborne phase must lead to `landed`, and "
+                                 "a ground phase must not")
+
+    def test_the_sims_fact_is_not_refused(self):
+        """Acceptance 3. No `phase REFUSED: ... cannot lead to landed` in a
+        normal recovery -- and the refusal callback is how that is heard."""
+        for phase in self.AIRBORNE:
+            with self.subTest(phase=phase):
+                seen: list = []
+                got = P.derive(phase, on_ground=True,
+                               refused=lambda cur, want, s=seen:
+                                   s.append((cur, want)))
+                self.assertEqual(got, "landed")
+                self.assertEqual(seen, [])
+
+    def test_a_parked_aeroplane_that_has_never_flown_still_does_not_land(self):
+        """Acceptance 2, and the case `follows` was written to protect. It is
+        the same fact -- he is stopped on an aerodrome -- and the opposite
+        phase."""
+        for phase in self.ON_THE_GROUND:
+            with self.subTest(phase=phase):
+                self.assertNotEqual(P.derive(phase, on_ground=True), "landed",
+                                    "a jet on the ramp before start-up has not "
+                                    "landed")
+
+    def test_and_no_ground_phase_may_lead_there_at_all(self):
+        for phase in ("clearance", "taxi", "holding_short", "taxi_in"):
             with self.subTest(phase=phase):
                 self.assertFalse(P.may_follow(phase, "landed"))
-
-    def test_so_the_phase_is_kept_and_the_refusal_is_heard(self):
-        seen = []
-        got = P.derive("arrival", on_ground=True,
-                       refused=lambda cur, want: seen.append((cur, want)))
-        self.assertEqual(got, "arrival")
-        self.assertEqual(seen, [("arrival", "landed")],
-                         "a refusal nobody hears is how a phase gets welded")

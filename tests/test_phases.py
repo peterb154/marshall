@@ -45,13 +45,30 @@ class TestTransitions(unittest.TestCase):
     def test_a_holding_aircraft_may_be_cleared_for_the_approach(self):
         self.assertTrue(phases.may_follow("holding", "approach"))
 
-    def test_an_enroute_aircraft_may_not_land(self):
-        self.assertFalse(phases.may_follow("enroute", "landed"))
+    def test_an_enroute_aircraft_may_land(self):
+        """It used to read `may_NOT_land`, and that was the table arguing with
+        the sim. Wheels on the ground is an observation, and the phase he
+        happened to be in when it happened cannot make it untrue. [#151]"""
+        self.assertTrue(phases.may_follow("enroute", "landed"))
 
-    def test_a_go_around_returns_to_the_pattern_not_to_the_ground(self):
+    def test_a_go_around_returns_to_the_pattern(self):
         self.assertTrue(phases.may_follow("approach", "missed"))
         self.assertTrue(phases.may_follow("missed", "holding"))
-        self.assertFalse(phases.may_follow("missed", "landed"))
+
+    def test_and_a_man_who_went_around_may_still_come_back_and_land(self):
+        """The other half of the same rewrite. `missed -> landed` was refused,
+        which is the commonest recovery there is: he goes around, he is brought
+        back, he lands -- and if nothing re-derived him onto the approach first
+        the touchdown was refused and his phase welded to `missed`."""
+        self.assertTrue(phases.may_follow("missed", "landed"))
+
+    def test_but_a_man_who_has_never_flown_has_not_landed(self):
+        """What `follows` was written to protect, and it is untouched: a ground
+        phase does not lead to `landed`, so a jet on the ramp before start-up is
+        not welcomed home and sent to parking."""
+        for phase in ("clearance", "taxi", "holding_short", "taxi_in"):
+            with self.subTest(phase=phase):
+                self.assertFalse(phases.may_follow(phase, "landed"))
 
     def test_an_unknown_phase_permits_nothing(self):
         self.assertFalse(phases.may_follow("loitering-about", "approach"))

@@ -3102,11 +3102,31 @@ def sim_state(scope: str, track: str, pos=None) -> str:
     #
     # Absence of evidence, read as evidence. Empty is the honest answer and the
     # board already has a column that says he cannot be seen -- `confirmed`.
-    if not any(_key_name(u.name) == _key_name(track)
-               for u in identity.units_on(scope)):
+    unit = next((u for u in identity.units_on(scope)
+                 if _key_name(u.name) == _key_name(track)), None)
+    if unit is None:
         return ""
     if not is_on_the_ground(scope, track, pos):
-        return "airborne"
+        # ...AND BEING ON THE SCOPE IS NOT "AIRBORNE" EITHER, which is the same
+        # fault one row in. The guard above catches an aeroplane that has left
+        # the world; this catches one that has arrived in it and been asked
+        # about before the sweep reached him. `is_on_the_ground` is False in
+        # both cases and for the same reason -- nothing said otherwise -- so
+        # "not down" had to be split into the two answers it was hiding. [#149]
+        #
+        #     the sim says he is flying          `in_air is True`
+        #     radar has him high and moving      a position, which is what
+        #                                        `is_on_the_ground` just weighed
+        #     neither                            say nothing
+        #
+        # A position counts because the geometry fallback is a real observation:
+        # `is_on_the_ground` saying False about an aircraft it can SEE is the
+        # altitude-and-speed test answering, not an absence. With no position
+        # and no report there is nothing behind the word at all, and the board
+        # already has a column for "he cannot be seen".
+        if unit.in_air is True or pos is not None:
+            return "airborne"
+        return ""
     kt = getattr(pos, "speed_kt", None)
     if kt is None:
         # DOWN, AND THAT IS ALL WE KNOW. No position means no speed, and
@@ -3423,9 +3443,22 @@ def handoff_on_the_event(scope: str, track: str, me, profile,
     A fix is optional and its absence changes nothing, because a controller with
     no radar picture is exactly the case that must keep working the way it did.
 
-    Silent unless the sim has actually said so. `on_ground` is False both for an
-    aeroplane in the air and for one nothing has been reported about, and this
-    must not fire on the second -- see events.ground_state.
+    Silent unless the sim has actually said so, and it TAKES A POSITIVE ANSWER
+    to be silent about. This paragraph used to end "`on_ground` is False both
+    for an aeroplane in the air and for one nothing has been reported about, and
+    this must not fire on the second" -- and it fired on the second, for two
+    weeks, because the only guard it had was `unit is None`. That was enough
+    while the flag came from land/takeoff events and stopped being enough the
+    day it moved to a swept column that starts NULL.
+
+    So the test is `in_air is True` and not `not on_ground`. There is a scar for
+    the difference one function along in `handoff._airborne`: an aircraft radar
+    has stopped seeing answers False to `on_ground`, and reading that as
+    "airborne" put an aeroplane which had LEFT THE WORLD onto the board as
+    flying. Here the same mistake offers Approach to a jet on a ramp -- a real
+    controller, a real frequency, for a man nobody has looked at yet -- and the
+    window is widest exactly where it is worst: a fresh mission, a restart, an
+    aeroplane spawning while somebody asks who has him. [#149]
     """
     if me is None or not track:
         return None
@@ -3438,7 +3471,7 @@ def handoff_on_the_event(scope: str, track: str, me, profile,
     fld = getattr(me, "field", "")
     if unit.on_ground and role == "approach":
         return _theatre.station_for("tower", field=fld, procedure=profile)
-    if not unit.on_ground and role == "tower":
+    if unit.in_air is True and role == "tower":
         # Airborne again: Tower owns the runway, not the departure -- unless he
         # is pointed AT the runway, in which case he is an arrival on final and
         # Tower is the man who owns him.
@@ -4911,7 +4944,16 @@ def _plan_row(plan: dict, flying_it: str, on_board: dict, track_of: dict,
         "phase": row.get("phase") if row else "",
         # None, not False, when radar cannot see him: "parked" and "we do not
         # know" are different answers and only one of them is about the ground.
-        "on_ground": unit.on_ground if unit is not None else None,
+        #
+        # AND THAT WAS TRUE OF THE MISSING TRACK ONLY. A unit that IS on the
+        # scope came through here as False the moment nothing had reported his
+        # ground state, so the page printed "airborne" for an aeroplane the
+        # sweep had not reached -- the same three-into-two collapse this row's
+        # own comment was written against. `in_air` carries the third answer now
+        # and this passes it straight through; the page has rendered all three
+        # since it was built and was simply never handed the middle one. [#149]
+        "on_ground": (None if unit is None or unit.in_air is None
+                      else unit.in_air is False),
     }
 
 

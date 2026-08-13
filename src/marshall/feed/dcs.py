@@ -342,7 +342,14 @@ def contacts_live(bindings: dict | None = None) -> list[dict]:
                 "name": u.name, "label": who,
                 "callsign": bindings.get(who, ""),
                 "type": u.type, "category": "", "manned": bool(u.player_name),
-                "player": u.player_name or "", "on_ground": False,
+                "player": u.player_name or "",
+                # NOT KNOWN, AND THE DOCSTRING ABOVE ALREADY SAID SO. A live
+                # scan does not have the sim's ground state; `on_ground: False`
+                # was that absence written down as a fact, and downstream it
+                # read as "the sim says he is flying" -- which is the whole of
+                # #149, in the one path that is only ever taken when the cache
+                # is cold and the picture is degraded anyway.
+                "in_air": None, "on_ground": False,
                 "lat": u.position.lat, "lon": u.position.lon,
                 "alt_ft": u.position.alt * _M_TO_FT,
                 "heading": u.orientation.heading, "speed_kt": 0.0,

@@ -121,9 +121,24 @@ def contacts(origin: tuple[float, float] | None = None,
                 "category": t.category or "",
                 "manned": bool(t.player),
                 "player": t.player or "",
-                # THE SIM'S OWN ANSWER, from `Unit.inAir()`. NULL means nobody
-                # has asked yet, which is a third answer -- and reading it as
-                # "airborne" is what told a parked Mustang it was flying.
+                # THE SIM'S OWN ANSWER, from `Unit.inAir()`, WITH ITS THIRD
+                # STATE INTACT. NULL means nobody has asked yet -- not down,
+                # not flying, not known -- and reading it as "airborne" is what
+                # told a parked Mustang it was flying.
+                #
+                # THAT USED TO BE WRITTEN HERE AND DISCARDED ON THE NEXT LINE.
+                # `on_ground` alone maps NULL and TRUE onto the same False, so
+                # a comment about three answers sat directly above a value that
+                # carried two, and every reader downstream was told about a
+                # distinction the number no longer had. A comment is not a
+                # carrier. [#149]
+                #
+                # `in_air` is the answer; `on_ground` stays as the convenience
+                # every caller already reads and still means exactly what it
+                # always did -- THE SIM SAYS HE IS DOWN. Anything that means
+                # "the sim says he is FLYING" asks `in_air is True`, which is
+                # positive evidence and cannot be satisfied by silence.
+                "in_air": t.in_air,
                 "on_ground": (t.in_air is False),
                 "lat": lat, "lon": lon,
                 "alt_ft": t.alt_ft, "heading": t.heading,
