@@ -167,19 +167,30 @@ def paint(name: str, label: str, lat: float, lon: float, alt_ft: float,
     starts and ends.
     """
     from marshall.core import db
+    from marshall.feed import categories as cat
+    # THE FEED'S OWN WORD, not a second spelling of it. This wrote the literal
+    # `'Airplane'` and `feed.tracks` writes `airplane`, so `tracks.category` had
+    # two writers who disagreed by one capital letter -- and every reader
+    # compared case-sensitively. A ghost was therefore not an aircraft: no
+    # derived callsign, no state, no amber on the untracked panel, and
+    # `count_contacts` returning nought so the separation engine never engaged
+    # for him. The readers ask `feed.categories` now and would survive this, and
+    # it is still wrong for a fixture to invent a spelling the feed never
+    # writes: a rehearsal is only evidence while it paints what the sim would.
+    # [#156]
     with db.pool().connection() as c:
         c.execute(
             "INSERT INTO tracks (name, label, type, coalition, geog, alt_ft, "
             "                    heading, speed_kt, player, category, in_air, "
             "                    last_seen) "
             "VALUES (%s, %s, %s, 2, ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography, "
-            "        %s, %s, %s, %s, 'Airplane', %s, now()) "
+            "        %s, %s, %s, %s, %s, %s, now()) "
             "ON CONFLICT (name) DO UPDATE SET "
             "  geog = EXCLUDED.geog, alt_ft = EXCLUDED.alt_ft, "
             "  heading = EXCLUDED.heading, speed_kt = EXCLUDED.speed_kt, "
             "  in_air = EXCLUDED.in_air, last_seen = now()",
             (name, label, kind, lon, lat, alt_ft, heading, speed_kt, label,
-             bool(in_air)))
+             cat.AIRPLANE, bool(in_air)))
 
 
 class Ghost:

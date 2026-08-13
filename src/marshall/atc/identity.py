@@ -51,6 +51,10 @@ from __future__ import annotations
 
 import re
 from marshall.core import names as _names
+# The sim's vocabulary for what a return IS, from the module that defines it.
+# Pure and grpc-free on purpose -- `feed.tracks`, where `_CATEGORY` lives, needs
+# a simulator to import and this is below it. See `feed/categories.py`.
+from marshall.feed import categories as _cat
 from dataclasses import dataclass, field
 
 # One line of the radar picture:  362nd_sockeye [Pony 1-1] (P-47D-30): 4.1 nm ...
@@ -233,12 +237,25 @@ def units_on(scope: str) -> list[Unit]:
         # strongest link in the system was severed and the pilot was identified
         # only by ELIMINATION, which works with one man up and fails with two.
         # He was being called "viper".
+        # THE CATEGORY, AND WHY IT IS BLANKED FOR AN AEROPLANE. `Unit.category`
+        # does not mean "what the sim called it"; it means WHAT IT IS IF IT IS
+        # NOT AN AEROPLANE. Six readers in `agent_atc` are written on that
+        # contract -- `not u.category` is "does it fly" at every one of them --
+        # so this is the single place the sim's word becomes that answer.
+        #
+        # IT ASKS `feed.categories` NOW, because it used to compare against two
+        # lower-case literals and `tracks.category` has a second writer:
+        # `tools/ghost_flight.py` painted `Airplane`, and one capital letter made
+        # every ghost a tank. `is_aircraft: false`, no derived callsign, no
+        # state, no amber on the untracked panel, and `count_contacts` returning
+        # nought so the separation engine never engaged. That is [#156], and its
+        # filed diagnosis blames `_contact` for a comparison that was made here.
         return [Unit(c.get("label") or c.get("name", ""),
                      c.get("callsign", "") or "",
                      c.get("type", "") or "", bool(c.get("manned")),
                      bool(c.get("on_ground")),
-                     "" if c.get("category") in ("airplane", "helicopter")
-                     else (c.get("category") or ""))
+                     "" if _cat.is_aircraft(c.get("category"))
+                     else _cat.word(c.get("category")))
                 for c in got if c.get("name")]
 
     out: list[Unit] = []
@@ -256,7 +273,11 @@ def units_on(scope: str) -> list[Unit]:
         low = kind.lower()
         manned = "manned" in low
         grounded = "on the ground" in low
-        category = next((c for c in ("ground", "ship") if f", {c}" in low), "")
+        # The same vocabulary the structured path reads, from the same module,
+        # so a fifth category is one edit rather than two -- and the prose and
+        # the data cannot come to disagree about what a tank is called.
+        category = next((c for c in _cat.WORDS
+                         if c not in _cat.FLYING and f", {c}" in low), "")
         kind = kind.split(",")[0].strip()
         out.append(Unit(name, (m.group(2) or "").strip(), kind, manned, grounded,
                         category))
