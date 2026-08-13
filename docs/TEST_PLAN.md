@@ -922,6 +922,7 @@ the two differ, which is why they want a pilot and not a sweep.
 | **V2** | Recover into **Kobuleti** on the same sortie the radio was started for Batumi | Every range Center and Approach speak is measured from **Kobuleti**. This is the one that separates a chosen datum from a fallback: today the radio's loaded arrival decides it, and on this route that is the wrong field by forty miles | [#160] | **P1** |
 | **V3** | Ask Approach for the **ILS runway one three** by name | Cleared for that procedure, and the strip and the clearance both name the runway. Asking for "the ILS" when a field publishes two must get a question back, never whichever is listed first — that is #131, which cost a sortie on 12 August | [#165] | **P1** |
 | **V4** | With two aircraft recovering to **different fields**, listen to both | Each is worked on his own approach: his own minima, his own stack, his own tower's frequency. One radio, two arrivals. Nothing on the air should suggest the second aeroplane is flying the first one's procedure | [#162] | **P1** |
+| **V5** | Fly the **ILS** in, and note where Approach hands you to Tower. Then fly the sortie again with the radio started on a **different** procedure | The handoff happens in the same place both times, because the rule belongs to the approach YOU are flying. A talkdown keeps you to the runway; an ILS gives you to Tower at five miles. Which one the radio was started with must not change either | [#150] | **P1** |
 
 ---
 

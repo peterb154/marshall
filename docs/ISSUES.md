@@ -8217,7 +8217,7 @@ same collapse.
 ---
 
 ## [ARCH-27] The procedure a decision is made from is the bridge's, not the aeroplane's — #150
-labels: architecture
+labels: architecture, needs-flight-test
 
 `Controller._pro(ac)` is the owner of *"which approach is this aeroplane
 flying"* and has been since two aircraft could recover to two fields. It is
@@ -8264,14 +8264,40 @@ Tests: beside `tests/test_two_fields.py`.
 Code: `src/marshall/atc/agent_atc.py`, `src/marshall/atc/handoff.py`,
 `src/marshall/atc/controller.py`.
 
-**Status:** OPEN — one of six fixed, and the five enumerated are still true.
-`intents.dispatch` now asks `ctl._pro(_ac)` before `reachable`/`why_not`
-(`9cc7c8a`, guarded by `TheGateAsksHISPROCEDURE` in `tests/test_reachable.py`),
-but `agent_atc.py` still calls `_asr.guide(fix, ctl.profile, …)`, and
-`asr_context`, `leaving_my_airspace`, `settle`'s `_phases.guide` and
-`handoff.py` are all still handed the bridge's loaded profile. No test flies two
-aircraft on two procedures through one bridge.
+**Status:** FIXED 13 August, NEEDS A PILOT — card row S15. The accessor is
+`controller.procedure_of` (free function) and `Controller.procedure_for` (by
+callsign); its docstring carries the line between the procedure question and
+the theatre question, because a rule that lives only in a test is one the next
+person breaks before the test tells them.
 
+SEVEN SITES, NOT FIVE. The five enumerated above are done. Sweeping for
+`ctl.profile` rather than working the list found two more inside
+`separation_context` that nobody had listed — whether a beacon is flown at all
+(so a Mustang genuinely over the beacon was told he had not reached it), and
+the DATUM a radar range is measured from (twenty-two miles of error between
+Kobuleti and Batumi, quoted to a pilot as fact). An eighth, `his_station`, went
+the same way. There are now no live reads of `ctl.profile` in `agent_atc.py`
+and a test asserts it.
+
+Criterion 2 held without changes and is now checked: `station_for` takes a
+`procedure` and asks it ONE boolean about itself — `theatre_stations`, whether
+it staffs the ladder — and never yields a Station. Seats come from the map for
+everybody. That distinction is what would have made this fix worse than the
+bug if it had been fumbled, so it is asserted rather than assumed.
+
+NOT DONE, AND SPLIT OUT AS #173: `asr_monitor` picks its transmit channel once
+at thread start from the bridge's procedure, then uses it for every aircraft's
+mile calls. It is the same fault and not the same shape — a radio-path change
+rather than a lookup — so it is its own issue with its own criteria rather than
+a footnote here.
+
+One correction to the entry above: the test file went in beside
+`tests/test_two_fields.py` in argument but not in name — it is
+`tests/test_two_procedures_one_bridge.py`, and it records that its first
+version passed for the wrong reason. It compared an ILS against the map's
+published letdown, which staffs no ladder at all, so `handoff.due` returned
+None for reasons that had nothing to do with guidance and would have gone on
+doing so if the talkdown rule were deleted outright.
 ---
 
 ## [SEP-16] `landed` may only follow `approach`, so the sim's own fact is refused — #151
@@ -9997,5 +10023,53 @@ Tests: `tests/test_identity.py::TestWhisperBreakingHisCallsignIsNotHimUsingTheWr
 Code: `src/marshall/atc/addressing.py` (`_mangled_form_of`, `misnamed`).
 
 **Status:** FIXED 13 August, NEEDS A PILOT — card row S14. Closed and reopened twice in five minutes, and the second closure is the one worth recording. `552d4c7` carried a closing trailer, which this project's own rule forbids on a `needs-flight-test` issue. `1fb846a` was the commit APOLOGISING for that, and quoted the offending trailer in prose inside backticks to say what not to do — GitHub does not read markdown, saw the keyword, and shut the issue again thirty seconds after the reopen. There is now a `commit-msg` hook (`tools/commit_msg_check.py`) that refuses a closing keyword outside the trailer block, tested against the very message that did it. The fix and its tests stand; what has not happened is somebody hearing one sentence where there were two.
+
+---
+
+## [ARCH-33] The channel a talkdown goes out on is chosen once, from the bridge's procedure — #173
+labels: architecture, bug
+
+Found while closing #150's list of five, which is the argument for sweeping
+rather than ticking items off: two more sites were inside `separation_context`
+and are fixed, and this one is not, because it is not a one-line change.
+
+`asr_monitor` computes its transmit channel ONCE, at thread start:
+
+    _final = (_stations.role_at(_seats, "approach", _fld)
+              if getattr(profile, "guidance", "") == "talkdown"
+              else _stations.role_at(_seats, "tower", _fld))
+    final_hz = (_final.freq_mhz * 1_000_000) if _final else freq_hz
+
+`profile` there is the bridge's, and `_fld` is the loaded theatre's arrival
+field. Both are then used inside a loop that runs PER AIRCRAFT — the mile
+calls, the landing clearance relay, the goodbye, and every `channel_is_free`
+check ahead of them.
+
+So the question "which frequency does this man's final controller work on" is
+answered once for everybody. Two aircraft on two procedures get one answer, and
+the wrong one is a real frequency belonging to a real controller: a Viper on
+the ILS at one field hears his mile calls on the other field's approach channel,
+or hears nothing at all because the letdown the bridge was started on staffs no
+ladder.
+
+WHY IT WAS LEFT. The five sites #150 enumerated each pass a profile into a
+function that already knows which aeroplane it is about. This one does not —
+`final_hz` is a transmit channel, chosen before any aeroplane is in scope, and
+moving it inside the loop means the pool, the free-channel check and the
+goodbye all become per-aircraft. That is a change to the radio path rather than
+to a lookup, and it wants its own test and its own flight.
+
+**Acceptance criteria**
+1. The final controller's frequency is resolved per aircraft, from his
+   procedure and his field, at the moment something is said to him.
+2. A test puts two aircraft on two procedures at two fields through one monitor
+   and asserts the mile calls go out on two different channels.
+3. `channel_is_free` is asked about the channel the transmission will actually
+   use, not the one the thread started with.
+
+Tests: beside `tests/test_two_procedures_one_bridge.py`.
+Code: `src/marshall/atc/agent_atc.py` (`asr_monitor`).
+
+**Status:** OPEN — found 13 August while fixing #150, not started.
 
 ---

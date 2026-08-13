@@ -2649,7 +2649,13 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
         # `may_vector` exists for precisely this and gets it right for all
         # three: the letdown flies a beacon, the ASR and the ILS do not.
         from marshall.core.approach import may_vector as _may_vector
-        beacon_flown = not _may_vector(ctl.profile)
+        # HIS procedure. Whether a beacon is flown at all is the definitive
+        # property of the approach this man was cleared for -- so on a bridge
+        # loaded with the ILS, a Mustang genuinely over the beacon was told he
+        # had not reached it, and on a bridge loaded with the letdown a Viper
+        # claiming the ILS would be believed about a beacon he does not
+        # have. [#150]
+        beacon_flown = not _may_vector(ctl.procedure_for(intent.callsign))
         if (beacon_flown and intent.kind is intents.IntentKind.REPORT_BEACON
                 and nm is not None and nm > OVERHEAD_NM):
             print(f"  !! rejected: claims the beacon, radar shows {nm:.1f} nm",
@@ -2701,9 +2707,15 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
         # the aircraft was treated as a radar arrival -- while the seed below,
         # the one thing that stops an aeroplane already established on final
         # being filed as a new arrival and stacked, silently never ran.
-        fix = radar_fix_by_track(scope, track, ctl.profile) if track else None
+        # AND HIS FOR THE DATUM. A radar fix is a range and a bearing FROM
+        # somewhere, and the somewhere is the procedure's aerodrome -- so the
+        # bridge's profile put an aeroplane recovering to one field at a
+        # distance measured from the other. Twenty-two miles of error at
+        # Kobuleti and Batumi, quoted to a pilot as fact. [#150]
+        _fix_pro = ctl.procedure_for(intent.callsign)
+        fix = radar_fix_by_track(scope, track, _fix_pro) if track else None
         if fix is None:
-            fix = radar_fix(scope, intent.callsign, ctl.profile)
+            fix = radar_fix(scope, intent.callsign, _fix_pro)
         # WHERE HE IS IN THE SORTIE, worked out before anything acts on it.
         # `settle` used to derive this, and `settle` runs after this function --
         # so the half of the turn that mutates the engine ran first. See
@@ -2760,9 +2772,14 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
         _seedable = (not _phase) or _phases.flies_geometry(_phase)
         if fix is not None and _seedable:
             from marshall.atc import asr as _asr
-            g = _asr.guide(fix, ctl.profile,
+            # HIS procedure, both times. This decides whether an aeroplane is
+            # already established on final and therefore must not be stacked --
+            # a judgement about geometry that is entirely a property of the
+            # approach he was cleared for, asked here of the bridge's. [#150]
+            _pro = ctl.procedure_for(intent.callsign)
+            g = _asr.guide(fix, _pro,
                            on_missed=flying_the_missed(bridge, intent.callsign, fix,
-                                                       ctl.profile, ctl))
+                                                       _pro, ctl))
             if g.established and ctl.seen_on_final(intent.callsign):
                 print(f"  .. {intent.callsign} is already on final per radar; "
                       "not stacking him", flush=True)
@@ -3250,7 +3267,16 @@ def his_station(bridge, ctl, profile, cs: str, fallback_hz: float = 0.0):
     hz = bridge.heard_on.get(ctl._resolve(cs)) or fallback_hz
     if not hz:
         return None
-    return _theatre.station_on(hz / 1_000_000, procedure=profile)
+    # HIS procedure decides whether the ladder is staffed at all. `station_on`
+    # asks it one boolean about itself -- `theatre_stations` -- and a 1944
+    # letdown answers no, so every seat lookup through it returns None. On a
+    # bridge loaded with the letdown that silenced the monitor for the Viper
+    # beside him; loaded with the ILS it gave the Mustang a modern ladder he
+    # has no radios for. `profile` stays the fallback for an aeroplane nobody
+    # has cleared. [#150]
+    return _theatre.station_on(hz / 1_000_000,
+                               procedure=_controller.procedure_of(
+                                   ctl.aircraft.get(ctl._resolve(cs)), profile))
 
 
 def seat_named(name: str, profile=None):
@@ -3327,12 +3353,19 @@ def watching_him(bridge, ctl, profile, cs, pos, scope, fallback_hz=0.0,
     # offered anything. `heard_on` is where he actually checked in, which is the
     # only thing that says whose aeroplane he is.
     hz = bridge.heard_on.get(key) or fallback_hz
-    me = _theatre.station_on(hz / 1_000_000, procedure=profile)
+    # THE PROCEDURE THIS AEROPLANE IS FLYING. `who` is the aircraft and has
+    # been all along -- three lines below it is asked for its phase and its
+    # assigned heading -- so the profile was the one fact in this block still
+    # coming from the bridge. It reaches `station_on` (which asks it whether
+    # the procedure staffs the ladder at all) and `next_controller` (which asks
+    # it the talkdown question). [#150]
+    _pro = _controller.procedure_of(who, profile)
+    me = _theatre.station_on(hz / 1_000_000, procedure=_pro)
     phase = getattr(who, "sortie_phase", "") or ""
     if me is None:
         _no = f"nobody owns him -- {hz / 1_000_000:.3f} is not a station"
         return None, (_no, _no)
-    nxt = next_controller(scope, track, me, profile, pos, known=key,
+    nxt = next_controller(scope, track, me, _pro, pos, known=key,
                           session_id=session_id, phase=phase,
                           vectoring=getattr(who, "assigned_hdg", None))
     # A HANDOFF THAT FIRES NEEDS THE SAME ACCOUNT AS ONE THAT DOES NOT, and
@@ -6930,8 +6963,13 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                                 channels_of(heard_hz), AM)
             continue
 
+        # HIS PROCEDURE, not the bridge's. `decide` hands this straight to
+        # `asr_context`, which asks it whether the approach is vectored and
+        # what the geometry is -- so a Viper on the ILS beside a Mustang on the
+        # letdown was getting whichever one the bridge was started with. [#150]
         directive, stack, vectoring = decide(
-            bridge, ctl, transcript, scope, known, _ident.track, engaged, profile)
+            bridge, ctl, transcript, scope, known, _ident.track, engaged,
+            ctl.procedure_for(known))
 
         # WHAT THE ENGINE THINKS IS OUT THERE, AFTER IT HAS HEARD HIM.
         #
@@ -7032,7 +7070,13 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # question is whether he is being vectored at all, not what this
         # particular transmission ended up saying.
         _ac = ctl.aircraft.get(ctl._resolve(known)) if known else None
-        nxt = next_controller(scope, _ident.track, ctl._me, profile, _fix,
+        # HIS procedure. `next_controller` feeds it to `handoff.due`, where the
+        # talkdown condition decides whether Tower takes him at five miles or
+        # not until he is down -- and to `leaving_my_airspace`, which asks the
+        # same question again on the airspace rung. The aircraft was already
+        # resolved on the line above for its phase; only the profile was still
+        # being taken from the bridge. [#150]
+        nxt = next_controller(scope, _ident.track, ctl._me, ctl._pro(_ac), _fix,
                               known=known, session_id=session_id,
                               vectoring=vectoring,
                               phase=getattr(_ac, "sortie_phase", "") or "")
@@ -7040,8 +7084,11 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # the transmit path refuses any other -- see `strip_unauthorised_handoff`.
         bridge.handoff_due[0] = nxt
 
+        # AND HIS AGAIN. `settle` asks it for the phase guidance and for the
+        # missed-approach geometry, both of which belong to the procedure he is
+        # actually flying. [#150]
         directive, stack, vectoring, _g, dropped = settle(bridge,
-            directive, stack, vectoring, _fix, profile, known, ctl,
+            directive, stack, vectoring, _fix, ctl._pro(_ac), known, ctl,
             scope=scope, track=_ident.track or "", handoff=nxt)
         if dropped:
             print(f"  .. {dropped}", flush=True)

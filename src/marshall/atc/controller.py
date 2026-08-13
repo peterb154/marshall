@@ -383,6 +383,33 @@ def _too_old(row, stale_after_sec: float) -> bool:
     return (now - got).total_seconds() > stale_after_sec
 
 
+def procedure_of(ac, fallback=None):
+    """THE PROCEDURE THIS AEROPLANE IS FLYING. The one accessor. [#150]
+
+    Free of the Controller so the bridge's own functions can ask it -- they
+    hold an aircraft or a callsign and a loaded profile, and the whole of #150
+    is that they were answering with the second when they had the first.
+
+    WHAT MAY COME THROUGH HERE, and it is a shorter list than it looks: the
+    guidance kind, whether the approach is vectored at all, the geometry and
+    its datum, the levels, the minima, the missed approach, and the handoff
+    conditions that read any of those. All of them differ between a Mustang on
+    a 1944 beacon letdown and a Viper on the ILS beside him.
+
+    WHAT MUST NOT is who works a seat. `station_for` takes a `procedure`, which
+    looks like a counterexample and is not: it is asked one boolean about
+    ITSELF -- `theatre_stations`, whether this procedure staffs the ladder at
+    all -- and never yields a Station. The seats come from the theatre's table
+    for everybody. So passing an aeroplane's procedure there is right for the
+    same reason as everything above, and passing his STATIONS would be wrong;
+    see `theatre.seats_now`, which says so at the only place it could matter.
+
+    The fallback is what every caller used before -- the bridge's loaded
+    profile -- so adopting this can only narrow a wrong answer, never widen it.
+    """
+    return getattr(ac, "profile", None) or fallback
+
+
 @dataclass
 class Controller:
     # THE ARRIVAL THE RADIO WAS STARTED WITH, and it is OPTIONAL because there
@@ -723,7 +750,23 @@ class Controller:
         Falls back to the bridge's profile, which is what every caller did
         before and is right for an aeroplane nobody has assigned a recovery to.
         """
-        return getattr(ac, "profile", None) or self.profile
+        return procedure_of(ac, self.profile)
+
+    def procedure_for(self, callsign: str):
+        """`_pro`, reached by NAME, for the callers who only have one.
+
+        The bridge's outer loop and its monitor thread hold a callsign and a
+        controller, not an `Aircraft` -- and each of them was reaching for
+        `ctl.profile` because resolving the callsign first was two lines nobody
+        wrote. That is #150's whole list: five call sites, each one line from
+        being right.
+
+        An unknown callsign is the ordinary blind case, not an error. It
+        returns the fallback, which is exactly what those sites did before, so
+        adopting this accessor cannot make anything worse than it already was.
+        """
+        ac = self.aircraft.get(self._resolve(callsign)) if callsign else None
+        return self._pro(ac)
 
     def assign_approach(self, callsign: str, profile, named: str = "") -> None:
         """This aeroplane is recovering on THIS procedure. Told, not deduced.
