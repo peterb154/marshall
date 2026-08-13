@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field, fields
 
+from marshall.core import fields as _fields
 from marshall.core.airspace import msa_for, mva_for
 from marshall.core.fixes import Fix
 from marshall.core.units import MAGVAR, MPH_PER_KT
@@ -120,10 +121,9 @@ def ladder_station(field: str, enroute: bool = False,
     # 'Tonopah'. Handing the fix's spelling straight to `station_for` matches
     # no seat at all, which is the same wrong answer as asking about the wrong
     # field and is harder to see. `field_named` is the documented join between
-    # the two and is case-insensitive; a name it does not know is passed
-    # through unchanged so that an unknown field fails to match rather than
-    # silently matching everything.
-    known = _th.current().field_named(field)
+    # the two; a name it does not know is passed through unchanged so that an
+    # unknown field fails to match rather than silently matching everything.
+    known = _fields.field_named(field)
     field = known.name if known is not None else field
     if enroute or banished:
         s = _th.station_for("center", field=field)

@@ -234,12 +234,23 @@ def field_named(name: str):
     it is here rather than at the call sites: a ground instruction and a
     take-off clearance must read the same runway, and they will only do that if
     they read it from the same place.
+
+    AND IT JOINS THE FIXES TOO, which is why the match is case-folded. The two
+    catalogues have never agreed on capitals: a fix is `BATUMI` and an
+    aerodrome is `Batumi`, so an exact match answered None for the Caucasus and
+    a real field for Nevada, where the Tonopah fix happens to be title-cased.
+    An approach's datum is a Fix, so anything asking "which aerodrome does this
+    procedure arrive at" got a different KIND of answer depending on how
+    somebody typed a name into a TOML file.
+
+    There were TWO of this function and they disagreed -- `Theatre.field_named`
+    has folded case since it was written -- so which answer you got depended on
+    which of two identically-named joins you happened to call. This one is the
+    other one now. A name that matches nothing still returns None; the fold can
+    only turn a miss into the hit it was meant to be.
     """
     # ASKS THE THEATRE, because the aerodromes are its data now and not this
     # module's. Imported here rather than at the top: `theatre` reads `Field_`
     # from this file, so a module-level import would be a cycle.
     from marshall.core import theatre as _th
-    for f in _th.fields_now():
-        if f.name == name:
-            return f
-    return None
+    return _th.current().field_named(name)

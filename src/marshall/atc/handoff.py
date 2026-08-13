@@ -297,6 +297,53 @@ class State:
     phase: str = ""
 
 
+def _at(me, profile) -> str:
+    """WHICH AERODROME THIS HANDOFF IS ABOUT, spelled as a Station spells it.
+
+    His current controller's field, and where that controller has none, THE
+    FIELD HE IS GOING TO. A role is unique only within an aerodrome, so every
+    lookup below has to be qualified or it returns whichever seat is listed
+    first -- a real controller at a real facility, forty or a hundred and
+    twenty-four miles from the man who actually has him.
+
+    `me.field` alone was the qualifier, and it is empty for exactly the seat
+    that matters most. Center and Sentry are DELIBERATELY fieldless --
+    `test_two_fields` asserts it and calls it correct, because owning a region
+    is not owning an aerodrome -- so the one row this table exists for,
+
+        Rule("center", "approach", "inbound_within", CENTER_NM)
+
+    the row added after a pilot declared an emergency at 44 nm to get himself
+    off Center (#51), was the one row asked with no field at all. Measured:
+
+        inbound to TONOPAH at 20 nm  -> "contact Nellis Approach one one
+                                         eight decimal one two five"
+
+    Nellis is 124 nm away. He changes frequency and talks to nobody who can see
+    him. On the Caucasus the same call sends a Kobuleti recovery to Batumi
+    Approach, and it is invisible on the default sortie only because Batumi
+    Approach is the sole seat whose PRIMARY role is `approach`, so first-match
+    happens to be right.
+
+    The destination was never missing -- `due` is handed the profile, and a
+    procedure's `aerodrome` is the field it arrives at. It simply was not
+    consulted.
+
+    `field_named` is the join, and it is here because the two catalogues do not
+    agree on case: a procedure's datum is a Fix and the fixes are shouted
+    ('NELLIS', 'KOBULETI') while the aerodrome rows are not. An unknown name
+    comes back as EMPTY rather than as itself, on purpose -- an unmatchable
+    field resolves no role at all, and a handoff that never fires is #51 again
+    rather than a safer version of it.
+    """
+    mine = getattr(me, "field", "")
+    if mine:
+        return mine
+    fix = getattr(profile, "aerodrome", None)
+    fld = _route.field_named(getattr(fix, "name", "") or "")
+    return fld.name if fld is not None else ""
+
+
 @dataclass(frozen=True)
 class Verdict:
     """What should happen, and whether the pilot hears about it."""
@@ -360,7 +407,7 @@ def due(profile, me, st: State) -> Verdict | None:
             want = ""
         if want and aims == "none" and want != role \
                 and want not in getattr(me, "also", ()):
-            nxt = _route.station_for(want, field=getattr(me, "field", ""),
+            nxt = _route.station_for(want, field=_at(me, profile),
                                      procedure=profile)
             if nxt is not None:
                 same = (getattr(nxt, "name", None) == getattr(me, "name", None))
@@ -382,8 +429,9 @@ def due(profile, me, st: State) -> Verdict | None:
         # lookup returns whichever is listed first. That put a Kobuleti
         # departure on Batumi Departure's frequency, forty miles from the man
         # who actually had him, and nothing raised: both answers are a real
-        # Station. See `station_for`, which is why it takes a field at all.
-        nxt = _route.station_for(rule.to, field=getattr(me, "field", ""),
+        # Station. See `station_for`, which is why it takes a field at all --
+        # and `_at`, which is why the field is not always the seat's own.
+        nxt = _route.station_for(rule.to, field=_at(me, profile),
                                  procedure=profile)
         if nxt is None:
             continue
