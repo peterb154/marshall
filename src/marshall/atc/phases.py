@@ -401,6 +401,28 @@ def _wanted(current: str, on_ground: bool | None, sep: str,
     # three disagreeing ideas of "what is happening" got loose to begin with.
     if worked_by == "approach" and current in ("departure", "enroute", "rtb", ""):
         return "arrival"
+    # AND THE SAME FACT ONE RUNG EARLIER, which was missing. `enroute` was
+    # declared, owned by Center, and named as a successor by four other phases
+    # -- and NOTHING RETURNED IT. Swept from `departure` the reachable set was
+    # {arrival, departure}, so an aeroplane crossed the theatre with the board
+    # still saying `departure` the whole way.
+    #
+    # It took the task half with it: `tasked` and `on_station` follow only from
+    # `enroute`, so a strike, a CAS check-in and a tanker join were unreachable
+    # by construction however they read on the page. [#168]
+    #
+    # It hid because handoffs key on the controller's ROLE and not on the
+    # phase, so the ladder ran correctly while the phase was wrong -- and being
+    # handed to Center is exactly what "he is enroute" MEANS, which is the
+    # argument the arrival rule above makes for Approach.
+    #
+    # Safe against the inversion that comment warns of, for the same reason:
+    # `enroute` aims at a point rather than "none", so `handoff.due`'s
+    # phase-ownership branch never fires for it and the rules table goes on
+    # deciding by role. Not from `rtb`, which Center also owns -- a man coming
+    # home is not re-derived into the outbound leg.
+    if worked_by == "center" and current in ("departure", ""):
+        return "enroute"
     return current
 
 

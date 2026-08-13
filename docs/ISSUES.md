@@ -9334,8 +9334,39 @@ found. Nothing tried to move him and was blocked; nothing tried.
 Tests: `tests/test_phases_derive.py` is the home.
 Code: `src/marshall/atc/phases.py` (`_wanted`).
 
-Status: OPEN — found by an agent answering questions about a live board, and
-confirmed by enumerating the returns.
+**FIXED 13 August.** Being handed to Center is what "he is enroute" MEANS, which
+is the argument the `arrival` rule one line above already makes about Approach —
+so the fix is that rule's mirror, and it was simply never written. Not from
+`rtb`, which Center also owns: a man coming home must not be re-derived into the
+outbound leg every poll.
+
+Safe against the inversion the neighbouring comment warns of. `enroute` aims at
+a POINT rather than "none", so `handoff.due`'s phase-ownership branch never
+fires for it and the rules table goes on deciding by role — the same reason the
+`arrival` rule is safe.
+
+**The test is the general form**, because a test that `enroute` is reachable
+would pass for ever while the next phase went the same way. It sweeps every
+phase in the table against every input the deriver can be handed, and **counts
+only TRANSITIONS** — the first version counted `derive(x) -> x` and would have
+passed on `enroute` the day before the fix, which is the exact thing it exists
+to catch.
+
+It flagged three more, and all three are honest: `rtb` is a stated intention and
+deriving it from a turn towards home would be guessing at intent; `unknown` is
+"heard on the radio and nothing more"; and `filed` is "a plan exists and there
+is no aeroplane yet", which a deriver that runs for an aeroplane on radar can
+never produce. Each is named in the test with the reason from its own
+declaration, so the list is a claim somebody can argue with.
+
+**Still missing, and not implied fixed:** `tasked` and `on_station` are now
+reachable in PRINCIPLE — `enroute` was the prerequisite — and still have no
+trigger. An overlord has to task him and there is no seat doing that. A test
+asserts they remain underivable, so building the trigger will fail it and force
+the claim to be updated.
+
+Status: FIXED — needs a pilot to see the board say `enroute` while Center works
+him.
 
 ## [KB-6] The board's datum is the fallback whenever nobody has just spoken — #169
 
