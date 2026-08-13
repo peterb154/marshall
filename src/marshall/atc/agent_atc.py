@@ -4242,7 +4242,12 @@ def phase_now(ctl, known: str, down: bool | None, fix) -> str:
         getattr(_ac, "sortie_phase", "") or "",
         on_ground=down if fix is not None else None,
         separation=(getattr(getattr(_ac, "phase", None), "name", "") or "").lower(),
-        was_airborne=bool(getattr(_ac, "approaches", 0)),
+        # `was_airborne` IS NOT PASSED, and taking it out is the fix. It used to
+        # be `bool(_ac.approaches)` -- a counter of GO-AROUNDS, incremented only
+        # by `Controller._do_missed` -- standing in for "has he left the ground
+        # this sortie". Every pilot who flew one approach and landed off it, so
+        # every normal recovery, answered False. `derive` reads it off the phase
+        # now, which is the thing that holds it: see `phases.has_flown`.
         worked_by=worked_by,
         refused=lambda cur, want: print(
             f"  .. phase REFUSED: {cur} cannot lead to {want} "

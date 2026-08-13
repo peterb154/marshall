@@ -253,6 +253,40 @@ def guide(phase: str, pos, profile):
 ON_THE_GROUND = ("clearance", "taxi", "holding_short", "landed",
                  "taxi_in")
 
+# ...AND THE PHASES THAT MEAN NOTHING HAS HAPPENED YET. `unknown` is a man on
+# the radio and nothing more; `filed` is a plan with no aeroplane under it.
+# Neither says he is on an aerodrome and neither says he has flown, so they are
+# their own answer rather than the absence of one.
+NOT_YET = ("", "unknown", "filed")
+
+
+def has_flown(phase: str) -> bool:
+    """Has he left the ground on this sortie? THE PHASE SAYS SO.
+
+    WHY THIS IS A FUNCTION AND NOT A COUNTER. `derive` takes `was_airborne`
+    because "he is stopped on the aerodrome" means LANDED for an aeroplane that
+    has flown and "still on the ramp" for one that has not -- the same fact,
+    two opposite phases. The bridge answered it with `bool(ac.approaches)`,
+    which counts GO-AROUNDS: `Controller._do_missed` is the only thing that
+    increments it. So every pilot who flew an approach and landed off it --
+    which is every normal sortie -- was reported as never having been airborne,
+    and a landing that the separation engine had not already called was derived
+    as "he is where he was".
+
+    The consequence is the ground half of the sortie. `sortie_phase` never
+    reached `landed`, so `handoff.due` had no phase to hand him to Tower or
+    Ground with (#77), and `intents` reads the same field to tell "taxi to
+    parking" from "ready to taxi" (#100) -- so the last request of a flight was
+    answered as though it were the first.
+
+    Nobody had to guess: the phase he is in IS the record of where he has been.
+    `departure`, `enroute`, `arrival`, `approach`, `missed` are airborne phases
+    by construction, and a counter of one particular way of having been airborne
+    is a side-effect standing in for the fact.
+    """
+    p = (phase or "").lower()
+    return p not in NOT_YET and p not in ON_THE_GROUND
+
 
 def derive(current: str, *, on_ground: bool | None = None,
            separation: str = "", was_airborne: bool = False,
@@ -265,6 +299,11 @@ def derive(current: str, *, on_ground: bool | None = None,
     authoritative for the other half. Where neither knows, the current phase
     stands: a deriver that invents a transition on missing information is worse
     than one that waits.
+
+    `was_airborne` IS EXTRA EVIDENCE, NOT THE EVIDENCE. Whether he has flown is
+    read off `current` by `has_flown`, because the phase is what holds it; a
+    caller that knows better may still say so, and may only add. It was being
+    answered with a count of go-arounds -- see `has_flown` for what that cost.
 
     NOTHING IS SKIPPED SILENTLY. A transition the table calls illegal is
     refused and the current phase kept, because "cleared for the approach while
@@ -311,7 +350,12 @@ def _wanted(current: str, on_ground: bool | None, sep: str,
     # settles both ends of the sortie: an aeroplane that has flown and is now
     # stopped has landed, and one that has not flown yet is still on the ramp.
     if on_ground is True:
-        if was_airborne or sep == "landed":
+        # HAS HE FLOWN? READ IT OFF THE PHASE, do not take a caller's word for
+        # it and do not accept a counter of go-arounds in its place. See
+        # `has_flown`: `was_airborne` stays because a caller may know something
+        # the phase does not (a flight row that outlived a bridge restart), but
+        # it may only ADD evidence, never withhold it.
+        if was_airborne or has_flown(current) or sep == "landed":
             return "landed"
         # WHICH GROUND RUNG HE IS ON IS NOT A GEOMETRIC FACT, and this line
         # used to invent one. A parked aeroplane with no phase yet was derived

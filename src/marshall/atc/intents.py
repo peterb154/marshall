@@ -393,17 +393,29 @@ def dispatch(ctl: atc.Controller, intent: Intent,
     #
     # Never cleared by a transmission that does not carry one: he says it once
     # and every controller after that inherits it. See docs/STATE.md.
-    if getattr(intent, "wants", ""):
-        _ac = ctl.aircraft.get(ctl._resolve(cs))
-        if _ac is not None:
-            _ac.wants = intent.wants
+    _ac = ctl.aircraft.get(ctl._resolve(cs))
+    if getattr(intent, "wants", "") and _ac is not None:
+        _ac.wants = intent.wants
     # NOT AN ERROR, AND NOT A "SAY AGAIN". An unreachable action means the
     # engine has nothing to do with this transmission -- the ordinary case for
     # a read-back, which the agent answers with "roger" perfectly well. True,
     # because it IS handled: by doing nothing, on purpose.
+    #
+    # HIS PROCEDURE, NOT THE BRIDGE'S. The gate asks two questions of a profile
+    # -- is this a beacon letdown (`kind`), and is the controller blind
+    # (`atc.radar`) -- and both are properties of the approach THIS AEROPLANE is
+    # flying. Read off `ctl.profile` they were properties of whatever the bridge
+    # happened to be started with, which is the same fault `Controller._runway_
+    # in_use` and `check_in` have each been fixed for: two aircraft recovering
+    # to two fields have two procedures. `_pro` falls back to the bridge's for
+    # an aeroplane nobody has assigned a recovery to, so the single-field case
+    # is untouched -- but a Mustang on the 1944 letdown beside a Viper on the
+    # ILS would have had his station-passage report refused because the BRIDGE
+    # had radar.
     from marshall.atc import reachable as _reach
-    if not _reach.reachable(intent.kind, ctl.profile, on_ground=on_ground):
-        ctl.note_unreachable(_reach.why_not(intent.kind, ctl.profile,
+    _pro = ctl._pro(_ac)
+    if not _reach.reachable(intent.kind, _pro, on_ground=on_ground):
+        ctl.note_unreachable(_reach.why_not(intent.kind, _pro,
                                             on_ground=on_ground))
         return True
     # A formation that has been split no longer names an aeroplane. Ask rather

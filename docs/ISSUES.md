@@ -7843,3 +7843,327 @@ sim is started, so it shows the DECLARED wind — which is what the mission is
 built with and therefore what ATIS measures back. A live chart that reads the
 `atis` table is not built and is not wanted until the pages are generated
 per-sortie rather than per-container (#137).
+
+---
+
+## [HO-8] "Nothing has told us" is written down three times and read as "he is flying" — #149
+labels: bug, architecture
+
+Found by the audit for #146's siblings, 13 August. It is the same defect one
+line above the one that was fixed.
+
+**The third answer exists and is documented everywhere it is written.**
+
+    feed/tracks.py:718     "NULL here means the sweep has not run yet, and that
+                            is not the same as 'airborne'"
+    feed/tracks.py:996     "`in_air IS NULL` ... not down, not flying, not known"
+    core/scope.py:124      "NULL means nobody has asked yet, which is a third
+                            answer -- and reading it as 'airborne' is what told
+                            a parked Mustang it was flying"
+    atc/identity.py:140    "False means either 'airborne' or 'nothing has told
+                            us', and the caller keeps its own fallback"
+
+**And it is collapsed at every boundary.** `core/scope.py:127` is the sharp
+end — `"on_ground": (t.in_air is False)` — which maps NULL and TRUE onto the
+same output. `feed/tracks.py:719` and `:998` do the same for the director's own
+rendering. By the time `identity.Unit.on_ground` reaches a caller there are two
+states where the database has three, and the comment quoted above survives to
+tell the reader about a distinction the value no longer carries.
+
+**Who reads it as a definite answer.** `agent_atc.handoff_on_the_event` — the
+FIRST rung of `next_controller`'s cascade, the one #146 was about:
+
+    if not unit.on_ground and role == "tower":
+        return profile.station_for("approach", field=fld)
+
+Its own docstring closes with *"Silent unless the sim has actually said so.
+`on_ground` is False both for an aeroplane in the air and for one nothing has
+been reported about, and this must not fire on the second"*. It fires on the
+second. The only guard it has is `unit is None` — not on the picture at all —
+which was sufficient when the flag came from land/takeoff events and stopped
+being sufficient when it moved to a swept column that starts NULL.
+
+`sim_state` has the same shape one function along: a unit on the scope whose
+ground state nothing knows, with no radar position, is reported as `airborne`
+to the board and to the agent's prompt.
+
+**Why it has not bitten hard.** The window is one sweep — a unit appears, and
+`_note_in_air` fills the column on the next pass. It is widest exactly where it
+is worst: a fresh mission, a director restart, an aeroplane spawning on a ramp
+while a controller is being asked who has him. #114 is the same column read
+wrongly in the other direction and cost a whole map's ground ladder.
+
+**Remaining scope.** Carry the third state instead of documenting its loss:
+`in_air: bool | None` on the contact dict and on `identity.Unit`, `on_ground`
+kept as the convenience it already is, and the branches that mean *"the sim
+says he is flying"* asking for positive evidence. The prose path has no third
+state and cannot get one, so it keeps today's behaviour and says so.
+
+**Acceptance criteria**
+1. A contact whose ground state is unknown is distinguishable from one the sim
+   says is airborne, at every layer between `tracks` and `handoff_on_the_event`.
+2. `handoff_on_the_event` does not offer Approach to an aeroplane nothing has
+   reported a ground state for, and a test asserts it.
+3. `sim_state` does not report `airborne` for such an aeroplane.
+4. Nothing in `core/scope.py` or `feed/tracks.py` writes a comment about a third
+   answer next to an expression that discards it.
+
+Tests: beside `tests/test_events.py` and `tests/test_the_ladder_has_a_direction.py`.
+Code: `src/marshall/core/scope.py`, `src/marshall/atc/identity.py`,
+`src/marshall/atc/agent_atc.py`, `src/marshall/feed/tracks.py`.
+
+Status: OPEN — diagnosed, not fixed.
+
+---
+
+## [ARCH-27] The procedure a decision is made from is the bridge's, not the aeroplane's — #150
+labels: architecture
+
+`Controller._pro(ac)` is the owner of *"which approach is this aeroplane
+flying"* and has been since two aircraft could recover to two fields. It is
+consulted by the proactive monitor (`may_vector(_pro)`, `asr.guide(pos, _pro)`,
+`is_the_intercept(g, _pro, pos)`) and by almost nothing else. The audit for
+#146's siblings, 13 August, listed the sites that still read the bridge's:
+
+    agent_atc.leaving_my_airspace:3380   getattr(profile, "guidance", "")
+                                         -- the talkdown guard on the airspace rung
+    handoff._inbound_within:201          getattr(profile, "guidance", "")
+                                         -- "a talkdown makes LANDING the trigger"
+    agent_atc.asr_context:1526           may_vector(profile)
+    agent_atc.decide:2642                asr.guide(fix, ctl.profile, ...)
+    agent_atc.settle:4322                _phases.guide(phase, fix, profile)
+
+Each is a property of a PROCEDURE, and the failure is the one this project
+keeps meeting: the wrong answer is a real answer. A Mustang on the 1944 letdown
+beside a Viper on the ILS gets the Viper's rule about when Tower takes him,
+because the bridge was started on the ILS.
+
+`intents.dispatch` was the sixth and is fixed — it gated the reachability of a
+station-passage report on the bridge's `kind` and `atc.radar` rather than his.
+It is listed here because the fix is one line at each site and the risk is not:
+`next_controller` uses `profile` for the STATION TABLE as well as the
+procedure, and those are deliberately different things (see `_pro`'s docstring —
+"who works ground at Kobuleti" is the theatre's and cannot differ per flight).
+Threading `_pro` through it without separating the two would hand an aeroplane
+another theatre's controllers.
+
+This is the terminal half of #2 and #111 with the call sites enumerated, which
+is the part that was missing. The same shape as #76: a fix applied to one call
+site and not its siblings.
+
+**Acceptance criteria**
+1. Every site that asks a profile about the PROCEDURE (`kind`, `guidance`,
+   `atc.*`, the geometry) reads the aircraft's, via one accessor.
+2. Every site that asks a profile about the THEATRE (`station_for`,
+   `station_on`, `stations`) reads one shared table, and a test asserts the two
+   questions cannot be answered from the same argument by accident.
+3. A test flies two aircraft on two procedures through one bridge and asserts
+   each gets his own guidance rule.
+
+Tests: beside `tests/test_two_fields.py`.
+Code: `src/marshall/atc/agent_atc.py`, `src/marshall/atc/handoff.py`,
+`src/marshall/atc/controller.py`.
+
+Status: OPEN — one of six fixed, five enumerated.
+
+---
+
+## [SEP-16] `landed` may only follow `approach`, so the sim's own fact is refused — #151
+labels: bug
+
+Exposed by the `has_flown` fix (#154), 13 August. `phases.derive` opens its reasoning
+with *"DOWN IS THE ONE FACT NOBODY ARGUES WITH. The sim says so outright, and it
+settles both ends of the sortie"* — and then `may_follow` argues with it:
+
+    approach  -> landed     legal
+    arrival   -> landed     REFUSED
+    departure -> landed     REFUSED
+    holding   -> landed     REFUSED
+    missed    -> landed     REFUSED
+    enroute   -> landed     REFUSED
+
+All five of those are things an aeroplane does. A straight-in that was never
+formally cleared is in `arrival` when the wheels touch; a departure that comes
+straight back is in `departure`; a pilot who breaks off a hold and lands is in
+`holding`. In each case the sim states the fact, `derive` wants `landed`, the
+table refuses, and the phase is kept.
+
+The refusal is at least AUDIBLE now — `phase REFUSED: arrival cannot lead to
+landed` — which is what #91 fixed and is the whole reason this is visible rather
+than silent. Before the `has_flown` fix these transitions were never even
+proposed, because the bridge answered "has he been airborne" with a count of
+go-arounds.
+
+**What it costs** is the end of the sortie: `landed` is Tower's and `taxi_in`
+follows it, so a phase that never reaches `landed` cannot hand him to Ground
+(#77), and `intents` reads the same field to tell "taxi to parking" from "ready
+to taxi" (#100).
+
+**What it probably wants.** `landed` follows any phase in which he is airborne,
+because touching down is not a procedural transition that can be illegal — it is
+an observation. The one that should stay refused is `landed` from a GROUND
+phase, which is the case `follows` was written to protect.
+
+**Acceptance criteria**
+1. An aeroplane the sim says is down reaches `landed` from every airborne phase.
+2. A parked aeroplane that has never flown does not, and the test for it stays.
+3. No `phase REFUSED: ... cannot lead to landed` line appears in a normal
+   recovery.
+
+Tests: `tests/test_phases_derive.py`, which characterises the current behaviour
+in `LandingOutOfAnArrivalIsRefusedByTheTable`.
+Code: `src/marshall/atc/phases.py`.
+
+Status: OPEN — characterised by a test, not fixed.
+
+---
+
+## [ASR-9] An empty station list is a MODE SWITCH, in two places — #152
+labels: bug, architecture
+
+The other half of #140, and the reason that issue's *"the fix belongs in its own
+commit"* is right. #140 records that `BATUMI_APPROACH` carries `stations=[]` and
+therefore has no frequencies. What it does not record is that two call sites
+read the emptiness as a STATEMENT ABOUT THE ERA rather than as a gap:
+
+    core/approach.py:603      if self.stations:  ... else: derive the station
+                              from the FIX -- "on a beacon letdown the station
+                              is derived from the fix instead"
+    agent_atc.py:5156         if getattr(profile, "stations", None): channels =
+                              every station's frequencies
+                              else: the arrival fix, the beacon, the outer hold
+
+So "which frequencies does this bridge listen on" and "who works this phase of
+the arrival" are both answered by asking whether a LIST IS EMPTY. That is the
+same shape as `check_in` concluding *"the controller has no radar"* from the
+mere presence of `profile.arrival_fix` (fixed in `1e35bf9`) — a capability
+inferred from the shape of neighbouring data, with `AtcCapability` sitting
+unread beside it.
+
+**It makes #140 unfixable by data alone**, which is the finding. Filling in
+`BATUMI_APPROACH.stations` does not merely give a blind controller some
+frequencies: it silently flips both branches, so the bridge stops monitoring the
+beacon channels a P-51's ARA-8 is tuned to and `station()` stops returning the
+controller who sits on the beacon being flown. The comment at `approach.py:120`
+explains exactly why that matters — *"a phase's controller must live on the
+beacon flown in that phase"* — and nothing enforces it except the empty list.
+
+**What it wants** is the thing the mode switch is standing in for, said out
+loud. A procedure knows whether its controllers live on beacons; that is a
+property of the ERA and of the aeroplane's radio, and `AtcCapability` is where
+properties of that kind already live.
+
+**Acceptance criteria**
+1. No branch anywhere decides how a controller is reached by testing whether
+   `stations` is empty.
+2. `BATUMI_APPROACH` can be given the theatre's stations without changing which
+   channels the bridge monitors, and a test asserts both halves.
+3. #140 becomes a data change.
+
+Tests: beside `tests/test_two_fields.py`.
+Code: `src/marshall/core/approach.py`, `src/marshall/atc/agent_atc.py`,
+`config/theatres/caucasus.toml`.
+
+Status: OPEN — blocks #140.
+
+---
+
+## [ARCH-28] The director states an absence as a fact, in three places — #153
+labels: bug
+
+From the same audit, 13 August, sweeping `director/` for the #146 shape. Three
+sites turn *"we do not know"* into a definite answer, and each one has a
+comment nearby stating the rule it breaks.
+
+**1. A merge treats `False` and `0` as "not known".** `director/tools/flights.py:176`
+
+    if keep.get(k) in (None, "", 0) and other.get(k) not in (None, ""):
+
+`False in (None, "", 0)` is `True` in Python. So when two rows are discovered to
+be one aeroplane, a surviving row holding `on_visual = False` is judged empty
+and overwritten from the losing row — and `on_visual` means *"he is flying it
+himself, the talk-down must stop"*. Same for every falsy-but-meaningful column
+in `_FIELDS`: `approaches_flown = 0`, `missed_count = 0`, `assigned_ft = 0`,
+`sequence_no = 0`. The schema keeps these honest (`NOT NULL DEFAULT false`);
+this line is where the distinction is lost, on the identity path.
+
+**2. A failed radar read is returned as an empty sky.** `director/app.py:391`
+
+    except Exception: got = []
+
+Two lines above it: *"`contacts` returns None (not []) when the cache cannot be
+read, which is what distinguishes 'cold cache' from 'empty sky'"*. The fallback
+discards exactly that. `picture` on the next line comes from a separate call, so
+the prose and the structured field can disagree inside one response.
+
+**3. Navigation capability from an absent airframe.** `director/tools/plans.py:452`
+
+    if not aircraft_type: return "dr"
+
+`clearance.aircraft_type` returns None both when the pilot has not been
+correlated to a track yet and when the row is missing, so *"we have not
+identified him"* is indistinguishable from *"we know what he is flying"* — and
+`help_level` turns it into a flat instruction to the controller: *"Dead
+reckoning only… he cannot tell you where he is."* There is no output meaning
+"we do not know".
+
+**Acceptance criteria**
+1. The flight merge distinguishes an unset column from a false or zero one, and
+   a test covers `on_visual=False` surviving a merge.
+2. A radar read that failed is reported as failed, and no consumer renders it as
+   "nothing is flying".
+3. An unknown airframe produces a "we do not know what he is flying" answer
+   rather than the most pessimistic capability.
+
+Code: `director/tools/flights.py`, `director/app.py`, `director/tools/plans.py`.
+
+Status: OPEN — diagnosed, not fixed.
+
+---
+
+## [SEP-17] "Has he been airborne" was answered with a count of go-arounds — #154
+labels: bug
+
+Found by the audit for #146's siblings, 13 August, and fixed in the same commit.
+
+`phases.derive` takes `was_airborne` because *"he is stopped on the aerodrome"*
+means two opposite things: LANDED for an aeroplane that has flown, STILL ON THE
+RAMP for one that has not. The bridge answered it:
+
+    was_airborne=bool(getattr(_ac, "approaches", 0))
+
+`Aircraft.approaches` is incremented by `Controller._do_missed` and by nothing
+else. It counts GO-AROUNDS. So every pilot who flew one approach and landed off
+it — every normal recovery — was reported as never having been airborne, and the
+only thing that could still reach `landed` was the separation engine having
+already called it (`separation="landed"`, set by `report_down`).
+
+The same shape as #146 one module over: **a fact taken from a side-effect of one
+particular way of it being true, rather than read from the thing that holds it.**
+The phase holds it. `approach` IS an airborne phase; the counter agreed only by
+accident, and only after a missed approach.
+
+**What it cost is the ground half of the END of a sortie.** `report_down` runs
+only from the proactive monitor, only when radar is on, and only for an aircraft
+that thread watched fly (`if cs not in flown: continue`) — so a bridge restarted
+mid-sortie never sees the landing. Then `sortie_phase` never reaches `landed`,
+`handoff.due` has no phase to hand him to Ground with (#77), and `intents` reads
+the same field to tell *"taxi to parking"* from *"ready to taxi"* (#100), so the
+last request of a flight is answered as the first.
+
+**Fixed.** `phases.has_flown(phase)` is one definition, read by `derive` off the
+phase it is already given. `was_airborne` survives for a caller that knows
+something the phase does not — a flight row that outlived a restart — and may
+only ADD evidence, never withhold it. The bridge stops passing anything.
+
+It immediately exposed #151: with the question answered correctly, an aeroplane
+the sim says is down now WANTS `landed` from wherever he is, and the `follows`
+table permits it only from `approach`. Those refusals are audible (#91) and are
+characterised by a test rather than silently fixed.
+
+Tests: `HavingFlownIsAPhaseAndNotACounter` in `tests/test_phases_derive.py`.
+Code: `src/marshall/atc/phases.py`, `src/marshall/atc/agent_atc.py`.
+
+Status: SHIPPED/UNVERIFIED — the unit suite is clean. A pilot still has to fly a
+recovery and taxi in, which is the behaviour it is about (card rows for #77 and
+#100).

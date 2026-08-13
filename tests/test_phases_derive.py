@@ -414,3 +414,112 @@ class TakingOffIsNotBeingEstablishedOnFinal(unittest.TestCase):
         self.assertIn("phase_now(", inspect.getsource(agent_atc.settle))
         self.assertEqual(
             inspect.getsource(agent_atc.settle).count("_phases.derive("), 0)
+
+
+class HavingFlownIsAPhaseAndNotACounter(unittest.TestCase):
+    """"He is stopped on the aerodrome" means two opposite things.
+
+    LANDED for an aeroplane that has flown, STILL ON THE RAMP for one that has
+    not, and `derive` has taken a `was_airborne` argument to tell them apart
+    since it was written. The bridge answered it with `bool(ac.approaches)` --
+    a counter of GO-AROUNDS, incremented by `Controller._do_missed` and by
+    nothing else. So every pilot who flew one approach and landed off it, which
+    is every normal recovery, was reported as never having been airborne.
+
+    The same shape as #146 one module over: a fact taken from a side-effect of
+    one particular way of it being true, rather than read from the thing that
+    holds it. The phase holds it -- `approach` IS an airborne phase -- and the
+    counter only ever agreed by accident.
+
+    WHAT IT COST is the ground half of the end of a sortie. `sortie_phase` never
+    reached `landed` unless the separation engine had already called it, so
+    `handoff.due` had no phase to hand a landed aeroplane to Ground with (#77),
+    and `intents` reads the same field to tell "taxi to parking" from "ready to
+    taxi" (#100) -- so the last request of a flight was answered as the first.
+    """
+
+    def test_an_airborne_phase_says_he_has_flown(self):
+        for phase in ("departure", "enroute", "rtb", "arrival", "holding",
+                      "approach", "missed", "tasked", "on_station"):
+            with self.subTest(phase=phase):
+                self.assertTrue(P.has_flown(phase))
+
+    def test_a_ground_phase_does_not(self):
+        for phase in ("clearance", "taxi", "holding_short", "landed", "taxi_in"):
+            with self.subTest(phase=phase):
+                self.assertFalse(P.has_flown(phase))
+
+    def test_and_neither_does_not_knowing(self):
+        """`unknown` is a man on the radio and nothing more; `filed` is a plan
+        with no aeroplane under it. Reading either as "he has flown" would
+        welcome a cold-start jet home."""
+        for phase in ("", "unknown", "filed"):
+            with self.subTest(phase=phase):
+                self.assertFalse(P.has_flown(phase))
+
+    def test_stopped_after_an_approach_is_landed_without_being_told(self):
+        """THE REGRESSION. No `was_airborne`, no separation verdict -- just the
+        phase he was in and the sim saying he is down."""
+        self.assertEqual(P.derive("approach", on_ground=True), "landed")
+
+    def test_the_guard_it_must_not_break(self):
+        """A jet on the ramp before start-up has not landed, and calling it one
+        welcomes him and sends him to parking."""
+        for phase in ("", "clearance", "taxi", "holding_short"):
+            with self.subTest(phase=phase):
+                self.assertNotEqual(P.derive(phase, on_ground=True), "landed")
+
+    def test_a_caller_may_still_add_evidence(self):
+        """`was_airborne` survives for a caller that knows something the phase
+        does not -- a flight row that outlived a bridge restart. It may only
+        ADD: withholding is what the counter was doing."""
+        self.assertEqual(P.derive("approach", on_ground=True,
+                                  was_airborne=False), "landed")
+
+    def test_the_bridge_no_longer_answers_it_with_go_arounds(self):
+        """Source, because the fault was the ARGUMENT and not the arithmetic.
+        A behavioural test on `derive` alone passed throughout: the wrong
+        answer was computed one layer up and handed in."""
+        import inspect
+        from marshall.atc import agent_atc
+        src = inspect.getsource(agent_atc.phase_now)
+        code = "\n".join(ln for ln in src.splitlines()
+                         if not ln.lstrip().startswith("#"))
+        self.assertNotIn("was_airborne", code,
+                         "the bridge must not answer a question the phase "
+                         "already holds")
+        self.assertNotIn("approaches", code,
+                         "the go-around counter must not decide whether he "
+                         "has been airborne")
+
+
+class LandingOutOfAnArrivalIsRefusedByTheTable(unittest.TestCase):
+    """Characterised, not fixed, because it is the next question along.
+
+    With `has_flown` reading the phase, an aeroplane the sim says is down now
+    WANTS `landed` from wherever he is. `approach` may lead there and every
+    other airborne phase may not -- so a straight-in that was never formally
+    cleared, or a departure that comes back and lands, is refused and keeps its
+    phase. That is the behaviour it had before this fix, with one difference
+    that is the whole point: the refusal is now REPORTED instead of never being
+    proposed.
+
+    Filed separately. `derive`'s own docstring says down is the fact nobody
+    argues with, and `may_follow` argues with it.
+    """
+
+    def test_approach_may_land(self):
+        self.assertTrue(P.may_follow("approach", "landed"))
+
+    def test_and_the_others_may_not_yet(self):
+        for phase in ("arrival", "departure", "enroute", "holding", "missed"):
+            with self.subTest(phase=phase):
+                self.assertFalse(P.may_follow(phase, "landed"))
+
+    def test_so_the_phase_is_kept_and_the_refusal_is_heard(self):
+        seen = []
+        got = P.derive("arrival", on_ground=True,
+                       refused=lambda cur, want: seen.append((cur, want)))
+        self.assertEqual(got, "arrival")
+        self.assertEqual(seen, [("arrival", "landed")],
+                         "a refusal nobody hears is how a phase gets welded")

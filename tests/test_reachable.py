@@ -176,3 +176,63 @@ class TestTheGateDidNotShutTheDoorOnEntry(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheGateAsksHISPROCEDURE(unittest.TestCase):
+    """Which approach decides is a fact about the AEROPLANE, not the bridge.
+
+    `reachable` asks a profile two questions -- is this a beacon letdown
+    (`kind`), and is the controller blind (`atc.radar`) -- and `dispatch` handed
+    it `ctl.profile`: whatever the bridge happened to be started with. So the
+    procedure a pilot is actually flying had no say in whether his own report
+    was routed anywhere.
+
+    `Controller._pro` has been the answer to "which approach is this aeroplane
+    flying" since two aircraft could recover to two fields, and this call site
+    was not asking it -- the same shape as `_runway_in_use` and `check_in`, each
+    fixed for it separately. See #111.
+
+    It falls back to the bridge's profile for an aeroplane nobody has assigned a
+    recovery to, so every single-field sortie behaves exactly as it did.
+    """
+
+    def ctl(self):
+        from marshall.atc import controller as C
+        return C.Controller(R.BATUMI_ASR)          # the BRIDGE has radar
+
+    def test_the_letdown_pilot_keeps_his_station_passage(self):
+        """A Mustang on the 1944 beacon letdown, on a bridge started on the
+        radar approach. Station passage IS his procedure and it was refused."""
+        from marshall.atc import intents
+        ctl = self.ctl()
+        ctl.get("Pony 1-1")
+        ctl.assign_approach("Pony 1-1", R.BATUMI_APPROACH, named="batumi-ndb")
+        handled = intents.dispatch(
+            ctl, intents.Intent(kind=K.REPORT_BEACON, callsign="Pony 1-1"),
+            on_ground=False)
+        self.assertTrue(handled)
+        self.assertEqual(list(ctl.unreachable), [],
+                         "his own procedure's report was stood down")
+
+    def test_and_the_jet_beside_him_still_has_none(self):
+        """The other half. Same controller, same moment, the profile the bridge
+        loaded -- a radar approach has no station to pass and must still say so.
+        """
+        from marshall.atc import intents
+        ctl = self.ctl()
+        ctl.get("Falcon 1-1")
+        intents.dispatch(
+            ctl, intents.Intent(kind=K.REPORT_BEACON, callsign="Falcon 1-1"),
+            on_ground=False)
+        self.assertTrue(any("no station to pass" in why
+                            for _t, why in ctl.unreachable),
+                        "a radar approach still has no station to pass")
+
+    def test_the_gate_reads_it_off_the_aircraft(self):
+        import inspect
+        from marshall.atc import intents
+        src = inspect.getsource(intents.dispatch)
+        self.assertIn("ctl._pro(", src)
+        code = "\n".join(ln for ln in src.splitlines()
+                         if not ln.lstrip().startswith("#"))
+        self.assertNotIn("reachable(intent.kind, ctl.profile", code)
