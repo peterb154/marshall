@@ -58,22 +58,30 @@ phrases = ["Nellis", "Tonopah", "Creech", "Groom Lake", "Las Vegas",
 # already publishes for the SAME grid point, and each `source` says which and
 # admits the Python cited nothing. No other value below was touched.
 #
-# A BEACON IS NOT AN AIRFIELD, and NELLIS is the fault a68151353 named at
-# Batumi, on a second map. Its position is the aerodrome reference point, its
-# ident and note are the LSV TACAN's, and the real LSV sits 1,250 m away in the
-# [[navaid]] table of this same file. Preserved exactly as it was; see #163.
+# A BEACON IS NOT AN AIRFIELD, and NELLIS was the fault a681513 named at
+# Batumi, on a second map: its position is the aerodrome reference point and
+# its ident and note were the LSV TACAN's, which sits 1,250 m away in the
+# [[navaid]] table of this same file. The costume comes off here (#163). The
+# point stays exactly where it was -- it is the aerodrome, and the ILS to 21L
+# is measured from it -- and LSV keeps its own row below, where a pilot who
+# wants to tune it will find it with the right position.
+#
+# `navaid` IS STATED ON BOTH, and both were wrong by omission. The loader read
+# an empty kind as "ndb", so an aerodrome reference point with no transmitter
+# at all and an enroute VORTAC were both non-directional beacons as far as
+# `atc/equipment.py` was concerned -- and that table is what decides which
+# airframe can navigate to what.
 
 [[fix]]
 name = "NELLIS"
-ident = "LSV"
 x = -398195
 z = -17233
 freq_mhz = 0.0
-sector = "Nellis Approach"
+navaid = ""
 lat = 36.2352
 lon = -115.0330
 source = "pydcs Nevada terrain, Nellis airport point -- the same x/z and the same lat/lon as the [[field]] below, because it IS the aerodrome reference. The Python this was migrated from carried no lat/lon at all."
-note = "Nellis TACAN 12X. Field reference for the ILS to 21L."
+note = "Aerodrome reference point, KLSV. Nothing transmits here: the field's TACAN is LSV 12X, 1,250 m away in the [[navaid]] rows."
 
 [[fix]]
 name = "TONOPAH"
@@ -81,11 +89,12 @@ ident = "TPH"
 x = -200809
 z = -196936
 freq_mhz = 117.2
+navaid = "vortac"
 sector = "Silverbow Approach"
 lat = 38.030667
 lon = -117.0335
 source = "nevada-Beacons.lua: the TPH VORTAC's own positionGeo, at the same grid point to within a metre -- see the [[navaid]] TPH below. The Python this was migrated from carried no lat/lon at all."
-note = "Tonopah VORTAC, channel 119. Enroute, not an airfield beacon."
+note = "Tonopah VORTAC, channel 119. ENROUTE, and it carries the town's name: it is eighteen miles from Tonopah airfield and is not that field's beacon. #141 measured the distance and read it as a wrong coordinate."
 
 # --- aerodromes ------------------------------------------------------------
 #
@@ -401,7 +410,6 @@ manner = "Unhurried and a long way off, working in whole minutes and hundreds of
 key = "nellis-ils"
 field = "Nellis"
 controller = "Nellis Approach"
-beacon = "NELLIS"
 outer_hold = "TONOPAH"
 iaf = "TONOPAH"
 hold_base_ft = 9000
@@ -436,7 +444,11 @@ era = "modern"
 key = "tonopah-ils"
 field = "Tonopah"
 controller = "Silverbow Approach"
-beacon = "TONOPAH"
+# NO BEACON, AND THE DATUM MOVES EIGHTEEN MILES BECAUSE OF IT. This named
+# `TONOPAH` -- the TPH VORTAC -- so every range, every radial and the whole
+# descent profile of an ILS to runway 15 were measured from a station out in
+# the desert, and each number was plausible. The field is the datum now. TPH
+# stays as the IAF and the hold, which is what an enroute VORTAC is for. #163
 outer_hold = "TONOPAH"
 iaf = "TONOPAH"
 hold_base_ft = 12000

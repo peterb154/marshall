@@ -63,7 +63,13 @@ def _channels(profile: R.ApproachProfile) -> list[str]:
     # The guard is `arrival_fix`: an approach with no enroute homing fix has
     # nothing to say here. It also stopped the bridge dead on Nevada --
     # `profile.arrival_fix.name` on a None -- which is how this was found.
-    if getattr(profile, "arrival_fix", None) is None:
+    #
+    # AND THE BEACON IS GUARDED FOR THE SAME REASON, not because a procedure
+    # exists today with an arrival fix and no homer, but because the paragraph
+    # below is about homing one and there is now such a thing as an approach
+    # that homes nothing at all (#163). Two Nones, one lesson.
+    if (getattr(profile, "arrival_fix", None) is None
+            or getattr(profile, "homer", None) is None):
         return []
     enr_name, enr_freq = profile.station(enroute=True)
     twr_name, twr_freq = profile.station()
@@ -72,7 +78,7 @@ def _channels(profile: R.ApproachProfile) -> list[str]:
         out.append(
             f"- **Channels.** Enroute he homes {profile.arrival_fix.name} and is "
             f"on **{enr_freq:.1f}** ({enr_name}); the letdown is flown homing "
-            f"{profile.beacon.name}, so it belongs to {twr_name} on "
+            f"{profile.homer.name}, so it belongs to {twr_name} on "
             f"**{twr_freq:.1f}**. Hand him over as he leaves "
             f"{profile.arrival_fix.name}. He physically cannot hear you on a "
             "channel he is not homing.")
@@ -135,7 +141,7 @@ def _asr_plate(profile: R.ApproachProfile, flight: str, size: int) -> str:
         "# This mission's plate (the field-specific facts)",
         "",
         f"- This is a **surveillance radar approach** to runway **{rwy}** at "
-        f"**{profile.beacon.name}**. **You** navigate; the pilot flies the "
+        f"**{profile.aerodrome.name}**. **You** navigate; the pilot flies the "
         "headings you give him. He has no approach aid of his own.",
         f"- Controllers: {stations}.",
         f"- Final approach course **{inbound:03d}**. Vector him to intercept it "
@@ -383,7 +389,8 @@ def _ils_plate(profile: R.ApproachProfile, flight: str, size: int) -> str:
     return "\n".join([
         "# This mission's plate (the field-specific facts)",
         "",
-        f"- This is an **ILS** to runway **{rwy}** at **{profile.beacon.name}**. "
+        f"- This is an **ILS** to runway **{rwy}** at "
+        f"**{profile.aerodrome.name}**. "
         "**He** navigates. You vector him to intercept, clear him, and hand him "
         "to Tower — the approach itself is his.",
         f"- Controllers: {stations}.",
@@ -428,7 +435,7 @@ def _ndb_plate(profile: R.ApproachProfile,
                size: int = R.FLIGHT_SIZE) -> str:
     """The field-specific facts, as the markdown 'plate' prompt part."""
     cap = profile.atc
-    b = profile.beacon
+    b = profile.homer
     inbound = _inbound_hdg(profile)
     outbound = (inbound + 180) % 360
     hold, platform = profile.stack_ft[0], profile.platform_ft

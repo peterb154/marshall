@@ -80,7 +80,7 @@ def main() -> int:
 
     p = R.BATUMI_ASR
     print(f"final approach course {p.final_crs}M / {p.final_crs_true:.0f}T at "
-          f"{p.beacon.name}\n")
+          f"{p.aerodrome.name}\n")
     print(f"{'aircraft':12} {'rng':>6} {'radial':>7} {'alt':>6} "
           f"{'xtk':>7}  TRUTH{'':14} what he should be told")
     last = ""

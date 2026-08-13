@@ -32,7 +32,10 @@ def _row(label: str, value: str, note: str = "") -> str:
 def build(profile: R.ApproachProfile = P) -> str:
     inbound = profile.final_crs
     outbound = (inbound + 180) % 360
-    field = profile.beacon           # the radar reference point IS the field
+    # THE RADAR REFERENCE POINT IS THE FIELD, and this line used to say so
+    # while reading `profile.beacon` -- a comment correcting its own code. The
+    # aerodrome is a field of its own now (#163) and this asks for it.
+    field = profile.aerodrome
     # THE THEATRE'S SEATS. They used to hang off the profile, so a plate for
     # one approach carried the comms ladder of both aerodromes (#162).
     stations = R.STATIONS

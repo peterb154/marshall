@@ -27,7 +27,11 @@ HERE = Path(__file__).parent
 # reads a true height so MDA can sit low, just under the briefed cloud base.
 P = R.BATUMI_APPROACH
 
-BEACON = P.beacon
+# THE BEACON, and this chart is the one page in the tree that genuinely means
+# one: the letdown is flown ON it and station passage over it is the missed
+# approach point. `homer` is the profile's name for it since #163, where the
+# other three procedures stopped claiming to have one.
+BEACON = P.homer
 FINAL_CRS = P.final_crs
 HOLD_TURNS = P.hold_turns
 SPEED_KT = P.speed_kt          # nm/h, derived from the MPH the ASI reads

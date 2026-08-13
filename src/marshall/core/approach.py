@@ -105,7 +105,11 @@ class ApproachProfile:
     from here and nothing else" -- and that stopped being true the day a
     station table was added, which review kept believing anyway:
 
-        the fixes       beacon, outer hold, arrival fix, IAF
+        the place       `aerodrome` -- the field this procedure arrives at, and
+                        the datum every range, radial and plate is measured
+                        from. Required. See #163: it used to be called `beacon`
+        the fixes       homer (only where one is flown), outer hold, arrival
+                        fix, IAF
         the geometry    final approach course, IF, FAP, MAP, glidepath, the
                         descent table, the missed approach, the touchdown offset
         the heights     platform, minima, MSA/MVA tables, the holding stack
@@ -127,14 +131,48 @@ class ApproachProfile:
     `theatre.station_for` / `theatre.station_on` (or `route.station_for`,
     `route.station_on`, which is the same thing through the façade). [#162]
 
-    The plate (build_plate.py) reads the same beacon and ladder plus the
-    geometry it needs to draw. Change a stack level here and both the
-    clearances and the plate's table move together, because they share this one
-    definition.
+    The plates read the same aerodrome and ladder plus the geometry they need
+    to draw -- and the letdown's plate reads the same homer. Change a stack
+    level here and both the clearances and the plate's table move together,
+    because they share this one definition.
     """
     controller: str                 # radio callsign, e.g. "Batumi Approach"
-    beacon: Fix                     # the approach beacon (ident + freq)
+    # THE AERODROME. Required, and it is the datum for everything positional:
+    # the ranges the controller speaks, the IAF offset, the plates, the AIP
+    # card. Every approach has one -- an approach is a way of arriving at an
+    # AIRFIELD -- which is why it has no default and cannot be omitted.
+    #
+    #     "A beacon is not an airfield. They are separate things and you have
+    #      built them as though they are. ... I think all approaches have an
+    #      airfield. Not all approaches have a beacon."
+    #
+    # This slot used to be called `beacon` and held the fix named BATUMI, which
+    # is the aerodrome reference point wearing an ident and a frequency that
+    # `tools/import_beacons.py` says outright were invented for the period
+    # scenario. So one field did three unrelated jobs -- a navaid the pilot
+    # tunes, the geometric datum, and the origin a Center falls back to -- and
+    # only the first is a beacon's. Both ILS approaches named a beacon and
+    # NEITHER HAS ONE: an ILS is a localiser and a glideslope, and nobody homes
+    # on the field. The row existed because the object needed a position and
+    # `beacon` was the field that had one. [#163]
+    aerodrome: Fix
     outer_hold: Fix                 # escape-valve fix for repeated misses
+    # THE NAVAID THIS PROCEDURE HOMES ON, where there is one. None is the
+    # normal case and is not a gap: an ILS and a surveillance approach have no
+    # beacon at all, and the 1944 letdown has one because the whole procedure
+    # is flown on it.
+    #
+    # It is a separate slot from `aerodrome` rather than the same one, because
+    # a beacon and an airfield are different things in all three directions: an
+    # approach always has a field, sometimes has a beacon, and a beacon exists
+    # perfectly well with no approach attached -- 122 of them per map sit in
+    # `[[navaid]]` rows that no procedure mentions.
+    #
+    # Named `homer` and not `beacon` for one reason, and it is a transitional
+    # one: `beacon` is still a property below, kept alive for the call sites in
+    # `atc/agent_atc.py` and `atc/controller.py` that this change was not
+    # allowed to touch. See that property.
+    homer: Fix | None = None
 
     # Where the flight is worked BEFORE it reaches the beacon. None means one
     # controller owns the whole arrival.
@@ -441,6 +479,38 @@ class ApproachProfile:
     final_crs_true_measured: float | None = None
 
     @property
+    def beacon(self) -> Fix:
+        """TRANSITIONAL, AND IT IS THE CONFLATION ITSELF. Do not add a caller.
+
+        `beacon` was the stored field and did three jobs; #163 split it into
+        `aerodrome` (the datum, always) and `homer` (the navaid, sometimes).
+        This property returns the homer where the procedure has one and the
+        aerodrome otherwise -- which is precisely the merged answer that was
+        wrong, kept for exactly as long as it takes to migrate the readers this
+        change was not permitted to edit:
+
+            agent_atc.load_and_push_plate   `{"field": profile.beacon.name}` --
+                                            wants the AERODROME, and would
+                                            raise on a None at bridge start
+            agent_atc.field_origin          the Center fallback, which is #160's
+                                            to replace with the destination
+            agent_atc, the channel list     the letdown's tuned frequencies --
+                                            wants the HOMER
+            controller._hold_phrase         "hold at BATUMI as published" --
+                                            the HOMER; letdown-only branch
+            controller._report_phrase       "report BATUMI inbound" -- likewise
+            controller, the tower handoff   "you will be homing BATUMI" --
+                                            likewise
+
+        Every one of those is unchanged by construction: on the letdown it is
+        the homer, on everything else it is the point the old field held. What
+        it must never do is acquire a SEVENTH reader, because a new caller
+        asking for `beacon` gets an airfield on three of this map's four
+        procedures.
+        """
+        return self.homer or self.aerodrome
+
+    @property
     def vectored(self) -> bool:
         """True when the CONTROLLER owns navigation.
 
@@ -678,7 +748,13 @@ class ApproachProfile:
         elif enroute and self.arrival_fix is not None:
             fix = self.arrival_fix
         else:
-            fix = self.beacon
+            # THE HOMER, and the aerodrome only if there is none. A procedure
+            # that reaches this branch is one whose controllers live on the
+            # beacons rather than on the ladder, so it has a homer by
+            # definition; the fallback is there so that a mis-configured
+            # procedure gives its own controller on no frequency rather than
+            # raising on a None halfway through an arrival.
+            fix = self.homer or self.aerodrome
         return (fix.sector or self.controller,
                 fix.freq_mhz if fix.freq_mhz else 0.0)
 
@@ -936,10 +1012,27 @@ def profile_from_dict(d: dict) -> ApproachProfile:
     the mission actually briefed).
     """
     d = dict(d)
+    # A ROW WRITTEN BEFORE #163 CARRIES `beacon` AND NO `aerodrome`, and what
+    # that field held on such a row was the aerodrome reference point -- that
+    # is the whole finding. So it becomes the datum, and the procedure comes
+    # back with no homer, which is right for the three of four that never had
+    # one and wrong only for a stored letdown, whose beacon and whose field are
+    # the same point anyway. Dropping it instead would leave `aerodrome`
+    # missing, and it is required: the profile would not rebuild at all.
+    if "beacon" in d and "aerodrome" not in d:
+        d["aerodrome"] = d["beacon"]
+        # ...AND THE HOMER TOO, but only on a letdown. `kind` is on the row, so
+        # the question "was that stored beacon a real beacon?" is answerable
+        # rather than guessed: on `ndb` it was one and the procedure is flown on
+        # it, on an ILS or an ASR it was the aerodrome wearing an invented ident
+        # and the profile must come back with no beacon at all.
+        if (d.get("kind") or "").strip().lower() == "ndb":
+            d["homer"] = d["beacon"]
+    d.pop("beacon", None)
     # Every nested Fix has to be rebuilt, not just the two obvious ones -- a dict
     # left in arrival_fix survives every check and only fails at the moment the
     # controller asks which frequency to talk on, which is mid-approach.
-    for key in ("beacon", "outer_hold", "arrival_fix"):
+    for key in ("aerodrome", "homer", "outer_hold", "arrival_fix"):
         if isinstance(d.get(key), dict):
             d[key] = Fix(**d[key])
     # A STORED `stations` LIST IS DROPPED, and there is no rebuilding of it any

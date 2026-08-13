@@ -45,7 +45,10 @@ def has_plate(profile: R.ApproachProfile = P) -> bool:
 
 def build(profile: R.ApproachProfile = P) -> str:
     path = plate_path(profile)
-    field = profile.beacon.name
+    # THE AERODROME, which is what this page has always meant by `field` and
+    # what it printed -- through the profile's beacon, because that is where
+    # the field's position lived until #163.
+    field = profile.aerodrome.name
     chart = getattr(profile, "chart_name", "") or "published chart"
 
     if path is None:

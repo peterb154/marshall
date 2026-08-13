@@ -125,7 +125,7 @@ def main() -> int:
 
     profile = R.BATUMI_ASR
     grp_flag = 2 if args.group.lower().startswith("pony") else 1
-    print(f"ASR autopilot -> {args.group} at {profile.beacon.name}, "
+    print(f"ASR autopilot -> {args.group} at {profile.aerodrome.name}, "
           f"runway {profile.runway}, course {profile.final_crs:03d}")
     print(f"  IF {profile.final_intercept_nm:.0f} nm at {profile.iaf_alt_ft} ft, "
           f"FAP {profile.fap_nm:.0f} nm, MDA {profile.mda_ft} ft")

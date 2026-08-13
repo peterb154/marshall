@@ -8969,7 +8969,29 @@ Code: `src/marshall/core/approach.py`, `catalogue.py`, `theatre.py`,
 `config/theatres/*.toml`, `kneeboard/asr_plate.py`, `aip_plate.py`,
 `atc/asr.py`, `atc/briefing.py`, `atc/controller.py`.
 
-Status: OPEN — the decision is made. Blocks the clean version of #160.
+**Status:** FIXED 13 August — commit below. `aerodrome` is required and is the
+datum; `homer` is optional and only the 1944 letdown has one; both ILS
+approaches and the ASR now name no beacon, because they never had one.
+
+Proved with a worktree at the previous HEAD: geometry, minima, stack levels,
+glidepath at nine ranges, MSA and MVA on every 30° bearing, IAF distance, every
+station at every field on both maps, and all three plates — **empty diff**.
+
+A THIRD CONFLATION FELL OUT, unlooked for: `field` was left EMPTY on the letdown
+to mean "no surveyed minima", so a procedure that plainly lands at Batumi claimed
+to happen at no aerodrome at all. One key answering two questions. That is
+`published_minima` now, and the letdown's field is Batumi, as it always was.
+
+`ApproachProfile.beacon` survives as a documented transitional property
+returning the merged answer, because this change was not permitted to edit
+`agent_atc.py` (another agent held it) or `controller.py`'s letdown phrases. Six
+readers remain, in two files, and a test PINS that set — a new one fails the
+suite. That grep is the criterion #162 found missing on #2, where four
+acceptance criteria passed while the old path stayed in 26 of 28 call sites.
+
+Tests fail against the pre-fix tree: 7 failures and 5 errors of 10.
+
+Remaining: the six shim readers, which #162 step 2 retires.
 Labels: needs-flight-test
 
 ---

@@ -124,6 +124,21 @@ class Theatre:
 # editing here as well as there. The keys are the file's now. See #137.
 
 
+# HOW CLOSE A POINT HAS TO BE TO COUNT AS THE AERODROME'S OWN. Two miles is
+# well outside any runway -- Batumi's is a mile and an eighth end to end -- and
+# well inside the eighteen that separate the TPH VORTAC from Tonopah airfield,
+# which is the case this exists to refuse. It is a sanity check and not a
+# tolerance: nothing is corrected by it, a candidate either is the aerodrome
+# reference point or is some other place wearing the aerodrome's name.
+ON_THE_FIELD_NM = 2.0
+
+
+def _nm(x1: float, z1: float, x2: float, z2: float) -> float:
+    """Grid metres apart, in nautical miles. Flat, because two points a mile
+    apart on one aerodrome do not need a geodesic."""
+    return ((x1 - x2) ** 2 + (z1 - z2) ** 2) ** 0.5 / 1852.0
+
+
 def published_approaches(fields=(), theatre: str = "") -> dict:
     """The map's procedures, keyed, with the theatre's data composed back in.
 
@@ -190,11 +205,46 @@ def published_approaches(fields=(), theatre: str = "") -> dict:
         return R.Fix(want[0], p.ident, p.x, p.z, p.mhz or None,
                      sector=a.controller, lat=p.lat, lon=p.lon)
 
+    def datum(a, f):
+        """WHERE THIS APPROACH IS. The aerodrome, as a point, and nothing else.
+
+        An approach always has a field and it is the datum for every range, IAF
+        offset and plate -- which is what `beacon` was doing under a name that
+        made three of this map's four procedures claim a navaid they do not
+        have (#163).
+
+        THE POINT COMES FROM THE PUBLISHED FIX WHERE THE MAP HAS ONE, because
+        that fix IS the aerodrome reference point and is what the rest of the
+        system already measures against: `field_origin` resolves an aerodrome
+        by looking its NAME up in the projected fix table, so taking the datum
+        from anywhere else would give one controller a different Batumi from
+        the next. It is copied rather than shared, and stripped of its ident,
+        frequency and sector on the way -- a datum is a place, and the one
+        thing the fix rows carry that does not belong to a place is the beacon
+        costume this issue is about.
+
+        A FIX OF THE SAME NAME IS NOT AUTOMATICALLY THE AERODROME, and Nevada
+        is the proof: `TONOPAH` is the TPH VORTAC, an enroute station carrying
+        the town's name eighteen miles from Tonopah airfield, and reading it as
+        the field's datum is how `tonopah-ils` came to measure its whole
+        approach from a point in the desert (#141 found the distance and read
+        it as a wrong coordinate; it is this conflation wearing one). So the
+        candidate has to BE at the aerodrome, and where it is not, the
+        aerodrome's own row answers -- it is never wrong about where it is.
+        """
+        got = at.get((a.field or "").upper())
+        if got is not None and _nm(got.x, got.z, f.x, f.z) <= ON_THE_FIELD_NM:
+            return R.Fix(got.name, "", got.x, got.z, None,
+                         note=got.note, navaid="", lat=got.lat, lon=got.lon)
+        return R.Fix(f.name, "", f.x, f.z, None,
+                     note=f.note, navaid="", lat=f.lat, lon=f.lon)
+
     out = {}
     for a in catalogue.approaches(theatre):
         knobs = a.model_dump(exclude={"key", "field", "atc", "beacon",
                                       "outer_hold", "arrival_fix", "iaf",
-                                      "theatre_stations", "own_point"})
+                                      "theatre_stations", "own_point",
+                                      "published_minima"})
         # AN UNUSED ROLE IS NOT AN UNRESOLVABLE NAME, and conflating the two is
         # what broke the first two attempts at #145. An approach that names no
         # `arrival_fix` has no enroute homing fix -- `briefing.py` guards on
@@ -206,13 +256,24 @@ def published_approaches(fields=(), theatre: str = "") -> dict:
         def role(want, _mine=mine):
             return (at.get(want) or _mine) if want else None
         f = by_field.get(a.field)
+        if f is None:
+            # LOUD. A procedure with no aerodrome has no datum, and every range
+            # it speaks would be measured from nothing -- which is not a thing
+            # that can be discovered later from a plausible number.
+            raise ValueError(
+                f"approach {a.key!r} names field {a.field!r}, which this "
+                f"theatre does not have. Every approach arrives at an "
+                f"aerodrome and it is the datum for everything positional. "
+                f"See docs/CONFIG.md")
+        mins = a.published_minima
         out[a.key] = R.ApproachProfile(
-            beacon=role(a.beacon), outer_hold=role(a.outer_hold),
+            aerodrome=datum(a, f), homer=role(a.beacon),
+            outer_hold=role(a.outer_hold),
             arrival_fix=role(a.arrival_fix), iaf=role(a.iaf),
             atc=R.AtcCapability(**a.atc.model_dump(exclude_none=True)),
             theatre_stations=a.theatre_stations,
-            msa_sectors=[tuple(s) for s in (f.msa_sectors if f else [])],
-            mva_cells=[tuple(c) for c in (f.mva_cells if f else [])],
+            msa_sectors=[tuple(s) for s in (f.msa_sectors if mins else [])],
+            mva_cells=[tuple(c) for c in (f.mva_cells if mins else [])],
             **knobs)
     return out
 
@@ -414,8 +475,17 @@ def published_fixes(theatre: str = "") -> tuple:
     from marshall.core import catalogue
     from marshall.core import route as R
     return tuple(
+        # WHAT KIND OF STATION IT IS, IF ANY, AND THE FILE IS BELIEVED. This
+        # read `f.navaid or "ndb"`, so a fix that named no kind got a homing
+        # beacon it does not have -- which is how `TONOPAH`, a VORTAC, and
+        # `NELLIS`, an aerodrome reference point with no transmitter at all,
+        # both came to be non-directional beacons as far as `atc/equipment.py`
+        # was concerned. That table decides which airframe can navigate to
+        # what: it would have offered a hold at Nellis to a Mustang on the
+        # strength of an ADF needle pointing at nothing. Empty means a point in
+        # space, which `equipment.can_use` already answers correctly. [#163]
         R.Fix(f.name, f.ident, f.x, f.z, f.freq_mhz or None,
-              sector=f.sector, note=f.note, navaid=f.navaid or "ndb",
+              sector=f.sector, note=f.note, navaid=f.navaid,
               lat=f.lat, lon=f.lon)
         for f in catalogue.published_fixes(theatre))
 

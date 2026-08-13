@@ -91,7 +91,7 @@ lon = 41.600234
 freq_mhz = 132.0
 sector = "Batumi Tower"
 navaid = "ndb"
-source = "UGSB. Aerodrome; NDB OS 132.0 on the AIP plate."
+source = "UGSB aerodrome reference point (the runway centre, which is what Airbase:getRunways() returns). THE BEACON ON IT IS FICTION: `OS` on 132.0 was INVENTED for the 1944 scenario, because an ARA-8 homes VHF and the real Batumi homer is `LU`, a 430 kHz LF NDB the adapter cannot steer on -- see the [[navaid]] rows below, which are the sim's own. Kept because the period letdown is flown on it; declared here because a fictional ident on a real aerodrome's row is exactly what this field exists to prevent. #163"
 note = "Field elevation 32 ft. Landing runway 12 (charted 13/31 today -- magnetic drift renamed it; we fly the period AIP designation)."
 
 [[fix]]
@@ -104,8 +104,8 @@ lon = 41.863275
 freq_mhz = 124.0
 sector = "Kobuleti Departure"
 navaid = "ndb"
-source = "UG5X. Aerodrome; NDB MG 124.0."
-note = "Field elevation 59 ft. Departure end."
+source = "UG5X aerodrome reference. THE BEACON ON IT IS FICTION, like Batumi's: `MG` on 124.0 was INVENTED for the 1944 scenario -- Kobuleti's real homers are `KT` on 0.870 and `T` on 0.490 and its TACAN is `KBL` 67X, all in the [[navaid]] rows below. Kept because the letdown holds its banished aircraft here on that channel. #163"
+note = "Field elevation 59 ft. Departure end. This point is 0.61 nm from the [[field]] row's own position, on the runway axis -- see #163, which measured it: one of the two is the runway centre and the other is the 07 threshold."
 
 [[fix]]
 name = "KUTAISI"
@@ -357,14 +357,22 @@ manner = '''Command, not service. Crisp, directive and impersonal -- she gives a
 # ILS. They are composed back in from the FIELD named here, so there is one
 # copy of each and the file cannot disagree with the aerodrome.
 #
-# `field = ""` means the procedure carries no published minimum altitudes,
-# which is a real answer rather than a gap: the 1944 letdown predates them.
+# `field` IS REQUIRED AND `beacon` IS NOT, and until #163 it was the other way
+# round. Every approach arrives at an aerodrome and that aerodrome is the datum
+# for every range, radial and plate; almost no approach is FLOWN ON a beacon.
+# The three below name none, because an ILS is a localiser and a glideslope and
+# a surveillance approach is a man reading a radar -- nobody homes on the field
+# in either. Only the 1944 letdown names one, because the whole procedure is
+# that beacon.
+#
+# `published_minima = false` is how a procedure says it has no surveyed MSA or
+# MVA table. It used to be said by leaving `field` empty, so the letdown
+# claimed to happen at no aerodrome at all -- two questions, one key.
 
 [[approach]]
 key = "batumi-asr"
 field = "Batumi"
 controller = "Batumi Approach"
-beacon = "BATUMI"
 outer_hold = "KOBULETI"
 hold_base_ft = 4000
 cloud_thickness_ft = 3000
@@ -434,7 +442,6 @@ mhz = 128.0
 key = "batumi-ils"
 field = "Batumi"
 controller = "Batumi Approach"
-beacon = "BATUMI"
 outer_hold = "KOBULETI"
 hold_base_ft = 4000
 cloud_thickness_ft = 3000
@@ -500,7 +507,13 @@ mhz = 128.0
 
 [[approach]]
 key = "batumi-ndb"
-field = ""
+field = "Batumi"
+# NO SURVEYED MINIMA, WHICH IS AN ERA AND NOT A GAP. This procedure predates
+# the MSA and MVA tables the modern approaches read off the aerodrome; it flies
+# a published pattern over water at a platform altitude of its own. It said so
+# by leaving `field` empty, which also said "this approach happens nowhere" --
+# and the field is not in doubt. It is Batumi, and it always was. #163
+published_minima = false
 # PRESERVED, NOT ENDORSED. This profile carries no station list in the
 # Python it replaces, so a bridge started on it has a controller who cannot
 # name a single frequency -- and it IS selectable, via MARSHALL_APPROACH.
@@ -508,6 +521,10 @@ field = ""
 # kept exactly and filed as its own defect. See #140.
 theatre_stations = false
 controller = "Batumi Approach"
+# THE ONE APPROACH ON THIS MAP THAT HAS A BEACON, and it is the reason the
+# concept exists at all: the pilot tunes `OS` on 132.0, the ARA-8 points the
+# nose at it, and station passage over it IS the missed approach point. The
+# beacon is fiction and the [[fix]] row above says so; the procedure is real.
 beacon = "BATUMI"
 outer_hold = "KOBULETI"
 arrival_fix = "INITIAL"
@@ -576,7 +593,6 @@ mhz = 128.0
 key = "kobuleti-ils"
 field = "Kobuleti"
 controller = "Kobuleti Departure"
-beacon = "KOBULETI"
 outer_hold = "INITIAL"
 hold_base_ft = 4000
 cloud_thickness_ft = 3000

@@ -224,7 +224,11 @@ def iaf_nm(profile) -> float:
     if iaf is None:
         return profile.final_intercept_nm + 4.0
     import math as _m
-    dx, dz = iaf.x - profile.beacon.x, iaf.z - profile.beacon.z
+    # FROM THE AERODROME, which is what "how far out" has always meant here --
+    # it read `profile.beacon` while the beacon was the field wearing an
+    # invented ident, and on Nevada that put the IAF zero miles from itself.
+    # [#163]
+    dx, dz = iaf.x - profile.aerodrome.x, iaf.z - profile.aerodrome.z
     return _m.hypot(dx, dz) / 1852.0
 
 

@@ -246,6 +246,15 @@ class OwnPoint(_File):
 class Approach(_File):
     """One published procedure.
 
+    A PROCEDURE HAS A FIELD AND MAY HAVE A BEACON, and they are two keys
+    because they are two things. `field` is the aerodrome it arrives at: it is
+    required, it is the datum for everything positional, and every approach in
+    the world has one. `beacon` is the navaid it is FLOWN ON, which most
+    approaches do not have -- an ILS is a localiser and a glideslope and nobody
+    homes on the airfield. Both ILS rows here named one until #163; neither
+    had one, and what they were naming was the aerodrome reference point
+    wearing an ident invented for the 1944 scenario.
+
     FIXES ARE NAMED, NOT REPEATED. A beacon appearing in two approaches must be
     the SAME beacon, and copying its coordinates into both is how they come to
     differ by a decimal -- so `beacon`, `outer_hold`, `iaf` and `arrival_fix`
@@ -269,11 +278,20 @@ class Approach(_File):
 
     key: str
     controller: str
-    beacon: str
     kind: str
-    # Whose minimum altitudes this procedure uses. Empty is a real answer and
-    # not a gap: the 1944 letdown predates published MVAs.
-    field: str = ""
+    # THE AERODROME THIS PROCEDURE ARRIVES AT. Required, because every approach
+    # has one, and it is what everything positional is measured from.
+    field: str
+    # The navaid the pilot HOMES on, if the procedure is flown on one. Empty is
+    # the normal case: only the 1944 letdown is.
+    beacon: str = ""
+    # WHETHER THIS FIELD'S SURVEYED MINIMA APPLY, which is not the same
+    # question as which field it is -- and one key was answering both. `field`
+    # was empty on the letdown to say "no published minimum altitudes", so a
+    # procedure that plainly happens at Batumi claimed to happen nowhere. The
+    # 1944 procedure predates the MSA and MVA tables; the aerodrome it lands at
+    # is not in doubt.
+    published_minima: bool = True
     outer_hold: str = ""
     arrival_fix: str = ""
     iaf: str = ""
