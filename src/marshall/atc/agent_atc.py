@@ -393,11 +393,31 @@ def _ack_the_clearance(bridge, known: str, base: str = BASE_URL) -> dict:
 
 
 def _flight_id_of(known: str, base: str = BASE_URL) -> int:
-    """His row on the board, by callsign."""
+    """His row on the board, by callsign, IN THIS MISSION.
+
+    THE MISSION WAS MISSING AND IT MADE THE WHOLE FUNCTION RETURN NOTHING.
+    `/flights` defaults to `mission=default` and a real sortie is not called
+    that -- ours is `362nd-Blind-Flying-1444@<instance>` -- so this walked a list
+    that could never contain him, returned 0, and `_ack_the_clearance` gave up
+    silently on every single read-back.
+
+    `clearance_ack` is therefore never written in a live sortie. Nothing noticed
+    because nothing downstream read it: the engine's own `clearance_agreed` was
+    set in memory by `clearance_read_back`, so the durable record could be
+    absent for a whole flight without changing anything. The moment the engine
+    started reading the board every turn (#135) it changed everything -- a pilot
+    whose read-back had just been accepted was refused taxi, twice, because the
+    row still said ISSUED.
+
+    Found by `tools/ghost_flight.py --sortie`, 13 August:
+
+        ATC   Marlin four two, readback correct, contact Kobuleti Ground
+        ATC   Marlin four two, your IFR clearance has STILL not been read back
+    """
     if not known:
         return 0
     try:
-        got = _get_json(f"{base}/flights")
+        got = _get_json(f"{base}/flights?mission={urllib.parse.quote(MISSION)}")
     except Exception:
         return 0
     for row in (got or {}).get("flights", []) or []:
@@ -2346,6 +2366,21 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
             _cl = _plan.get("cruise_ft")
             if _cl:
                 ctl.note_cleared_level(known, int(_cl))
+            # ...AND WHETHER HE HAS AGREED IT, which is the same fact-from-the-
+            # board as the level above and was missing for the same reason. The
+            # engine never issued the clearance, so it never knew one existed --
+            # and `request_taxi` refuses only on `clearance_agreed is False`, a
+            # value nothing in a live sortie ever wrote. #135 was therefore
+            # unreachable outside a unit test that set the field by hand: a
+            # ghost asked Ground for taxi on a clearance he had not read back
+            # and was cleared to the runway.
+            #
+            # `_plan` is non-empty only when a clearance has actually been
+            # ISSUED -- `_cleared_plan_now` returns {} without a level or a
+            # squawk -- so the three states stay three: no plan leaves the
+            # engine's None, which never blocks anybody.
+            if _plan:
+                ctl.note_clearance_agreed(known, bool(_plan.get("acknowledged")))
             # ...AND WHICH APPROACH HIS CLEARANCE NAMES. #2, and it is the
             # oldest thing on the list: `Controller` held ONE profile and every
             # arrival fact came off it -- the beacon, the stack, the runway, the
@@ -4623,8 +4658,24 @@ def publish_state(bridge, ctl, scope: str, session_id: str,
     # the strip is what it did to resolve him in the first place.
     by_plan = {i.plan: i.callsign
                for i in bridge.identity.by_guid.values() if i.plan and i.callsign}
-    plan_of = {by_plan[p["callsign"]]: p for p in (plans or [])
-               if p.get("callsign") in by_plan}
+    # BY THE LABEL HE SAID, which is what `by_plan` is keyed on: `Identity.plan`
+    # is set by matching what the pilot SPOKE against the published plan names.
+    #
+    # This asked for `p["callsign"]` -- the plan row's own callsign column --
+    # and looked it up in a dict of LABELS. Two different questions, so it
+    # matched nothing, so `strip` was blank on every aeroplane that has ever
+    # been on this board:
+    #
+    #     "On nowhere on the board does it say marlin is going to batumi."
+    #
+    # And it could not have worked even by accident: that column is NULL for
+    # every row and always has been, because nothing writes it. #142 finished
+    # the job by removing the idea that a plan belongs to a callsign at all --
+    # `filed()` is "deliberately anonymous: any pilot may request any plan".
+    # The comment three lines above says joining on it "would now match
+    # nothing", and then the code joined on it.
+    plan_of = {by_plan[p["label"]]: p for p in (plans or [])
+               if p.get("label") in by_plan}
 
     board = []
     # FILLED FROM THE FINISHED BOARD, BELOW, not from the identity registry.

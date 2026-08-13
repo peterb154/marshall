@@ -658,6 +658,8 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>]/g,
 // columns of the plans table for the whole life of that panel, the escaper
 // doing exactly its job to a string that should never have been near it.
 const DASH = '\\u2014';
+// The arrow a strip uses between a route and where it ends.
+const TO = '\\u2192';
 // BLANK READS AS BLANK. A missing value is dimmed and dashed, never zeroed and
 // never guessed at: an altitude nobody published shown as `0` is this page's
 // whole failure in miniature.
@@ -781,7 +783,24 @@ function card(r, reasons) {
     // THE STRIP HE WAS RESOLVED FROM, whole, as the bridge attached it to the
     // row. Published on the board row since the plans panel was written and
     // never once drawn.
-    + kv('strip', val(r.plan && (r.plan.label || r.plan.name)))
+    // ...AND WHERE IT GOES, which is the whole reason a controller wants the
+    // strip in front of him.
+    //
+    //     "On nowhere on the board does it say marlin is going to batumi."
+    //
+    // It was on the wire the entire time -- the bridge attaches the plan ROW,
+    // and `filing.derived` puts the destination on it (the last leg, since
+    // migration 031). The card printed the label and dropped it. That is the
+    // third time this exact shape has been reported on this page: the fact is
+    // published, the renderer does not draw it, and the gap reads as the
+    // system not knowing. `cleared_approach` was the first, the strip itself
+    // the second.
+    + kv('strip', r.plan
+        ? val(r.plan.label || r.plan.name)
+          + (r.plan.destination
+              ? ` <span class="dim">${TO}</span> ${esc(r.plan.destination)}`
+              : '')
+        : val(null))
     // WHAT WAS DECIDED ABOUT HIM AND NOT DONE. His own lines out of the quiet
     // log -- the newest is the standing answer, because `watching_him` records
     // only when the answer changes.
