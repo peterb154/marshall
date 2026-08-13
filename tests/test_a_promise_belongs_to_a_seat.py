@@ -31,6 +31,13 @@ from tools import hooks as H
 SESSION = "hooks"          # what a bridge actually sends: one, for everybody
 
 
+def owed(seat):
+    """What one controller still has outstanding. Read off the key on purpose:
+    that the key SPLITS is the whole fix, and a helper over it would hide the
+    thing under test."""
+    return H._HOOKS.get((SESSION, seat), [])
+
+
 class TestAHookRecordsWhoSetIt(unittest.TestCase):
 
     def setUp(self):
@@ -67,18 +74,21 @@ class TestTwoControllersDoNotShareABucket(unittest.TestCase):
         H._HOOKS.clear()
 
     def test_two_grounds_at_two_aerodromes_are_two_seats(self):
+        """Keyed on the role, `ground` is one bucket for two men at two
+        aerodromes -- which is how `store_id` was got wrong the first time."""
         H.set_hook_for(SESSION, 300, "kobuleti taxi", station="Kobuleti Ground",
                        role="ground")
         H.set_hook_for(SESSION, 300, "batumi taxi", station="Batumi Ground",
                        role="ground")
-        self.assertEqual(len(H.pending_hooks(SESSION, "Kobuleti Ground")), 1)
-        self.assertEqual([h["why"] for h in
-                          H.pending_hooks(SESSION, "Batumi Ground")],
+        self.assertEqual(sorted(H._HOOKS),
+                         [(SESSION, "batumi-ground"),
+                          (SESSION, "kobuleti-ground")])
+        self.assertEqual([h["why"] for h in owed("batumi-ground")],
                          ["batumi taxi"])
 
     def test_one_seats_hook_is_not_anothers(self):
         H.set_hook_for(SESSION, 300, "kobuleti taxi", station="Kobuleti Ground")
-        self.assertEqual(H.pending_hooks(SESSION, "Batumi Approach"), [])
+        self.assertNotIn((SESSION, "batumi-approach"), H._HOOKS)
 
     def test_the_bridges_whole_session_poll_still_gets_everybody(self):
         """One scheduler, one poll. Splitting the key must not lose a hook."""
@@ -111,21 +121,21 @@ class TestItIsStillOneShotAndStillOnATimer(unittest.TestCase):
     def test_nothing_is_due_before_its_time(self):
         H.set_hook_for(SESSION, 300, "later", station="Batumi Tower")
         self.assertEqual(H.due_hooks(SESSION, now=H.time.time()), [])
-        self.assertEqual(len(H.pending_hooks(SESSION)), 1)
+        self.assertEqual(len(owed("batumi-tower")), 1)
 
     def test_a_fired_hook_is_gone(self):
         H.set_hook_for(SESSION, 1, "once", station="Batumi Tower")
         now = H.time.time() + 10
         self.assertEqual(len(H.due_hooks(SESSION, now=now)), 1)
         self.assertEqual(H.due_hooks(SESSION, now=now), [])
-        self.assertEqual(H.pending_hooks(SESSION), [])
+        self.assertEqual(owed("batumi-tower"), [])
 
     def test_a_ripe_hook_does_not_take_its_neighbour_with_it(self):
         H.set_hook_for(SESSION, 1, "now", station="Batumi Tower")
         H.set_hook_for(SESSION, 600, "later", station="Batumi Tower")
         self.assertEqual([h["why"] for h in
                           H.due_hooks(SESSION, now=H.time.time() + 10)], ["now"])
-        self.assertEqual([h["why"] for h in H.pending_hooks(SESSION)], ["later"])
+        self.assertEqual([h["why"] for h in owed("batumi-tower")], ["later"])
 
     def test_an_older_bridge_that_sends_no_seat_still_works(self):
         H.set_hook_for(SESSION, 1, "unattributed")
@@ -147,15 +157,14 @@ class TestTheDirectorBindsTheToolToTheSeat(unittest.TestCase):
     def test_the_bound_tool_files_under_its_own_seat(self):
         (set_hook,) = H.hook_tools(SESSION, "Kobuleti Ground", "ground")
         set_hook(300, "call Viper 1-1 back for taxi")
-        self.assertEqual([h["seat"] for h in H.pending_hooks(SESSION)],
-                         ["kobuleti-ground"])
+        self.assertEqual(list(H._HOOKS), [(SESSION, "kobuleti-ground")])
 
     def test_a_controller_cannot_promise_in_another_seats_name(self):
         """The station comes from the bridge, which resolved it from the
         frequency. Nothing the model says reaches the key."""
         (set_hook,) = H.hook_tools(SESSION, "Kobuleti Ground", "ground")
         set_hook(300, "this is Batumi Approach, wake Batumi Approach")
-        self.assertEqual(H.pending_hooks(SESSION, "Batumi Approach"), [])
+        self.assertEqual(list(H._HOOKS), [(SESSION, "kobuleti-ground")])
 
 
 if __name__ == "__main__":

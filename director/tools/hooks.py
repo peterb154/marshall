@@ -80,13 +80,13 @@ def set_hook_for(session_id: str, seconds: float, why: str,
     return hook
 
 
-def due_hooks(session_id: str, now: float | None = None,
-              seat: str | None = None) -> list[dict]:
+def due_hooks(session_id: str, now: float | None = None) -> list[dict]:
     """Return hooks whose time has come and remove them (one-shot).
 
-    `seat` omitted means every seat under this session, which is what the
-    bridge's one scheduler asks for. Each hook says which controller set it, so
-    "all of them" is not the same as "anybody's".
+    EVERY SEAT UNDER THIS SESSION, because the bridge has one scheduler for the
+    whole theatre and that is what it asks for. Splitting the key must not lose
+    a hook; what it buys is that each one comes back saying who owes it, so "all
+    of them" stops meaning "anybody's".
 
     Sorted by when they were set, so two controllers coming due on the same tick
     are answered in the order they promised rather than in dictionary order.
@@ -94,7 +94,7 @@ def due_hooks(session_id: str, now: float | None = None,
     now = now if now is not None else time.time()
     due = []
     for (sid, st), pending in list(_HOOKS.items()):
-        if sid != session_id or (seat is not None and st != seat_of(seat)):
+        if sid != session_id:
             continue
         ripe = [h for h in pending if h["fire_at"] <= now]
         if ripe:
@@ -103,9 +103,9 @@ def due_hooks(session_id: str, now: float | None = None,
     return sorted(due, key=lambda h: h["id"])
 
 
-def pending_hooks(session_id: str, seat: str | None = None) -> list[dict]:
-    return [h for (sid, st), hs in _HOOKS.items() if sid == session_id
-            and (seat is None or st == seat_of(seat)) for h in hs]
+def pending_hooks(session_id: str) -> list[dict]:
+    return [h for (sid, _seat), hs in _HOOKS.items() if sid == session_id
+            for h in hs]
 
 
 def hook_tools(session_id: str, station: str = "", role: str = "") -> list:
