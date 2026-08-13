@@ -797,6 +797,32 @@ class TestTheEndOfAnApproachIsAudible(unittest.TestCase):
         self.ctl.report_beacon("Hoover 1-1", 4000)
         self.ctl.out.clear()
 
+    def test_a_stopped_aeroplane_is_never_cleared_to_land(self):
+        """The live failure, and both rehearsal runs found it too.
+
+        Radar sees him stop and `report_down` says the right thing. Eight
+        seconds later he reports it himself -- "on the ground, runway one
+        tree" -- the taxonomy routes that to `report_landed`, and the engine
+        answered a stationary aeroplane with a landing clearance.
+
+        The agent hid it: with nothing sensible to voice it said "go ahead",
+        so the transcript read as merely unhelpful rather than wrong. Only the
+        recorder showed the controller had gone backwards a whole leg.
+        """
+        self.ctl.report_down("Hoover 1-1")
+        self.ctl.out.clear()
+        self.ctl.report_landed("Hoover 1-1")
+        said = " ".join(x.text for x in self.ctl.out).lower()
+        self.assertNotIn("cleared to land", said)
+        self.assertIn("runway", said, "he is still told to get off it")
+
+    def test_and_he_is_still_cleared_when_he_is_actually_flying(self):
+        """The other half. A man with the field in sight and still airborne is
+        owed the clearance and the wind -- the guard must not eat that."""
+        self.ctl.report_landed("Hoover 1-1")
+        self.assertIn("cleared to land",
+                      " ".join(x.text for x in self.ctl.out).lower())
+
     def test_he_says_something_when_you_are_down(self):
         self.ctl.report_down("Hoover 1-1")
         said = " ".join(t.text for t in self.ctl.out).lower()

@@ -1850,6 +1850,28 @@ class Controller:
 
     def report_landed(self, cs: str) -> None:
         ac = self.get(cs)
+        # HE IS ALREADY DOWN, so this is not a landing clearance, it is a
+        # greeting. `report_down` says so in its own docstring -- "reading a
+        # landing clearance to a man already stopped on the runway is a
+        # controller who has not noticed the aeroplane arrive" -- and then
+        # nothing enforced it, because `report_down` is reachable only from the
+        # radar poll and a PILOT has no way to say it. The taxonomy sends both
+        # "field in sight, landing" and "on the ground, runway one three" here
+        # (`intents.py`: report_landed covers "...landing, down").
+        #
+        # CAUGHT LIVE, and by both rehearsal runs. Radar fired `report_down` at
+        # 03:02:23 and said the right thing; the pilot reported down 8 s later
+        # and this method regressed the controller a whole leg, answering a
+        # stopped aeroplane with "roger, cleared to land runway one three".
+        # The agent papered over it with "go ahead", which is how it stayed
+        # invisible in the transcript -- the wrong sentence never reached the
+        # air, so only the recorder knew the engine had lost the plot.
+        #
+        # The engine knows which rung he is on. That is the same argument #100
+        # used one case down for the taxi request, and it applies here.
+        if ac.phase is Phase.LANDED:
+            self.report_down(cs)
+            return
         ac.phase, ac.last_report_t = Phase.LANDED, self.t
         ac.map_t = None
         if self._in_letdown(ac) == ac.callsign:

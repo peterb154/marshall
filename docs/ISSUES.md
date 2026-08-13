@@ -8610,3 +8610,118 @@ commit as the strip work.
 Labels: needs-flight-test
 
 ---
+
+## [PHR-7] A stopped aeroplane was cleared to land — #161
+
+Found twice on the same night by two independent runs — a live sortie and both
+ghost-flight rehearsals.
+
+    03:02:23  ATC    "Marlin five seven, Batumi Tower, welcome. Exit the
+                      runway when able."          <- report_down, off radar
+    03:02:32  PILOT  "Batumi Tower, Marlin57, on the ground, runway one tree."
+    03:02:35  ENGINE "Marlin five seven, roger, cleared to land runway one
+                      three, wind zero nine zero at five."
+
+The controller had already seen him land, said the right thing, and then went
+BACKWARDS A WHOLE LEG when the pilot confirmed it.
+
+**Cause.** The taxonomy sends both "field in sight, landing" and "on the ground"
+to `REPORT_LANDED` — `intents.py` says so: *"field or runway in sight, landing,
+down"* — and `Controller.report_landed` had no guard on his already being down.
+`report_down` is the method that says the right thing and its docstring argues
+this exact case: *"Reading a landing clearance to a man already stopped on the
+runway is a controller who has not noticed the aeroplane arrive."* It was
+reachable only from the radar poll. **Nothing a pilot could SAY could reach it.**
+
+**Why it hid.** The agent never voiced the wrong sentence. With nothing sensible
+to say it fell back to *"Marlin five seven, Batumi Tower, go ahead"*, so the
+transcript reads as unhelpful rather than wrong, and only the recorder shows the
+engine had lost the plot. That is the second time this month the language half
+has masked an engine fault well enough to keep it off the flight test card.
+
+**Fixed** in the same commit: `report_landed` delegates to `report_down` when
+`ac.phase is Phase.LANDED`. The engine knows which rung he is on — the same
+argument #100 used one case down for the taxi request.
+
+**Acceptance criteria.**
+
+- `report_down` then `report_landed` never produces the words "cleared to land",
+  and still tells him to get off the runway.
+- A man with the field in sight and still flying is still cleared, with the wind.
+
+Tests: `tests/test_controller.py::TestTheEndOfAnApproachIsAudible` (2 new cases).
+Code: `src/marshall/atc/controller.py` (`report_landed`).
+
+Status: FIXED, needs a pilot to hear the right thing after touchdown.
+Labels: needs-flight-test
+
+## [ARCH-29] There is no such thing as the theatre's approach — #162
+
+    "I don't understand what this whole business about a theater default
+     approach is. There should be no such thing"
+
+Correct, and it is the root under #160, #158 and the remainder of #2.
+
+**A pilot flies the approach his CLEARANCE names.** That is settled everywhere
+else already: migration 031 removed `approach` from `flight_plans` because
+*"which arrival you fly is a fact about your clearance, not your route"*, and
+`flights.cleared_approach` is the column that holds it, restored across a
+restart by `Controller.hydrate`. A field OFFERS a set of approaches —
+`approaches_now(theatre)` — and Approach issues one of them to one aeroplane.
+Nothing in that story needs a singular "the approach".
+
+But one exists. `theatre.default_approach` in `config/theatres/caucasus.toml`,
+overridable by `MARSHALL_APPROACH`, resolved once at boot into a module-global
+`APPROACH_NAME` and a single `profile`. It is load-bearing in four places:
+
+    field_origin(profile, "")        a Center has no field, so it measures from
+                                     the loaded arrival's beacon        -> #160
+    _agreed.setdefault("procedure",  the bridge's arrival is written into a
+                       APPROACH_NAME)  PILOT'S agreed clearance as a default
+    boot-time check                  warns if the theatre's key and the loaded
+                                     profile's kind disagree
+    Controller.self.profile          read 26 times. `ac.profile` -- the
+                                     per-aircraft one -- is read TWICE.
+
+That last line is the measurement that matters. **#2 [ARCH-1] "One approach
+profile per flight, not per bridge" is marked SHIPPED/UNVERIFIED and is 2 call
+sites out of 28.** The mechanism landed; almost nothing uses it. Every symptom
+above is a consequence of the other 26.
+
+**What it costs to keep.** A restart from the wrong shell changes the procedure
+(#158, done by accident during a rehearsal — `batumi-ils` became `batumi-asr`);
+a Center's every range and the handoff boundary derived from it move forty miles
+with no other change (#160); and a pilot's clearance can be defaulted to an
+arrival he never asked for, which is the mechanism behind the original
+*"why on earth is intent still ASR"*.
+
+**What replaces it.**
+
+1. `Theatre` publishes `approaches`, plural, and nothing else. Delete
+   `default_approach` from the file and `MARSHALL_APPROACH` from the
+   environment. An approach with no clearance naming it is not being flown.
+2. Every `self.profile` read becomes `ac.profile`, or takes the field/role it
+   actually needs. This is the bulk of the work and it is #2 finished rather
+   than a new project.
+3. Where there is genuinely no aeroplane — a Center's origin, ATIS choosing a
+   runway — the answer comes from the ROLE and the FIELD, not from an arrival.
+   #160 specifies that half.
+
+**Acceptance criteria.**
+
+- `grep default_approach` and `grep MARSHALL_APPROACH` return nothing.
+- Two aircraft on one bridge fly two different approaches, proven without a sim.
+- Restarting the bridge cannot change any procedure, because there is none to
+  change; what each aeroplane is cleared for comes back from `flights`.
+- `tests/test_two_fields.py` and the approach sweep stay green throughout.
+
+Tests: `tests/test_two_fields.py`, `tests/test_controller.py`, the sweep.
+Code: `src/marshall/core/theatre.py`, `src/marshall/atc/agent_atc.py`
+(`APPROACH_NAME`, `field_origin`, the `_agreed` default),
+`src/marshall/atc/controller.py` (26 `self.profile` reads),
+`config/theatres/*.toml`.
+
+Status: OPEN — the decision is made; this supersedes the "default" half of #2.
+Labels: needs-flight-test
+
+---
