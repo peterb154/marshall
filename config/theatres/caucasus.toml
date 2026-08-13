@@ -16,6 +16,23 @@ arrival = "Batumi"
 # that the controller has none for you.
 default_approach = "batumi-asr"
 bootstrap_plan = "362nd-kobuleti-batumi"
+# FIVE KNOTS FROM THE EAST, and it is the runways that chose it. The wind is
+# what makes a runway the runway in use, and 180 favoured neither end of
+# Batumi's 13/31 -- a pure crosswind, so landing 13 was a decision the mission
+# had made rather than one the weather justified. 090 fixes both ends of the
+# route at once: Batumi 13 (125 magnetic) and Kobuleti 07 (064 magnetic) are
+# both into the easterly, so the departure and the arrival agree without
+# anybody special-casing either. It was 20 mph from 270 before that, and a
+# stiff crosswind is a poor thing to debug an approach in -- every heading
+# correction had a wind component buried in it, so "he put me left of course"
+# and "I drifted left of course" looked identical from both ends.
+#
+# WHAT THIS IS. The wind the MISSION IS BUILT WITH: `mission/build.py` writes
+# it into the .miz weather, so it is the number the sim then has, and `atis/`
+# measures that back at ten metres over each field. Anything SPOKEN reads the
+# measurement (`atis.store.wind`); this is the fallback for everything that
+# runs with no sim -- the plate, the nav log, the builder itself. Changing it
+# changes the weather the ATIS will observe, and with it the runway in use.
 wind_from_deg = 90.0
 wind_mph = 5.7539
 

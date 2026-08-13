@@ -110,9 +110,9 @@ def build(profile: R.ApproachProfile = P) -> str:
          ft &middot; {profile.mda_ft - profile.field_elev_ft} HAT</div>
     <div><span class="cap">CEILING</span>
          <span class="big">{profile.ceiling_ft}</span> ft briefed</div>
-    <div><span class="cap">WIND</span>
+    <div><span class="cap">WIND FCST</span>
          <span class="big">{int(R.WIND_FROM_DEG):03d}</span>
-         at {int(R.WIND_MPH)} mph</div>
+         at {int(R.WIND_MPH)} mph &middot; ATIS has the actual</div>
   </div>
 
   <h2>WHAT YOU WILL HEAR</h2>

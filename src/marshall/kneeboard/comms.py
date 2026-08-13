@@ -210,7 +210,8 @@ def build(card: Card | None = None, profile=None) -> str:
     <tr><td>Altimeter</td>
         <td><b>{qfe}</b> ({profile.altimeter_datum})</td></tr>
     <tr><td>Wind</td>
-        <td>{int(card.wind_from_deg):03d} at {int(card.wind_mph)} mph</td></tr>
+        <td>{int(card.wind_from_deg):03d} at {int(card.wind_mph)} mph
+            (forecast &mdash; the ATIS has the actual)</td></tr>
     <tr><td>Holding</td>
         <td><b>{profile.stack_ft[0]:,} ft</b> and up, in clear air &mdash;
             {profile.hold_outbound_hdg:03d} outbound,

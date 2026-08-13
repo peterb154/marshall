@@ -74,6 +74,63 @@ def sky_cover(density: int) -> tuple[str, bool]:
 
 
 @dataclass(frozen=True)
+class Wind:
+    """The wind at one aerodrome, and whether anybody actually measured it.
+
+    THE TYPE EXISTS BECAUSE THE PROVENANCE MATTERS. A wind is two numbers and
+    they are not interesting; what is interesting is that the same two numbers
+    mean different things depending on where they came from, and until #148
+    nothing carried the difference. `observed` is a measurement over that
+    field, taken with the runway in use that came out of it. Not observed is
+    the map's DECLARED wind -- what the mission was built with, and the honest
+    answer for a chart drawn before anybody started the sim.
+
+    Never inferred from a sentinel value. `Current.on_the_air` was carried
+    rather than derived for the same reason: a caller that reconstructs why an
+    answer is what it is will eventually reconstruct it wrongly.
+
+    KNOTS, like the observation and the broadcast, because that is the unit a
+    wind is given in on the radio. `mph` is here for the nav log and the E6B,
+    which work in the P-51's units -- see `core/units.py`. One conversion, in
+    one place, so a printed wind and a spoken one cannot be two numbers.
+    """
+
+    from_deg: int
+    kt: int
+    observed: bool
+    field: str = ""
+
+    @classmethod
+    def measured(cls, obs) -> Wind:
+        """What an observation found. The `atis` row is written from this."""
+        return cls(from_deg=int(obs.wind_from_deg), kt=int(obs.wind_kt),
+                   observed=True, field=obs.field)
+
+    @property
+    def mph(self) -> float:
+        from marshall.core.units import MPH_PER_KT
+        return self.kt * MPH_PER_KT
+
+    @property
+    def spoken(self) -> str:
+        """"wind zero nine zero at five", or "wind calm".
+
+        CALM IS A WORD, NOT THREE NOUGHTS -- "wind zero zero zero at zero" is
+        not something anybody says. A DIRECTION IS THREE DIGITS AND A SPEED IS
+        NOT: the direction is spelled digit by digit because that is how a
+        bearing is said, and the speed is a number said as a number.
+
+        Lower case and unpunctuated, because it lands mid-sentence in a landing
+        clearance as often as it opens one in a broadcast. The caller who wants
+        a sentence out of it makes one.
+        """
+        from marshall.core import say
+        if self.kt < 1:
+            return "wind calm"
+        return f"wind {say.spell_hdg(self.from_deg)} at {say.spell_count(self.kt)}"
+
+
+@dataclass(frozen=True)
 class Observation:
     """One aerodrome's weather at one moment. Frames named, like everything."""
 

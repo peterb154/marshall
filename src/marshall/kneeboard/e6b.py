@@ -150,7 +150,7 @@ def build() -> str:
     <button data-f="wdir" data-d="5">+5</button>
     <button data-f="wdir" data-d="10">+10</button></div></div>
 
-  <div class="ctl"><label>Wind kts</label><div class="btns">
+  <div class="ctl"><label>Wind mph</label><div class="btns">
     <button data-f="wspd" data-d="-5">&minus;5</button>
     <button data-f="wspd" data-d="-1">&minus;1</button>
     <span class="cur" id="v-wspd"></span>

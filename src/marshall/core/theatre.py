@@ -296,6 +296,36 @@ def approaches_now(theatre: str = "") -> dict:
     return _approaches_cached(_map_name(theatre))
 
 
+@_lru_cache(maxsize=4)
+def _wind_cached(name: str) -> tuple:
+    th = THEATRES[name]()
+    return (th.wind_from_deg, th.wind_mph)
+
+
+def declared_wind(theatre: str = "") -> tuple:
+    """(from degrees, mph) — the wind this MAP declares, and nobody else does.
+
+    THE DECLARED WIND IS NOT THE WIND. It is what the mission is built with:
+    `mission/build.py` writes it into the .miz weather, so it is the number the
+    sim then has, and `atis/` MEASURES that at ten metres over each field and
+    writes what it found to the `atis` table. Anything spoken or drawn should
+    read the measurement -- `atis.store.wind` -- and fall back here only when
+    nothing has observed anything, which is every component that runs with no
+    sim: the kneeboard, the plate, the nav log, the mission builder itself.
+
+    It lives on the THEATRE because a different map wants a different answer,
+    which is the rule in docs/CONFIG.md. It used to be `units.WIND_FROM_DEG`, a
+    module constant, at the same time as the runway in use was a measurement --
+    so a landing clearance could name a wind that contradicted the ATIS that
+    chose its runway (#148). There is one declared wind per map now and it is
+    in `config/theatres/<map>.toml`.
+
+    Cached on the map name like the other loaders, because `runway_in_use()`
+    falls back to it and that is called per transmission.
+    """
+    return _wind_cached(_map_name(theatre))
+
+
 def published_fixes(theatre: str = "") -> tuple:
     """The map's published fixes as `Fix` objects, from the configuration file.
 

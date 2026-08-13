@@ -92,22 +92,33 @@ class Card:
                      if f.name.lower() == (name or "").lower()), None)
 
 
+# THE WIND IS ASKED OF THE MAP, by name, and neither card holds one of its own.
+# `for_nevada` carried `wind_from_deg=210.0` while `theatre.nevada()` carried the
+# same two numbers, which is two sources both claiming to be the wind -- the
+# fault of #148 in miniature, and the one that decides which end of Nellis the
+# card prints. A card is drawn before anybody starts the sim, so the DECLARED
+# wind is all there could be; the ATIS has the actual and every page that shows
+# this one says which it is.
 def for_caucasus() -> Card:
     """The 362nd's sortie. Kobuleti to Batumi, radar recovery."""
     from marshall.core import route as R
+    from marshall.core import theatre as TH
+    deg, mph = TH.declared_wind("caucasus")
     return Card(theatre="Caucasus", fields=tuple(R.FIELDS),
                 departure=R.DEPARTURE_FIELD, arrival=R.ARRIVAL_FIELD,
                 stations=tuple(R.STATIONS), profile=R.BATUMI_ASR,
-                wind_from_deg=R.WIND_FROM_DEG, wind_mph=R.WIND_MPH)
+                wind_from_deg=deg, wind_mph=mph)
 
 
 def for_nevada() -> Card:
     """Nellis to Tonopah, ILS at both ends."""
     from marshall.core import nevada as N
+    from marshall.core import theatre as TH
+    deg, mph = TH.declared_wind("nevada")
     return Card(theatre="Nevada", fields=tuple(N.NEVADA_FIELDS),
                 departure="Nellis", arrival="Tonopah",
                 stations=tuple(N.NEVADA_STATIONS), profile=N.TONOPAH_ILS,
-                wind_from_deg=210.0, wind_mph=9.2)
+                wind_from_deg=deg, wind_mph=mph)
 
 
 THEATRES = {"caucasus": for_caucasus, "nevada": for_nevada}

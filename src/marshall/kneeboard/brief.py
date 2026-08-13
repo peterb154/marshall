@@ -125,8 +125,9 @@ def build(profile=P) -> str:
   </table>
 
   <p class="aside">Altimeter {R.altimeter_spoken(R.qfe_inhg(profile.field_elev_ft))},
-  {profile.altimeter_datum}. Wind {int(R.WIND_FROM_DEG):03d} at
-  {int(R.WIND_MPH)}. Bring the aeroplane back; there is a shortage.</p>
+  {profile.altimeter_datum}. Wind forecast {int(R.WIND_FROM_DEG):03d} at
+  {int(R.WIND_MPH)} &mdash; the field will give you the actual.
+  Bring the aeroplane back; there is a shortage.</p>
 </div>
 """
 

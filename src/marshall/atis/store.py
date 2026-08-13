@@ -14,6 +14,12 @@ wrong way.
 
 The wind is a MEASUREMENT. The runway is a DECISION. A decision has one author.
 
+AND THE MEASUREMENT IS ANSWERED HERE TOO, for the same reason one rung down.
+The runway came out of a wind; a controller who names the runway from this
+table and the wind from somewhere else has put two winds in one sentence, and
+the one he SAYS is the one that never chose anything (#148). `wind()` is the
+one call, beside `runway_in_use()`, and both answer out of the same row.
+
 WHAT A MISSING ROW MEANS. No row is a field with no ATIS, which is a real
 arrangement rather than an error -- most aerodromes do not have one. Callers
 fall back to computing the runway themselves, and `current` says which happened
@@ -26,8 +32,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, UTC
 
+from marshall.atis.observation import Wind
 from marshall.core import db
 from marshall.core.schema import Atis
+from marshall.core.units import MPH_PER_KT
 
 
 @dataclass(frozen=True)
@@ -120,6 +128,39 @@ def current(field, fallback_wind_deg: float | None = None) -> Current:
     return Current(field=field.name, letter=None,
                    runway=field.runway_in_use(fallback_wind_deg),
                    on_the_air=False)
+
+
+def wind(field) -> Wind:
+    """The wind at this aerodrome, from whoever last measured it.
+
+    THE COMPANION TO `runway_in_use`, and the same argument makes it: the
+    runway was DECIDED from a wind, so anything that says the wind beside the
+    runway has to say THAT wind or the two contradict each other in one breath.
+    They did. `_runway_in_use` asked this table and `_wind_phrase` read a
+    module constant, so Tower could clear an aircraft to land on the runway the
+    measured wind chose while naming a wind that did not choose it (#148).
+
+    NO ROW MEANS THE MAP'S DECLARED WIND, flagged as not observed. That is a
+    real arrangement rather than an error -- a field with no ATIS, a bridge
+    with no database, a chart drawn before the sim was started -- and it is
+    the wind the mission was BUILT with, so it is the best answer available.
+    What must not happen is presenting it as an observation, which is why
+    `Wind.observed` is carried rather than left to be guessed at.
+
+    `field` may be None, for a controller who does not know which aerodrome he
+    is at; he gets the declaration, which is all anybody could give him.
+    """
+    if field is not None:
+        now = current(field)
+        if now.on_the_air and now.wind_from_deg is not None:
+            return Wind(from_deg=int(now.wind_from_deg),
+                        kt=int(now.wind_kt or 0), observed=True,
+                        field=now.field)
+    from marshall.core import theatre as _th
+    deg, mph = _th.declared_wind()
+    return Wind(from_deg=int(round(deg)) % 360,
+                kt=int(round(mph / MPH_PER_KT)), observed=False,
+                field=getattr(field, "name", ""))
 
 
 def runway_in_use(field, fallback_wind_deg: float | None = None) -> int:

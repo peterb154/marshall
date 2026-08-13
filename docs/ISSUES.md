@@ -7821,4 +7821,25 @@ always plausible" is the same shape.
 Code: `src/marshall/core/units.py`, `src/marshall/atc/controller.py`,
 `src/marshall/atis/`, `src/marshall/kneeboard/`.
 
-Status: OPEN — diagnosed, not fixed.
+Status: CLOSED, 13 August — the wind has one author per aerodrome and it is the
+row the runway came out of. `Controller._wind_phrase` asks `atis.store.wind(his
+field)`, beside `_runway_in_use`, so the sentence cannot carry two winds; the
+broadcast and the clearance are phrased by one renderer (`Wind.spoken`), so
+"calm" is a word in both mouths. `units.WIND_FROM_DEG`/`WIND_MPH` are DELETED:
+the declared wind is `[theatre] wind_from_deg/wind_mph` in the map's TOML, and
+`R.WIND_*` resolves onto it through `route.__getattr__` — so `mission/build.py`
+still authors the .miz weather from the declaration, and ATIS measures that
+back. `Wind.observed` carries the provenance rather than leaving it to be
+inferred, and the surfaces that can only ever have the declaration say so: the
+nav log's WIND (FCST), the plate, the comms card, the squadron brief, and the
+agent's plate, which is now told plainly that the wind it SAYS is the ATIS's.
+`runway_in_use()` with no wind given is the map's declaration too, not the
+Caucasus on every map. Guarded by `tests/test_the_wind_has_one_author.py` (15
+cases, the sharp one behavioural: an ATIS on the air with weather the
+declaration does not describe).
+
+Criterion 2 is met the only way it can be: a kneeboard is generated before the
+sim is started, so it shows the DECLARED wind — which is what the mission is
+built with and therefore what ATIS measures back. A live chart that reads the
+`atis` table is not built and is not wanted until the pages are generated
+per-sortie rather than per-container (#137).

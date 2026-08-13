@@ -57,8 +57,12 @@ from marshall.core.stations import (  # noqa: F401
     PRESET_LETTERS, Station, preset_label, preset_of)
 from marshall.core.units import (  # noqa: F401
     CRUISE_ALT_FT, CRUISE_TAS_MPH, INHG_PER_FT, MAGVAR, MPH_PER_KT, NM,
-    QNH_INHG, QNH_MMHG, WIND_FROM_DEG, WIND_MPH, altimeter_spoken, ias_mph,
-    qfe_inhg)
+    QNH_INHG, QNH_MMHG, altimeter_spoken, ias_mph, qfe_inhg)
+
+# `WIND_FROM_DEG` and `WIND_MPH` are NOT in that list, and they used to be. The
+# wind is not a conversion; it is a fact about the map, so it comes off the
+# theatre through `__getattr__` below like the fields and the stations do. See
+# `units.py`, where the constants were, and #148.
 
 
 # --- who is flying it -------------------------------------------------------
@@ -120,13 +124,19 @@ def bearing_distance(a: Fix | Field_, b: Fix | Field_,
 
 
 def wind_triangle(course_true: float, tas: float = CRUISE_TAS_MPH,
-                  wind_from: float = WIND_FROM_DEG,
-                  wind_speed: float = WIND_MPH) -> tuple[float, float, float]:
+                  wind_from: float | None = None,
+                  wind_speed: float | None = None) -> tuple[float, float, float]:
     """Returns (wind correction angle, true heading, groundspeed).
 
     WCA is positive to the right. Raises if the wind exceeds TAS across track,
     which would mean the course simply cannot be held.
+
+    NEITHER WIND DEFAULTS TO A CONSTANT ANY MORE. `None` means the map's
+    declared wind, resolved when the sum is done rather than when this module
+    was imported -- a default argument is bound at import, which on a theatre
+    that is chosen by environment is a fact captured before anybody has chosen.
     """
+    wind_from, wind_speed = _wind_or_declared(wind_from, wind_speed)
     delta = math.radians(wind_from - course_true)
     crosswind = wind_speed * math.sin(delta)
     headwind = wind_speed * math.cos(delta)
@@ -136,6 +146,21 @@ def wind_triangle(course_true: float, tas: float = CRUISE_TAS_MPH,
     wca = math.degrees(math.asin(ratio))
     gs = tas * math.cos(math.radians(wca)) - headwind
     return wca, (course_true + wca) % 360, gs
+
+
+def _wind_or_declared(wind_from: float | None,
+                      wind_speed: float | None) -> tuple[float, float]:
+    """Whichever half the caller gave, and the map's declaration for the rest.
+
+    ONE READER, so `solve_route` and `wind_triangle` cannot fall back to
+    different winds -- which is the whole complaint of #148, one layer down.
+    """
+    if wind_from is not None and wind_speed is not None:
+        return wind_from, wind_speed
+    from marshall.core import theatre as _th
+    deg, mph = _th.declared_wind()
+    return (deg if wind_from is None else wind_from,
+            mph if wind_speed is None else wind_speed)
 
 
 def magnetic(true_deg: float) -> float:
@@ -164,14 +189,18 @@ class LegSolution:
         return f"{m}:{round((self.minutes - m) * 60):02d}"
 
 
-def solve_route(tas: float = CRUISE_TAS_MPH, wind_from: float = WIND_FROM_DEG,
-                wind_speed: float = WIND_MPH, legs=None) -> list[LegSolution]:
+def solve_route(tas: float = CRUISE_TAS_MPH, wind_from: float | None = None,
+                wind_speed: float | None = None, legs=None) -> list[LegSolution]:
     """Wind-corrected headings and timings for a route.
 
     Defaults to the approach's own legs so nothing that already called this
     changes, but takes any list of (from, to) pairs -- which is what lets the
     nav log carry an actual sortie rather than the letdown it grew out of.
     """
+    # RESOLVED ONCE, not per leg: the nav log is one solution against one wind,
+    # and a route solved leg by leg against "whatever is declared now" would be
+    # a log nobody could reproduce.
+    wind_from, wind_speed = _wind_or_declared(wind_from, wind_speed)
     out = []
     for frm, to in (legs if legs is not None else LEGS):
         course, dist = bearing_distance(frm, to)
@@ -185,8 +214,9 @@ def solve_route(tas: float = CRUISE_TAS_MPH, wind_from: float = WIND_FROM_DEG,
 
 
 if __name__ == "__main__":
-    print(f"wind {WIND_FROM_DEG:.0f}/{WIND_MPH:.0f}  TAS {CRUISE_TAS_MPH:.0f} mph  "
-          f"var {MAGVAR:.0f}E\n")
+    _wdir, _wspd = _wind_or_declared(None, None)
+    print(f"wind {_wdir:.0f}/{_wspd:.0f} (declared)  "
+          f"TAS {CRUISE_TAS_MPH:.0f} mph  var {MAGVAR:.0f}E\n")
     print(f"{'leg':22} {'crs':>4} {'hdg(M)':>7} {'dist':>6} {'gs':>5} {'time':>6}")
     total = 0.0
     for s in solve_route():
@@ -232,6 +262,11 @@ _FROM_THEATRE = {
     "TOWER": ("station", "Batumi Tower"),
     "GROUND": ("station", "Batumi Ground"),
     "OVERLORD": ("station", "Sentry"),
+    # ...the weather the map declares. NOT the weather: see `units.py`. This is
+    # what the .miz is built with and what a component with no sim falls back
+    # to; anything SPOKEN asks `atis.store.wind` for what was measured (#148).
+    "WIND_FROM_DEG": ("wind", "from_deg"),
+    "WIND_MPH": ("wind", "mph"),
     # ...and the aerodromes.
     "PRESET_LADDER": ("ladder", ""),
     "FIELDS": ("fields", ""),
@@ -264,6 +299,9 @@ def __getattr__(name: str):
                 f"{name} names approach {key!r}, which the configured theatre "
                 f"does not publish. See docs/CONFIG.md")
         return got
+    if kind == "wind":
+        deg, mph = _th.declared_wind()
+        return deg if key == "from_deg" else mph
     if kind == "stations":
         return list(_th.stations_now())
     if kind == "ladder":

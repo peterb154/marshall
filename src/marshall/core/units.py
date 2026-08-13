@@ -1,8 +1,8 @@
 """The numbers everything else is measured in, and the air they are measured through.
 
-Conversions, the mission's wind and altimeter setting, and the two sums that
-turn a height into a pressure and a true airspeed into the needle the pilot is
-actually looking at. Nothing here knows about a fix, a field or a controller,
+Conversions, the mission's altimeter setting, and the two sums that turn a
+height into a pressure and a true airspeed into the needle the pilot is
+actually looking at. The WIND is deliberately not here; see below. Nothing here knows about a fix, a field or a controller,
 which is why it is the bottom of `core` and may be imported by anything.
 
 Speeds are MPH because the P-51's airspeed indicator is. That decision is made
@@ -20,46 +20,37 @@ MPH_PER_KT = 1.15078
 # variation is subtracted from true.
 MAGVAR = 6.0
 
-# Briefed conditions. Wind is the direction it blows FROM.
+# Briefed conditions.
 CRUISE_TAS_MPH = 220.0
 CRUISE_ALT_FT = 5000
-# FIVE KNOTS FROM THE EAST, and it is the runway that chose it.
+
+# THE WIND IS NOT HERE ANY MORE, and where it went is the point.
 #
-#     "Let's also move the wind to 090 at 5, so runway 13 makes sense."
+# It was `WIND_FROM_DEG = 90.0` and `WIND_MPH`, right here, while the runway in
+# use was a MEASUREMENT: `atis/` samples the sim's wind over each field, decides
+# the active runway from it and writes both to the `atis` table, and a
+# controller ASKS that table rather than recomputing. So one sentence carried
+# two winds --
 #
-# The wind is what makes a runway the runway in use, and 180 did not favour
-# either end of Batumi's 13/31 -- it was a pure crosswind, so landing 13 was a
-# decision the mission had made rather than one the weather justified. A pilot
-# reading the plate had no way to derive the runway in use from anything he
-# could see.
+#     f"{self._runway_in_use()}, {self._wind_phrase()}"
 #
-# 090 fixes both ends of the route at once, which is the point of picking it
-# rather than something merely non-crosswind: Batumi 13 (125 magnetic) and
-# Kobuleti 07 (064 magnetic) are both into the easterly, so the departure end
-# and the arrival end agree without anybody having to special-case one of them.
+# -- the runway from the observation and the wind from this constant, and a
+# landing clearance could name a wind that contradicted the ATIS broadcast that
+# chose its runway. It survived only because the declared Caucasus wind was
+# never far enough off to flip an end, which is luck (#148).
 #
-# THIS IS STILL THE INPUT AND NOT THE ANSWER. "Runway in use" should be
-# computed from the wind rather than declared beside it -- see SCHEMA.md -- and
-# while that is still a constant in `Field_.runway`, the two have to be kept
-# consistent by hand. Changing the wind here without checking the runways is a
-# way to have the controller land people downwind.
+# There are two honest answers now and neither of them is a constant in code:
 #
-# WHAT CAME BEFORE, and why it is not 20 mph from 270 any more.
+#     what was MEASURED     `atis.store.wind(field)` -- per field, per instant,
+#                           the same row the runway came out of
+#     what was DECLARED     `theatre.declared_wind()`, out of
+#                           config/theatres/<map>.toml, which is what the
+#                           mission is BUILT with and the fallback for anything
+#                           running with no sim
 #
-# It was 20 mph from 270 -- a stiff, near-direct crosswind on runway 13, which
-# is a fine thing to fly against once the procedure works and a poor thing to
-# debug an approach in. Every heading correction the controller gave had a wind
-# component buried in it, so "he put me left of course" and "I drifted left of
-# course" looked identical from both ends.
-#
-#     "wind should be much much less aggressive. Let's just go with 5 kn from
-#      the south"
-#
-# Changed HERE and nowhere else on purpose: the nav log's timed legs, the
-# plate, the mission file and the controller's landing clearance all read this
-# one number, so they cannot disagree about it.
-WIND_FROM_DEG = 90.0
-WIND_MPH = 5.0 * 1.15078          # five knots, in the mph this file works in
+# `R.WIND_FROM_DEG` and `R.WIND_MPH` still resolve -- through `route.__getattr__`
+# onto the theatre -- so the plate, the nav log and the mission builder read the
+# map's declared wind and cannot disagree with the .miz they produce.
 
 # Altimeter setting. Briefed, written into the mission, and passed on radar
 # contact -- a pilot who never gets one is flying on whatever was in the

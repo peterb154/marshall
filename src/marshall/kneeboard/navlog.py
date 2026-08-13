@@ -178,7 +178,7 @@ def build() -> str:
   <div class="sub">{R.DEPARTURE_FIELD} &rarr; {R.ARRIVAL_FIELD} &nbsp;&middot;&nbsp; Instrument &nbsp;&middot;&nbsp; ASR to Batumi</div>
 
   <div class="band">
-    <span><b>WIND</b> {R.WIND_FROM_DEG:03.0f}/{R.WIND_MPH:.0f}</span>
+    <span><b>WIND (FCST)</b> {R.WIND_FROM_DEG:03.0f}/{R.WIND_MPH:.0f}</span>
     <span><b>TAS</b> {R.CRUISE_TAS_MPH:.0f} MPH</span>
     <span><b>ALT</b> {R.CRUISE_ALT_FT:,} FT</span>
     <span><b>VAR</b> {R.MAGVAR:.0f}&deg;E</span>

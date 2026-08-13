@@ -152,12 +152,15 @@ def _asr_plate(profile: R.ApproachProfile, flight: str, size: int) -> str:
         "it when you call radar contact, and to anyone who asks. Every height "
         "you read him is measured against this datum; a pilot who never gets it "
         "is holding a different one and neither of you knows by how much.",
-        f"- Wind **{int(R.WIND_FROM_DEG):03d} at {int(R.WIND_MPH)}** mph. Do NOT "
-        "pass it as a correction while vectoring — you are watching his ground "
-        "track, so the drift is already inside the heading you give him. "
-        "Correct what the scope shows, not what the wind should do. It IS said "
-        "with the landing clearance, where it tells him what to expect in the "
-        "flare: \"cleared to land, wind two seven zero at two zero\".",
+        f"- Wind **{int(R.WIND_FROM_DEG):03d} at {int(R.WIND_MPH)}** mph, "
+        "**briefed** — the mission was built with it. THE WIND YOU SAY IS THE "
+        "MEASURED ONE, off the ATIS, and it reaches you in the directive with "
+        "the landing clearance; never read this briefed number on the air, and "
+        "never work one out. Do NOT pass the wind as a correction while "
+        "vectoring either — you are watching his ground track, so the drift is "
+        "already inside the heading you give him. Correct what the scope shows, "
+        "not what the wind should do. It IS said with the landing clearance, "
+        "where it tells him what to expect in the flare.",
         f"- Assignable altitudes: **{profile.platform_ft}** vectoring, "
         f"**{profile.mda_ft}** MDA, **{profile.missed_ft}** missed. Nothing else.",
         *_departure_field(),
@@ -398,9 +401,11 @@ def _ils_plate(profile: R.ApproachProfile, flight: str, size: int) -> str:
         f"- **Altimeter {_setting(profile)}** ({profile.altimeter_datum}) — pass "
         "it when you call radar contact, and to anyone who asks. Every height "
         "you read him is measured against this datum.",
-        f"- Wind **{int(th.wind_from_deg):03d} at {int(th.wind_mph)}**. It is "
-        "said with the landing clearance, where it tells him what to expect in "
-        "the flare — never as a correction while vectoring.",
+        f"- Wind **{int(th.wind_from_deg):03d} at {int(th.wind_mph)}**, "
+        "**briefed** — what the mission was built with, not what is blowing. "
+        "The wind you SAY is the measured one and arrives with the landing "
+        "clearance, where it tells him what to expect in the flare — never as "
+        "a correction while vectoring, and never recalled from here.",
         f"- Assignable altitudes: **{profile.platform_ft}** vectoring, "
         f"**{profile.missed_ft}** missed, and the holding stack "
         f"**{profile.stack_ft[0]}** and up. Nothing else.",
@@ -447,8 +452,9 @@ def _ndb_plate(profile: R.ApproachProfile,
         f"**{missed}**, back to the beacon, re-sequence.",
         f"- Timing: about **{_mmss(profile.final_approach_sec)}** from established "
         "inbound to the threshold — flown on a watch (no cone of silence).",
-        f"- Wind **{int(R.WIND_FROM_DEG):03d} at {int(R.WIND_MPH)}** — expect a "
-        f"tailwind float on {rwy}; plant it early.",
+        f"- Wind **{int(R.WIND_FROM_DEG):03d} at {int(R.WIND_MPH)}** briefed — "
+        f"expect a tailwind float on {rwy}; plant it early. The wind you say on "
+        f"the air is the ATIS's.",
         *_formation(flight, size, profile),
         f"- Assignable levels: holding **{', '.join(str(f) for f in profile.stack_ft)}** "
         f"(bottom first), platform **{platform}**, MDA **{mda}**, missed "

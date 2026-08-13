@@ -1958,15 +1958,34 @@ class Controller:
     def _wind_phrase(self) -> str:
         """The wind, on the clearance that ends with a landing or a take-off.
 
-        A DIRECTION IS THREE DIGITS AND A SPEED IS NOT. The direction is spelled
-        digit by digit because that is how a bearing is said; the speed is a
-        number said as a number. Slicing the last nine characters off a spelled
-        bearing gave "wind zero nine zero at zero five" -- five knots dressed as
-        a heading, and nobody says that.
+        ASKED OF THE BROADCAST, exactly as `_runway_in_use` is, and it is the
+        same sentence that asks both:
+
+            f"{self._runway_in_use()}, {self._wind_phrase()}"
+
+        The runway came from the measurement and the wind from
+        `units.WIND_FROM_DEG`, a module constant, so Tower could clear an
+        aircraft to land on the runway the measured wind chose while naming a
+        wind that did not choose it -- the ATIS broadcast and the landing
+        clearance disagreeing about one number at one field, which is this
+        project's own failure shape one field over (#148). It survived because
+        the declared Caucasus wind has never been far enough off to flip a
+        runway, and the sim's weather is a per-mission setting.
+
+        HIS FIELD, not the profile's, for the same reason the runway is: the
+        profile describes the arrival at the other end of the route, and
+        Kobuleti Tower reading Batumi's weather is a real controller quoting a
+        real observation from forty miles away.
+
+        A DIRECTION IS THREE DIGITS AND A SPEED IS NOT -- see `Wind.spoken`,
+        which is where those words are made, so a broadcast and a clearance
+        cannot phrase one measurement two ways.
         """
+        from marshall.atis import store as _atis
         from marshall.core import route as _R
-        return (f"wind {spell_hdg(int(_R.WIND_FROM_DEG))} at "
-                f"{spell_count(_R.WIND_MPH)}.")
+        me = getattr(self, "_me", None)
+        fld = _R.field_named(getattr(me, "field", "") or _R.ARRIVAL_FIELD)
+        return f"{_atis.wind(fld).spoken}."
 
     # -- the ground half ---------------------------------------------------
     #

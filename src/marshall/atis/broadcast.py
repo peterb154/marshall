@@ -31,6 +31,7 @@ sounds like the same recording, which is what a synthetic ATIS sounds like.
 
 from __future__ import annotations
 
+from marshall.atis import observation as _o
 from marshall.core import say
 
 # ICAO, and the whole alphabet rather than the first few: a long session with
@@ -147,14 +148,11 @@ def spoken(obs, letter: str, zulu: str) -> str:
     parts = [f"{obs.field} information {letter}.",
              f"Time {_digits(zulu)} Zulu."]
 
-    # WIND. Calm is a word, not zero at zero -- "wind zero zero zero at zero"
-    # is not something anybody says, and a pilot listening for a runway does
-    # not need three noughts first.
-    if obs.wind_kt < 1:
-        parts.append("Wind calm.")
-    else:
-        parts.append(f"Wind {say.spell_hdg(obs.wind_from_deg)} at "
-                     f"{say.spell_count(obs.wind_kt)}.")
+    # WIND. Said by `Wind.spoken` rather than here, because a controller reads
+    # this same measurement out with a landing clearance and the two must be
+    # one sentence written once -- calm is a word and not zero at zero, in both
+    # of them, forever (#148).
+    parts.append(f"{_o.Wind.measured(obs).spoken.capitalize()}.")
 
     parts.append(f"Visibility {_vis(obs.visibility_m)}.")
 

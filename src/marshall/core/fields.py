@@ -17,7 +17,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from marshall.core.airspace import msa_for, mva_for
-from marshall.core.units import WIND_FROM_DEG
 
 @dataclass
 class Field_:
@@ -121,9 +120,16 @@ class Field_:
 
         Ties go to the published end, so a dead calm is stable rather than
         flipping on rounding.
+
+        NO WIND GIVEN MEANS THE MAP'S DECLARED ONE, which is a fallback and not
+        an observation -- `atis/` measures the sim and is who should be asking
+        this, with what it measured. It used to be `units.WIND_FROM_DEG`, a
+        constant for the Caucasus, so a Nevada field with nobody watching the
+        weather picked its end in a Georgian easterly (#148).
         """
         if wind_from_deg is None:
-            wind_from_deg = WIND_FROM_DEG
+            from marshall.core import theatre as _th
+            wind_from_deg = _th.declared_wind()[0]
         into = self.runway
         best_off = abs((wind_from_deg - into + 180) % 360 - 180)
         recip = (self.runway + 180) % 360

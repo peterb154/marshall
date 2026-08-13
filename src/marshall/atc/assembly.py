@@ -479,13 +479,25 @@ def compose_message(bridge, scope, known, transcript, profile, me, fix, nxt,
         # you. Telling him to change radios here is the one thing that
         # cannot be recovered, because the controller reading his ranges is
         # the one he just left.
+        # THE WIND IS NOT QUOTED HERE, and that is deliberate. It used to read
+        # `wind {R.WIND_FROM_DEG} at {R.WIND_MPH}` -- a declared constant, in
+        # an example, in a prompt -- and this file already knows what that
+        # does: "an example in a prompt is data to a model; it may not contain
+        # a number that could be mistaken for this field's". The frequency
+        # block above was written after a model lifted an illustrative Tower
+        # frequency verbatim. A wind is the same, and worse here, because the
+        # measured one is in the directive he has already been handed and the
+        # ATIS is broadcasting it (#148). NOTHING IS FETCHED IN THIS FILE, so
+        # the live number could not be put here even if it should be.
         parts.append(
             f"TOWER RELAY: he is inside the final and stays with you to the "
             f"missed approach point — do NOT hand him to Tower. You have "
             f"his landing clearance from Tower; pass it on once, in your "
-            f"own transmission, with the wind: \"cleared to land runway "
-            f"{profile.runway}, wind {controller.spell_hdg(int(R.WIND_FROM_DEG))} "
-            f"at {int(R.WIND_MPH)}\". Say it once and go back to the talk-down.")
+            f"own transmission, with the wind AS THE DIRECTIVE GIVES IT — "
+            f"\"cleared to land runway {profile.runway}\", then the wind, in "
+            f"the words you were handed. Do not recall a wind or work one out; "
+            f"the one that matters was measured at the field and is the same "
+            f"one on the ATIS. Say it once and go back to the talk-down.")
     if known:
         # WHO THIS IS, settled. The model has the radar picture and the
         # transcript and was inferring the caller from both, which is how a
