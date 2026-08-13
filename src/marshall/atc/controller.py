@@ -1183,12 +1183,45 @@ class Controller:
         flight, and the flight entry has just been replaced by its members. Left
         to the lookup it would come out on the enroute channel -- which is
         precisely the channel the flight has already been told to leave.
+
+        THE CHANNEL IS HIS, and it was the radio's. On a beacon letdown a
+        phase's controller lives on the beacon flown in that phase -- the ARA-8
+        homes whatever the set is tuned to -- so which frequency an aeroplane
+        can be reached on is decided by the procedure HE is flying. Reading the
+        bridge's arrival here transmits to the second aeroplane on the first
+        one's channel, and a transmission on the wrong frequency is not a
+        mis-phrasing, it is silence.
         """
         ac = ref if ref is not None else self.aircraft.get(to)
         enroute = ac is None or ac.phase in (Phase.UNKNOWN, Phase.ENROUTE)
         banished = ac is not None and ac.phase is Phase.BANISHED
-        name, freq = self.profile.station(enroute=enroute, banished=banished)
+        name, freq = self._channel(ac, enroute=enroute, banished=banished)
         self.out.append(Tx(to, text, self.t, freq, name, decision=decided))
+
+    def _channel(self, ac, enroute: bool = False,
+                 banished: bool = False) -> tuple[str, float]:
+        """(controller, frequency) for the phase this aeroplane is in.
+
+        WITH NO PROCEDURE AT ALL the answer is the map's ladder, and that is
+        not a fallback dressed up -- it is the same question asked of the only
+        authority that can answer it. A comms ladder belongs to the THEATRE:
+        who works Tower at Batumi does not change because somebody was cleared
+        for an ILS, and you do not need an arrival to be told. `ladder_station`
+        is the branch `ApproachProfile.station` takes for every procedure that
+        does not put its controllers on the beacons, reached directly.
+
+        Only the #152 arrangement genuinely needs a procedure here, and it
+        needs it for a real reason rather than a historical one: there the
+        station IS the fix being homed, so with no procedure there is no fix,
+        no sector and no frequency. A map with no seats at all and no arrival
+        gets ('', 0.0) -- nothing invented, and `Tx` has always carried a
+        frequency of zero for "not decided".
+        """
+        pro = self._pro(ac)
+        if pro is not None:
+            return pro.station(enroute=enroute, banished=banished)
+        from marshall.core.approach import ladder_station
+        return ladder_station(enroute=enroute, banished=banished) or ("", 0.0)
 
     def _resolve(self, cs: str) -> str:
         """Which entity owns this callsign.
@@ -1558,14 +1591,20 @@ class Controller:
         #
         # Falls back to the enroute station when nobody has told us, which is
         # every unit test and the dry runs -- see `_owns` for the same rule.
+        #
+        # AND THE FALLBACK IS HIS CHANNEL, not the radio's. With nobody named,
+        # the best guess at who is speaking is the man on the frequency this
+        # aeroplane is listening to, and on a beacon letdown that is decided by
+        # the procedure HE is flying. Same for the Tower he is handed to at the
+        # arrival fix, which is a fact about his arrival and about no other.
         me = getattr(self, "_me", None)
+        pro = self._pro(ac)
         if me is not None and getattr(me, "name", ""):
             here, here_freq = me.name, me.freq_mhz
         else:
-            here, here_freq = self.profile.station(enroute=True)
-        tower, tower_freq = self.profile.station()
-        pro = self._pro(ac)
-        fix = pro.arrival_fix
+            here, here_freq = self._channel(ac, enroute=True)
+        tower, tower_freq = self._channel(ac)
+        fix = getattr(pro, "arrival_fix", None)
         # A CAPABILITY IS DECLARED, NEVER INFERRED FROM THE SHAPE OF THE DATA,
         # and this branch broke that rule twice in one condition. [#53, #145]
         #
@@ -1993,7 +2032,7 @@ class Controller:
         # had parked.
         twr = R.station_for(
             "tower", field=getattr(getattr(self, "_me", None), "field", ""),
-            procedure=self.profile)
+            procedure=self._pro(ac))
         if self.working and twr is not None and self.working != "tower":
             self.say(ac.callsign,
                      f"{self._addr(ac)}, roger, field in sight, contact "
@@ -2010,10 +2049,10 @@ class Controller:
         # so all three name one runway; see `_runway_in_use`.
         self.say(ac.callsign,
                  f"{self._addr(ac)}, roger, cleared to land runway "
-                 f"{self._runway_in_use()}, {self._wind_phrase()}")
+                 f"{self._runway_in_use(ac)}, {self._wind_phrase()}")
         self._try_clear()
 
-    def _ground_at(self, fld: str):
+    def _ground_at(self, ac, fld: str):
         """The Ground seat at this aerodrome, or None if there is not one.
 
         Two ways the answer is nobody, and each is a controller declining to say
@@ -2026,10 +2065,12 @@ class Controller:
                             dials before anybody notices
             no ground seat  a field where Tower works the taxiways has nobody to
                             hand to, and the old sentence is still right
+
+        A third: `procedure` is the #152 switch and it is HIS -- see `_pro`.
         """
         if not fld:
             return None
-        return R.station_for("ground", field=fld, procedure=self.profile)
+        return R.station_for("ground", field=fld, procedure=self._pro(ac))
 
     def _must_be_told(self, ac, me, gnd) -> bool:
         """Is naming this station a FREQUENCY CHANGE, or is he already there?
@@ -2127,9 +2168,9 @@ class Controller:
         # every dry run and most of the unit suite is in.
         speaker = (me if me is not None
                    else R.station_for("tower", field=fld,
-                                      procedure=self.profile))
+                                      procedure=self._pro(ac)))
         who = f"{speaker.name}, " if speaker else ""
-        gnd = self._ground_at(fld)
+        gnd = self._ground_at(ac, fld)
         # ASKED BEFORE THE RUNG MOVES, because one of the answers is "he is
         # already on it" -- this transmission is reachable twice.
         tell = self._must_be_told(ac, me, gnd)
@@ -2358,7 +2399,7 @@ class Controller:
             gnd = R.station_for(
                 "ground", field=getattr(getattr(self, "_me", None),
                                         "field", ""),
-                procedure=self.profile)
+                procedure=self._pro(ac))
             if gnd is not None:
                 self.say(ac.callsign,
                          f"{self._addr(ac)}, parking is Ground's, contact "
@@ -2422,7 +2463,7 @@ class Controller:
             who = R.station_for(
                 "clearance", field=getattr(getattr(self, "_me", None),
                                            "field", ""),
-                procedure=self.profile)
+                procedure=self._pro(ac))
             where = (f", contact {who.name} {spell_freq(who.freq_mhz)}"
                      if who is not None else "")
             self.say(ac.callsign,
@@ -2433,7 +2474,7 @@ class Controller:
                          station=getattr(who, "name", ""),
                          frequency_mhz=getattr(who, "freq_mhz", None)))
             return
-        rwy = self._runway_in_use()
+        rwy = self._runway_in_use(ac)
         self.say(ac.callsign,
                  f"{self._addr(ac)}, taxi to runway {rwy}, "
                  f"hold short of runway {rwy}.",
@@ -2459,7 +2500,7 @@ class Controller:
         """
         me = getattr(self, "_me", None)
         who = R.station_for(role, field=getattr(me, "field", ""),
-                            procedure=self.profile)
+                            procedure=self._pro(ac))
         where = (f", contact {who.name} {spell_freq(who.freq_mhz)}"
                  if who is not None else "")
         self.say(ac.callsign,
@@ -2488,19 +2529,25 @@ class Controller:
             self._not_mine(ac, "tower", "Take-off")
             return
         ac.sortie_phase = "departure"
-        rwy = self._runway_in_use()
+        rwy = self._runway_in_use(ac)
         self.say(ac.callsign,
                  f"{self._addr(ac)}, runway {rwy}, cleared for take-off, "
                  f"{self._wind_phrase()}",
                  decided=D.Decision(kind="cleared_takeoff", to=ac.callsign,
                                     runway=rwy))
 
-    def _runway_in_use(self) -> str:
+    def _runway_in_use(self, ac=None) -> str:
         """Two digits, ASKED OF THE BROADCAST -- see `atis/store.py`.
 
         Read here rather than remembered so a ground instruction and a take-off
         clearance cannot name different runways, and asked rather than computed
         so neither of them can disagree with the recording.
+
+        THE SPEAKING CONTROLLER'S FIELD decides this, which is why `ac` is
+        optional here and required on the phraseology helpers: the runway in
+        use at Kobuleti is the same runway for every aeroplane on the ramp, and
+        it is not a property of anybody's arrival. The aeroplane is wanted only
+        for the last resort below.
         """
         from marshall.core import route as _R
         # HIS field, not the profile's. A ground instruction at Kobuleti must
@@ -2509,7 +2556,14 @@ class Controller:
         me = getattr(self, "_me", None)
         fld = _R.field_named(getattr(me, "field", "") or _R.ARRIVAL_FIELD)
         if fld is None:
-            return spell_rwy(self.profile.runway) if self.profile.runway else "in use"
+            # NO FIELD AND NO BROADCAST -- the map does not publish the
+            # aerodrome this seat claims to be at. The last thing left is the
+            # runway HIS approach lands on, which is a real answer for the man
+            # being spoken to and was the RADIO's answer for everybody. With no
+            # arrival either it is "in use", which commits to nothing and is
+            # what a controller says when the runway is not his to name.
+            rwy = getattr(self._pro(ac), "runway", "")
+            return spell_rwy(rwy) if rwy else "in use"
         # ASKED, NOT COMPUTED. `runway_in_use()` is a pure function of the wind,
         # so calling it here would be a SECOND author for a decision that has
         # one -- and two authors agree only while they read the same wind at the
@@ -2805,7 +2859,11 @@ class Controller:
         if overdue:
             ac = max(overdue, key=lambda a: self.t - a.last_report_t)
             ac.last_report_t = self.t
-            self.say(ac.callsign, f"{self._addr(ac)}, {self.profile.controller}, "
+            # THE MAN WORKING HIM introduces himself, and this named the
+            # radio's. Two aeroplanes go quiet in two stacks and both were
+            # prompted by the same controller, one of whom is not working that
+            # field. The letdown timeout eight lines up already asked `_pro`.
+            self.say(ac.callsign, f"{self._addr(ac)}, {self._pro(ac).controller}, "
                                   f"report position.")
 
 

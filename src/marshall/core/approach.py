@@ -65,6 +65,52 @@ class AtcCapability:
     vectors: bool | None = None
 
 
+def ladder_station(enroute: bool = False,
+                   banished: bool = False) -> tuple[str, float] | None:
+    """Who works this phase of an arrival, off the THEATRE's comms ladder.
+
+    Extracted out of `ApproachProfile.station`, unchanged, because it never
+    read the procedure it was a method on -- it asks the map for a role at the
+    arrival field and nothing else. That made it unreachable to a controller
+    who has no procedure, which is the state a bridge is in before anybody has
+    been cleared for anything (#162). A ladder is a property of the map; you do
+    not need an arrival to be told who works Tower.
+
+    `None` means the map staffs no seats at all, and the caller falls through
+    to the beacons -- the #152 arrangement, where the man you talk to IS the
+    frequency you home.
+
+    By ROLE, not by position in the list. Picking the last one was fine while
+    the list ended at Tower, and quietly wrong the moment a mission commander
+    was appended -- it would have sent a pilot to land on the overlord's
+    frequency. A list order is not a fact about who works an arrival.
+
+    AT THE ARRIVAL FIELD, and the qualifier is not decoration. This answers
+    "who works this phase of the ARRIVAL", and the arrival happens at one
+    specific aerodrome. Unqualified it returns whichever Tower is listed first
+    -- which became Kobuleti's the moment the departure field got one, so a
+    Batumi landing clearance would have gone out on Kobuleti's frequency.
+    `Controller.say` uses this to choose the channel it transmits on, so the
+    aeroplane on short final would simply not have heard it. Same fault
+    `station_for` had, in a function that takes no role and so did not look
+    like a lookup.
+    """
+    # THE SEATS ARE THE THEATRE'S. Imported here rather than at the top
+    # because `theatre` reads `route`, which re-exports this module.
+    from marshall.core import theatre as _th
+    seats = _th.stations_now()
+    if not seats:
+        return None
+    fld = ARRIVAL_FIELD
+    if enroute or banished:
+        s = _th.station_for("center", field=fld) or seats[0]
+    else:
+        s = (_th.station_for("tower", field=fld)
+             or _th.station_for("approach", field=fld)
+             or seats[0])
+    return s.name, s.freq_mhz
+
+
 def may_vector(profile) -> bool:
     """May this controller give headings at all?
 
@@ -681,36 +727,10 @@ class ApproachProfile:
         the two this procedure is, is `theatre_stations` -- it used to be
         whether the profile's own station list happened to be empty (#152).
         """
-        # THE SEATS ARE THE THEATRE'S. Imported here rather than at the top
-        # because `theatre` reads `route`, which re-exports this module.
-        from marshall.core import theatre as _th
-        seats = _th.stations_now() if self.theatre_stations else ()
-        if seats:
-            # By ROLE, not by position in the list. Picking the last one was
-            # fine while the list ended at Tower, and quietly wrong the moment a
-            # mission commander was appended -- it would have sent a pilot to
-            # land on the overlord's frequency. A list order is not a fact about
-            # who works an arrival.
-            # AT THE ARRIVAL FIELD, and the qualifier is not decoration.
-            #
-            # This method answers "who works this phase of the ARRIVAL", and
-            # the arrival happens at one specific aerodrome. Unqualified, it
-            # returns whichever Tower is listed first -- which became Kobuleti's
-            # the moment the departure field got one, so a Batumi landing
-            # clearance would have gone out on Kobuleti's frequency. `say` uses
-            # this to choose the channel it transmits on, so the aeroplane on
-            # short final would simply not have heard it.
-            #
-            # Same fault as `station_for` had, in a method that was missed
-            # because it takes no role and so did not look like a lookup.
-            fld = ARRIVAL_FIELD
-            if enroute or banished:
-                s = _th.station_for("center", field=fld) or seats[0]
-            else:
-                s = (_th.station_for("tower", field=fld)
-                     or _th.station_for("approach", field=fld)
-                     or seats[0])
-            return s.name, s.freq_mhz
+        if self.theatre_stations:
+            got = ladder_station(enroute=enroute, banished=banished)
+            if got is not None:
+                return got
         if banished:
             fix = self.outer_hold
         elif enroute and self.arrival_fix is not None:
