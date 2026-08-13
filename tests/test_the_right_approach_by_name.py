@@ -184,3 +184,39 @@ class TestTwoILSApproachesAtOneField(unittest.TestCase):
             # assertion above. What becomes ambiguous is the key that does not
             # say which runway.
             self.assertIsNone(A._approach_named("batumi-ils"))
+
+
+class TestTheSweepAsksTheBridge(unittest.TestCase):
+    """One resolver, and `tools/asr_sweep.py` used to hold a second.
+
+    Both of its helpers said "same resolution the bridge uses, so the sweep and
+    the controller cannot disagree" -- while REIMPLEMENTING it, which is the
+    only way two things ever come to disagree. They drifted the day keys gained
+    a runway: the copy built `<field>-<kind>`, the theatre published
+    `<field>-<kind>-<runway>`, nothing matched, and the sweep printed "no
+    approach called ..." and returned 2 -- which `tools/check.py` renders as
+    SKIP, in the same list as the checks that need a simulator.
+
+    So the one instrument that measures the GEOMETRY of an approach stood down
+    silently, for the second time in two days, by the same mechanism the file's
+    own comment describes happening the first time.
+
+    This asserts the sweep and the bridge answer identically, which is what
+    those docstrings were always claiming. [#165]
+    """
+
+    def test_the_sweep_names_what_the_bridge_resolves(self):
+        import importlib.util
+        from pathlib import Path
+        root = Path(__file__).resolve().parent.parent
+        spec = importlib.util.spec_from_file_location(
+            "asr_sweep", root / "tools" / "asr_sweep.py")
+        sweep = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(sweep)
+        for key in sweep._known_profiles():
+            with self.subTest(key=key):
+                self.assertIsNotNone(A._approach_named(key),
+                                     "the sweep names a key the bridge cannot "
+                                     "resolve -- they have drifted again")
+                self.assertIsNotNone(sweep._profile_named(key))
+                self.assertEqual(A._key_of(sweep._profile_named(key)), key)

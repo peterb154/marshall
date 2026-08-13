@@ -368,27 +368,28 @@ def _field_of(p) -> str:
     return (getattr(getattr(p, "aerodrome", None), "name", "") or "").lower()
 
 
+# ONE RESOLVER, AND THIS FILE USED TO HOLD A SECOND. Both functions below said
+# "same resolution the bridge uses, so the sweep and the controller cannot
+# disagree" -- while reimplementing it, which is the only way two things ever
+# do disagree. They drifted the day approach keys gained a runway (#165): the
+# copy built `<field>-<kind>`, the theatre published `<field>-<kind>-<runway>`,
+# nothing matched, and the sweep went dark AGAIN -- for the second time in two
+# days, by the same mechanism the comment above this describes.
+#
+# The bridge's resolver is the one the controller actually uses, so asking it is
+# what the docstring was always claiming. A copy that agrees today is a copy
+# that will disagree on the day somebody changes one of them.
 def _known_profiles() -> list[str]:
     """Every approach the loaded theatre publishes, by the name a plan uses."""
+    from marshall.atc.agent_atc import _key_of
     from marshall.core import theatre as _t
-    out = []
-    for p in getattr(_t.current(), "approaches", ()) or ():
-        field, kind = _field_of(p), (getattr(p, "kind", "") or "").lower()
-        if field and kind:
-            out.append(f"{field}-{kind}")
-    return out
+    return [_key_of(p) for p in getattr(_t.current(), "approaches", ()) or ()]
 
 
 def _profile_named(key: str):
-    """The theatre's procedure with this key. Same resolution the bridge uses,
-    so the sweep and the controller cannot disagree about what `nellis-ils` is."""
-    from marshall.core import theatre as _t
-    key = (key or "").strip().lower()
-    for p in getattr(_t.current(), "approaches", ()) or ():
-        field, kind = _field_of(p), (getattr(p, "kind", "") or "").lower()
-        if key in (f"{field}-{kind}", field, kind):
-            return p
-    return None
+    """The theatre's procedure with this key -- the bridge's own resolution."""
+    from marshall.atc.agent_atc import _approach_named
+    return _approach_named((key or "").strip().lower())
 
 
 def main() -> int:
