@@ -7507,8 +7507,8 @@ So Nevada's fixes were never blocked, and the block was the only reason #137
 listed Nevada as unconverted. Both are cleared: `9275c81` publishes them with
 `nevada-Beacons.lua` cited as the source.
 
-**Status: CLOSED 13 August** — resolved from the sim's own vendored data, not
-from a flight. The remaining Nevada caution is in #163: the NELLIS fix wears the
+**Status:** CLOSED 13 August — commit `dfbdffa`. Resolved from the sim's own
+vendored data, not from a flight. The remaining Nevada caution is in #163: the NELLIS fix wears the
 LSV TACAN's ident while sitting at the aerodrome reference point, which is the
 same conflation in the other direction and is that issue's to fix.
 
