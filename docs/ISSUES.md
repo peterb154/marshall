@@ -8180,7 +8180,13 @@ Tests: beside `tests/test_two_fields.py`.
 Code: `src/marshall/atc/agent_atc.py`, `src/marshall/atc/handoff.py`,
 `src/marshall/atc/controller.py`.
 
-Status: OPEN — one of six fixed, five enumerated.
+**Status:** OPEN — one of six fixed, and the five enumerated are still true.
+`intents.dispatch` now asks `ctl._pro(_ac)` before `reachable`/`why_not`
+(`9cc7c8a`, guarded by `TheGateAsksHISPROCEDURE` in `tests/test_reachable.py`),
+but `agent_atc.py` still calls `_asr.guide(fix, ctl.profile, …)`, and
+`asr_context`, `leaving_my_airspace`, `settle`'s `_phases.guide` and
+`handoff.py` are all still handed the bridge's loaded profile. No test flies two
+aircraft on two procedures through one bridge.
 
 ---
 
@@ -8230,7 +8236,11 @@ Tests: `tests/test_phases_derive.py`, which characterises the current behaviour
 in `LandingOutOfAnArrivalIsRefusedByTheTable`.
 Code: `src/marshall/atc/phases.py`.
 
-Status: OPEN — characterised by a test, not fixed.
+**Status:** OPEN — characterised by a test, not fixed. `phases.py` still names
+`landed` in `follows` for `approach` alone, and
+`LandingOutOfAnArrivalIsRefusedByTheTable` in `tests/test_phases_derive.py`
+asserts the refusal from arrival, departure, enroute, holding and missed — a
+test that RECORDS the defect, which is not the same as one that guards a fix.
 
 ---
 
@@ -8280,7 +8290,14 @@ Tests: beside `tests/test_two_fields.py`.
 Code: `src/marshall/core/approach.py`, `src/marshall/atc/agent_atc.py`,
 `config/theatres/caucasus.toml`.
 
-Status: OPEN — blocks #140.
+**Status:** FIXED 13 August — commits `d5e243b` and `1589364`, and the line that
+stood here ("OPEN — blocks #140") was stale. `ApproachProfile` has no `stations`
+attribute at all any more; the mode switch is the explicit
+`theatre_stations: bool = True` in `core/approach.py`, read in one place in
+`agent_atc.py`, and no branch decides reachability from a list being empty.
+`test_the_beacon_letdown_still_reaches_nobody_on_the_ladder` asserts both halves
+— nobody on the ladder through that procedure, Batumi Tower on 132.0 off the
+fix. #140 is now the one-line data change this was blocking it from being.
 
 ---
 
@@ -8333,7 +8350,13 @@ reckoning only… he cannot tell you where he is."* There is no output meaning
 
 Code: `src/marshall/atc/board.py`, `director/app.py`, `src/marshall/atc/plans.py`.
 
-Status: OPEN — diagnosed, not fixed.
+**Status:** OPEN — diagnosed, not fixed, and re-checked 13 August: all three
+lines are still there verbatim. `atc/board.py`'s `_merge` still tests
+`keep.get(k) in (None, "", 0)`, so a deliberate `False` or `0` is still
+overwritten; `director/app.py` still returns `got = []` two lines under its own
+comment about a cold cache against an empty sky; `atc/plans.py` still returns
+`"dr"` for an unknown airframe. Nothing tests `on_visual=False` surviving a
+merge.
 
 ---
 
@@ -8380,9 +8403,11 @@ characterised by a test rather than silently fixed.
 Tests: `HavingFlownIsAPhaseAndNotACounter` in `tests/test_phases_derive.py`.
 Code: `src/marshall/atc/phases.py`, `src/marshall/atc/agent_atc.py`.
 
-Status: SHIPPED/UNVERIFIED — the unit suite is clean. A pilot still has to fly a
-recovery and taxi in, which is the behaviour it is about (card rows for #77 and
-#100).
+**Status:** SHIPPED/UNVERIFIED — the unit suite is clean. A pilot still has to
+fly a recovery and taxi in, which is the behaviour it is about (card rows for
+#77 and #100). Re-checked 13 August: `phases.has_flown` is still read by
+`derive`, `agent_atc.py` still does not pass `was_airborne` and says so where it
+used to, and `HavingFlownIsAPhaseAndNotACounter` is green.
 
 ---
 
@@ -8517,9 +8542,12 @@ Code: `src/marshall/kneeboard/diag.py`; the remaining scope is
 `src/marshall/atc/agent_atc.py` (`publish_state`) and
 `src/marshall/atc/controller.py` (`board`).
 
-Status: SHIPPED/UNVERIFIED for 1-6 — flown against the live bridge with
+**Status:** SHIPPED/UNVERIFIED for 1-6 — flown against the live bridge with
 `tools/ghost_flight.py --inbound` and read at 1024x1365. 7 is not built and 8 is
-a pilot's.
+a pilot's. Re-checked 13 August: the six named classes in `tests/test_diag.py`
+are green and the datum row renders its source, but `agent_atc.publish_state`
+still takes only `units, handed, names, plans` — none of criterion 7's five
+facts — and cards P9/P10/P11 are unstruck.
 
 ---
 
@@ -8565,9 +8593,12 @@ this ever appeared to work.
 Code: `src/marshall/atc/agent_atc.py` (`_contact`), `src/marshall/feed/tracks.py`
 (`_CATEGORY`).
 
-Status: OPEN — diagnosed, not fixed. `/diag` names what it is hiding
+**Status:** OPEN — diagnosed, not fixed. `/diag` names what it is hiding
 (*"N more on the scope the bridge does not count as aircraft"*) so the symptom is
-visible until it is.
+visible until it is. Re-checked 13 August: `agent_atc._contact` still publishes
+`"is_aircraft": not u.category` (and blanks `derived` and `state` the same way)
+while `feed/tracks.py` still stamps every aeroplane `"airplane"`, and no test
+anywhere mentions `is_aircraft`.
 
 ## [SEAM-18] A read-back correction names what is missing in PROSE, so nothing checks it was said — #157
 labels: bug
@@ -8618,8 +8649,12 @@ Code: `src/marshall/atc/controller.py` (`clearance_read_back`),
 `src/marshall/atc/decision.py` (`verify`, `Decision`),
 `src/marshall/atc/agent_atc.py` (`_read_back_correct`).
 
-Status: OPEN — a transcript and a repro, and it is one turn away from #134
-reopening in flight.
+**Status:** OPEN — a transcript and a repro, and it is one turn away from #134
+reopening in flight. The only commit citing it (`720311d`) touched
+`docs/TEST_PLAN.md` and nothing else: `controller.py` still emits
+`Decision(kind="say_again", note=what)` with the missing items joined into
+prose that `Decision.facts()` deliberately excludes, so `not_voiced` still
+cannot fire and the 13 August pair has no regression test.
 
 ---
 
@@ -8667,7 +8702,12 @@ Tests: needs one; `tools/bridge.py` has no test today.
 Code: `tools/bridge.py` (`DEFAULT_ARGS`, `_env`, `restart`),
 `src/marshall/core/theatre.py`.
 
-Status: OPEN — reproduced twice today, once by accident and once deliberately.
+**Status:** OPEN — reproduced twice today, once by accident and once
+deliberately, and nothing has been built since. `tools/bridge.py`'s restart is
+still a bare `stop(); return start()`, `DEFAULT_ARGS` still carries `--theatre`
+and nothing else, `MARSHALL_APPROACH` appears nowhere in that file, and there is
+still no test for the launcher — so neither half of the criterion (carry it
+forward, or say what you are changing) exists.
 
 ---
 
@@ -8717,7 +8757,12 @@ procedure.
 Tests: `tests/test_untracked.py` (5 cases).
 Code: `src/marshall/atc/agent_atc.py` (`_INTENT_SAID`, `intent_said`).
 
-Status: FIXED in code, needs a pilot to see the right words on the strip.
+**Status:** SHIPPED/UNVERIFIED — fixed in code (`d81d7b8`), needs a pilot to see
+the right words on the strip. `intent_said` returns his verbatim `wants` before
+it consults the map, `_INTENT_SAID["request_approach"]` reads "an approach"
+rather than naming a procedure nobody asked for, and the five cases in
+`tests/test_untracked.py::TestTheStripSaysWhatHeAskedFor` are green. The word is
+not FIXED because nobody has read the strip in the cockpit.
 Labels: needs-flight-test
 
 ---
@@ -8869,8 +8914,14 @@ Tests: needs one; `tests/test_two_fields.py` is the right home.
 Code: `src/marshall/atc/agent_atc.py` (`field_origin`, ~3634; caller at 153),
 `CENTER_NM`.
 
-Status: OPEN — diagnosed from a live board, deliberately not fixed in the same
-commit as the strip work.
+**Status:** PARTLY — the board now SAYS its datum and the choosing is still
+wrong, which is the half the entry warned about. `3bb2cb7` landed `Datum` and
+the `WHY_*` reasons with 24 green cases in
+`tests/test_a_range_names_its_datum.py`, so a range names what it is measured
+from; but `field_origin` still walks the `ApproachProfile`'s `aerodrome`,
+`arrival_fix`, `outer_hold` and returns `WHY_APPROACH`, which criterion 3 says
+must not exist. `WHY_DESTINATION` is declared and unwired, and no test loads
+`batumi-ils` and `kobuleti-ils` to compare one aeroplane's Center origin.
 Labels: needs-flight-test
 
 ---
@@ -8916,7 +8967,11 @@ argument #100 used one case down for the taxi request.
 Tests: `tests/test_controller.py::TestTheEndOfAnApproachIsAudible` (2 new cases).
 Code: `src/marshall/atc/controller.py` (`report_landed`).
 
-Status: FIXED, needs a pilot to hear the right thing after touchdown.
+**Status:** SHIPPED/UNVERIFIED — fixed and closed in code by `218f551`, which
+carries a real `Closes #161`; needs a pilot to hear the right thing after
+touchdown. `report_landed` delegates to `report_down` when the man is already
+`Phase.LANDED`, and both named cases in
+`tests/test_controller.py::TestTheEndOfAnApproachIsAudible` exist and pass.
 Labels: needs-flight-test
 
 ## [ARCH-29] There is no such thing as the theatre's approach — #162
@@ -9007,7 +9062,14 @@ Code: `src/marshall/core/theatre.py`, `src/marshall/atc/agent_atc.py`
 `src/marshall/atc/controller.py` (26 `self.profile` reads),
 `config/theatres/*.toml`.
 
-Status: OPEN — the decision is made; this supersedes the "default" half of #2.
+**Status:** PARTLY — the decision is made and this still supersedes the
+"default" half of #2. Step 2 has largely landed: `controller.py` now asks
+`_pro(ac)` at thirty-two sites and one raw `self.profile` read survives, as
+`_pro`'s own fallback. Step 1 has not: `config/theatres/caucasus.toml` still
+declares `default_approach`, `core/theatre.py` still reads `MARSHALL_APPROACH`
+and `me.default_approach`, and `agent_atc.py` still does
+`_agreed.setdefault("procedure", APPROACH_NAME)` — a pilot's agreed procedure
+defaulted from the module global the criterion says must not exist.
 Labels: needs-flight-test
 
 ---
@@ -9164,8 +9226,14 @@ Tests: `tests/test_handoff_rules.py::TestAnAirborneAeroplaneIsNeverGrounds`.
 Code: `src/marshall/atc/handoff.py` (`_airborne`, `_GROUND_SEATS`, two rule
 rows, the phase-ownership guard in `due`).
 
-Status: FIXED. Retrieval only — a touch-and-go REQUEST to Tower is a separate
-thing the owner has put at very low priority, and is not built.
+**Status:** SHIPPED/UNVERIFIED — retrieval only, and a touch-and-go REQUEST to
+Tower is a separate thing the owner has put at very low priority and is not
+built. `2cb8e6c` carries a real `Closes #164` and all four enforcement points
+survive: `_airborne`, `_GROUND_SEATS`, the two `airborne` rule rows and the
+phase-ownership guard in `due`, with all seven cases in
+`tests/test_handoff_rules.py::TestAnAirborneAeroplaneIsNeverGrounds` green. Card
+row F3b is unstruck, and its question — two frequency changes in a quarter of a
+minute — is an ear's.
 Labels: needs-flight-test
 
 ---
@@ -9240,9 +9308,18 @@ Code: `config/theatres/*.toml`, `src/marshall/atc/agent_atc.py`
 `flights.cleared_approach` / `assigned_plans.approach` values, which carry the
 old keys and must migrate.
 
-Status: OPEN — the runway key lands as soon as `agent_atc.py` is free (an agent
-holds it for #162 step 2). The navaid rename is separated deliberately because
-it changes what a controller says.
+**Status:** PARTLY — the runway half is in and deployed, and the line that stood
+here (waiting for `agent_atc.py` to be free) is stale. `_key_of` builds and
+resolves `<field>-<kind>-<runway>` and refuses an ambiguous request by naming
+the candidates (`55ee8b1`), the theatre files and the stored approaches were
+migrated with it (`c4f530c`, migration 033, live keys now `batumi-ils-13` and
+the rest), the sweep was pointed back at the real resolver rather than its own
+copy (`51e3d0e`), and `tests/test_the_right_approach_by_name.py` publishes two
+ILS approaches to opposite ends of one runway and tells them apart. The navaid
+half is untouched: `config/theatres/caucasus.toml` still has the 1944 letdown
+naming `navaid = "BATUMI"`, an aerodrome standing where a transmitter's ident
+belongs — and that half changes what a controller SAYS, so it is flown before it
+is closed.
 Labels: needs-flight-test
 
 ---
@@ -9368,7 +9445,18 @@ line migration 032 carries for it:
 Left for a moment when somebody is watching, because until it runs the fossils
 are a harmless second copy and after it runs the push is the only source.
 
-Status: **FIXED** and deployed.
+**Status:** SHIPPED/UNVERIFIED — both halves are in AND deployed, which is more
+than this file usually gets to say. `push_stations` runs at bridge start beside
+`push_sectors` and `frequencies` reads the new table rather than the approach's
+JSON (`032bd02`, `1a49e53`); migration 032 is applied on the running director
+and the live `stations` table holds nine rows — Batumi Approach 124.425, Ground
+121.9, Tower 118.6, Georgia Center 139 with no field, Kobuleti Clearance 125.1,
+Departure 123.3, Ground 121.8, Tower 133, Sentry 131. The callback resolves the
+promising seat by name for both its frequency and its datum (`7312940`, whose
+`Closes #166` covered only that hook half). It is not FIXED because nobody has
+heard Kobuleti Ground's callback arrive on 121.800. One correction to the text
+above: only three fossil `stations` blobs survive in `approaches.data`, not
+four — `batumi-ils-13`'s has already been overwritten by a push.
 Labels: needs-flight-test
 
 ---
@@ -9454,8 +9542,15 @@ WET were about: a SENTENCE must not create a fact.
 Each link was reverted independently and the chain test fails for each, only
 that one. Whole suite green at 2,115.
 
-Status: FIXED — needs a pilot to see a label and a destination on the strip.
-This is the defect that started the 13 August session.
+**Status:** SHIPPED/UNVERIFIED — all five links are in (`219e620`, a real
+`Closes #167`) and `tests/test_a_plan_reaches_the_strip.py` walks the whole
+chain in four hops, failing if any one of them drops the label. Needs a pilot to
+see a label and a destination on the strip: criterion 1 asks for a rehearsal by
+its own wording and refuses a unit test as proof. This is the defect that
+started the 13 August session. One residue worth knowing: `flight_plans.callsign`
+is still declared and still written by `upsert_flight_plan` and
+`PUT /flightplans/{name}`, so a literal `grep callsign` over the filing path
+still finds a writer — nothing reads it, so the strip cannot regress from it.
 Labels: needs-flight-test
 
 ---
@@ -9531,8 +9626,15 @@ trigger. An overlord has to task him and there is no seat doing that. A test
 asserts they remain underivable, so building the trigger will fail it and force
 the claim to be updated.
 
-Status: FIXED — needs a pilot to see the board say `enroute` while Center works
-him.
+**Status:** PARTLY — the title complaint is fixed and two of the three criteria
+are not. `phases._wanted` returns `enroute` when Center works a departing
+aeroplane, deliberately not from `rtb` (`33c616a`, a real `Closes #168`), and
+`tests/test_every_phase_can_be_entered.py` holds the general guard. But
+`tasked` and `on_station` still have no trigger — a test in that same file
+asserts they remain underivable — and nothing yet asserts that the controller
+`handoff.due` gives him is the controller `phases.owner_of` names, which is the
+criterion written to stop this recurring. A pilot still has to see the board say
+`enroute` while Center works him.
 
 ## [KB-6] The board's datum is the fallback whenever nobody has just spoken — #169
 
@@ -9556,8 +9658,12 @@ the failure is invisible while the two answers agree.
 
 Code: `src/marshall/atc/agent_atc.py` (the hook-tick publishes).
 
-Status: OPEN — belongs to #155's remaining scope; file it separately so it
-cannot be closed by the parts of #155 that are done.
+**Status:** OPEN — belongs to #155's remaining scope; filed separately so it
+cannot be closed by the parts of #155 that are done. Only the hook half was
+addressed, and `7312940`'s own message says so; at HEAD the metronome tick still
+fetches radar with no `field=` and publishes that fieldless scope, so a board
+refreshed with no transmission in it still renders the fallback datum and
+nothing asserts otherwise.
 
 ---
 
