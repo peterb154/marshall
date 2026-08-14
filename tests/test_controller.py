@@ -603,23 +603,34 @@ class AStationIsTheTheatresAndNotTheApproachs(unittest.TestCase):
                 self.assertIs(R.station_for(role, field=fld),
                               R.station_for(role, field=fld, theatre="caucasus"))
 
-    def test_the_beacon_letdown_still_reaches_nobody_on_the_ladder(self):
-        """PRESERVED, NOT ENDORSED -- the same words the theatre file uses.
+    def test_the_beacon_letdown_reaches_nobody_on_the_MODERN_ladder(self):
+        """`theatre_stations = false` is #152's mode switch, and this class
+        used to read it as "has no controllers at all".
 
-        `BATUMI_APPROACH` carries `theatre_stations = false`, which is #152's
-        mode switch: its controllers live on the BEACONS, because an ARA-8
-        homes whatever the set is tuned to. Under the old shape that was spelt
-        "its own station list is empty", so every role lookup through it
-        answered None. Moving the table to the map would have handed the 1944
-        letdown eight modern seats if the bit had not moved with it.
+        The docstring here already said what it should mean -- *its controllers
+        live on the BEACONS, because an ARA-8 homes whatever the set is tuned
+        to* -- and the assertions said the opposite: every role lookup answered
+        None, so a bridge started on the 1944 flavour had a man who could not
+        name a single frequency. That is #140, and it was invisible because
+        nobody had flown it.
+
+        So the switch means NOT THE MODERN LADDER, which is what is asserted
+        here, and `beacon_seats` supplies what he does have. Both halves matter:
+        handing him the modern nine would tell a Mustang to contact Batumi
+        Tower on 118.6 while his ARA-8 is homing 132.0.
         """
         self.assertFalse(profile().theatre_stations)
         self.assertTrue(vectored().theatre_stations)
-        self.assertIsNone(R.station_for("tower", field="Batumi",
-                                        procedure=profile()))
+        # THE MODERN TOWER'S FREQUENCY IS NOT ONE OF HIS. This is the guard
+        # that was always the point: a frequency his aeroplane cannot tune must
+        # not resolve to a controller through his procedure.
         self.assertIsNone(R.station_on(R.TOWER.freq_mhz,
                                        procedure=profile()))
-        # ...and his controller still comes off the fix he is homing.
+        # ...and the tower he DOES reach is the beacon he is homing.
+        got = R.station_for("tower", field="Batumi", procedure=profile())
+        self.assertIsNotNone(got, "the 1944 controller can name no frequency")
+        self.assertEqual(got.freq_mhz, 132.0)
+        self.assertNotEqual(got.freq_mhz, R.TOWER.freq_mhz)
         self.assertEqual(profile().station(), ("Batumi Tower", 132.0))
 
 

@@ -525,8 +525,60 @@ def seats_now(procedure=None, theatre: str = "") -> tuple:
     `procedure=None` means the ladder, which is every other caller.
     """
     if procedure is not None and not getattr(procedure, "theatre_stations", True):
-        return ()
+        return beacon_seats(procedure)
     return stations_now(theatre)
+
+
+def beacon_seats(procedure) -> tuple:
+    """The controllers of a procedure that is not on the ladder: its own beacons.
+
+        "They were the same thing while the approach was a beacon letdown --
+         the controller had to sit on the beacon you were homing, because the
+         ARA-8 tunes and homes on one frequency at a time."
+
+    `Station`'s own docstring, and the reason this can be DERIVED rather than
+    declared. Each fix a period procedure uses already carries the seat that
+    owns its frequency -- INITIAL is Batumi Approach on 128.0, BATUMI is Batumi
+    Tower on 132.0, KOBULETI is Kobuleti Departure on 124.0 -- because on that
+    procedure the frequency IS the navaid.
+
+    WHAT THIS REPLACES IS AN EMPTY TUPLE. `theatre_stations = false` meant "not
+    on the modern ladder" and was read as "has no controllers", so a bridge
+    started on the 1944 flavour had a man who could not name a single
+    frequency: no handoff could be spoken, no departure frequency issued, and
+    every refusal lost the half that tells a pilot what to do. Nobody had flown
+    it, which is why nobody had noticed. [#140]
+
+    AND IT IS NOT THE MODERN LADDER EITHER, which is the other wrong answer and
+    the tempting one. Handing this profile `stations_now()` would tell a
+    Mustang to contact Batumi Tower on 118.6 while his ARA-8 is homing 132.0 --
+    a real controller on a frequency the aeroplane physically cannot tune. The
+    period flavour lives in `AtcCapability` (no DME, procedural separation, no
+    vectors); the SEATS are a fact about which radios exist.
+
+    A role and a field come out of the name, last word first, exactly as
+    `clearance.field_of` reads one: "Batumi Approach" is the approach seat at
+    Batumi. That is how every station in this system is named.
+    """
+    from marshall.core.stations import Station
+    out: dict[str, Station] = {}
+    # The order is the ladder's: where he is worked first, then the field.
+    for attr in ("arrival_fix", "outer_hold", "navaid", "iaf", "aerodrome"):
+        f = getattr(procedure, attr, None)
+        who = (getattr(f, "sector", "") or "").strip()
+        hz = getattr(f, "freq_mhz", None)
+        if not who or not hz:
+            # A fix with no seat or no frequency is a place, not a person. The
+            # aerodrome row is usually exactly that.
+            continue
+        if who in out:
+            continue
+        words = who.split()
+        out[who] = Station(name=who, freq_mhz=float(hz),
+                           role=words[-1].lower() if len(words) > 1 else "",
+                           field=" ".join(words[:-1]) if len(words) > 1 else "",
+                           preset=True)
+    return tuple(out.values())
 
 
 def station_for(role: str, field: str = "", theatre: str = "", procedure=None):

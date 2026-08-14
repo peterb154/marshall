@@ -144,20 +144,33 @@ class TestThePushCarriesThisMapsSeats(unittest.TestCase):
             self.assertTrue(s["name"])
             self.assertIsNotNone(s["freq_mhz"])
 
-    def test_a_letdown_staffs_nobody_and_pushes_nothing(self):
+    def test_a_letdown_pushes_its_BEACONS_and_not_the_modern_ladder(self):
         """`seats_now` and not `stations_now`, so the mode switch stays in one
-        place. A 1944 beacon letdown has no ladder -- the man you talk to IS the
-        frequency you home -- and eight modern seats in a Mustang would be a
-        frequency directory it has no radio for."""
+        place. A 1944 beacon letdown has no modern ladder -- the man you talk
+        to IS the frequency you home -- and nine modern seats in a Mustang
+        would be a frequency directory it has no radio for.
+
+        This asserted a push of NOTHING, which is the other wrong answer: a
+        controller who can name no frequency cannot speak a handoff, issue a
+        departure frequency, or finish the refusals that tell a pilot where to
+        go instead. #140. What he pushes now is the seats his own fixes name,
+        on the frequencies he actually homes.
+        """
         p = T.letdown()
         if getattr(p, "theatre_stations", True):
             self.skipTest("this map's letdown staffs the modern ladder, so "
                           "there is no mode switch here to exercise")
         n, cap = push(p)
-        self.assertEqual(n, 0)
-        self.assertIsNone(cap.stations, "an empty ladder must send no push at "
-                                        "all — see set_stations, which refuses "
-                                        "an empty one rather than wiping")
+        self.assertTrue(n, "the 1944 controller pushed no seats at all")
+        self.assertIsNotNone(cap.stations)
+        # `TH` is the theatre MODULE here and `T` the test helper -- the
+        # two are one letter apart in this file and I picked the wrong one.
+        modern = {s.freq_mhz for s in TH.stations_now()}
+        for row in cap.stations:
+            with self.subTest(row["name"]):
+                self.assertNotIn(row["freq_mhz"], modern,
+                                 f"{row['name']} was pushed on a modern "
+                                 f"frequency an ARA-8 cannot tune")
 
 
 class TestASecondPushReplacesTheTable(unittest.TestCase):

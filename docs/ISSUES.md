@@ -7671,7 +7671,7 @@ reverted on 13 August.
 ---
 
 ## [ASR-8] The 1944 letdown profile carries no controllers at all — #140
-labels: bug
+labels: bug, needs-flight-test
 
 Found while moving the approaches into configuration (#137), by a test that
 asserts the file says exactly what the Python said.
@@ -7703,13 +7703,38 @@ stations at all; it should name the field it serves and let the theatre answer
 controllers, and the question cannot be answered differently by two procedures
 at one aerodrome.
 
-**Status:** OPEN — `config/theatres/caucasus.toml` still carries
-`theatre_stations = false` on the selectable `batumi-ndb-12`, and `agent_atc.py`
-still yields no seats for it, so that controller can still name no frequency.
-What HAS changed is that #152 turned the emptiness into an explicit bit, which
-is what makes this the one-line data change its own criterion asked for — the
-line has not been changed.
+**Status:** FIXED 14 August, NEEDS A PILOT — card row V11. `theatre.beacon_seats`
+supplies the controllers a period procedure actually has, and the answer was
+already in the data:
 
+    INITIAL   128.0   Batumi Approach     (arrival_fix — where he is worked)
+    KOBULETI  124.0   Kobuleti Departure  (outer_hold)
+    BATUMI    132.0   Batumi Tower        (navaid — the beacon he homes)
+
+Each fix carries the seat that owns its frequency, because on this procedure
+the frequency IS the navaid. `Station`'s own docstring has said so all along:
+*"the controller had to sit on the beacon you were homing, because the ARA-8
+tunes and homes on one frequency at a time."*
+
+**Not the modern ladder, which is the other wrong answer and the worse one.**
+Handing this profile `stations_now()` would tell a Mustang to contact Batumi
+Tower on 118.6 while his set is homing 132.0 — a real controller on a frequency
+the aeroplane cannot tune. A test asserts no seat of his carries a modern
+frequency, and that every modern frequency resolves to nobody through his
+procedure.
+
+The issue proposed dropping the station list from the approach entirely and
+letting the theatre answer. That is right for the MODERN procedures and is
+already how they work; it is wrong here, because "who works this field" has a
+different answer in 1944 and the era is exactly what this profile exists to
+model. The period flavour stays in `AtcCapability` (no DME, procedural
+separation, no vectors) and the SEATS are a fact about which radios exist.
+
+**Two tests asserted the old emptiness and both argued against it in their own
+docstrings** — *"its controllers live on the BEACONS"* and *"the man you talk
+to IS the frequency you home"* — while asserting `None` and a push of nothing.
+They assert the beacons now, and keep the guard that was always the real point:
+a modern frequency must not resolve through this procedure.
 ---
 
 ## [OPS-18] Nevada's TONOPAH fix is thirty kilometres from the sim's own VORTAC — #141
