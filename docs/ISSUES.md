@@ -8508,12 +8508,12 @@ Tests: `tests/test_phases_derive.py`, which characterises the current behaviour
 in `LandingOutOfAnArrivalIsRefusedByTheTable`.
 Code: `src/marshall/atc/phases.py`.
 
-**Status:** OPEN — characterised by a test, not fixed. `phases.py` still names
-`landed` in `follows` for `approach` alone, and
-`LandingOutOfAnArrivalIsRefusedByTheTable` in `tests/test_phases_derive.py`
-asserts the refusal from arrival, departure, enroute, holding and missed — a
-test that RECORDS the defect, which is not the same as one that guards a fix.
-
+**Status:** FIXED, and this entry was stale — found by a grooming sweep on
+14 August, not by anybody hitting it. `phases.py` names `landed` in `follows`
+for every airborne phase, with a comment citing this issue and giving its
+argument: *"touching down is an OBSERVATION, not a procedural transition, and
+an observation cannot be illegal."* Verified behaviourally, not by reading:
+every airborne phase reaches `landed`, no ground phase does.
 ---
 
 ## [ASR-9] An empty station list is a MODE SWITCH, in two places — #152
@@ -8622,14 +8622,12 @@ reckoning only… he cannot tell you where he is."* There is no output meaning
 
 Code: `src/marshall/atc/board.py`, `director/app.py`, `src/marshall/atc/plans.py`.
 
-**Status:** OPEN — diagnosed, not fixed, and re-checked 13 August: all three
-lines are still there verbatim. `atc/board.py`'s `_merge` still tests
-`keep.get(k) in (None, "", 0)`, so a deliberate `False` or `0` is still
-overwritten; `director/app.py` still returns `got = []` two lines under its own
-comment about a cold cache against an empty sky; `atc/plans.py` still returns
-`"dr"` for an unknown airframe. Nothing tests `on_visual=False` surviving a
-merge.
-
+**Status:** FIXED, and this entry was stale — the third one that grooming
+found on 14 August. All three sites now carry the distinction and their own
+account of what they used to do: `board._merge` tests `v is None or v == ""`,
+`director/app.py` says what separates a cold cache from an empty sky, and
+`plans.py` has an output meaning "we do not know" and asks. Covered by
+`tests/test_i_do_not_know_is_not_it_does_not_exist.py`, 14 tests passing.
 ---
 
 ## [SEP-17] "Has he been airborne" was answered with a count of go-arounds — #154
@@ -10118,9 +10116,15 @@ Tests: `tests/test_controller.py` (two aircraft, one field, one runway);
 Code: `src/marshall/atc/controller.py` (`request_takeoff`, `report_landed`,
 `Phase`, the ground-half comment), `src/marshall/atc/agent_atc.py` (`decide`).
 
-**Status:** OPEN — raised by the owner on the /diag board, 13 August. The runway
-half is the one to build; the enroute half is a decision to take first.
+**Status:** RUNWAY HALF FIXED, and this entry was stale — found by the same
+grooming sweep. `Controller._on_the_runway` exists, `request_takeoff` refuses
+over an occupied strip and says why, and
+`tests/test_nobody_is_cleared_onto_an_occupied_runway.py` covers it including
+the two-aerodrome case.
 
+**The enroute half is still open and is still a decision to take first**, which
+is what this issue said and remains true: nothing sequences two aircraft
+against each other outside the arrival stack.
 ---
 
 ## [KB-7] Two columns on the board print the same word and mean different things — #171
