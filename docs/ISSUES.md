@@ -7620,10 +7620,10 @@ aborted run carried no track, the view's LEFT JOIN found none, and the
 aeroplane fell through to the unbounded Center — reported as "overhead Batumi
 -> georgia-center", which reads exactly like the bug it exists to find.
 
-**Split out, not done:** the pilot's second bullet — *"leaving it is an EVENT,
+**Split out as #174:** the pilot's second bullet — *"leaving it is an EVENT,
 not a handoff: the approach is cancelled and he is handed back, said out
-loud"* — is controller behaviour rather than geometry and wants its own issue
-and its own flight. A silent bounce between two frequencies still has no
+loud"* — is controller behaviour rather than geometry and has its own issue
+and its own criteria. A silent bounce between two frequencies still has no
 procedural meaning; it is just no longer fired by a volume that was too small.
 
 **What this unblocks:** #130. The ladder can now read the map without holding
@@ -10206,5 +10206,58 @@ Tests: beside `tests/test_two_procedures_one_bridge.py`.
 Code: `src/marshall/atc/agent_atc.py` (`asr_monitor`).
 
 **Status:** OPEN — found 13 August while fixing #150, not started.
+
+---
+
+## [SEP-19] Leaving the terminal area is a cancelled approach, not a silent bounce — #174
+labels: bug
+
+    "If the approach doesn't require maneuvering in centers airspace but we
+     accidentally cross into center because the pilot f d up, maybe his
+     approach should be cancelled and he handed back to center. Trying to
+     determine the direction of a ladder and assuming it always goes in one
+     direction is brittle."
+
+The second half of #139, split out on 14 August rather than folded in, because
+it is controller BEHAVIOUR and #139 was geometry.
+
+#139 fixed the reason this fired when it should not have: terminal areas were
+eleven-mile circles around approaches that begin at twenty-two, so a man flying
+the published procedure was genuinely outside the airspace working him and the
+system was right to say so. Areas hold their own procedures now, so a departure
+from one is a real event rather than an artefact.
+
+**AND A REAL EVENT STILL HAS NO WORDS.** `leaving_my_airspace` returns the next
+station and the ladder hands him over, silently, as though it were an ordinary
+progression. It is not. A pilot who has strayed out of the terminal area while
+being vectored for an approach has had something happen TO him, and a
+frequency change with no explanation is the thing that has no procedural
+meaning:
+
+    what he gets      "contact Georgia Center one three niner decimal zero"
+    what it means     his approach clearance is void and nobody said so
+
+A cancelled approach has a meaning he can act on. It is also the honest
+description of the state: `Controller` still holds him as CLEARED, the letdown
+slot is still his, and the stack behind him is still sequenced against an
+aeroplane that is no longer flying the procedure.
+
+**Acceptance criteria**
+1. An aircraft that leaves the terminal area while CLEARED for an approach has
+   that clearance cancelled in the engine — the letdown slot is released and
+   the stack resequences.
+2. The engine decides it, so it is a `Decision` and `verify` can check it
+   reached the air. Not prose the agent composes.
+3. He is told, in one transmission: the approach is cancelled, and who has him
+   now.
+4. A test flies an aircraft out of the area mid-approach and asserts all three,
+   and asserts the ordinary inbound case is untouched.
+
+Tests: beside `tests/test_the_ladder_uses_the_maps_boundary.py`.
+Code: `src/marshall/atc/agent_atc.py` (`leaving_my_airspace`),
+`src/marshall/atc/controller.py`, `src/marshall/atc/phrasebook.py`.
+
+**Status:** OPEN — split out of #139 on 14 August, not started. The geometry
+that made it fire spuriously is fixed; the words it should say do not exist.
 
 ---
