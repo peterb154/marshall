@@ -187,6 +187,38 @@ def _nm_between(a, b) -> float:
     return nm
 
 
+def terminal_reach_nm(field, others) -> float:
+    """How far THIS aerodrome's terminal area actually extends.
+
+    `TERMINAL_NM` is a cap, not the answer. Two fields twenty-two miles apart
+    cannot each own twenty-five, so the area is halved to the nearest
+    neighbour and the two meet in the middle: Kobuleti and Batumi get eleven
+    and a bit each.
+
+    EXTRACTED SO THAT THE LADDER CAN READ IT. It was three lines inside
+    `sectors_for`, which meant the only thing that knew a field's real reach
+    was the map -- and `handoff.CENTER_NM` went on importing the CAP while
+    believing it had imported the boundary. Its own comment makes the argument
+    against exactly that:
+
+        "AND IT IS THE SAME NUMBER AS THE EDGE OF APPROACH'S VOLUME, so it is
+         imported rather than restated ... holding them separately is one edit
+         away from a ladder that hands a man over at twenty-five miles into
+         airspace that stops at twenty."
+
+    The comment was right and the code stopped satisfying it the day the
+    halving was added, because a constant imported from a module is not the
+    same thing as the function that module uses. Measured on the live sortie:
+    a rule firing at 25 nm over a volume ending at 11.3.
+
+    `others` is every OTHER aerodrome being worked. Empty means the field is
+    alone on the map and the cap is the answer, which is the Nevada single-field
+    case and not a degenerate one.
+    """
+    nearest = min((_nm_between(field, o) for o in others), default=None)
+    return TERMINAL_NM if nearest is None else min(TERMINAL_NM, nearest / 2.0)
+
+
 def sectors_for(fields, stations) -> list[dict]:
     """Every controller's volume, DERIVED from the theatre rather than declared.
 
@@ -244,8 +276,7 @@ def sectors_for(fields, stations) -> list[dict]:
     for name in worked:
         f = by_name[name]
         others = [by_name[o] for o in worked if o != name]
-        nearest = min((_nm_between(f, o) for o in others), default=None)
-        reach = TERMINAL_NM if nearest is None else min(TERMINAL_NM, nearest / 2.0)
+        reach = terminal_reach_nm(f, others)
         term = next((s for s in stations
                      if s.field == name and s.role in TERMINAL_ROLES), None)
         twr = next((s for s in stations

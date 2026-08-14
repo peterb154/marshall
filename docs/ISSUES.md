@@ -6708,15 +6708,32 @@ to a Kobuleti station — the DESTINATION's Approach is unreachable from the rul
 table. That is why the airspace branch exists and why it is the only mechanism
 that can move him between fields.
 
-**Status:** REOPENED 13 August — the geometry never moved. `handoff.py` fires `departure -> center` at a flat 25 nm while `airspace.py` derives 11 nm per field. What answered the SYMPTOM was #168, `enroute` being unreachable, and that is a different fact — a symptom explained by another cause is not this one fixed.
-file should keep: **the geometry did not move.** `handoff.py` still fires
-`departure → center` at a flat `CENTER_NM = TERMINAL_NM = 25.0` while
-`core/airspace.py` derives an eleven-mile area for each of the two fields, and
-the rule does not read the derived reach — none of the three options above was
-taken. What answered the symptom instead was #168: `enroute` is now a phase an
-aeroplane can be IN when Center works him, which is a different fact from being
-far enough out to be handed there.
+**Status:** OPEN, and BLOCKED — investigated 14 August and the obvious repair
+is a regression wearing the shape of a cleanup.
 
+Aligning the two numbers means making the ladder read the map, and the map is
+the half that is wrong:
+
+    Batumi terminal area                          11.3 nm
+    batumi-ils-13's outer hold, at KOBULETI       22.6 nm
+
+The procedure begins at DOUBLE the radius of the airspace that owns it. So
+`Rule("center", "approach", "inbound_within", ...)` reading the derived reach
+would hold an arrival on Center until eleven miles — inside the final, later
+than the rule #51 was filed to fix, for a man flying the approach exactly as
+published. Tried, measured, reverted.
+
+The chain is **#137 → #139 → this**. #139 is a terminal area derived from the
+procedure it serves; it needs fixes carrying lat/lon, which is #137.
+
+WHAT DID LAND is the half that is right in any geometry:
+`airspace.terminal_reach_nm` is now a named function rather than three lines
+inside `sectors_for`, so there is ONE author of "how far does this area
+reach" — the reason `handoff.CENTER_NM` could import a constant while
+believing it had imported the boundary. `tests/test_a_terminal_area_is_one_number.py`
+holds the arithmetic above as an executable statement, and its last class is
+written to FAIL on the day #139 lands, with instructions to delete it and make
+this change then.
 ---
 
 ## [ARCH-21] A flight plan is a route somebody filed, and nothing else — #131
