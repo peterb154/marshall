@@ -216,5 +216,80 @@ class TestARouteThatNamesNothingIsRefused(unittest.TestCase):
             C.sortie = real
 
 
+class TestThePublishedFixesHaveOneAuthorToo(unittest.TestCase):
+    """The same defect one level up, caught before it cost anything.
+
+    KOBULETI, BATUMI and KUTAISI were module constants in `core/fixes.py` AND
+    `[[fix]]` rows in the theatre file, holding identical coordinates. They
+    agreed only because nobody had edited one without the other -- which is not
+    a property, it is luck, and it is the shape every foundational bug this
+    month has had.
+
+    INITIAL was worse: a THIRD copy. #143 moved it onto the approaches that use
+    it, as an `iaf`, precisely so it would stop being published -- and the
+    module constant went on existing beside it, so the move that was supposed
+    to make it private left it declared in two places at once.
+    """
+
+    def test_the_module_defines_no_places_at_all(self):
+        """What is left in `core/fixes.py` is the TYPE and two functions that
+        reason about a route. Numbers in the data, rules in code."""
+        for name in ("KOBULETI", "BATUMI", "KUTAISI", "INITIAL", "FIXES",
+                     "LEGS"):
+            with self.subTest(name):
+                self.assertFalse(hasattr(F, name),
+                                 f"core.fixes still defines {name}")
+
+    def test_the_published_ones_come_off_the_map(self):
+        for name in ("KOBULETI", "BATUMI", "KUTAISI"):
+            with self.subTest(name):
+                got = getattr(R, name, None)
+                if got is None:
+                    continue          # a map need not publish these names
+                self.assertIn(got.name.upper(),
+                              {f.name.upper() for f in T.fixes_now()})
+
+    def test_and_they_are_THE_SAME_OBJECT_as_the_catalogue_holds(self):
+        """Identity, not equality. Two objects that happen to match are what
+        this whole change is about -- an `is` check is the cheapest way to say
+        "the same fix, not a copy that agrees today"."""
+        pub = {f.name.upper(): f for f in T.fixes_now()}
+        for name in ("KOBULETI", "BATUMI", "KUTAISI"):
+            got = getattr(R, name, None)
+            if got is None or got.name.upper() not in pub:
+                continue
+            with self.subTest(name):
+                self.assertIs(got, pub[got.name.upper()])
+
+    def test_INITIAL_is_a_procedure_point_and_not_published(self):
+        """#143's whole point. If it reappears in `[[fix]]`, a real cartridge's
+        steerpoint of the same name collides with our fiction again."""
+        got = getattr(R, "INITIAL", None)
+        if got is None:
+            self.skipTest("this map declares no INITIAL")
+        self.assertNotIn("INITIAL", {f.name.upper() for f in T.fixes_now()})
+        self.assertIsNotNone(T.procedure_point("INITIAL"))
+
+    def test_the_transit_is_built_from_those_readers(self):
+        """`FIXES` was `[KOBULETI, INITIAL, BATUMI]` as module constants, so
+        the transit and the catalogue were separate objects that agreed. Now
+        the transit IS them."""
+        got = getattr(R, "FIXES", None)
+        if not got:
+            self.skipTest("this map declares no transit")
+        self.assertIs(got[0], R.KOBULETI)
+        self.assertIs(got[-1], R.BATUMI)
+
+    def test_a_name_the_map_does_not_publish_raises(self):
+        """Not None. A typo that answered None becomes a plausible number three
+        layers away; `__getattr__` says which name and which file to look in."""
+        # Through the module hook directly: ruff refuses both `R.NAME` (a
+        # useless expression) and `getattr(R, "NAME")` (a constant attribute),
+        # and it is right about both -- the thing under test is the hook.
+        with self.assertRaises(AttributeError) as caught:
+            R.__getattr__("NOWHERE_AT_ALL")
+        self.assertIn("NOWHERE_AT_ALL", str(caught.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

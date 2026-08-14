@@ -56,32 +56,25 @@ class Fix:
     lon: float | None = None
 
 
-# Beacon idents must NOT resemble the letters the ARA-8 keys for homing --
-# U (..-), D (-..), A (.-), N (-.). An earlier build used B (-...), one dot from
-# a homing D, and the two were indistinguishable in flight. M, S, G, H, O and W
-# share no prefix with any of them.
-KOBULETI = Fix("KOBULETI", "MG", -317962, 635633, 124.000,
-               "Kobuleti Departure", "Field elevation 59 ft. Departure end.")
+# THE PUBLISHED FIXES ARE NOT HERE EITHER, for the same reason and one level
+# up. KOBULETI, BATUMI and KUTAISI were Python constants AND `[[fix]]` rows in
+# `config/theatres/caucasus.toml`, holding identical coordinates -- two authors
+# for one number, agreeing only because nobody had edited one without the
+# other. That is the shape this project keeps finding, caught here before it
+# cost anything rather than after.
+#
+# INITIAL was worse: a third copy. It is the initial approach fix of the 1944
+# letdown, declared on the approaches that use it as an `iaf` and moved there
+# by #143 precisely so it would stop being published -- and the module constant
+# went on existing beside it.
+#
+# All four come off the loaded map through `route.__getattr__` now. The beacon
+# idents keep their rule, in the file: they must NOT resemble the letters the
+# ARA-8 keys for homing -- U (..-), D (-..), A (.-), N (-.). An earlier build
+# used B (-...), one dot from a homing D, and the two were indistinguishable in
+# flight. [#137]
 
-INITIAL = Fix("INITIAL", "SW", -337949, 596106, 128.000,
-              "Batumi Approach",
-              "Offshore holding fix. Open water, no terrain in any quadrant.")
 
-BATUMI = Fix("BATUMI", "OS", -355811, 617386, 132.000,
-             "Batumi Tower",
-             "Field elevation 32 ft. Landing runway 12 (charted 13/31 today -- "
-             "magnetic drift renamed it; we fly the period AIP designation).")
-
-KUTAISI = Fix("KUTAISI", "KT", -284887, 683859, None,
-              note="Red field. The transit turning point, not a diversion -- "
-                   "Batumi is the only blue aerodrome on the map.")
-
-FIXES = [KOBULETI, INITIAL, BATUMI]
-
-# The sortie, as planned rather than as flown: out from Batumi, across to
-# Kutaisi, east into the target area, and home. Everything but Batumi is
-# hostile, so the route is a there-and-back with no alternate -- which is the
-# point of the scenario and the reason fuel is a real number.
 # THE 1944 STRIKE'S OWN POINTS ARE NOT HERE ANY MORE, and that is the fix.
 #
 #     "There are fixes in core/fixes.py??? Shouldn't all fixes be data in the
@@ -145,7 +138,3 @@ def steerpoint(fix, route=None) -> int:
         if f is fix or f.name == fix.name:
             return i + 1
     return 0
-
-# The route, in order. INITIAL to BATUMI is deliberately runway heading, so
-# rolling out of the turn inbound puts you on the approach course already.
-LEGS = [(KOBULETI, INITIAL), (INITIAL, BATUMI)]

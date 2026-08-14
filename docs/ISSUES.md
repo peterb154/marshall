@@ -7126,11 +7126,16 @@ data, rules in code.
    projected by the sim at bridge start and still degrade when it is down,
    exactly as they did in Python. Seeding them through `coord.LOtoLL` is the
    rest of it, and is what #139 needs.
-3. **The published fixes are declared twice** — `KOBULETI`, `INITIAL`,
-   `BATUMI`, `KUTAISI` are Python constants in `core/fixes.py` AND `[[fix]]`
-   rows in the TOML. 22 call sites read the Python. Two authors for one number
-   is the shape this project keeps finding; it did not bite here only because
-   nobody has edited one without the other.
+3. ~~The published fixes are declared twice.~~ **Done, same day.**
+   `KOBULETI`, `BATUMI` and `KUTAISI` come off `[[fix]]`; `INITIAL` — which
+   was a THIRD copy, since #143 had already moved it onto its approaches as an
+   `iaf` — comes off the procedure that declares it, through the new
+   `theatre.procedure_point`. The transit `FIXES`/`LEGS` are assembled from
+   those readers rather than from constants, so the route cannot disagree with
+   the catalogue it is drawn from. A test asserts IDENTITY rather than
+   equality: two objects that happen to match are the thing being removed.
+   `core/fixes.py` is now 140 lines and defines no places at all — the `Fix`
+   type and the two functions that reason about a route.
 4. `core/fields.py` still hard-codes `DEPARTURE_FIELD = "Kobuleti"` and
    `ARRIVAL_FIELD = "Batumi"`.
 

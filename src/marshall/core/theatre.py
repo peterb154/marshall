@@ -420,6 +420,33 @@ def _sortie_legs(theatre: str = "") -> tuple:
     return tuple(zip(pts, pts[1:]))
 
 
+def procedure_point(want: str, theatre: str = ""):
+    """A point an APPROACH declares, by name. `None` when nothing does.
+
+    The third source, after the published catalogue and the mission's own.
+    `catalogue.OwnPoint` is "a point a procedure USES and nobody PUBLISHES" --
+    INITIAL is the standing example, moved onto its approaches by #143 when a
+    real DKS cartridge turned up carrying a steerpoint of the same name
+    thirteen miles away and every import warned about a collision with our
+    fiction.
+
+    ONE POINT MAY BE DECLARED BY SEVERAL PROCEDURES. Three approaches name
+    INITIAL as their `iaf` and it is the same place each time, so the first
+    match wins and the others are not consulted -- which is right while they
+    agree and would be wrong the moment they did not. They cannot: each is
+    written under the approach that uses it, and a procedure that wanted a
+    different point of the same name would be declaring a different point, not
+    disagreeing about this one.
+    """
+    key = (want or "").upper()
+    for pro in approaches_now(theatre).values():
+        for attr in ("iaf", "outer_hold", "arrival_fix", "navaid"):
+            got = getattr(pro, attr, None)
+            if got is not None and getattr(got, "name", "").upper() == key:
+                return got
+    return None
+
+
 def sortie_point(want: str, theatre: str = ""):
     """One of the mission's own points by name, or None.
 

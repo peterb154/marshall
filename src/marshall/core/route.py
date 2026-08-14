@@ -54,9 +54,7 @@ from marshall.core.fields import (  # noqa: F401
 # loaded map through `__getattr__` below exactly as the fields, the stations
 # and the wind do. See #137 and `core/fixes.py`, which now holds the TYPE and
 # the two functions that reason about a route, and none of the route itself.
-from marshall.core.fixes import (  # noqa: F401
-    BATUMI, FIXES, Fix, INITIAL, KOBULETI, KUTAISI, LEGS, leg_altitude,
-    steerpoint)
+from marshall.core.fixes import Fix, leg_altitude, steerpoint  # noqa: F401
 from marshall.core.stations import (  # noqa: F401
     PRESET_LETTERS, Station, preset_label, preset_of)
 from marshall.core.units import (  # noqa: F401
@@ -206,7 +204,7 @@ def solve_route(tas: float = CRUISE_TAS_MPH, wind_from: float | None = None,
     # a log nobody could reproduce.
     wind_from, wind_speed = _wind_or_declared(wind_from, wind_speed)
     out = []
-    for frm, to in (legs if legs is not None else LEGS):
+    for frm, to in (legs if legs is not None else __getattr__("LEGS")):
         course, dist = bearing_distance(frm, to)
         wca, hdg, gs = wind_triangle(course, tas, wind_from, wind_speed)
         # Distance is nautical, speed is statute per hour -- convert or every
@@ -292,6 +290,25 @@ _FROM_THEATRE = {
     "INGRESS": ("sortie_point", "INGRESS"),
     "HOMEBOUND": ("sortie_point", "EGRESS"),
     "AIR_START": ("sortie_point", "REHEARSAL"),
+    # ...and the PUBLISHED places, which were module constants here AND rows in
+    # the theatre file, holding the same numbers and agreeing only because
+    # nobody had edited one without the other.
+    "KOBULETI": ("fix", "KOBULETI"),
+    "BATUMI": ("fix", "BATUMI"),
+    "KUTAISI": ("fix", "KUTAISI"),
+    # INITIAL is NOT published and is not a `[[fix]]`. It is the initial
+    # approach fix of the 1944 letdown -- a procedure this project invented, on
+    # a plate it generates -- and #143 moved it onto the approaches that use
+    # it, as an `iaf`, exactly so it would stop being offered to pilots flying
+    # something else. The module constant beside it was a third copy.
+    "INITIAL": ("procedure_point", "INITIAL"),
+    # The Kobuleti-to-Batumi TRANSIT, which is a different journey from the
+    # strike: `SORTIE` goes out to the target and back, this is the hop that is
+    # actually flown. Still assembled here rather than declared, because a
+    # second mission per map is `Sortie` becoming a list and that has not
+    # happened yet -- see #137.
+    "FIXES": ("transit", "fixes"),
+    "LEGS": ("transit", "legs"),
 }
 
 
@@ -373,6 +390,29 @@ def __getattr__(name: str):
         if key == "alt_ft":
             return list(_th.sortie_alt_ft())
         return list(_th.sortie_defended())
+    if kind == "fix":
+        got = next((f for f in _th.fixes_now() if f.name.upper() == key.upper()),
+                   None)
+        if got is None:
+            raise AttributeError(
+                f"{name} names fix {key!r}, which the configured theatre does "
+                f"not publish. See docs/CONFIG.md")
+        return got
+    if kind == "procedure_point":
+        got = _th.procedure_point(key)
+        if got is None:
+            raise AttributeError(
+                f"{name} names {key!r}, which no approach on the configured "
+                f"theatre declares. See docs/CONFIG.md")
+        return got
+    if kind == "transit":
+        # KOBULETI, the initial approach fix, then BATUMI. Assembled from the
+        # readers above so the transit cannot come to disagree with the
+        # catalogue it is drawn from -- which is what two module constants
+        # holding the same numbers already were.
+        pts = [__getattr__("KOBULETI"), __getattr__("INITIAL"),
+               __getattr__("BATUMI")]
+        return pts if key == "fixes" else list(zip(pts, pts[1:]))
     if kind == "sortie_point":
         # NONE RATHER THAN AN ERROR, and only here. A map may fly no mission at
         # all -- Nevada declares no `[sortie]` -- and a briefing that asks for
