@@ -201,14 +201,37 @@ def can_use(kit: frozenset[str], navaid_kind: str | None) -> bool:
     return bool(kit & needs)
 
 
-def can_hold_at(kit: frozenset[str], navaid_kind: str | None) -> bool:
-    """May a controller send him to hold OVER this station?
+def can_hold_at(kit: frozenset[str], navaid_kind: str | None,
+                on_his_plan: bool | None = None) -> bool:
+    """May a controller send him to hold OVER this point?
 
-    An inertial platform is enough on its own: he can hold at a point in space
-    because he knows where he is. That is the one case where the answer does not
-    depend on what is on the ground.
+    TWO WAYS TO SAY YES, and an inertial platform on its own is NOT one of
+    them:
+
+        "F16 needs a navaid or a fix on his plan for a hold."
+
+    So either he can TUNE it, or the point is already in his system because he
+    filed it. An INS tells him where HE is; it does not tell him where an
+    arbitrary point on the ground is, and this function claimed otherwise --
+    *"an inertial platform is enough on its own: he can hold at a point in
+    space because he knows where he is"*. That is true of a point he has
+    coordinates for and false of one he has not, and the difference is the
+    flight plan.
+
+    `on_his_plan` is None when the caller does not know, and None is treated as
+    "not on it": a hold offered over a point he cannot find is an instruction
+    he cannot fly, and the fallback -- a level, a turn, an outbound heading and
+    a clock -- is always flyable. Guessing in the generous direction here costs
+    a real aeroplane a real hold.
+
+    THE CALLERS DO NOT PASS IT YET. `_hold_phrase` and `_report_phrase` both
+    ask this question and neither has the filed legs to hand, which is the
+    remaining half of #175 -- see the issue, which names it rather than leaving
+    it to be rediscovered.
     """
-    return "ins" in kit or can_use(kit, navaid_kind)
+    if can_use(kit, navaid_kind):
+        return True
+    return "ins" in kit and bool(on_his_plan)
 
 
 def described(kit: frozenset[str]) -> str:

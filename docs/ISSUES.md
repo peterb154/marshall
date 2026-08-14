@@ -10484,6 +10484,55 @@ It is about everything that asks him where he IS:
     the hold        gated on `equipment.can_hold_at`      correct
     the report      gated on nothing                      the defect
 
+**AND AN INS IS NOT ENOUGH ON ITS OWN**, which `equipment.can_hold_at` claimed
+and which is the second correction from the owner:
+
+    "F16 needs a navaid or a fix on his plan for a hold."
+
+An inertial platform tells him where HE is; it says nothing about where an
+arbitrary point on the ground is. That comes from tuning the station or from
+having FILED the fix. So the rule is two ways to say yes — he can receive it,
+or it is on his plan — and `"ins" in kit` was a third that does not exist.
+
+Corrected 14 August, with `on_his_plan` added. **No caller passes it**, so
+today both `_hold_phrase` and `_report_phrase` answer "he cannot" for an F-16
+at an NDB field, which is right for a fix he has not filed and wrong for one he
+has. Threading the filed legs to those two call sites is the remaining half of
+this issue.
+
+**THE BETTER ANSWER IS TO ASK HIM**, and it came from the owner while this was
+being written:
+
+    "We could always make at a question the controller asks rather than a per
+     airframe rule"
+
+Which is what a real controller does — *"advise able direct BATUMI"* — and it is
+better than a table for reasons this project has already learned once:
+
+  * **A table is a guess about somebody else's aeroplane.** `equipment.receivers`
+    maps an airframe name to a set of receivers, so it is wrong for a variant it
+    has not heard of, wrong for a failed radio, wrong for a loadout that
+    replaced a set, and wrong the day DCS changes a module. Every one of those
+    is invisible: the aeroplane answers a question nobody asked it.
+  * **The pilot is the authority and is on the frequency.** This is the identity
+    ladder's shape exactly — RADAR over roster over not-admitted — where the
+    best evidence wins and the fallback is honest. Ask, and believe the answer.
+  * **It removes the flight-plan problem entirely.** "Able BATUMI?" needs no
+    knowledge of what he filed, which is the half of this issue that has no
+    caller today.
+
+So the table becomes a PRIOR, not a verdict: it decides what the controller
+offers first and what he assumes when nobody has answered, and a pilot's "unable"
+overrides it for the rest of the sortie. That also gives the exchange somewhere
+to live — an `unable` is a fact about a flight, like a clearance, and belongs on
+the board beside one.
+
+**Not built.** It changes what the engine ASKS as well as what it believes, so
+it wants its own pass and probably its own issue once the shape is agreed. The
+equipment gate below is worth having in the meantime: it stops the controller
+saying something impossible, which is the defect, and asking is how he stops
+having to guess at all.
+
 **Acceptance criteria**
 1. Nothing asks for a position report the aeroplane's equipment cannot
    produce — the same `equipment` question the hold already asks, on the report
@@ -10498,7 +10547,13 @@ Tests: beside `tests/test_equipment.py` and `tests/test_controller.py`.
 Code: `src/marshall/atc/controller.py` (`report_beacon`, the approach
 clearance), `src/marshall/atc/equipment.py`.
 
-**Status:** OPEN — filed 14 August. Not started; the hold half has been right
-since #163 and the report half has never been asked.
+**Status:** PARTLY, 14 August. The report side now asks the same equipment
+question the hold side has asked since #163, so a P-51 is asked for the field
+in sight rather than for a beacon it cannot detect, and the two halves of one
+exchange can no longer contradict each other. `equipment.can_hold_at` has had
+its INS-alone rule corrected.
 
+STILL OPEN: `on_his_plan` has no caller, so a modern aeroplane is refused a
+hold at a fix he filed. And criterion 2 — a radar controller reading the
+position out rather than requesting it — is untouched.
 ---

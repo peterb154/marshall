@@ -1122,12 +1122,43 @@ class Controller:
             if getattr(pro, "guidance", "") == "talkdown":
                 return "report the field in sight"
             return "report established on the final approach course"
-        # NO PROCEDURE, NO NAVAID TO REPORT OVER. The field in sight is the one
-        # trigger every pilot can detect without anything published, which is
-        # the same argument the talkdown branch makes one line up.
-        if getattr(pro, "navaid", None) is None:
+        # NO NAVAID TO REPORT OVER, OR NOTHING ABOARD THAT CAN FIND IT.
+        #
+        #     "Telling a p51 to hold at the beacon or report established has
+        #      always been impossible and a defect."
+        #
+        # This asked whether the PROCEDURE published a navaid and never whether
+        # the AEROPLANE could detect one, so a Mustang was told to report over
+        # a beacon it has no working receiver for -- an instruction with no
+        # instrument behind it, which he can only guess at or ignore. Both look
+        # from the ground like a pilot not following instructions.
+        #
+        # THE SAME QUESTION `_hold_phrase` ALREADY ASKS, on the other side of
+        # the same exchange. It has consulted `equipment.can_hold_at` since
+        # #163 and falls through to a racetrack -- a level, a turn, an outbound
+        # heading, a leg time -- for exactly this aeroplane. The instruction
+        # was gated and the report was not.
+        #
+        # The field in sight is the one trigger every pilot can detect without
+        # anything published or anything fitted, which is the same argument the
+        # talkdown branch makes three lines up. [#175]
+        from marshall.atc import equipment
+        nav = getattr(pro, "navaid", None)
+        kit = getattr(ac, "kit", None)
+        # `can_hold_at`, NOT `can_use`, and the difference is a real aeroplane.
+        # An F-16 carries no ADF, so it cannot RECEIVE an NDB -- but it has an
+        # inertial platform, so it knows where the point is and can report over
+        # it perfectly well. That is the owner's own line: "in modern we can
+        # instruct an aircraft to hold at a navaid or a fix on his flight
+        # plan". `can_hold_at` already says exactly that -- "an inertial
+        # platform is enough on its own: he can hold at a point in space
+        # because he knows where he is" -- and asking `can_use` here would have
+        # sent a Viper looking out of the window for the field.
+        able = kit is None or equipment.can_hold_at(
+            kit, getattr(nav, "navaid_kind", None))
+        if nav is None or not able:
             return "report the field in sight"
-        return f"report {pro.navaid.name} inbound"
+        return f"report {nav.name} inbound"
 
     def _no_acknowledgement_phrase(self, ac) -> str:
         """Said ONCE, with the approach clearance, on a talkdown. Then never.

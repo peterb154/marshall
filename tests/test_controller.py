@@ -1127,9 +1127,31 @@ class TestWhatHeIsFlyingDecidesTheHold(unittest.TestCase):
         self.assertIn("outbound", said)
         self.assertIn("minute", said)
 
-    def test_an_inertial_platform_can_hold_anywhere(self):
-        """He knows where he is; the ground does not have to help him."""
-        self.assertIn("as published", self.hold_for(E.receivers("F-16C_50")))
+    def test_an_inertial_platform_is_NOT_enough_on_its_own(self):
+        """This asserted the opposite, and the opposite is not true.
+
+            "F16 needs a navaid or a fix on his plan for a hold."
+
+        An INS tells him where HE is. It does not tell him where an arbitrary
+        point on the ground is -- that comes from tuning the station or from
+        having filed the fix. At a field whose only aid is an NDB, an F-16 with
+        no ADF gets the racetrack like everybody else who cannot find it.
+
+        The generous answer was the expensive one: it offered a hold over a
+        point he had no way to locate, which is an instruction he cannot fly.
+        """
+        said = self.hold_for(E.receivers("F-16C_50"))
+        self.assertNotIn("as published", said)
+        self.assertIn("outbound", said)
+        self.assertIn("minute", said)
+
+    def test_but_a_fix_he_FILED_is_one_he_can_hold_at(self):
+        """The other half of the owner's sentence, and the reason this is not
+        simply `can_use`. `on_his_plan` is the argument that carries it; no
+        caller passes it yet, which is the open half of #175."""
+        kit = E.receivers("F-16C_50")
+        self.assertFalse(E.can_hold_at(kit, "ndb"))
+        self.assertTrue(E.can_hold_at(kit, "ndb", on_his_plan=True))
 
     def test_a_jet_with_no_ADF_cannot_home_the_NDB_itself(self):
         """The asymmetry, stated on its own so it cannot be lost in a refactor.
