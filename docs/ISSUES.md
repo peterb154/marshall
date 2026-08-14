@@ -10427,3 +10427,63 @@ Code: `src/marshall/atc/agent_atc.py` (`leaving_my_airspace`),
 that made it fire spuriously is fixed; the words it should say do not exist.
 
 ---
+
+## [SEP-20] The controller asks for position reports the aeroplane cannot make — #175
+labels: bug
+
+    "The report beacon or report over holding fix has always been impossible in
+     a ww2 aircraft. In modern we can instruct an aircraft to hold at a navaid
+     or a fix on his flight plan. Telling a p51 to hold at the beacon or report
+     established has always been impossible and a defect."
+
+Named by the owner on 14 August while dropping WW2 homing, and it predates that
+work by months. It is not a consequence of the removal; the removal is what
+made it visible.
+
+**HALF OF IT IS ALREADY RIGHT, which is what makes the other half easy to
+miss.** `Controller._hold_phrase` asks `equipment.can_hold_at(kit, kind)` before
+it offers a published hold, and falls through to a racetrack — a heading, a
+turn and a clock — when the aeroplane cannot find the fix:
+
+    "When ATC asks an airplane with no navaids to hold, it's going to need to
+     help him... 'turn 180 heading fly 2 mins, then right turn to 360 and fly 2
+     minutes'. Right now he just says to hold."
+
+So the INSTRUCTION is gated on what he can fly. The REPORT is not.
+
+**What is still wrong.** `report_beacon` is the letdown's entry point and asks
+nothing about the aeroplane: a P-51 whose ADF does not work reports itself over
+a beacon it cannot detect, and the engine believes it and sequences on it. The
+same shape reaches the air the other way round — *"report established"*,
+*"report over the beacon"* — instructions the pilot has no instrument to obey.
+
+    a P-51D-30    the only WW2 airframe with a homing receiver at all, and it
+                  works badly enough to be unusable
+    everything    no ADF, no DME, nothing that says WHERE HE IS relative to a
+    else in 1944  point on the ground
+
+**And a radar controller should not be asking.** An ASR exists precisely so the
+controller reads the range off a scope and TELLS him — *"eight miles from
+touchdown"*. Asking a man to report a position the controller can already see is
+the procedure inverted, and asking one he cannot determine is worse than
+useless: he either guesses or stays silent, and both look like a pilot who is
+not following instructions.
+
+**Acceptance criteria**
+1. Nothing asks for a position report the aeroplane's equipment cannot
+   produce — the same `equipment` question the hold already asks, on the report
+   side.
+2. A controller with radar reads the position out rather than requesting it.
+3. `report_beacon` from an aeroplane that cannot find the beacon does not
+   silently become a sequencing fact.
+4. A modern aeroplane is untouched: hold at a navaid, hold at a fix on the
+   filed plan, report established — all of which he has the instruments for.
+
+Tests: beside `tests/test_equipment.py` and `tests/test_controller.py`.
+Code: `src/marshall/atc/controller.py` (`report_beacon`, the approach
+clearance), `src/marshall/atc/equipment.py`.
+
+**Status:** OPEN — filed 14 August. Not started; the hold half has been right
+since #163 and the report half has never been asked.
+
+---
