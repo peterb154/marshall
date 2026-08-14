@@ -8877,13 +8877,29 @@ this ever appeared to work.
 Code: `src/marshall/atc/agent_atc.py` (`_contact`), `src/marshall/feed/tracks.py`
 (`_CATEGORY`).
 
-**Status:** OPEN — diagnosed, not fixed. `/diag` names what it is hiding
-(*"N more on the scope the bridge does not count as aircraft"*) so the symptom is
-visible until it is. Re-checked 13 August: `agent_atc._contact` still publishes
-`"is_aircraft": not u.category` (and blanks `derived` and `state` the same way)
-while `feed/tracks.py` still stamps every aeroplane `"airplane"`, and no test
-anywhere mentions `is_aircraft`.
+**Status:** FIXED, and this entry was stale — the SIXTH found by grooming on
+14 August. All three criteria are met and
+`tests/test_a_category_is_one_word.py` covers them, 16 tests passing.
+Verified behaviourally rather than by reading, which matters here more than
+usual because the diagnosis above points at the wrong file:
 
+    feed says 'Airplane'   -> is_aircraft True   derived 'Sockeye'  level warn
+    feed says 'airplane'   -> is_aircraft True   derived 'Sockeye'  level warn
+    feed says 'helicopter' -> is_aircraft True   derived 'Sockeye'  level warn
+    feed says 'ground'     -> is_aircraft False  derived ''
+    feed says 'ship'       -> is_aircraft False  derived ''
+
+**The diagnosis above blames `agent_atc._contact` and that is wrong**, which is
+worth leaving in place rather than editing away. `_contact` never sees the
+feed's word: `identity.units_on` has already turned it into `Unit.category`,
+which means *the category IF IT IS NOT AN AEROPLANE'S* — six readers are
+written on that contract and `not u.category` is correct under it. The
+comparison that actually produced the bug was the case-sensitive one in
+`identity.py`, and one capital letter in `tools/ghost_flight.py`'s `Airplane`
+made every ghost a tank in five places at once.
+
+The vocabulary has one home now (`feed/categories.py`) and the five copies ask
+it.
 ---
 
 
