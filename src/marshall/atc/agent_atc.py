@@ -3322,6 +3322,48 @@ def his_field(bridge, ctl, profile, cs: str, fallback_hz: float = 0.0) -> str:
     return getattr(st, "field", "") if st is not None else ""
 
 
+def final_channel(bridge, ctl, profile, cs: str, fallback_hz: float = 0.0) -> float:
+    """WHICH FREQUENCY THIS MAN'S FINAL IS FLOWN ON. His, not the thread's.
+
+    One controller, one channel: the conversation, the vectors and the mile
+    calls all go out on the frequency the man flying the approach is working.
+    Splitting them was reported as "two personalities" and "he's sending me
+    south of the field" -- two halves of one controller across two radios.
+
+    WHOSE CHANNEL IT IS depends on two facts and both are the AEROPLANE'S. On a
+    talkdown the radar controller flies the approach, so it is Approach's; on
+    any other procedure the aeroplane has its own aid and Tower genuinely takes
+    him at the intercept. And it is Approach or Tower AT HIS FIELD, which on a
+    two-aerodrome map is not the same seat.
+
+    `asr_monitor` computed this ONCE at thread start, from the bridge's loaded
+    profile and the theatre's arrival field, and then used it inside a loop
+    that runs per aircraft -- for the mile calls, the landing-clearance relay,
+    the goodbye, and every free-channel check ahead of them. So a Viper on the
+    ILS at one field heard his mile calls on the other field's approach
+    channel, or heard nothing at all because the letdown the bridge was started
+    on staffs no ladder. Same fault as #150's other seven sites; different
+    shape, because this is a transmit channel rather than a lookup. [#173]
+
+    Falls back to the frequency he checked in on, which is what a controller
+    with no better answer should use and is what this thread did before.
+    """
+    pro = _controller.procedure_of(
+        ctl.aircraft.get(ctl._resolve(cs)) if cs else None, profile)
+    fld = his_field(bridge, ctl, pro, cs, fallback_hz)
+    role = "approach" if getattr(pro, "guidance", "") == "talkdown" else "tower"
+    seats = _theatre.seats_now(pro)
+    st = _stations.role_at(seats, role, fld) if fld else None
+    if st is None:
+        # NO SEAT FOR THAT ROLE AT HIS FIELD is a real state, not an error: a
+        # 1944 letdown staffs no ladder at all, and a field may publish a tower
+        # and no approach. Answering with another aerodrome's frequency would
+        # be the #147 fault -- a real controller, a real channel, the wrong
+        # airport -- so the honest answer is the one he called on.
+        return fallback_hz
+    return st.freq_mhz * 1_000_000
+
+
 def watching_him(bridge, ctl, profile, cs, pos, scope, fallback_hz=0.0,
                  session_id: str = ""):
     """Who should have this aeroplane, and -- when nobody -- WHY NOT.
@@ -6157,34 +6199,12 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         under the same radio lock as everything else so it can never talk over
         the pilot or over the agent mid-sentence.
         """
-        # WHICH FREQUENCY THE FINAL IS FLOWN ON. One controller, one channel.
-        #
-        # This used to go out on Tower's frequency while the model's answers
-        # went out on Approach's, and the result was exactly what it sounds
-        # like: a pilot heard a conversation from one voice on one channel and
-        # vectors from a different voice on another, disagreeing, and reported
-        # "two personalities" and "he's sending me south of the field". They
-        # were two halves of one controller, split across two radios.
-        #
-        # On a talkdown the radar controller flies the approach, so his channel
-        # carries all of it -- the conversation, the vectors and the mile calls
-        # -- and Tower's landing clearance is relayed rather than collected on
-        # another frequency. That matches both the procedure and the handoff
-        # rule in route.py, which now keeps him here to the missed approach
-        # point. On any other approach the aeroplane has its own aid and Tower
-        # genuinely does take him at the intercept, so the old behaviour stands.
-        # The ARRIVAL field's, explicitly. This is the frequency the
-        # talkdown goes out on, so a first-role-match answer would put the
-        # mile calls on another aerodrome's channel.
-        # THE LOADED THEATRE'S arrival field, not `core.route`'s. This was
-        # the Caucasus constant, so on Nevada it asked for a station at
-        # "Batumi", got None, and the talkdown fell back to whatever channel
-        # this thread happened to transmit on. [CODEX_NTTR_AUDIT]
-        _fld = _theatre.current().arrival
-        _final = (_stations.role_at(_seats, "approach", _fld)
-                  if getattr(profile, "guidance", "") == "talkdown"
-                  else _stations.role_at(_seats, "tower", _fld))
-        final_hz = (_final.freq_mhz * 1_000_000) if _final else freq_hz
+        # WHICH FREQUENCY THE FINAL IS FLOWN ON is asked PER AEROPLANE now,
+        # inside the loop below, by `final_channel` -- which carries the
+        # argument that used to live here. It was computed once at thread
+        # start from the bridge's loaded profile and the theatre's arrival
+        # field, and then used for every aircraft's mile calls, landing
+        # relay and goodbye. [#173]
         called: dict[str, int] = {}
         vectored: dict[str, int] = {}      # last heading issued, per aircraft
         vec_at: dict[str, float] = {}      # and when, so he is not nagged
@@ -6311,7 +6331,13 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 # and a closure over the loop variable would hand this tick's
                 # fixes to the next tick's picture.
                 def _his_picture(cs: str, _seen=_seen) -> Scope:
-                    fld = his_field(bridge, ctl, profile, cs, final_hz)
+                    # THIS THREAD'S OWN CHANNEL as the fallback, which
+                    # is what "he has not checked in anywhere" means
+                    # here. It was the thread-level `final_hz`, derived
+                    # once from the bridge's profile -- so the guess
+                    # about an unknown aeroplane came from another
+                    # man's procedure. [#173]
+                    fld = his_field(bridge, ctl, profile, cs, freq_hz)
                     if fld not in _seen:
                         _seen[fld] = fetch_radar(session_id, profile=profile,
                                                  field=fld)
@@ -6321,6 +6347,13 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 # Two contacts is traffic, and traffic means one at a time.
                 traffic = len(fixes) >= 2
                 for cs, pos, scope in fixes:
+                    # HIS CHANNEL, decided here and used for everything this
+                    # iteration says to him -- the mile calls, the landing
+                    # relay, the goodbye, and every free-channel check ahead of
+                    # them. Two facts decide it and both are the aeroplane's:
+                    # whether HIS procedure is a talkdown, and which field is
+                    # HIS. [#173]
+                    _final_hz = final_channel(bridge, ctl, profile, cs, freq_hz)
                     # He is on the ground. Stop flying him.
                     #
                     # The approach ends when the aeroplane is on the runway, and
@@ -6385,7 +6418,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                         # same bug as an engineering channel that says nothing,
                         # and it is worse here because it is the last thing that
                         # happens on every flight.
-                        free, why = channel_is_free(on_hz=final_hz)
+                        free, why = channel_is_free(on_hz=_final_hz)
                         if not free:
                             print(f"  .. holding {cs}'s goodbye: {why}", flush=True)
                             continue          # not marked down; it will repeat
@@ -6400,7 +6433,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                             # stations, his Tower and his Ground, and both are
                             # unique only within his aerodrome.
                             ctl.report_down(cs, me=his_station(
-                                bridge, ctl, profile, cs, final_hz))
+                                bridge, ctl, profile, cs, _final_hz))
                             _txs = ctl.take_out()
                             bye = for_voice(" ".join(tx.text for tx in _txs))
                         except Exception:
@@ -6435,8 +6468,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                                     record(session_id, kind="atc/handoff",
                                            callsign=cs, text=bye,
                                            to=_ho.role)
-                                _pool.transmit(voice_for(final_hz).frames(bye),
-                                                channels_of(final_hz), AM)
+                                _pool.transmit(voice_for(_final_hz).frames(bye),
+                                                channels_of(_final_hz), AM)
                         continue
                     grounded.discard(cs)        # airborne again: a new sortie
                     flown.add(cs)               # and now a landing is possible
@@ -6458,9 +6491,9 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     # loop keeps its copy: a handoff that becomes due mid-
                     # transmission should not wait for the next poll.
                     _who = ctl.aircraft.get(ctl._resolve(cs))
-                    _hz = bridge.heard_on.get(ctl._resolve(cs)) or final_hz
+                    _hz = bridge.heard_on.get(ctl._resolve(cs)) or _final_hz
                     _nxt, _why = watching_him(bridge, ctl, profile, cs, pos,
-                                              scope, fallback_hz=final_hz,
+                                              scope, fallback_hz=_final_hz,
                                               session_id=session_id)
                     # SAY WHAT WAS DECIDED, INCLUDING NOTHING. Only when the
                     # answer CHANGES, so a quiet cruise does not fill the log --
@@ -6506,7 +6539,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     if not may_vector(_pro):
                         continue                # a letdown he flies himself
                     if not may_be_vectored(bridge, ctl, cs, traffic=traffic,
-                                           freq_hz=final_hz):
+                                           freq_hz=_final_hz):
                         continue                # holding, or nobody's turn yet
                     g = asr.guide(pos, _pro,
                                   on_missed=flying_the_missed(bridge, cs, pos, _pro,
@@ -6558,7 +6591,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                                       f" degree reversal for {cs} to see if it "
                                       "persists", flush=True)
                                 continue
-                        free, why = channel_is_free(on_hz=final_hz)
+                        free, why = channel_is_free(on_hz=_final_hz)
                         if not free:
                             # Do NOT record it as issued -- he never heard it,
                             # and marking it sent would suppress the repeat.
@@ -6601,8 +6634,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                             record(session_id, kind="atc/vector", callsign=cs,
                                    range_nm=round(g.range_nm, 2),
                                    heading=want, alt=g.altitude_ft, text=text)
-                            _pool.transmit(voice_for(final_hz).frames(text),
-                                            channels_of(final_hz), AM)
+                            _pool.transmit(voice_for(_final_hz).frames(text),
+                                            channels_of(_final_hz), AM)
                             hold_the_channel_for_a_readback()
                         continue
 
@@ -6613,7 +6646,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     mile = 0 if g.phase == "map" else int(round(g.range_nm))
                     if called.get(cs) == mile:
                         continue
-                    free, why = channel_is_free(on_hz=final_hz)
+                    free, why = channel_is_free(on_hz=_final_hz)
                     if not free:
                         print(f"  .. holding the {mile} mile call for {cs}: "
                               f"{why}", flush=True)
@@ -6627,8 +6660,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                         record(session_id, kind="atc/range", callsign=cs,
                                range_nm=round(g.range_nm, 2), phase=g.phase,
                                heading=g.heading, text=text)
-                        _pool.transmit(voice_for(final_hz).frames(text),
-                                        channels_of(final_hz), AM)
+                        _pool.transmit(voice_for(_final_hz).frames(text),
+                                        channels_of(_final_hz), AM)
                         if g.phase != "map":
                             # A range call with a correction in it is an
                             # instruction; the bare "over the point" is not.

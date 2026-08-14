@@ -10162,7 +10162,7 @@ Code: `src/marshall/atc/addressing.py` (`_mangled_form_of`, `misnamed`).
 ---
 
 ## [ARCH-33] The channel a talkdown goes out on is chosen once, from the bridge's procedure — #173
-labels: architecture, bug
+labels: architecture, bug, needs-flight-test
 
 Found while closing #150's list of five, which is the argument for sweeping
 rather than ticking items off: two more sites were inside `separation_context`
@@ -10205,8 +10205,29 @@ to a lookup, and it wants its own test and its own flight.
 Tests: beside `tests/test_two_procedures_one_bridge.py`.
 Code: `src/marshall/atc/agent_atc.py` (`asr_monitor`).
 
-**Status:** OPEN — found 13 August while fixing #150, not started.
+**Status:** FIXED 14 August, NEEDS A PILOT — card row V8. `final_channel`
+answers it per aeroplane, from two facts that are both his: whether HIS
+procedure is a talkdown (Approach's channel) or not (Tower's), and which field
+is HIS, off the frequency he checked in on. Resolved at the top of the
+per-aircraft loop, so everything that iteration says to him — the mile calls,
+the landing relay, the goodbye, and every free-channel check ahead of them —
+goes out on one channel that is his.
 
+The thread-level constant is gone rather than shadowed. `_his_picture` used it
+as the fallback for an aeroplane who has checked in nowhere and now uses the
+channel THIS THREAD listens on, which is what that fallback actually means.
+
+**The blind cases answer honestly.** A man on a frequency nobody works, or on a
+procedure that staffs no ladder at all — the 1944 letdown — gets back the
+channel he called on rather than a seat from somebody else's aerodrome. A guess
+that names a real controller at the wrong airport is the #147 fault and is
+worse than the frequency in front of him.
+
+Criterion 3 is met by construction rather than separately: `channel_is_free` is
+asked about `_final_hz`, which IS the channel the transmission then uses.
+
+Tests: `tests/test_the_final_goes_out_on_his_channel.py`. The two-field case
+is the one a single-aerodrome map cannot show, so it skips there and says so.
 ---
 
 ## [SEP-19] Leaving the terminal area is a cancelled approach, not a silent bounce — #174
