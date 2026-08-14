@@ -2575,6 +2575,9 @@ correct either way — but it is the difference between "Sockeye, radar contact"
 and "Pony one one, radar contact" on the air, and only a pilot can say whether
 being called by his handle is right.
 
+---
+
+
 
 ## [OPS-2] Backlog and issues stay in step — #27
 labels: chore
@@ -5255,6 +5258,9 @@ a tank parked on a runway and nothing said so. Unknown types are now an error
 naming what is known, with `--force` for a raw DCS type name, and the F-16,
 Hornet, Warthog and Eagle are in the table.
 
+---
+
+
 ## [SEP-12] A parked aeroplane was derived as `taxi`, so the sortie began on Ground's rung — #103
 labels: bug
 
@@ -5306,6 +5312,9 @@ sorties of looking at logs: `board_rows` carried the separation enum alone, so
 every reader outside the engine saw a parked aeroplane described as ENROUTE and
 had no way to ask what it actually thought he was doing. Published now — see #96.
 
+---
+
+
 ## [OPS-13] Fourteen files each decided where the sim was, and three leaked a LAN address — #104
 labels: bug, tooling
 
@@ -5346,6 +5355,9 @@ private copies.
 convenient default at a time: no committed RFC1918 address, and nothing but
 `config.py` may supply a default for a host variable. Both halves were proved
 to go red before being left green.
+
+---
+
 
 ## [SEAM-8] A plan on file is reported as a clearance already issued and read back — #105
 labels: bug, needs-flight-test
@@ -5469,6 +5481,9 @@ rather than at the engine.
 3. Whisper's "Runways 07" for "runway zero seven" does not change the answer —
    the transcript is what it is and the classifier reads transcripts.
 
+---
+
+
 ## [OPS-14] The flight recorder was a turn stale, and half the handoffs left no trace — #107
 labels: bug, tooling
 
@@ -5508,6 +5523,9 @@ Both are the same shape as #103: not a wrong answer, a **right answer recorded
 at the wrong moment or not at all**, believed by everything downstream. The
 harness is the first reader that ever compared the record against what the
 engine actually did, which is why two years of logs looked fine.
+
+---
+
 
 ## [SEP-14] The vacated stack level is reassigned before it is vacated — #108
 labels: bug, needs-flight-test
@@ -5599,6 +5617,9 @@ Live, three synthetic arrivals over real SRS:
 
     no aircraft shared a level, one letdown at a time, the stack
     filled from the bottom, and nobody was forgotten.
+
+---
+
 
 ## [ARCH-12] A radar picture with no origin should say nothing, not guess — #109
 labels: architecture
@@ -5738,6 +5759,9 @@ move that made fields, stations and terrain minima portable.
 
 Start with one Nellis SID, one range route, one Nellis STAR and the existing ILS.
 
+---
+
+
 ## [SEP-15] "On the ground" was measured from sea level — #114
 labels: bug, needs-flight-test
 
@@ -5773,6 +5797,9 @@ authoritative, so this fallback only ever decides for aircraft no event covered.
 The Caucasus is unchanged, which is the point — 59 feet against 32 changes
 nothing there, and that is exactly why this survived. A constant that is right
 on one map is invisible until there are two.
+
+---
+
 
 ## [SEAM-9] Handed to Center and told to hold, in one transmission — #115
 labels: bug, needs-flight-test
@@ -5837,6 +5864,9 @@ aeroplane.
    logged the way `reconcile` logs the others.
 3. `tools/stack_rehearsal.py` sees no transmission containing both.
 
+---
+
+
 ## [ASR-6] The Nellis ILS dithers, and three approaches never arrive — #117
 labels: bug, needs-flight-test
 
@@ -5879,6 +5909,9 @@ and judge nothing until these are fixed and a defensible baseline exists.
    excluded deliberately rather than silently.
 3. A recorded baseline for each, in `BASELINE_FOR`.
 
+---
+
+
 ## [OPS-17] `--sync` overwrote an issue it had no business touching — #118
 labels: bug, tooling
 
@@ -5916,6 +5949,9 @@ The third is the one that made the first possible, and it is the same
 one-directional blindness as the `DONE`-word gap fixed the same day: a check
 that only looks one way will call two things equal while one of them holds
 something the other has never seen.
+
+---
+
 
 ## [ARCH-15] The board cannot remember who is flying — #119
 labels: architecture, needs-flight-test
@@ -6051,6 +6087,9 @@ cannot be trusted to hold what it is given.
 1. `Controller.aircraft` is a cache of the tables, not the original.
 2. A bridge restart mid-sortie loses nothing a pilot can hear.
 3. Per-turn scratch is separated from remembered state, named as such.
+
+---
+
 
 ## [SEAM-10] A read-back is heard as a report, and a debug note moves the board — #121
 labels: bug, needs-flight-test
@@ -8833,6 +8872,9 @@ visible until it is. Re-checked 13 August: `agent_atc._contact` still publishes
 while `feed/tracks.py` still stamps every aeroplane `"airplane"`, and no test
 anywhere mentions `is_aircraft`.
 
+---
+
+
 ## [SEAM-18] A read-back correction names what is missing in PROSE, so nothing checks it was said — #157
 labels: bug, needs-flight-test
 
@@ -9216,6 +9258,9 @@ touchdown. `report_landed` delegates to `report_down` when the man is already
 `Phase.LANDED`, and both named cases in
 `tests/test_controller.py::TestTheEndOfAnApproachIsAudible` exist and pass.
 Labels: needs-flight-test
+
+---
+
 
 ## [ARCH-29] There is no such thing as the theatre's approach — #162
 
@@ -9900,6 +9945,57 @@ that staffs no delivery seat.
 trigger. An overlord owns them, the map staffs one, and no rule reaches him.
 That is asserted rather than forgotten — the test fails on the day somebody
 builds it, with instructions to delete the class.
+---
+
+## [KB-6] The board's datum is the fallback whenever nobody has just spoken — #169
+labels: bug, needs-flight-test
+
+`field_origin` takes the SPEAKING controller's field, and only the transmission
+path passes one: `agent_atc.py:5154` hands the seat's field in, while the
+hook-tick publishes at `:5753` and `:5796` fetch radar with no `field=` at all.
+
+So a board refreshed by the metronome — which is most refreshes — always renders
+the fallback datum, whatever the seat working him would have measured from.
+
+**Harmless today, and that is the trap.** Center is fieldless anyway, so the
+fallback is what he would have used; the number and the "why" both happen to be
+right. The moment #160 lands and a datum is chosen per aeroplane, this path will
+go on printing the loaded approach's field while the controller measures from the
+destination — and the page will be confidently wrong rather than honestly odd,
+which is the exact regression the datum work was written to prevent.
+
+**Acceptance criteria.** The datum a board row shows is the one the controller
+working him would use, on a tick with no transmission in it — asserted, because
+the failure is invisible while the two answers agree.
+
+Code: `src/marshall/atc/agent_atc.py` (the hook-tick publishes).
+
+**Status:** FIXED, NEEDS A PILOT — card row V10. The fix landed in `392f961`
+and this entry went stale: `worked_from` has resolved the datum PER ROW since
+then, from the seat working that aeroplane, re-measuring the range from the
+contact's own position rather than relabelling it.
+
+**What was missing was the assertion**, which is the criterion this issue
+states — *"asserted, because the failure is invisible while the two answers
+agree"* — and a fix with no test is exactly the state that let this entry rot
+without anybody noticing.
+`tests/test_the_board_measures_from_his_seat.py` drives the metronome case: a
+picture fetched with no field, a row whose seat is at the other aerodrome, and
+a contact standing ON that aerodrome so the two answers cannot coincide. It
+asserts the datum is his seat's field, that the NUMBER moved with the name
+(zero miles, not twenty-two), and — separately — that the fallback would have
+named a different field, so the test cannot pass by the two agreeing.
+
+**The metronome still fetches with no `field=`, deliberately, and that is now
+guarded.** It is nobody's picture and must stay so: passing a field there would
+put one seat's answer under every row again. The hook callback in the same loop
+DOES pass one and must, because that is one seat speaking (#166) — so the test
+follows the variable the board is published from rather than sweeping the
+function, which is what its first version got wrong.
+
+The blind cases are asserted too: an unrecognised seat, no owner, a contact
+with no position, and a seat at the same field all leave the picture's own
+answer standing. A relabelled number would be worse than the fallback.
 ---
 
 ## [SEP-18] Nothing owns the runway, and nothing separates an aeroplane that is not on the approach — #170

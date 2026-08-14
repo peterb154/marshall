@@ -240,6 +240,19 @@ def main() -> int:
     # falls into, which is this project's recurring shape: something true of a
     # neighbour, borrowed silently.
     unlabelled = []
+    # AN ENTRY NOT TERMINATED BY `---`, which is what lets one edit eat the
+    # next issue whole.
+    #
+    # Every tool here parses by HEADING and is unaffected. A human -- or an
+    # agent -- editing a status by hand does not: the obvious way to find an
+    # entry's extent is `text.index("\n---", start)`, and on an unterminated
+    # entry that runs past the following heading and takes the next issue with
+    # it. #169 was deleted from this file exactly that way on 14 August,
+    # silently, and was noticed only because a later edit could not find it.
+    #
+    # The separator is not decoration; it is the only thing that says where an
+    # entry stops.
+    unterminated = []
     for _i in items:
         if not _i["num"]:
             continue
@@ -257,6 +270,8 @@ def main() -> int:
                 x.strip() for x in _lm.group(1).split(",") if x.strip()}
         else:
             unlabelled.append((_i["slug"], int(_i["num"])))
+        if not any(ln.strip() == "---" for ln in _seg.splitlines()):
+            unterminated.append((_i["slug"], int(_i["num"])))
 
     # TWO ISSUES WITH ONE NAME, which is how [OPS-4] came to mean both "the card
     # check was blind" and "a paused sim". I did that three times in two days --
@@ -427,6 +442,15 @@ def main() -> int:
         print("NEEDS A PILOT, BUT IS NOT ON THE CARD")
         for n in sorted(unflown):
             print(f"  #{n} is labelled needs-flight-test and no row cites it")
+    if unterminated:
+        print("NO `---` AT THE END OF THE ENTRY")
+        for slug, n in unterminated:
+            print(f"  {slug:10} #{n}")
+        print("  The tools parse by heading and do not care. A HUMAN editing a "
+              "status by\n  hand does: the obvious way to find an entry's "
+              "extent is index(\"\\n---\"),\n  which on an unterminated entry "
+              "runs past the next heading and takes that\n  issue with it. "
+              "#169 was deleted from this file that way.")
     if unlabelled:
         print("NO `labels:` LINE AT ALL")
         for slug, n in unlabelled:
