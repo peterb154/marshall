@@ -348,6 +348,87 @@ class Navaid(_File):
     source: str
 
 
+class SortiePoint(_File):
+    """A turning point of ONE mission. Flown, named, and nobody else's.
+
+    The third kind of place, and the one this project kept getting wrong.
+    `PublishedFix` is a navaid or a reference point an AIP would carry;
+    `OwnPoint` is geometry a procedure computes against and no pilot ever says.
+    This is neither: FEET WET, INGRESS, EGRESS and TSUTSNVATI are steerpoints
+    the 362nd actually flies to and actually names on the radio, so by
+    CONFIG.md's rule -- *a fix needs a NAME only if he can fly to it* -- they
+    need names.
+
+    WHAT THEY DO NOT NEED IS TO BE PUBLISHED. They belong to the mission that
+    flies them, not to the map:
+
+        "we deleted the domino flight plan that had feet wet... where on earth
+         did that come from. It shouldn't be in the database from a flight plan
+         as a private fix and it's definitely not a public fix."
+
+    Deleting the plan could never have removed it, because it was a
+    module-level `Fix` in `core/fixes.py` and the bridge pushed the lot into
+    the shared table on every start. Being in a different Python module was the
+    only thing that made it "not published", and that is not a property of the
+    name -- it is an accident of where somebody typed it. Here the distinction
+    is a SECTION, which is a thing the file states rather than a thing a reader
+    has to infer. [#137]
+
+    LAT/LON OPTIONAL HERE, AND REQUIRED ON `PublishedFix`. That is a real
+    difference and not an oversight. A published fix has to be locatable with
+    no sim running, because a controller answers questions about it on a bridge
+    that may never reach DCS -- so its coordinates are seeded from
+    `coord.LOtoLL` once and written into this file. These carry DCS grid metres
+    and are still projected at bridge start, exactly as they were when they
+    lived in Python, and they degrade the same way when the sim is down.
+
+    Not computed here, ever. Caucasus is a transverse Mercator and a flat-earth
+    offset from the field was measured 1.2 miles wrong at the coast and 7.6 at
+    the target area. Seeding them is the rest of #137; moving them out of
+    Python is this part of it, and doing both at once would mix a data move
+    with a projection run.
+    """
+    name: str
+    x: float
+    z: float
+    lat: float | None = None
+    lon: float | None = None
+    note: str = ""
+
+
+class Defended(_File):
+    """Somewhere the route is planned AROUND. Not a place anybody flies to.
+
+    A gun position with a reach, used by the planner and drawn on the chart.
+    It has no ident and no frequency because nothing tunes it.
+    """
+    name: str
+    x: float
+    z: float
+    reach_nm: float = 6.0
+
+
+class Sortie(_File):
+    """The mission this map is set up to fly: its route and what it avoids.
+
+    ONE MISSION PER MAP TODAY, and that is a limit worth naming rather than
+    hiding. The 1944 strike is the Caucasus file's; Nevada's route is two
+    published fixes and needs no private points at all, which is why this whole
+    section is optional. When a second mission on one map arrives this becomes
+    a list and the bridge is told which -- the same shape `approach` already
+    has, and the reason `route` names points rather than embedding them.
+
+    `route` is the order they are flown IN, by name, so a point used twice --
+    BATUMI opens and closes the strike -- is one definition and two visits.
+    `alt_ft` is one entry per LEG, so it is always one shorter than `route`.
+    """
+    label: str = ""
+    point: list[SortiePoint] = []
+    route: list[str] = []
+    alt_ft: list[int] = []
+    defended: list[Defended] = []
+
+
 class TheatreFile(_File):
     theatre: Identity | None = None
     pronunciation: Terms = Terms()
@@ -357,6 +438,7 @@ class TheatreFile(_File):
     station: list[Controller] = []
     approach: list[Approach] = []
     navaid: list[Navaid] = []
+    sortie: Sortie | None = None
 
 
 class CallsignsFile(_File):
@@ -499,6 +581,15 @@ def published_fixes(theatre: str = "") -> list[PublishedFix]:
     a fact about the name, not about which Python module it happens to sit in.
     """
     return list(_theatre(theatre or theatre_name()).fix)
+
+
+def sortie(theatre: str = "") -> Sortie | None:
+    """The mission this map flies, or None where the file declares none.
+
+    None is a real answer and the common one: a map with no `[sortie]` section
+    publishes a catalogue and nothing private, which is Nevada.
+    """
+    return _theatre(theatre or theatre_name()).sortie
 
 
 def identity(theatre: str = "") -> Identity | None:

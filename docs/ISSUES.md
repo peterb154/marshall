@@ -7094,19 +7094,47 @@ that can be cited (a plate, an AIP, the sim's own `Beacons.lua`); a mission's
 route points live with the mission; and nothing invented gets published to
 everybody. See also #133, which is the same distinction for flight plans.
 
-**Status:** PARTLY, and the headline complaint is still live. Items 3 and 4 of
-the audit below are done: aerodromes, stations and approaches became TOML rows,
-the Python definitions were DELETED (`118a9e6`) and `route.py` is a reader over
-them through a module `__getattr__`. Item 2 is not. `core/fixes.py` was never
-converted — FEET WET, INGRESS, TSUTSNVATI, EGRESS and `SORTIE` are still Python
-— and they re-enter through the back door: `theatre.waypoints` is built from
-them and `push_fixes` merges the waypoints into the shared table, so this
-mission's private turning points are STILL published to every controller on
-every bridge start. That is the sentence the pilot opened with. `core/fields.py`
-also still hard-codes `DEPARTURE_FIELD = "Kobuleti"` and
-`ARRIVAL_FIELD = "Batumi"`, and `3a30af3` already says all of this in fewer
-words.
+**Status:** PARTLY — item 2 landed 14 August, and what is left of it is
+named below rather than left as "partly".
 
+`core/fixes.py` was 208 lines and is 151. FEET WET, INGRESS, TSUTSNVATI,
+EGRESS and REHEARSAL, the route, its per-leg altitudes and the defended
+batteries are all `[sortie]` in `config/theatres/caucasus.toml` now — a
+SECTION of its own beside `[[fix]]`, because what is published is a fact about
+the map and what is there goes home with the mission that flies it. Being in a
+different Python module was the only thing that ever made them "private", and
+that is not a property of a name; it is an accident of where somebody typed it.
+
+`catalogue.SortiePoint` is the third kind of place, after `PublishedFix` (a
+navaid an AIP would carry) and `OwnPoint` (geometry a procedure computes
+against and no pilot ever says): a steerpoint that IS flown and IS named on the
+radio and belongs to one mission. `route.py` keeps every old name — `R.SORTIE`,
+`R.TARGET_AREA`, `R.DEFENDED` — as a reader over the file, so nothing
+downstream moved. `core/fixes.py` keeps the `Fix` type and the two functions
+that reason about a route, which is CONFIG.md's split exactly: numbers in the
+data, rules in code.
+
+**Still open, and each is its own piece:**
+
+1. **The private points are still PUBLISHED at runtime.** `push_fixes` does
+   `fixes.update(_th.waypoints)`, so they still reach the shared `fixes` table
+   on every bridge start. Fixing it needs a scope on that table — the flat
+   name→lat/lon map cannot express "this belongs to one mission" — and doing it
+   carelessly breaks plan validation, which refuses a plan naming a fix the
+   table does not hold. The DECLARATION is now separate; the PUBLICATION is not.
+2. **`[[sortie.point]]` carries no lat/lon**, so those points are still
+   projected by the sim at bridge start and still degrade when it is down,
+   exactly as they did in Python. Seeding them through `coord.LOtoLL` is the
+   rest of it, and is what #139 needs.
+3. **The published fixes are declared twice** — `KOBULETI`, `INITIAL`,
+   `BATUMI`, `KUTAISI` are Python constants in `core/fixes.py` AND `[[fix]]`
+   rows in the TOML. 22 call sites read the Python. Two authors for one number
+   is the shape this project keeps finding; it did not bite here only because
+   nobody has edited one without the other.
+4. `core/fields.py` still hard-codes `DEPARTURE_FIELD = "Kobuleti"` and
+   `ARRIVAL_FIELD = "Batumi"`.
+
+Tests: `tests/test_the_sortie_is_data.py`.
 ---
 
 ## The audit, 12 August

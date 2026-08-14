@@ -2020,3 +2020,92 @@ lon = 40.666647
 x = 189361.796875
 z = 487761.8125
 source = "caucasus-Beacons.lua, the sim's own table"
+
+# ---------------------------------------------------------------------------
+# THE MISSION, and it is a SECTION rather than a comment.
+#
+#     "we deleted the domino flight plan that had feet wet... where on earth
+#      did that come from. It shouldn't be in the database from a flight plan
+#      as a private fix and it's definitely not a public fix."
+#
+# These were module-level `Fix` objects in `core/fixes.py`, and being in a
+# different Python module was the only thing that made them "not published" --
+# which is not a property of a name, it is an accident of where somebody typed
+# it. The bridge pushed the lot into the shared table on every start, so the
+# 362nd's own turning points were offered to every controller in every sortie
+# as though they were navaids.
+#
+# `[[fix]]` above is what this MAP publishes: citable, and true whoever is
+# flying. Everything below belongs to ONE mission and goes home with it. [#137]
+[sortie]
+label = "362nd strike, Batumi to Tsutsnvati and home"
+
+# The route, in order, BY NAME -- so BATUMI, which opens and closes the strike,
+# is one definition and two visits. Names resolve against the points below
+# first and the published catalogue second, which is what lets a private route
+# use a public aerodrome without copying it.
+route = ["BATUMI", "FEET WET", "INGRESS", "TSUTSNVATI", "EGRESS", "BATUMI"]
+
+# Altitude per LEG, so this list is always one shorter than the route. The
+# shape of the sortie is in these numbers rather than in the route: go out low
+# where nobody is looking, come home high because the way home is over
+# mountains. Terrain under each leg was sampled from the sim, not guessed --
+# 32 ft climbing out over the coast, 0 ft on the open-water leg, 1,865 ft on
+# the run east, 6,684 ft climbing away from the target, 8,832 ft over the top.
+# Five hundred feet over the sea is deliberate: low enough that nobody on the
+# coast has anything to report, and nothing out there to hit. Eleven thousand
+# clears the highest ridge on the line home by two, which is the margin you
+# want when the alternative is a hillside.
+alt_ft = [2000, 500, 3000, 9000, 11000]
+
+[[sortie.point]]
+name = "FEET WET"
+x = -355811
+z = 595162
+note = "Off 31 to the west, over water. Climb here."
+
+[[sortie.point]]
+name = "INGRESS"
+x = -259507
+z = 595162
+note = "52 nm north of Batumi, 12 nm offshore -- water the whole way, and north of Kutaisi. Turn east for the target from here; this is where the run in starts."
+
+[[sortie.point]]
+name = "TSUTSNVATI"
+x = -268955
+z = 713840
+note = "CAS area: the town on the western shore of the lake, 11 nm east of Kutaisi. Hostile ground. The lake is the only water for miles, which makes it the one landmark that reads the same at eight thousand feet as it does on a chart -- and the town sits on its western edge, so a target can be described by where it is rather than by a coordinate nobody can see. N42 17.314 E42 51.676, given rather than derived: a terrain sweep found a lake nearby and picked the wrong one, and somebody who has flown over the place beats a surface-type search every time."
+
+[[sortie.point]]
+name = "EGRESS"
+x = -318936
+z = 712429
+note = "Off the target and heading home, 24 nm south-east of Kutaisi. Over the high ground: a climb in exchange for 15 nm of clearance from every battery."
+
+[[sortie.point]]
+name = "REHEARSAL"
+x = -375454
+z = 597742
+note = "Air-start point for rapid testing: 15 nm south-west of Batumi, over water, well clear of the defended fields. They used to appear directly over the Kobuleti beacon, which was harmless right up until that field acquired a battery of 88s -- an aeroplane shot down while the pilot is still finding the throttle is not a test of anything."
+
+# Somewhere the route is planned AROUND, not flown to. Data rather than chart
+# decoration: a pilot can ask Center to keep him clear, and Center can only do
+# that if it knows they are there. The direct line to the target flies straight
+# over Kutaisi, which is a short conversation with an 8.8 cm battery.
+[[sortie.defended]]
+name = "Kobuleti"
+x = -317962
+z = 635633
+reach_nm = 6.0
+
+[[sortie.defended]]
+name = "Senaki"
+x = -281782
+z = 647279
+reach_nm = 6.0
+
+[[sortie.defended]]
+name = "Kutaisi"
+x = -284887
+z = 683859
+reach_nm = 6.0

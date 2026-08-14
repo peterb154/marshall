@@ -357,6 +357,111 @@ def _approaches_cached(name: str) -> dict:
 # numbered route and the published table were the same objects. Rebuilt per
 # call they are two copies that happen to agree, which is how they come to
 # differ -- so the conversion is cached on the resolved map name like the rest.
+def sortie_route(theatre: str = "") -> tuple:
+    """The mission's numbered steerpoints, from the file. `((1, Fix), ...)`.
+
+    NAMES RESOLVE AGAINST THE MISSION'S OWN POINTS FIRST AND THE PUBLISHED
+    CATALOGUE SECOND, which is what lets a private route use a public
+    aerodrome without copying it: BATUMI opens and closes the 1944 strike and
+    is one row in `[[fix]]`, visited twice.
+
+    Private first rather than public first, deliberately. A mission that
+    defines a point of its own under a published name means it, and silently
+    handing it the map's version instead would move a turning point without
+    saying so -- the mirror of #143, where our INITIAL collided with a real
+    cartridge's. A collision is the mission's to resolve and this is not the
+    layer that can.
+
+    Empty where the file declares no `[sortie]`, which is Nevada: a map may
+    publish a catalogue and fly nothing private. [#137]
+    """
+    from marshall.core import catalogue
+    from marshall.core.fixes import Fix
+    name = _map_name(theatre)
+    s = catalogue.sortie(name)
+    if s is None or not s.route:
+        return ()
+    mine = {p.name.upper(): Fix(p.name, "", p.x, p.z, None, note=p.note or "",
+                                navaid_kind="", lat=p.lat, lon=p.lon)
+            for p in s.point}
+    public = {f.name.upper(): f for f in _fixes_cached(name)}
+    out = []
+    for n, want in enumerate(s.route, start=1):
+        f = mine.get(want.upper()) or public.get(want.upper())
+        if f is None:
+            # NAMED, NOT SKIPPED. A route point nothing defines would otherwise
+            # renumber every steerpoint after it, so "waypoint four" would mean
+            # a different place than the chart says -- silently.
+            raise KeyError(
+                f"{name}: [sortie].route names {want!r}, which is neither a "
+                f"[[sortie.point]] nor a published [[fix]]")
+        out.append((n, f))
+    return tuple(out)
+
+
+def _sortie_wp(theatre: str = "") -> tuple:
+    """`sortie_route`, and empty rather than fatal when the file is wrong.
+
+    A malformed `[sortie]` must not stop a bridge coming up: the strike route
+    is one mission's chart and the ladder, the approaches and the whole ground
+    half do not touch it. Named on the way past, because a route that silently
+    vanished would read as a map that has no mission.
+    """
+    try:
+        return sortie_route(theatre)
+    except (KeyError, ValueError) as exc:
+        print(f"!! {_map_name(theatre)}: no sortie route -- {exc}", flush=True)
+        return ()
+
+
+def _sortie_legs(theatre: str = "") -> tuple:
+    """Consecutive pairs down the route, which is what a planner walks."""
+    pts = [f for _, f in _sortie_wp(theatre)]
+    return tuple(zip(pts, pts[1:]))
+
+
+def sortie_point(want: str, theatre: str = ""):
+    """One of the mission's own points by name, or None.
+
+    DECLARED, NOT NECESSARILY FLOWN, and that distinction is the whole reason
+    this is not just a search of `sortie_route`. REHEARSAL is a `[[sortie.point]]`
+    that appears nowhere in `route`: it is where the test flights spawn
+    airborne, which is a place the mission owns and never navigates to. A
+    lookup that walked the route returned None for it and the mission builder
+    lost its air-start.
+
+    Falls through to the published catalogue, so a caller asking for a name the
+    mission borrows -- BATUMI opens and closes the strike -- gets the map's row
+    rather than nothing.
+    """
+    from marshall.core import catalogue
+    from marshall.core.fixes import Fix
+    name = _map_name(theatre)
+    s = catalogue.sortie(name)
+    key = (want or "").upper()
+    for pt in (s.point if s is not None else ()):
+        if pt.name.upper() == key:
+            return Fix(pt.name, "", pt.x, pt.z, None, note=pt.note or "",
+                       navaid_kind="", lat=pt.lat, lon=pt.lon)
+    return next((f for f in _fixes_cached(name) if f.name.upper() == key), None)
+
+
+def sortie_defended(theatre: str = "") -> tuple:
+    """What the route is planned around: `(name, x, z, reach_nm)` per battery."""
+    from marshall.core import catalogue
+    s = catalogue.sortie(_map_name(theatre))
+    if s is None:
+        return ()
+    return tuple((d.name, d.x, d.z, d.reach_nm) for d in s.defended)
+
+
+def sortie_alt_ft(theatre: str = "") -> tuple:
+    """Planned altitude per LEG -- one shorter than the route."""
+    from marshall.core import catalogue
+    s = catalogue.sortie(_map_name(theatre))
+    return tuple(s.alt_ft) if s is not None else ()
+
+
 @_lru_cache(maxsize=4)
 def _fixes_cached(name: str) -> tuple:
     return published_fixes(name)
@@ -493,7 +598,6 @@ def published_fixes(theatre: str = "") -> tuple:
 def caucasus() -> Theatre:
     """The 362nd. Kobuleti to Batumi, radar recovery, 1944 flavour available."""
     from marshall.core import catalogue
-    from marshall.core import route as R
     # NAMES ITS OWN MAP. These read `MARSHALL_THEATRE` underneath, so when
     # `current()` fell back to this function after a misspelt name, every
     # loader went looking for `nevda.toml` again and the fallback landed
@@ -537,8 +641,13 @@ def caucasus() -> Theatre:
         # coast routes via KOBULETI, which no sortie leg touches, and a plan
         # naming a fix the table does not hold is refused at delivery.
         fixes=published_fixes("caucasus"),
-        waypoints=tuple(R.sortie_points()),
-        defended=tuple(R.DEFENDED), legs=tuple(R.SORTIE_LEGS))
+        # ...AND THE MISSION'S OWN, out of `[sortie]` in the same file. Two
+        # sections because they are two kinds of thing, which is the whole
+        # point: what is published is a fact about the map, what is here goes
+        # home with the sortie that flies it.
+        waypoints=_sortie_wp("caucasus"),
+        defended=sortie_defended("caucasus"),
+        legs=_sortie_legs("caucasus"))
 
 
 # WHICH NEVADA SORTIE. Two are filed and they recover at different fields, so

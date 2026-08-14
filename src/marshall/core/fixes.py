@@ -76,103 +76,48 @@ KUTAISI = Fix("KUTAISI", "KT", -284887, 683859, None,
               note="Red field. The transit turning point, not a diversion -- "
                    "Batumi is the only blue aerodrome on the map.")
 
-# Where the work is. Not an aerodrome and not a beacon: a point on the ground
-# with a name, which is what a target area actually is -- somewhere a controller
-# can say out loud and a pilot can find by looking.
-#
-# The lakes east of Kutaisi, found by asking the terrain rather than by picking
-# a coordinate off a map: a surface-type sweep east of the field turned up water
-# here and nowhere else nearby, which makes it the one landmark in the valley
-# that reads the same from ten thousand feet as it does on a chart.
-# N42 17.314 E42 51.676, given rather than derived -- a terrain sweep found a
-# lake nearby and picked the wrong one, and somebody who has flown over the
-# place beats a surface-type search every time.
-TARGET_AREA = Fix("TSUTSNVATI", "", -268955, 713840, None,
-                  note="CAS area: the town on the western shore of the lake, "
-                       "11 nm east of Kutaisi. Hostile ground. The lake is the "
-                       "only water for miles, which makes it the one landmark "
-                       "that reads the same at eight thousand feet as it does "
-                       "on a chart -- and the town sits on its western edge, "
-                       "so a target can be described by where it is rather "
-                       "than by a coordinate nobody can see.")
-
 FIXES = [KOBULETI, INITIAL, BATUMI]
 
 # The sortie, as planned rather than as flown: out from Batumi, across to
 # Kutaisi, east into the target area, and home. Everything but Batumi is
 # hostile, so the route is a there-and-back with no alternate -- which is the
 # point of the scenario and the reason fuel is a real number.
-# Where the rehearsal flights spawn airborne. Fifteen miles south-west of
-# Batumi, which is open sea and thirty-seven miles from Kobuleti -- they used to
-# appear directly over the Kobuleti beacon, which was harmless right up until
-# that field acquired a battery of 88s. An aeroplane that is shot down while the
-# pilot is still finding the throttle is not a test of anything.
-AIR_START = Fix("REHEARSAL", "", -375454, 597742, None,
-                note="Air-start point for rapid testing: 15 nm south-west of "
-                     "Batumi, over water, well clear of the defended fields.")
-
-# The defended fields, and how far out their heavy flak reaches. Data, because
-# the controllers need it as much as the chart does: a pilot can ask Center to
-# keep him clear, and Center can only do that if it knows they are there.
-DEFENDED = [
-    ("Kobuleti", -317962, 635633, 6.0),
-    ("Senaki",   -281782, 647279, 6.0),
-    ("Kutaisi",  -284887, 683859, 6.0),
-]
-
-# The sortie, routed round the guns rather than through them.
+# THE 1944 STRIKE'S OWN POINTS ARE NOT HERE ANY MORE, and that is the fix.
 #
-# The direct line to the target flies straight over Kutaisi, which is a short
-# conversation with an 8.8 cm battery, and the valley is the only low ground
-# going east -- all three defended fields sit in it. So the outbound leg does
-# not use the valley at all: off runway 31 to the west, climb over the sea,
-# turn north and run up the coast well offshore, and come at the target from
-# the north where nobody is shooting. Sampled the whole way: water under the
-# entire northbound leg, and 1,652 ft of ground on the run east.
+#     "There are fixes in core/fixes.py??? Shouldn't all fixes be data in the
+#      database?"
 #
-# Home is the other way, over the high ground south-east of Kutaisi, which
-# trades a climb for fifteen miles of clearance. Coming back the way we came is
-# thirty miles longer and the direct line passes 4.4 nm from Kutaisi's guns --
-# inside their reach.
-FEET_WET = Fix("FEET WET", "", -355811, 595162, None,
-               note="Off 31 to the west, over water. Climb here.")
-INGRESS = Fix("INGRESS", "", -259507, 595162, None,
-              note="52 nm north of Batumi, 12 nm offshore -- water the whole "
-                   "way, and north of Kutaisi. Turn east for the target from "
-                   "here; this is where the run in starts.")
-HOMEBOUND = Fix("EGRESS", "", -318936, 712429, None,
-                note="Off the target and heading home, 24 nm south-east of "
-                     "Kutaisi. Over the high ground: a climb in exchange for "
-                     "15 nm of clearance from every battery.")
-
-SORTIE = [BATUMI, FEET_WET, INGRESS, TARGET_AREA, HOMEBOUND, BATUMI]
-SORTIE_LEGS = list(zip(SORTIE, SORTIE[1:]))
-
-# Altitude per leg, and the shape of the sortie is in these numbers rather than
-# in the route: go out low where nobody is looking, come home high because the
-# way home is over mountains.
+# FEET WET, INGRESS, TSUTSNVATI, EGRESS and REHEARSAL were module-level `Fix`
+# objects here, and the defended fields and the route and its altitudes were
+# lists beside them. Being in a Python module was the only thing that made them
+# "not published" -- which is not a property of a name, it is an accident of
+# where somebody typed it -- and the bridge pushed the lot into the shared
+# `fixes` table on every start regardless.
 #
-# The terrain under each leg was sampled from the sim, not guessed:
+# They live in `[sortie]` in `config/theatres/<map>.toml` now, in a section of
+# their own, because what is published is a fact about the MAP and what is
+# there goes home with the mission that flies it. Read through
+# `theatre.sortie_route`, `theatre.sortie_defended` and `theatre.sortie_alt_ft`,
+# and reachable under their old names on `route` -- which is the module every
+# caller already imports and is a reader over the files rather than their
+# author. [#137]
 #
-#   1-2  BATUMI to FEET WET        32 ft   -- climbing out over the coast
-#   2-3  FEET WET to NORTH          0 ft   -- open water the whole way
-#   3-4  NORTH to TSUTSNVATI    1,865 ft   -- the run east
-#   4-5  TSUTSNVATI to RIDGE    6,684 ft   -- climbing away from the target
-#   5-6  RIDGE to BATUMI        8,832 ft   -- over the top
-#
-# Five hundred feet over the sea is deliberate and is the whole point of going
-# that way: low enough that nobody on the coast has anything to report, and
-# there is nothing out there to hit. The run east is as low as the ground
-# allows. Coming home the numbers are set by the mountains and not by choice --
-# eleven thousand clears the highest ridge on the line by two, which is the
-# margin you want when the alternative is a hillside.
-SORTIE_ALT_FT = [2000, 500, 3000, 9000, 11000]
+# What is left in this file is the `Fix` TYPE and the two functions that answer
+# questions ABOUT a route. Those are logic and stay in code, which is the split
+# docs/CONFIG.md asks for: numbers in the data, rules in Python.
 
 
 def leg_altitude(i: int) -> int:
-    """Planned altitude for leg i (0-based), or cruise if the route is shorter."""
-    if 0 <= i < len(SORTIE_ALT_FT):
-        return SORTIE_ALT_FT[i]
+    """Planned altitude for leg i (0-based), or cruise if the route is shorter.
+
+    The numbers come off the loaded map; falling back to the cruise for a map
+    that declares no sortie is the same answer this gave for a route shorter
+    than the list, and is why Nevada needs no `[sortie]` section at all.
+    """
+    from marshall.core import theatre as _th
+    alts = _th.sortie_alt_ft()
+    if 0 <= i < len(alts):
+        return alts[i]
     return CRUISE_ALT_FT
 
 
@@ -193,15 +138,13 @@ def steerpoint(fix, route=None) -> int:
     has no chance at all. The names stay for the chart, where a pilot is
     reading rather than listening -- both, and each where it works.
     """
-    for i, f in enumerate(route if route is not None else SORTIE):
+    if route is None:
+        from marshall.core import theatre as _th
+        route = [f for _, f in _th.sortie_route()]
+    for i, f in enumerate(route):
         if f is fix or f.name == fix.name:
             return i + 1
     return 0
-
-
-def sortie_points() -> list[tuple[int, Fix]]:
-    """(number, fix) down the route, which is how it should be read out."""
-    return list(enumerate(SORTIE, start=1))
 
 # The route, in order. INITIAL to BATUMI is deliberately runway heading, so
 # rolling out of the turn inbound puts you on the approach course already.

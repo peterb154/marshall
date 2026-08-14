@@ -49,10 +49,14 @@ from marshall.core.approach import (  # noqa: F401
 from marshall.core.fields import (  # noqa: F401
     ARRIVAL_FIELD, DEPARTURE_FIELD, Field_, KOBULETI_MSA, KOBULETI_MVA,
     field_named)
+# The sortie's own names are NOT in this list and used to be. They are the
+# mission's, they live in `[sortie]` in the theatre file, and they come off the
+# loaded map through `__getattr__` below exactly as the fields, the stations
+# and the wind do. See #137 and `core/fixes.py`, which now holds the TYPE and
+# the two functions that reason about a route, and none of the route itself.
 from marshall.core.fixes import (  # noqa: F401
-    AIR_START, BATUMI, DEFENDED, FEET_WET, FIXES, Fix, HOMEBOUND, INGRESS,
-    INITIAL, KOBULETI, KUTAISI, LEGS, SORTIE, SORTIE_ALT_FT, SORTIE_LEGS,
-    TARGET_AREA, leg_altitude, sortie_points, steerpoint)
+    BATUMI, FIXES, Fix, INITIAL, KOBULETI, KUTAISI, LEGS, leg_altitude,
+    steerpoint)
 from marshall.core.stations import (  # noqa: F401
     PRESET_LETTERS, Station, preset_label, preset_of)
 from marshall.core.units import (  # noqa: F401
@@ -272,7 +276,33 @@ _FROM_THEATRE = {
     "FIELDS": ("fields", ""),
     "BATUMI_FIELD": ("field", "Batumi"),
     "KOBULETI_FIELD": ("field", "Kobuleti"),
+    # ...and the MISSION the map is set up to fly. Its turning points are not
+    # published fixes and never were: they belong to the sortie, and the only
+    # thing that used to make that true was which Python module they sat in.
+    "SORTIE": ("sortie", "route"),
+    "SORTIE_LEGS": ("sortie", "legs"),
+    "SORTIE_ALT_FT": ("sortie", "alt_ft"),
+    "DEFENDED": ("sortie", "defended"),
+    # The named ones, for the callers that want one point rather than the
+    # route -- the briefing names the target, the mission builder spawns at the
+    # rehearsal point. A map that does not declare one answers None, which is
+    # what `briefing.py` already handles with `getattr(R, "TARGET_AREA", None)`.
+    "TARGET_AREA": ("sortie_point", "TSUTSNVATI"),
+    "FEET_WET": ("sortie_point", "FEET WET"),
+    "INGRESS": ("sortie_point", "INGRESS"),
+    "HOMEBOUND": ("sortie_point", "EGRESS"),
+    "AIR_START": ("sortie_point", "REHEARSAL"),
 }
+
+
+def sortie_points() -> list[tuple[int, Fix]]:
+    """(number, fix) down the mission's route, which is how it is read out.
+
+    Was a module constant walked from `fixes.SORTIE`; now the loaded map's, so
+    a second theatre gets its own numbering rather than the Caucasus strike's.
+    """
+    from marshall.core import theatre as _th
+    return list(_th.sortie_route())
 
 
 def station_for(role: str, field: str = "", theatre: str = "", procedure=None):
@@ -333,6 +363,24 @@ def __getattr__(name: str):
         return [s for s in _th.stations_now() if s.preset]
     if kind == "fields":
         return _th.fields_now()
+    if kind == "sortie":
+        route = _th.sortie_route()
+        pts = [f for _, f in route]
+        if key == "route":
+            return pts
+        if key == "legs":
+            return list(zip(pts, pts[1:]))
+        if key == "alt_ft":
+            return list(_th.sortie_alt_ft())
+        return list(_th.sortie_defended())
+    if kind == "sortie_point":
+        # NONE RATHER THAN AN ERROR, and only here. A map may fly no mission at
+        # all -- Nevada declares no `[sortie]` -- and a briefing that asks for
+        # the target area on such a map is asking a reasonable question with
+        # the answer "there isn't one". `briefing.py` already reads it as
+        # `getattr(R, "TARGET_AREA", None)`, so raising would turn a blank
+        # paragraph into a dead plate.
+        return _th.sortie_point(key)
     table, what = ((_th.stations_now(), "station") if kind == "station"
                    else (_th.fields_now(), "aerodrome"))
     for got in table:
