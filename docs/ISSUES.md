@@ -9799,7 +9799,7 @@ Labels: needs-flight-test
 ---
 
 ## [ARCH-32] `enroute` is unreachable, and it takes the whole task half with it — #168
-labels: bug
+labels: bug, needs-flight-test
 
 `phases._wanted` decides which phase an aeroplane should be in. Its complete set
 of returns:
@@ -9870,46 +9870,36 @@ trigger. An overlord has to task him and there is no seat doing that. A test
 asserts they remain underivable, so building the trigger will fail it and force
 the claim to be updated.
 
-**Status:** REOPENED 13 August — closed by me on one of three criteria. `enroute` is reachable and tested. `tasked` and `on_station` still have no trigger, and nothing asserts `handoff.due`'s controller agrees with `phases.owner_of` — which is the test that would have caught the original defect and is the half that generalises.
-are not. `phases._wanted` returns `enroute` when Center works a departing
-aeroplane, deliberately not from `rtb` (`33c616a`, a real `Closes #168`), and
-`tests/test_every_phase_can_be_entered.py` holds the general guard. But
-`tasked` and `on_station` still have no trigger — a test in that same file
-asserts they remain underivable — and nothing yet asserts that the controller
-`handoff.due` gives him is the controller `phases.owner_of` names, which is the
-criterion written to stop this recurring. A pilot still has to see the board say
-`enroute` while Center works him.
+**Status:** FIXED 14 August, NEEDS A PILOT — card row V9. The third criterion
+landed and FOUND A LIVE BUG on its first run, which is the argument for having
+written it rather than closing on the other two.
 
-## [KB-6] The board's datum is the fallback whenever nobody has just spoken — #169
-labels: bug
+`tests/test_the_phase_and_the_ladder_agree.py` asserts that the controller a
+phase names and the controller the ladder gives him are the same man: every
+phase owner is a seat the map staffs, every rule role is one too, and for a
+phase with no geometry `due` returns exactly `owner_of(phase)`.
 
-`field_origin` takes the SPEAKING controller's field, and only the transmission
-path passes one: `agent_atc.py:5154` hands the seat's field in, while the
-hook-tick publishes at `:5753` and `:5796` fetch radar with no `field=` at all.
+**WHAT IT CAUGHT.** An aeroplane at eight thousand feet in the `clearance`
+phase was handed to **Batumi Ground**. The guard in `due` asked
+`owner_of(phase) in _GROUND_SEATS` against a hand-written
+`("ground", "clearance")` — and `phases.clearance.owner` is spelled
+**`"delivery"`**, which is in neither. `Station.also` carries both spellings so
+every lookup worked and nothing ever looked broken.
 
-So a board refreshed by the metronome — which is most refreshes — always renders
-the fallback datum, whatever the seat working him would have measured from.
+The invariant it broke is the pilot's own: *"Yes, an airborne airplane is never
+ground's. Just have tower take him back if he's flying."* It was enforced
+everywhere except through the one seat whose role has two names — and the list
+sat under a comment saying "named once ... two lists would drift". It drifted
+through a third spelling nobody had counted.
 
-**Harmless today, and that is the trap.** Center is fieldless anyway, so the
-fallback is what he would have used; the number and the "why" both happen to be
-right. The moment #160 lands and a datum is chosen per aeroplane, this path will
-go on printing the loaded approach's field while the controller measures from the
-destination — and the page will be confidently wrong rather than honestly odd,
-which is the exact regression the datum work was written to prevent.
+`_GROUND_SEATS` is derived from the phase table now, so a rename in `phases.py`
+carries by construction, with the two literals kept as a floor for a theatre
+that staffs no delivery seat.
 
-**Acceptance criteria.** The datum a board row shows is the one the controller
-working him would use, on a tick with no transmission in it — asserted, because
-the failure is invisible while the two answers agree.
-
-Code: `src/marshall/atc/agent_atc.py` (the hook-tick publishes).
-
-**Status:** OPEN — belongs to #155's remaining scope; filed separately so it
-cannot be closed by the parts of #155 that are done. Only the hook half was
-addressed, and `7312940`'s own message says so; at HEAD the metronome tick still
-fetches radar with no `field=` and publishes that fieldless scope, so a board
-refreshed with no transmission in it still renders the fallback datum and
-nothing asserts otherwise.
-
+**Still open and still second criterion:** `tasked` and `on_station` have no
+trigger. An overlord owns them, the map staffs one, and no rule reaches him.
+That is asserted rather than forgotten — the test fails on the day somebody
+builds it, with instructions to delete the class.
 ---
 
 ## [SEP-18] Nothing owns the runway, and nothing separates an aeroplane that is not on the approach — #170

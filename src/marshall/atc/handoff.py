@@ -278,10 +278,33 @@ CONDITIONS = {
     "airborne": _airborne,
 }
 
-# THE SEATS THAT CANNOT HAVE A FLYING AEROPLANE. Named once, because the
-# invariant is enforced in two places -- the rule rows above and the
-# phase-ownership guard in `due` -- and two lists would drift.
-_GROUND_SEATS = ("ground", "clearance")
+# THE PHASES THAT HAPPEN ON THE GROUND. `holding_short` is deliberately not
+# here: he is stopped at the holding point and he is TOWER's, which is the
+# whole reason the runway has one owner.
+_GROUND_PHASES = ("clearance", "taxi", "taxi_in")
+
+# ...AND THE SEATS THAT WORK THEM, DERIVED FROM THE PHASE TABLE.
+#
+# This was `("ground", "clearance")`, hand-written, under a comment saying
+# "named once, because the invariant is enforced in two places and two lists
+# would drift". It drifted anyway, through a spelling nobody had counted:
+# `phases.clearance.owner` is **"delivery"**, not "clearance". `Station.also`
+# carries both so every lookup worked, and the guard below asked
+# `want in _GROUND_SEATS` -- which was False for "delivery".
+#
+# Measured: an aeroplane at eight thousand feet in the `clearance` phase was
+# handed to Batumi Ground. The invariant is the pilot's own words --
+#
+#     "Yes, an airborne airplane is never ground's. Just have tower take him
+#      back if he's flying"
+#
+# -- and it was enforced everywhere except through the one seat whose role has
+# two names. Deriving the set from the phase table means a rename in `phases.py`
+# carries here by construction; the two literals stay as a floor, because a
+# theatre that staffs no delivery seat still has a Ground that cannot have a
+# flying aeroplane. [#168]
+_GROUND_SEATS = tuple(sorted(
+    {_phases.owner_of(p) for p in _GROUND_PHASES} - {""} | {"ground", "clearance"}))
 
 
 @dataclass(frozen=True)
