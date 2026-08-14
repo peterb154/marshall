@@ -18,7 +18,7 @@ about it. No clearance is ever produced here.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 from marshall.atc import controller as atc
@@ -122,6 +122,13 @@ class Intent:
     # wrong was the agent -- inventing it. "Negative, you missed altitude" has
     # to be a fact the engine hands over, like every other number here.
     missed: tuple = ()
+    # ...AND THE SAME LIST AS NUMBERS. `missed` is how each item SOUNDS, which
+    # is what goes into the sentence; this is which FIELD it was and what its
+    # value is, which is what lets the correction be verified like every other
+    # transmission. Prose is not a fact, so a correction carrying only prose is
+    # a transmission nothing can check -- and the one whose entire purpose is
+    # to restate numbers was the only one with none in it. [#157]
+    missed_facts: dict = field(default_factory=dict)
 
 
 # JSON schema for a structured-output parser (Haiku today, Nova Sonic later).
@@ -457,7 +464,8 @@ def dispatch(ctl: atc.Controller, intent: Intent,
             # pilot to Ground in the same breath as being told his squawk is
             # wrong. See `Controller.clearance_read_back`.
             ctl.clearance_read_back(cs, correct=intent.correct,
-                                    missed=tuple(intent.missed or ()))
+                                    missed=tuple(intent.missed or ()),
+                                    facts=dict(intent.missed_facts or {}))
         case IntentKind.REQUEST_TAXI:
             # WHICH WAY ACROSS THE TARMAC. "Ready to taxi" before the flight and
             # "taxi to parking" after it are the same request in the classifier's

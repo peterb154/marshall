@@ -2507,7 +2507,7 @@ class Controller:
                                      atis_letter=letter) if letter else None))
 
     def clearance_read_back(self, cs: str, correct: bool | None = True,
-                            missed: tuple = ()) -> None:
+                            missed: tuple = (), facts: dict | None = None) -> None:
         """The read-back, and the one place 'readback correct' belongs.
 
         A CORRECT read-back is what ends Delivery's business and hands him to
@@ -2539,10 +2539,32 @@ class Controller:
             # A read-back that is wrong is not a rebuke; it is a request for one
             # element again. Saying which one is the whole value of the reply.
             what = ", ".join(str(m) for m in missed)
+            # THE NUMBERS RIDE ON THE DECISION, not only in the sentence.
+            #
+            # This carried `note=what` and nothing else, and `Decision.facts()`
+            # excludes `note` on purpose -- prose is not a fact. So the one
+            # transmission in the system whose entire job is to name numbers
+            # was the one transmission with no numbers in it, and `verify` had
+            # nothing to check. On 13 August the engine decided two items and
+            # one reached the air:
+            #
+            #   decided: negative -- say again one zero thousand,
+            #                        one two three decimal three
+            #   spoken:  negative -- say again the altitude, one zero thousand
+            #
+            # The frequency he had never read back was now a thing he had not
+            # been ASKED for, so no answer of his could end the exchange
+            # however carefully he replied -- #134 arriving through a door that
+            # fix did not close.
+            #
+            # `facts` comes from `decision.unspoken`, which names the FIELD
+            # rather than how it sounded. With them here the ordinary
+            # verify-and-repair path does the rest, exactly as it does for
+            # every other decision. [#157]
             self.say(ac.callsign,
                      f"{self._addr(ac)}, negative — say again {what}.",
                      decided=D.Decision(kind="say_again", to=ac.callsign,
-                                        note=what))
+                                        note=what, **(facts or {})))
 
     def taxi_in(self, cs: str) -> None:
         """He is off the runway and wants a stand. GROUND'S, and the last of it.

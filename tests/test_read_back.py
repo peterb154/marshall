@@ -46,7 +46,7 @@ class TheExchangeCanBeFinished(unittest.TestCase):
     """The loop that had no exit."""
 
     def test_a_complete_read_back_is_correct(self):
-        ok, missed = agent_atc._read_back_correct(
+        ok, missed, _facts = agent_atc._read_back_correct(
             Bridge(plan()), "sockeye",
             "maintain one zero thousand, one two three decimal three, "
             "squawk three three five zero")
@@ -54,7 +54,7 @@ class TheExchangeCanBeFinished(unittest.TestCase):
         self.assertEqual(missed, [])
 
     def test_a_partial_read_back_names_only_what_is_missing(self):
-        ok, missed = agent_atc._read_back_correct(
+        ok, missed, _facts = agent_atc._read_back_correct(
             Bridge(plan()), "sockeye", "one two three decimal three, sockeye")
         self.assertIs(ok, False)
         self.assertEqual(sorted(missed),
@@ -70,13 +70,13 @@ class TheExchangeCanBeFinished(unittest.TestCase):
         and it is why `clearance_ack` was never written.
         """
         b = Bridge(plan())
-        ok, missed = agent_atc._read_back_correct(
+        ok, missed, _facts = agent_atc._read_back_correct(
             b, "sockeye", "one two three decimal three, sockeye")
         self.assertIs(ok, False)
         self.assertEqual(sorted(missed),
                          ["one zero thousand", "three three five zero"])
 
-        ok, missed = agent_atc._read_back_correct(
+        ok, missed, _facts = agent_atc._read_back_correct(
             b, "sockeye",
             "we expect one zero thousand, one zero minutes after departure, "
             "and we're going to squawk three three five zero, sockeye")
@@ -97,7 +97,7 @@ class TheExchangeCanBeFinished(unittest.TestCase):
         b = Bridge(plan())
         b.cleared_plan["lancer38"] = plan()
         agent_atc._read_back_correct(b, "sockeye", "one zero thousand")
-        ok, missed = agent_atc._read_back_correct(
+        ok, missed, _facts = agent_atc._read_back_correct(
             b, "lancer38", "one two three decimal three")
         self.assertIs(ok, False)
         self.assertIn("one zero thousand", missed)
@@ -120,7 +120,7 @@ class TheSortieOfTwelveAugust(unittest.TestCase):
     def test_the_exchange_now_ends_in_agreement(self):
         b = Bridge(plan())
 
-        ok, missed = agent_atc._read_back_correct(b, "sockeye", self.FIRST)
+        ok, missed, _facts = agent_atc._read_back_correct(b, "sockeye", self.FIRST)
         # The frequency and the squawk ARE there -- as "1, 2, 3 decimal, 3" and
         # "3, 3, 5, 0" -- and used to be reported missing. Only the altitude is
         # genuinely wrong: Whisper wrote "1,000", which is a different number,
@@ -128,7 +128,7 @@ class TheSortieOfTwelveAugust(unittest.TestCase):
         self.assertIs(ok, False)
         self.assertEqual(missed, ["one zero thousand"])
 
-        ok, missed = agent_atc._read_back_correct(b, "sockeye", self.THEN)
+        ok, missed, _facts = agent_atc._read_back_correct(b, "sockeye", self.THEN)
         self.assertIs(ok, True, "'1-0,000' is one zero thousand")
         self.assertEqual(missed, [])
 
@@ -165,32 +165,32 @@ class ItBelongsToTheManWhoIssuedIt(unittest.TestCase):
                    zero seven.
             ATC:   negative -- say again one zero thousand, ...
         """
-        ok, missed = agent_atc._read_back_correct(
+        ok, missed, _facts = agent_atc._read_back_correct(
             Bridge(plan(sortie_phase="taxi")), "sockeye",
             "taxi to zero seven and we will hold short of runway zero seven")
         self.assertIsNone(ok, "Ground did not issue the IFR clearance")
         self.assertEqual(missed, [])
 
     def test_an_approach_read_back_at_thirty_miles_is_not_judged(self):
-        ok, _ = agent_atc._read_back_correct(
+        ok, _, _ = agent_atc._read_back_correct(
             Bridge(plan(sortie_phase="approach")), "sockeye",
             "roger, cleared for the ILS runway one three, sockeye")
         self.assertIsNone(ok)
 
     def test_nor_is_clearing_the_runway_at_the_OTHER_aerodrome(self):
         """05:05:58, on the ground at Batumi, having landed."""
-        ok, _ = agent_atc._read_back_correct(
+        ok, _, _ = agent_atc._read_back_correct(
             Bridge(plan(sortie_phase="landed")), "sockeye",
             "batumi tower, sockeye is clear of the active")
         self.assertIsNone(ok)
 
     def test_an_agreed_clearance_is_not_still_being_read_back(self):
-        ok, _ = agent_atc._read_back_correct(
+        ok, _, _ = agent_atc._read_back_correct(
             Bridge(plan(acknowledged=True)), "sockeye", "anything at all")
         self.assertIsNone(ok)
 
     def test_no_clearance_means_no_verdict_rather_than_yes(self):
-        ok, missed = agent_atc._read_back_correct(
+        ok, missed, _facts = agent_atc._read_back_correct(
             Bridge({}), "nobody", "cleared to Batumi as filed")
         self.assertIsNone(ok)
         self.assertEqual(missed, [])

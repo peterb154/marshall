@@ -2217,7 +2217,7 @@ def _key_of(p) -> str:
 
 
 def _read_back_correct(bridge, known: str,
-                       transcript: str) -> tuple[bool | None, list[str]]:
+                       transcript: str) -> tuple[bool | None, list[str], dict]:
     """Did he repeat the clearance he was given, and WHICH parts did he miss?
 
     ONE JUDGE, AND IT IS THIS ONE. `decision.verify` already returned the list
@@ -2272,7 +2272,7 @@ def _read_back_correct(bridge, known: str,
             # NOT CLEARED, so there is nothing to read back. This is also the
             # answer to "was his read-back correct?" asked of a man who has not
             # been given a clearance: not "yes".
-            return None, []
+            return None, [], {}
     # AN AGREED CLEARANCE IS NOT STILL BEING READ BACK, and this judged every
     # later transmission against it for the rest of the sortie. Acknowledged on
     # the ramp at Kobuleti, he was still being marked against it at eight miles
@@ -2288,7 +2288,7 @@ def _read_back_correct(bridge, known: str,
     # judge, and a transmission that merely shares a number with an old
     # clearance is not a read-back of it.
     if plan.get("acknowledged"):
-        return None, []
+        return None, [], {}
     # A READ-BACK IS READ BACK TO THE MAN WHO ISSUED IT. The IFR clearance is
     # Clearance Delivery's; once he has let go, nothing the pilot says to
     # anybody else is a read-back of it. Without this the check ran for the
@@ -2304,14 +2304,14 @@ def _read_back_correct(bridge, known: str,
     # inventing a squawk and giving him the wrong field's frequency; it was
     # this, reciting his departure clearance back at him an hour later.
     if (plan.get("sortie_phase") or "clearance").lower() != "clearance":
-        return None, []
+        return None, [], {}
     d = _decision.Decision(
         kind="clearance", to=known,
         altitude_ft=plan.get("cruise_ft") or None,
         frequency_mhz=plan.get("departure_mhz") or None,
         squawk=plan.get("squawk") or "")
     if not _decision.accepted_forms(d):
-        return None, []                 # nothing to check him against
+        return None, [], {}             # nothing to check him against
     # CUMULATIVE, BECAUSE A CORRECTION IS A CONVERSATION. Judging each
     # transmission against the WHOLE clearance made the exchange unwinnable: he
     # was told two elements were missing, read back exactly those two, and was
@@ -2337,10 +2337,18 @@ def _read_back_correct(bridge, known: str,
     key = (known or "").lower()
     whole = " ".join(filter(None, (said.get(key, ""), transcript)))
     said[key] = whole
+    # TYPED, NOT JUST SPOKEN. `unspoken` returns the FIELDS he did not repeat,
+    # so the correction can be built as a Decision carrying those numbers
+    # rather than a sentence describing them. Without it the one transmission
+    # whose whole purpose is to restate numbers is the one nothing verifies,
+    # and a dropped item leaves an exchange that cannot terminate: he has not
+    # been asked for the frequency, so no answer of his can supply it. [#157]
+    lost = _decision.unspoken(d, whole)
     missed = _decision.verify(d, whole)
+    facts = {f.field: getattr(d, f.field) for f in lost}
     if not missed:
         said.pop(key, None)              # agreed; nothing left to carry
-    return (not missed), missed
+    return (not missed), missed, facts
 
 
 def separation_context(bridge, ctl, transcript: str, scope: str = "",
@@ -2407,8 +2415,9 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
             intent = dataclasses.replace(intent, kind=intents.IntentKind.READ_BACK,
                                          correct=None, missed=())
         if intent.kind is intents.IntentKind.READ_BACK:
-            _ok, _missed = _read_back_correct(bridge, known, transcript)
-            intent = dataclasses.replace(intent, correct=_ok, missed=_missed)
+            _ok, _missed, _facts = _read_back_correct(bridge, known, transcript)
+            intent = dataclasses.replace(intent, correct=_ok, missed=_missed,
+                                         missed_facts=_facts)
             # ...AND WRITE IT DOWN, from here. `clearance_ack` is the durable
             # record that a clearance was AGREED and not merely issued, and it
             # was being written by the agent's own `correct=` argument -- which

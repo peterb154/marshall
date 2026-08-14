@@ -6444,12 +6444,28 @@ wiring including that the no-argument form is gone. Half of the "Open:" above
 landed with it — `not_on_the_board` now says which board it means and is told in
 so many words not to tell him a plan is missing.
 
-**One item of that paragraph did NOT land, and is written down here rather than
-lost with the issue:** `request_clearance` still returns `_not_on_the_board`
-before it ever calls `resolve(said, callsign)`, so clearance delivery still
-decides it cannot help without looking at what is filed. Re-file it if it is
-heard on the radio again.
+**That item has now landed.** `request_clearance` resolves the plan FIRST --
+`resolve` is a pure lookup over `flight_plans` with no side effects and no
+dependence on the board, so there was never a reason for it to run second, only
+the habit of validating the caller first.
 
+The refusal that did not exist is `found_but_not_him`, and it says both facts:
+the plan is on file, named, with its origin and destination, AND nothing on the
+board answers to that callsign. A pilot who hears "I have Domino, Kobuleti to
+Batumi, but nothing under Sockeye" knows in one breath that his filing is fine
+and his IDENTITY is the problem, which is the one thing he can fix from the
+cockpit. It is still a refusal: `assign` writes against a flight row, and a
+sentence must not create the aeroplane.
+
+`nothing is on file` and `not on the board` stay separate, and a test asserts
+the fix did not collapse them the other way -- a pilot who really has filed
+nothing must not be told his identity is wrong.
+
+**Status:** FIXED 13 August, NEEDS A PILOT — card row G11. The two sibling
+tools were checked and deliberately left alone: `clearance_state` and
+`flight_plan_help` look up what was ISSUED to an aeroplane, so "you are not on
+the board" is the correct and complete answer there, and reordering them would
+be a change made by pattern-matching rather than by reading.
 ---
 
 ## [ARCH-19] The filed route repeats the aerodromes, and the "two fixes" rule depends on it — #127
@@ -6810,7 +6826,7 @@ asymmetry in the title.
 ---
 
 ## [SEAM-16] The read-back correction had no exit, and ran for the whole sortie — #134
-labels: bug
+labels: bug, needs-flight-test
 
 **Status:** CLOSED 12 August. Not `needs-flight-test`: every claim is
 structural and the evidence is the recorded transcripts, replayed verbatim.
@@ -8711,7 +8727,7 @@ while `feed/tracks.py` still stamps every aeroplane `"airplane"`, and no test
 anywhere mentions `is_aircraft`.
 
 ## [SEAM-18] A read-back correction names what is missing in PROSE, so nothing checks it was said — #157
-labels: bug
+labels: bug, needs-flight-test
 
 Found by `tools/ghost_flight.py --sortie` on 13 August — the first run in which
 one aeroplane climbed the whole ladder under one callsign.
@@ -8759,13 +8775,22 @@ Code: `src/marshall/atc/controller.py` (`clearance_read_back`),
 `src/marshall/atc/decision.py` (`verify`, `Decision`),
 `src/marshall/atc/agent_atc.py` (`_read_back_correct`).
 
-**Status:** OPEN — a transcript and a repro, and it is one turn away from #134
-reopening in flight. The only commit citing it (`720311d`) touched
-`docs/TEST_PLAN.md` and nothing else: `controller.py` still emits
-`Decision(kind="say_again", note=what)` with the missing items joined into
-prose that `Decision.facts()` deliberately excludes, so `not_voiced` still
-cannot fire and the 13 August pair has no regression test.
+**Status:** FIXED 13 August, NEEDS A PILOT — card row G12.
+`decision.accepted_forms` now returns a `Form` carrying the FIELD each fact
+came from, not only how it sounds, and `decision.unspoken` returns those forms
+for what went missing. `_read_back_correct` hands them up as
+`{field: value}`, `Intent.missed_facts` carries them, and
+`clearance_read_back` builds `Decision(kind="say_again", ..., **facts)` — so
+the ordinary verify-and-repair path does the rest, exactly as it does for every
+other decision. The phrasebook learned to render a correction from its fields,
+because `repair` returns "" for a kind it cannot phrase and that silent no-op
+meant `say_again` was recorded unvoiced and never put back.
 
+`tests/test_a_correction_names_numbers.py` drives the 13 August pair verbatim
+and keeps the OLD shape as an executable statement of the bug: a correction
+carrying only prose verifies CLEAN against a transmission that dropped half of
+it. Not "fails quietly" — reports success. That is why nothing ever noticed;
+the check ran on every turn and had nothing to look for.
 ---
 
 ## [OPS-19] A bridge restart silently changes the approach the sortie is flying — #158

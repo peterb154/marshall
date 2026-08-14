@@ -532,7 +532,7 @@ class TheReadBackIsJudgedAgainstTheClearance(unittest.TestCase):
         instead of the agent guessing which element was fumbled."""
         from marshall.atc import agent_atc
         b = agent_atc.Bridge()
-        ok, missed = agent_atc._read_back_correct(b, "Sockeye 1-1", "anything")
+        ok, missed, _facts = agent_atc._read_back_correct(b, "Sockeye 1-1", "anything")
         self.assertIsNone(ok)
         self.assertEqual(missed, [])
 

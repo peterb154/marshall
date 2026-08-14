@@ -323,6 +323,43 @@ def not_on_the_board(callsign: str, board: list[str]) -> str:
             f"do have, and ask him to say his callsign again.")
 
 
+def found_but_not_him(callsign: str, plan: dict, board: list[str]) -> str:
+    """The plan is here; the aeroplane is not. Two facts, and both get said.
+
+    THE REFUSAL THAT DID NOT EXIST. There were two answers at clearance
+    delivery -- "you are not on the board" and "nothing is on file" -- and the
+    real state was neither. A plan named `Domino` sat on file while nothing on
+    the board answered to `Sockeye`, and whichever of the two sentences came
+    out was a true statement about one noun and a lie by implication about the
+    other.
+
+    Naming the plan is the point. A pilot who hears "I have Domino, filed
+    Kobuleti to Batumi, but nothing on the board under Sockeye" knows in one
+    breath that his filing is fine and his IDENTITY is the problem, which is
+    the one thing he can fix from the cockpit. "I have no flight of that name"
+    sent him to re-read his flight plan three times instead.
+
+    It is still a refusal. `assign` writes a clearance against a flight row, so
+    there is nothing to issue it to -- and a sentence must not create the
+    aeroplane, which is the door #133 and FEET WET were about.
+    """
+    where = " to ".join(x for x in (plan.get("origin"), plan.get("destination"))
+                        if x)
+    named = plan.get("label") or plan.get("name") or "a plan"
+    board_text = ", ".join(board) if board else "nobody -- the board is empty"
+    return (f"THE PLAN IS ON FILE AND HE IS NOT ON THE BOARD. Both halves must "
+            f"reach him or he will fix the wrong one.\n"
+            f"On file: {named}" + (f", {where}" if where else "") + ".\n"
+            f"On the board: {board_text}.\n"
+            f"Tell him you HAVE the plan and name it, so he stops hunting for "
+            f"it -- do NOT say it is missing, unavailable or not on file. Then "
+            f"tell him you have nothing under {callsign}, say who you do have, "
+            f"and ask him to say his callsign again. A callsign here is a "
+            f"pilot's own name on the radio or a flight somebody created; it "
+            f"is never a name chosen in the air, so this is an identity "
+            f"problem and not a filing one.")
+
+
 def field_of(station: str) -> str:
     """"Kobuleti Clearance" -> "Kobuleti". The aerodrome this seat works.
 
@@ -361,14 +398,16 @@ def clearance_tools(mission: str = "default", station: str = "") -> list:
                 return got
         return None
 
-    def _not_on_the_board(callsign: str) -> str:
+    def _board() -> list[str]:
         from marshall.atc import board as F
         try:
-            have = F.callsigns(mission)
+            return F.callsigns(mission)
         except Exception as e:                  # never lose the refusal to a query
             log.warning("could not list the board: %s", e)
-            have = []
-        return not_on_the_board(callsign, have)
+            return []
+
+    def _not_on_the_board(callsign: str) -> str:
+        return not_on_the_board(callsign, _board())
 
     @tool
     def request_clearance(callsign: str, said: str = "") -> str:
@@ -386,16 +425,37 @@ def clearance_tools(mission: str = "default", station: str = "") -> list:
         not knowing whom to call. If more than one plan fits, you get a question
         to ask him instead; ask it exactly and do not choose for him.
         """
-        f = _flight(callsign)
-        if not f:
-            return _not_on_the_board(callsign)
-
+        # WHAT IS FILED IS LOOKED AT FIRST, and the order is the whole of #126.
+        #
+        # This asked `_flight(callsign)` and refused on it, so a request that
+        # names a plan sitting on file was answered "I have no flight of that
+        # name" without the file ever being opened. Three times in a row, to a
+        # pilot whose plan was there the whole time:
+        #
+        #     "clearly he doesn't know how to find my flight plan"
+        #
+        # He was right about what he heard and wrong about the cause, which is
+        # the damage a refusal about the wrong noun does: it sends him hunting
+        # in a place where nothing is missing.
+        #
+        # `resolve` is a pure lookup over `flight_plans` with no side effects
+        # and no dependence on the board, so there was never a reason for it to
+        # run second -- only the habit of validating the caller first.
         hit = resolve(said, callsign)
         if hit.get("none"):
             return ("Nothing is on file that matches. Tell him so and ask what "
                     "he filed.")
         if hit.get("ambiguous"):
             return "SAY THIS: " + P.ask_which(hit["ambiguous"])
+
+        # NOW the aeroplane, and the refusal can be honest because both halves
+        # are known. A clearance is ISSUED TO an aeroplane -- `assign` needs a
+        # flight row -- so this is still a refusal. It is a different one: the
+        # plan is there and he is not, which is a fact about identity that he
+        # can act on in one transmission.
+        f = _flight(callsign)
+        if not f:
+            return found_but_not_him(callsign, hit["plan"], _board())
 
         plan = hit["plan"]
         fixes = _known_fixes()

@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import re as _re
 from dataclasses import dataclass, field
+from typing import NamedTuple
 
 
 # THE KINDS, and they are named for what the controller DID rather than for the
@@ -170,7 +171,28 @@ class Decision:
 # actually have used. Keeping both meant two functions that had to agree about
 # what a fact sounds like, which is the duplication this module exists to
 # remove. `tools/unwired.py` flagged it the moment the last caller moved.
-def accepted_forms(d: Decision) -> list[tuple[str, list[str], float | None]]:
+class Form(NamedTuple):
+    """One fact of a decision, in every shape it might legitimately be said.
+
+    A TUPLE WITH A NAME ON EACH SLOT, and the name that matters is the first.
+    These entries used to be bare 3-tuples, so `verify` could report that "one
+    two three decimal three" had gone missing and nothing could say WHICH FIELD
+    that was. A spoken form is for a human to read in a log; it is not
+    something a Decision can be rebuilt from.
+
+    That gap is the whole of #157. A read-back correction names the items the
+    pilot missed, and it named them as prose -- so the one transmission whose
+    entire purpose is to restate numbers was the one transmission with no
+    numbers in it, and the verifier that puts back every other dropped fact had
+    nothing to check.
+    """
+    field: str                  # the Decision attribute this came from
+    spoken: str                 # the canonical way a controller says it
+    forms: list[str]            # spellings that are the same fact
+    value: float | None         # the number, where there is one
+
+
+def accepted_forms(d: Decision) -> list[Form]:
     """Every way a controller could legitimately have said each fact.
 
     ONE FACT, SEVERAL RENDERINGS, and this matters far more now that a failed
@@ -193,7 +215,8 @@ def accepted_forms(d: Decision) -> list[tuple[str, list[str], float | None]]:
     because `133`, `133.0` and `133.000` are one number and no amount of string
     matching says so.
 
-    Returns [(canonical spoken form, [string renderings], numeric value or None)].
+    Returns a `Form` per fact: the FIELD it came from, its canonical spoken
+    form, the spellings that count as the same fact, and its numeric value.
     """
     from marshall.core import say
     def _num(v) -> float | None:
@@ -215,42 +238,45 @@ def accepted_forms(d: Decision) -> list[tuple[str, list[str], float | None]]:
         except (TypeError, ValueError):
             return None
 
-    out: list[tuple[str, list[str], float | None]] = []
+    out: list[Form] = []
     if d.altitude_ft is not None:
         n = _num(d.altitude_ft)
         if n is not None:
-            out.append((say.spell_alt(int(n)), [say.spell_alt(int(n))], n))
+            out.append(Form("altitude_ft", say.spell_alt(int(n)),
+                            [say.spell_alt(int(n))], n))
     if d.heading_deg is not None:
         n = _num(d.heading_deg)
         if n is not None:
-            out.append((say.spell_hdg(int(n)),
-                        [say.spell_hdg(int(n)), f"{int(n):03d}"], n))
+            out.append(Form("heading_deg", say.spell_hdg(int(n)),
+                            [say.spell_hdg(int(n)), f"{int(n):03d}"], n))
     if d.runway:
         # ALREADY SPOKEN IS A VALID RUNWAY. `spell_rwy("zero seven")` returns it
         # unchanged, so the canonical form is right either way; only the numeric
         # alternative is unavailable, and a missing alternative is not a fault.
-        out.append((say.spell_rwy(d.runway), [say.spell_rwy(d.runway)],
-                    _num(d.runway)))
+        out.append(Form("runway", say.spell_rwy(d.runway),
+                        [say.spell_rwy(d.runway)], _num(d.runway)))
     if d.frequency_mhz is not None:
         f = _num(d.frequency_mhz)
         if f is not None:
-            out.append((say.spell_freq(f), [say.spell_freq(f)], f))
+            out.append(Form("frequency_mhz", say.spell_freq(f),
+                            [say.spell_freq(f)], f))
     # A STATION IS A NAME, not a number, and must not be held to the numeric
     # rules below -- "Kobuleti Tower one three three decimal zero" is the name
     # followed by the frequency, and treating the digits after it as part of
     # the name reported a perfectly good transmission as a miss.
     if d.station:
-        out.append((d.station, [d.station], None))
+        out.append(Form("station", d.station, [d.station], None))
     # A LETTER, NOT A NUMBER. "Information Alpha" is the whole fact -- the word
     # "information" alone is not it, and neither is a bare "alpha" in a
     # sentence about something else.
     if d.atis_letter:
         want = f"information {d.atis_letter}"
-        out.append((want, [want], None))
+        out.append(Form("atis_letter", want, [want], None))
     if d.squawk:
         digits = str(d.squawk).strip()
-        out.append((say.spell_squawk(digits), [say.spell_squawk(digits), digits],
-                    float(digits) if digits.isdigit() else None))
+        out.append(Form("squawk", say.spell_squawk(digits),
+                        [say.spell_squawk(digits), digits],
+                        float(digits) if digits.isdigit() else None))
     return out
 
 
@@ -473,6 +499,31 @@ def _digit_runs(hay: str) -> list[float]:
     return out
 
 
+def unspoken(d: Decision, said: str) -> list[Form]:
+    """The facts that did not survive being spoken, AS FACTS.
+
+    `verify` is this with the names thrown away, and it is the older of the two
+    only because nothing needed the names until #157. A caller that wants to
+    build a new Decision out of what went missing -- a read-back correction is
+    exactly that -- cannot do it from "one two three decimal three".
+
+    The altitude CONTRADICTION check stays in `verify` and deliberately does
+    not appear here. "five thousand (he said five thousand five hundred)" is a
+    sentence about two numbers; there is no single field whose value it is, so
+    it cannot be a `Form` without lying about what a `Form` means.
+    """
+    hay = _normalise(said)
+    out = []
+    for f in accepted_forms(d):
+        numeric = f.value is not None
+        ok = any(_said_words(hay, s, numeric) for s in f.forms)
+        if not ok and numeric:
+            ok = _said_number(hay, f.value)
+        if not ok:
+            out.append(f)
+    return out
+
+
 def verify(d: Decision, said: str) -> list[str]:
     """Which of the engine's facts did NOT survive being spoken.
 
@@ -486,15 +537,8 @@ def verify(d: Decision, said: str) -> list[str]:
     which is the problem rather than the fix. Hyphens and slashes become spaces
     because "one-three" is one fact spelled with a dash, not a missing one.
     """
+    missed = [f.spoken for f in unspoken(d, said)]
     hay = _normalise(said)
-    missed = []
-    for canonical, forms, value in accepted_forms(d):
-        numeric = value is not None
-        ok = any(_said_words(hay, f, numeric) for f in forms)
-        if not ok and numeric:
-            ok = _said_number(hay, value)
-        if not ok:
-            missed.append(canonical)
     # AND FOR AN ALTITUDE, THE OTHER QUESTION: was a DIFFERENT one also said?
     #
     # "Was the fact spoken" is the whole of the check above, and it is not

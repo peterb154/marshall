@@ -188,4 +188,34 @@ def render(d, last: LastSaid | None = None, amended: bool = False) -> str:
         return say.spell_alt(d.altitude_ft) if d.altitude_ft else ""
     if d.kind == "ack":
         return "roger"
+    if d.kind == "say_again":
+        # WHAT HE STILL OWES, spelled from the fields rather than from `note`.
+        #
+        # A read-back correction is the one transmission that exists purely to
+        # restate numbers, and it used to fall through to `d.note` -- the prose
+        # the engine had already composed. That reads correctly and repairs
+        # nothing: if the agent dropped one of two items, appending the whole
+        # original sentence restates the one it DID say as well, which is the
+        # frequency-filling this module exists to avoid.
+        #
+        # Rendering from the facts means the repair contains exactly what went
+        # missing, because `repair` is only ever called with the decision whose
+        # facts `verify` just found absent. [#157]
+        want = []
+        if d.altitude_ft is not None:
+            want.append(say.spell_alt(d.altitude_ft))
+        if d.heading_deg is not None:
+            want.append(say.spell_hdg(d.heading_deg))
+        if d.runway:
+            want.append(f"runway {say.spell_rwy(d.runway)}")
+        if d.frequency_mhz is not None:
+            want.append(say.spell_freq(d.frequency_mhz))
+        if d.squawk:
+            want.append(f"squawk {say.spell_squawk(str(d.squawk))}")
+        if d.atis_letter:
+            want.append(f"information {d.atis_letter}")
+        # Nothing typed on it means an older correction that carries only
+        # prose. Saying the prose is right there -- it is what the engine
+        # decided -- and it is why this is a fallback rather than a refusal.
+        return f"say again {', '.join(want)}" if want else (d.note or "")
     return d.note or ""

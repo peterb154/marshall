@@ -239,6 +239,8 @@ cockpit, can actually get it down at the pace it is read.
 | G8 | P2 | After a clearance, change your mind — *"request a change, make it Anvil"* | A **complete** new clearance (four thousand), read back again. He must not say only what changed | [R#1] `assign` amends |
 | G9 | P2 | With Shooter: both of you ask for **Marlin**, one after the other | Both get it, both are cleared to three thousand, and neither clearance changes the other's | [R#1] one plan, two flights |
 | G10 | P3 | Airborne later — *"what am I doing"* or *"where am I going next"* | He answers from your plan without you repeating it, and does not read you ranges you do not need | [R#1] `flight_plan_help` |
+| G11 | P1 | Ask for a clearance **under a callsign the board does not have** — say your callsign wrong on purpose, or call before the flight is created | He tells you he HAS the plan and names it — *"I have Domino, Kobuleti to Batumi"* — and separately that he has nothing under that callsign, and asks you to say it again. He must NOT say the plan is missing, unavailable or not on file: that sends you hunting where nothing is wrong | [#126] |
+| G12 | P1 | Read the clearance back with **two elements missing** — drop the altitude and the departure frequency | He asks for **both** back, in one transmission. Then supply only one, and he asks for the one still outstanding — never for the one you just gave him, and never a correction you cannot satisfy | [#157] |
 
 **What each one is actually checking**
 
