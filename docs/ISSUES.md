@@ -7122,10 +7122,20 @@ data, rules in code.
    name→lat/lon map cannot express "this belongs to one mission" — and doing it
    carelessly breaks plan validation, which refuses a plan naming a fix the
    table does not hold. The DECLARATION is now separate; the PUBLICATION is not.
-2. **`[[sortie.point]]` carries no lat/lon**, so those points are still
-   projected by the sim at bridge start and still degrade when it is down,
-   exactly as they did in Python. Seeding them through `coord.LOtoLL` is the
-   rest of it, and is what #139 needs.
+2. ~~`[[sortie.point]]` carries no lat/lon.~~ **Done, same day.** Seeded
+   through `coord.LOtoLL` by `tools/seed_fixes.py` — re-runnable, additive,
+   and a text edit rather than a TOML round trip so the `source` citations
+   survive. **Every fix on the Caucasus map now carries a position**, so #139's
+   question is answerable with no sim running for the first time. It answers
+   badly: all four published approaches begin OUTSIDE the terminal area that
+   owns them.
+
+   The seeding also caught a wrong number in the data's own prose. TSUTSNVATI's
+   note said *"11 nm east of Kutaisi"*; the grid metres and the sim's
+   projection both say 18. They agree with each other and disagree with the
+   sentence, which had been carried unchecked since the point was written —
+   and its hand-given `N42 17.314 E42 51.676` matches the sim to six decimal
+   places, which is what says the projection is right and the prose is not.
 3. ~~The published fixes are declared twice.~~ **Done, same day.**
    `KOBULETI`, `BATUMI` and `KUTAISI` come off `[[fix]]`; `INITIAL` — which
    was a THIRD copy, since #143 had already moved it onto its approaches as an
