@@ -1,4 +1,4 @@
-"""How far a terminal area reaches has ONE author, and the ladder is not it.
+"""How far a terminal area reaches has ONE author, and it is the procedure.
 
 `handoff.CENTER_NM` imports `airspace.TERMINAL_NM` and says why:
 
@@ -7,22 +7,27 @@
      from a ladder that hands a man over at twenty-five miles into airspace
      that stops at twenty."
 
-The comment is right and the code stopped satisfying it, because the halving
+The comment was right and the code stopped satisfying it, because the halving
 was added later and inside `sectors_for`:
 
     reach = min(TERMINAL_NM, nearest_other_field_nm / 2)
 
-Kobuleti and Batumi are 22.6 nm apart, so each area is 11.3 -- and a constant
+Kobuleti and Batumi are 22.6 nm apart, so each area was 11.3 -- and a constant
 imported from a module is not the function that module uses. The ladder had the
-CAP while the map drew the boundary. Measured on the live sortie: a rule firing
-at 25 over a volume ending at 11.3.
+CAP while the map drew the boundary.
 
-`terminal_reach_nm` exists so there is one place to ask. This file checks that
-the number is derived rather than assumed, on whatever map is loaded.
+BOTH HALVES ARE FIXED NOW AND THEY WERE FIXED IN THAT ORDER, which mattered.
+`terminal_reach_nm` became the one place to ask (#130's investigation); then the
+answer it gave became right (#139). Aligning the ladder to the map FIRST would
+have been a regression wearing the shape of a cleanup -- Center holding an
+arrival to eleven miles, inside the final -- and the intervening commit says so
+with the arithmetic.
 
-WHAT THIS FILE DELIBERATELY DOES NOT DO is make the ladder follow the volume.
-That was tried and is wrong in the current geometry -- see the last class, which
-records the arithmetic so the next person does not have to rediscover it. [#130]
+The area is derived from the procedures it serves now: the furthest fix any of
+this field's approaches uses, plus room to manoeuvre onto it, floored at the
+conventional twenty-five. Areas may overlap, because real terminal areas do;
+the tie is broken where two volumes are compared, in migration 034, and checked
+against the live view by `tools/airspace_check.py`. [#130, #139]
 """
 
 from __future__ import annotations
@@ -44,28 +49,34 @@ def fields():
 
 class TestTheReachIsDerivedNotAssumed(unittest.TestCase):
 
-    def test_two_close_fields_do_not_each_own_the_cap(self):
+    def test_no_area_is_smaller_than_the_conventional_twenty_five(self):
+        """`TERMINAL_NM` became the FLOOR when #139 landed. It was the cap, and
+        as a cap it produced eleven-mile areas around twenty-two-mile
+        approaches."""
         got = fields()
         for f in got:
             with self.subTest(f.name):
                 reach = A.terminal_reach_nm(f, [o for o in got if o is not f])
-                self.assertLessEqual(reach, A.TERMINAL_NM)
+                self.assertGreaterEqual(reach, A.TERMINAL_NM)
 
-    def test_the_areas_meet_and_do_not_overlap(self):
-        """The halving's whole purpose, asserted rather than assumed. Two
-        fields d apart get d/2 each, so the circles touch."""
-        a, b = fields()[:2]
-        d = A._nm_between(a, b)
-        ra = A.terminal_reach_nm(a, [b])
-        rb = A.terminal_reach_nm(b, [a])
-        self.assertAlmostEqual(ra + rb, min(d, 2 * A.TERMINAL_NM), places=3)
+    def test_an_area_holds_its_own_procedures(self):
+        """The claim #139 is about, in one line."""
+        got = fields()
+        for f in got:
+            with self.subTest(f.name):
+                reach = A.terminal_reach_nm(f, [o for o in got if o is not f])
+                need = A.procedure_reach_nm(
+                    f, list(T.approaches_now().values()))
+                self.assertGreaterEqual(reach, need)
 
-    def test_a_field_alone_gets_the_cap(self):
-        """Not a degenerate case -- it is the single-aerodrome map, and a
-        reach that collapsed to zero there would hand every aeroplane over the
-        instant it left the ground."""
+    def test_a_field_whose_procedures_cannot_be_LOCATED_keeps_the_default(self):
+        """Zero rather than a small number, so an unsurveyed map behaves
+        exactly as it did. An area sized from a procedure nobody could place
+        would be a figure with no evidence behind it."""
         a = fields()[0]
-        self.assertEqual(A.terminal_reach_nm(a, []), A.TERMINAL_NM)
+        self.assertEqual(A.procedure_reach_nm(a, []), 0.0)
+        self.assertEqual(A.terminal_reach_nm(a, [], approaches=[]),
+                         A.TERMINAL_NM)
 
     def test_the_map_uses_this_function_rather_than_its_own_copy(self):
         """`sectors_for` had the three lines inline, which is how the ladder
@@ -91,52 +102,54 @@ class TestTheReachIsDerivedNotAssumed(unittest.TestCase):
                 self.assertAlmostEqual(row["radius_nm"], want, places=3)
 
 
-class TestTheVolumeDoesNotContainItsOwnApproach(unittest.TestCase):
-    """The arithmetic that stops #130 being fixed by aligning the two numbers.
+class TestEveryApproachFitsInsideItsOwnArea(unittest.TestCase):
+    """What this file asserted the OPPOSITE of, twelve hours ago.
 
-    The obvious repair for "the ladder says 25 and the map says 11" is to make
-    the ladder read the map. It was tried, on 14 August, and it is wrong in
-    this geometry -- because the map is the half that is wrong:
+    The class here was `TestTheVolumeDoesNotContainItsOwnApproach`, written
+    when #130 was found to be blocked, and its docstring ended:
 
-        Batumi terminal area   11.3 nm
-        batumi-ils-13 outer hold at KOBULETI, which is  22.6 nm out
+        "This test fails -- and should be deleted -- on the day #139 lands."
 
-    The procedure begins at DOUBLE the radius of the airspace that owns it. So
-    `Rule("center", "approach", "inbound_within", ...)` reading the derived
-    reach would keep an arrival on Center until eleven miles -- inside the
-    final approach, later than the rule that #51 was filed to fix, and for a
-    man flying the approach exactly as published.
+    It landed, it failed, and this is the replacement. Keeping the shape of the
+    old claim would have been the easy thing and the wrong one: a test that
+    records a defect is only worth having while the defect is there.
 
-    #139 is that fix: a terminal area derived from the procedure it serves,
-    which needs fixes that carry lat/lon, which is #137. So the chain is
-    #137 -> #139 -> #130 and aligning the constants first would be a
-    regression wearing the shape of a cleanup.
-
-    This test fails -- and should be deleted -- on the day #139 lands.
+        Batumi     area 27.5 nm    furthest fix KOBULETI at 22.5
+        Kobuleti   area 28.8 nm    furthest fix INITIAL  at 23.8
     """
 
-    def test_the_approach_reaches_outside_the_area_that_owns_it(self):
+    def test_no_published_approach_starts_outside_its_terminal_area(self):
+        from marshall.core import geo
         got = fields()
-        approaches = T.approaches_now()
         outside = []
-        for key, p in approaches.items():
-            fld = getattr(getattr(p, "aerodrome", None), "name", "")
-            f = next((x for x in got if x.name.lower() == fld.lower()), None)
-            if f is None:
+        for key, p in T.approaches_now().items():
+            fld = next((x for x in got if x.name.lower()
+                        == getattr(p.aerodrome, "name", "").lower()), None)
+            if fld is None or fld.lat is None:
                 continue
-            reach = A.terminal_reach_nm(f, [o for o in got if o is not f])
-            hold = getattr(p, "outer_hold", None) or getattr(p, "iaf", None)
-            if hold is None or not hasattr(hold, "lat"):
-                continue
-            from marshall.core import geo
-            nm, _ = geo.range_bearing_true((f.lat, f.lon), hold.lat, hold.lon)
-            if nm > reach:
-                outside.append((key, round(nm, 1), round(reach, 1)))
-        self.assertTrue(
-            outside,
-            "every published approach now fits inside its own terminal area -- "
-            "#139 has landed, so delete this class and align handoff.CENTER_NM "
-            "with airspace.terminal_reach_nm as #130 asks")
+            reach = A.terminal_reach_nm(fld, [o for o in got if o is not fld])
+            for attr in ("outer_hold", "iaf"):
+                fix = getattr(p, attr, None)
+                if fix is None or getattr(fix, "lat", None) is None:
+                    continue
+                nm, _ = geo.range_bearing_true((fld.lat, fld.lon),
+                                               fix.lat, fix.lon)
+                if nm > reach:
+                    outside.append(f"{key} {attr} {nm:.1f} nm > {reach:.1f}")
+        self.assertEqual(outside, [],
+                         "an approach begins outside the airspace that works "
+                         "it, so 'he is outside my airspace' will fire on a "
+                         "man flying it exactly as published")
+
+    def test_and_every_fix_it_needs_can_be_LOCATED(self):
+        """The prerequisite, asserted so that the test above cannot pass by
+        being unable to measure anything. Every fix carrying no position is a
+        silent exemption."""
+        blind = [f.name for f in T.fixes_now() if f.lat is None]
+        blind += [f.name for _, f in T.sortie_route() if f.lat is None]
+        self.assertEqual(blind, [],
+                         "these fixes have no position, so nothing above "
+                         "measured them -- run tools/seed_fixes.py")
 
 
 if __name__ == "__main__":

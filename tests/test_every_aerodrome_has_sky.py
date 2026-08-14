@@ -96,22 +96,66 @@ class TestNoFieldIsLeftWithoutSky(unittest.TestCase):
             self.assertEqual(s["field"], "")
 
 
-class TestTheBoundaryGoesBetweenThem(unittest.TestCase):
-    """Two aerodromes twenty-two miles apart do not both own twenty-five."""
+class TestTheBoundaryHoldsTHEIROWNAPPROACHES(unittest.TestCase):
+    """Two aerodromes twenty-two miles apart DO both own more than eleven.
 
-    def test_neighbours_meet_in_the_middle(self):
+    This class used to assert the opposite -- that neighbours meet in the
+    middle -- and the reason it gave was real:
+
+        "Half way, so neither swallows the other, which is what happened on the
+         first attempt at this, when both were given the full terminal range
+         and an aeroplane on Kobuleti's ramp resolved to Batumi Approach."
+
+    The hazard was right; the remedy was aimed at the wrong thing. Halving
+    stopped the overlap and produced eleven-mile terminal areas around
+    approaches that begin at twenty-two, so `leaving_my_airspace` fired on a
+    man flying the published procedure. #139 is the other way round: the area
+    is derived from the procedures it serves, overlap is legal because real
+    terminal areas overlap, and the RESOLUTION moves to where two volumes are
+    compared -- migration 034, rank first and then the nearer centre.
+
+    So an aeroplane on Kobuleti's ramp is inside both areas and is still
+    Kobuleti's: by rank, because the circuit outranks a terminal area, and by
+    distance under that. Verified against the live view by
+    `tools/airspace_check.py`, which is where a claim about SQL belongs.
+    """
+
+    def test_each_area_holds_its_own_approaches(self):
+        th = THEATRES[0][1]
+        got = {s["name"]: s for s in _sectors(th, THEATRES[0][2])}
+        from marshall.core import geo
+        for pro in th.approaches:
+            fld = next((f for f in th.fields
+                        if f.name.lower() == pro.aerodrome.name.lower()), None)
+            row = got.get(f"{getattr(fld, 'name', '').lower()}-approach")
+            if fld is None or row is None or fld.lat is None:
+                continue
+            for attr in ("outer_hold", "iaf"):
+                fix = getattr(pro, attr, None)
+                if fix is None or getattr(fix, "lat", None) is None:
+                    continue
+                nm, _ = geo.range_bearing_true((fld.lat, fld.lon),
+                                               fix.lat, fix.lon)
+                with self.subTest(f"{fld.name}/{attr}"):
+                    self.assertLessEqual(
+                        nm, row["radius_nm"],
+                        f"{fld.name}'s area stops at {row['radius_nm']:.1f} nm "
+                        f"and its own approach reaches {nm:.1f}")
+
+    def test_neighbours_are_allowed_to_overlap_now(self):
+        """Stated as a positive, so nobody restores the halving as a tidy-up.
+
+        If this ever fails, the areas have been made disjoint again and every
+        approach on this map begins outside the airspace that works it.
+        """
         th = THEATRES[0][1]
         got = {s["name"]: s for s in _sectors(th, THEATRES[0][2])}
         bat, kob = got["batumi-approach"], got["kobuleti-approach"]
         gap = A._nm_between(
             next(f for f in th.fields if f.name == "Batumi"),
             next(f for f in th.fields if f.name == "Kobuleti"))
-        # Half way, so neither swallows the other -- which is what happened on
-        # the first attempt at this, when both were given the full terminal
-        # range and an aeroplane on Kobuleti's ramp resolved to Batumi Approach.
-        self.assertAlmostEqual(bat["radius_nm"], gap / 2.0, places=3)
-        self.assertAlmostEqual(kob["radius_nm"], gap / 2.0, places=3)
-        self.assertLessEqual(bat["radius_nm"] + kob["radius_nm"], gap + 1e-6)
+        self.assertGreater(bat["radius_nm"] + kob["radius_nm"], gap,
+                           "the terminal areas no longer overlap")
 
     def test_a_lone_aerodrome_gets_the_full_terminal_area(self):
         # Nothing to share a boundary with, so the cap is the ladder's own

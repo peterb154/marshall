@@ -7520,7 +7520,7 @@ on that heuristic until #139 lands, and no pilot has flown an arrival since.
 ---
 
 ## [ARCH-24] A terminal area does not contain the approach it serves — #139
-labels: architecture
+labels: architecture, needs-flight-test
 
     "If the approach requires us maneuvering outside a 25nm ring then maybe we
      should extend that airspace so that the whole approach is covered by the
@@ -7576,13 +7576,48 @@ Tower-to-Approach offers at one to four miles on final and the Center bounce at
 27 nm, and it is exactly the brittle direction test the pilot objected to. It
 comes out when the volumes are right.
 
-**Status:** OPEN — `core/airspace.py` still computes the published reach as
-`min(TERMINAL_NM, nearest / 2.0)`, so Batumi and Kobuleti are still eleven-mile
-circles around a procedure that holds twenty-two miles out. Nothing derives a
-volume from the fixes its approaches use, leaving the volume is still not an
-event, and the interim inbound heuristic above is the only thing between that
-and the bounce.
+**Status:** FIXED 14 August, NEEDS A PILOT — card row V6. Both halves of the
+pilot's first bullet landed; the second bullet is split out below.
 
+**The volume is derived from the procedure it serves.** `terminal_reach_nm`
+takes the furthest fix any of that field's approaches uses and adds
+`MANOEUVRE_NM` — five miles, which is not measured and says so — floored at
+the conventional `TERMINAL_NM`. So `TERMINAL_NM` went from being the CAP to
+being the FLOOR, which is the whole change in one sentence:
+
+    Batumi     11.3 nm -> 27.5     furthest fix KOBULETI at 22.5
+    Kobuleti   11.3 nm -> 28.8     furthest fix INITIAL  at 23.8
+
+**The midpoint split is gone.** It existed so two aerodromes could not claim
+the same sky, and that was the wrong constraint — real terminal areas overlap.
+Where two now do, the nearer field's wins, and that tie is broken where two
+volumes are compared rather than where they are drawn: migration 034 orders by
+rank and then by the nearer centre.
+
+THE HAZARD THE SPLIT WAS GUARDING IS REAL and is now handled somewhere it can
+be. `tests/test_every_aerodrome_has_sky.py` recorded it exactly — *"what
+happened on the first attempt at this, when both were given the full terminal
+range and an aeroplane on Kobuleti's ramp resolved to Batumi Approach"* — so an
+aeroplane on Kobuleti's ramp is inside both areas and is still Kobuleti's: by
+rank, because the circuit outranks a terminal area, and by distance under that.
+
+`tools/airspace_check.py` proves it against the live view, because the rule is
+an `ORDER BY` and a unit test asserting the migration's TEXT proves the file
+says something rather than that the database does it. It is a `check.py` row.
+It also caught its own first failure honestly: a stale `flights` row from an
+aborted run carried no track, the view's LEFT JOIN found none, and the
+aeroplane fell through to the unbounded Center — reported as "overhead Batumi
+-> georgia-center", which reads exactly like the bug it exists to find.
+
+**Split out, not done:** the pilot's second bullet — *"leaving it is an EVENT,
+not a handoff: the approach is cancelled and he is handed back, said out
+loud"* — is controller behaviour rather than geometry and wants its own issue
+and its own flight. A silent bounce between two frequencies still has no
+procedural meaning; it is just no longer fired by a volume that was too small.
+
+**What this unblocks:** #130. The ladder can now read the map without holding
+an arrival on Center until eleven miles, which is why that alignment was
+reverted on 13 August.
 ---
 
 ## [ASR-8] The 1944 letdown profile carries no controllers at all — #140

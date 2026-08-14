@@ -162,6 +162,12 @@ def mva_for(bearing_deg: float, range_nm: float | None = None, cells=None) -> in
 # ladder is a fact about procedure; procedure may read geography, not the
 # reverse. See LAYERS.md.
 TERMINAL_NM = 25.0
+# ROOM TO GET ONTO THE PROCEDURE, beyond its furthest published fix. An
+# aeroplane is not established the instant he reaches the hold: he is vectored
+# onto it, and the vector happens outside it. Five miles is the smallest number
+# that is honestly more than nothing. It is not measured, and saying so is
+# better than implying it was.
+MANOEUVRE_NM = 5.0
 # Tower's, and the reason it is small is the reason it is a separate volume: he
 # owns the runway and its circuit, not the arrival.
 CIRCUIT_NM = 5.0
@@ -187,36 +193,70 @@ def _nm_between(a, b) -> float:
     return nm
 
 
-def terminal_reach_nm(field, others) -> float:
-    """How far THIS aerodrome's terminal area actually extends.
+def procedure_reach_nm(field, approaches=()) -> float:
+    """How far out this aerodrome's own procedures actually go.
 
-    `TERMINAL_NM` is a cap, not the answer. Two fields twenty-two miles apart
-    cannot each own twenty-five, so the area is halved to the nearest
-    neighbour and the two meet in the middle: Kobuleti and Batumi get eleven
-    and a bit each.
+    THE FURTHEST FIX ANY OF THEM USES, plus room to manoeuvre onto it. A
+    terminal area exists to hold the approaches worked in it, so its size is a
+    question about those approaches and not about a constant.
 
-    EXTRACTED SO THAT THE LADDER CAN READ IT. It was three lines inside
-    `sectors_for`, which meant the only thing that knew a field's real reach
-    was the map -- and `handoff.CENTER_NM` went on importing the CAP while
-    believing it had imported the boundary. Its own comment makes the argument
-    against exactly that:
-
-        "AND IT IS THE SAME NUMBER AS THE EDGE OF APPROACH'S VOLUME, so it is
-         imported rather than restated ... holding them separately is one edit
-         away from a ladder that hands a man over at twenty-five miles into
-         airspace that stops at twenty."
-
-    The comment was right and the code stopped satisfying it the day the
-    halving was added, because a constant imported from a module is not the
-    same thing as the function that module uses. Measured on the live sortie:
-    a rule firing at 25 nm over a volume ending at 11.3.
-
-    `others` is every OTHER aerodrome being worked. Empty means the field is
-    alone on the map and the cap is the answer, which is the Nevada single-field
-    case and not a degenerate one.
+    Zero when nothing can be measured -- no approaches, or fixes carrying no
+    position -- and the caller keeps its default. That is the honest answer
+    rather than a small one: an area sized from a procedure nobody could locate
+    would be a number with no evidence behind it.
     """
-    nearest = min((_nm_between(field, o) for o in others), default=None)
-    return TERMINAL_NM if nearest is None else min(TERMINAL_NM, nearest / 2.0)
+    if field is None or getattr(field, "lat", None) is None:
+        return 0.0
+    far = 0.0
+    for pro in approaches:
+        at = getattr(pro, "aerodrome", None)
+        if getattr(at, "name", "").lower() != field.name.lower():
+            continue
+        for attr in ("outer_hold", "iaf", "arrival_fix", "navaid", "aerodrome"):
+            f = getattr(pro, attr, None)
+            if f is None or getattr(f, "lat", None) is None:
+                continue
+            far = max(far, _nm_between(field, f))
+    return far + MANOEUVRE_NM if far else 0.0
+
+
+def terminal_reach_nm(field, others=(), approaches=None) -> float:
+    """How far THIS aerodrome's terminal area extends. Derived, not declared.
+
+        "If the approach requires us maneuvering outside a 25nm ring then maybe
+         we should extend that airspace so that the whole approach is covered
+         by the airspace."
+
+    THE MIDPOINT SPLIT IS GONE AND THAT IS THE FIX. It halved each area to the
+    nearest neighbour so two fields could not overlap, and the arithmetic was
+    absurd: Kobuleti and Batumi are 22.6 nm apart, so both terminal areas were
+    eleven-mile circles -- while Batumi's ILS holds at KOBULETI, twenty-two
+    miles out. The procedure began at DOUBLE the radius of the airspace that
+    owned it, so "he is outside my airspace" fired on a man flying the approach
+    exactly as published, and the geometry answered correctly. That is the
+    signature of a volume that does not describe what it is for.
+
+    NOT OVERLAPPING WAS THE WRONG CONSTRAINT. Real terminal areas overlap. Two
+    fields twenty-two miles apart whose approaches both reach thirty are one
+    radar room with two names -- which `Station.also` has always modelled for
+    the CONTROLLER and nothing modelled for the AIRSPACE. Where two overlap the
+    nearer field's wins, and that tie is broken where the containment test
+    happens rather than here; see migration 034.
+
+    `TERMINAL_NM` IS THE FLOOR NOW rather than the cap: an area is at least the
+    conventional twenty-five miles and grows to hold its own procedures. A map
+    whose approaches carry no positions gets exactly what it got before, which
+    is what makes this safe to adopt on a theatre nobody has surveyed.
+
+    `others` is kept in the signature and is no longer consulted. Not dead
+    weight: every caller passes the map's other aerodromes, and the day a
+    neighbour matters again -- a shelf, a delegated sector -- it is the
+    argument that carries them. [#139]
+    """
+    if approaches is None:
+        from marshall.core import theatre as _th
+        approaches = list(_th.approaches_now().values())
+    return max(TERMINAL_NM, procedure_reach_nm(field, approaches))
 
 
 def sectors_for(fields, stations) -> list[dict]:

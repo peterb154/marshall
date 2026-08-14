@@ -103,6 +103,10 @@ CHECKS = [
     ("wait for the check-in", [PY, "tools/checkin_check.py"],
      "#6 B1a — a controller works the men on HIS frequency and nobody else",
      False),
+    ("airspace resolves", [PY, "tools/airspace_check.py"],
+     "#139 — terminal areas overlap now, so the nearer field must win. The "
+     "rule is an ORDER BY in a view (migration 034) and no unit test can see "
+     "it", False),
     ("one in the letdown", [PY, "tools/letdown_check.py"],
      "#15 D4/F4 — nobody vectored until somebody is cleared, and it survives a "
      "restart emptying the stack", False),
