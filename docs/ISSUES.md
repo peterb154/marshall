@@ -8368,14 +8368,28 @@ Tests: beside `tests/test_events.py` and `tests/test_the_ladder_has_a_direction.
 Code: `src/marshall/core/scope.py`, `src/marshall/atc/identity.py`,
 `src/marshall/atc/agent_atc.py`, `src/marshall/feed/tracks.py`.
 
-**Status:** OPEN — diagnosed, not fixed, and re-checked 13 August: not one of
-the four criteria is met. `core/scope.py` still writes
-`"on_ground": (t.in_air is False)` directly beneath the comment explaining the
-third answer, `identity.Unit` still carries a two-state `on_ground: bool = False`
-with no `in_air: bool | None` anywhere, `handoff_on_the_event` still guards only
-on `unit is None`, and `feed/tracks.py` still carries the same comment beside the
-same collapse.
+**Status:** FIXED, and this entry was stale — the FIFTH found by the same
+grooming sweep on 14 August. All four criteria are met and
+`tests/test_nothing_has_told_us_is_not_he_is_flying.py` asserts them, 16 tests
+passing. It is not a characterisation test, which is what I took it for on
+first reading.
 
+1. `in_air: bool | None` is carried on the contact dict by BOTH producers —
+   `core/scope.contacts` and `feed/tracks` — and on `identity.Unit`.
+2. `handoff_on_the_event` tests `unit.in_air is True`, which is positive
+   evidence and cannot be satisfied by silence.
+3. `sim_state` returns `""` rather than `"airborne"` for an aeroplane with no
+   report and no position.
+4. Every comment about the third answer now sits beside a value that carries
+   it, and each says what it used to drop.
+
+**How I misread it, because the misreading is the interesting part.**
+`core/scope.py` still contains `"on_ground": (t.in_air is False)` — the exact
+line this issue quotes as the sharp end — and I matched that string and
+concluded nothing had changed. The line is now correct: `in_air` is emitted on
+the line ABOVE it, and `on_ground` was always meant to stay as the convenience
+it is. A string that appears in the fix as well as in the fault cannot tell
+them apart, which is the fourth time that error has cost something today.
 ---
 
 ## [ARCH-27] The procedure a decision is made from is the bridge's, not the aeroplane's — #150
