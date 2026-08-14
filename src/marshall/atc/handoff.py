@@ -102,6 +102,17 @@ class Rule:
     to: str             # the role that should have him
     when: str           # a name from CONDITIONS below
     nm: float | None = None
+    # IS `nm` THE EDGE OF THE TERMINAL AREA, or a distance of its own?
+    #
+    # A circuit distance is a circuit distance -- five miles is five miles at
+    # every aerodrome on every map. The terminal boundary is not: it is derived
+    # from the procedures the field publishes, so Batumi's is 27.5 and
+    # Kobuleti's 28.8 while the constant says 25.
+    #
+    # Without this the rows below carried a number the map did not draw, which
+    # is exactly what `CENTER_NM`'s own comment warns against two screens up.
+    # `nm` stays the fallback for a field nothing can be derived for. [#130]
+    terminal_edge: bool = False
 
 
 # THE ORDER IS THE PRIORITY. First rule whose condition holds, wins -- so a
@@ -119,14 +130,16 @@ RULES: tuple[Rule, ...] = (
     # nineteen miles outside the airspace Approach would have taken him in,
     # with no mechanism in the system that could have helped him. He declared
     # an emergency. [#51]
-    Rule("center", "approach", "inbound_within", CENTER_NM),
+    Rule("center", "approach", "inbound_within", CENTER_NM,
+         terminal_edge=True),
     # AND THE MIRROR OF IT, which only became visible once the ladder could be
     # read end to end in one place. Nothing handed a DEPARTURE to Center, so a
     # jet leaving Kobuleti stayed with Kobuleti Departure to the far side of
     # the map while the comms card told him preset 4 was for the enroute leg.
     # The same fault as the missing Center row and in the same table -- found
     # by printing the ladder rather than by anybody flying it.
-    Rule("departure", "center", "outbound_beyond", CENTER_NM),
+    Rule("departure", "center", "outbound_beyond", CENTER_NM,
+         terminal_edge=True),
     # Inbound. Approach hands him over when the runway is his problem.
     Rule("approach", "tower", "inbound_within", ARRIVAL_NM),
     # On the ground under a radar controller at all is a mistake to correct --
@@ -297,6 +310,39 @@ class State:
     phase: str = ""
 
 
+def reach_of(field: str) -> float | None:
+    """How far THIS aerodrome's terminal area goes, or None if unknowable.
+
+    One number, authored by `core.airspace` and read here. Procedure may read
+    geography; the reverse would put a rule table underneath a map, which is
+    the direction LAYERS.md forbids.
+
+    NONE IS A REAL ANSWER and the caller keeps its constant when it comes back.
+    A field the theatre does not publish, a map still loading, a test that
+    hand-builds a Station -- none of those are errors, and a boundary that
+    collapsed to zero because a lookup missed would hand every aeroplane over
+    the instant it left the ground.
+
+    TRIED ONCE BEFORE AND REVERTED, on 13 August, and the difference is #139.
+    Reading the map was right and the map was wrong: terminal areas were
+    eleven-mile circles around approaches that begin at twenty-two, so
+    `center -> approach` would have held an arrival until eleven miles, inside
+    the final and later than the rule #51 exists to fix. The areas hold their
+    own procedures now, so the same change is now the correct one.
+    """
+    if not field:
+        return None
+    try:
+        from marshall.core import theatre as _t
+        fields = list(_t.fields_now())
+    except Exception:
+        return None
+    f = next((x for x in fields if x.name.lower() == field.lower()), None)
+    if f is None:
+        return None
+    return _airspace.terminal_reach_nm(f, [o for o in fields if o is not f])
+
+
 def _at(me, profile) -> str:
     """WHICH AERODROME THIS HANDOFF IS ABOUT, spelled as a Station spells it.
 
@@ -421,7 +467,12 @@ def due(profile, me, st: State) -> Verdict | None:
         # trigger rather than a distance. Without them that rule has to live as
         # an `if` at one call site, which is how this ended up with two handoff
         # mechanisms that disagreed.
-        if cond is None or not cond(st, rule.nm, profile, rule):
+        # THE FIELD'S OWN BOUNDARY, where the rule is about one. `rule.nm` is
+        # the fallback; `reach_of` is what the map actually drew.
+        nm = rule.nm
+        if rule.terminal_edge:
+            nm = reach_of(_at(me, profile)) or rule.nm
+        if cond is None or not cond(st, nm, profile, rule):
             continue
         # HIS FIELD, or the handoff crosses the theatre. A role is unique within
         # an aerodrome and not across one -- with Kobuleti and Batumi both on

@@ -6103,6 +6103,7 @@ had been corrupted by a debug note, not because nothing could issue it.
 ---
 
 ## [SEAM-11] The proactive thread decides nothing and does not say so — #122
+labels: bug
 
     "had to end that flight early. left several debug logs. Never got handed to
      center.."
@@ -6199,6 +6200,7 @@ by the `coming_towards_us` trend test under #138.
 ---
 
 ## [ASR-7] An ILS is not a talkdown, and nothing had ever flown one — #123
+labels: bug
 
     "ive never flown an ILS with marshall yet - just the ASR and Visual"
 
@@ -6324,6 +6326,7 @@ unflown and unnoticed, until that file ran.
 ---
 
 ## [ARCH-18] Three sources, three magnetic variations, and only a pilot can settle it — #125
+labels: bug
 
     "DKS also says batumi rwy course is 119 for rwy 13.. interesting"
 
@@ -6616,6 +6619,7 @@ and never revised — which would be #119's lifecycle question one column along.
 ---
 
 ## [ARCH-20] A filed plan outlives the steerpoints it names — #129
+labels: bug
 
 **Status:** CLOSED 12 August. Attested by claude at 8587385.
 
@@ -6665,6 +6669,7 @@ copies the plan at clearance. Tracked as #133.
 ---
 
 ## [SEAM-14] There is no enroute phase on a twenty-two mile sortie — #130
+labels: architecture, needs-flight-test
 
     "Also kob departure didn't hand me off to center again"
 
@@ -6708,32 +6713,38 @@ to a Kobuleti station — the DESTINATION's Approach is unreachable from the rul
 table. That is why the airspace branch exists and why it is the only mechanism
 that can move him between fields.
 
-**Status:** OPEN, and BLOCKED — investigated 14 August and the obvious repair
-is a regression wearing the shape of a cleanup.
+**Status:** FIXED 14 August, NEEDS A PILOT — card row V7. #139 landed, which
+was the block, and the same change reverted on 13 August is now the right one.
 
-Aligning the two numbers means making the ladder read the map, and the map is
-the half that is wrong:
+`Rule.terminal_edge` marks the two rows whose distance IS the edge of the
+terminal area — `center -> approach` and `departure -> center` — and `due`
+resolves them through `handoff.reach_of`, which asks `core.airspace`. Procedure
+reads geography; the reverse would put a rule table underneath a map. A circuit
+distance stays a constant, because five miles is five miles at every aerodrome
+on every map, and a test asserts that only those two rows are scaled.
 
-    Batumi terminal area                          11.3 nm
-    batumi-ils-13's outer hold, at KOBULETI       22.6 nm
+    Center holds an arrival to 27.5 nm, then Approach   (was a flat 25)
+    Kobuleti Departure holds an outbound to 28.8 nm     (was a flat 25)
 
-The procedure begins at DOUBLE the radius of the airspace that owns it. So
-`Rule("center", "approach", "inbound_within", ...)` reading the derived reach
-would hold an arrival on Center until eleven miles — inside the final, later
-than the rule #51 was filed to fix, for a man flying the approach exactly as
-published. Tried, measured, reverted.
+The first number is the one that matters: Batumi's ILS holds at KOBULETI, 22.5
+nm out, so an arrival is now with Approach BEFORE his procedure starts. Under
+the 13 August attempt it was 11.3 and he would have been on Center inside the
+final — #51 with the numbers changed, which is why nine tests refused it and
+why the revert was right.
 
-The chain is **#137 → #139 → this**. #139 is a terminal area derived from the
-procedure it serves; it needs fixes carrying lat/lon, which is #137.
+**THE HALF OF THIS ISSUE THAT IS NOT A BUG is written down rather than fixed.**
+Kobuleti and Batumi are 22.6 nm apart and a pilot turns for his destination
+long before he is 28.8 miles outbound, so `outbound_beyond` never fires and
+Center never gets him on that hop. That is option (1) above — *"Departure hands
+straight to the destination's Approach on a short hop. Real, and it is what
+happens between two fields this close"* — and it is the comms card promising an
+enroute leg that is wrong, not the ladder. Asserted in
+`tests/test_the_ladder_uses_the_maps_boundary.py` so nobody "fixes" it.
 
-WHAT DID LAND is the half that is right in any geometry:
-`airspace.terminal_reach_nm` is now a named function rather than three lines
-inside `sectors_for`, so there is ONE author of "how far does this area
-reach" — the reason `handoff.CENTER_NM` could import a constant while
-believing it had imported the boundary. `tests/test_a_terminal_area_is_one_number.py`
-holds the arithmetic above as an executable statement, and its last class is
-written to FAIL on the day #139 lands, with instructions to delete it and make
-this change then.
+Still true and still out of the rule table's reach: `due` resolves `rule.to`
+within `me.field`, so a departure at Kobuleti can only be handed to a Kobuleti
+station. The destination's Approach comes from the airspace branch, which is
+the only mechanism that moves an aeroplane between fields.
 ---
 
 ## [ARCH-21] A flight plan is a route somebody filed, and nothing else — #131
@@ -9788,6 +9799,7 @@ Labels: needs-flight-test
 ---
 
 ## [ARCH-32] `enroute` is unreachable, and it takes the whole task half with it — #168
+labels: bug
 
 `phases._wanted` decides which phase an aeroplane should be in. Its complete set
 of returns:
@@ -9869,6 +9881,7 @@ criterion written to stop this recurring. A pilot still has to see the board say
 `enroute` while Center works him.
 
 ## [KB-6] The board's datum is the fallback whenever nobody has just spoken — #169
+labels: bug
 
 `field_origin` takes the SPEAKING controller's field, and only the transmission
 path passes one: `agent_atc.py:5154` hands the seat's field in, while the
@@ -10084,6 +10097,7 @@ from #155 so it cannot be closed by the parts of #155 that are already done.
 ---
 
 ## [ID-8] Whisper breaking his callsign is not him using the wrong one — #172
+labels: bug, needs-flight-test
 
 Caught on the board by the owner, 13 August, in a single transmission:
 

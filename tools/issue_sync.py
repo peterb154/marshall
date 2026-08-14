@@ -225,6 +225,21 @@ def main() -> int:
     titles = gh_titles()
     items = entries(text)
     declared_labels = {}
+    # AN ENTRY WITH NO `labels:` LINE AT ALL, which is worth its own report
+    # because of what it does to anybody EDITING this file.
+    #
+    # Adding a label by hand means finding the entry's labels line -- and an
+    # entry that has none silently lends you the NEXT one's. That has now put
+    # `needs-flight-test` on two closed issues that did not want it: #134,
+    # whose own status line reads "Not `needs-flight-test`", and #131, which
+    # was closed and attested. Both times the edit was aimed at the issue
+    # above and both times nothing said a word, because the file was still
+    # perfectly well-formed afterwards.
+    #
+    # An absent line is not an empty label set. It is a hole the next edit
+    # falls into, which is this project's recurring shape: something true of a
+    # neighbour, borrowed silently.
+    unlabelled = []
     for _i in items:
         if not _i["num"]:
             continue
@@ -240,6 +255,8 @@ def main() -> int:
         if _lm:
             declared_labels[int(_i["num"])] = {
                 x.strip() for x in _lm.group(1).split(",") if x.strip()}
+        else:
+            unlabelled.append((_i["slug"], int(_i["num"])))
 
     # TWO ISSUES WITH ONE NAME, which is how [OPS-4] came to mean both "the card
     # check was blind" and "a paused sim". I did that three times in two days --
@@ -410,6 +427,15 @@ def main() -> int:
         print("NEEDS A PILOT, BUT IS NOT ON THE CARD")
         for n in sorted(unflown):
             print(f"  #{n} is labelled needs-flight-test and no row cites it")
+    if unlabelled:
+        print("NO `labels:` LINE AT ALL")
+        for slug, n in unlabelled:
+            print(f"  {slug:10} #{n}")
+        print("  Harmless to the tooling and a trap for a human: adding a "
+              "label by hand\n  means finding the entry's labels line, and an "
+              "entry with none lends you\n  the NEXT issue's. That is how "
+              "#134 and #131 were labelled by accident.\n  Give it a line of "
+              "its own, directly under the heading.")
     if orphans:
         print("ON GITHUB, NOT IN ISSUES.md")
         for n in orphans:
