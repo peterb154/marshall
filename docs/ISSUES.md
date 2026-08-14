@@ -6390,6 +6390,7 @@ has never been taken.
 ---
 
 ## [SEAM-12] Clearance delivery searched an empty board, and said so three times — #126
+labels: bug, needs-flight-test
 
     "clearly he doesn't know how to find my flight plan"
 
@@ -6826,7 +6827,7 @@ asymmetry in the title.
 ---
 
 ## [SEAM-16] The read-back correction had no exit, and ran for the whole sortie — #134
-labels: bug, needs-flight-test
+labels: bug
 
 **Status:** CLOSED 12 August. Not `needs-flight-test`: every claim is
 structural and the evidence is the recorded transcripts, replayed verbatim.
