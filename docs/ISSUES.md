@@ -10469,6 +10469,21 @@ the procedure inverted, and asking one he cannot determine is worse than
 useless: he either guesses or stays silent, and both look like a pilot who is
 not following instructions.
 
+**WHAT A P-51 HOLD ACTUALLY IS**, from the owner, and it is the whole of it:
+
+    "A controller can tell a p51 to hold at an altitude and fly an inbound
+     outbound heading and timed legs, but that's it"
+
+Which the engine already does. `_hold_phrase`'s fallback is a level, a turn
+direction, an outbound heading, a leg time and an inbound heading — everything
+he needs in one transmission and in the order he flies it. So this issue is NOT
+about the hold. The hold is right and has been since #163.
+
+It is about everything that asks him where he IS:
+
+    the hold        gated on `equipment.can_hold_at`      correct
+    the report      gated on nothing                      the defect
+
 **Acceptance criteria**
 1. Nothing asks for a position report the aeroplane's equipment cannot
    produce — the same `equipment` question the hold already asks, on the report
