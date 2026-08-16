@@ -17,25 +17,42 @@ the sections are reordered.
 
 ## Fly in this order
 
-| | section | issue | needs | why it is on the card |
-|---|---|---|---|---|
-| 1 | **Q — the ladder, Kobuleti to Batumi** | [#1] [#16] | solo | **fly this first.** The theatre has two aerodromes as of 31 July and none of it has been heard. It is also where you are sitting: the sortie now starts at Kobuleti, so section Q is simply the first ten minutes of the flight |
-| 2 | **N — what he calls you** | [#48] | solo | everything about identity changed on 30 July and none of it has been heard. The quickest to falsify: three transmissions on the ramp |
-| 3 | **M — how fast he answers alone** | [#45] | solo | one radio check. Ground units stopped counting as traffic, so the classifier is off the path — you are judging a pause, and you can only judge it while you still remember the old one |
-| 4 | **J — who he thinks you are** | [#40] | solo | identity under stress: garble it, omit it, lose radar. N says he gets it right; J says he keeps it when things go wrong |
-| 5 | **G — clearance at the ramp** | [#1] | solo | the awkward half: a wrong read-back, a deliberate ambiguity, an amendment |
-| 6 | **H — the approach** | [R#19] [#37] [#39] | solo | the main event, and where the open bugs live |
-| 7 | **F — landing and the handoff** | [#41] | solo | the sim's own events now drive Tower. Never flown |
-| 8 | **K — does he remember** | [#43] | solo, better with two | shipped 30 July, never flown |
-| 9 | **R — ATIS and the letter** | [#17] | solo | built 2 August, never heard. Three transmissions on the ramp |
-| 10 | **S — does it sound right** | [#17] | solo | **ears only.** Nothing else on this card can falsify it and I cannot test it at all |
-| 11 | **T — the Kobuleti ILS** | [#3] | solo | a whole second approach added as data. Fly it last; it needs no new procedure from you |
-| — | **D — flights** | [#42] | **two aircraft** | skip it solo. A formation cannot be flown by one aeroplane, and the break-up rules changed on 30 July |
-| — | **E — known broken** | | | read it, so you do not re-find something already understood |
+**Rebuilt 16 August against what is actually open.** The previous order was
+written on 2 August and named six issues that have since closed; it also
+predates sections P, L, U and V. Twenty-three issues are waiting on a pilot and
+every one of them has a live row, so this is one sortie's worth of work rather
+than eleven.
 
-**Solo today?** Q, N, M, J, G, H, F, K, R, S, T — in that order. Only D needs a
-second aeroplane. Note that N3, N5 and N6 inside section N are formation rows and want
-one too; the rest of N is flyable alone and is the part that changed most.
+**Section V is the main event now, and it is not a phase of flight.** The order
+below used to hand that title to H. V is a THEME -- *nothing the controller says
+is pinned to the arrival the radio happened to start on* -- so its rows attach
+to stages rather than sitting together, and they carry ten of the twenty-three.
+They are placed in the run below rather than flown as a block.
+
+| stage | rows | issues | what you are listening for |
+|---|---|---|---|
+| **1. Cold, on the Kobuleti ramp** | R1–R4, N1–N2, M1 | [#17] [#48] | ATIS, then three transmissions to see whether he has your name right. Cheapest possible falsification and it costs you nothing to be sitting still |
+| **2. Clearance delivery** | G1–G12 | [#126] [#157] | the awkward half: a callsign he does not have, a read-back with two elements missing. **G11 and G12 are new** and are the two that have never been heard |
+| **3. Taxi and take-off** | Q1–Q5, **V9** | [#89] | the ground ladder, and one deliberate sin: roll without a clearance and see whether Ground tries to take an airborne aeroplane |
+| **4. Departure and the climb** | Q6–Q8, **V7** | [#130] | where Departure lets you go. **Expect no enroute leg at all on this hop** — Kobuleti to Batumi is 22 nm and you turn for home before you are 29 miles out. That is correct; the comms card is what is wrong |
+| **5. Enroute** | **V1**, P1–P4 | [#49] [#160] | every range he speaks: from WHERE? A bearing with no datum is unfalsifiable, which is the whole of #160 |
+| **6. Handed to Approach** | **V6**, **V7**, V3 | [#139] [#165] | around 27–28 nm now, comfortably before the procedure starts at 22. Nothing should bounce you back to Center on the way in |
+| **7. The approach** | H1–H12, **V8**, **V5** | [#37] [#80] [#91] [#95] [#173] | the main event. Also: which frequency the mile calls arrive on, and that it is the same voice throughout |
+| **8. Landing and taxi in** | F1–F8, **V2** | [#150] | the sim's own events drive Tower. Then park |
+| **9. With the board in front of you** | **V10**, K1–K4 | [#169] | one datum per ROW, not one per page. Leave it a minute so it refreshes on its own |
+| **10. Ears only, all sortie** | S1–S14 | [#79] [#172] | **no machine will ever score these.** A seam in a transmission, a spoken numeral, one sentence where there were two |
+| — **second aeroplane** | D1–D6, N3/N5/N6, L1–L3, **V4** | [#162] | skip solo. A formation cannot be flown by one aeroplane |
+| — **another day** | U1–U8 | [#117] | Nevada. A different map, a different sortie, and it needs the mission loading |
+
+**Do not fly V11.** It exercises the 1944 NDB letdown, and that procedure is
+being removed — in DCS only the P-51D-30 carries a homing receiver and it works
+badly, so a period recovery is an ASR or a visual approach like anybody else's.
+The row and #140 stay on the card until the removal lands so that neither
+vanishes silently, and flying it now would be an hour spent on something already
+deleted in principle.
+
+**Solo today?** Stages 1–10, in order. That is the whole sortie and it answers
+twenty-one of the twenty-three.
 
 ## How to report
 
