@@ -8228,15 +8228,32 @@ or subtree moving.
 Code: `docs/STRUCTURE.md`, `CLAUDE.md`, `docs/START_HERE.md`, `pyproject.toml`,
 `director/`.
 
-**Status:** PARTLY — 1, 2 and 4 are met, and the line that said otherwise was
-already stale when it was written: `docs/STRUCTURE.md` dates every claim,
-`CLAUDE.md` records the `marshall-director_pgdata` constraint, and `969d02e`
-took the ATC reasoning out of the container, leaving `director/tools/` holding
-`busy.py` and `ops.py`. 3 is not built — `pyproject.toml` still declares
-`marshall-kneeboard` alone, the other three blocked on #55 — and 5 has gone
-BACKWARDS: `director/app.py` is 36 routes today against the 34 this was written
-about.
+**Status:** PARTLY — 1, 2 and 4 are met. 3 is not built (`pyproject.toml`
+declares `marshall-kneeboard` alone, the other three blocked on #55) and 5 has
+gone BACKWARDS: `director/app.py` is 36 routes today against the 34 this was
+written about.
 
+**THE FOLDER RENAME IS NOT BLOCKED, AND THE THING EVERYONE THOUGHT BLOCKED IT
+IS WHAT MAKES IT SAFE.** `CLAUDE.md` warned that letting compose derive the
+project name would mount an empty `marshall-director_pgdata` and bring the
+agent up with no data. Measured 17 August: **there is no such volume.**
+`docker volume ls` shows no marshall volume at all and the database is a bind
+mount to `/srv/pgdata/data`, a dedicated LVM volume, which no project name can
+miss. The compose file also pins `name: marshall-director` explicitly, so the
+derivation the note feared cannot happen either way.
+
+That note deferred this rename for a fortnight and nobody re-checked it,
+because a warning that specific reads as one somebody measured. Corrected in
+`CLAUDE.md` with the date and the evidence.
+
+**AND THE MISSING COMMANDS ARE WHY THE OLD WORDS SURVIVE**, which is worth
+stating as a cause rather than a symptom. The vocabulary says to say
+`marshall-atc`; `pyproject.toml` declares no such command, so the thing an
+operator actually runs is `tools/bridge.py` and "bridge" is the only word that
+names something real. Renaming the parts while leaving the PROCESS unnamed and
+unrunnable is what keeps the deprecated term in every conversation — including
+mine, all week. Item 3 is not cosmetic; it is the half that makes the rest
+usable, and it is #55.
 ---
 
 ## [ATIS-4] The runway in use is measured, and the wind spoken beside it is a constant — #148

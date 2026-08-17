@@ -180,12 +180,26 @@ that is what kept the words unsaid for a fortnight (#147).
   `tools.<name>` spelling raises, and `tests/test_the_atc_is_not_in_a_container.py`
   keeps it that way.
 
-  Its compose project name is **pinned to `marshall-director`** — it predates the
-  merge and its Postgres volume is `marshall-director_pgdata`. Don't let compose
-  derive the project from the folder or it mounts an empty volume and the agent
-  comes up with no contacts, sessions or approaches. It is also a stamp of
-  `strands-pgsql-agent-framework`; `diff -r /tmp/fresh-stamp director/` still
-  works for pulling upstream changes.
+  Its compose project name is **pinned to `marshall-director`** in
+  `docker-compose.yml`, and that pin is what makes the folder safe to RENAME:
+  compose derives a project from the directory unless told otherwise, and it
+  has been told.
+
+  **The `marshall-director_pgdata` hazard this note used to describe is gone,
+  and saying so is the point of the correction.** It warned that letting
+  compose derive the project would mount an empty volume and bring the agent up
+  with no contacts, sessions or approaches. That was true when the database
+  lived in a named volume. It does not: `docker volume ls` shows no marshall
+  volume at all, and the data is a **bind mount to `/srv/pgdata/data`** — a
+  dedicated LVM volume — which no project name can miss. Verified 17 August.
+
+  A documented constraint that has stopped being true is worse than no note:
+  this one deferred the `director/` rename for a fortnight (#147) and nobody
+  re-checked it, because a warning that specific reads as a warning somebody
+  measured. Rename the folder when the rest of #147 lands; the pin protects it.
+
+  It is also a stamp of `strands-pgsql-agent-framework`; `diff -r
+  /tmp/fresh-stamp director/` still works for pulling upstream changes.
 
 ## How it runs
 **`marshall-radio` + `marshall-atc` are one host process today**
