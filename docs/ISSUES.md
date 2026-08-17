@@ -409,19 +409,23 @@ Code: `asr.on_the_ground`
 ## [APP-3] Visual approaches, without having to argue for one — #10
 labels: needs-flight-test
 
-**Status:** CLOSED — commit `4d011ed`
+**Status:** REOPENED 17 August — criterion 3 has regressed and criteria 1 and 2
+have not. Found by `tools/visual_check.py` in a pre-flight sweep with the sim
+up, on a bridge restarted onto current code.
 
-> "the controllers have to be forced to give us a visual approach"
+    C1  PASS  granted without an argument
+    C2  PASS  0 mile calls after the visual clearance
+    C3  FAIL  "field in sight" answered with "Batumi approach, go ahead"
 
-**Acceptance criteria**
-1. Asking for a visual gets one, first time, with no argument.
-2. Once cleared visual, **no mile calls** — he is spacing, not talking you down.
-3. "Field in sight" is still read as a report, not a request.
-4. A visual does not jump the queue.
+The controller ASKED for that report one transmission earlier — *"cleared
+visual approach runway one three, report the field in sight"* — and then
+treated the answer as somebody keying the mic for attention. From the cockpit
+it is a man who has forgotten what he just asked for, and it arrives on short
+final while the pilot is waiting for a landing clearance.
 
-Tests: C1, C2, C3
-Code: `controller.request_visual`, intent ordering in `intents.py`
-
+Deliberately not fixed before the 17 August sortie: a rushed change to the
+intent path an hour before a flight is worse than a known defect a pilot has
+been warned about.
 ---
 
 ## [APP-4] Going around: no vector back towards the field — #11
