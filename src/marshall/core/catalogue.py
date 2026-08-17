@@ -320,6 +320,13 @@ class Identity(_File):
     terrain: str
     departure: str = ""
     arrival: str = ""
+    # HAS THIS FACILITY GOT A SCOPE, and it is a fact about the ATC unit rather
+    # than about any procedure. It was read off `AtcCapability.radar` -- the
+    # PROCESS-WIDE approach's -- so "does the controller have radar" was
+    # answered by whichever arrival the radio happened to be started on, and
+    # two approaches into one field cannot disagree about it. Real ATC by
+    # default; a handicapped mission turns it off here. [#162]
+    radar: bool = True
     # A STOPGAP, and the remainder of #2 is that there should be no such thing:
     # which approach you are flying is a fact about your CLEARANCE.
     default_approach: str = ""

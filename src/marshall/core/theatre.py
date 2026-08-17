@@ -56,6 +56,9 @@ class Theatre:
     stations: tuple = ()
     departure: str = ""
     arrival: str = ""
+    # WHETHER THIS FACILITY HAS RADAR. See `catalogue.Identity.radar`: it is a
+    # property of the ATC unit and was being read off a procedure. [#162]
+    radar: bool = True
     # THE APPROACH THE BRIDGE RUNS. One per theatre today, because a bridge
     # works one arrival at a time -- see `load_and_push_plate`, which pushes it
     # to the director and reads it back as the source of truth.
@@ -702,7 +705,7 @@ def caucasus() -> Theatre:
     return Theatre(
         name=me.name, terrain=me.terrain, fields=fields,
         stations=stations, departure=me.departure,
-        arrival=me.arrival, approach=recovery,
+        arrival=me.arrival, approach=recovery, radar=me.radar,
         approaches=tuple(procedures.values()),
         wind_from_deg=me.wind_from_deg, wind_mph=me.wind_mph,
         bootstrap_plan=me.bootstrap_plan, approach_key=want,

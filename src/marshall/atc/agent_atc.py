@@ -5703,7 +5703,17 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
               "movement -- and joining the server does not clear it. "
               "`uv run python tools/sim.py unpause`", flush=True)
     profile = load_and_push_plate(_th.approach)       # DB is the source of truth
-    radar_on = profile.atc.radar          # a no-radar mission works purely procedural
+    # THE FACILITY'S, NOT A PROCEDURE'S. This read `profile.atc.radar` off the
+    # process-wide approach, so "has this controller got a scope" -- which
+    # gates the entire proactive monitor, for every aeroplane, for the life of
+    # the process -- was answered by whichever arrival the radio happened to be
+    # started on. Two approaches into one field cannot disagree about whether
+    # the field has radar.
+    #
+    # It is the one thing that made the process-wide approach load-bearing, and
+    # is why #162 step 1 stalled in August: you cannot delete the approach
+    # while something real is hanging off it. [#162]
+    radar_on = _th.radar                  # a no-radar mission works purely procedural
     # One voice per controller. Changing frequency should sound like meeting a
     # different person -- that is most of what makes a sector split feel real,
     # and it costs nothing but picking the right Voice before transmitting.
