@@ -74,6 +74,16 @@ class GroundCase(unittest.TestCase):
     def setUp(self):
         self.ctl = atc.Controller(P())
         self.ctl.t = 0.0
+        # HE HAS BEEN CLEARED, because every case in this file is about what
+        # happens AFTER Delivery is finished with him -- which runway Ground
+        # names, who has him next, what Tower says on the roll. #181 made
+        # taxi conditional on that being true, so without this line the cases
+        # below assert on a refusal and stop testing the ladder at all.
+        #
+        # The gate itself is held by
+        # `GroundDoesNotMoveAnAircraftOnAnUnagreedClearance`, which builds its
+        # own controller and is untouched by this.
+        self.ctl.get("Sockeye").clearance_agreed = True
 
     def turn(self, who, kind):
         """One transmission, on one frequency, and what follows from it."""
@@ -1163,14 +1173,71 @@ class GroundDoesNotMoveAnAircraftOnAnUnagreedClearance(unittest.TestCase):
         self.assertIn("taxi to runway",
                       " ".join(t.text for t in ctl.out).lower())
 
-    def test_nobody_cleared_him_at_all_still_taxis(self):
-        """VFR, and everyone the engine has never been told about. Unknown
-        never blocks -- a guard that fires on missing information silences a
-        controller the first time the board is quiet."""
+    def test_nobody_cleared_him_at_all_is_refused_too(self):
+        """THIS TEST USED TO ASSERT THE OPPOSITE, and the rule it held was
+        wrong on procedure rather than merely incomplete.
+
+        It read `test_nobody_cleared_him_at_all_still_taxis`, on the grounds
+        that `None` is "VFR, and everyone the engine has never been told
+        about". But a VFR departure at a controlled field calls Clearance too:
+
+            "VFR still needs a clearance to taxi. At a controlled airport, you
+             still have to call clearance and say 'VFR departure to the west'
+             or something.. That is a pre-req to taxi"
+
+        So the tri-state was being read as "IFR / IFR-pending / everyone else"
+        when it means "acknowledged / issued / neither", and only the first of
+        those three may move.
+
+        THE OTHER HALF OF THE OLD REASONING SURVIVES and is worth keeping
+        straight, because it is not the same claim: *a guard that fires on
+        missing information silences a controller the first time the board is
+        quiet.* That is about SILENCE, and this refusal is not silent -- it
+        names the seat and the frequency, which is what the next test holds.
+        An empty board now produces the sentence a real Ground controller with
+        no strip in front of him says, rather than a taxi clearance.  [#181]
+        """
         ctl = self.ground()
         ctl.request_taxi("Sockeye")
-        self.assertIn("taxi to runway",
-                      " ".join(t.text for t in ctl.out).lower())
+        said = " ".join(t.text for t in ctl.out).lower()
+        self.assertNotIn("taxi to runway", said)
+        self.assertIn("not been cleared", said)
+
+    def test_and_the_two_refusals_are_not_the_same_sentence(self):
+        """A pilot can only fix the fault he is told about.
+
+        "Your clearance has not been read back" at a man who never called
+        Clearance sends him hunting for a read-back he never made -- which is
+        the shape of #135's complaint rather than its fix.
+        """
+        never = self.ground()
+        never.request_taxi("Sockeye")
+        issued = self.ground()
+        issued.get("Sockeye").clearance_agreed = False
+        issued.request_taxi("Sockeye")
+        a = " ".join(t.text for t in never.out).lower()
+        b = " ".join(t.text for t in issued.out).lower()
+        self.assertIn("not been cleared", a)
+        self.assertNotIn("read back", a)
+        self.assertIn("read back", b)
+        self.assertNotEqual(a, b)
+
+    def test_a_refused_aeroplane_stays_on_clearances_rung(self):
+        """THE PHASE IS THE HANDOFF, so a refusal that leaves him in `taxi`
+        has handed him to Ground in the same breath as refusing him.
+
+        `request_taxi` moves him to `taxi` at the top on the reasoning that he
+        IS ready to taxi whatever frequency he said it on. That is right when
+        the answer is "not my seat" and wrong here, and it was already fixed
+        for the `False` case in #82 -- this holds the `None` case to the same
+        rule rather than leaving it to be discovered again.
+        """
+        for agreed in (False, None):
+            with self.subTest(clearance_agreed=agreed):
+                ctl = self.ground()
+                ctl.get("Sockeye").clearance_agreed = agreed
+                ctl.request_taxi("Sockeye")
+                self.assertEqual(ctl.get("Sockeye").sortie_phase, "clearance")
 
     def test_a_correct_read_back_agrees_it(self):
         ctl = self.ground()

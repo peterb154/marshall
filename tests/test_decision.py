@@ -105,6 +105,11 @@ class TestTheEngineEmitsThemWhereItMatters(unittest.TestCase):
     def setUp(self):
         self.ctl = atc.Controller(R.BATUMI_ASR)
         self.ctl.t = 0.0
+        # CLEARED, because these are about the RUNWAY on a taxi instruction
+        # and #181 made a taxi instruction conditional on being cleared at all.
+        # Without this they assert on a refusal, which carries no runway and
+        # would read as the two seats disagreeing.
+        self.ctl.get("Sockeye").clearance_agreed = True
 
     def decided(self):
         return [tx.decision for tx in self.ctl.take_out() if tx.decision]

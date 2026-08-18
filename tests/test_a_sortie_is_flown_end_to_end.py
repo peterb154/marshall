@@ -263,12 +263,27 @@ class GroundCanActuallyRefuse(unittest.TestCase):
 
     def test_an_aeroplane_nobody_has_heard_of_is_not_an_error(self):
         """A guard that fires on missing information silences a controller the
-        first time the board is quiet."""
+        first time the board is quiet.
+
+        THE INVARIANT HERE IS ISOLATION -- a verdict written for one callsign
+        must not reach another -- and it used to be asserted by watching
+        Sockeye taxi. #181 stopped an uncleared aeroplane taxiing at all, so
+        that assertion now passes or fails for the wrong reason. Asserted on
+        the two callsigns directly instead, which is what the test was ever
+        about.
+
+        And the principle in the first line still holds: the board being quiet
+        produces a SENTENCE with a frequency in it, not silence and not an
+        anomaly.
+        """
         ctl = self.ground()
         ctl.note_clearance_agreed("Nobody", False)      # no such aircraft
         ctl.request_taxi("Sockeye")
-        self.assertIn("taxi to runway",
-                      " ".join(t.text for t in ctl.out).lower())
+        self.assertIsNot(ctl.get("Sockeye").clearance_agreed, False,
+                         "a verdict for another callsign reached Sockeye")
+        said = " ".join(t.text for t in ctl.out).lower()
+        self.assertNotIn("read back", said)
+        self.assertIn("contact", said)
 
     def test_the_bridge_writes_it_every_turn(self):
         """Beside the cleared LEVEL, off the same board read.

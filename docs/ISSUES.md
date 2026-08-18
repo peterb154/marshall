@@ -11143,7 +11143,7 @@ be added to the schema and silently never collected.
 ## [ARCH-38] Nobody may taxi without a clearance, and the gate asks the wrong question — #181
 labels: bug, architecture, needs-flight-test
 
-**Status:** OPEN — 18 August, root-caused and scoped, not yet built. Waiting on nothing: the predicate is safe to tighten now that a filed plan is a prerequisite. On-the-fly VFR plan creation is deliberately NOT in scope and wants its own issue.
+**Status:** BUILT 18 August, NEEDS A PILOT — card row G13. The gate now requires ACKNOWLEDGED, and the two refusals say different things. Nine tests failed on the tightening and every one of them was a case that had never been cleared — including `test_nobody_cleared_him_at_all_still_taxis`, which asserted the old rule by name and is now inverted with the reasoning recorded. What survives from that rule is its OTHER half: an empty board must not produce silence, and the refusal names the seat and the frequency. **Only a pilot can score criterion 1**, because the transcript reads plausibly either way — what is being tested is whether the sentence he hears points him at the right fault. On-the-fly VFR plan creation is deliberately NOT in scope and wants its own issue.
 
     "so we never got a clearance, because clearance never heard that we had
      information whiskey? Then everybody just played along?"

@@ -2697,20 +2697,38 @@ class Controller:
         if not self._owns("ground"):
             self._not_mine(ac, "ground", "Taxi")
             return
-        # AND HE DOES NOT MOVE ON A CLEARANCE HE HAS NOT AGREED.
+        # AND HE DOES NOT MOVE UNTIL CLEARANCE IS FINISHED WITH HIM.
         #
-        # `clearance_agreed` is False only when one was ISSUED and the read-back
-        # has not been accepted -- None, the ordinary case for VFR and for
-        # anybody nobody has cleared, passes straight through. So this refuses
-        # exactly the situation that has no other exit, and says which it is:
-        # "not read back" is a different problem from "not filed", and a pilot
-        # can only fix the one he is told about.
+        # This asked `is False`, which is only true when one was ISSUED and the
+        # read-back has not been accepted. `None` -- nobody has cleared him at
+        # all -- passed straight through, justified on VFR needing no
+        # clearance. That is wrong procedure, not just a gap:
         #
-        # Silence here is what the pilot actually objected to. An error that
-        # changes nothing is indistinguishable from no error, and he flew a
-        # whole sortie -- taxi, take-off, two aerodromes -- before anything
-        # noticed his clearance had never been agreed. See #135 and #134.
-        if ac.clearance_agreed is False:
+        #     "VFR still needs a clearance to taxi. At a controlled airport,
+        #      you still have to call clearance and say 'VFR departure to the
+        #      west' or something.. That is a pre-req to taxi"
+        #
+        # So the gate answered "was the ISSUED clearance read back?" and never
+        # "was one ever issued?" -- and on 18 August the second question was
+        # the one that mattered. #180 stopped the clearance rung completing at
+        # all, the language brain narrated a clearance the engine had no record
+        # of, and this let him taxi. He then took off and flew two aerodromes
+        # on it. `controller.py` had already said so, next to the field:
+        #
+        #     FILED, ISSUED and ACKNOWLEDGED became three real states in #105
+        #     so that the next rung could ask which one he was in; nothing
+        #     asked.
+        #
+        # ACKNOWLEDGED OR NOTHING, therefore. Safe to tighten because a filed
+        # plan is a prerequisite for a clearance today, which makes the
+        # read-back the only route to True -- there is no aeroplane that ought
+        # to reach the runway without passing through it. On-the-fly VFR plan
+        # creation is a deliberate gap and wants its own issue; when it lands
+        # it must end at this same `True`, not at a second way past this gate.
+        #
+        # Silence here is what the pilot objected to in #135. An error that
+        # changes nothing is indistinguishable from no error. [#181, #134]
+        if ac.clearance_agreed is not True:
             # AND HE IS NOT TAXIING, so the phase must not say he is.
             #
             # The line at the top of this method moves him to `taxi` whatever
@@ -2737,9 +2755,16 @@ class Controller:
                 procedure=self._pro(ac))
             where = (f", contact {who.name} {spell_freq(who.freq_mhz)}"
                      if who is not None else "")
+            # NAME THE RIGHT PROBLEM. These are two different faults and a
+            # pilot can only fix the one he is told about -- "your clearance
+            # has not been read back" sent at a man who never called Clearance
+            # has him hunting for a read-back he never made, which is the
+            # shape of #135's complaint rather than its fix.
+            why = ("your IFR clearance has not been read back"
+                   if ac.clearance_agreed is False
+                   else "you have not been cleared")
             self.say(ac.callsign,
-                     f"{self._addr(ac)}, your IFR clearance has not been read "
-                     f"back{where}.",
+                     f"{self._addr(ac)}, {why}{where}.",
                      decided=D.Decision(
                          kind="refuse", to=ac.callsign, role="clearance",
                          station=getattr(who, "name", ""),
