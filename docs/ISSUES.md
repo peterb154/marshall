@@ -11367,3 +11367,112 @@ honest and costs nothing.
 4. No aeroplane's place in the letdown changes.
 
 ---
+
+## [ARCH-42] Nothing asks whether a clearance the controller spoke was ever issued — #185
+labels: bug, architecture, needs-flight-test
+
+**Status:** BUILT 18 August, NEEDS A PILOT — card row G14. The prompt fault is fixed, the inverse check records unbacked claims, and a prompt/tool signature check now guards the two-brain seam. Verified end to end on `tools/atc_dryrun.py --script kobuleti` — the controller called the tool, was refused, spoke the refusal and stopped, inventing nothing. **Only a pilot can score criterion 1** because a fabricated clearance sounds exactly like a real one; what a machine can now say is whether the record backs it, which is criterion 3 and is guarded.
+
+    "so we never got a clearance ... Then everybody just played along?"
+
+`decision.verify` asks which of the engine's facts did not survive being spoken
+— the DROP — and has caught real transmissions since #102. **Nothing asked the
+opposite.** On 18 August the engine issued no clearance at all and the
+controller said:
+
+    15:13:52  Sockeye, Kobuleti Clearance, cleared to Batumi, as filed,
+              maintain five thousand, expect one zero thousand, departure
+              frequency one two three decimal three, squawk ...
+    15:14:33  Sockeye, readback correct, contact Kobuleti Ground ...
+
+`assigned_plans` held no row; `flights` held none either. Ground taxied him,
+Tower launched him, and he flew to another aerodrome on a clearance that
+existed only in the air. **Every rung believed it, because nothing anywhere
+asked whether it was real** — which is why it was the last of the seven
+findings to be understood and took a day of reading transcripts.
+
+**Where the numbers came from: nowhere.** Unlike #179, we did not tell it. The
+per-turn prompt carries the departure frequency and nothing else; `found_but_
+not_him` names the label and the endpoints; `flight_plan_help` needs an
+assigned plan and refuses without one. The altitude and the squawk were
+invented after the tool refused him.
+
+**And the rules already forbade it** — *"never search your memory for a plan"*,
+*"a clearance you improvised is an aeroplane cleared to an altitude nobody
+wrote down"*. What they never said is that **a refusal is terminal**. Every
+rule covered what to do with what comes BACK; none covered nothing coming back.
+That is the prompt fault, and it is fixed.
+
+**A LIVE DEFECT WAS FOUND WHILE FIXING THIS.** #183 changed the tool to
+`request_clearance(callsign, plan)` and left `rules.md` telling the controller
+to pass the pilot's words through unedited. Flown, every clearance request in
+the next sortie would have been refused — `named("Roger Sock, I would like
+Batumi Test...")` matches no label. The suite was green, ruff was clean, the
+tool's own docstring was correct and tested, and the prompt is a markdown file
+nothing parses. **The seam between the two brains was the only contract in the
+system with no check on it.**
+
+**What was built.**
+
+    rules.md                   the contract corrected, plus the rule that was
+                               missing: a refusal is not a clearance, and if
+                               the tool did not hand you the words you have
+                               none
+    clearance.unbacked_claims  the inverse of `verify` — what did he say that
+                               the record denies? Answered from the DATABASE,
+                               because what the turn believes is the thing in
+                               question, and silent when it cannot ask
+    the receive loop           RECORDS it (`kind="unbacked"`), never edits it.
+                               Cutting the clause would be a regex guard on a
+                               model's words, which is #179
+    a prompt/tool check        every `tool(args)` spelled in the prompts must
+                               match the real tool. It fails on the exact
+                               defect above
+
+**Verified end to end** on `tools/atc_dryrun.py --script kobuleti`: the
+controller called the tool, was refused, spoke the refusal and stopped.
+
+**Acceptance criteria**
+1. A controller refused a clearance says so and does not invent one.
+2. "Readback correct" is not said before anything is acknowledged.
+3. An unbacked claim reaches the recorder on the transmission it happened on.
+4. No transmission is edited to achieve any of the above.
+
+---
+
+## [ARCH-43] Errors go to stdout through `print`, where a logger belongs — #186
+labels: architecture
+
+**Status:** OPEN — 18 August, measured and scoped, not swept. `agent_atc` has a logger now and the #185 path uses it; the other 22 exception paths are untouched. Deliberately not done in the same commit as #185: a 97-call sweep through the receive loop on the evening before a test flight is how a working sortie gets broken by tidying.
+
+    "print() should be a smell shouldnt it?"
+
+Yes, and one was added while fixing #185 by copying the neighbours rather than
+thinking. Measured across `atc/`:
+
+    agent_atc.py     print=97    logger? NO
+    controller.py    print=8     logger? NO
+    clearance.py     print=0     logger? yes
+    board.py         print=0     logger? yes
+
+**22 exception paths across `atc/` print to stdout.** No level, no filtering,
+no routing, interleaved with the sortie transcript, and invisible unless
+somebody is watching a console. `agent_atc` had no logger at all, which is why
+`log` was undefined the moment one was reached for — ruff caught that, which is
+the only reason it did not ship.
+
+**The transcript is NOT the smell and must not be swept up with it.** The `ATC`
+and `PILOT` lines are the operator's interface and are meant to be on the
+console; what is wrong is that failures share the channel with them, so a
+diagnostic cannot be raised in severity, silenced, or sent to a file without
+taking the sortie with it.
+
+`agent_atc` now has a module logger and the #185 path uses it. The rest is this
+issue.
+
+**Acceptance criteria**
+1. No `except` block in `atc/` reports through `print`.
+2. The sortie transcript still reaches the console unchanged.
+3. A check keeps it that way, since prose has not held on this before.
+
+---

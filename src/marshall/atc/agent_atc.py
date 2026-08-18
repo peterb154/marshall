@@ -22,6 +22,7 @@ from __future__ import annotations
 import dataclasses
 from collections import Counter
 import json
+import logging
 import os
 import pathlib
 import re
@@ -44,6 +45,7 @@ from marshall.core import theatre as _theatre
 from marshall.core import stations as _stations
 from marshall.atc import handoff as _handoff
 from marshall.atc import decision as _decision
+from marshall.atc import clearance as _clearance
 from marshall.atc import flights as fl
 from marshall.atc import identity
 from marshall.atc import phases as _phases
@@ -79,6 +81,14 @@ from marshall.atc.addressing import (  # noqa: F401
     READBACK_WINDOW_SEC, _heard_names, _matches_name, _plausible_callsign,
     addressed_to, addressed_to_another_aircraft, hook_frequency,
     is_a_clearance, known_flight_names, misnamed, readback_due)
+
+# A LOGGER, BECAUSE AN ERROR IS NOT A TRANSCRIPT. This file prints the sortie
+# to the console on purpose -- the ATC and PILOT lines ARE the operator's
+# interface -- and for a long time it had nothing else, so every failure went
+# out through the same channel with no level, no filtering and no way to route
+# it anywhere. `clearance` and `board` have had one all along. #186 sweeps the
+# rest; this is here so the check below does not add another.
+log = logging.getLogger(__name__)
 
 BASE_URL = "http://localhost:8000"
 AGENT_URL = f"{BASE_URL}/atc"          # two-tier routed turn (tier picks the model)
@@ -6309,6 +6319,34 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             record(session_id, kind="repaired", callsign=_d.to,
                    text=f"{_d.kind}: {_add}")
         bridge.decided[:] = []
+
+        # ...AND THE OTHER DIRECTION, WHICH NOTHING ASKED. Everything above
+        # checks that the engine's facts SURVIVED being spoken. This checks
+        # that what was spoken is backed by anything at all -- "cleared to",
+        # "readback correct" -- against the database rather than against what
+        # this turn believes, because what the turn believes is the thing in
+        # question.
+        #
+        # RECORDED, NOT EDITED. Cutting the clause would be a regex guard on a
+        # model's words (#179), and the prompt fault it would paper over is
+        # already fixed: the rules now say a refusal is not a clearance. This
+        # is here so the next occurrence is loud on the first transmission
+        # instead of costing a day of reading transcripts. [#185]
+        try:
+            # THE SAME BUCKET THE BOARD IS WRITTEN UNDER. `MISSION` is
+            # rebound to the sortie's instance key at start-up (#136), and
+            # asking under any other key finds no flight and so reports
+            # nothing -- which is the wrong kind of quiet for this check.
+            _claims = _clearance.unbacked_claims(
+                MISSION, to_callsign or "", reply)
+        except Exception as _e:                  # never lose a transmission
+            log.warning("claim check failed: %s", _e)
+            _claims = []
+        for _bad in _claims:
+            print(f"  .. UNBACKED {_bad}", flush=True)
+            record(session_id, kind="unbacked", callsign=to_callsign,
+                   text=_bad)
+
         # RENDERED BEFORE THE LOCK. Polly is a network call too, and it is
         # cached -- so this is free on a repeat and must not be a reason to
         # hold the air on a miss.

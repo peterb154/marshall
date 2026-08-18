@@ -243,6 +243,77 @@ def aircraft_type(flight: dict) -> str | None:
     return r[0] if r else None
 
 
+# --- did the record back what he said? --------------------------------------
+
+# THE ASSERTIONS A PILOT CANNOT ARGUE WITH, and the state each one claims.
+# Deliberately short: every phrase here has to be one a controller says ONLY
+# when the fact is true, or the check becomes noise and gets switched off.
+_CLAIMS = (
+    ("cleared to", "issued"),
+    ("readback correct", "acknowledged"),
+    ("read back correct", "acknowledged"),
+    ("readback is correct", "acknowledged"),
+)
+
+
+def unbacked_claims(mission: str, callsign: str, said: str) -> list[str]:
+    """Which clearance facts a transmission ASSERTED that the record denies.
+
+    THE INVERSE OF `decision.verify`, and the direction nothing checked.
+    `verify` asks which of the engine's facts did not survive being spoken --
+    the drop. This asks the opposite: what did he say that nothing issued?
+
+    18 August. The engine issued no clearance for the whole sortie, and the
+    controller said:
+
+        15:13:52  Sockeye, Kobuleti Clearance, cleared to Batumi, as filed,
+                  maintain five thousand, expect one zero thousand, departure
+                  frequency one two three decimal three, squawk ...
+        15:14:33  Sockeye, readback correct, contact Kobuleti Ground ...
+
+    `assigned_plans` held no row. Ground taxied him, Tower launched him, and he
+    flew to another aerodrome on a clearance that existed only in the air --
+    and every rung believed it, because nothing anywhere asked whether it was
+    real.
+
+    IT RECORDS; IT DOES NOT EDIT. Deleting the clause would be a regex guard on
+    a model's words, which is #179 and which this project has agreed is a
+    bandaid over a prompt fault. The prompt fault here is fixed -- the rules
+    now say a refusal is not a clearance -- and this exists so that the NEXT
+    time it happens it is loud on the first transmission instead of costing a
+    day of reading transcripts.
+
+    ANSWERED FROM THE DATABASE rather than from anything the turn is carrying,
+    because what is being questioned IS what the turn believes. A missing
+    flight row or an unreachable store returns nothing: an unanswerable
+    question is not evidence of a lie, and a check that cries wolf when
+    Postgres hiccups is a check somebody turns off.
+    """
+    lowered = (said or "").lower()
+    wanted = {state for phrase, state in _CLAIMS if phrase in lowered}
+    if not wanted:
+        return []
+    try:
+        from marshall.atc import board as F
+        f = None
+        for cs in (canonical_callsign(callsign), callsign):
+            f = F.find(mission, callsign=cs)
+            if f:
+                break
+        if not f:
+            return []
+        got = assigned(f["id"])
+    except Exception as e:
+        log.warning("could not check what was claimed: %s", e)
+        return []
+    bad = []
+    if "issued" in wanted and not got:
+        bad.append("said CLEARED TO with no clearance issued")
+    if "acknowledged" in wanted and not (got or {}).get("acked_at"):
+        bad.append("said READBACK CORRECT with nothing acknowledged")
+    return bad
+
+
 # --- the tool the controller actually calls ---------------------------------
 
 def resolve(label: str) -> dict | None:
