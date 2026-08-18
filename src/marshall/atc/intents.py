@@ -446,7 +446,12 @@ def dispatch(ctl: atc.Controller, intent: Intent,
         case IntentKind.REPORT_LANDED:
             ctl.report_landed(cs)
         case IntentKind.REQUEST_APPROACH:
-            ctl.request_approach(cs)
+            # HIS WORDS GO WITH IT. `wants` is what the classifier already
+            # extracts verbatim -- "an approach he wants, a runway" -- and it
+            # was reaching the board and nothing else. It is the only thing
+            # that can say WHICH approach a pilot asked for, so without it the
+            # engine could offer but never issue. [#177]
+            ctl.request_approach(cs, wants=getattr(intent, "wants", "") or "")
         case IntentKind.REQUEST_BREAKUP:
             ctl.request_breakup(cs)
         case IntentKind.REQUEST_VISUAL:

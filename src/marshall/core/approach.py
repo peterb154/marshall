@@ -164,6 +164,87 @@ def may_vector(profile) -> bool:
     return (getattr(profile, "guidance", "") or "").lower() == "intercept"
 
 
+# WHAT A PILOT CALLS EACH KIND OF APPROACH. One kind, several words, because a
+# pilot says "radar approach", "surveillance", "ASR" and "talk me down" for the
+# same procedure and a controller who only recognises one of them is deaf three
+# times in four.
+#
+# Deliberately NOT a fuzzy match. Each of these is a word somebody actually
+# says; anything not on the list resolves nothing and the controller ASKS,
+# which is the whole point -- see `match_spoken`.
+_SPOKEN_KIND = {
+    "ils": ("ils", "i l s", "instrument landing"),
+    "asr": ("asr", "a s r", "radar", "surveillance", "talkdown", "talk down",
+            "talk me down", "precision"),
+    "ndb": ("ndb", "n d b", "beacon", "letdown", "let down", "homing"),
+    "gca": ("gca", "g c a", "ground controlled"),
+    "vor": ("vor", "v o r"),
+    "tacan": ("tacan", "tac an"),
+}
+
+
+def match_spoken(said: str, procedures, field: str = ""):
+    """Which published approach a pilot's WORDS mean. `(profile, candidates)`.
+
+        "when a pilot approaches the field -- on a flight plan or not (just
+         coming into the airspace vfr) the approach should ask which approach
+         he would like and assign it to him, and support him in that approach"
+
+    THE MISSING HALF OF #162. That issue established that a field OFFERS a set
+    and Approach ISSUES one, and wired the issuing to a FILED plan only:
+    `assign_approach`'s single caller reads `assigned_plans.approach`. A pilot
+    who asked on the radio -- VFR, air-started, or simply not on the frag --
+    could never be given one, so `_pro` stayed None, his holding stack was
+    empty, and `request_approach` fell through in SILENCE. [#177]
+
+    RETURNS TWO THINGS, and the second is why this is not a `dict.get`. An
+    ambiguous request must be ASKED BACK, never resolved by list order -- #165
+    settled that for the key axis after a pilot was cleared for a "radar
+    approach" his plate called an ILS. "Give me the ILS" at a field with an ILS
+    to each end of the runway is exactly that shape:
+
+        (profile, ())      one match. Issue it.
+        (None, (a, b))     several. NAME them and let him choose.
+        (None, ())         nothing he said matches. Offer what there is.
+
+    `procedures` is the keyed mapping `theatre.approaches_now()` returns.
+    `field` narrows to one aerodrome, which is what an Approach controller
+    working his own field wants; empty searches the map, for the pilot who asks
+    about somewhere else.
+    """
+    rows = [(k, p) for k, p in sorted(dict(procedures).items())
+            if not field
+            or (getattr(getattr(p, "aerodrome", None), "name", "") or "").lower()
+            == field.lower()]
+    if not rows:
+        return None, ()
+    words = " ".join((said or "").lower().replace("-", " ").split())
+    if not words:
+        return None, tuple(p for _k, p in rows)
+    # THE KEY ITSELF, first and exactly. A pilot reading his kneeboard may say
+    # the published name, and #165's lesson is that an exact match must win
+    # before anything looser runs.
+    for k, p in rows:
+        if k.lower() in words:
+            return p, ()
+    # THEN THE KIND HE NAMED, and the RUNWAY if he gave one. Both narrow; a
+    # pilot who says only "the ILS" at a field with one is unambiguous, and at
+    # a field with two is not, which is the case that must ask.
+    kinds = {kind for kind, spellings in _SPOKEN_KIND.items()
+             if any(w in words for w in spellings)}
+    import re as _re
+    rwys = set(_re.findall(r"\b(\d{1,2})\b", words))
+    hit = [p for _k, p in rows
+           if (not kinds or (getattr(p, "kind", "") or "").lower() in kinds)
+           and (not rwys or str(getattr(p, "runway", "") or "").lstrip("0")
+                in {r.lstrip("0") for r in rwys})]
+    if not kinds and not rwys:
+        return None, tuple(p for _k, p in rows)
+    if len(hit) == 1:
+        return hit[0], ()
+    return None, tuple(hit)
+
+
 def _round_up(value: int, step: int) -> int:
     return -(-int(value) // int(step)) * int(step)
 

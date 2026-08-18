@@ -10901,3 +10901,82 @@ which `LAYERS.md` names as the real cost of a per-call prompt) and 4 as a
 guarded assertion rather than a consequence.
 Labels: needs-flight-test
 ---
+
+## [ARCH-35] Approach never asks which approach, so a VFR arrival gets silence — #177
+labels: bug, architecture
+
+    "A field has a set of approaches available to it. When a pilot approaches
+     the field - on a flight plan or not (just coming into the airspace vfr)
+     the approach should ask which approach he would like and assign it to him,
+     and support him in that approach"
+
+#162 established the shape -- a field OFFERS a set, Approach ISSUES one to one
+aeroplane -- and wired the ISSUING to a filed plan only. `assign_approach` had
+exactly one caller and it read `assigned_plans.approach`, so a pilot who asked
+on the radio was never given one.
+
+**And the failure was silent, which is worse than the wrong answer it
+replaced.** Everything followed correctly from `_pro(ac)` being None:
+
+    stack_ft          empty, so `_free_slot` returned None
+    request_approach  fell through without entering the stack
+    the engine        said NOTHING AT ALL
+
+Measured: radar-identified, asking plainly, phase stayed UNKNOWN and the outbox
+was empty. The agent then answered with no directive behind it, improvising a
+clearance the separation engine had no record of. Before #162 he was given the
+radio's loaded arrival instead -- a real procedure, possibly at the wrong
+field, which is the defect that issue deleted. **Removing a wrong answer
+without supplying the right one turns a defect into a quieter defect.**
+
+**Who it happens to.** Anyone not taking an IFR clearance from Delivery first:
+a VFR join, an air start, a mid-sortie test, or the owner jumping in to try
+something. `_cleared_plan_now` returns `{}` without a `cruise_ft` or a
+`squawk`, so no clearance means no plan means no approach.
+
+**What was built.**
+
+    core/approach.match_spoken     a pilot's WORDS to a published procedure.
+                                   Returns `(profile, candidates)` -- an
+                                   ambiguous request is asked BACK with the
+                                   candidates named, never resolved by list
+                                   order, which is #165's rule
+    Controller.offer_approaches    names what this FIELD publishes and asks
+                                   which. One on offer is told, not asked
+    Controller.request_approach    takes `wants`, resolves it, and ISSUES --
+                                   `assign_approach` from the radio at last
+    intents.dispatch               passes `intent.wants`, which the classifier
+                                   already extracted verbatim ("an approach he
+                                   wants, a runway") and which reached the
+                                   board and nothing else
+
+**The assignment is the ENGINE's and that is not bureaucracy.** An approach
+clearance puts an aeroplane into a letdown that holds ONE, so which procedure
+each aeroplane is on decides who contends with whom. It may never be a thing
+the language half remembers having said.
+
+**Acceptance criteria**
+1. A radar-identified pilot with nothing filed who asks for the approach is
+   ASKED which, with the field's set named — never met with silence.
+2. Naming one issues it, and the stack, the levels and the letdown all work
+   from it afterwards.
+3. An ambiguous request names the candidates and assigns nothing.
+4. A pilot already cleared is not asked again.
+5. Three aircraft choosing different procedures still hold distinct levels
+   with one in the letdown and no anomalies.
+6. A procedure the map does not publish resolves to nothing, and the controller
+   says so rather than offering the nearest thing.
+
+Tests: `tests/test_approach_asks_which_one.py`. All six are green.
+Code: `src/marshall/core/approach.py` (`match_spoken`),
+`src/marshall/atc/controller.py` (`offer_approaches`, `published_approaches`,
+`request_approach`), `src/marshall/atc/intents.py` (dispatch).
+
+**Status:** BUILT 18 August, needs a pilot. The engine half is guarded by the
+six criteria above; what no suite can score is whether ASKING sounds right on
+the air — whether the offer is too long a transmission, whether "say which you
+want" is the phrase, and whether a pilot who has already said what he wants in
+his check-in gets asked anyway because the classifier put it in `wants` and
+nothing else did.
+Labels: needs-flight-test
+---

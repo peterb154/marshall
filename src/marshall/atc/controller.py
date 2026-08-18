@@ -43,6 +43,11 @@ from enum import Enum, auto
 
 from marshall.atc import callsign
 from marshall.core import route as R
+# WHICH APPROACH HIS WORDS MEAN, and what this map publishes. Imported by
+# name so the engine keeps ONE spelling of each question -- `match_spoken`
+# refuses an ambiguous request by naming the candidates (#165) rather than
+# resolving it by list order.
+from marshall.core.approach import match_spoken as _match_spoken
 from marshall.atc import decision as D
 # The spellers live in `core` now -- ATIS needs them too and cannot import
 # sideways. Re-exported here so `controller.spell_hdg` still resolves.
@@ -381,6 +386,18 @@ def _too_old(row, stale_after_sec: float) -> bool:
     if got.tzinfo is None:
         got = got.replace(tzinfo=_dt.UTC)
     return (now - got).total_seconds() > stale_after_sec
+
+
+def _published_now() -> dict:
+    """This map's approaches, keyed. Asked per call rather than held.
+
+    `theatre.approaches_now` is cached per map name, so this is a dict lookup
+    after the first call -- and holding the result would put a set of
+    procedures on the Controller, which is a smaller version of exactly what
+    #162 deleted.
+    """
+    from marshall.core import theatre as _t
+    return _t.approaches_now()
 
 
 def procedure_of(ac, fallback=None):
@@ -2850,7 +2867,80 @@ class Controller:
         from marshall.atis import store as _atis
         return spell_rwy(_atis.runway_in_use(fld))
 
-    def request_approach(self, cs: str) -> None:
+    def offer_approaches(self, ac, candidates=()) -> bool:
+        """Ask him WHICH approach he would like, naming what this field has.
+
+            "A field has a set of approaches available to it. When a pilot
+             approaches the field -- on a flight plan or not (just coming into
+             the airspace vfr) the approach should ask which approach he would
+             like and assign it to him, and support him in that approach"
+
+        The half #162 left out. It established that a field OFFERS a set and
+        Approach ISSUES one, and wired the issuing to a FILED plan only -- so a
+        VFR arrival, an air start, or anybody not on the frag could never be
+        given one. He then had no procedure, an empty holding stack, and
+        `request_approach` fell through saying NOTHING. Asking is what a
+        controller does, and it is also the only thing that turns "he has no
+        approach" from a dead end into a conversation. [#177]
+
+        `candidates` narrows the offer to a genuine ambiguity -- "the ILS" at a
+        field with one to each end -- which is #165's rule: an ambiguous
+        request is refused by NAMING the candidates, never resolved by list
+        order. Empty offers everything published at his field.
+
+        Returns True when something was said, so the caller can stop.
+        """
+        offer = tuple(candidates) or self.published_approaches(ac)
+        if not offer:
+            return False
+        said = ", ".join(self._approach_words(p) for p in offer)
+        if len(offer) == 1:
+            # ONE ON OFFER IS NOT A QUESTION. Reading a list of one to a pilot
+            # and asking him to choose is the kind of politeness that costs a
+            # transmission and tells him nothing.
+            self.say(ac.callsign,
+                     f"{self._addr(ac)}, expect the {said}. Advise when ready.")
+            return True
+        self.say(ac.callsign,
+                 f"{self._addr(ac)}, we have the {said}. Say which you want.")
+        return True
+
+    def published_approaches(self, ac=None) -> tuple:
+        """What THIS controller's field offers. A fact about the map.
+
+        Read from the theatre rather than held, for the reason the whole of
+        #162 is about: a set of approaches belongs to an aerodrome and nothing
+        in this process may hold a singular one. Scoped to the field of the
+        seat that is speaking, because a role is unique only within an
+        aerodrome and so is a procedure -- offering Kobuleti's ILS to a man
+        recovering at Batumi is the same error one axis over.
+        """
+        from marshall.core import theatre as _t
+        # HIS SEAT'S FIELD FIRST -- `_me` is set by the radio from the frequency
+        # the transmission arrived on, which is the one fact a pilot cannot
+        # influence. Then the aeroplane's own, for a caller that has an
+        # aircraft and no seat (the dry run, the tests). Empty searches the map,
+        # which is honest rather than wrong: a controller nobody has placed
+        # should offer everything rather than one aerodrome's by accident.
+        fld = getattr(self._me, "field", "") or ""
+        if not fld and ac is not None:
+            fld = self._key(ac)
+        rows = _t.approaches_now()
+        return tuple(p for _k, p in sorted(rows.items())
+                     if not fld
+                     or (getattr(getattr(p, "aerodrome", None), "name", "")
+                         or "").lower() == str(fld).lower())
+
+    def _approach_words(self, p) -> str:
+        """One approach, as a controller names it on the air."""
+        kind = (getattr(p, "kind", "") or "").lower()
+        spoken = {"ils": "I-L-S", "asr": "radar approach",
+                  "ndb": "beacon approach", "gca": "G-C-A",
+                  "vor": "V-O-R"}.get(kind, kind.upper() or "approach")
+        rwy = getattr(p, "runway", "") or ""
+        return f"{spoken} runway {rwy}" if rwy else spoken
+
+    def request_approach(self, cs: str, wants: str = "") -> None:
         # A pilot who calls up asking for the approach directly (no prior check-in
         # or beacon report) should still be worked, not ignored. Enter a new
         # arrival into the stack bottom-up, then let the sequencer clear them.
@@ -2900,6 +2990,38 @@ class Controller:
                      f"{self._addr(ac)}, not radar identified, say your "
                      f"position and altitude.")
             return
+        # WHICH APPROACH IS HE ASKING FOR, AND HAS ANYBODY GIVEN HIM ONE.
+        #
+        #     "When a pilot approaches the field -- on a flight plan or not
+        #      (just coming into the airspace vfr) the approach should ask
+        #      which approach he would like and assign it to him, and support
+        #      him in that approach"
+        #
+        # Until this block, ISSUING an approach had one caller and it read a
+        # FILED plan (`assigned_plans.approach`). A pilot who asked on the
+        # radio -- VFR, air-started, or simply not on the frag -- was never
+        # given one, so `_pro` stayed None, his holding stack was empty,
+        # `_free_slot` returned None, and this method fell through in SILENCE.
+        # Measured: radar-identified, asking plainly, and the engine said
+        # nothing at all. That is worse than the wrong answer it replaced,
+        # because a controller who does not answer is indistinguishable from a
+        # dead radio.
+        #
+        # THE ASSIGNMENT IS THE ENGINE'S, and that is not bureaucracy: an
+        # approach clearance puts an aeroplane into a letdown that holds ONE,
+        # so which procedure he is on decides who contends with whom. It may
+        # not be a thing the language half remembers having said. [#177]
+        if self._pro(ac) is None:
+            want, maybe = _match_spoken(
+                wants, _published_now(), field=getattr(self._me, "field", ""))
+            if want is not None:
+                self.assign_approach(ac.callsign, want)
+            elif self.offer_approaches(ac, maybe):
+                # ASKED, AND NOT STACKED. He has no procedure, so there is no
+                # stack of his to enter and nothing to sequence him against --
+                # putting him in one before he has chosen would be inventing
+                # the contention the choice decides.
+                return
         # ENTER HIM IN THE STACK SILENTLY, THEN SEE IF HE IS ABOUT TO BE CLEARED.
         #
         # Holding him is a state change; SAYING so is a separate decision, and
