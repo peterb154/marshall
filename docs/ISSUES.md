@@ -11196,7 +11196,7 @@ pilot can only fix the fault he is told about — which is #135's own complaint.
 ## [ARCH-39] A plan named out loud comes back ambiguous, because the label is matched as typed — #182
 labels: bug
 
-**Status:** FIXED 18 August. Guarded by `tests/test_a_plan_named_out_loud_is_not_ambiguous.py` — 7 of its 9 tests fail on the old comparison. Not `needs-flight-test`: every criterion is a fact the resolver can be asked directly, which is how the bug was found. **A stopgap, and named as one** — the comparison is still string surgery and #183 is the real answer.
+**Status:** FIXED 18 August, then SUPERSEDED the same day. The first fix compared letters instead of characters, which worked and left the design — *"lets not implement stopgaps"*. The scorer is deleted outright in #183 and the case is guarded there. Kept as its own entry because it is the transcript that found the fault, and because the two-line fix is what made the real one obvious.
 
     15:13:08  PILOT  Roger Sock, I would like Batumi Test, IFR to Batumi.
     15:13:20  ATC    two plans fit that — say which: transit and recovery
@@ -11243,7 +11243,7 @@ the question.
 ## [ARCH-40] Plan resolution is hand-weighted string scoring where a similarity query belongs — #183
 labels: architecture
 
-**Status:** OPEN — 18 August, scoped, not started. Nothing blocks it: `pg_trgm` and `pgvector` are both already in the database. Filed straight after #182, whose one-line fix works and does not make the layer less fragile.
+**Status:** BUILT 18 August, NEEDS A PILOT — card rows G3–G7. `plans.score`, `pick`, `ask_which`, `_squash`, `_spoken`, `_addressed_field` and `_words` are gone; `request_clearance(callsign, plan)` takes a label the controller has chosen, and `plans.named` is an exact lookup. **No similarity search was needed in the end** — the answer was not a better matcher but deleting the matcher, because the controller already had the labels, the words and the conversation and was passing a bare string to something that had none of them. `tools/plan_sweep.py` now scores the MODEL on the same phrasings and is baselined at 14/16; it moved to the `--live` group because it costs model calls, and `check.py` names it as unguarded rather than dropping it. **Only a pilot can score G5/G6** — whether the question a controller asks when two plans really are alike sounds like a controller rather than a menu.
 
     "that's weak ... this kind of string matching is lame"
 

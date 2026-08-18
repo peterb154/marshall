@@ -94,9 +94,12 @@ CHECKS = [
     ("issues and the card in step", [PY, "tools/issue_sync.py"],
      "#27 — that ISSUES.md, GitHub and the cockpit card still agree. Twenty of "
      "thirty-seven had drifted before anyone looked", False),
+    # LIVE SINCE #183. It scored a regex and now it scores the MODEL, which
+    # costs model calls and a network -- neither of which a tier-1 check may
+    # need. Reported as unguarded by name rather than quietly dropped.
     ("filed plans, resolved", [PY, "tools/plan_sweep.py"],
      "#1 G3/G4 — which plan a spoken request means, and when to ASK instead of "
-     "picking one", False),
+     "picking one", True),
     ("filed plans, assigned", [PY, "tools/plan_assign_check.py"],
      "#1 — two flights, two plans, and an amendment that touches neither the "
      "other aeroplane nor what was filed", False),

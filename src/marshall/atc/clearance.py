@@ -245,9 +245,14 @@ def aircraft_type(flight: dict) -> str | None:
 
 # --- the tool the controller actually calls ---------------------------------
 
-def resolve(said: str, callsign: str | None = None) -> dict:
-    """Which filed plan he means. Pure lookup + `plans.pick`, no side effects."""
-    return P.pick(said, filed(), callsign=callsign)
+def resolve(label: str) -> dict | None:
+    """The filed plan by that name, or None. Pure lookup, no side effects.
+
+    It took the whole transcript and scored it. The controller decides now --
+    see the note at the top of `plans.py` -- so this is a key lookup and the
+    only thing it can get wrong is a name nobody filed.  [#183]
+    """
+    return P.named(label, filed())
 
 
 _SPOKEN_DIGIT = {"zero": "0", "one": "1", "two": "2", "three": "3", "four": "4",
@@ -410,20 +415,34 @@ def clearance_tools(mission: str = "default", station: str = "") -> list:
         return not_on_the_board(callsign, _board())
 
     @tool
-    def request_clearance(callsign: str, said: str = "") -> str:
+    def request_clearance(callsign: str, plan: str) -> str:
         """Give a flight its IFR clearance from a plan on file, and get back the
-        exact words to say. Call this when a pilot asks for his clearance --
-        "request clearance", "IFR to Batumi ready to copy", "clearance for the
-        CAS over Tsutsnvati". `said` is his request in his own words; it is how
-        the right plan is found, so pass it through unedited.
+        exact words to say. `plan` is the LABEL of the plan you have decided he
+        means -- "Domino", "BatumiTest" -- not his words.
+
+        YOU DECIDE WHICH PLAN, because you are the one who heard him. You have
+        every filed label in front of you and he has just told you what he
+        wants, in his own words: "the weather run out to Ingress" is Lantern,
+        "IFR to Batumi ready to copy" is whichever one that is when only one
+        departs this field. An engine used to guess this from the transcript
+        and it was worse at it than you are.
+
+        IF YOU CANNOT TELL, ASK HIM -- do not call this with a guess. Two plans
+        really can be alike (Samovar and Kettle are the same sortie flown two
+        ways), and naming them both back to him costs one transmission where
+        clearing him onto the wrong sortie costs the mission. A pilot who
+        NAMED a plan has not asked you an ambiguous question; ask only when he
+        genuinely has not chosen.
+
+        A label that is not on the board is refused and you will be told what
+        IS filed.
 
         READ THE RETURNED CLEARANCE VERBATIM AND WHOLE. Every element is there
         because a pilot writes it down: clearance limit, route, altitude,
         DEPARTURE FREQUENCY, squawk. Do not paraphrase, round, drop or reorder
         one -- a clearance is the one long transmission on this frequency, and
         the frequency is the element most often lost, which leaves him airborne
-        not knowing whom to call. If more than one plan fits, you get a question
-        to ask him instead; ask it exactly and do not choose for him.
+        not knowing whom to call.
         """
         # WHAT IS FILED IS LOOKED AT FIRST, and the order is the whole of #126.
         #
@@ -441,12 +460,14 @@ def clearance_tools(mission: str = "default", station: str = "") -> list:
         # `resolve` is a pure lookup over `flight_plans` with no side effects
         # and no dependence on the board, so there was never a reason for it to
         # run second -- only the habit of validating the caller first.
-        hit = resolve(said, callsign)
-        if hit.get("none"):
-            return ("Nothing is on file that matches. Tell him so and ask what "
-                    "he filed.")
-        if hit.get("ambiguous"):
-            return "SAY THIS: " + P.ask_which(hit["ambiguous"])
+        board = filed()
+        hit = resolve(plan)
+        if hit is None:
+            # HE NAMED SOMETHING NOBODY FILED, which is a different answer from
+            # "nothing is on file" and the pilot can only act on the right one.
+            return (f"No plan called {plan!r} is filed. {P.whats_filed(board)} "
+                    f"Tell him what is on file and ask which he wants -- do "
+                    f"not clear him on one he did not ask for.")
 
         # NOW the aeroplane, and the refusal can be honest because both halves
         # are known. A clearance is ISSUED TO an aeroplane -- `assign` needs a
@@ -455,9 +476,9 @@ def clearance_tools(mission: str = "default", station: str = "") -> list:
         # can act on in one transmission.
         f = _flight(callsign)
         if not f:
-            return found_but_not_him(callsign, hit["plan"], _board())
+            return found_but_not_him(callsign, hit, _board())
 
-        plan = hit["plan"]
+        plan = hit
         fixes = _known_fixes()
         _, missing = P.route_fixes(plan, fixes)
         if missing:

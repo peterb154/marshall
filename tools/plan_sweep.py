@@ -1,12 +1,27 @@
-"""Does the controller find the plan a pilot actually asked for?
+"""Does the CONTROLLER find the plan a pilot actually asked for?
 
-FP-1 on the card -- #1 -- and the reason it is a sweep rather than a flight test
-is that the thing under test is a MATCH, not a manoeuvre. Reading fifty phrasings
-at a controller over the radio would cost an evening; here it costs a second, and
-the evening can be spent on something only an aeroplane can tell us.
+FP-1 on the card -- #1 -- and it is a bench rather than a flight test because
+the thing under test is comprehension, not a manoeuvre. Reading fifty phrasings
+at a controller over the radio would cost an evening; here it costs a minute,
+and the evening can be spent on something only an aeroplane can tell us.
 
-    uv run python tools/plan_sweep.py
-    uv run python tools/plan_sweep.py --live      # against a running director
+    uv run python tools/plan_sweep.py            # scores the model
+
+IT USED TO SCORE A REGEX AND NOW IT SCORES THE MODEL, which is the whole of
+#183. `plans.pick` gave 100 points for naming a plan, 10 a word for the task, 6
+for a route point and 1 for the destination, and this file measured those
+weights. The weights are gone: the controller reads the pilot's words with
+every filed label in his prompt and decides, and the engine validates the label
+he names. So the question this file asks is unchanged and the thing it asks has
+moved.
+
+    "lets not implement stopgaps"
+
+WHY IT LEFT tools/check.py. It costs model calls and a network, which a tier-1
+check may not. `check.py` now reports it as unguarded by name rather than
+quietly not running it -- the same treatment as the other live checks, and for
+the same reason: a check that silently does not run reads exactly like one that
+passed.
 
 Three outcomes are all correct, and telling them apart is the whole job:
 
@@ -17,10 +32,14 @@ Three outcomes are all correct, and telling them apart is the whole job:
              nearest thing, which would be an aeroplane routed somewhere nobody
              asked to go.
 
-The failure this guards is the quiet one. A resolver that always picks the
-best-scoring plan never asks a question and looks perfect in a demo, because
-every request produces a clearance -- including the requests that were ambiguous,
+The failure this guards is the quiet one. A controller who always names his
+best guess never asks a question and looks perfect in a demo, because every
+request produces a clearance -- including the requests that were ambiguous,
 where the clearance is for somebody else's sortie.
+
+A SCORE, NOT A PASS. Like `classify_bench.py`, this measures a model and models
+vary; the baseline is what it scored last, beaten and moved in the same commit.
+`asr_sweep`'s rule -- a check that is always red is a check nobody reads.
 """
 
 from __future__ import annotations
@@ -69,6 +88,29 @@ FILED = [
      "route": "KOBULETI, INITIAL, BATUMI",
      "task": "Transit and radar recovery"},
 ]
+
+# WHAT IT SCORED WHEN THE MODEL TOOK OVER, 18 August, all-Sonnet. Two cases
+# fail and both are the controller naming Domino where the case wants a
+# question:
+#
+#   "IFR to Batumi, ready to copy"                a real miss. Every plan ends
+#                                                 at Batumi, so this genuinely
+#                                                 discriminates nothing and the
+#                                                 answer is a question
+#   "the transit from Kobuleti to Batumi"         ARGUABLE, and left failing on
+#                                                 purpose. The case wants ASK
+#                                                 because the old scorer could
+#                                                 not tell Domino from Anvil,
+#                                                 whose task also names
+#                                                 Kobuleti -- but Domino IS the
+#                                                 Kobuleti-to-Batumi transit and
+#                                                 a controller reading the board
+#                                                 would say so
+#
+# The second is a case that encoded a limitation of the thing being replaced.
+# Left in and left red rather than quietly reclassified: moving the goalposts
+# to make a new number look better is how a baseline stops meaning anything.
+BASELINE = 14
 
 # (what he says, what should happen, why this phrasing is in the list)
 CASES = [
@@ -159,12 +201,65 @@ def live_plans(base: str = "http://localhost:8000") -> list[dict]:
         return json.load(r).get("plans") or []
 
 
+SCHEMA = {
+    "type": "object",
+    "properties": {
+        "plan": {"type": "string",
+                 "description": "the LABEL of the plan he means -- 'Domino', "
+                                "'Marlin'. Empty if you cannot tell or if "
+                                "nothing on file fits."},
+        "ask": {"type": "boolean",
+                "description": "true if more than one filed plan fits and you "
+                               "must ask him which"},
+        "none": {"type": "boolean",
+                 "description": "true if nothing on file fits what he asked "
+                                "for"},
+    },
+    "required": ["plan", "ask", "none"],
+}
+
+
+def contract() -> str:
+    """The REAL tool description, read off the source.
+
+    Copying the wording into this file would let the two drift, and the drift
+    would be invisible: the bench would go on scoring a contract the controller
+    is no longer given. It is the prompt under test, so it is read from where
+    the controller actually gets it.
+    """
+    src = (ROOT / "src" / "marshall" / "atc" / "clearance.py").read_text()
+    at = src.index("def request_clearance(callsign: str, plan: str)")
+    doc = src[src.index('"""', at) + 3:]
+    return doc[:doc.index('"""')]
+
+
+def board(filed: list[dict]) -> str:
+    """What the controller can see. `filed_plans` puts the labels in his
+    prompt; the task is what a pilot describes instead of naming one."""
+    return "\n".join(
+        f"  {p['label']} — {p.get('task') or '?'} "
+        f"({p.get('origin') or '?'} to {p.get('destination') or '?'})"
+        for p in filed)
+
+
+def decide(said: str, filed: list[dict]) -> dict:
+    from marshall.atc.bedrock_intent import bedrock_llm
+    system = (
+        "You are a clearance delivery controller. A pilot has just spoken to "
+        "you. Decide which filed flight plan he means.\n\n"
+        "These are the plans on file:\n" + board(filed) + "\n\n"
+        "The tool you would call is described to you like this:\n\n"
+        + contract())
+    return bedrock_llm(said, system, SCHEMA)
+
+
 def outcome(hit: dict) -> str:
-    if hit.get("plan"):
-        return hit["plan"]["name"]
-    if hit.get("ambiguous"):
+    """The model's answer, in the sweep's three-way vocabulary."""
+    if hit.get("ask"):
         return "ASK"
-    return "NONE"
+    if hit.get("none") or not (hit.get("plan") or "").strip():
+        return "NONE"
+    return (hit.get("plan") or "").strip()
 
 
 def unrunnable(want: str, filed: list[dict]) -> str:
@@ -193,7 +288,7 @@ def main(argv: list[str]) -> int:
     filed = live_plans() if live else FILED
     print(f"{len(filed)} plan(s) on file\n")
 
-    ok, skipped = True, []
+    ok, skipped, passed, failed = True, [], 0, []
     for said, want, why in CASES:
         gap = unrunnable(want, filed) if live else ""
         if gap:
@@ -202,18 +297,21 @@ def main(argv: list[str]) -> int:
             print(f'        "{said}"')
             print(f"        {gap}")
             continue
-        hit = P.pick(said, filed, callsign="Hoover 1-1")
+        hit = decide(said, filed)
         got = outcome(hit)
-        good = got == want
-        ok = ok and good
+        # CASES NAME A PLAN BY ITS KEY and a controller answers with a LABEL,
+        # because the key is a slug nobody says out loud. Compared through the
+        # board so the cases stay readable as what is actually filed.
+        want_label = next((p["label"] for p in filed
+                           if p.get("name") == want), want)
+        good = P._key(got) == P._key(want_label)
+        passed += 1 if good else 0
+        if not good:
+            failed.append(why)
         print(f"  {'PASS' if good else 'FAIL'}  {why}")
         print(f'        "{said}"')
         if not good:
-            print(f"        wanted {want}, got {got}")
-        if got == "ASK":
-            print(f"        -> {P.ask_which(hit['ambiguous'])}")
-        elif hit.get("plan"):
-            print(f"        -> matched on {', '.join(hit.get('why') or [])}")
+            print(f"        wanted {want_label}, got {got}")
 
     # And the clearance itself, read out once so a human can hear whether it
     # scans. Nothing here asserts on the wording -- that is what the unit tests
@@ -232,8 +330,19 @@ def main(argv: list[str]) -> int:
         for why, gap in skipped:
             print(f"  - {why}: {gap}")
         print("  The FIXTURE still exercises all of them; run without --live.")
-    print("\nall cases behaved" if ok else "\nSOME CASES FAILED")
-    return 0 if ok else 1
+    # A BASELINE, NOT A PASS MARK. This scores a model and models vary; a
+    # check that is always red is a check nobody reads. Beat it and move it in
+    # the same commit.
+    print(f"\n{passed}/{len(CASES) - len(skipped)} — baseline {BASELINE}")
+    for why in failed:
+        print(f"  still failing: {why}")
+    if passed < BASELINE:
+        print("REGRESSION against the recorded baseline")
+        return 1
+    if passed > BASELINE:
+        print(f"BETTER than the baseline — raise BASELINE to {passed} "
+              f"in this commit")
+    return 0 if ok or passed >= BASELINE else 1
 
 
 if __name__ == "__main__":

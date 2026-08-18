@@ -1,11 +1,34 @@
-"""Which filed plan does he mean? Matched on how a pilot actually says it.
+"""Which filed plan does he mean? THE CONTROLLER DECIDES; this validates.
 
-Civil practice is callsign plus DESTINATION -- "IFR to Kutaisi, ready to copy"
--- and ATC finds the one plan on file. That works because destinations differ.
+It used to decide, with a hand-weighted point system over the transcript --
+100 for naming the label, 10 a word for the task, 6 for a route point, 1 for
+the destination -- and the whole of that is gone.
 
-Here they do not. A sortie leaves Batumi, does something, and comes back to
-Batumi, so every plan on file shares an origin and a destination and the civil
-key separates nothing:
+WHY IT WENT. The scorer was a worse language model sitting in front of a good
+one. The controller calls `request_clearance` having already read the pilot's
+words, with every filed label in front of him and the conversation behind him;
+he passed the raw transcript in, and a matcher with none of that context
+decided. On 18 August it decided wrong:
+
+    PILOT  Roger Sock, I would like Batumi Test, IFR to Batumi.
+    ATC    two plans fit that -- say which: transit and recovery filed as
+           Batumi Test, or transit and recovery filed as Domino.
+
+He named it. The 100 points for naming a plan outright could not fire, because
+the test was `label in said` and a label is TYPED (`BatumiTest`) while a
+request is SPOKEN ("Batumi Test"). Only `destination` scored, which both plans
+shared, so they tied and the controller was handed a question to ask whose
+answer was already in the transmission.
+
+    "lets not implement stopgaps"
+
+Matching letters instead of characters would have fixed that sentence and left
+the design: five weights nobody can tune, a noise list, an address parser, and
+a stop-word set, all reimplementing comprehension. The fix is to stop.
+
+WHAT SEPARATES PLANS IS STILL WHAT A PILOT WOULD SAY. Every sortie leaves
+Batumi and comes home to Batumi, so the civil key -- callsign plus destination
+-- separates nothing:
 
     Samovar  to Batumi   CAS over Tsutsnvati
     Kettle   to Batumi   CAS over Tsutsnvati, beacon letdown on return
@@ -13,314 +36,70 @@ key separates nothing:
     Marlin   to Batumi   Night patrol of the coastline
     Anvil    to Batumi   Escort a transport as far as Kobuleti
 
-What separates them is what a pilot would say anyway -- WHAT he is doing and
-WHERE. "The weather run out to Ingress" names one of those five and nothing
-else, without anybody being taught a syntax. And where two really are alike --
-Samovar and Kettle are the same sortie flown two ways -- the answer is a
-question, not the better-scoring guess.
+"The weather run out to Ingress" names one of those five and nothing else,
+without anybody being taught a syntax. That was always a comprehension problem
+and it is now answered by the half that comprehends.
 
-So the match runs over the task, the places in the route, the label and the
-destination, in that order of usefulness. The label stays as the unambiguous
-escape hatch for a night when two plans really are alike, and for taking
-somebody else's plan -- which is a thing here and not a thing in the civil
-world.
+**AMBIGUITY IS STILL ANSWERED BY ASKING**, and that rule did not move -- only
+who applies it. Samovar and Kettle are the same sortie flown two ways, and a
+controller who cannot tell says so. He can see both labels; he asks.
 
-**Ambiguity is answered by asking.** Nothing here picks the first, the newest or
-the best-scoring when two plans match: a controller who cannot tell says so, the
-same rule as a formation that has broken up.
+WHAT IS LEFT HERE IS THE PART A MODEL MAY NOT DO. `named` is an exact lookup,
+so the plan an aeroplane is ISSUED is decided by a key and not by a judgment --
+which is what makes an assignment auditable, and is the same line #177 drew for
+approaches. A label that is not on the board is refused and the refusal says
+what IS filed, because the one thing worse than the wrong plan is a menu the
+pilot has to guess from.  [#183]
 """
 
 from __future__ import annotations
 
 import re
 
-# Words that carry no signal about WHICH plan. Without these, "request" and
-# "clearance" match a task field containing either.
-#
-# The list is long on purpose and it earns its length twice. It stops a plan
-# being matched on the words every request contains -- and it is also what tells
-# "request clearance" (he named nothing, offer him what is on file) apart from
-# "request clearance to Vaziani" (he named somewhere nobody filed for, and the
-# answer is that nothing matches, not a menu).
-_NOISE = {
-    "request", "requesting", "clearance", "cleared", "ready", "copy", "ifr",
-    "vfr", "flight", "plan", "filed", "file", "the", "a", "an", "for", "to",
-    "over", "on", "at", "and", "with", "my", "our", "is", "am", "we", "i",
-    "please", "approach", "tower", "ground", "center", "centre", "delivery",
-    # ordinary connective English, which arrives in every transmission
-    "as", "of", "in", "by", "from", "this", "that", "it", "us", "you", "he",
-    "his", "have", "has", "had", "be", "been", "will", "can", "could", "do",
-    "does", "did", "are", "was", "were", "not", "no", "yes", "or", "but", "if",
-    "then", "so", "just", "now", "like", "want", "need", "looking", "take",
-    "get", "got", "give", "say", "how", "what", "which", "where", "when",
-    "re", "ve", "ll", "sir", "good", "day", "morning", "afternoon", "evening",
-    "thanks", "thank", "affirm", "roger", "wilco", "standby", "stand", "again",
-    # WHAT HE WANTS DONE WITH A PLAN, which is never WHICH plan. "We'd like to
-    # open the flight plan" is the standard way of asking for the one on file,
-    # and `open` not being here made it read as naming something -- so the
-    # no-name branch that offers what is filed never ran, and a pilot asking
-    # the ordinary question was told nothing on file matched.
-    "open", "opening", "activate", "activating", "pick", "pickup", "up",
-    "close", "amend", "start",
-    # spoken digits. A plan is never identified by a number, and these arrive
-    # inside every callsign, altitude and frequency he says.
-    "zero", "one", "two", "three", "four", "five", "six", "seven", "eight",
-    "nine", "niner", "ten", "hundred", "thousand",
-}
+def named(label: str, plans: list[dict]) -> dict | None:
+    """The filed plan the controller named, or None if it is not on the board.
 
+    AN EXACT LOOKUP, and that is the point of it. Which plan an aeroplane is
+    issued decides what it is cleared for, so it is settled by a key rather
+    than by a judgment -- the judgment happened upstairs, where the words are.
 
-# WHO HE IS TALKING TO IS NOT WHAT HE IS ASKING FOR.
-#
-# A transmission opens by naming a station -- "Kobuleti Clearance, Viper one
-# one, request IFR clearance to Batumi" -- and that field name is a form of
-# ADDRESS. It says where the pilot is standing, not where his sortie goes.
-#
-# Scored as content it is poison, because the aerodrome a pilot departs from is
-# exactly the aerodrome another plan is likely to mention. That request resolved
-# to Anvil: "Escort a transport as far as Kobuleti", Batumi to Batumi. The word
-# "Kobuleti" came out of the callsign line and hit Anvil's task, which is the
-# heaviest field there is; "Batumi" hit its route and its destination. A pilot
-# on the Kobuleti ramp says the name of his field in the first two words of
-# every transmission he makes, so this fires on all of them.
-#
-# The ROLES are a closed set and none of them is ever a plan's name, so an
-# address can be recognised without this module knowing the station table.
-_ADDRESS = re.compile(
-    r"\b[a-z]+\s+(?:clearance|delivery|ground|tower|approach|departure|"
-    r"centre|center|control|radar|director|arrival)\b", re.I)
-
-
-def _spoken(said: str) -> str:
-    """His request with the station he is addressing taken out of it."""
-    return _ADDRESS.sub(" ", said or "")
-
-
-def _addressed_field(said: str) -> str:
-    """The aerodrome he is CALLING, which is the aerodrome he is standing on.
-
-    Dropping the address outright was the first fix and it threw away real
-    information: "Kobuleti Clearance" is not a description of his sortie, but it
-    does say where he is, and where he is IS his origin. Stripped completely,
-    "request IFR clearance to Batumi" stopped matching the one plan that departs
-    Kobuleti and offered him the five that do not -- asking a question with the
-    right answer missing, which is worse than asking a plain one.
-
-    So the address is read for exactly one thing and scored against exactly one
-    field. It cannot reach a task or a route, which is where the poison was.
+    Case and separators are ignored on both sides because a label is TYPED and
+    a controller reads it back out of his own transmission: `BatumiTest`,
+    `Batumi Test` and `batumi-test` are one plan. That is normalisation of a
+    known identifier, not matching -- there is no scoring here and no
+    second-best. Two plans whose labels normalise the same cannot both be
+    filed; `filing._LABEL_OK` and the uniqueness check own that.
     """
-    m = _ADDRESS.search(said or "")
-    return m.group(0).split()[0].lower() if m else ""
+    want = _key(label)
+    if not want:
+        return None
+    for p in plans:
+        if _key(p.get("label")) == want:
+            return p
+    return None
 
 
-def _words(text: str, drop: set[str] = frozenset()) -> set[str]:
-    return {w for w in re.findall(r"[a-z0-9]+", (text or "").lower())
-            if w not in _NOISE and w not in drop and len(w) > 1}
-
-
-def _squash(text: str) -> str:
-    """Letters and digits only, so a plan NAME survives being said out loud.
-
-    A label is typed by whoever filed the plan and SPOKEN by the pilot, and the
-    two spellings never agree: `BatumiTest` is one token on a screen and two
-    words in a cockpit. Comparing on letters alone is the only test that holds
-    across "BatumiTest", "Batumi Test", "batumi-test" and whatever Whisper
-    decides the spacing was this time.
-    """
+def _key(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", (text or "").lower())
 
 
-def score(said: str, plan: dict) -> tuple[int, list[str]]:
-    """How well this plan answers what he said, and on what grounds.
+def whats_filed(plans: list[dict]) -> str:
+    """What IS on the board, for a refusal.
 
-    The grounds are returned because the controller should be able to say WHY
-    he thinks it is that one -- "the CAS to Tsutsnvati" reads as a controller
-    who knows the plan, where "Samovar One" reads as a database.
+    A refusal that only says "no" makes a pilot guess, and he will guess at the
+    thing he already said. Naming the board turns one wasted transmission into
+    a choice he can answer -- which is the whole of #126's complaint, one noun
+    over: he was told his flight was missing when his PLAN was on file the
+    whole time, and went hunting where nothing was wrong.
     """
-    want = _words(_spoken(said))
-    if not want:
-        return 0, [], 0
-    pts, why, context = 0, [], 0
-
-    # HE NAMED IT OUTRIGHT -- the strongest signal there is, and it could not
-    # fire for any label with a word boundary in it.
-    #
-    # This was a plain substring of the transcript, so `batumitest` was looked
-    # for inside "i would like batumi test, ifr to batumi" and not found. Every
-    # multi-word plan name fails that way, always, because a pilot says the
-    # space and Whisper writes it down.
-    #
-    # 18 August, live. Two plans on file, both ending at Batumi:
-    #
-    #     PILOT  Roger Sock, I would like Batumi Test, IFR to Batumi.
-    #     ATC    two plans fit that -- say which: transit and recovery filed
-    #            as Batumi Test, or transit and recovery filed as Domino.
-    #
-    # He named it. The only thing that scored was `destination`, worth one
-    # point and deliberately weak because every plan comes home to the same
-    # field -- so the two tied and the resolver asked a question whose answer
-    # was already in the transmission. Bare "Batumi Test", with nothing else
-    # said at all, tied the same way.
-    #
-    # #165's rule is that an ambiguous request is asked back rather than
-    # resolved by list order, and it is right. This was not an ambiguous
-    # request. [#182]
-    tag = _squash(plan.get("label"))
-    if tag and tag in _squash(said):
-        pts += 100
-        why.append(f"named {plan['label']}")
-
-    task_hits = want & _words(plan.get("task"))
-    if task_hits:
-        pts += 10 * len(task_hits)
-        why.append("task: " + ", ".join(sorted(task_hits)))
-
-    route_hits = want & _words(plan.get("route"))
-    if route_hits:
-        pts += 6 * len(route_hits)
-        why.append("route: " + ", ".join(sorted(route_hits)))
-
-    dest_hits = want & _words(plan.get("destination"))
-    if dest_hits:
-        # Deliberately weak. Everything comes home to the same field, so a
-        # destination match is nearly free and must not outweigh a task.
-        pts += 1
-        why.append("destination")
-
-    # WHERE HE IS LEAVING FROM, which only started carrying information when a
-    # plan appeared that does not depart Batumi.
-    #
-    # Every plan used to share an origin as well as a destination, so scoring it
-    # would have added a point to all of them and changed nothing -- which is
-    # why it was never scored, and the note at the top of this file says as
-    # much. The Kobuleti departure makes it the single most discriminating field
-    # on the board: it is the only row whose origin is not Batumi.
-    #
-    # THIS REPLACES THE WRONG FIX. The same request resolved by putting the
-    # place names into that plan's TASK -- "transit from Kobuleti to Batumi" --
-    # and the task is scored at ten a word. That gave one plan triple credit for
-    # "Batumi" (task, route, destination) and turned "IFR to Batumi, ready to
-    # copy" -- a request every plan on the board answers equally -- into a
-    # confident clearance onto somebody else's sortie. A task says what he is
-    # DOING; the endpoints have their own fields and must be read from them.
-    #
-    # Weighted above a destination and below a task: an origin is worth more
-    # than "everyone lands there" and less than what he is going to do.
-    # HIS OWN WORDS FIRST, then where he is calling from -- either is evidence
-    # of an origin and they are worth the same, so a pilot who says "the transit
-    # out of Kobuleti" and one who simply calls Kobuleti Clearance are read the
-    # same way. Counted once: saying both is not twice the evidence.
-    orig = _words(plan.get("origin"))
-    if want & orig:
-        pts += 4
-        why.append("origin")
-    elif orig and _addressed_field(said) in orig:
-        # THE ADDRESS IS CONTEXT, NOT A REQUEST, and the difference only shows
-        # on a board trimmed to one plan.
-        #
-        # Every transmission opens by naming a station, so this fires on all of
-        # them -- which meant the local plan carried a standing four points that
-        # had nothing to do with what the pilot asked for. "Kobuleti Clearance,
-        # request clearance to VAZIANI" scored those four, was the only plan on
-        # the board, and won: a man who asked for an aerodrome nobody filed for
-        # was read back a clearance to Batumi.
-        #
-        # So it is banked separately. It breaks ties between plans his own words
-        # already point at, and it can never BE the match -- see `pick`, where
-        # "did he name anything on file" now asks about his words alone.
-        context += 4
-        why.append("origin (from who he called)")
-    return pts + context, why, pts
+    live = [p.get("label") for p in plans if p.get("label")]
+    if not live:
+        return "Nothing is on file at all."
+    if len(live) == 1:
+        return f"The only plan on file is {live[0]}."
+    return (f"On file: {', '.join(live[:-1])} and {live[-1]}.")
 
 
-def pick(said: str, plans: list[dict], callsign: str | None = None) -> dict:
-    """Resolve a spoken request to one plan, or say why it cannot be.
-
-    Returns {"plan": ..., "why": [...]} on a clean match,
-            {"ambiguous": [...]} when more than one fits,
-            {"none": True} when nothing does.
-    """
-    if not plans:
-        return {"none": True}
-
-    graded = [(p, score(said, p)) for p in plans]
-    scored = [(s, w, p) for p, (s, w, _) in graded]
-    best = max((s for s, _, _ in scored), default=0)
-
-    # NOTHING HE SAID POINTS AT A PLAN. Measured on his WORDS, with the standing
-    # bonus every plan at this aerodrome collects from being addressed taken
-    # back out -- otherwise the local plan always looks like a match and a
-    # request nobody filed for is answered with whatever is nearest.
-    if max((words for _, (_, _, words) in graded), default=0) == 0:
-        # He NAMED something and nothing on file is it. "Request clearance to
-        # Vaziani" is not an ambiguous request, it is a request that cannot be
-        # filled, and offering him a menu of three plans that all go somewhere
-        # else answers a question he did not ask.
-        #
-        # Only when his callsign is known, because that is what lets his own name
-        # be taken out of what he said -- without it "Hoover" is a word that
-        # matches no plan, and every request would read as a request for
-        # somewhere nobody filed for. Asking is the safe way to be wrong.
-        # `_spoken`, not `said`: the station he is calling is not something he
-        # NAMED. Left in, "Kobuleti Clearance, Viper one one, request clearance"
-        # -- the plainest request there is -- read as a pilot who had asked for
-        # something specific, so instead of being offered the board he was told
-        # nothing on file matched. The address has to come out here for the same
-        # reason it comes out of the scoring.
-        if callsign and _words(_spoken(said), drop=_words(callsign)):
-            return {"none": True}
-
-        # Nothing in what he said points at a plan.
-        #
-        # THERE IS NO "THE ONE ON FILE FOR YOU" HERE, and there used to be: if
-        # exactly one plan carried his callsign it was handed to him as the
-        # civil "as filed" case. That read as the safest branch in the file and
-        # was the least safe, because it made a plan belong to a pilot before
-        # anybody was cleared for anything.
-        #
-        # A plan on file belongs to NOBODY. It becomes his at the moment a
-        # clearance is issued, by being copied into `assigned_plans` against his
-        # flight_id, and not one instant earlier. The callsign a template
-        # carried was typed by whoever built the mission and matches a live
-        # pilot only by coincidence -- the same coincidence that would have
-        # given the man who asked to "open the flight plan" a sortie he had
-        # never heard of, and told him it was on file for him.
-        #
-        # So when he has named nothing, the answer is the whole list. Asking is
-        # the safe way to be wrong.
-        if len(plans) == 1:
-            return {"plan": plans[0], "why": ["the only one on file"]}
-        return {"ambiguous": plans}
-
-    top = [(s, w, p) for s, w, p in scored if s == best]
-    if len(top) > 1:
-        return {"ambiguous": [p for _, _, p in top]}
-    return {"plan": top[0][2], "why": top[0][1]}
-
-
-def ask_which(plans: list[dict]) -> str:
-    """What the controller says when he cannot tell. Describes them by what
-    they ARE, then offers the labels -- a pilot recognises "the CAS to
-    Tsutsnvati" faster than he recognises a name he was given yesterday."""
-    bits = []
-    for p in plans[:4]:
-        task = (p.get("task") or "").strip()
-        label = (p.get("label") or p.get("name") or "").strip()
-        # "filed as" rather than a bare name. Handed the label on its own, the
-        # controller reached for the only word he had for a name on a radio and
-        # called it a CALLSIGN -- which is a specific thing that this is not, and
-        # a pilot hearing "callsign Kettle" has been told there is an aeroplane
-        # out there called Kettle.
-        bits.append(f"{task}, filed as {label}" if task else f"filed as {label}")
-    return "I have " + "; or ".join(bits) + ". Say which."
-
-
-# --- the clearance ----------------------------------------------------------
-
-# Codes a controller never assigns, whatever the sim models. 7500 is hijack,
-# 7600 radio failure, 7700 emergency; 7000 and 1200 mean "VFR, not talking to
-# anybody" in Europe and the US. DCS has no transponder at all, so these numbers
-# are decoration -- but decoration that reads 7700 would have a pilot's squadron
-# mate wondering, and getting it right costs one tuple.
 RESERVED_SQUAWKS = {"7500", "7600", "7700", "7000", "1200", "0000", "7777"}
 
 

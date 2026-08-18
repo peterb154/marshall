@@ -79,14 +79,18 @@ class TestTheFileIsOpenedBeforeTheRefusal(_Stubbed):
         super().setUp()
         self.ask = tool_named("request_clearance")
 
-    def said(self, words: str) -> str:
-        return self.ask("Sockeye", words)
+    def said(self, plan: str) -> str:
+        """The controller has ALREADY decided which plan he means (#183), so
+        what goes in is a label rather than the pilot's words. That does not
+        soften this file: the transcript's fault was answering a question
+        about the PLAN with a refusal about the BOARD, and the order that
+        caused it is the order under test."""
+        return self.ask("Sockeye", plan)
 
     def test_the_transcripts_first_request(self):
         """Verbatim. The plan is named in the answer, which is the fact that
         was missing from all three replies he actually got."""
-        got = self.said("Kobuleti Clearance, sockeye, IFR to Batumi with "
-                        "information delta")
+        got = self.said("Domino")
         self.assertIn("Domino", got)
 
     def test_and_it_forbids_telling_him_the_plan_is_missing(self):
@@ -100,7 +104,7 @@ class TestTheFileIsOpenedBeforeTheRefusal(_Stubbed):
         the violation. That is the same reading error as the bug itself: a
         string matched without regard to which noun it was about.
         """
-        got = self.said("IFR to Batumi").lower()
+        got = self.said("Domino").lower()
         self.assertIn("the plan is on file", got)
         self.assertIn("do not say it is missing", got)
 
@@ -109,20 +113,19 @@ class TestTheFileIsOpenedBeforeTheRefusal(_Stubbed):
         flight row -- and a sentence must not create one. So this is a refusal
         and the test says so, rather than quietly asserting a success that
         would mean the identity ladder had been talked past."""
-        got = self.said("IFR to Batumi")
+        got = self.said("Domino")
         self.assertNotIn("cleared to", got.lower())
         self.assertIn("NOT ON THE BOARD", got)
 
     def test_and_it_names_what_he_can_actually_fix(self):
-        got = self.said("IFR to Batumi")
+        got = self.said("Domino")
         self.assertIn("Sockeye", got)
         self.assertIn("callsign", got.lower())
 
     def test_the_third_request_named_the_plan_and_was_still_refused(self):
         """The one that makes the original transcript indefensible: he said the
         word `Domino` and was told there was no flight of that name."""
-        got = self.said("Kobuleti Clearance, sockeye, requesting Domino "
-                        "flight plan")
+        got = self.said("Domino")
         self.assertIn("Domino", got)
 
     def test_it_says_who_IS_on_the_board(self):
@@ -130,10 +133,10 @@ class TestTheFileIsOpenedBeforeTheRefusal(_Stubbed):
         controller who can say who he has has told the pilot what to do next in
         one breath."""
         self.BOARD = [{"id": 7, "callsign": "Panther 2-6"}]
-        self.assertIn("Panther 2-6", self.said("IFR to Batumi"))
+        self.assertIn("Panther 2-6", self.said("Domino"))
 
     def test_an_empty_board_says_it_is_empty_rather_than_nothing(self):
-        self.assertIn("empty", self.said("IFR to Batumi").lower())
+        self.assertIn("empty", self.said("Domino").lower())
 
 
 class TestNothingOnFileIsStillItsOwnAnswer(_Stubbed):
@@ -147,7 +150,7 @@ class TestNothingOnFileIsStillItsOwnAnswer(_Stubbed):
     FILED: list = []
 
     def test_a_pilot_with_no_plan_is_told_about_the_plan(self):
-        got = tool_named("request_clearance")("Sockeye", "IFR to Batumi")
+        got = tool_named("request_clearance")("Sockeye", "Domino")
         self.assertIn("on file", got.lower())
         self.assertNotIn("NOT ON THE BOARD", got)
 
@@ -155,7 +158,7 @@ class TestNothingOnFileIsStillItsOwnAnswer(_Stubbed):
         """Both are wrong, and the FILE is the one he is asking about. This
         ordering is a judgement rather than a fact -- it is here so that
         changing it is deliberate."""
-        got = tool_named("request_clearance")("Nobody", "IFR to Batumi")
+        got = tool_named("request_clearance")("Nobody", "Domino")
         self.assertIn("on file", got.lower())
 
 
@@ -173,11 +176,31 @@ class TestAmbiguityStillWins(_Stubbed):
                     "legs": [{"fix": "KOBULETI", "alt_ft": 3000},
                              {"fix": "BATUMI", "alt_ft": 9000}]}]
 
-    def test_he_is_asked_which_one(self):
-        got = tool_named("request_clearance")("Sockeye", "IFR to Batumi")
-        self.assertIn("SAY THIS:", got)
+    def test_the_one_he_named_is_the_one_he_gets(self):
+        """Two on file and neither is "the only one", so nothing can be
+        inferred -- the label is the whole of the answer."""
+        got = tool_named("request_clearance")("Sockeye", "Ferry")
+        self.assertIn("Ferry", got)
+        self.assertNotIn("Domino", got)
+
+    def test_and_the_engine_no_longer_asks_for_him(self):
+        """The retired branch, asserted so a restoration is loud. "SAY THIS:"
+        was the engine composing a question out of its own tie."""
+        for label in ("Domino", "Ferry"):
+            with self.subTest(label):
+                self.assertNotIn(
+                    "SAY THIS:",
+                    tool_named("request_clearance")("Sockeye", label))
+
+    def test_a_label_nobody_filed_is_refused_with_the_board(self):
+        """He may not be talked past, and he may not be left guessing: the
+        refusal names what IS filed, which is the same courtesy #126 wanted
+        one noun over."""
+        got = tool_named("request_clearance")("Sockeye", "Marlin")
+        self.assertIn("Marlin", got)
         self.assertIn("Domino", got)
         self.assertIn("Ferry", got)
+        self.assertNotIn("cleared to", got.lower())
 
 
 class TestTheOtherTwoToolsStillAskAboutTheAEROPLANE(_Stubbed):
