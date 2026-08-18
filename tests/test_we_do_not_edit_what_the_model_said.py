@@ -72,10 +72,17 @@ FILTERS = {
         "stays until a sortie shows the model has stopped volunteering them."),
     "hush_a_second_talkdown": (
         "The engine flies the talkdown and the agent transmitted its own mile "
-        "calls beside it, holding the metronome off the air. The brief tells "
-        "it not to and it does it anyway -- which is the same shape and has "
-        "NOT been root-caused. Nobody has yet asked what in the prompt makes a "
-        "controller on final think range calls are his."),
+        "calls beside it, holding the metronome off the air -- so the 6, 5, 4 "
+        "and 3 mile calls never went out and the pilot heard nothing about "
+        "coming down until two miles. Root-caused 18 August and it was not "
+        "disobedience: the per-turn message handed the model the guidance as "
+        "'ASR (radar guidance ... VOICE THESE NUMBERS EXACTLY; you are "
+        "navigating for him)' while the metronome was transmitting the same "
+        "numbers. An instruction and a filter cancelling out inside one turn. "
+        "`settle` no longer hands the voice guidance the engine is about to "
+        "speak; the RADAR block still carries his position, so it can answer a "
+        "question without being told to make the call. The filter stays as a "
+        "belt until a sortie on final shows it catching nothing."),
 }
 
 # ...AND THE ONE THAT IS NOT A FILTER. `for_voice` cuts at a `RADIO:` marker
@@ -180,6 +187,27 @@ class TheHandoffRuleIsTaughtInOnePlace(unittest.TestCase):
             A.Bridge(), "", "Sockeye", "Clear for takeoff, runway seven.",
             None, me, None, None, "", "", "", {}, "", "", "")
         return msg + "\n" + briefing.plates(T.approaches_now())
+
+    def test_the_voice_is_not_ordered_to_speak_the_engines_mile_calls(self):
+        """The talkdown half of the same fault.
+
+        `settle` used to pass `vectoring` through on final, and
+        `compose_message` renders it as "voice these numbers exactly". The
+        metronome was transmitting them at the same time and
+        `hush_a_second_talkdown` deleted the model's copy -- an order and a
+        censor inside one turn.
+
+        Asserted on `settle`'s source rather than behaviourally, because
+        reproducing it needs a live guidance object mid-final; what matters is
+        that the gate exists and names the engine. [#179]
+        """
+        import inspect
+        from marshall.atc import agent_atc as A
+        src = inspect.getsource(A.settle)
+        self.assertIn('("final", "map")', src,
+                      "nothing stops the voice being handed the engine's own "
+                      "talkdown to speak")
+        self.assertIn("ENGINE's on final", src)
 
     def test_the_voice_is_not_told_when_a_departure_is_handed_on(self):
         """`5 miles` and `after takeoff` were the two that fired. Asserted on

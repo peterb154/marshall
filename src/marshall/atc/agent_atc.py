@@ -456,6 +456,28 @@ def flight_handoff(flight_id: int, to: str, base: str = BASE_URL) -> dict:
 
 
 
+def tell_the_agent_what_was_said(session_id: str, text: str, *, role: str = "",
+                                 also=(), station: str = "",
+                                 base: str = BASE_URL) -> None:
+    """Correct the stored transcript to what actually went on the air.
+
+    The reply is persisted inside the model call, before the bridge filters
+    it, so an edited transmission leaves the controller's own history claiming
+    words the pilot never heard. See `/atc/transmitted`; this is the caller.
+
+    SWALLOWED LIKE EVERY OTHER DIRECTOR CALL. A dead language brain must
+    degrade the controller, never mute him -- and a failure to correct a
+    transcript is the least urgent thing that can go wrong on a radio.
+    """
+    try:
+        _post_json(f"{base}/atc/transmitted",
+                   {"session_id": session_id, "text": text, "role": role,
+                    "also": list(also or ()), "station": station,
+                    "mission": MISSION})
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
+        print(f"  !! could not correct the transcript: {e}", flush=True)
+
+
 def load_and_push_plates(base: str = BASE_URL):
     """Publish EVERY procedure this map offers, and brief the controller on all.
 
@@ -4959,6 +4981,28 @@ def settle(bridge, directive, stack, vectoring, fix, known, ctl,
               f"approach (worked by {_worked_by or 'nobody'}, "
               f"{'down' if down else 'airborne'})", flush=True)
         vectoring = ""
+    # AND NOT WHEN THE ENGINE IS ABOUT TO SAY IT ITSELF.
+    #
+    # `vectoring` reaches the model as "ASR (radar guidance ... VOICE THESE
+    # NUMBERS EXACTLY; you are navigating for him)". On final the metronome is
+    # ALSO transmitting them, every mile, deterministically -- so the model was
+    # told to speak a sentence the engine was already speaking, and
+    # `hush_a_second_talkdown` then deleted what it spoke. An instruction and a
+    # filter cancelling each other out inside one turn.
+    #
+    # It was not a model ignoring its brief. Its own docstring says "the brief
+    # has told it not to and it does it anyway", and the brief had told it to,
+    # louder, in the message. Same shape as the departure handoff (#179): two
+    # authorities on one question, adjudicated afterwards by string surgery.
+    #
+    # He is not left blind -- the RADAR block still carries his position, so
+    # the model can answer a question about where he is. What it no longer gets
+    # is an order to transmit the range call the engine owns. [#179]
+    if vectoring and guide is not None and getattr(
+            guide, "phase", "") in ("final", "map"):
+        print(f"  .. ASR guidance is the ENGINE's on final: not handed to the "
+              f"voice as something to say (phase {phase})", flush=True)
+        vectoring = ""
     # The missed-approach latch still belongs to the geometry that reads it, so
     # it is applied to the phase the dispatcher was given rather than lost.
     if (guide is not None and _pro is not None
@@ -6188,6 +6232,21 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         if sent:
             print(f"  .. refused an unauthorised handoff: {sent}",
                   flush=True)
+        # THE HISTORY MUST MATCH THE AIR.
+        #
+        # Everything above may have edited the reply, and the language brain
+        # persisted the ORIGINAL before handing it back -- so the conversation
+        # recorded what the model wrote and the pilot heard what survived.
+        # Measured on 18 August: the stored turn said "that's correct, contact
+        # Kobuleti Departure ... good day" and the pilot heard "go ahead", and
+        # two turns later the controller was arguing with a memory of a handoff
+        # it never made.
+        #
+        # Only when it CHANGED, and best-effort: correcting the record must
+        # never be able to cost the next transmission.
+        if hushed or sent:
+            tell_the_agent_what_was_said(
+                session_id, reply, role=_role, also=_also, station=_station)
         # AND RECORD THE ONE THAT WAS AUTHORISED. `atc/handoff` was written only
         # by the proactive monitor, so a handoff the LADDER decided and the
         # agent then voiced -- which is most of them, and all of the ground ones

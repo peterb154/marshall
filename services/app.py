@@ -416,6 +416,82 @@ def atc_endpoint(body: dict) -> dict:
         lock.release()
 
 
+@app.post("/atc/transmitted")
+def atc_transmitted_endpoint(body: dict) -> dict:
+    """What actually went ON THE AIR, when it differs from what was generated.
+
+    THE HISTORY MUST MATCH THE RADIO. `agent(message)` persists the reply
+    before the bridge has done anything with it, and the bridge then edits it:
+    an unauthorised handoff is deleted, a second talkdown is hushed. So the
+    conversation recorded what the model WROTE and the pilot heard what
+    SURVIVED, and nothing reconciled them.
+
+    Measured, 18 August. The stored assistant turn reads
+
+        "RADIO: Sockeye, that's correct, contact Kobuleti Departure one two
+         three decimal three airborne, good day."
+
+    and the pilot heard "Sockeye, Kobuleti Tower, go ahead." From the next turn
+    the controller believed it had handed him over, and two turns later it is
+    visibly arbitrating against that belief -- "HANDOFF says hand him to Tower,
+    but he's already been sent to Center previously". It deferred to the engine
+    that time. Nothing guaranteed it would.
+
+    A filter that deletes is crude and honest: the words are gone and nobody
+    thinks otherwise. A filter that deletes AND lets the speaker go on
+    believing it spoke corrupts the record, and every later turn reasons from a
+    transcript that never happened.
+
+    BOTH COPIES, because there are two. The row in `session_messages` is what a
+    restart restores; `agent.messages` is what the live process is reasoning
+    from, and correcting one leaves the other lying until the next restart.
+
+    Idempotent and best-effort: an unknown session, an uncached agent or an
+    empty history is a no-op rather than an error. The bridge calls this after
+    a transmission it altered, and a failure here must never cost the next one.
+    """
+    session_id = (body.get("session_id") or "").strip()
+    text = body.get("text") or ""
+    if not session_id or not text:
+        return {"ok": False, "why": "session_id and text are required"}
+    role = (body.get("role") or "").strip().lower()
+    also = tuple(body.get("also") or ())
+    mission = (body.get("mission") or "").strip() or "default"
+    station = (body.get("station") or "").strip()
+    agent = _atc_agents.get((session_id, station, role, also, mission))
+    if agent is None:
+        return {"ok": False, "why": "no cached agent for that seat"}
+    # THE LAST THING THE CONTROLLER SAID, which is the only turn the bridge can
+    # have altered -- it edits the reply it just received.
+    last = next((m for m in reversed(agent.messages)
+                 if m.get("role") == "assistant"), None)
+    if last is None:
+        return {"ok": False, "why": "nothing said yet"}
+    was = "".join(c.get("text", "") for c in last.get("content") or [])
+    if was.strip() == text.strip():
+        return {"ok": True, "changed": False}
+    # `RADIO:` IS KEPT. `for_voice` cuts at the marker on the way out, so the
+    # transmitted text has none -- and a stored turn without it would look to
+    # the model like a malformed reply of the kind it is told never to produce.
+    last["content"] = [{"text": f"RADIO: {text}"}]
+    try:
+        store = store_id(session_id, role, station)
+        prompts_pool = PgSessionManager(session_id=store)
+        msgs = prompts_pool.list_messages(store, agent.agent_id)
+        target = next((m for m in reversed(msgs)
+                       if (m.to_dict().get("message") or {}).get("role")
+                       == "assistant"), None)
+        if target is not None:
+            d = target.to_dict()
+            d["message"]["content"] = [{"text": f"RADIO: {text}"}]
+            prompts_pool.update_message(
+                store, agent.agent_id, type(target).from_dict(d))
+    except Exception as e:                     # pragma: no cover - best effort
+        log.warning("could not correct the stored transcript: %s", e)
+        return {"ok": True, "changed": True, "persisted": False}
+    return {"ok": True, "changed": True, "persisted": True}
+
+
 # The voice bridge reads this before every /chat and prepends it, so the
 # controller always has a fresh scope with no tool round-trip in the hot path.
 @app.get("/radar")
