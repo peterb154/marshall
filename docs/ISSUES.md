@@ -8586,6 +8586,16 @@ callsign); its docstring carries the line between the procedure question and
 the theatre question, because a rule that lives only in a test is one the next
 person breaks before the test tells them.
 
+**RE-VERIFIED 18 August, and #162 made it unconditional.** This read FIXED
+while the fallback it was about still existed: `procedure_of(ac, fallback)`
+answered the AEROPLANE's procedure and fell back to the radio's, so every one
+of the five call sites was right only because it had been individually
+corrected. There is no bridge profile now -- `_pro` returns None rather than a
+process-wide arrival -- so the fault this issue describes has no mechanism left
+to occur through. The guard tests moved with it and got STRONGER: they assert
+the parameter is ABSENT from the signature rather than that the body reads the
+right variable.
+
 SEVEN SITES, NOT FIVE. The five enumerated above are done. Sweeping for
 `ctl.profile` rather than working the list found two more inside
 `separation_context` that nobody had listed — whether a beacon is flown at all
@@ -10253,6 +10263,15 @@ and this entry went stale: `worked_from` has resolved the datum PER ROW since
 then, from the seat working that aeroplane, re-measuring the range from the
 contact's own position rather than relabelling it.
 
+**RE-VERIFIED 18 August.** `worked_from` and `field_origin` both changed under
+this issue when #162 removed their profile argument; the datum is resolved per
+ROW from the speaking seat exactly as before, and `test_the_board_measures_from_his_seat`
+was updated to the new signature with no assertion dropped. What DID change is
+the fallback underneath: a row nobody has just spoken for now measures from the
+sortie's arrival aerodrome rather than from whichever arrival the radio was
+started on, so the "fallback nobody chose" this issue is about is now a stable,
+named place. #160 carries that half.
+
 **What was missing was the assertion**, which is the criterion this issue
 states — *"asserted, because the failure is invisible while the two answers
 agree"* — and a fix with no test is exactly the state that let this entry rot
@@ -10583,6 +10602,12 @@ per-aircraft loop, so everything that iteration says to him — the mile calls,
 the landing relay, the goodbye, and every free-channel check ahead of them —
 goes out on one channel that is his.
 
+**RE-VERIFIED 18 August.** `final_channel` lost its `profile` parameter to
+#162 and resolves the aeroplane's procedure through `ctl.procedure_for` inside
+instead. That is the same answer by a shorter route -- the caller can no longer
+pass the wrong one, which is what this issue was about. The source-inspection
+guard was updated to the new call shape rather than removed.
+
 The thread-level constant is gone rather than shadowed. `_his_picture` used it
 as the fallback for an aeroplane who has checked in nowhere and now uses the
 channel THIS THREAD listens on, which is what that fallback actually means.
@@ -10784,7 +10809,7 @@ position out rather than requesting it — is untouched.
 ---
 
 ## [ARCH-34] Two knobs survive the per-flight profile, and one of them is the plate — #176
-labels: architecture
+labels: architecture, needs-flight-test
 
 The remainder of #2, lifted out of a closed issue so that it is readable. #2
 was closed on 11 August reading "all four criteria met"; #162 found that the
@@ -10903,7 +10928,7 @@ Labels: needs-flight-test
 ---
 
 ## [ARCH-35] Approach never asks which approach, so a VFR arrival gets silence — #177
-labels: bug, architecture
+labels: bug, architecture, needs-flight-test
 
     "A field has a set of approaches available to it. When a pilot approaches
      the field - on a flight plan or not (just coming into the airspace vfr)

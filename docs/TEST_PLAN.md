@@ -15,13 +15,46 @@ a human is the only instrument for. Section letters and row IDs are stable: they
 are cited on the issues and in the attestations, so J4 is J4 forever even when
 the sections are reordered.
 
+**THE CARD IS A LIBRARY; THE RUNNING ORDER IS THE SORTIE.** There are 143 live
+rows here and nobody flies 143 rows. Measured 18 August:
+
+    85   `[R#n]` regression checks whose issue is CLOSED. They survive on
+         purpose -- "a tested thing is not deleted, it becomes the regression
+         check" -- and they are flown when something near them changes, not
+         every time
+    55   `[#n]` chasing a finding that is still open. These are the sortie
+     2   citing nothing at all: H9 and H11, which predate the citation column
+         and carry a KEYWORD there instead ("anticipatory", "hold"). Left
+         alone deliberately: guessing a number for them would be worse than
+         the gap, because a row citing the wrong issue sends a failure at the
+         wrong commit. They want a human who remembers which finding they came
+         from
+     1   citing a finding that has closed: F2's `[#19]`, spent beside a live
+         `[R#41]`. Corrected to `[R#19]` -- the go-around geometry is still
+         worth re-flying, it is just no longer chasing anything
+
+So "the card looks enormous" is the library talking. **Fly the running order
+below**, which is one sortie; reach into the rest when a row near your change
+is worth re-flying.
+
 ## Fly in this order
 
-**Rebuilt 16 August against what is actually open.** The previous order was
-written on 2 August and named six issues that have since closed; it also
-predates sections P, L, U and V. Twenty-three issues are waiting on a pilot and
-every one of them has a live row, so this is one sortie's worth of work rather
-than eleven.
+**Rebuilt 16 August, re-scrubbed 18 August.** The previous order was written on
+2 August and named six issues that had since closed; it also predates sections
+P, L, U and V.
+
+**Twenty-four issues are waiting on a pilot** and every one has a live row.
+Two of those rows were added on 18 August and are the reason to fly today --
+#177 (Approach asks which approach) and #176 (he is briefed on HIS approach and
+not all four). Both were labelled `needs-flight-test` and had NO ROW for
+several hours, and the check that exists to catch exactly that could not see
+them: `file_issues.py` reads the FIRST `^labels:` line in an entry, so a
+heading `labels:` line silently overrides a trailing `Labels:` one. The label
+was the fix; the rows are V12–V16.
+
+Two rows came OFF in the same scrub -- V1, V2 and V4 are struck, because #160
+and #162 closed on 18 August and a closed row spends a pilot's attention on
+nothing.
 
 **Section V is the main event now, and it is not a phase of flight.** The order
 below used to hand that title to H. V is a THEME -- *nothing the controller says
@@ -36,12 +69,12 @@ They are placed in the run below rather than flown as a block.
 | **3. Taxi and take-off** | Q1–Q5, **V9** | [#89] | the ground ladder, and one deliberate sin: roll without a clearance and see whether Ground tries to take an airborne aeroplane |
 | **4. Departure and the climb** | Q6–Q8, **V7** | [#130] | where Departure lets you go. **Expect no enroute leg at all on this hop** — Kobuleti to Batumi is 22 nm and you turn for home before you are 29 miles out. That is correct; the comms card is what is wrong |
 | **5. Enroute** | P1–P4 | [#49] | every range he speaks: from WHERE? A bearing with no datum is unfalsifiable, which was the whole of #160 — closed unverified 18 August, so V1/V2 are struck and kept as the regression |
-| **6. Handed to Approach** | **V6**, **V7**, V3 | [#139] [#165] | around 27–28 nm now, comfortably before the procedure starts at 22. Nothing should bounce you back to Center on the way in |
-| **7. The approach** | H1–H12, **V8**, **V5** | [#37] [#80] [#91] [#95] [#173] | the main event. Also: which frequency the mile calls arrive on, and that it is the same voice throughout |
-| **8. Landing and taxi in** | F1–F8, **V2** | [#150] | the sim's own events drive Tower. Then park |
+| **6. Handed to Approach** | **V6**, **V7**, V3, **V12**, **V13**, **V14** | [#139] [#165] [#177] | around 27–28 nm now, comfortably before the procedure starts at 22. Nothing should bounce you back to Center on the way in. **V12–V14 are the new ones and the reason for this sortie**: arrive with NOTHING FILED and he must ask which approach you want. Until 18 August he said nothing at all to that pilot |
+| **7. The approach** | H1–H12, **V8**, **V5**, **V15**, **V16** | [#37] [#80] [#91] [#95] [#173] [#176] | the main event. Also: which frequency the mile calls arrive on, and that it is the same voice throughout. **V15** is new: he should never read you numbers from a procedure you are not flying, because he is no longer carrying all four plates |
+| **8. Landing and taxi in** | F1–F8 | [#150] | the sim's own events drive Tower. Then park. **V2 is struck** — #160 closed 18 August, and its row is kept as the regression rather than flown |
 | **9. With the board in front of you** | **V10**, K1–K4 | [#169] | one datum per ROW, not one per page. Leave it a minute so it refreshes on its own |
 | **10. Ears only, all sortie** | S1–S14 | [#79] [#172] | **no machine will ever score these.** A seam in a transmission, a spoken numeral, one sentence where there were two |
-| — **second aeroplane** | D1–D6, N3/N5/N6, L1–L3, **V4** | [#162] | skip solo. A formation cannot be flown by one aeroplane |
+| — **second aeroplane** | D1–D6, N3/N5/N6, L1–L3 | [#12] | skip solo. A formation cannot be flown by one aeroplane. **V4 is struck** — #162 closed 18 August; two aircraft on two approaches is now guarded by the suite and kept here as the regression |
 | — **another day** | U1–U8 | [#117] | Nevada. A different map, a different sortie, and it needs the mission loading |
 
 **Do not fly V11.** It exercises the 1944 NDB letdown, and that procedure is
@@ -52,7 +85,21 @@ vanishes silently, and flying it now would be an hour spent on something already
 deleted in principle.
 
 **Solo today?** Stages 1–10, in order. That is the whole sortie and it answers
-twenty-one of the twenty-three.
+twenty-two of the twenty-four.
+
+**Shortest useful sortie, if you only want to know whether THIS WEEK's work
+flies.** Six rows, one recovery, no formation and no second aeroplane:
+
+    V12  arrive VFR with nothing filed, ask for the approach without naming one
+    V13  ask vaguely, then ask for a GCA this field has not got
+    V15  listen for numbers from a procedure you are NOT flying
+    V5   where Approach hands you to Tower on the ILS
+    V8   which frequency the mile calls and the landing clearance arrive on
+    S11  one transmission with a seam in it -- the standing ear-only row
+
+V12 is the one that matters. Everything else this week was structural and the
+suite can see it; that row is the behaviour a pilot changed his mind about, and
+before 18 August the engine answered it with silence.
 
 ## How to report
 
@@ -525,7 +572,7 @@ tiresome. You can.
 | ID | Prio | Test | What should happen | Fix under test |
 |----|------|------|--------------------|----------------|
 | F1 | P1 | Fly the approach to a full stop | Handed to **Tower over the runway**, not at a range on final, and nothing tells you to climb once you are down | [R#41] `land` |
-| F2 | P1 | Go around from short final | **No handoff to Tower**, and no reversal back towards the field while you are climbing out. A go-around at half a mile is closer than a landing at one | [R#41], [#19] |
+| F2 | P1 | Go around from short final | **No handoff to Tower**, and no reversal back towards the field while you are climbing out. A go-around at half a mile is closer than a landing at one | [R#41], [R#19] |
 | F3 | P2 | Touch and go | You are **not** handed to Tower for the few seconds you are on the runway — `runway_touch` is deliberately not acted on | [R#41] `DOWN` |
 | **F3b** | **P1** | **Touch and go, and then say nothing** — or get airborne again at any point after Tower has said goodbye | **Nobody hands a flying aeroplane to Ground.** The roll-out goodbye moves you to `taxi_in` while you are still rolling, so an aeroplane that then flies is a ground controller's aeroplane in the air; before 13 August nothing could retrieve it and you sat on 121.900, airborne. If you have already checked in with Ground, **Batumi Tower takes you back** — *"contact Batumi Tower one one eight decimal six"*. A ghost flew both halves on 13 August and both fired. **What is yours:** on the touch-and-go the goodbye is followed about fourteen seconds later by *"contact Batumi Approach one two four decimal four two five"*, with nothing from you in between. It is defensible — you are airborne, leaving, and Batumi has no Departure seat — but it is two frequency changes in a quarter of a minute at a hundred feet, and whether that is a controller working or a controller thrashing is an ear's question | [R#164], [R#77] |
 | F4b | **P1** | **Say something Whisper will mangle** — a hurried call, a name half-swallowed, someone else's callsign — then check `/diag` | **No aeroplane appeared that does not exist.** One P-47 once entered the stack as "Hammer 1-1", "Hammer 1-3", "All 4" and "Maintained 2" — four aircraft, three imaginary, each with a place in the queue. With one ship that is untidy; with two a ghost at the head holds real pilots for an aeroplane that will never arrive. The identity work since means a radio is bound by RADAR and a mangled name should reach nothing, but the closure condition here has always been a live sortie and nobody has flown one | [R#13] | ghosts |
@@ -939,6 +986,11 @@ the two differ, which is why they want a pilot and not a sweep.
 |---|---|---|---|---|
 | ~~V1~~ | On Georgia Center, ask for a range or bearing | It is measured from **where you are going**, and he SAYS so — "twenty three miles from Batumi". A Center has no aerodrome of its own, so a datum that goes unstated is one you cannot check; if he gives a bare "twenty three miles", that is the defect | [#160] | **P1** |
 | ~~V2~~ | Recover into **Kobuleti** on the same sortie the radio was started for Batumi | Every range Center and Approach speak is measured from **Kobuleti**. This is the one that separates a chosen datum from a fallback: today the radio's loaded arrival decides it, and on this route that is the wrong field by forty miles | [#160] | **P1** |
+| **V12** | **Arrive VFR with nothing filed** — do not call Clearance at all, come into the airspace and tell Approach you are inbound, then ask for the approach without naming one | **He asks which**, naming what the field has: *"we have the radar approach runway one three, I-L-S runway one three, beacon approach runway one two. Say which you want."* Then say one, and be CLEARED for it. Before this the engine had no way to give an approach to anybody who had not filed, so it said **nothing at all** — and the agent improvised a clearance the separation engine had no record of. Silence is the failure here, not a wrong number | [#177] | **P1** |
+| **V13** | On that same VFR arrival, ask for **"the approach"** vaguely, then for something the field has not got — a **GCA** | Vague gets the list back, not a guess. A GCA gets a plain *"there is no such approach here"* and NOT the nearest thing. A controller who answers an impossible request with a plausible procedure is inventing minima, and a minimum is an altitude somebody descends to | [#177] | **P1** |
+| **V14** | Ask for an approach, get cleared, then **on your next transmission ask for a different one** | The change is issued and you are worked on the NEW one from then — his stack, his minima, his tower. And he does not re-ask which approach you want on every transmission after you have said once | [#177] | **P2** |
+| **V15** | Listen to a whole approach and ask yourself whether he ever reads you numbers from a procedure you are NOT flying | He should not. The controller is now briefed on the field's OFFER — the four names — and given the DETAIL of only the one you were cleared for. Before, he carried all four plates on every transmission and could read the wrong one's minima with complete confidence | [#176] | **P1** |
+| **V16** | Ask the controller **what other approaches are available**, then ask about one at the OTHER aerodrome | He looks it up rather than recalling it, and the answer is right for the field you asked about. Expect a beat — a tool call costs about three seconds, which is why it is used for this and never for the approach you are flying | [#176] | **P2** |
 | **V3** | Ask Approach for the **ILS runway one three** by name | Cleared for that procedure, and the strip and the clearance both name the runway. Asking for "the ILS" when a field publishes two must get a question back, never whichever is listed first — that is #131, which cost a sortie on 12 August | [#165] | **P1** |
 | ~~V4~~ | With two aircraft recovering to **different fields**, listen to both | Each is worked on his own approach: his own minima, his own stack, his own tower's frequency. One radio, two arrivals. Nothing on the air should suggest the second aeroplane is flying the first one's procedure | [#162] | **P1** |
 | **V5** | Fly the **ILS** in, and note where Approach hands you to Tower. Then fly the sortie again with the radio started on a **different** procedure | The handoff happens in the same place both times, because the rule belongs to the approach YOU are flying. A talkdown keeps you to the runway; an ILS gives you to Tower at five miles. Which one the radio was started with must not change either | [#150] | **P1** |
