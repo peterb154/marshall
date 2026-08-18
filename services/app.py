@@ -791,11 +791,24 @@ def plan_approaches_endpoint() -> dict:
 
 
 @app.get("/plans/resolve")
-def resolve_plan_endpoint(said: str, callsign: str = "") -> dict:
-    """Which plan he means, without assigning it. The dry run for the radio, and
-    what the sweep script scores against."""
+def resolve_plan_endpoint(plan: str = "", said: str = "",
+                          callsign: str = "") -> dict:
+    """Is this plan on file? A lookup by LABEL, not a resolver.
+
+    IT USED TO RESOLVE WHAT HE SAID, and #183 deleted the scorer that did --
+    the controller decides which plan a pilot means, because he has the labels,
+    the words and the conversation, and a hand-weighted string matcher had none
+    of them. `said` is still accepted so an old caller gets an answer rather
+    than a 500, and it is treated as a label.
+
+    THIS SURVIVED #183 BY A DAY, and only the HTTP path could see it: the
+    signature changed under a call the unit suite never makes. `tools/
+    plan_assign_check.py` caught it, which is the whole reason a check that
+    goes over the wire earns its place beside one that imports.  [#183]
+    """
     from marshall.atc.clearance import resolve
-    return resolve(said, callsign or None)
+    got = resolve(plan or said)
+    return {"plan": got} if got else {"none": True}
 
 
 @app.post("/flights/{flight_id}/assign-plan")
@@ -808,10 +821,11 @@ def assign_plan_endpoint(flight_id: int, body: dict) -> dict:
         if plan is None:
             return {"error": f"no plan on file called {body['plan']}"}
     else:
-        hit = resolve(body.get("said", ""), body.get("callsign"))
-        if not hit.get("plan"):
-            return hit
-        plan = hit["plan"]
+        # BY LABEL. #183 made choosing the plan the controller's job, so what
+        # arrives here is a name and not a transcript.
+        plan = resolve(body.get("plan") or body.get("said", ""))
+        if plan is None:
+            return {"none": True}
     return assign(flight_id, plan, mission=body.get("mission", "default"),
                   route=body.get("route"))
 

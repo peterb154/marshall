@@ -132,8 +132,20 @@ def flight_strip(f: dict) -> str:
         if f.get("route"):
             plan.append("ROUTE: " + " > ".join(
                 x.strip() for x in str(f["route"]).split(",") if x.strip()))
-        if f.get("cruise_ft"):
-            plan.append(f"CRUISE: {int(f['cruise_ft']):,} ft")
+        # NO LEVEL FROM THE PLAN AT ALL, and that is the change.
+        #
+        # This said "cruise 10,000 ft", off `cruise_ft` -- `max(alt_ft)`
+        # synthesised in `filing.derived` and then stored. There is no cruise
+        # altitude in a flight plan; there is a level per LEG, and #192 removed
+        # the column from both tables.
+        #
+        # Nothing replaces it here. The strip is what the NEXT controller
+        # inherits, and the level that matters to him is the one the aeroplane
+        # is HELD to -- `MAINTAINING:` below, off `assigned_ft`. The top of the
+        # route is a number the clearance VOICES once ("expect one zero
+        # thousand") and `plans.top_of_route` computes it from the legs at that
+        # moment. This row carries no legs and had no business asserting a
+        # level from them. [#192]
         # READ BACK OR NOT, because an unacknowledged clearance is not agreed
         # and the difference is exactly what `clearance_ack` was added to
         # record. A controller who assumes agreement has an aeroplane flying a
@@ -147,10 +159,13 @@ def flight_strip(f: dict) -> str:
     if f.get("procedure"):
         bits.append(f"on the {f['procedure']}"
                     + (f" runway {f['runway']}" if f.get("runway") else ""))
+    # NAMED, LIKE THE REST. `cleared: enroute` is the SEPARATION state -- his
+    # place in the letdown -- and reads as "cleared for enroute", which is not
+    # a thing. Same fault as the board's "cleared for", one surface over. [#191]
     if f.get("cleared") and f["cleared"] != "unknown":
-        bits.append(f"cleared: {f['cleared']}")
+        bits.append(f"SEPARATION: {f['cleared']}")
     if f.get("assigned_ft"):
-        bits.append(f"assigned {f['assigned_ft']:,} ft")
+        bits.append(f"MAINTAINING: {f['assigned_ft']:,} ft")
     if f.get("promised"):
         bits.append(f"we promised: {f['promised']}")
     return "STRIP: " + ", ".join(b for b in bits if b) + "."

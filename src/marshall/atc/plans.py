@@ -140,6 +140,30 @@ def _spell_alt(ft: int) -> str:
     return f"{_spell(str(ft // 1000))} thousand {_spell(str((ft % 1000) // 100))} hundred"
 
 
+def top_of_route(plan: dict) -> int:
+    """The highest level this route asks for, from the LEGS.
+
+    THERE IS NO CRUISE ALTITUDE IN A FLIGHT PLAN. There is a level per leg.
+
+        "There is no cruise altitude, this has been something I've harped on
+         for weeks. And it's still in the schema? There is only leg altitude."
+
+    `cruise_ft` was `max(alt_ft)` synthesised in `filing.derived` and then
+    STORED -- migration 031 removed it from `flight_plans` for being a second
+    answer to a question `legs` already answers, and it survived as a column on
+    `flights` and on `assigned_plans`, so a number nobody filed was written
+    down twice downstream of the table it was deleted from.
+
+    Computed here, at the one point a controller needs it: "expect one zero
+    thousand" is the top of his route, and the level he MAINTAINS is `legs[0]`
+    until the engine assigns him one (`flights.assigned_ft`). Those are two
+    different questions and one column could never answer both -- which
+    `filing.derived`'s own docstring said while emitting it anyway. [#192]
+    """
+    legs = [l for l in (plan.get("legs") or []) if isinstance(l, dict)]
+    return max((int(l.get("alt_ft") or 0) for l in legs), default=0)
+
+
 def clearance(plan: dict, *, flight_id: int, departure_freq: float,
               initial_ft: int, amended_route: str | None = None) -> str:
     """CRAFT, in the order a pilot writes it down.
@@ -153,7 +177,7 @@ def clearance(plan: dict, *, flight_id: int, departure_freq: float,
     filed" must never appear beside an amended route.
     """
     dest = plan.get("destination") or "the field"
-    cruise = plan.get("cruise_ft") or 0
+    cruise = top_of_route(plan)
     route = amended_route or plan.get("route") or ""
 
     parts = [f"cleared to {dest}"]

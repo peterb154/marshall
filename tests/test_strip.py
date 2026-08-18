@@ -47,7 +47,7 @@ class TestTheStripCarriesTheClearance(unittest.TestCase):
         self.assertIn("Domino", said)
         self.assertNotIn("362nd-", said)
 
-    def test_it_carries_the_route_and_the_cruise_level(self):
+    def test_it_carries_the_route_and_not_an_invented_level(self):
         said = flight_strip(CLEARED)
         # `>` AND NOT `-` SINCE #191. The separator changed with the labels:
         # a route is ORDERED and a hyphenated list is not obviously so, and
@@ -55,7 +55,13 @@ class TestTheStripCarriesTheClearance(unittest.TestCase):
         # a controller neither what the name was nor what the points were.
         self.assertIn("KOBULETI > INITIAL > BATUMI", said)
         self.assertIn("ROUTE:", said)
-        self.assertIn("5,000 ft", said)
+        # NO LEVEL FROM THE PLAN. This asserted "5,000 ft" off `cruise_ft` --
+        # `max(alt_ft)` synthesised and then stored under a name no plan has.
+        # #192 dropped the column from both tables; a flight plan has a level
+        # per LEG and no cruise. What the next controller needs is the level
+        # the aeroplane is HELD to, which is `MAINTAINING:` off `assigned_ft`.
+        self.assertNotIn("CRUISE", said.upper())
+        self.assertNotIn("cruise", said)
 
     def test_the_route_does_not_read_as_more_fields(self):
         """The strip is already a comma list. A route inside it with its own

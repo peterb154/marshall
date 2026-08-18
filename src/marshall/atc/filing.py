@@ -97,11 +97,14 @@ def derived(plan: dict) -> dict:
     """
     legs = [l for l in (plan.get("legs") or []) if isinstance(l, dict)]
     names = [(l.get("fix") or "").strip() for l in legs]
-    alts = [int(l.get("alt_ft") or 0) for l in legs]
+    # NO `cruise_ft`. A plan has a level per LEG and no cruise altitude, and
+    # emitting a `max()` under that name is what put the fiction into two
+    # tables downstream of the migration that deleted it. Whoever needs the
+    # top of a route computes it where it is used -- `plans.top_of_route`.
+    # [#192]
     return {**plan,
             "route": ", ".join(n for n in names[:-1] if n),
-            "destination": names[-1] if names else "",
-            "cruise_ft": max(alts) if alts else 0}
+            "destination": names[-1] if names else ""}
 
 
 def key_for(label: str) -> str:

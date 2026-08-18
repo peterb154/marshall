@@ -2253,7 +2253,7 @@ def _cleared_plan_now(known: str) -> dict:
     for row in (rows.get("flights") if isinstance(rows, dict) else rows) or []:
         if (row.get("callsign") or "").lower() != known.lower():
             continue
-        if not (row.get("cruise_ft") or row.get("squawk")):
+        if not row.get("squawk"):
             return {}
         return {"cruise_ft": row.get("cruise_ft"),
                 "squawk": row.get("squawk") or "",

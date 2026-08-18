@@ -104,7 +104,6 @@ class Flight(Base):
     flight_plan: Mapped[str | None] = mapped_column(Text)
     origin: Mapped[str | None] = mapped_column(Text)
     route: Mapped[str | None] = mapped_column(Text)
-    cruise_ft: Mapped[int | None] = mapped_column(Integer)
     clearance_ack: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     flight_plan_label: Mapped[str | None] = mapped_column(Text)
 

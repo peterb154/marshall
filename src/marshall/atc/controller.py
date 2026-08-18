@@ -742,7 +742,7 @@ class Controller:
             # has cleared him and the answer stays None, which never blocks.
             if row.get("clearance_ack"):
                 ac.clearance_agreed = True
-            elif row.get("cruise_ft") or row.get("squawk"):
+            elif row.get("squawk"):
                 ac.clearance_agreed = False
             ac.track = row.get("track_name") or ""
             ac.radar_identified = bool(row.get("radar_identified"))
@@ -755,8 +755,11 @@ class Controller:
                 ac.has_been_airborne = True
             if row.get("assigned_ft"):
                 ac.assigned_ft = int(row["assigned_ft"])
-            if row.get("cruise_ft"):
-                ac.cleared_ft = int(row["cruise_ft"])
+            # `cleared_ft` comes off `assigned_ft` -- the level the engine
+            # ISSUED -- and no longer off a synthesised route maximum. There
+            # is no cruise altitude in a plan (#192).
+            if row.get("assigned_ft"):
+                ac.cleared_ft = int(row["assigned_ft"])
             if approach_named and row.get("cleared_approach"):
                 ac.approach = row["cleared_approach"]
                 got = approach_named(row["cleared_approach"])

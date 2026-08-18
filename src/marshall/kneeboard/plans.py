@@ -101,7 +101,10 @@ def build() -> str:
         body.append('<div class="plan">')
         body.append(f'<div class="hd"><span class="label">'
                     f'{_esc(p.get("label") or p.get("name"))}</span>'
-                    f'<span class="alt">{_feet(p.get("cruise_ft"))}</span>'
+                    # THE TOP OF THE ROUTE, computed from the legs. It read
+                    # `cruise_ft`, which was `max(alt_ft)` stored under a name
+                    # no plan has -- see #192, which dropped the column.
+                    f'<span class="alt">{_feet(max((int(l.get("alt_ft") or 0) for l in (p.get("legs") or []) if isinstance(l, dict)), default=0))}</span>'
                     f'{dup}</div>')
         body.append(f'<div class="task">{_esc(p.get("task"))}</div>')
         body.append(f'<div class="route">{_esc(p.get("route"))}</div>')

@@ -11775,3 +11775,49 @@ names its fields — `FLIGHT PLAN:`, `ROUTE:`, `CRUISE:` — and the route is
 3. Asked which plan he is on, any controller answers from the strip.
 
 ---
+
+## [ARCH-48] `cruise_ft` is a level nobody filed — #192
+labels: architecture
+
+**Status:** FIXED 18 August. Migration 037 drops `cruise_ft` from `flights` and `assigned_plans` and rebuilds both dependent views — `flight_with_plan` carries it too and was found by asking the database rather than by reading. `filing.derived` no longer synthesises it; `plans.top_of_route` computes the top of a route from the LEGS at the one point a controller voices it (*"expect one zero thousand"*); `controller.hydrate` takes `cleared_ft` off `assigned_ft`, which is the level the engine actually issued. The strip asserts no level from the plan at all — what the next controller needs is `MAINTAINING:`, off `assigned_ft`. **Nothing was migrated into another column**: every value was derivable from `legs` and still is, and copying it would have moved the fiction rather than ended it, which is what #031 did by leaving these two behind. `tests/test_the_database_is_the_source_of_truth.py` caught the model drifting from the live schema, which is what it is for.
+
+    "There is no cruise in a flight plan. Where is that coming from. Another
+     smell"
+
+Correct. A filed plan has a level per **leg**; there is no cruise. `cruise_ft`
+is synthesised in `filing.derived`:
+
+    "cruise_ft": max(alts) if alts else 0
+
+**The number is not wrong — the noun is.** It is the highest level the route
+asks for, which is what a controller voices as *"expect"*. `derived`'s own
+docstring concedes the ambiguity it cannot resolve:
+
+> the CLEARANCE altitude is `legs[0]`, and which is which is exactly what a
+> single `cruise_ft` column could never say.
+
+**And the fiction outlived the migration that removed it.** #031 took
+`cruise_ft` off `flight_plans` for being a second answer to a question `legs`
+already answers — and it is still a column on **`flights`** and on
+**`assigned_plans`**, so the derived value is now stored twice downstream of
+the table it was deleted from. Two copies of a number nobody filed, under a
+name that asserts a fact the plan does not contain.
+
+The strip says `HIGHEST LEVEL ON ROUTE` as of #191, which is what the value
+means. That is a label, not a fix.
+
+**What the plan actually supports.** Two real questions, and one name cannot
+carry both:
+
+    what he MAINTAINS now      `legs[0]`, and after a clearance
+                               `flights.assigned_ft` — the level the engine
+                               issued and the only one he is held to
+    what he may EXPECT         the highest level his route asks for
+
+**Acceptance criteria**
+1. No stored column claims a cruise level a pilot did not file.
+2. The clearance still says maintain-and-expect with the same two numbers.
+3. Whatever replaces it distinguishes the level he is HELD to from the level
+   his route reaches — `assigned_ft` already answers the first.
+
+---

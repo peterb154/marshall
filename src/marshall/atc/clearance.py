@@ -106,7 +106,7 @@ def filed() -> list[dict]:
 
 
 _ASSIGNED_COLS = ("id", "flight_id", "template", "label", "origin",
-                  "destination", "route", "cruise_ft", "task", "approach",
+                  "destination", "route", "task", "approach",
                   "acked_at")
 
 
@@ -133,19 +133,19 @@ def assign(flight_id: int, plan: dict, *, mission: str = "default",
             """
             INSERT INTO assigned_plans
                 (mission, flight_id, template, label, origin, destination,
-                 route, cruise_ft, task, approach, squawk)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 route, task, approach, squawk)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (flight_id) DO UPDATE SET
                 template=EXCLUDED.template, label=EXCLUDED.label,
                 origin=EXCLUDED.origin, destination=EXCLUDED.destination,
-                route=EXCLUDED.route, cruise_ft=EXCLUDED.cruise_ft,
+                route=EXCLUDED.route,
                 task=EXCLUDED.task, approach=EXCLUDED.approach,
                 squawk=EXCLUDED.squawk,
                 assigned_at=now(), acked_at=NULL
             """,
             (mission, flight_id, row.get("name"), row.get("label"),
              row.get("origin"), row.get("destination"),
-             route or row.get("route"), row.get("cruise_ft"),
+             route or row.get("route"),
              row.get("task"), row.get("approach"),
              # THE SQUAWK, RECORDED RATHER THAN RECOMPUTED. It is derived from
              # the flight id, so it was reproducible -- and being reproducible
@@ -161,7 +161,7 @@ def assign(flight_id: int, plan: dict, *, mission: str = "default",
     F.agree(flight_id, flight_plan=row.get("name"),
             flight_plan_label=row.get("label"),
             destination=row.get("destination"),
-            route=route or row.get("route"), cruise_ft=row.get("cruise_ft"),
+            route=route or row.get("route"),
             clearance_ack=None)
     # acked_at is cleared on an amendment on purpose. A read-back covers the
     # clearance he was given, and he has not read back the new one yet.
@@ -579,9 +579,12 @@ def clearance_tools(mission: str = "default", station: str = "") -> list:
         # `legs` carries the profile the pilot actually filed (migration 030).
         # Falls back to the cruise for a plan filed before it, which behaves
         # exactly as it did.
+        # LEGS AND NOTHING ELSE. This fell back to `cruise_ft` for a plan
+        # filed before migration 030; there is no cruise altitude and the
+        # column is gone (#192), so a plan with no legs has no initial level
+        # and the clearance says so by omitting it.
         _legs = plan.get("legs") or []
-        _initial = (_legs[0].get("alt_ft") if _legs else 0) or \
-            (plan.get("cruise_ft") or 0)
+        _initial = (_legs[0].get("alt_ft") if _legs else 0) or 0
         words = P.clearance(plan, flight_id=f["id"],
                             departure_freq=departure_freq(here),
                             initial_ft=_initial)
@@ -649,7 +652,7 @@ def clearance_tools(mission: str = "default", station: str = "") -> list:
         route = " -> ".join(x["name"] for x in legs) or "(no route filed)"
         out = [f"{callsign}: {plan.get('task') or 'no task filed'}",
                f"route {route}",
-               f"cruise {plan.get('cruise_ft') or '?'} ft, "
+               f"top of route {P.top_of_route(plan) or '?'} ft, "
                f"destination {plan.get('destination') or '?'}",
                P.help_level(nav)]
         if missing:
