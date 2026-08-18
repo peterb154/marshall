@@ -65,6 +65,29 @@ no flight at all is one nobody will ever fly -- both are checked by
 ### FLIGHT 1 — the full recovery
 > Kobuleti to Batumi, IFR, cold and dark to parked. The standing sortie.
 
+**FLOWN ON `BatumiTest`, AND THAT IS THE POINT.** The clearance rows used to
+name Domino, Samovar, Kettle, Lantern, Marlin and Anvil — the plan set every
+resolver, sweep and fixture in this repository was written against.
+
+    "BatumiTest is the one I want to fly - I created it because it
+     specifically challenges all the over-fitment that has been happening"
+
+So the rows now name what is actually on the board. Re-filing the old set to
+make the card pass would have restored the exact over-fitment it exists to
+break, which was the first thing suggested here and was wrong.
+
+**A plan carries no origin and is not supposed to.** `BatumiTest` reads
+`origin = None` because a filed plan is a route anybody may request; the origin
+is established at the moment a clearance is ISSUED, from the seat issuing it
+(`assigned_plans` has its own origin column). Flown from Kobuleti Clearance,
+`BatumiTest` IS the Kobuleti-to-Batumi recovery. Two aircraft may fly one plan
+out of different fields on the same night.
+
+**G5 and G6 are not on this sortie** and have moved to UNSCHEDULED: they test a
+request that fits TWO similar plans, and with `BatumiTest` and `NellisTest` on
+the board — one ending at Batumi, one three thousand miles away — nothing here
+is ambiguous. **G9 has moved to FLIGHT 3**, where the wingman it needs is.
+
 **THIS IS THE 16 AUGUST RUNNING ORDER, MINUS WHAT HAS SINCE BEEN RETIRED.**
 
 It was briefly not. The first version of this section expanded every section to
@@ -86,7 +109,7 @@ the flight below. The `..` ranges expand over LIVE rows in card order, so they
 cannot name a retired one again without the parser saying so out loud.
 
 ```rows
-R1..R4 N1 N2 M1 G3..G14 Q1 Q14 Q15 Q16 V9 V7 P1..P4
+R1..R4 N1 N2 M1 G3 G4 G7 G8 G10 G11 G12 G13 G14 Q1 Q14 Q15 Q16 V9 V7 P1..P4
 V6 V3 H4 H5 H6 H7 H8 H9 H10 H11 V8 V5 F1..F5b V10 K1..K4
 ```
 ### FLIGHT 2 — the VFR arrival
@@ -102,7 +125,7 @@ V12 V13 V14 H4 H5 H9 H10 V15 V16 H11 F1 F3 S11
 > sequencing needs somebody to be sequenced against.
 
 ```rows
-D1..D8 N1..N9 L1..L6 H18 H19 H13 V10
+D1..D8 N1..N9 L1..L6 H18 H19 H13 V10 G9
 ```
 ### FLIGHT 4 — Nevada
 > Another map, another day. Needs the mission loading.
@@ -135,7 +158,7 @@ S1..S15
 > who flies it.
 
 ```rows
-J1..J6 K5 M2..M4 P5..P11 Q0 Q1a Q1b Q3b Q4b Q12 Q13 R5..R7
+J1..J6 K5 M2..M4 P5..P11 Q0 Q1a Q1b Q3b Q4b Q12 Q13 R5..R7 G5 G6
 H13..H28 F4b
 ```
 ### PARKED — do not fly
@@ -404,15 +427,15 @@ cockpit, can actually get it down at the pace it is read.
 
 | ID | Prio | Test | What should happen | Fix under test |
 |----|------|------|--------------------|----------------|
-| G3 | P1 | Ask again for Marlin, and read it back with **one number wrong** | He corrects **that number only** and asks for it again — not the whole clearance, and never a shrug | [R#1] `clearance_read_back` |
-| G4 | P1 | Ask by what you are DOING, no name — *"request clearance for the weather run out to Ingress"* | Lantern's clearance, five thousand. You should never have had to say a plan name | [R#1] `plans.pick` |
+| G3 | P1 | Ask again for **BatumiTest**, and read it back with **one number wrong** | He corrects **that number only** and asks for it again — not the whole clearance, and never a shrug | [R#1] `clearance_read_back` |
+| G4 | P1 | Ask by what you are DOING, no name — *"request clearance for the transit and recovery to Batumi"* | BatumiTest, without you ever saying a plan name. Since #183 this is the CONTROLLER resolving it, not a scorer: he has every filed label in front of him and decides. He must not ask which when only one fits | [#183] |
 | G5 | P1 | *"request clearance for the CAS over Tsutsnvati"* | A **question** naming both — the plain one, and the one with the beacon letdown on return. He must not pick for you | [R#1] `plans.pick` |
 | G6 | P1 | Answer it — *"the beacon letdown one"* | Kettle: eleven thousand, and the route out through Ingress to Tsutsnvati | [R#1] `plans.pick` |
 | G7 | P2 | *"request clearance to Vaziani"* | *"nothing on file"* and a question. **Not** the nearest plan read out as though you had asked for it | [R#1] `plans.pick` |
-| G8 | P2 | After a clearance, change your mind — *"request a change, make it Anvil"* | A **complete** new clearance (four thousand), read back again. He must not say only what changed | [R#1] `assign` amends |
+| G8 | P2 | After a clearance, change your mind — *"request a change, make it NellisTest"* | A **complete** new clearance (four thousand), read back again. He must not say only what changed | [R#1] `assign` amends |
 | G9 | P2 | With Shooter: both of you ask for **Marlin**, one after the other | Both get it, both are cleared to three thousand, and neither clearance changes the other's | [R#1] one plan, two flights |
 | G10 | P3 | Airborne later — *"what am I doing"* or *"where am I going next"* | He answers from your plan without you repeating it, and does not read you ranges you do not need | [R#1] `flight_plan_help` |
-| G11 | P1 | Ask for a clearance **under a callsign the board does not have** — say your callsign wrong on purpose, or call before the flight is created | He tells you he HAS the plan and names it — *"I have Domino, Kobuleti to Batumi"* — and separately that he has nothing under that callsign, and asks you to say it again. He must NOT say the plan is missing, unavailable or not on file: that sends you hunting where nothing is wrong | [#126] |
+| G11 | P1 | Ask for a clearance **under a callsign the board does not have** — say your callsign wrong on purpose, or call before the flight is created | He tells you he HAS the plan and names it — *"I have BatumiTest, to Batumi"* — and separately that he has nothing under that callsign, and asks you to say it again. He must NOT say the plan is missing, unavailable or not on file: that sends you hunting where nothing is wrong | [#126] |
 | G12 | P1 | Read the clearance back with **two elements missing** — drop the altitude and the departure frequency | He asks for **both** back, in one transmission. Then supply only one, and he asks for the one still outstanding — never for the one you just gave him, and never a correction you cannot satisfy | [#157] |
 | G13 | P1 | Ask Ground to taxi **without ever calling Clearance** — cold start, straight to Ground on 121.8 | **Refused, and told the RIGHT thing**: he has no clearance and must contact Kobuleti Clearance. Not *"your clearance has not been read back"*, which is a different fault and sends a man hunting for a read-back he never made. He must also stay on **Clearance's rung** — the phase IS the handoff, so a refusal that also hands you to Ground is #135's complaint back again. On 18 August a pilot taxied, took off and flew two aerodromes on a clearance nobody had issued | [#181] |
 | G14 | P1 | Ask for a clearance **under a callsign the board does not have**, then keep talking as though you had been cleared — read back an altitude and a squawk you made up | He must **not** play along. The tool refuses him (the plan is on file, you are not on the board) and he says so — he must not fill the gap, reconstruct a clearance from the conversation, or answer your invented read-back with *"readback correct"*. On 18 August he was refused and then read out a full IFR clearance the engine had no record of, and Ground, Tower and Departure all believed it. Check `/diag` afterwards: an unbacked claim is recorded | [#185] |
@@ -930,7 +953,7 @@ have been answered with "nothing on file for you" — see [#56].
 
 | id | do this | expected | issue | pri |
 |---|---|---|---|---|
-| **Q1** | Preset 1. *"Kobuleti Clearance, Sockeye, request clearance."* — **your own callsign**, the one radar prints, not the jet's slot name | He answers as **Kobuleti Clearance** — not Batumi anything — and gives you **Domino** without asking which. He knows you are calling from Kobuleti and it is the only plan that departs Kobuleti. Clearance to Batumi, an altitude, and a departure frequency of **123.300** | [R#56] | **P1** |
+| **Q1** | Preset 1. *"Kobuleti Clearance, Sockeye, request clearance."* — **your own callsign**, the one radar prints, not the jet's slot name | He answers as **Kobuleti Clearance** — not Batumi anything — and gives you **BatumiTest** without asking which. NellisTest is the only other plan on file and it ends three thousand miles away, so nothing here is ambiguous and he must not ask. Note the plan carries NO origin: it is a route anybody may request, and Kobuleti becomes the origin at the moment the clearance is issued. Clearance to Batumi, an altitude, and a departure frequency of **123.300** | [R#56] | **P1** |
 | **Q1a** | With **both** Domino and Silverstate on the board, ask Kobuleti Clearance for a clearance | **Domino, unasked.** Silverstate departs *Nellis*, three thousand miles away, and is not even active — a plan that is not from your field is not yours, and offering it as a choice is the resolver ignoring what it knows. On 10 August he offered both and made the pilot pick | [#89] | **P1** |
 | **Q1b** | Instead say *"...request IFR clearance to Batumi."* | He should **ask which** and Domino must be among the ones he offers. Every plan on the board ends at Batumi, so naming the destination narrows nothing — a controller who picks one confidently here has guessed. Before 7 August this resolved to *Anvil*: a real plan, someone else's sortie, because "Kobuleti" in your callsign line scored against Anvil's task | [R#57] | **P1** |
 | ~~Q2~~ | Read the clearance back, deliberately getting the departure frequency wrong — say *"departure one two four decimal four two five"* | He corrects it. 124.425 is Batumi Approach: a real controller, wrong field. This is the exact failure the field-scoping was built to prevent | [#1] | **P1** |
