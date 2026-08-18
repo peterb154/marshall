@@ -47,6 +47,12 @@ PHASES = ("filed", "clearance", "taxi", "departure", "enroute", "tasked",
           "landed", "unknown")
 
 _FIELDS = ("sortie_phase", "on_visual", "approaches_flown", "atis_letter",
+           # HAS HE LEFT THE GROUND THIS SORTIE. A latch, and durable for the
+           # same reason `sortie_phase` is: the phase cannot answer it for
+           # `departure`, which straddles the ground and the air, so a restart
+           # that forgot it would leave an aeroplane unable to be recognised
+           # as landed. See migration 035. [#178]
+           "has_been_airborne",
            "callsign", "track_name", "srs_guid", "srs_name", "intent",
            "destination", "claimed_size", "controller", "procedure", "runway",
            "cleared", "assigned_ft", "assigned_hdg", "sequence_no",

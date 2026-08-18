@@ -126,6 +126,7 @@ class Flight(Base):
     on_visual: Mapped[bool | None] = mapped_column(Boolean)
     approaches_flown: Mapped[int | None] = mapped_column(Integer)
     atis_letter: Mapped[str | None] = mapped_column(Text)
+    has_been_airborne: Mapped[bool | None] = mapped_column(Boolean)
 
     first_seen: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now())

@@ -448,10 +448,33 @@ class HavingFlownIsAPhaseAndNotACounter(unittest.TestCase):
     """
 
     def test_an_airborne_phase_says_he_has_flown(self):
-        for phase in ("departure", "enroute", "rtb", "arrival", "holding",
+        for phase in ("enroute", "rtb", "arrival", "holding",
                       "approach", "missed", "tasked", "on_station"):
             with self.subTest(phase=phase):
                 self.assertTrue(P.has_flown(phase))
+
+    def test_but_DEPARTURE_does_not_because_it_straddles(self):
+        """The one phase that is a ground phase and an air phase, in that
+        order. It was in the list above and it cost a sortie.
+
+        18 August, live: a pilot read back a take-off clearance at 0 knots on
+        the runway, `derive("departure", on_ground=True)` returned `landed`,
+        and for thirteen miles Departure posted him back to Tower because a
+        landed aeroplane is Tower's. He had never left the ground.
+
+        You are in `departure` from Tower's first word, through the roll,
+        until Departure lets you go -- so the phase genuinely cannot say
+        whether a man holding on the runway has already flown. That is what
+        the `was_airborne` latch is for. [#178]
+        """
+        self.assertFalse(P.has_flown("departure"))
+        self.assertEqual(
+            P.derive("departure", on_ground=True, worked_by="tower"),
+            "departure", "holding on the runway is not a landing")
+        self.assertEqual(
+            P.derive("departure", on_ground=True, was_airborne=True,
+                     worked_by="tower"),
+            "landed", "but a man radar HAS seen airborne has landed")
 
     def test_a_ground_phase_does_not(self):
         for phase in ("clearance", "taxi", "holding_short", "landed", "taxi_in"):
@@ -488,18 +511,34 @@ class HavingFlownIsAPhaseAndNotACounter(unittest.TestCase):
     def test_the_bridge_no_longer_answers_it_with_go_arounds(self):
         """Source, because the fault was the ARGUMENT and not the arithmetic.
         A behavioural test on `derive` alone passed throughout: the wrong
-        answer was computed one layer up and handed in."""
+        answer was computed one layer up and handed in.
+
+        THE COUNTER IS STILL FORBIDDEN; `was_airborne` IS NOT. This asserted
+        that the bridge passes no `was_airborne` at all, which was right while
+        the only thing it could pass was `bool(ac.approaches)` -- a count of
+        GO-AROUNDS standing in for "has he left the ground". Unwiring it was
+        the fix then.
+
+        It made the phase the sole answer, and the phase cannot answer for
+        `departure`. So the argument is back, fed by a LATCH set on positive
+        radar evidence and persisted in `flights.has_been_airborne`. The
+        original intent stands and is what is still asserted: no proxy, no
+        counter, no inference from a number that means something else. [#178]
+        """
         import inspect
         from marshall.atc import agent_atc
         src = inspect.getsource(agent_atc.phase_now)
         code = "\n".join(ln for ln in src.splitlines()
                          if not ln.lstrip().startswith("#"))
-        self.assertNotIn("was_airborne", code,
-                         "the bridge must not answer a question the phase "
-                         "already holds")
         self.assertNotIn("approaches", code,
                          "the go-around counter must not decide whether he "
                          "has been airborne")
+        self.assertIn("has_been_airborne", code,
+                      "the latch is how `departure` is answered; without it "
+                      "an aeroplane that flew a circuit cannot be landed")
+        self.assertIn("down is False", code,
+                      "the latch must be set on POSITIVE evidence -- `not "
+                      "down` is not `airborne`, which is #164's scar")
 
 
 class TouchingDownIsObservedAndNotProposed(unittest.TestCase):
@@ -546,8 +585,30 @@ class TouchingDownIsObservedAndNotProposed(unittest.TestCase):
         """THE DRIFT GUARD, and the reason this is data rather than a special
         case inside `may_follow`. A phase added later is airborne or it is not,
         and either way its `follows` has to agree with `has_flown` -- otherwise
-        the next `arrival` is one nobody notices for a fortnight."""
+        the next `arrival` is one nobody notices for a fortnight.
+
+        `departure` IS EXEMPT AND IT IS THE ONLY ONE, because for it the two
+        questions genuinely differ:
+
+            can you land from here?   YES -- an aborted take-off, a circuit
+            have you flown?           UNKNOWN -- you are in this phase from
+                                      Tower's first word, stationary
+
+        Every other phase answers both the same way, which is what makes this
+        guard worth having. Asserting the exemption is only ONE phase wide is
+        the half that keeps it from becoming a hole: a second straddler is a
+        design change and should fail here. [#178]
+        """
+        STRADDLES = set(P.STRADDLES)
+        self.assertEqual(STRADDLES, {"departure"},
+                         "a second straddling phase appeared; the exemption "
+                         "below was written for exactly one")
         for name, phase in P.PHASES.items():
+            if name in STRADDLES:
+                # It may land, and it is not evidence of having flown.
+                self.assertIn("landed", phase.follows)
+                self.assertFalse(P.has_flown(name))
+                continue
             with self.subTest(phase=name):
                 self.assertEqual(P.has_flown(name), "landed" in phase.follows,
                                  "an airborne phase must lead to `landed`, and "

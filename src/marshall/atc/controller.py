@@ -233,6 +233,25 @@ class Aircraft:
     # on radar cannot leave it.
     radar_identified: bool = False
 
+    # HAS HE LEFT THE GROUND ON THIS SORTIE. A LATCH, and a durable one.
+    #
+    # `phases.has_flown` answers this from the phase, which works for every
+    # phase except `departure` -- the one that straddles the ground and the
+    # air. So the phase genuinely cannot tell you whether a man holding on the
+    # runway has already flown a circuit, and on 18 August it guessed wrong in
+    # the dangerous direction: a pilot reading back a take-off clearance at 0
+    # knots derived as LANDED and was posted back to Tower for thirteen miles.
+    #
+    # SET ON POSITIVE EVIDENCE ONLY, which is #164's rule and its scar: `not
+    # on_ground` is not `airborne`. A track radar has stopped seeing answers
+    # False to `on_ground` with no position at all, and reading that as flying
+    # would latch every aeroplane whose track went quiet on the ramp. It
+    # requires the scope to actually hold him -- see `handoff._airborne`.
+    #
+    # ONCE TRUE IT STAYS TRUE. That is what a latch is for: he cannot un-fly a
+    # sortie, and the fact has to survive the aeroplane stopping.
+    has_been_airborne: bool = False
+
     # HOW MANY, which is all a flight report tells you. "Flight of four" is a
     # number; it is not four names, and the engine used to turn it into four by
     # minting "Pony 1-1" through "Pony 1-4" off the flight key. That worked
@@ -727,6 +746,13 @@ class Controller:
                 ac.clearance_agreed = False
             ac.track = row.get("track_name") or ""
             ac.radar_identified = bool(row.get("radar_identified"))
+            # THE LATCH SURVIVES THE RESTART, and it must. Without this a
+            # reconnect mid-climb-out forgets he ever flew, `has_flown` says
+            # no for `departure`, and the first time he stops on a runway he
+            # is not recognised as landed -- the mirror of the bug the latch
+            # exists to fix.
+            if row.get("has_been_airborne"):
+                ac.has_been_airborne = True
             if row.get("assigned_ft"):
                 ac.assigned_ft = int(row["assigned_ft"])
             if row.get("cruise_ft"):

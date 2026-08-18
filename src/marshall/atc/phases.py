@@ -278,6 +278,33 @@ ON_THE_GROUND = ("clearance", "taxi", "holding_short", "landed",
 # their own answer rather than the absence of one.
 NOT_YET = ("", "unknown", "filed")
 
+# THE PHASES THAT ONLY EXIST IN THE AIR, and the answer to "has he flown".
+#
+# Stated POSITIVELY, which is the change. `has_flown` used to be "not on the
+# ground and not nothing-yet", and that made it true for every phase somebody
+# had not thought to exclude -- including `departure`, which is the ONE phase
+# that straddles: you are in it from Tower's first word, through the roll,
+# until Departure lets you go, and most of that is spent stationary.
+#
+# 18 August, live: a pilot read back a take-off clearance at 0 knots on the
+# runway, `derive("departure", on_ground=True)` returned `landed`, and for the
+# next thirteen miles Departure posted him back to Tower because a landed
+# aeroplane is Tower's. He had never left the ground.
+#
+# The exclusion form fails DANGEROUSLY -- a new phase nobody classifies reads
+# as flown, so an aeroplane on the ground in it derives as landed. This form
+# fails SAFELY: an unclassified phase is not evidence of having flown, and he
+# stays where he is, which is what a controller does when he cannot tell.
+# `tests/test_a_phase_is_in_exactly_one_list.py` keeps every phase classified.
+AIRBORNE_ONLY = ("enroute", "tasked", "on_station", "rtb", "arrival",
+                 "holding", "approach", "missed")
+
+# ...AND THE ONE THAT IS NEITHER. `departure` is a GROUND phase and an AIR
+# phase, in that order, so it is evidence of neither. Whether a man in it has
+# flown is answered by `was_airborne` -- radar's positive evidence -- and not
+# by the phase, because the phase genuinely does not know.
+STRADDLES = ("departure",)
+
 
 def has_flown(phase: str) -> bool:
     """Has he left the ground on this sortie? THE PHASE SAYS SO.
@@ -304,7 +331,7 @@ def has_flown(phase: str) -> bool:
     is a side-effect standing in for the fact.
     """
     p = (phase or "").lower()
-    return p not in NOT_YET and p not in ON_THE_GROUND
+    return p in AIRBORNE_ONLY
 
 
 def derive(current: str, *, on_ground: bool | None = None,

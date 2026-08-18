@@ -4811,16 +4811,38 @@ def phase_now(ctl, known: str, down: bool | None, fix) -> str:
     _ac = (ctl.aircraft.get(ctl._resolve(known))
            if (ctl is not None and known) else None)
     worked_by = getattr(getattr(ctl, "_me", None), "role", "") if ctl else ""
+    # LATCH HIM AS HAVING FLOWN, ON POSITIVE EVIDENCE ONLY.
+    #
+    # `down is False` is not the same as `not down`: `down` is None when
+    # nothing has told us, and reading that as airborne would latch every
+    # aeroplane whose track went quiet on the ramp. `fix is not None` is the
+    # scope actually holding him -- the same guard `handoff._airborne` uses,
+    # and the same scar it records (#164).
+    #
+    # This is the fact `departure` cannot supply. The phase straddles the
+    # ground and the air, so "has he flown" has to be remembered rather than
+    # inferred, and remembered from the moment radar first sees him off the
+    # ground. [#178]
+    if _ac is not None and down is False and fix is not None:
+        _ac.has_been_airborne = True
     phase = _phases.derive(
         getattr(_ac, "sortie_phase", "") or "",
         on_ground=down if fix is not None else None,
         separation=(getattr(getattr(_ac, "phase", None), "name", "") or "").lower(),
-        # `was_airborne` IS NOT PASSED, and taking it out is the fix. It used to
-        # be `bool(_ac.approaches)` -- a counter of GO-AROUNDS, incremented only
-        # by `Controller._do_missed` -- standing in for "has he left the ground
-        # this sortie". Every pilot who flew one approach and landed off it, so
-        # every normal recovery, answered False. `derive` reads it off the phase
-        # now, which is the thing that holds it: see `phases.has_flown`.
+        # `was_airborne` IS PASSED AGAIN, and from the right thing this time.
+        # It used to be `bool(_ac.approaches)` -- a counter of GO-AROUNDS,
+        # incremented only by `Controller._do_missed` -- standing in for "has
+        # he left the ground this sortie", so every pilot who flew one approach
+        # and landed off it answered False. That was unwired rather than
+        # corrected, and `derive` read it off the phase instead.
+        #
+        # The phase answers it for every phase but `departure`, which straddles
+        # the ground and the air and therefore knows nothing. So the latch
+        # above carries it: radar saw him off the ground, once, and that cannot
+        # be un-seen. `has_flown` and the latch are OR'd inside `derive` --
+        # extra evidence, never withheld evidence, exactly as its docstring
+        # says. [#178]
+        was_airborne=bool(getattr(_ac, "has_been_airborne", False)),
         worked_by=worked_by,
         refused=lambda cur, want: print(
             f"  .. phase REFUSED: {cur} cannot lead to {want} "
@@ -7319,6 +7341,12 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 # information he had -- while the aeroplane went on flying.
                 # See migration 026 and docs/STATE.md. [#120]
                 _agreed["sortie_phase"] = _ac.sortie_phase or ""
+                # ...AND WHETHER HE HAS EVER BEEN OFF THE GROUND. Only ever
+                # written TRUE: a latch that could be cleared by a turn in
+                # which radar happened to say nothing is not a latch, and
+                # clearing it is what would re-arm the bug it exists to fix.
+                if _ac.has_been_airborne:
+                    _agreed["has_been_airborne"] = True
                 _agreed["on_visual"] = bool(_ac.on_visual)
                 _agreed["approaches_flown"] = int(_ac.approaches or 0)
                 if _ac.atis_letter:
