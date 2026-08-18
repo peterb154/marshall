@@ -397,6 +397,52 @@ def flight_bind(base: str = BASE_URL, **names) -> dict:
         return {}
 
 
+def flight_now(flight_id: int, base: str = BASE_URL) -> dict:
+    """This flight's row AS IT STANDS, read after the engine has settled.
+
+    THE PICTURE THE MODEL IS BRIEFED ON MUST BE THE ONE THE ENGINE ENDED THE
+    TURN WITH. `flight_bind` runs at the top of a turn, and its result was
+    carried three hundred lines down into `compose_message` -- across
+    `next_controller`, which decides the handoff, and `settle`, which mutates
+    the engine. So the strip described the aeroplane as it was BEFORE this
+    turn's decisions.
+
+    18 August, four seconds apart:
+
+        21:36:11  PILOT   Kobuleti Departure, sockeye with you   (on 123.3)
+        21:36:13  ENGINE  Sockeye, Kobuleti Departure, radar contact
+        21:36:14  handoff Kobuleti Departure keeps him
+        21:36:18  ATC     you should be with Tower, one three three decimal
+                          zero -- you're still with me
+
+    He was on the right frequency, sent there four seconds earlier. The seat
+    answering was Departure; the strip in its message still said Tower owned
+    him, because the row had been read before the handoff was recorded. The
+    controller reconciled the contradiction the only way it could and sent him
+    back.
+
+    `agent_atc` already carried a note about this exact class -- "the half of
+    the turn that MUTATES the engine ran before anything had worked out what
+    the aeroplane was doing" -- and the fix at the time hoisted ONE field
+    (`phase`) to the top of the turn. That was the field that had bitten; the
+    shape was never addressed, and it came back on `owner`.
+
+    A READ AND NOT A WRITE. `flight_bind` would return the same row and would
+    also upsert, so a picture-taking call could quietly change what it was
+    photographing. [#190]
+    """
+    try:
+        got = _get_json(f"{base}/flights?mission={urllib.parse.quote(MISSION)}")
+    except Exception as e:
+        log.warning("could not re-read the flight after the engine settled, "
+                    "so the strip may describe him as he was: %s", e)
+        return {}
+    for row in (got or {}).get("flights") or ():
+        if row.get("id") == flight_id:
+            return row
+    return {}
+
+
 def flight_agree(flight_id: int, base: str = BASE_URL, **fields) -> dict:
     """Record what was agreed: a clearance, a level, a place in the queue."""
     if not flight_id:
@@ -7364,7 +7410,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # Nothing between here and that assignment touches `scope`, `known` or
         # `profile`, so reusing it is the same computation with the better
         # answer kept.
-        _flight = flight_bind(
+        _bound = flight_bind(
             srs_guid=client.last_sender_guid or None,
             srs_name=srs or None,
             callsign=known or None,
@@ -7377,7 +7423,13 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             # airspace; he had no airspace at all.
             track_name=(_ident.track or None) if _fix is not None else None,
         ) if (client.last_sender_guid or known) else {}
-        _fid = _flight.get("id")
+        # THE BIND'S OWN RESULT, and it is used for the ID and nothing else.
+        # It is a picture of the aeroplane BEFORE this turn decided anything,
+        # so briefing the model from it is what #190 was: the strip said Tower
+        # owned him while the seat answering was Departure. The row the model
+        # sees is read after `settle`, below.
+        _fid = _bound.get("id")
+        _flight = _bound
         # WHAT HE WAS CLEARED TO, kept for the NEXT transmission -- which is the
         # read-back. A clearance and its read-back are never the same turn, so
         # caching it as the board hands it over is enough and costs no extra
@@ -7436,6 +7488,22 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         directive, stack, vectoring, _g, dropped = settle(bridge,
             directive, stack, vectoring, _fix, known, ctl,
             scope=scope, track=_ident.track or "", handoff=nxt)
+        # THE PICTURE IS FROZEN HERE, and this line is the whole of #190.
+        #
+        # Everything above decides: `next_controller` settles the handoff and
+        # writes it to the board, `settle` advances the engine. Everything
+        # below DESCRIBES -- the strip, the message, what the model is told.
+        # The row was read at the top of the turn and carried across that
+        # boundary, so on 18 August the strip said Tower owned an aeroplane the
+        # engine had handed to Departure four seconds earlier, and the
+        # controller sent him back.
+        #
+        # Re-read rather than patched: mending a stale copy from what the
+        # engine happens to hold is the same trade that put the board and
+        # `flights` out of step in the first place. One read, after the
+        # deciding is done.
+        if _fid:
+            _flight = flight_now(_fid) or _flight
         if dropped:
             print(f"  .. {dropped}", flush=True)
 

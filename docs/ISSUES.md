@@ -11662,3 +11662,62 @@ They meant *"nobody is handed anywhere"* and were written against the sentinel
    regress).
 
 ---
+
+## [ARCH-46] The model is briefed on the aeroplane as it was before the turn decided anything — #190
+labels: bug, architecture, needs-flight-test
+
+**Status:** FIXED 18 August, NEEDS A PILOT — card row Q18. Guarded by `tests/test_the_picture_is_frozen_after_the_engine.py`, which asserts the ORDER (bind → decide → settle → freeze → describe) and fails by line number if the read moves back above `settle`. **Only a pilot can score criterion 1**: both the right and the wrong behaviour are a controller answering confidently on the correct frequency.
+
+    21:36:11  PILOT   Kobuleti Departure, sockeye with you        (on 123.3)
+    21:36:13  ENGINE  Sockeye, Kobuleti Departure, radar contact
+    21:36:14  handoff Kobuleti Departure keeps him -- departure, 3 nm, outbound
+    21:36:18  ATC     you should be with Tower, one three three decimal zero —
+                      you're still with me
+
+He was on the right frequency, sent there four seconds earlier. The seat
+answering was Departure and the engine agreed **in the same turn**. What
+disagreed was the FLIGHT STRIP in the message, which still said Tower owned
+him — so the controller reconciled a contradiction it had been handed, the only
+way it could.
+
+**The row was read at the top of the turn** and carried three hundred lines
+down into `compose_message`, across `next_controller` (which settles the
+handoff and records it) and `settle` (which advances the engine):
+
+    _bound = flight_bind(...)           <- picture taken
+    nxt    = next_controller(...)       <- handoff decided and written
+    settle(...)                         <- engine advanced
+    compose_message(..., _flight, ...)  <- briefed from the OLD picture
+
+**IT HAD BITTEN BEFORE, ON A DIFFERENT FIELD**, and `phase_now`'s docstring
+records it: *"This lived inside `settle`, which runs AFTER
+`separation_context`, so the half of the turn that MUTATES the engine ran
+before anything had worked out what the aeroplane was doing."* That fix hoisted
+**one field** to the top of the turn. The shape was never addressed, so it came
+back on `owner`.
+
+**So the turn has a boundary now:** everything before the freeze DECIDES,
+everything after DESCRIBES. `flight_now(fid)` re-reads the row once, after the
+deciding is done, immediately before the message is built.
+
+**A read and not a write.** `flight_bind` would return the same row and also
+upsert, so a picture-taking call would quietly change what it was
+photographing — the boundary crossed by the line drawing it.
+
+**Re-read rather than patched.** Mending a stale copy from whatever the engine
+happens to hold is the trade that put the board and `flights` out of step in
+the first place (#120).
+
+**The guard is an ORDER, not a line of code.** `flight_now` may move, be
+renamed or be inlined; what may not change is that the row the message is built
+from is obtained after the engine stops changing things. Moving the read back
+above `settle` fails two assertions by line number.
+
+**Acceptance criteria**
+1. A controller never tells a pilot to go back to a frequency the same turn
+   handed him away from.
+2. The strip names the controller who has him NOW.
+3. The store being unreachable degrades to the stale row, never to a lost
+   transmission.
+
+---
