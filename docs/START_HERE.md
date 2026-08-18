@@ -185,11 +185,15 @@ ever answer them. See CLAUDE.md for the full line.
 
 ## Known limits, so you do not rediscover them
 
-- **One approach per voice process.** `load_and_push_plate` takes a single
-  profile, so one process works one arrival at a time (#2).
-- **`agent_atc.py` is 6,656 lines** (12 August; it was ~4,950 on 10 August and
-  3,688 on 30 July, and three documents each quoted a different figure until
-  the `STRUCTURE.md` reconciliation) and its loop functions are not directly
+- ~~**One approach per voice process.**~~ **CLOSED 18 August (#162).** The
+  radio publishes every procedure the map offers and is briefed on all of
+  them; which one an aeroplane flies comes from his clearance
+  (`flights.cleared_approach`), and an aeroplane nobody has cleared has
+  none — so he gets no vectors, which is the procedure rather than a gap.
+- **`agent_atc.py` is 7,516 lines** (18 August; 6,656 on 12 August, ~4,950 on
+  10 August, 3,688 on 30 July, and three documents each quoted a different
+  figure until the `STRUCTURE.md` reconciliation) and its loop functions are
+  not directly
   callable by tests (#55).
 - **SIDs and STARs are not modelled**; departures are vectors and a cruise
   level (#70).

@@ -10,11 +10,12 @@ name = "Caucasus"
 terrain = "Caucasus"
 departure = "Kobuleti"
 arrival = "Batumi"
-# WHICH ARRIVAL WHEN NOBODY HAS SAID. A stopgap, and the remainder of #2 is
-# that there should be no such thing: which approach you are flying is a fact
-# about your CLEARANCE, and until you have asked for one the honest answer is
-# that the controller has none for you.
-default_approach = "batumi-asr-13"
+# NO `default_approach`, as Nevada has never had one. It read
+# `batumi-asr-13` and it was the last thing choosing an arrival for the whole
+# radio: which approach you are flying is a fact about your CLEARANCE, and
+# until you have asked for one the honest answer is that the controller has
+# none for you. The map publishes four procedures in `[[approach]]` below and
+# offers all four; Approach issues one of them to one aeroplane. [#162]
 bootstrap_plan = "362nd-kobuleti-batumi"
 # FIVE KNOTS FROM THE EAST, and it is the runways that chose it. The wind is
 # what makes a runway the runway in use, and 180 favoured neither end of
@@ -515,10 +516,12 @@ field = "Batumi"
 # and the field is not in doubt. It is Batumi, and it always was. #163
 published_minima = false
 # PRESERVED, NOT ENDORSED. This profile carries no station list in the
-# Python it replaces, so a bridge started on it has a controller who cannot
-# name a single frequency -- and it IS selectable, via MARSHALL_APPROACH.
-# A data migration must not quietly change behaviour, so the emptiness is
-# kept exactly and filed as its own defect. See #140.
+# Python it replaces, so an aeroplane cleared for it is worked by a controller
+# who cannot name a single frequency. A data migration must not quietly change
+# behaviour, so the emptiness is kept exactly and filed as its own defect. See
+# #140. It used to be reachable process-wide via `MARSHALL_APPROACH`, which is
+# gone (#162): a clearance selects it now, so the defect is one aeroplane's
+# rather than the whole radio's.
 theatre_stations = false
 controller = "Batumi Approach"
 # THE ONE APPROACH ON THIS MAP THAT HAS A BEACON, and it is the reason the

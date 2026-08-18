@@ -719,7 +719,12 @@ def _inbound(args, th, field, recorder) -> int:
     table and be inbound in none of them.
     """
     from marshall.core import route as _r
-    profile = th.approach
+    # A PROCEDURE THIS SCRIPT IS FLYING, named rather than inherited. It read
+    # `th.approach` -- the arrival the PROCESS was started on -- which is the
+    # singular #162 deleted. A ghost stands in for a pilot and a pilot flies
+    # one approach, so choosing here is right; choosing it once for the whole
+    # radio was not. `--approach` overrides, and the choice is printed.
+    profile = _procedure(th)
     radial, hdg = arrival_geometry(field, profile)
     track = f"362nd_{args.name}"
     apr = _r.station_for("approach", field=field.name)
@@ -1495,7 +1500,12 @@ def _sortie(args, th, recorder: Path) -> int:
         return 2
     out_rwy = say.spell_rwy(kob.runway_in_use(th.wind_from_deg))
     in_rwy = say.spell_rwy(bat.runway_in_use(th.wind_from_deg))
-    profile = th.approach
+    # A PROCEDURE THIS SCRIPT IS FLYING, named rather than inherited. It read
+    # `th.approach` -- the arrival the PROCESS was started on -- which is the
+    # singular #162 deleted. A ghost stands in for a pilot and a pilot flies
+    # one approach, so choosing here is right; choosing it once for the whole
+    # radio was not. `--approach` overrides, and the choice is printed.
+    profile = _procedure(th)
     radial, final_hdg = arrival_geometry(bat, profile)
     who = args.name
     track = f"362nd_{who}"
@@ -1942,7 +1952,12 @@ def _touch_and_go(args, th, recorder: Path) -> int:
         print(f"!! {th.arrival} has no approach, tower and ground to fly this",
               file=sys.stderr)
         return 2
-    profile = th.approach
+    # A PROCEDURE THIS SCRIPT IS FLYING, named rather than inherited. It read
+    # `th.approach` -- the arrival the PROCESS was started on -- which is the
+    # singular #162 deleted. A ghost stands in for a pilot and a pilot flies
+    # one approach, so choosing here is right; choosing it once for the whole
+    # radio was not. `--approach` overrides, and the choice is printed.
+    profile = _procedure(th)
     radial, final_hdg = arrival_geometry(bat, profile)
     in_rwy = say.spell_rwy(bat.runway_in_use(th.wind_from_deg))
     who, track = args.name, f"362nd_{args.name}"
@@ -2076,6 +2091,30 @@ def _limits() -> None:
           "and stays a pilot's.")
 
 
+# WHICH APPROACH THE GHOST FLIES, set by `main` from `--approach`. A module
+# global because the three call sites below are deep in the flight scripts and
+# threading an argument through them is churn for no reader -- but note the
+# difference from what #162 deleted: this is ONE SYNTHETIC PILOT's clearance,
+# printed at the top of the run, not the radio's idea of the arrival.
+_WANT_APPROACH = ""
+
+
+def _procedure(th):
+    """The approach this ghost flies. Named on the command line, or one into
+    the arrival field -- and SAID either way, because a rehearsal whose
+    procedure nobody printed is a rehearsal nobody can reproduce."""
+    from marshall.core import theatre as _t
+    published = _t.approaches_now()
+    want = (_WANT_APPROACH or "").strip().lower()
+    if want and want not in published:
+        raise SystemExit(f"{th.name} publishes {sorted(published)}, "
+                         f"not {want!r}")
+    got = published[want] if want else _t.a_procedure_into()
+    name = want or next(k for k, v in published.items() if v is got)
+    print(f"  the ghost is flying {name}", flush=True)
+    return got
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description=__doc__,
@@ -2083,6 +2122,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--srs", default=config.SRS_HOST)
     ap.add_argument("--session", default=os.environ.get("MARSHALL_SESSION", "hooks"))
     ap.add_argument("--voice", default="Joey")
+    ap.add_argument("--approach", default="",
+                    help="the procedure this ghost flies, e.g. batumi-ils-13. "
+                         "Default: one into the arrival field, and it is "
+                         "printed either way.")
     ap.add_argument("--name", default="")
     # NO DEFAULT UNTIL THE DIRECTION IS KNOWN. 3 to 32 is a departure and 32 to
     # 2 is an arrival, and a single pair of numbers cannot be both -- so they
@@ -2165,6 +2208,8 @@ def main(argv: list[str] | None = None) -> int:
                          "twenty, so this is how the read-back exchange is "
                          "iterated on without re-flying the aeroplane")
     args = ap.parse_args(argv)
+    global _WANT_APPROACH
+    _WANT_APPROACH = args.approach
     # A DIRECTION IS EITHER DECLARED OR IMPLIED, and implying it from the ranges
     # is the reading that cannot be got wrong: "to 2 from 32" is an arrival in
     # any language, and a flag saying otherwise would be a contradiction with a

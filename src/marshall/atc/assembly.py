@@ -307,11 +307,16 @@ def compose_message(bridge, scope, known, transcript, profile, me, fix, nxt,
             "numbers exactly; you are navigating for him and he has no "
             f"approach aid of his own): {vectoring}")
     if me and getattr(me, "role", "") in ("approach", "tower"):
+        # THE RUNWAY IN USE WHERE HE HAS NO PROCEDURE. A man who has asked
+        # for nothing has been cleared for nothing, so there is no arrival to
+        # read a runway off -- and the old answer was the bridge's, which on
+        # two aerodromes is a real runway at the wrong airport. [#162]
+        _rwy = getattr(profile, "runway", "") or "in use"
         parts.append(
             "VISUAL APPROACHES ARE AVAILABLE and are the normal thing to "
             "fly in decent weather. If he asks for one, give it to him -- "
             "\"cleared visual approach runway "
-            f"{profile.runway or 'in use'}, report the field in sight\" -- "
+            f"{_rwy}, report the field in sight\" -- "
             "and then get off the air: your job shrinks to spacing and he "
             "flies the approach. Do NOT tell him only the surveillance "
             "approach is published and make him argue for it. The radar "
@@ -528,7 +533,8 @@ def compose_message(bridge, scope, known, transcript, profile, me, fix, nxt,
         parts.append(handoff_phrase(nxt, fix, getattr(scope, "datum", None)))
     elif (me and getattr(me, "role", "") == "approach"
             and getattr(profile, "guidance", "") == "talkdown"
-            and fix is not None and fix.range_nm <= profile.final_intercept_nm):
+            and fix is not None
+            and fix.range_nm <= profile.final_intercept_nm):
         # He is inside the final on a talkdown, so he is NOT going to
         # Tower -- you are flying him to the missed approach point. Do not
         # send him to another frequency; the clearance comes to him through

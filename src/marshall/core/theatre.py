@@ -26,10 +26,17 @@ The middle one is the dangerous shape this project keeps meeting: not silence,
 but a real controller at a real field answering confidently for the wrong
 airport -- on the wrong map, this time.
 
-A THEATRE IS THE SELECTION, made once. The bridge takes its approach, its
-fields, its stations and its bootstrap plan from here; the kneeboard builds its
-Card from here. Two mechanisms for "which world" is how the radio and the chart
-come to disagree, which is the one thing this project exists to prevent.
+A THEATRE IS THE SELECTION, made once, AND IT SELECTS A WORLD RATHER THAN AN
+ARRIVAL. `marshall-atc` takes its fields, its stations, its published
+procedures and its bootstrap plan from here; the kneeboard builds its Card from
+here. Two mechanisms for "which world" is how the radio and the chart come to
+disagree, which is the one thing this project exists to prevent.
+
+It used to take an APPROACH from here too, and that is the line at the top of
+this docstring. A map offers procedures; a clearance issues one. There is no
+such thing as the theatre's approach and there is no longer anywhere to put
+one -- see `Theatre.approaches`, which is plural and has no singular beside
+it. [#162]
 
 CHOSEN BY ENVIRONMENT AND NOT INFERRED. Reading the loaded mission sounds better
 and is worse: the bridge and the kneeboard both start before anybody has told
@@ -59,19 +66,29 @@ class Theatre:
     # WHETHER THIS FACILITY HAS RADAR. See `catalogue.Identity.radar`: it is a
     # property of the ATC unit and was being read off a procedure. [#162]
     radar: bool = True
-    # THE APPROACH THE BRIDGE RUNS. One per theatre today, because a bridge
-    # works one arrival at a time -- see `load_and_push_plate`, which pushes it
-    # to the director and reads it back as the source of truth.
-    approach: object = None
+    # WHAT THIS MAP OFFERS, plural, and there is deliberately no singular
+    # beside it. `approach` and `approach_key` were here -- the one arrival the
+    # radio was started on -- and every range a Center quoted, every plate the
+    # agent was given and every un-cleared aeroplane's numbers came off
+    # whichever one that happened to be.
+    #
+    #     "I don't understand what this whole business about a theater default
+    #      approach is. There should be no such thing"
+    #
+    # There is not. A field OFFERS these and Approach issues ONE of them to ONE
+    # aeroplane, which `flights.cleared_approach` records and `hydrate` brings
+    # back across a restart. A caller who wants a procedure and has no
+    # aeroplane to ask about is asking a question with no answer -- and the
+    # answer it used to get was a real approach to a real runway, which is why
+    # nothing looked wrong until somebody flew it. [#162]
     approaches: tuple = ()
     wind_from_deg: float = 0.0
     wind_mph: float = 0.0
-    # The filed plan the bridge seeds and reads its approach from. Named here
-    # rather than in the bridge so a migration and the bootstrap cannot
-    # disagree -- see migrations/017 and 020.
+    # The filed plan the bridge seeds. Named here rather than in the bridge so
+    # a migration and the bootstrap cannot disagree -- see migrations/017 and
+    # 020. It no longer carries an approach: a filed route says where you are
+    # going, not which procedure you will be given when you get there.
     bootstrap_plan: str = ""
-    # The key the approach is stored under in the director's `approaches` table.
-    approach_key: str = ""
     # EVERY FIX THIS MAP PUBLISHES, and the numbered route down it.
     #
     # The bridge used to build this by reading `core.route`'s module globals --
@@ -115,16 +132,19 @@ class Theatre:
 #            clearance, and then silence. AD 2.UGSB-IAC-12-ILSz.
 #     ndb    the 1944 beacon letdown, for the period flavour.
 #
-# `MARSHALL_APPROACH=batumi-ils`. The ASR stays the default because it is what
-# has actually been flown; a default nobody has heard is not a default.
-# GONE, and this is what it used to be:
+# ALL THREE ARE PUBLISHED AND NONE IS SELECTED HERE. This block used to end
+# `MARSHALL_APPROACH=batumi-ils`, with the ASR as the default "because it is
+# what has actually been flown". Two mechanisms have now been deleted off the
+# same line, and they failed the same way:
 #
-#     CAUCASUS_RECOVERIES = {"batumi-asr": "BATUMI_ASR", ...}
+#     CAUCASUS_RECOVERIES = {"batumi-asr": "BATUMI_ASR", ...}   -> #137
+#     MARSHALL_APPROACH / default_approach                      -> #162
 #
-# A key mapped to the NAME OF A PYTHON CONSTANT, so the set of arrivals a map
-# offered lived in this module rather than with the map. A theatre file could
-# publish a procedure that nothing was able to select, and adding one meant
-# editing here as well as there. The keys are the file's now. See #137.
+# The first mapped a key to the NAME OF A PYTHON CONSTANT, so a theatre file
+# could publish a procedure nothing was able to select. The second let the
+# shell a process was started from decide which arrival every aeroplane on the
+# frequency was worked against. The keys are the file's, the choice is a
+# clearance's, and this module makes neither.
 
 
 # HOW CLOSE A POINT HAS TO BE TO COUNT AS THE AERODROME'S OWN. Two miles is
@@ -532,6 +552,82 @@ def seats_now(procedure=None, theatre: str = "") -> tuple:
     return stations_now(theatre)
 
 
+def a_procedure_into(field: str = "", theatre: str = ""):
+    """One published procedure into `field`, for a TOOL that must choose one.
+
+    THE RADIO NEVER CALLS THIS, and that is the whole reason it is named the
+    way it is. `Theatre.approach` was deleted because a process cannot fly an
+    approach (#162); a REHEARSAL SCRIPT is a different thing -- it is standing
+    in for a pilot, and a pilot flies one. `ghost_flight` and `stack_rehearsal`
+    need a procedure for the same reason a synthetic pilot needs a callsign.
+
+    So the choice is made HERE, once, visibly, and by a function whose name is
+    an indefinite article. It is not `the_approach`, there is no environment
+    variable behind it, and `tests/test_the_atc_holds_no_arrival.py` asserts
+    that nothing under `marshall/atc/` reaches for it. A tool that wants a
+    different one names it on the command line and should PRINT which it got.
+
+    The lowest key at the field, sorted, so two runs choose the same procedure
+    and a rehearsal is reproducible. Defaults to the sortie's arrival field.
+    """
+    procedures = approaches_now(theatre)
+    want = (field or _theatre_arrival(theatre) or "").lower()
+    here = [p for _k, p in sorted(procedures.items())
+            if p.aerodrome.name.lower() == want]
+    if not here:
+        raise LookupError(
+            f"no published approach into {want!r}; this map offers "
+            f"{', '.join(sorted(procedures))}")
+    return here[0]
+
+
+def _theatre_arrival(theatre: str = "") -> str:
+    """Where the sortie recovers. `current()`, not `identity()`: Nevada's
+    arrival is a fact about which of its two sorties is being flown and its
+    theatre file declares none, so the catalogue answers "" there."""
+    if theatre and theatre in THEATRES:
+        return THEATRES[theatre]().arrival or ""
+    return current().arrival or ""
+
+
+def seats_on_the_air(theatre: str = "") -> tuple:
+    """Every seat anybody on this map could be worked by. FREQUENCIES, not roles.
+
+    THE EAR OPENS THIS, and it exists because there is no longer one procedure
+    to ask. `_run_srs` read `stations_now() if profile.theatre_stations else ()`
+    off the process-wide arrival, so which channels the radio LISTENED on were
+    decided by whichever approach it was started with: started on the 1944
+    letdown it opened none of the ladder, and started on anything else it could
+    not hear a Mustang homing 132.0. One aeroplane's procedure cannot decide
+    what the facility can hear. [#162]
+
+    THE UNION IS SAFE HERE AND WOULD NOT BE IN THE STATION TABLE, which is why
+    this is a separate function from `push_stations`. A beacon seat and a
+    ladder seat can share a NAME and differ in frequency -- "Batumi Tower" is
+    118.6 on the ladder and 132.0 on the letdown -- so a union has two rows for
+    one role at one field, and `station_for("tower", field="Batumi")` would
+    answer one of them by list order. That is the exact fault #162 and the
+    two-aerodrome work both exist to kill.
+
+    Every caller of this resolves by FREQUENCY -- `on_frequency`, the voice
+    table, the channel list -- and a frequency is unique across the union. The
+    by-role lookups keep the ladder alone. Where a procedure's seats differ,
+    its plate says so in words: see `briefing._own_seats`.
+    """
+    from marshall.core.stations import Station
+    out: list[Station] = list(stations_now(theatre))
+    seen = {round(s.freq_mhz, 3) for s in out}
+    for p in approaches_now(theatre).values():
+        if getattr(p, "theatre_stations", True):
+            continue
+        for s in beacon_seats(p):
+            if round(s.freq_mhz, 3) in seen:
+                continue
+            seen.add(round(s.freq_mhz, 3))
+            out.append(s)
+    return tuple(out)
+
+
 def beacon_seats(procedure) -> tuple:
     """The controllers of a procedure that is not on the ladder: its own beacons.
 
@@ -687,28 +783,24 @@ def caucasus() -> Theatre:
     # which theatre it is.
     me = catalogue.identity("caucasus")
     fields, stations = fields_now("caucasus"), stations_now("caucasus")
+    # ALL OF THEM, AND NOTHING CHOSEN. This used to resolve `MARSHALL_APPROACH`
+    # or `default_approach` into one `recovery` and hang it on the theatre. Two
+    # things followed from that and both cost a sortie: restarting the radio
+    # from the wrong shell changed the procedure under a flying aeroplane
+    # (#158, `batumi-ils` became `batumi-asr` during a rehearsal), and a Center
+    # measured every range from the loaded arrival's field, so the number moved
+    # forty miles with no other change (#160).
+    #
+    # The keys are still the file's -- that half of #137 stands -- but nothing
+    # in this process picks one. See `Theatre.approaches`. [#162]
     procedures = approaches_now("caucasus")
-    # WHICH RECOVERY. `CAUCASUS_RECOVERIES` mapped a key to the NAME OF A
-    # PYTHON CONSTANT, so the set of arrivals a map offered was a dict in this
-    # module -- and a theatre file could add a procedure that nothing could
-    # select. The keys are the file's now, and an unknown one is named rather
-    # than silently swapped for the default, which is how a pilot came to fly a
-    # talkdown after asking for an ILS.
-    want = (os.environ.get("MARSHALL_APPROACH")
-            or me.default_approach).strip().lower()
-    if want not in procedures:
-        print(f"  !! no approach {want!r} on this map; the theatre publishes "
-              f"{', '.join(sorted(procedures))} — falling back to "
-              f"{me.default_approach!r}", flush=True)
-        want = me.default_approach
-    recovery = procedures[want]
     return Theatre(
         name=me.name, terrain=me.terrain, fields=fields,
         stations=stations, departure=me.departure,
-        arrival=me.arrival, approach=recovery, radar=me.radar,
+        arrival=me.arrival, radar=me.radar,
         approaches=tuple(procedures.values()),
         wind_from_deg=me.wind_from_deg, wind_mph=me.wind_mph,
-        bootstrap_plan=me.bootstrap_plan, approach_key=want,
+        bootstrap_plan=me.bootstrap_plan,
         # THE PUBLISHED CATALOGUE, out of config/theatres/caucasus.toml.
         #
         # This used to scrape every module-level `Fix` out of `route.py`, which
@@ -733,24 +825,28 @@ def caucasus() -> Theatre:
 
 
 # WHICH NEVADA SORTIE. Two are filed and they recover at different fields, so
-# they cannot both be the bridge's active approach -- it runs one arrival profile
-# at a time (see `load_and_push_plate`).
+# where the flight is GOING is a fact about which sortie is being flown and not
+# about the map.
 #
 #     "a flight that departs Nellis, works the range, and returns to Nellis
 #      needs that profile and its arrival state during the same sortie. It
 #      cannot be selected concurrently with the Tonopah recovery."
 #                                                -- CODEX_NTTR_AUDIT.md
 #
-# Right, and per-flight selection is the real answer (#111). Until then the
-# choice is at least EXPLICIT and steerable rather than baked in: a Nellis
-# there-and-back is what a range sortie actually is, so it is the default, and
-# the one-way transit to Tonopah is a flag away.
+# THE APPROACH KEY CAME OUT OF THESE ROWS. They read
+# `("nevada-nellis-nellis", "nellis-ils-21", "Nellis")`, and the middle value
+# was the whole objection: the sortie chose a PROCEDURE, so every aeroplane in
+# it was worked against one arrival whatever it had been cleared for. A sortie
+# says where you depart and where you recover. Which approach you fly into
+# Nellis is Approach's to issue and yours to accept, and Nellis publishes more
+# than one. [#162]
 #
-# The default CHANGED with this. A bridge started on Nevada used to load the
-# Tonopah recovery, which is the wrong end of the flight for a pilot going home.
+# What survives is a departure, a filed plan and a destination FIELD, which are
+# all facts about the mission. Per-flight selection of the procedure is #111
+# and is now the only mechanism there is.
 NEVADA_SORTIES = {
-    "nellis": ("nevada-nellis-nellis", "nellis-ils-21", "Nellis"),
-    "tonopah": ("nevada-nellis-tonopah", "tonopah-ils-15", "Tonopah"),
+    "nellis": ("nevada-nellis-nellis", "Nellis"),
+    "tonopah": ("nevada-nellis-tonopah", "Tonopah"),
 }
 # The one flown when nobody has said. A Nellis there-and-back is what a range
 # sortie actually is, so it is the default and the transit is a flag away.
@@ -791,7 +887,7 @@ def nevada() -> Theatre:
               f"{', '.join(sorted(NEVADA_SORTIES))} — falling back to "
               f"{DEFAULT_SORTIE!r}", flush=True)
         want = DEFAULT_SORTIE
-    plan, key, arrival = NEVADA_SORTIES[want]
+    plan, arrival = NEVADA_SORTIES[want]
     # ONE CALL, so the numbered route and the published table hold the SAME
     # objects -- `NEVADA_ROUTE = [LSV, TPH, LSV]` was one Fix appearing twice,
     # and two copies that happen to agree is how they come to differ.
@@ -799,10 +895,10 @@ def nevada() -> Theatre:
     at = {f.name: f for f in fixes}
     return Theatre(
         name=me.name, terrain=me.terrain, fields=fields, stations=stations,
-        departure=me.departure, arrival=arrival, approach=procedures[key],
+        departure=me.departure, arrival=arrival,
         approaches=tuple(procedures.values()),
         wind_from_deg=me.wind_from_deg, wind_mph=me.wind_mph,
-        bootstrap_plan=plan, approach_key=key,
+        bootstrap_plan=plan,
         fixes=fixes,
         waypoints=tuple(enumerate((at[n] for n in NEVADA_ROUTE), start=1)))
 

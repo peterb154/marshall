@@ -860,38 +860,35 @@ class TestTheMissedApproachLatch(unittest.TestCase):
     def test_it_starts_when_the_geometry_hands_out_the_procedure(self):
         self.A.note_missed(self.bridge, "Pony 1-1", "missed", self.ctl)
         self.assertTrue(
-            self.A.flying_the_missed(self.bridge, "Pony 1-1", self.at(4, 1800), self.p, self.ctl))
+            self.A.flying_the_missed(self.bridge, "Pony 1-1", self.at(4, 1800), self.ctl))
 
     def test_it_also_starts_when_he_SAYS_he_is_going_around(self):
         """The two ways a controller finds out. Either is enough."""
         self.ctl.report_missed("Pony 1-1")
         self.assertTrue(
-            self.A.flying_the_missed(self.bridge, "Pony 1-1", self.at(4, 1800), self.p, self.ctl))
+            self.A.flying_the_missed(self.bridge, "Pony 1-1", self.at(4, 1800), self.ctl))
 
     def test_it_releases_at_the_missed_approach_altitude(self):
         self.A.note_missed(self.bridge, "Pony 1-1", "missed", self.ctl)
         self.assertFalse(
             self.A.flying_the_missed(self.bridge, "Pony 1-1",
-                                     self.at(6, self.p.missed_climb_ft), self.p,
-                                     self.ctl))
+                                     self.at(6, self.p.missed_climb_ft), self.ctl))
 
     def test_it_releases_outside_the_terminal_area(self):
         self.A.note_missed(self.bridge, "Pony 1-1", "missed", self.ctl)
         self.assertFalse(
             self.A.flying_the_missed(self.bridge, "Pony 1-1",
-                                     self.at(self.p.final_intercept_nm + 2, 2000),
-                                     self.p, self.ctl))
+                                     self.at(self.p.final_intercept_nm + 2, 2000), self.ctl))
 
     def test_it_does_not_leak_between_aircraft(self):
         self.A.note_missed(self.bridge, "Pony 1-1", "missed", self.ctl)
         self.assertFalse(
-            self.A.flying_the_missed(self.bridge, "Hammer 1-1", self.at(4, 1800), self.p,
-                                     self.ctl))
+            self.A.flying_the_missed(self.bridge, "Hammer 1-1", self.at(4, 1800), self.ctl))
 
     def test_an_ordinary_vector_does_not_set_it(self):
         self.A.note_missed(self.bridge, "Pony 1-1", "vector", self.ctl)
         self.assertFalse(
-            self.A.flying_the_missed(self.bridge, "Pony 1-1", self.at(4, 1800), self.p, self.ctl))
+            self.A.flying_the_missed(self.bridge, "Pony 1-1", self.at(4, 1800), self.ctl))
 
 
 class TestTheEndOfAnApproachIsAudible(unittest.TestCase):

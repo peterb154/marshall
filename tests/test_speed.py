@@ -21,6 +21,9 @@ from marshall.atc import agent_atc as A
 from marshall.atc import controller as C
 
 
+import tests.theatre as _T
+
+
 @dataclass
 class G:
     speed_kt: float = 0.0
@@ -241,7 +244,7 @@ class TestOnTheGroundIsNotAPhaseOfFlight(unittest.TestCase):
 
     def _ctx(self, scope):
         from marshall.core import route as R
-        return A.asr_context(R.BATUMI_ASR, scope, "Falcon 1-1", "362nd_sockeye")
+        return A.asr_context(_T.flying(R.BATUMI_ASR, "Falcon 1-1"), scope, "Falcon 1-1", "362nd_sockeye")
 
     def test_a_taxiing_aeroplane_gets_no_guidance(self):
         self.assertEqual(self._ctx(self.TAXI), "")

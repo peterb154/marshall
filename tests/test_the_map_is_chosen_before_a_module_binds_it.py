@@ -17,7 +17,7 @@ chosen, and on the second map neither name exists:
       -> AttributeError: TOWER names station 'Batumi Tower', which the
          configured theatre does not have.
 
-`agent_atc.load_and_push_plate` opens `from marshall.atc import briefing`
+`agent_atc.load_and_push_plates` opens `from marshall.atc import briefing`
 UNGUARDED and `_run_srs` calls it unguarded, so the SRS bridge -- the live ATC
 -- raised during start-up on Nevada. Not a wrong frequency: no controller at
 all, for the whole map. And `mission/nevada.py` imports `channels_for`,
@@ -118,11 +118,11 @@ class TestTheBridgeStartsOnEitherMap(unittest.TestCase):
                                      got.stderr.strip()[-400:])
 
     def test_and_the_bridges_own_start_up_import_is_one_of_them(self):
-        """`load_and_push_plate` reaches `briefing` with no try/except round
+        """`load_and_push_plates` reaches `briefing` with no try/except round
         it, which is why an import error there is a dead radio rather than a
         missing page."""
         from marshall.atc import agent_atc
-        src = inspect.getsource(agent_atc.load_and_push_plate)
+        src = inspect.getsource(agent_atc.load_and_push_plates)
         self.assertIn("from marshall.atc import briefing", src)
 
 

@@ -398,6 +398,23 @@ def _at(me, profile) -> str:
     procedure's `aerodrome` is the field it arrives at. It simply was not
     consulted.
 
+    AND THE PROFILE MAY NOW BE NONE, which is what #162 made possible: `_pro`
+    answers None for an aeroplane nobody has cleared, and that is the common
+    case for a man on Center forty miles out who has not asked for anything.
+    NOTHING IS INVENTED FOR HIM. The lookup goes back to being UNQUALIFIED,
+    which still resolves -- `station_for("approach", field="")` returns the
+    first seat with that primary role -- so
+
+        Rule("center", "approach", "inbound_within", CENTER_NM)
+
+    still fires and #51 does not come back. An unqualified answer that is right
+    by first-match is a known, tested weakness with its own name in this
+    docstring; a field guessed from the sortie's destination would be a
+    CONFIDENT wrong answer on the day two aeroplanes recover at two fields,
+    which is the failure this whole function exists to prevent. Guessing was
+    tried here and reverted for exactly that reason; the two tests below pin
+    it. See `test_a_handoff_names_the_field_he_is_going_to.py`.
+
     `field_named` is the join, and it is here because the two catalogues do not
     agree on case: a procedure's datum is a Fix and the fixes are shouted
     ('NELLIS', 'KOBULETI') while the aerodrome rows are not. An unknown name

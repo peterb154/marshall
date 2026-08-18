@@ -101,7 +101,7 @@ class Captured:
 def push(profile=None):
     cap = Captured()
     with mock.patch.object(A, "_put_json", cap):
-        n = A.push_stations("http://director", profile or T.the_arrival())
+        n = A.push_stations("http://director")
     return n, cap
 
 
@@ -144,33 +144,77 @@ class TestThePushCarriesThisMapsSeats(unittest.TestCase):
             self.assertTrue(s["name"])
             self.assertIsNotNone(s["freq_mhz"])
 
-    def test_a_letdown_pushes_its_BEACONS_and_not_the_modern_ladder(self):
-        """`seats_now` and not `stations_now`, so the mode switch stays in one
-        place. A 1944 beacon letdown has no modern ladder -- the man you talk
-        to IS the frequency you home -- and nine modern seats in a Mustang
-        would be a frequency directory it has no radio for.
+    def test_a_letdown_s_BEACONS_reach_the_EAR_and_not_the_role_table(self):
+        """The mode switch moved, and where it moved to is the whole point.
 
-        This asserted a push of NOTHING, which is the other wrong answer: a
-        controller who can name no frequency cannot speak a handoff, issue a
-        departure frequency, or finish the refusals that tell a pilot where to
-        go instead. #140. What he pushes now is the seats his own fixes name,
-        on the frequencies he actually homes.
+        This used to assert that `push_stations` published the LETDOWN's own
+        beacon seats rather than the modern ladder -- right while the process
+        ran one arrival, and unanswerable without one: with four procedures
+        published and no singular, "which procedure's seats" has no subject.
+
+        The tempting answer is to publish the union, and it is wrong. This
+        table backs `look_up_frequency`, which is asked BY ROLE AND FIELD, and
+        a beacon seat and a ladder seat share a name at one aerodrome --
+        "Batumi Tower" is 118.6 on the ladder and 132.0 on the letdown. A union
+        answers one of them by row order, which is a real controller on a real
+        frequency, and the wrong one.
+
+        So the split is by HOW THE SEAT IS LOOKED UP:
+
+            by role and field   the ladder            `push_stations`
+            by frequency        ladder + beacons      `seats_on_the_air`
+
+        A frequency is unique across the union, so the ear can open every
+        channel anybody might call on without any lookup becoming ambiguous.
+        And the one reader who has to tell them apart -- the controller -- is
+        told in words, in the letdown's own plate section. [#140, #162]
         """
         p = T.letdown()
-        if getattr(p, "theatre_stations", True):
-            self.skipTest("this map's letdown staffs the modern ladder, so "
+        if p is None or getattr(p, "theatre_stations", True):
+            self.skipTest("this map publishes no letdown off the ladder, so "
                           "there is no mode switch here to exercise")
-        n, cap = push(p)
-        self.assertTrue(n, "the 1944 controller pushed no seats at all")
-        self.assertIsNotNone(cap.stations)
-        # `TH` is the theatre MODULE here and `T` the test helper -- the
-        # two are one letter apart in this file and I picked the wrong one.
-        modern = {s.freq_mhz for s in TH.stations_now()}
-        for row in cap.stations:
-            with self.subTest(row["name"]):
-                self.assertNotIn(row["freq_mhz"], modern,
-                                 f"{row['name']} was pushed on a modern "
-                                 f"frequency an ARA-8 cannot tune")
+        # THE ROLE TABLE IS THE LADDER, and nothing else.
+        _n, cap = push()
+        self.assertEqual([s["name"] for s in cap.stations],
+                         [s.name for s in TH.stations_now()])
+
+        # THE EAR OPENS BOTH. Every beacon frequency this letdown is worked on
+        # is a channel the radio listens to -- without it a Mustang homing
+        # 132.0 calls into silence and neither end can tell.
+        heard = {round(s.freq_mhz, 3) for s in TH.seats_on_the_air()}
+        beacons = TH.beacon_seats(p)
+        self.assertTrue(beacons, "the letdown derives no seats from its fixes")
+        for s in beacons:
+            with self.subTest(s.name):
+                self.assertIn(round(s.freq_mhz, 3), heard,
+                              f"{s.name} on {s.freq_mhz} is a frequency this "
+                              f"procedure is worked on and nobody is listening")
+
+        # ...AND THE UNION IS STILL UNAMBIGUOUS BY FREQUENCY, which is the
+        # property that makes it safe to open. Two seats on one channel would
+        # put the wrong man's name on a transmission.
+        freqs = [round(s.freq_mhz, 3) for s in TH.seats_on_the_air()]
+        self.assertEqual(len(freqs), len(set(freqs)),
+                         "two seats claim one frequency in the union")
+
+    def test_and_the_letdown_s_PLATE_says_its_seats_are_not_the_ladder(self):
+        """The words that stop the one contradiction the split leaves behind.
+
+        The combined plate lists the map's ladder once, for every procedure,
+        and the letdown's section describes controllers on other frequencies.
+        Both are true and only one applies to any given aeroplane; without a
+        sentence saying so the controller has to guess, and the wrong guess
+        sends a Mustang to a frequency his ARA-8 cannot tune.
+        """
+        from marshall.atc import briefing
+        p = T.letdown()
+        if p is None or getattr(p, "theatre_stations", True):
+            self.skipTest("this map publishes no letdown off the ladder")
+        said = briefing.plates(T.approaches())
+        self.assertIn("THE SEATS ON THIS PROCEDURE ARE ITS BEACONS", said)
+        for s in TH.beacon_seats(p):
+            with self.subTest(s.name):
+                self.assertIn(f"{s.name}", said)
 
 
 class TestASecondPushReplacesTheTable(unittest.TestCase):
@@ -260,9 +304,9 @@ class TestTheBridgeActuallySendsIt(unittest.TestCase):
         tree = ast.parse(SRC.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if (isinstance(node, ast.FunctionDef)
-                    and node.name == "load_and_push_plate"):
+                    and node.name == "load_and_push_plates"):
                 return node
-        self.fail("load_and_push_plate is gone — find where the bridge starts")
+        self.fail("load_and_push_plates is gone — find where the bridge starts")
 
     def _called(self, fn) -> set:
         return {n.func.id for n in ast.walk(fn)

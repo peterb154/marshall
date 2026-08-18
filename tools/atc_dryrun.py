@@ -130,12 +130,12 @@ def run(script, session_id: str, sep_always: bool = True,
     empty means no radar, so position reports are taken at face value exactly as
     they are on a non-radar field."""
     # The SAME profile the live bridge runs. It used to seed the beacon letdown
-    # here, which is not merely a different script: `load_and_push_plate` WRITES
+    # here, which is not merely a different script: `load_and_push_plates` WRITES
     # what it is given, so a dry run replaced the stored radar approach -- and
     # the stored approach is where the controllers and their frequencies live.
     # Every station vanished from the database, and the first thing to notice was
     # a clearance with no departure frequency in it.
-    profile = agent_atc.load_and_push_plate(R.BATUMI_ASR)
+    profile = agent_atc.load_and_push_plates(R.BATUMI_ASR)
     ctl = atc.Controller(profile)
     # This run's own state -- see agent_atc.Bridge. It used to reach into the
     # module for the identity registry, which is the singleton [LAYERS.md]

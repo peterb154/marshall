@@ -32,15 +32,15 @@ SCOPE = ("362nd_sockeye [Falcon 1-1] (F-16C_50, manned): 36.1 nm on the 300 "
 class TestEachPilotGetsHisOwnPosition(unittest.TestCase):
     def test_the_lead(self):
         self.assertAlmostEqual(
-            A.radar_fix(SCOPE, "Falcon 1-1", R.BATUMI_ASR).range_nm, 36.1, 1)
+            A.radar_fix(SCOPE, "Falcon 1-1", A.field_of(R.BATUMI_ASR)).range_nm, 36.1, 1)
 
     def test_the_wingman(self):
         self.assertAlmostEqual(
-            A.radar_fix(SCOPE, "Falcon 1-2", R.BATUMI_ASR).range_nm, 3.7, 1)
+            A.radar_fix(SCOPE, "Falcon 1-2", A.field_of(R.BATUMI_ASR)).range_nm, 3.7, 1)
 
     def test_they_are_not_the_same_aeroplane(self):
-        a = A.radar_fix(SCOPE, "Falcon 1-1", R.BATUMI_ASR)
-        b = A.radar_fix(SCOPE, "Falcon 1-2", R.BATUMI_ASR)
+        a = A.radar_fix(SCOPE, "Falcon 1-1", A.field_of(R.BATUMI_ASR))
+        b = A.radar_fix(SCOPE, "Falcon 1-2", A.field_of(R.BATUMI_ASR))
         self.assertNotEqual(a.range_nm, b.range_nm)
 
 
@@ -79,7 +79,7 @@ class TestAFlightIsOnlyOneThingWhileItIsJoined(unittest.TestCase):
               "6,004 ft, heading 151")
 
     def test_a_member_finds_his_joined_flight(self):
-        got = A.radar_fix(self.JOINED, "Pony 1-3", R.BATUMI_ASR)
+        got = A.radar_fix(self.JOINED, "Pony 1-3", A.field_of(R.BATUMI_ASR))
         self.assertIsNotNone(got)
         self.assertAlmostEqual(got.range_nm, 12.0, 1)
 
@@ -89,12 +89,12 @@ class TestAFlightIsOnlyOneThingWhileItIsJoined(unittest.TestCase):
         answering it would pick one of two aeroplanes by accident, which is the
         failure this file exists for. Same reasoning as
         Controller.ambiguous_after_breakup."""
-        self.assertIsNone(A.radar_fix(SCOPE, "Falcon 1", R.BATUMI_ASR))
+        self.assertIsNone(A.radar_fix(SCOPE, "Falcon 1", A.field_of(R.BATUMI_ASR)))
 
     def test_asking_for_a_member_does_not_find_the_other(self):
         lone = ("362nd Andre [Falcon 1-2] (P-51D-30-NA, manned): 3.7 nm on the "
                 "130 radial, 900 ft, heading 130, 150 knots")
-        self.assertIsNone(A.radar_fix(lone, "Falcon 1-1", R.BATUMI_ASR))
+        self.assertIsNone(A.radar_fix(lone, "Falcon 1-1", A.field_of(R.BATUMI_ASR)))
 
 
 if __name__ == "__main__":

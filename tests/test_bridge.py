@@ -415,7 +415,7 @@ class TestAsrContext(unittest.TestCase):
         # sounds exactly as confident.
         bogey = "Bogey (P-51D): 6 nm on the 304 radial, 2,000 ft, heading 124"
         self.assertIsNone(agent_atc.radar_fix(bogey, "Pony 1-1"))
-        self.assertEqual(agent_atc.asr_context(self.asr, bogey, "Pony 1-1"), "")
+        self.assertEqual(agent_atc.asr_context(T.flying(self.asr, "Pony 1-1"), bogey, "Pony 1-1"), "")
 
     def test_a_wingman_uses_his_flights_track(self):
         """Tagged with the FLIGHT, which is what a joined formation is.
@@ -439,10 +439,10 @@ class TestAsrContext(unittest.TestCase):
         # A beacon letdown must never receive vectors: the homing adapter points
         # the nose at the beacon, so a heading destroys his only reference.
         self.assertEqual(
-            agent_atc.asr_context(self.ndb, self.scope(6), "Pony 1-1"), "")
+            agent_atc.asr_context(T.flying(self.ndb, "Pony 1-1"), self.scope(6), "Pony 1-1"), "")
 
     def test_far_out_is_vectoring(self):
-        out = agent_atc.asr_context(self.asr, self.scope(14, 300), "Pony 1-1")
+        out = agent_atc.asr_context(T.flying(self.asr, "Pony 1-1"), self.scope(14, 300), "Pony 1-1")
         self.assertIn("vectored", out)
 
     def test_the_agent_is_not_handed_the_turn_to_say(self):
@@ -460,7 +460,7 @@ class TestAsrContext(unittest.TestCase):
 
         Neither was wrong about its own instant. Asking the question twice was.
         """
-        out = agent_atc.asr_context(self.asr, self.scope(14, 300), "Pony 1-1")
+        out = agent_atc.asr_context(T.flying(self.asr, "Pony 1-1"), self.scope(14, 300), "Pony 1-1")
         self.assertIn("do NOT issue a heading", out)
         self.assertNotIn(str(self.asr.platform_ft), out,
                          "the agent was handed an altitude to read out")
@@ -469,27 +469,25 @@ class TestAsrContext(unittest.TestCase):
         # The mile calls already go out automatically; the agent reporting range
         # and heading too meant the pilot heard the same numbers twice from the
         # same controller. That is what "too chatty on final" meant.
-        out = agent_atc.asr_context(self.asr, self.scope(6), "Pony 1-1")
+        out = agent_atc.asr_context(T.flying(self.asr, "Pony 1-1"), self.scope(6), "Pony 1-1")
         self.assertIn("on final", out)
         self.assertIn("do NOT repeat", out)
 
     def test_off_course_is_named(self):
         inbound = (self.asr.final_crs_true + 180) % 360
-        right = agent_atc.asr_context(
-            self.asr, self.scope(6, inbound - 8), "Pony 1-1")
-        left = agent_atc.asr_context(
-            self.asr, self.scope(6, inbound + 8), "Pony 1-1")
+        right = agent_atc.asr_context(T.flying(self.asr, "Pony 1-1"), self.scope(6, inbound - 8), "Pony 1-1")
+        left = agent_atc.asr_context(T.flying(self.asr, "Pony 1-1"), self.scope(6, inbound + 8), "Pony 1-1")
         self.assertIn("right of course", right)
         self.assertIn("left of course", left)
 
     def test_the_missed_approach_point(self):
-        out = agent_atc.asr_context(self.asr, self.scope(0.4, 304), "Pony 1-1")
+        out = agent_atc.asr_context(T.flying(self.asr, "Pony 1-1"), self.scope(0.4, 304), "Pony 1-1")
         self.assertIn("missed approach point", out)
 
     def test_past_the_field_and_low_gets_the_missed_approach(self):
         # Lined up, low, four miles beyond the threshold: he has flown the
         # approach and not landed, and the plate answers that -- not a vector.
-        out = agent_atc.asr_context(self.asr, self.scope(4, 124), "Pony 1-1")
+        out = agent_atc.asr_context(T.flying(self.asr, "Pony 1-1"), self.scope(4, 124), "Pony 1-1")
         self.assertIn("issed approach", out)
         self.assertNotIn("of course", out.split("Do NOT")[0])
 
@@ -501,7 +499,7 @@ class TestAsrContext(unittest.TestCase):
         # mile before it. The test says which one it means rather than assuming
         # they are the same number, because for a while they were.
         radar_nm = 6 + self.asr.touchdown_offset_nm
-        out = agent_atc.asr_context(self.asr, self.scope(radar_nm), "Pony 1-1")
+        out = agent_atc.asr_context(T.flying(self.asr, "Pony 1-1"), self.scope(radar_nm), "Pony 1-1")
         self.assertIn("six miles", out)
 
 

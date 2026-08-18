@@ -31,7 +31,7 @@ WHAT IS FAKED, and all of it is IO:
     agent_atc.fetch_radar           the scope, per turn, from the script
     agent_atc.ask_agent             the director. The script says what it replies
     agent_atc.fetch_due             hooks -- empty unless a test wants one
-    agent_atc.load_and_push_plate   the real profile from route.py, no network
+    agent_atc.load_and_push_plates   the real profile from route.py, no network
     agent_atc.flight_bind           the director's flight rows
     agent_atc.filed_plans           the filed strips
 
@@ -321,7 +321,26 @@ class Sortie:
         patch(A, "fetch_radar", fake_radar)
         patch(A, "ask_agent", fake_ask)
         patch(A, "fetch_due", lambda *a, **k: self._due.pop(0) if self._due else [])
-        patch(A, "load_and_push_plate", lambda *a, **k: self.profile)
+        patch(A, "load_and_push_plates", lambda *a, **k: self.profile)
+        # HIS CLEARANCE NAMES AN APPROACH, because since #162 that is the
+        # ONLY thing that gives an aeroplane a procedure. The radio holds
+        # none: `_pro` answers None for a man nobody has cleared, so the
+        # talkdown does not run, the missed-approach latch never engages
+        # and the visual clearance says "runway in use" -- all correct, and
+        # all of it makes a scripted sortie test nothing at all.
+        #
+        # A live sortie gets this from clearance delivery, which files a
+        # plan naming the arrival; `_cleared_plan_now` is the read. Stubbed
+        # here so the harness flies a CLEARED aeroplane, which is what it
+        # was implicitly testing before the radio stopped supplying one.
+        #
+        # `acknowledged` is True for the same reason: a plan on the board
+        # that has not been read back sets `clearance_agreed=False`, which
+        # refuses taxi (#135), and that is a different test's subject.
+        patch(A, "_cleared_plan_now",
+              lambda known, *a, **k: ({"approach": A._key_of(self.profile),
+                                       "acknowledged": True}
+                                      if known else {}))
         patch(A, "flight_bind", lambda *a, **k: {})
         patch(A, "filed_plans", lambda *a, **k: [])
         # THE INTENT CLASSIFIER IS BEDROCK, and it is now reached for anybody on

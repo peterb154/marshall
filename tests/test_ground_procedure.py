@@ -320,7 +320,7 @@ class TestAParkedAeroplaneHasNoApproachGeometry(unittest.TestCase):
         ac = ctl.get("Sockeye")
         ac.sortie_phase = phase
         return A.settle(A.Bridge(), "taxi to runway zero seven", "", "",
-                        pos, P(), "Sockeye", ctl, scope="", track="")
+                        pos, "Sockeye", ctl, scope="", track="")
 
     def test_a_jet_on_the_ramp_gets_no_guidance_and_keeps_its_clearance(self):
         directive, _stack, _v, guide, dropped = self.settle(

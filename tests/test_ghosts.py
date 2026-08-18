@@ -281,7 +281,7 @@ class TestTheMannedMarkerDoesNotHideTheAirframe(unittest.TestCase):
         """So the speed floor and the equipment rules ask the same question of
         the same aeroplane."""
         from marshall.core import route as R
-        pos = A.radar_fix(self.SCOPE, "Pony 1-1", R.BATUMI_ASR)
+        pos = A.radar_fix(self.SCOPE, "Pony 1-1", A.field_of(R.BATUMI_ASR))
         self.assertEqual(pos.type, "P-51D-30-NA")
 
 if __name__ == "__main__":

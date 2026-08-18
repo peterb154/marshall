@@ -359,7 +359,7 @@ Everything on, no auth (`auth_verifier` is not configured). Endpoints from `dire
 | `PUT /prompts/{name}` | bridge at startup, for `plate`; you, by hand, for `soul`/`rules` | See the caching scar below |
 | `GET /prompts`, `GET /prompts/{name}` | you | Read what the agent is actually running on |
 | `POST /chat`, `POST /chat/stream` | **nothing in the bridge** — legacy/manual | The bridge uses `/atc`. `/chat` uses `make_app`'s own agent cache, a *different* cache from `/atc`'s |
-| `PUT /approaches/{name}`, `GET /flightplan/active` | bridge `load_and_push_plate` | Idempotent seed from `route.py`, then read back — the DB is truth |
+| `PUT /approaches/{key}` (one per published procedure) | `marshall-atc` `load_and_push_plates` | Publishes the map's whole OFFER at start. It seeded ONE from `route.py` and read it back; there is no process-wide arrival to seed since #162 |
 | `PUT /fixes` | bridge `push_fixes` | Lat/lon projected by the sim itself |
 | `GET /fixes` | you, for checking the push landed | |
 | `POST /flights/bind`, `/flights/{id}/agree`, `/flights/{id}/handoff` | bridge `flight_bind` / `flight_agree` / `flight_handoff` | **All three swallow their exceptions** — "the state store must never make him mute". Failures appear only as `!! flight bind failed:` in the bridge log |
@@ -2071,7 +2071,7 @@ This is the first thing to check when something reads wrong.
 | `atc` | `separation="procedural"`, era ww2 | `separation="radar"`, era ww2 |
 
 The live system runs `BATUMI_ASR`: `agent_atc._run_srs` calls
-`load_and_push_plate(R.BATUMI_ASR)` at `agent_atc.py`. But
+`load_and_push_plates()` at `agent_atc.py` — it was `load_and_push_plate(R.BATUMI_ASR)`, taking one profile, until #162. But
 `BATUMI_APPROACH` is still referenced in two places that matter:
 
 - **`mission/build.py`** — `P = R.BATUMI_APPROACH` is what the *weather* is
@@ -2227,7 +2227,7 @@ module rather than the profile:
  coming; it used to name the expected callsign and a pilot noticed Center
  greeting him already knowing where he was going (`briefing.py`)
 
-The push path, `agent_atc.load_and_push_plate` (`agent_atc.py`), runs
+The push path, `agent_atc.load_and_push_plates` (`agent_atc.py`), runs
 once per bridge start and does four things in order:
 
 1. `PUT /approaches/batumi-asr` with `profile_to_dict(profile)` —
@@ -2598,7 +2598,7 @@ curl -s --get "localhost:8000/plans/resolve" \
 
 ### The bridge's two involvements
 
-1. **It rewrites a template's callsign at every start.** `load_and_push_plate` PUTs `/flightplans/362nd-batumi-asr` with `callsign=R.FLIGHT_CALLSIGN` (`"Pony 1-1"`, `route.py`) and `active=True` (`agent_atc.py`), and `upsert_flight_plan` does `callsign=EXCLUDED.callsign` (`approaches.py`). Migration 012 explicitly nulled that column on all five rows; the bridge puts it back on Samovar every boot. It no longer affects plan matching (dropped at `_TEMPLATE_COLS`), but it is the entire content of the bridge's `filed_plans` identity rung (`agent_atc.py`), which reads `/flightplans` looking for callsigns typed before the sortie. Practical consequence: that rung knows one name, `Pony 1-1`, and only after a bridge restart. A visiting pilot who wants a clean first approach needs a plan row bearing his callsign — which today nothing but this bootstrap writes.
+1. **It rewrites a template's callsign at every start.** `load_and_push_plates` PUTs `/flightplans/362nd-batumi-asr` with `callsign=R.FLIGHT_CALLSIGN` (`"Pony 1-1"`, `route.py`) and `active=True` (`agent_atc.py`), and `upsert_flight_plan` does `callsign=EXCLUDED.callsign` (`approaches.py`). Migration 012 explicitly nulled that column on all five rows; the bridge puts it back on Samovar every boot. It no longer affects plan matching (dropped at `_TEMPLATE_COLS`), but it is the entire content of the bridge's `filed_plans` identity rung (`agent_atc.py`), which reads `/flightplans` looking for callsigns typed before the sortie. Practical consequence: that rung knows one name, `Pony 1-1`, and only after a bridge restart. A visiting pilot who wants a clean first approach needs a plan row bearing his callsign — which today nothing but this bootstrap writes.
 2. **It pushes the fix table**, which everything in `route_fixes` depends on — see above.
 
 ### What guards this
@@ -2950,7 +2950,7 @@ The console markers, and which component emitted them:
 | `tools/whos_who.py` | Live, during a sortie. Three panels that disagree in exactly the interesting cases: TRACKS (sim truth), BOARD (what the engine believes), RADIO (who spoke / who was answered). `--once` for a script |
 | `tools/identity_watch.py` | Live, when the question is *who does he think is talking*. One line per transmission; anything not `radar` gets a `<<` marker and its `why` printed. Watch the `MANNED` count — a guest is identified by elimination against it, so `0 manned` kills that path silently |
 | `tools/replay.py [flight-x.jsonl]` | After the sortie, when the vectoring was wrong. Re-runs every recorded fix through the *current* `asr.guide` and prints the percentage established. "A sortie that never reaches `final` is a vectoring failure, not a pilot one" |
-| `tools/atc_dryrun.py` | When the suspect is the model. Same message assembly, typed input, no SRS/Polly/Whisper/mission. Scripts: `formation`, `single`, `visual`, `clearance`, `readback`. Note it calls `load_and_push_plate`, which **writes** the stored approach — it uses `BATUMI_ASR` deliberately so it doesn't clobber the stations |
+| `tools/atc_dryrun.py` | When the suspect is the model. Same message assembly, typed input, no SRS/Polly/Whisper/mission. Scripts: `formation`, `single`, `visual`, `clearance`, `readback`. Note it calls `load_and_push_plates`, which **writes** every published approach — it no longer takes a profile, so there is no wrong one to pass |
 | `tools/check.py` | Before you conclude it is the world's fault. Ruff + pytest + the approach sweeps, seconds, no sim. `--live` adds the sim-backed and voice checks |
 | `tools/classify_bench.py` | After touching `intents.py`, the taxonomy wording, or the classifier prompt. The classifier decides check-in from beacon report on the separation-critical path |
 | `tools/whats_out_there.py` | "What *was* that?" — asks the sim directly for every unit including ground/statics and anything whose altitude doesn't match the terrain. Run it **while the thing is on screen**; the `tracks` table drops rows and proves nothing by absence |
@@ -3020,6 +3020,6 @@ jq -r 'select(.kind=="pilot" and .track=="") | .transcript' $S # never made it t
 
 - **The engine is blind and cannot retract.** It believes position reports; the agent sees radar. A flight once called "over the beacon" at eight miles — the agent refused correctly, but the engine had *already* broken the formation up. The bridge reconciles the two at, but only for a claimed station passage and only when a beacon is being flown.
 - **`_flights`, `_heard_on`, `_seen_at`, `_transmitters`, `_awaiting_readback` and the missed-approach latch all live in bridge process memory.** A bridge restart forgets every one of them. `may_be_vectored` deliberately keys traffic off the *scope* rather than the stack for this reason — radar does not forget over a restart.
-- **Every director call in the bridge is wrapped and swallowed** (`flight_bind`, `flight_agree`, `push_fixes`, `load_and_push_plate`). A dead Postgres degrades the controller silently rather than muting him. The only trace is a ` !! …` line at startup or in the log — worth grepping at the top of every investigation.
+- **Every director call in the bridge is wrapped and swallowed** (`flight_bind`, `flight_agree`, `push_fixes`, `load_and_push_plates`). A dead Postgres degrades the controller silently rather than muting him. The only trace is a ` !! …` line at startup or in the log — worth grepping at the top of every investigation.
 - **The `simple_response` shortcut bypasses the agent entirely** and is skipped when the separation engine is `engaged`. A radio check that got a rich reply means two or more contacts were on the scope.
 - **`tools/whats_out_there.py` exists because the `tracks` table has been dead for twelve hours without anyone noticing** (a missing SQL placeholder). An empty scope is not proof of an empty sky.

@@ -182,18 +182,24 @@ class TestTheRADARPICTUREIsHisToo(unittest.TestCase):
         self.assertFalse(_may_vector(letdown))
         self.assertNotEqual(getattr(letdown, "guidance", ""), "intercept")
 
-    def test_the_bridge_asks_it_of_a_profile_it_is_HANDED(self):
-        """`asr_context(profile, ...)` takes the procedure as its first
-        argument and asks `may_vector` of that -- so the fix for this call site
-        is entirely in what the caller passes, and the caller is `decide`."""
+    def test_the_bridge_cannot_HAND_it_a_profile_at_all(self):
+        """It took the procedure as its first argument, so this call site was
+        only ever as right as its caller -- and its caller was handed the
+        radio's one arrival. #162 removed the thing that could be passed:
+        `asr_context` takes the CONTROLLER and asks him which approach THIS
+        aeroplane was cleared for, so there is no argument left to get wrong.
+
+        Asserted on the signature rather than on the body, because the
+        property is that a procedure cannot reach here from outside."""
         import inspect
 
         from marshall.atc import agent_atc as A
-        self.assertEqual(
-            next(iter(inspect.signature(A.asr_context).parameters)), "profile")
-        src = inspect.getsource(A.decide)
-        self.assertIn("asr_context(profile", src,
-                      "decide no longer forwards its profile to asr_context")
+        params = list(inspect.signature(A.asr_context).parameters)
+        self.assertEqual(params[0], "ctl")
+        self.assertNotIn("profile", params)
+        src = inspect.getsource(A.asr_context)
+        self.assertIn("ctl.procedure_for(cs or track)", src,
+                      "asr_context stopped asking the aeroplane")
 
 
 class TestTheTHEATREQuestionIsNotThisQuestion(unittest.TestCase):
@@ -272,9 +278,15 @@ class TestTheFiveCallSitesAskForTheAEROPLANE(unittest.TestCase):
                          "bridge's profile")
 
     def test_the_proactive_monitor_asks_the_aircraft_it_already_has(self):
+        """`procedure_of(who, profile)` became `ctl._pro(who)` when the
+        second argument stopped existing. Same question, same answer for a
+        cleared aeroplane, and None rather than the radio's arrival for one
+        nobody has cleared. [#162]"""
         from marshall.atc import agent_atc as A
         src = self.source(A.watching_him)
-        self.assertIn("procedure_of(who", src)
+        self.assertIn("ctl._pro(who)", src)
+        self.assertNotIn("profile", list(
+            __import__("inspect").signature(A.watching_him).parameters))
 
     def test_and_no_site_left_reads_ctl_profile_for_a_PROCEDURE(self):
         """The sweep, so a sixth site added tomorrow is caught rather than

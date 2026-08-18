@@ -79,9 +79,9 @@ class TestTheRowIsRemeasuredFromHisOwnSeat(unittest.TestCase):
         self.away = TH.station("tower", self.there)
         if self.away is None:
             self.skipTest(f"{self.there.name} publishes no tower")
-        # THE TICK'S PICTURE. `fetch_radar(session_id, profile=profile)` with
+        # THE TICK'S PICTURE. `fetch_radar(session_id)` with
         # no `field=`, so the datum is the fallback nobody chose.
-        self.fallback = A.field_origin(self.pro, "")
+        self.fallback = A.field_origin("")
         # A contact sitting on the OTHER field, so the two answers cannot
         # coincide: zero miles from his own seat, twenty-two from the page's.
         self.scope = picture(self.fallback,
@@ -89,7 +89,7 @@ class TestTheRowIsRemeasuredFromHisOwnSeat(unittest.TestCase):
                                       self.there.lon)])
 
     def test_the_datum_is_his_seats_field_not_the_pictures(self):
-        d, _nm, _rad = A.worked_from(self.pro, self.away.name, self.scope,
+        d, _nm, _rad = A.worked_from(self.away.name, self.scope,
                                      "Away 1", None)
         self.assertIsNotNone(d, "the row published no datum at all")
         self.assertEqual(d["name"], self.there.name.upper())
@@ -103,7 +103,7 @@ class TestTheRowIsRemeasuredFromHisOwnSeat(unittest.TestCase):
         confidently wrong rather than merely odd. He is ON the other field, so
         his own seat measures him at zero.
         """
-        _d, nm, _rad = A.worked_from(self.pro, self.away.name, self.scope,
+        _d, nm, _rad = A.worked_from(self.away.name, self.scope,
                                      "Away 1", None)
         self.assertIsNotNone(nm, "the range was not re-measured")
         self.assertLess(nm, 1.0,
@@ -131,18 +131,18 @@ class TestItNeverGUESSES(unittest.TestCase):
     def setUp(self):
         project()
         self.pro = TH.the_arrival()
-        self.fallback = A.field_origin(self.pro, "")
+        self.fallback = A.field_origin("")
 
     def test_a_seat_nobody_recognises_leaves_the_picture_alone(self):
         scope = picture(self.fallback)
-        d, nm, rad = A.worked_from(self.pro, "Nobody At All", scope, "X", None)
+        d, nm, rad = A.worked_from("Nobody At All", scope, "X", None)
         self.assertEqual(d, A.datum_of(scope))
         self.assertIsNone(nm)
         self.assertIsNone(rad)
 
     def test_no_owner_at_all_leaves_the_picture_alone(self):
         scope = picture(self.fallback)
-        self.assertEqual(A.worked_from(self.pro, "", scope, "X", None)[0],
+        self.assertEqual(A.worked_from("", scope, "X", None)[0],
                          A.datum_of(scope))
 
     def test_a_contact_with_no_position_is_not_re_measured(self):
@@ -154,7 +154,7 @@ class TestItNeverGUESSES(unittest.TestCase):
         if away is None:
             self.skipTest("no tower at the other field")
         scope = picture(self.fallback, [contact("Away 1", None, None)])
-        d, _nm, _rad = A.worked_from(self.pro, away.name, scope, "Away 1", None)
+        d, _nm, _rad = A.worked_from(away.name, scope, "Away 1", None)
         self.assertEqual(d, A.datum_of(scope))
 
     def test_a_seat_at_the_SAME_field_changes_nothing(self):
@@ -164,9 +164,9 @@ class TestItNeverGUESSES(unittest.TestCase):
         here = TH.station("tower", TH.arrival())
         if here is None:
             self.skipTest("no tower at the arrival field")
-        own = A.field_origin(self.pro, TH.arrival().name)
+        own = A.field_origin(TH.arrival().name)
         scope = picture(own, [contact("Home 1", 41.0, 41.0)])
-        d, nm, rad = A.worked_from(self.pro, here.name, scope, "Home 1", None)
+        d, nm, rad = A.worked_from(here.name, scope, "Home 1", None)
         self.assertEqual(d, A.datum_of(scope))
         self.assertIsNone(nm)
         self.assertIsNone(rad)

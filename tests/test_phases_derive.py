@@ -167,7 +167,7 @@ class TestTheDepartureFromTheNinthOfAugust(unittest.TestCase):
         from marshall.atc import controller as C
         ctl = C.Controller(T.the_arrival())
         ctl.get("Sockeye").sortie_phase = phase
-        return A.settle(A.Bridge(), "", "", "", pos, T.the_arrival(), "Sockeye",
+        return A.settle(A.Bridge(), "", "", "", pos, "Sockeye",
                         ctl, scope="", track="")
 
     def climbing_out(self):

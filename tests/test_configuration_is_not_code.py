@@ -447,7 +447,7 @@ class TheTwoSourcesOfPositionAreMERGED(unittest.TestCase):
              mock.patch.object(A, "_eval_fix_positions",
                                return_value={"FEET WET": [41.629, 41.336]}):
             th.current.return_value = Theatre()
-            A.push_fixes("http://unused", profile=None)
+            A.push_fixes("http://unused", ())
 
         got = pushed.get("fixes") or {}
         self.assertIn("BATUMI", got, "the configured fix was wiped by the sim branch")
@@ -585,23 +585,38 @@ class AMapIsAFileAndNotAFunction(unittest.TestCase):
             self.assertEqual(th.name, "Caucasus")
             self.assertTrue(th.fields and th.approaches)
 
-    def test_an_unknown_approach_is_named_rather_than_swapped(self):
-        """The same fault one level down, and it has already cost a sortie:
-        `_approach_named` matched on a prefix and returned the surveillance
-        approach for a plan filed as `batumi-ils`, and the whole flight was
-        flown as a talkdown."""
-        import contextlib
-        import io
+    def test_the_environment_cannot_choose_an_approach_at_all(self):
+        """The mechanism one level down is DELETED rather than corrected.
 
+        This asserted that a misspelt `MARSHALL_APPROACH` was named rather
+        than silently swapped -- a good guard on a bad mechanism. #162 is
+        that the mechanism should not exist: which approach you fly is a
+        fact about your CLEARANCE, and letting the shell decide it meant a
+        restart changed the procedure under a flying aeroplane (#158,
+        `batumi-ils` became `batumi-asr` mid-rehearsal).
+
+        So the test is not "a wrong value is reported" but "no value has any
+        effect": a spelling that USED to select the ILS, and one that never
+        named anything, produce identical theatres. Set on the environment
+        rather than asserted absent from the source, because the criterion
+        is about behaviour -- a grep would pass on a file that read the
+        variable under another name."""
         from marshall.core import theatre as T
 
-        with mock.patch.dict(os.environ, {"MARSHALL_THEATRE": "caucasus",
-                                          "MARSHALL_APPROACH": "batumi-gca"}):
-            buf = io.StringIO()
-            with contextlib.redirect_stdout(buf):
-                th = T.current()
-            self.assertIn("batumi-gca", buf.getvalue())
-            self.assertEqual(th.approach_key, "batumi-asr-13")
+        with mock.patch.dict(os.environ, {"MARSHALL_THEATRE": "caucasus"}):
+            plain = T.current()
+        for spelt in ("batumi-ils-13", "batumi-gca", ""):
+            with self.subTest(MARSHALL_APPROACH=spelt):
+                with mock.patch.dict(os.environ,
+                                     {"MARSHALL_THEATRE": "caucasus",
+                                      "MARSHALL_APPROACH": spelt}):
+                    th = T.current()
+                self.assertEqual(th.approaches, plain.approaches)
+                self.assertEqual(th.arrival, plain.arrival)
+        # ...AND THERE IS NOWHERE TO PUT ONE. A singular beside the plural
+        # is how the old path would come back.
+        self.assertFalse(hasattr(plain, "approach"))
+        self.assertFalse(hasattr(plain, "approach_key"))
 
 
 class BothMapsAreRows(unittest.TestCase):
@@ -648,8 +663,14 @@ class BothMapsAreRows(unittest.TestCase):
                 self.assertEqual(th.stations, T.stations_now(m))
                 self.assertIs(th.fields[0], T.fields_now(m)[0])
                 self.assertIs(th.stations[0], T.stations_now(m)[0])
-                self.assertIn(th.approach_key, T.approaches_now(m))
-                self.assertIs(th.approach, T.approaches_now(m)[th.approach_key])
+                # THE SAME OBJECTS, not copies that happen to agree --
+                # `ApproachProfile` is unhashable, so identity is checked
+                # by `is` against the keyed table rather than by set.
+                pub = T.approaches_now(m)
+                self.assertEqual(len(th.approaches), len(pub))
+                for key, a in pub.items():
+                    with self.subTest(approach=key):
+                        self.assertTrue(any(a is x for x in th.approaches))
 
     def test_no_map_needs_a_fallback_for_its_seats(self):
         """`_stations_cached` used to answer out of `THEATRES[name]().stations`
@@ -692,7 +713,6 @@ class BothMapsAreRows(unittest.TestCase):
             self.assertIn("range", buf.getvalue())
             self.assertIn("nellis, tonopah", buf.getvalue())
             self.assertEqual(th.arrival, "Nellis")
-            self.assertEqual(th.approach_key, "nellis-ils-21")
 
     def test_a_known_sortie_still_picks_its_own_recovery(self):
         from marshall.core import theatre as T
@@ -700,9 +720,10 @@ class BothMapsAreRows(unittest.TestCase):
         with mock.patch.dict(os.environ, {"MARSHALL_THEATRE": "nevada",
                                           "MARSHALL_SORTIE": "tonopah"}):
             th = T.current()
-        self.assertEqual(
-            (th.arrival, th.approach_key, th.bootstrap_plan),
-            ("Tonopah", "tonopah-ils-15", "nevada-nellis-tonopah"))
+        # A FIELD AND A PLAN. The approach key was the middle value and a
+        # sortie does not choose a procedure -- see #162.
+        self.assertEqual((th.arrival, th.bootstrap_plan),
+                         ("Tonopah", "nevada-nellis-tonopah"))
 
     def test_the_nevada_module_is_a_reader_and_no_longer_the_map(self):
         """`N.NELLIS_ILS` still resolves for the call sites that read it -- the

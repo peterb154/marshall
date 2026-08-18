@@ -131,9 +131,13 @@ class EitherNevadaSortieCanBeSelected(_OnTheMap):
     theatre = "nevada"
 
     def test_the_default_is_out_of_nellis_and_home_again(self):
+        # A SORTIE, NOT AN ARRIVAL. The middle assertion was
+        # `approach_key == "nellis-ils-21"`, and a sortie choosing a
+        # PROCEDURE is what #162 deleted: it says where you depart and
+        # where you recover, and Approach issues the approach.
         self.assertEqual(self.th.arrival, "Nellis")
-        self.assertEqual(self.th.approach_key, "nellis-ils-21")
         self.assertEqual(self.th.bootstrap_plan, "nevada-nellis-nellis")
+        self.assertFalse(hasattr(self.th, "approach_key"))
 
     def test_the_one_way_transit_is_a_flag_away(self):
         was = os.environ.get("MARSHALL_SORTIE")
@@ -141,7 +145,7 @@ class EitherNevadaSortieCanBeSelected(_OnTheMap):
         try:
             th = self._theatre()
             self.assertEqual(th.arrival, "Tonopah")
-            self.assertEqual(th.approach_key, "tonopah-ils-15")
+            self.assertEqual(th.bootstrap_plan, "nevada-nellis-tonopah")
         finally:
             if was is None:
                 os.environ.pop("MARSHALL_SORTIE", None)

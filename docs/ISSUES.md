@@ -9060,13 +9060,24 @@ Tests: needs one; `tools/bridge.py` has no test today.
 Code: `tools/bridge.py` (`DEFAULT_ARGS`, `_env`, `restart`),
 `src/marshall/core/theatre.py`.
 
-**Status:** FIXED 13 August — commit `6e83dc9`, `Closes #158`, landed while this
-audit was running. `restart` reads `/proc/<pid>/environ` off the running bridge
-BEFORE stopping it, so the procedure survives; `--approach` is parsed the way
-`--theatre` is, and an operator who asks for a different one is told what is
-about to change. `tools/bridge.py` had no test at all, which is what this cost;
-the one that matters now spawns a real child, because the property being relied
-on is that `/proc/<pid>/environ` is the environment at EXEC time.
+**Status:** FIXED 13 August, and CLOSED BY DELETION 18 August. `6e83dc9` made
+`restart` read `/proc/<pid>/environ` off the running bridge before stopping it,
+so the procedure survived; `--approach` was parsed the way `--theatre` is, and
+an operator asking for a different one was told what was about to change.
+
+That was a correct fix to a mechanism that should not have existed. #162
+deleted the process-wide approach, so `approach_of`, the `--approach` flag and
+the carry-forward went with it: **a restart cannot revert a procedure when no
+procedure is attached to the process.** What comes back across a restart is
+`flights.cleared_approach` per aeroplane, via `Controller.hydrate` — which is
+more than the carry-forward ever managed, since that restored ONE procedure for
+everybody on the frequency.
+
+Deletion is the stronger close. A carry-forward can be forgotten, mis-set, or
+defeated by starting the radio by hand; a thing that does not exist cannot be
+any of those. `tests/test_a_restart_is_a_restart.py` now asserts the absence,
+and asks the AST rather than grepping the text — the file has to QUOTE
+`MARSHALL_APPROACH` to explain what it forbids.
 
 ---
 
@@ -9273,14 +9284,31 @@ Tests: needs one; `tests/test_two_fields.py` is the right home.
 Code: `src/marshall/atc/agent_atc.py` (`field_origin`, ~3634; caller at 153),
 `CENTER_NM`.
 
-**Status:** PARTLY — the board now SAYS its datum and the choosing is still
-wrong, which is the half the entry warned about. `3bb2cb7` landed `Datum` and
-the `WHY_*` reasons with 24 green cases in
-`tests/test_a_range_names_its_datum.py`, so a range names what it is measured
-from; but `field_origin` still walks the `ApproachProfile`'s `aerodrome`,
-`arrival_fix`, `outer_hold` and returns `WHY_APPROACH`, which criterion 3 says
-must not exist. `WHY_DESTINATION` is declared and unwired, and no test loads
-`batumi-ils` and `kobuleti-ils` to compare one aeroplane's Center origin.
+**Status:** BUILT, needs a pilot — 18 August, with #162. Both halves are now
+closed and they were closed a fortnight apart, which is worth recording because
+the first half alone looked like the fix.
+
+`3bb2cb7` landed `Datum` and the `WHY_*` reasons, so a range NAMES what it is
+measured from — necessary, and it left the number exactly where it was. The
+board printed "BATUMI, the loaded approach", which is the bug describing itself
+accurately.
+
+The number moved with #162. `field_origin` took a `profile` and walked its
+`aerodrome`, `arrival_fix` and `outer_hold`; it takes a FIELD, and where no
+controller has one — every Center — the answer is the sortie's ARRIVAL
+aerodrome. `WHY_APPROACH` is deleted and `WHY_ARRIVAL` replaces it. Same point
+on the Caucasus, and now it is Batumi because the sortie recovers there and
+says so, rather than because `MARSHALL_APPROACH` happened to be unset.
+
+**The test that could not be written before is written now.** The entry asked
+for one that loads `batumi-ils` and `kobuleti-ils` and compares a Center's
+origin. There is nothing left to load, so the assertion is stronger and
+simpler: ask three times, get one answer.
+`TheReferenceIsNamedAndJustified::test_and_the_same_center_no_longer_moves_forty_miles`.
+
+`WHY_DESTINATION` — the field HIS plan ends at — is still declared and unwired,
+and it is deliberately not this commit: choosing it moves a number `CENTER_NM`
+is computed against, which wants a ghost flight of its own.
 Labels: needs-flight-test
 
 ---
@@ -9424,14 +9452,66 @@ Code: `src/marshall/core/theatre.py`, `src/marshall/atc/agent_atc.py`
 `src/marshall/atc/controller.py` (26 `self.profile` reads),
 `config/theatres/*.toml`.
 
-**Status:** PARTLY — the decision is made and this still supersedes the
-"default" half of #2. Step 2 has largely landed: `controller.py` now asks
-`_pro(ac)` at thirty-two sites and one raw `self.profile` read survives, as
-`_pro`'s own fallback. Step 1 has not: `config/theatres/caucasus.toml` still
-declares `default_approach`, `core/theatre.py` still reads `MARSHALL_APPROACH`
-and `me.default_approach`, and `agent_atc.py` still does
-`_agreed.setdefault("procedure", APPROACH_NAME)` — a pilot's agreed procedure
-defaulted from the module global the criterion says must not exist.
+**Status:** BUILT, needs a pilot — 18 August. Step 1 has landed and there is
+now no such thing as the theatre's approach anywhere in the tree.
+
+    Theatre.approach / .approach_key   DELETED, plural `approaches` only
+    default_approach                   DELETED from catalogue + caucasus.toml
+    MARSHALL_APPROACH                  DELETED, and no reader remains
+    APPROACH_NAME                      DELETED, all 7 readers with it
+    tools/bridge.py --approach         DELETED, with the carry-forward (#158)
+
+Step 2 finished with it, in `agent_atc.py` rather than `controller.py`: the
+loop held ONE `profile` and handed it to about twenty-five functions as the
+answer to "which procedure" for every aeroplane on the frequency. It is gone,
+and what replaced each use is the point —
+
+    field_origin(profile, field)   -> field_origin(field). A datum is a PLACE;
+                                      the fallback is the sortie's arrival
+                                      aerodrome, so it is the same on every
+                                      restart. THIS CLOSES #160.
+    true_heading(hdg, profile)     -> true_heading(hdg, field). Grid
+                                      convergence is 0.0 at Batumi and 5.74 up
+                                      the coast: a property of WHERE, and
+                                      `Field_` is where it is declared.
+    asr_context, flying_the_missed,
+    settle, compose_message        -> ask `ctl.procedure_for(cs)`. His.
+    push_fixes / push_sectors /
+    push_stations                  -> the theatre and ALL published procedures
+    load_and_push_plate(profile)   -> load_and_push_plates(). Every procedure
+                                      published, one plate describing all of
+                                      them (`briefing.plates`).
+    _seats                         -> `theatre.seats_on_the_air()`: the ladder
+                                      plus every procedure's beacon seats, so
+                                      what the radio can HEAR is not one
+                                      aeroplane's procedure to decide.
+
+**`_pro` answers None now**, which is the whole of "the old path is gone": an
+aeroplane nobody has cleared has no approach, so he gets no vectors
+(`may_vector(None)` is False), no missed-approach latch, and "cleared visual
+approach runway **in use**" instead of another field's runway. That is the
+honest answer and it is a REAL behaviour change a pilot will notice — see the
+flight-test note below.
+
+**Criterion 1 cannot be met as literally written and is met in substance.**
+`grep default_approach` and `grep MARSHALL_APPROACH` still hit: the comments
+and the tests that FORBID them have to quote them. That is the trap CLAUDE.md
+records misfiring four times. `tests/test_a_restart_is_a_restart.py` asks the
+AST instead — which names the module binds, which strings it compares `argv`
+against, which keys it writes into `os.environ` — and `--theatre` is asserted
+PRESENT in the same test as the control.
+
+**One coupling fell out, and it predates this.** The board refresh that reads
+`flights` for the cruise level, the agreed clearance and the cleared approach
+sat BELOW `separation_context`'s `if intent is None: return "", ""`. So a
+transmission the classifier could not read threw away all three. Invisible
+while the process-wide arrival covered for the third; load-bearing without it.
+Lifted above the early return.
+
+**What a pilot has to judge**, because no suite can: whether an aeroplane that
+has NOT been cleared for an approach is now too quiet. The engine will not
+vector him, which is correct procedure and a change from a radio that vectored
+everybody down one arrival. Card rows for the approach section apply.
 Labels: needs-flight-test
 
 ---

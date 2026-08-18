@@ -327,9 +327,14 @@ class Identity(_File):
     # two approaches into one field cannot disagree about it. Real ATC by
     # default; a handicapped mission turns it off here. [#162]
     radar: bool = True
-    # A STOPGAP, and the remainder of #2 is that there should be no such thing:
-    # which approach you are flying is a fact about your CLEARANCE.
-    default_approach: str = ""
+    # NO `default_approach`, AND ITS ABSENCE IS THE POINT. It was here, called a
+    # stopgap in its own comment, and it was the last thing filling the
+    # process-wide arrival: which approach you are flying is a fact about your
+    # CLEARANCE, and until you have asked for one the honest answer is that the
+    # controller has none for you. `_File` forbids unknown keys, so a theatre
+    # file that still declares one is REFUSED rather than quietly ignored --
+    # which is what makes the deletion checkable on every map instead of on the
+    # two in this repository. [#162]
     bootstrap_plan: str = ""
     wind_from_deg: float = 0.0
     wind_mph: float = 0.0

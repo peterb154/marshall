@@ -112,11 +112,11 @@ class UntaggedButTracked(unittest.TestCase):
     def test_the_premise_the_contact_really_is_untagged(self):
         """Asserted so this class cannot go vacuous the way others have."""
         self.assertEqual(self.contact["callsign"], "")
-        self.assertIsNone(A.radar_fix(self.scope, "Sockeye 1-1", self.profile),
+        self.assertIsNone(A.radar_fix(self.scope, "Sockeye 1-1", A.field_of(self.profile)),
                           "an untagged contact must be invisible to the "
                           "callsign lookup -- that is the premise of the bug")
         self.assertIsNotNone(
-            A.radar_fix_by_track(self.scope, self.contact["name"], self.profile),
+            A.radar_fix_by_track(self.scope, self.contact["name"], A.field_of(self.profile)),
             "but perfectly visible to the track lookup")
 
     def test_he_is_radar_identified(self):

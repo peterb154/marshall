@@ -63,7 +63,7 @@ class TestWhoIsWatchingHim(unittest.TestCase):
         deliberately not asserted here: it exists to keep a cruise from printing
         one line a mile, and pinning its wording would make that a contract."""
         nxt, why = agent_atc.watching_him(
-            self.bridge, self.ctl, self.profile, "Sockeye", pos,
+            self.bridge, self.ctl, "Sockeye", pos,
             agent_atc.Scope(""), fallback_hz=124_000_000.0)
         return nxt, why[0]
 

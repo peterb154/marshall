@@ -7,24 +7,33 @@
 WHY THIS FILE EXISTS. `field_origin` has answered "where does this controller
 measure from" since the first sortie, and the answer went nowhere except into
 the arithmetic. Given a field it resolves that aerodrome; given NO field --
-which is every Center, whose airspace is the whole theatre -- it falls through
-to the loaded approach's beacon. So every range a Center has ever spoken was
+which is every Center, whose airspace is the whole theatre -- it fell through
+to THE LOADED APPROACH's beacon. So every range a Center has ever spoken was
 measured from Batumi, nothing chose that, and no screen or transmission
 anywhere said so.
 
-That is the property worth fixing first, ahead of choosing a better field: an
+That was the property worth fixing first, ahead of choosing a better field: an
 unstated reference produces a real range to a real airport and sounds exactly
 like a right answer, which is how #160 survived from the first sortie. A STATED
 wrong reference is something a pilot catches in the air.
 
-WHAT IS DELIBERATELY NOT TESTED HERE: that the datum is the RIGHT one. It is
-not, yet -- a Center still measures from whichever arrival the bridge was
-started on -- and the board is expected to print exactly that, in words, as
-"BATUMI, the loaded approach". The bug printing its own name is the point.
+BOTH HALVES ARE NOW CLOSED, and the second one is #162. The datum SAYS what it
+is (that was this file's original subject) and it no longer MOVES: the
+fallback is the sortie's arrival aerodrome, a fact about the map, rather than
+whichever procedure the process was started on. The two rows in `BEFORE` that
+changed are exactly the two that used to depend on the loaded approach, and
+they are called out where they sit -- a Center measured from Kobuleti because
+somebody had started the radio on the Kobuleti ILS, and the same Center on the
+same map measured from Batumi otherwise. Forty miles, no other difference.
 
-Every NUMBER in this file is asserted UNCHANGED, against co-ordinates captured
-before the change. `field_origin` picks exactly the point it always picked; what
-is new is that it says which point that is and why.
+WHAT IS STILL DELIBERATELY NOT TESTED HERE: that the datum is the BEST one.
+`WHY_DESTINATION` -- the field HIS plan ends at -- is what a controller
+working an aeroplane should eventually get, and choosing it moves a number
+that `CENTER_NM` is computed against. That is its own commit and its own
+ghost flight.
+
+Every OTHER number in this file is asserted UNCHANGED against co-ordinates
+captured before the change.
 """
 
 from __future__ import annotations
@@ -39,6 +48,8 @@ from marshall.atc import agent_atc as A
 from marshall.atc import assembly, asr, decision, phrasebook
 from marshall.core import geo, route as R, theatre as _th
 from marshall.kneeboard import diag
+
+import tests.theatre as _T
 
 
 def _fill_projected() -> dict:
@@ -75,32 +86,39 @@ class _Projected(unittest.TestCase):
 class TheReferenceIsNamedAndJustified(_Projected):
 
     def test_a_field_controller_measures_from_his_own_field(self):
-        d = A.field_origin(R.BATUMI_ASR, "Kobuleti")
+        d = A.field_origin("Kobuleti")
         self.assertEqual(d.name, "KOBULETI")
         self.assertEqual(d.why, A.WHY_FIELD)
 
-    def test_a_controller_with_no_field_falls_to_the_loaded_approach(self):
-        """THE BUG, STATED. A Center has no aerodrome, so it lands on the
-        arrival the bridge happened to be started with -- and now says so."""
-        d = A.field_origin(R.BATUMI_ASR, "")
-        self.assertEqual(d.name, "BATUMI")
-        self.assertEqual(d.why, A.WHY_APPROACH)
+    def test_a_controller_with_no_field_falls_to_the_arrival_aerodrome(self):
+        """A Center has no aerodrome of its own, so it measures from where
+        the traffic is GOING -- and says so. It used to land on the arrival
+        the process was started with, which is a different sentence with the
+        same answer on this map and a different one on the next."""
+        d = A.field_origin("")
+        self.assertEqual(d.name, _th.current().arrival.upper())
+        self.assertEqual(d.why, A.WHY_ARRIVAL)
 
-    def test_and_the_same_center_moves_forty_miles_on_another_arrival(self):
-        """Still true, still open, and now VISIBLE. Start the bridge on the
-        Kobuleti ILS and every number Center speaks is measured somewhere
-        else -- which was the whole of #160 and could not be seen from any
-        screen or any transmission."""
-        here = A.field_origin(R.BATUMI_ILS, "")
-        there = A.field_origin(R.KOBULETI_ILS, "")
-        self.assertNotEqual(here.name, there.name)
-        self.assertEqual((here.why, there.why),
-                         (A.WHY_APPROACH, A.WHY_APPROACH))
+    def test_and_the_same_center_no_longer_moves_forty_miles(self):
+        """CLOSED, and this is the assertion that says so. Starting the
+        radio on the Kobuleti ILS used to move every number Center spoke
+        forty miles, with no other change -- the whole of #160, invisible
+        from any screen and any transmission.
+
+        There is nothing left to start it ON. The function takes a place, so
+        the only way to get two answers is to ask about two places, and
+        asking twice about none gives one answer by construction."""
+        answers = {(A.field_origin("").name, A.field_origin("").why)
+                   for _ in range(3)}
+        self.assertEqual(len(answers), 1, "the datum moved under a Center")
+        (name, why), = answers
+        self.assertEqual(why, A.WHY_ARRIVAL)
+        self.assertEqual(name, _th.current().arrival.upper())
 
     def test_the_five_reasons_are_distinguishable(self):
         """The `why` is the audit trail, not decoration. Two of them reading
         the same string would make the board's account of itself useless."""
-        whys = (A.WHY_DESTINATION, A.WHY_FIELD, A.WHY_APPROACH,
+        whys = (A.WHY_DESTINATION, A.WHY_FIELD, A.WHY_ARRIVAL,
                 A.WHY_BULLSEYE, A.WHY_NONE)
         self.assertEqual(len(set(whys)), len(whys))
 
@@ -113,7 +131,7 @@ class TheReferenceIsNamedAndJustified(_Projected):
         self.assertEqual(d.published(), {})
 
     def test_it_is_spoken_as_a_man_says_his_own_field(self):
-        self.assertEqual(A.field_origin(R.BATUMI_ASR, "").spoken, "from Batumi")
+        self.assertEqual(A.field_origin("").spoken, "from Batumi")
 
 
 # EVERY ORIGIN THIS THEATRE CAN PRODUCE, CAPTURED BEFORE THE CHANGE and pinned
@@ -124,26 +142,22 @@ class TheReferenceIsNamedAndJustified(_Projected):
 # and every field a caller passes, including the two that resolve nothing.
 BATUMI_POINT = (41.609594, 41.600234)          # the beacon, projected by the sim
 KOBULETI_POINT = (41.929922, 41.863275)
+# KEYED ON THE FIELD ALONE, because that is now the only input. It was keyed
+# `(procedure, field)` and half the point of the table was that the first
+# element changed the answer. It cannot: `field_origin` takes a place. [#162]
 BEFORE = {
-    ("BATUMI_ASR", ""): BATUMI_POINT,
-    ("BATUMI_ASR", "Batumi"): BATUMI_POINT,
-    ("BATUMI_ASR", "batumi"): BATUMI_POINT,
-    ("BATUMI_ASR", "Kobuleti"): KOBULETI_POINT,
-    ("BATUMI_ASR", "KOBULETI"): KOBULETI_POINT,
-    ("BATUMI_ASR", "Senaki"): BATUMI_POINT,
-    ("BATUMI_ILS", ""): BATUMI_POINT,
-    ("BATUMI_ILS", "Kobuleti"): KOBULETI_POINT,
-    ("BATUMI_ILS", "Senaki"): BATUMI_POINT,
-    ("BATUMI_APPROACH", ""): BATUMI_POINT,
-    ("BATUMI_APPROACH", "Kobuleti"): KOBULETI_POINT,
-    ("BATUMI_APPROACH", "Senaki"): BATUMI_POINT,
-    # THE ONE THAT IS THE BUG. Same Center, same theatre, forty miles of
-    # difference, and nothing but which arrival the bridge was started with.
-    ("KOBULETI_ILS", ""): KOBULETI_POINT,
-    ("KOBULETI_ILS", "Batumi"): BATUMI_POINT,
-    ("KOBULETI_ILS", "batumi"): BATUMI_POINT,
-    ("KOBULETI_ILS", "Kobuleti"): KOBULETI_POINT,
-    ("KOBULETI_ILS", "Senaki"): KOBULETI_POINT,
+    "Batumi": BATUMI_POINT,
+    "batumi": BATUMI_POINT,
+    "Kobuleti": KOBULETI_POINT,
+    "KOBULETI": KOBULETI_POINT,
+    # NO FIELD -- every Center. It read BATUMI under three procedures and
+    # KOBULETI under the fourth, which is the whole of #160, and it is now
+    # the arrival aerodrome under all of them.
+    "": BATUMI_POINT,
+    # AN AERODROME WITH NO PROJECTED FIX. Falls past the field branch to the
+    # same fallback. Read KOBULETI on a Kobuleti-ILS process and BATUMI on
+    # any other; there is one answer now.
+    "Senaki": BATUMI_POINT,
 }
 
 
@@ -157,25 +171,32 @@ class TheNumberDidNotMove(_Projected):
     self-consistent.
     """
 
-    def test_every_procedure_and_field_resolves_exactly_as_before(self):
-        for (name, field), want in BEFORE.items():
-            with self.subTest(procedure=name, field=field):
-                self.assertEqual(
-                    A.field_origin(getattr(R, name), field).point, want)
+    def test_every_field_resolves_exactly_as_before(self):
+        for field, want in BEFORE.items():
+            with self.subTest(field=field):
+                self.assertEqual(A.field_origin(field).point, want)
 
-    def test_an_unresolvable_field_still_falls_through_to_the_approach(self):
-        """Senaki has no projected fix, so the field branch misses and the old
-        fallback runs -- and calls itself the loaded approach when it does."""
-        got = A.field_origin(R.BATUMI_ASR, "Senaki")
-        self.assertEqual(got.point, A.field_origin(R.BATUMI_ASR, "").point)
-        self.assertEqual(got.why, A.WHY_APPROACH)
+    def test_an_unresolvable_field_still_falls_through(self):
+        """Senaki has no projected fix, so the field branch misses and the
+        fallback runs -- and names the arrival aerodrome when it does."""
+        got = A.field_origin("Senaki")
+        self.assertEqual(got.point, A.field_origin("").point)
+        self.assertEqual(got.why, A.WHY_ARRIVAL)
 
-    def test_a_profile_that_names_nothing_gives_no_origin_and_no_datum(self):
-        class Nothing:
-            beacon = arrival_fix = outer_hold = None
-        got = A.field_origin(Nothing(), "")
-        self.assertIsNone(got.point)
-        self.assertFalse(got)
+    def test_with_nothing_projected_there_is_no_origin_and_no_datum(self):
+        """The empty-table case, which used to be spelt as a profile naming
+        no fixes. There is no profile to name anything now, so the only way
+        to have no datum is to have projected no places -- which is a bridge
+        that started with no sim and no theatre file, and it must render
+        blank rather than guess."""
+        was = dict(A.PROJECTED)
+        A.PROJECTED.clear()
+        try:
+            got = A.field_origin("")
+            self.assertIsNone(got.point)
+            self.assertFalse(got)
+        finally:
+            A.PROJECTED.update(was)
 
 
 # -------------------------------------------------------------------- say it
@@ -202,7 +223,7 @@ class ARangeOnTheAirNamesItsDatum(_Projected):
     """
 
     def scope(self, profile, nm=12.0, named=True):
-        d = A.field_origin(profile, "")
+        d = A.field_origin("")
         return A.Scope("", contacts=[_inbound(profile, nm, d.point)],
                        origin=d.point, datum=d if named else None)
 
@@ -210,7 +231,7 @@ class ARangeOnTheAirNamesItsDatum(_Projected):
         said = assembly.radar_datum(self.scope(R.BATUMI_ASR))
         self.assertIn("MEASURED FROM", said)
         self.assertIn("from Batumi", said)
-        self.assertIn(A.WHY_APPROACH, said)
+        self.assertIn(A.WHY_ARRIVAL, said)
 
     def test_and_an_unnamed_origin_states_nothing_rather_than_guessing(self):
         """A guessed reference is worse than none: it is a real distance to a
@@ -225,12 +246,12 @@ class ARangeOnTheAirNamesItsDatum(_Projected):
         computed against the Scope's origin -- so this is the one place that
         knows both."""
         sc = self.scope(R.BATUMI_ASR)
-        said = A.asr_context(R.BATUMI_ASR, sc, "Sockeye", track="Viper 1-4")
+        said = A.asr_context(_T.flying(R.BATUMI_ASR, "Sockeye"), sc, "Sockeye", track="Viper 1-4")
         self.assertIn("miles from Batumi", said)
 
     def test_and_says_only_the_range_when_the_origin_has_no_name(self):
         sc = self.scope(R.BATUMI_ASR, named=False)
-        said = A.asr_context(R.BATUMI_ASR, sc, "Sockeye", track="Viper 1-4")
+        said = A.asr_context(_T.flying(R.BATUMI_ASR, "Sockeye"), sc, "Sockeye", track="Viper 1-4")
         self.assertIn("miles", said)
         self.assertNotIn("from Batumi", said)
 
@@ -238,7 +259,7 @@ class ARangeOnTheAirNamesItsDatum(_Projected):
         class Nxt:
             name, freq_mhz = "Georgia Center", 139.0
         fix = asr.Position(12.0, 100.0, 5000)
-        d = A.field_origin(R.BATUMI_ASR, "")
+        d = A.field_origin("")
         self.assertIn("12 miles from Batumi",
                       assembly.handoff_phrase(Nxt(), fix, d))
 
@@ -291,7 +312,7 @@ class TheBoardPrintsWhereItMeasuredFrom(_Projected):
     """
 
     def publish(self, datum_named=True):
-        d = A.field_origin(R.BATUMI_ASR, "")
+        d = A.field_origin("")
         # TWO CONTACTS: one the board is working, one nobody is. They are the
         # two references this page has to keep apart.
         loose = dict(_inbound(R.BATUMI_ASR, 30.0, d.point),
@@ -321,7 +342,7 @@ class TheBoardPrintsWhereItMeasuredFrom(_Projected):
         row = self.publish()["board"][0]
         self.assertIsNotNone(row["range_nm"])
         self.assertEqual(row["datum"], {"name": "BATUMI",
-                                        "why": A.WHY_APPROACH})
+                                        "why": A.WHY_ARRIVAL})
 
     def test_the_untracked_contact_is_quoted_off_the_bullseye_and_says_so(self):
         """The one reference on the page that was already half honest: it
@@ -400,11 +421,11 @@ class TheBoardMeasuresFromWhoeverIsWorkingHim(_Projected):
         That is what `scheduler()` publishes, so it is what the board is
         rendered from whenever nobody has just spoken.
         """
-        tick = A.field_origin(R.BATUMI_ILS, "")
+        tick = A.field_origin("")
         contacts = []
         for row, (fld, brg, nm) in zip(board, place):
             lat, lon = geo.project_true(
-                A.field_origin(R.BATUMI_ILS, fld).point, brg, nm)
+                A.field_origin(fld).point, brg, nm)
             contacts.append({"name": row["track"], "label": row["track"],
                              "callsign": "", "type": "F-16C_50",
                              "lat": lat, "lon": lon, "alt_ft": 3000,
@@ -474,7 +495,7 @@ class TheBoardMeasuresFromWhoeverIsWorkingHim(_Projected):
         his man is flying to."""
         row = self.two_seats()["Hoover 1-1"]
         self.assertEqual(row["datum"], {"name": "BATUMI",
-                                        "why": A.WHY_APPROACH})
+                                        "why": A.WHY_ARRIVAL})
         self.assertAlmostEqual(row["range_nm"], 20.0, places=1)
 
     def test_a_seat_nothing_can_resolve_keeps_the_pictures_own_answer(self):
@@ -483,7 +504,7 @@ class TheBoardMeasuresFromWhoeverIsWorkingHim(_Projected):
         so that is what it must go on saying."""
         row = self.two_seats(owner="")["Quiver 7-1"]
         self.assertEqual(row["datum"], {"name": "BATUMI",
-                                        "why": A.WHY_APPROACH})
+                                        "why": A.WHY_ARRIVAL})
         self.assertAlmostEqual(row["range_nm"], 20.4, places=1)
 
     def test_and_a_row_with_no_position_to_re_measure_is_not_RELABELLED(self):
@@ -495,7 +516,7 @@ class TheBoardMeasuresFromWhoeverIsWorkingHim(_Projected):
                            place=[])["Quiver 7-1"]
         self.assertIsNone(row["range_nm"])
         self.assertEqual(row["datum"], {"name": "BATUMI",
-                                        "why": A.WHY_APPROACH})
+                                        "why": A.WHY_ARRIVAL})
 
 
 if __name__ == "__main__":

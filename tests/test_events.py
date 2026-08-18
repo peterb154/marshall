@@ -55,7 +55,7 @@ class TestThePictureCarriesIt(unittest.TestCase):
 
 class TestTheEventOutranksTheGuess(unittest.TestCase):
     def _ctx(self, scope):
-        return A.asr_context(T.the_arrival(), scope, "Falcon 1-1", "362nd_sockeye")
+        return A.asr_context(T.flying(T.the_arrival(), "Falcon 1-1"), scope, "Falcon 1-1", "362nd_sockeye")
 
     def test_a_landed_aeroplane_gets_no_guidance(self):
         self.assertEqual(self._ctx(DOWN), "")
@@ -130,17 +130,17 @@ class TestZeroIsTheCommonestGroundSpeed(unittest.TestCase):
 
     def test_a_parked_aeroplane_is_left_alone(self):
         self.assertEqual(
-            A.asr_context(T.the_arrival(), self.RAMP, "", "362nd_sockeye"), "")
+            A.asr_context(T.flying(T.the_arrival(), "362nd_sockeye"), self.RAMP, "", "362nd_sockeye"), "")
 
     def test_a_taxiing_one_still_is(self):
         rolling = self.RAMP.replace("0 knots", "15 knots")
         self.assertEqual(
-            A.asr_context(T.the_arrival(), rolling, "", "362nd_sockeye"), "")
+            A.asr_context(T.flying(T.the_arrival(), "362nd_sockeye"), rolling, "", "362nd_sockeye"), "")
 
     def test_and_flying_slow_and_low_is_still_flying(self):
         """Over the threshold at a hundred and forty knots is not parked."""
         slow = self.RAMP.replace("0 knots", "140 knots")
-        self.assertTrue(A.asr_context(T.the_arrival(), slow, "", "362nd_sockeye"))
+        self.assertTrue(A.asr_context(T.flying(T.the_arrival(), "362nd_sockeye"), slow, "", "362nd_sockeye"))
 
 
 class TestATouchAndGoIsNotALanding(unittest.TestCase):
@@ -233,7 +233,7 @@ class TestDownIsNotAGuessAnyMore(unittest.TestCase):
                "116 radial, 45 ft, heading 130, 5 knots")
 
     def _pos(self, scope):
-        return A.radar_fix_by_track(scope, "362nd_sockeye", T.the_arrival())
+        return A.radar_fix_by_track(scope, "362nd_sockeye", A.field_of(T.the_arrival()))
 
     def test_still_flying_in_the_flare(self):
         self.assertFalse(

@@ -129,7 +129,7 @@ def _correlated(session_id: str) -> dict:
 
 
 def fetch_radar(session_id: str = "", url: str = RADAR_URL,
-                timeout: float = 5.0, profile=None, field: str = "") -> Scope:
+                timeout: float = 5.0, field: str = "") -> Scope:
     """Grab the current scope (tagged with this session's radar-identified
     callsigns) to hand the controller with the pilot's call. Best-effort -- a
     radar hiccup must not eat the transmission."""
@@ -149,14 +149,20 @@ def fetch_radar(session_id: str = "", url: str = RADAR_URL,
     # The fallback stays for a bridge with no DSN -- a laptop, the dry-run
     # tools -- and for a database that is unreachable while the director is not.
     # It is a second SOURCE, not a second copy: the same rows either way.
-    # THE SPEAKING CONTROLLER'S FIELD, not the profile's. See `field_origin`:
-    # without it Kobuleti's controllers measure every range from Batumi.
+    # THE SPEAKING CONTROLLER'S FIELD. See `field_origin`: without it Kobuleti's
+    # controllers measure every range from Batumi.
+    #
+    # UNCONDITIONAL NOW. It read `if profile is not None else Datum()`, so a
+    # caller with no loaded approach got no origin at all and every range fell
+    # back to the director's -- and with the process-wide arrival gone that
+    # would have been every caller. A datum is a place; asking for one needs a
+    # field, not a procedure. [#162]
     #
     # AND THE REFERENCE COMES BACK WITH IT. Asked as a `Datum` rather than as a
     # bare point, so everything downstream of this line -- the board, the RADAR
     # block, the handoff phrase -- can name what it measured from instead of
     # working it out again from data it does not have. [#160]
-    datum = field_origin(profile, field) if profile is not None else Datum()
+    datum = field_origin(field)
     origin = datum.point
     got = None
     try:
@@ -333,7 +339,11 @@ def mission_instance(default: str = "default") -> str:
               f"flights will share the '{default}' bucket with previous sorties",
               flush=True)
         return default
-APPROACH_NAME = ""              # set when the active flight plan is loaded
+# NO `APPROACH_NAME`. It was a module global holding the key of the arrival
+# this process was started on, and it had seven readers -- including one that
+# wrote it into a pilot's AGREED clearance as a default. A process does not fly
+# an approach; an aeroplane does, and `flights.cleared_approach` is where that
+# is written down. [#162]
 
 # What a mission commander is, as opposed to an air traffic controller. Handed
 # to the agent only when it answers on the overlord's frequency, because the two
@@ -445,73 +455,61 @@ def flight_handoff(flight_id: int, to: str, base: str = BASE_URL) -> dict:
 
 
 
-def load_and_push_plate(profile, base: str = BASE_URL):
-    """Seed this field's approach + a flight plan that flies it from route.py
-    (idempotent bootstrap), then generate the plate from the ACTIVE flight plan's
-    approach -- the DB is the source of truth, route.py the seed -- and push it as
-    the 'plate' prompt part. Returns the profile the ATC should run (the loaded
-    flight plan's approach, or the route.py fallback), so the separation Controller
-    and the plate share one profile."""
+def load_and_push_plates(base: str = BASE_URL):
+    """Publish EVERY procedure this map offers, and brief the controller on all.
+
+    IT TOOK A PROFILE AND PUSHED ONE, and that argument was the last thing
+    holding the process-wide arrival up. The radio was briefed on the approach
+    it happened to be started with, so it could work exactly one:
+
+        "the radio should not have a default appproach it was loaded with.
+         Approaches should be assigned on a per flight basis at runtim ... and
+         also make sure that the radio/srs is completely flexible to work any
+         approach"
+
+    It is, when it has been briefed on all of them. A field OFFERS a set --
+    `theatre.approaches_now()` -- and Approach issues ONE of them to ONE
+    aeroplane, which `flights.cleared_approach` records and `hydrate` restores.
+    Nothing here chooses. [#162]
+
+    Returns the keyed procedures, so the caller has the map's offer and not an
+    arrival. It used to return "the profile the ATC should run", and there is
+    no such object: `Controller._pro(ac)` answers that per aeroplane and
+    answers None for an aeroplane nobody has cleared, which is the truth.
+    """
     from marshall.atc import briefing
     from marshall.core import route as R
     from marshall.core import theatre as _theatre
 
-    # WHICH WORLD, asked once. The key this is stored under used to be the
+    # WHICH WORLD, asked once. The key each is stored under used to be the
     # literal "batumi-asr", so a Nevada bridge would have overwritten the
     # Caucasus approach in the director's table with Tonopah's numbers under
     # Batumi's name -- and every later reader would have believed it.
     _th = _theatre.current()
+    procedures = _theatre.approaches_now()
     try:
-        _put_json(f"{base}/approaches/{_th.approach_key}",
-                  {"field": profile.aerodrome.name,
-                   "data": R.profile_to_dict(profile)})
-        # THE THEATRE ALREADY SAID WHICH PROCEDURE. It is not asked for back.
-        #
-        #     "whyt would the bridge load a default approach column?? doesnt
-        #      make sense"
-        #
-        # It did not make sense. This wrote `_th.approach_key` onto a
-        # flight-plan row with `active=true`, read the row back, and rebuilt the
-        # profile from it -- a round trip with itself for a value it was holding
-        # the whole time. The only thing that trip added was a chance to come
-        # back different, which is exactly what happened: `_approach_named`
-        # matched on a prefix and returned the surveillance approach for a plan
-        # filed as `batumi-ils`.
-        #
-        # WHAT THE ROW COST A PILOT. `active` is not a fact about a flight plan
-        # -- it is this bridge's note-to-self about which arrival it is running
-        # -- and parking it there made deleting a route he had finished with
-        # impossible:
-        #
-        #     "362nd-kobuleti-batumi is the ACTIVE plan"
-        #     "i dont understand this active business. sounds like
-        #      mis-alignment between you and me"
-        #
-        # There was. A flight plan is a route somebody filed. Nothing else.
-        global APPROACH_NAME
-        APPROACH_NAME = _th.approach_key or APPROACH_NAME
-        # NOT "loaded flight plan X". It loads no plan and never did -- that
-        # line named the theatre's `bootstrap_plan` string, which since the
-        # round trip went away is not even a row that has to exist. It printed
-        # the name of a plan that had just been deleted, which is exactly the
-        # sort of true-looking untruth this file keeps having to unpick.
-        print(f"  approach: {APPROACH_NAME} (from the theatre)", flush=True)
-        # AND SAY WHAT IS ACTUALLY LOADED, not merely what was asked for. One
-        # line, printed once, and it is the difference between an hour of
-        # confusion and reading the top of the log.
-        print(f"  flying: {profile.kind.upper()} runway {profile.runway}, "
-              f"{profile.guidance}, {profile.controller}", flush=True)
-        _want = (APPROACH_NAME or "").rsplit("-", 1)[-1].lower()
-        if _want and _want != (profile.kind or "").lower():
-            print(f"  !! THE THEATRE ASKED FOR {_want.upper()} AND THIS IS A "
-                  f"{profile.kind.upper()} -- every number will be real and "
-                  f"belong to the wrong procedure.", flush=True)
+        # ALL OF THEM, EVERY START. One row was written and the other three
+        # were whatever a previous run had left, so the table a controller
+        # looks a procedure up in was a union of however many shells had
+        # started the radio. Publishing the whole offer makes the table a
+        # statement about the MAP rather than a log of what has been selected.
+        for _key, _p in sorted(procedures.items()):
+            _put_json(f"{base}/approaches/{_key}",
+                      {"field": _p.aerodrome.name,
+                       "data": R.profile_to_dict(_p)})
+        print(f"  published {len(procedures)} approaches: "
+              f"{', '.join(sorted(procedures))}", flush=True)
+        # NO "approach: X (from the theatre)" LINE, because there is no such
+        # fact to print. It named `_th.approach_key`, and the mismatch warning
+        # under it -- "THE THEATRE ASKED FOR ILS AND THIS IS AN ASR" -- was a
+        # guard on a round trip between the process and itself. Neither has a
+        # subject once nothing process-wide holds an arrival.
     except (urllib.error.URLError, TimeoutError, OSError, ValueError,
             KeyError) as e:
         print(f"  !! approach bootstrap: {e}", flush=True)
 
     try:
-        n = push_fixes(base, profile)
+        n = push_fixes(base, procedures.values())
         # NOT "projected by the sim" any more, and the wording matters: the
         # published fixes carry their coordinates in the theatre file and only
         # the sortie's own turning points still need asking for. A log line
@@ -529,7 +527,7 @@ def load_and_push_plate(profile, base: str = BASE_URL):
     # the circuit. Derived from the theatre, an aerodrome gets airspace by
     # existing, and forty of them cost nothing to add.
     try:
-        n = push_sectors(base, profile)
+        n = push_sectors(base)
         print(f"  pushed {n} controller volumes (derived from the theatre)",
               flush=True)
     except Exception as e:
@@ -543,7 +541,7 @@ def load_and_push_plate(profile, base: str = BASE_URL):
     # accident, and #162 removed that channel without replacing it — so a reset
     # database had a controller inventing frequencies again.
     try:
-        n = push_stations(base, profile)
+        n = push_stations(base)
         print(f"  pushed {n} controller seats (the map's station list)",
               flush=True)
     except Exception as e:
@@ -552,11 +550,12 @@ def load_and_push_plate(profile, base: str = BASE_URL):
               flush=True)
 
     try:
-        _put_json(f"{base}/prompts/plate", {"body": briefing.plate(profile)})
-        print(f"  pushed plate for {profile.controller} to the director", flush=True)
+        _put_json(f"{base}/prompts/plate", {"body": briefing.plates(procedures)})
+        print(f"  pushed a plate for each of {len(procedures)} procedures "
+              f"to the language brain", flush=True)
     except (urllib.error.URLError, TimeoutError, OSError) as e:
         print(f"  !! could not push plate: {e}", flush=True)
-    return profile
+    return procedures
 
 
 # HOW LONG A BOARD ENTRY MAY SURVIVE WITHOUT EVIDENCE.
@@ -1263,7 +1262,19 @@ def aircraft_type_on_scope(scope: str, cs: str) -> str:
     return ""
 
 
-def true_heading(grid_hdg: float, profile) -> float:
+def field_of(procedure) -> str:
+    """The aerodrome a procedure arrives at, BY NAME. "" when there is none.
+
+    The join between "which approach is he flying" and the handful of things
+    that want a place rather than a procedure -- grid convergence, a datum, a
+    seat lookup. It exists so those callers take a field and the caller who
+    has an aeroplane does the conversion once, visibly, instead of each of
+    them reaching into a profile for the one attribute it needed. [#162]
+    """
+    return getattr(getattr(procedure, "aerodrome", None), "name", "") or ""
+
+
+def true_heading(grid_hdg: float, field: str = "") -> float:
     """A radar heading, out of the sim's grid frame and into true.
 
     DCS reports an aircraft's heading in its own x/z grid, which is a transverse
@@ -1278,8 +1289,23 @@ def true_heading(grid_hdg: float, profile) -> float:
     sweep fly one frame while the engine graded it in another, and the dither
     count went from 1 to 118 in a single run, which is the sound of that
     mistake.
+
+    IT TOOK A PROFILE AND READS A FIELD. Convergence is a property of WHERE ON
+    THE MAP you are -- it is 0.0 at Batumi's own reference and 5.74 up the
+    coast -- and `Field.grid_convergence_deg` is where it is declared;
+    `ApproachProfile` carried a copy because the process had a profile handy
+    and no field. So which of two numbers a radar heading was corrected by
+    depended on the arrival the radio was started with, and both are real
+    surveyed values, which is why nothing looked wrong. [#162]
+
+    No field named means the sortie's arrival aerodrome, the same rule and for
+    the same reason as `field_origin`: a fact about the map, identical on every
+    restart, rather than a fact about a selection.
     """
-    return (grid_hdg + getattr(profile, "grid_convergence_deg", 0.0)) % 360
+    from marshall.core import theatre as _t
+    th = _t.current()
+    f = th.field_named(field or th.arrival)
+    return (grid_hdg + getattr(f, "grid_convergence_deg", 0.0)) % 360
 
 
 # The same line, found by the UNIT NAME instead of the callsign tag. The tag is
@@ -1298,7 +1324,7 @@ _FIX_BY_TRACK = re.compile(
 _range_radial = _geo.range_bearing_true
 
 
-def radar_fix_by_track(scope: str, track: str, profile=None) -> object | None:
+def radar_fix_by_track(scope: str, track: str, field: str = "") -> object | None:
     """Where he is, found by the TRACK the identity ladder resolved.
 
     The callsign lookup below searches the scope for a bracketed tag, which is
@@ -1331,7 +1357,7 @@ def radar_fix_by_track(scope: str, track: str, profile=None) -> object | None:
         nm, radial = _range_radial(scope.origin, c["lat"], c["lon"])
         h = c.get("heading") or 0.0
         return asr.Position(nm, radial, int(c.get("alt_ft") or 0),
-                            true_heading(h, profile) if profile else h,
+                            true_heading(h, field),
                             c.get("speed_kt") or 0.0)
     want = _key_name(track)
     for name, nm, radial, alt, hdg, kt in _FIX_BY_TRACK.findall(
@@ -1340,7 +1366,7 @@ def radar_fix_by_track(scope: str, track: str, profile=None) -> object | None:
             continue
         h = float(hdg) if hdg else 0.0
         return asr.Position(float(nm), float(radial), int(alt.replace(",", "")),
-                            true_heading(h, profile) if profile else h,
+                            true_heading(h, field),
                             speed_kt=float(kt) if kt else 0.0,
                             type=aircraft_type_on_scope(scope, "") or "")
     return None
@@ -1372,7 +1398,7 @@ def said_who(transcript: str, names: list[str]) -> bool:
 _key_name = _names.squash
 
 
-def radar_fix(scope: str, cs: str, profile=None) -> object | None:
+def radar_fix(scope: str, cs: str, field: str = "") -> object | None:
     """Range, radial, altitude and heading of the track bound to this callsign.
 
     Only radar-IDENTIFIED contacts (the [tagged] ones) -- guidance computed from
@@ -1412,7 +1438,7 @@ def radar_fix(scope: str, cs: str, profile=None) -> object | None:
             nm, radial = _range_radial(scope.origin, hit["lat"], hit["lon"])
             h = hit.get("heading") or 0.0
             return asr.Position(nm, radial, int(hit.get("alt_ft") or 0),
-                                true_heading(h, profile) if profile else h,
+                                true_heading(h, field),
                                 hit.get("speed_kt") or 0.0)
     # THE AEROPLANE, NOT THE FLIGHT. This matched on `.flight`, and Falcon 1-1
     # and Falcon 1-2 ARE THE SAME FLIGHT -- so with two pilots up, each one's
@@ -1454,7 +1480,7 @@ def radar_fix(scope: str, cs: str, profile=None) -> object | None:
             h = float(hdg) if hdg else 0.0
             return asr.Position(float(nm), float(radial),
                                 int(alt.replace(",", "")),
-                                true_heading(h, profile) if profile else h,
+                                true_heading(h, field),
                                 speed_kt=float(kt) if kt else 0.0,
                                 type=aircraft_type_on_scope(scope, cs))
     return None
@@ -1473,7 +1499,7 @@ VECTOR_CHANGE_DEG = 12
 VECTOR_MIN_SEC = 20.0
 
 
-def radar_fixes(scope: str, profile=None, ctl=None, picture=None
+def radar_fixes(scope: str, field: str = "", ctl=None, picture=None
                 ) -> list[tuple[str, object]]:
     """Every aircraft we can talk down, as (callsign, Position).
 
@@ -1517,7 +1543,7 @@ def radar_fixes(scope: str, profile=None, ctl=None, picture=None
             # three miles off Kobuleti reads as twenty-five miles out, and
             # `departure -> center` fired while he was still in the circuit.
             his = picture(cs) if picture is not None else scope
-            fix = radar_fix_by_track(his, track, profile)
+            fix = radar_fix_by_track(his, track, field)
             if fix is not None:
                 out.append((cs, fix, his))
         return out
@@ -1529,7 +1555,7 @@ def radar_fixes(scope: str, profile=None, ctl=None, picture=None
         h = float(hdg) if hdg else 0.0
         out.append((tag, asr.Position(float(nm), float(radial),
                                       int(alt.replace(",", "")),
-                                      true_heading(h, profile) if profile else h,
+                                      true_heading(h, field),
                                       speed_kt=float(kt) if kt else 0.0),
                     scope))
     return out
@@ -1540,8 +1566,16 @@ GROUND_ALT_FT = 200
 GROUND_SPEED_KT = 60
 
 
-def asr_context(profile, scope: str, cs: str, track: str = "") -> str:
+def asr_context(ctl, scope: str, cs: str, track: str = "") -> str:
     """Radar guidance for a vectored approach -- the controller's next call.
+
+    TAKES THE CONTROLLER AND ASKS HIM, rather than taking a procedure. It was
+    handed the bridge's loaded approach, so every aeroplane on the frequency
+    was vectored down one arrival's geometry -- and on a map with two fields
+    that is a real course to a real runway forty miles from where he is going.
+    `procedure_for` is the same accessor `_pro` is, reached by callsign, and
+    it answers None for a man nobody has cleared: `may_vector(None)` is False,
+    so he gets no vectors, which is the truth rather than a guess. [#162]
 
     This is what replaces the deterministic engine for a single ship. The engine
     is blind and sequences aircraft against each other; on an ASR with one
@@ -1552,6 +1586,12 @@ def asr_context(profile, scope: str, cs: str, track: str = "") -> str:
     approach.
     """
     from marshall.atc import asr
+    # BY CALLSIGN, OR BY TRACK WHEN THERE IS NO CALLSIGN. The same argument
+    # `radar_fix_by_track` makes one function down: a label can be stale,
+    # mis-heard or not yet applied, and the aeroplane is the same aeroplane
+    # either way. Without the second half an aircraft radar holds but nobody
+    # has named gets no guidance at all.
+    profile = ctl.procedure_for(cs or track)
     # DOES THIS PROCEDURE GET VECTORS AT ALL -- which is not the same question
     # as whether he is TALKED DOWN, and one flag was answering both.
     #
@@ -1570,7 +1610,8 @@ def asr_context(profile, scope: str, cs: str, track: str = "") -> str:
     # Track first: this is the guidance a pilot actually hears, and it was
     # silently unavailable for a whole approach because the label had gone
     # stale while radar could see him perfectly.
-    pos = radar_fix_by_track(scope, track, profile) or radar_fix(scope, cs, profile)
+    _fld = field_of(profile)
+    pos = radar_fix_by_track(scope, track, _fld) or radar_fix(scope, cs, _fld)
     if pos is None:
         return ""
     # ON THE GROUND IS NOT A PHASE OF FLIGHT.
@@ -1940,8 +1981,14 @@ def reconcile(directive: str, stack: str, vectoring: str, g=None,
 # it once the geometry has recognised he started.
 
 
-def flying_the_missed(bridge, cs: str, pos, profile, ctl=None) -> bool:
+def flying_the_missed(bridge, cs: str, pos, ctl=None) -> bool:
     """Maintain and read the missed-approach latch for one aircraft.
+
+    THE PROCEDURE IS HIS. Both numbers below -- the altitude that releases
+    the latch and the range that does -- come off the approach he is flying,
+    and this used to be handed the bridge's. An aeroplane nobody has cleared
+    is not flying a missed approach off anybody's plate, so with no procedure
+    the latch simply does not engage. [#162]
 
     Set when the geometry recognises the procedure has begun, or when the pilot
     has SAID he is going around and the controller recorded it -- the two ways a
@@ -1950,8 +1997,9 @@ def flying_the_missed(bridge, cs: str, pos, profile, ctl=None) -> bool:
     a worse bug than the one it fixes.
     """
     key = ctl._resolve(cs) if ctl is not None else cs
-    if (pos.alt_ft >= profile.missed_climb_ft
-            or pos.range_nm > profile.final_intercept_nm):
+    profile = ctl.procedure_for(cs) if ctl is not None else None
+    if profile is None or (pos.alt_ft >= profile.missed_climb_ft
+                           or pos.range_nm > profile.final_intercept_nm):
         bridge.flying_missed.discard(key)
         return False
     if ctl is not None:
@@ -2377,6 +2425,52 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
         # "not provided" made this classify a second time, which put a live
         # Bedrock call into the offline test suite and took it from six seconds
         # to fifty-four.
+        # WHAT THE BOARD SAYS ABOUT HIM, REFRESHED BEFORE ANYTHING MAY GIVE
+        # UP. This block sat BELOW the early return above, so a transmission
+        # the classifier could not read -- or a classifier that simply failed,
+        # which returns None and is a real answer meaning "we do not know" --
+        # threw away his cruise level, whether he had agreed his clearance,
+        # and WHICH APPROACH HIS CLEARANCE NAMES. None of the three is a fact
+        # about what he just said; all three are read off `flights`.
+        #
+        # It was invisible while a process-wide arrival existed, because the
+        # third one had a fallback that was always a real procedure. With #162
+        # it is load-bearing: an aeroplane whose approach never got assigned
+        # has none at all, so the talkdown does not run and the guidance is
+        # silently empty. A misheard word must not cost a man his clearance.
+        if known:
+            _plan = _cleared_plan_now(known)
+            _cl = _plan.get("cruise_ft")
+            if _cl:
+                ctl.note_cleared_level(known, int(_cl))
+            # ...AND WHETHER HE HAS AGREED IT, which is the same fact-from-the-
+            # board as the level above and was missing for the same reason. The
+            # engine never issued the clearance, so it never knew one existed --
+            # and `request_taxi` refuses only on `clearance_agreed is False`, a
+            # value nothing in a live sortie ever wrote. #135 was therefore
+            # unreachable outside a unit test that set the field by hand: a
+            # ghost asked Ground for taxi on a clearance he had not read back
+            # and was cleared to the runway.
+            #
+            # `_plan` is non-empty only when a clearance has actually been
+            # ISSUED -- `_cleared_plan_now` returns {} without a level or a
+            # squawk -- so the three states stay three: no plan leaves the
+            # engine's None, which never blocks anybody.
+            if _plan:
+                ctl.note_clearance_agreed(known, bool(_plan.get("acknowledged")))
+            # ...AND WHICH APPROACH HIS CLEARANCE NAMES. #2, and it is the
+            # oldest thing on the list: `Controller` held ONE profile and every
+            # arrival fact came off it -- the beacon, the stack, the runway, the
+            # minima, the missed approach -- so a flight recovering at Nellis
+            # was given Tonopah's numbers whenever the bridge had been started
+            # with Tonopah's. Real numbers, real runway, wrong airport.
+            _ap = (_plan.get("approach") or "").strip().lower()
+            if _ap:
+                _pro = _approach_named(_ap)
+                if _pro is not None:
+                    ctl.assign_approach(known, _pro, named=_ap)
+
+
         if intent is _UNASKED:
             intent = bedrock_intent.classify(transcript)
         if intent is None:
@@ -2449,38 +2543,6 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
         # engine's, `None` means "not in the stack", and `_free_slot` depends on
         # it -- a cruise level written there would become a holding slot. See
         # `Aircraft.governing_ft` for the order between them.
-        if known:
-            _plan = _cleared_plan_now(known)
-            _cl = _plan.get("cruise_ft")
-            if _cl:
-                ctl.note_cleared_level(known, int(_cl))
-            # ...AND WHETHER HE HAS AGREED IT, which is the same fact-from-the-
-            # board as the level above and was missing for the same reason. The
-            # engine never issued the clearance, so it never knew one existed --
-            # and `request_taxi` refuses only on `clearance_agreed is False`, a
-            # value nothing in a live sortie ever wrote. #135 was therefore
-            # unreachable outside a unit test that set the field by hand: a
-            # ghost asked Ground for taxi on a clearance he had not read back
-            # and was cleared to the runway.
-            #
-            # `_plan` is non-empty only when a clearance has actually been
-            # ISSUED -- `_cleared_plan_now` returns {} without a level or a
-            # squawk -- so the three states stay three: no plan leaves the
-            # engine's None, which never blocks anybody.
-            if _plan:
-                ctl.note_clearance_agreed(known, bool(_plan.get("acknowledged")))
-            # ...AND WHICH APPROACH HIS CLEARANCE NAMES. #2, and it is the
-            # oldest thing on the list: `Controller` held ONE profile and every
-            # arrival fact came off it -- the beacon, the stack, the runway, the
-            # minima, the missed approach -- so a flight recovering at Nellis
-            # was given Tonopah's numbers whenever the bridge had been started
-            # with Tonopah's. Real numbers, real runway, wrong airport.
-            _ap = (_plan.get("approach") or "").strip().lower()
-            if _ap:
-                _pro = _approach_named(_ap)
-                if _pro is not None:
-                    ctl.assign_approach(known, _pro, named=_ap)
-
         # ONE RADIO IS ONE AEROPLANE. Whose call this is comes from the GUID
         # that keyed the mic, never from what Whisper made of the words.
         #
@@ -2721,10 +2783,10 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
         # bridge's profile put an aeroplane recovering to one field at a
         # distance measured from the other. Twenty-two miles of error at
         # Kobuleti and Batumi, quoted to a pilot as fact. [#150]
-        _fix_pro = ctl.procedure_for(intent.callsign)
-        fix = radar_fix_by_track(scope, track, _fix_pro) if track else None
+        _fix_fld = field_of(ctl.procedure_for(intent.callsign))
+        fix = radar_fix_by_track(scope, track, _fix_fld) if track else None
         if fix is None:
-            fix = radar_fix(scope, intent.callsign, _fix_pro)
+            fix = radar_fix(scope, intent.callsign, _fix_fld)
         # WHERE HE IS IN THE SORTIE, worked out before anything acts on it.
         # `settle` used to derive this, and `settle` runs after this function --
         # so the half of the turn that mutates the engine ran first. See
@@ -2787,8 +2849,8 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
             # approach he was cleared for, asked here of the bridge's. [#150]
             _pro = ctl.procedure_for(intent.callsign)
             g = _asr.guide(fix, _pro,
-                           on_missed=flying_the_missed(bridge, intent.callsign, fix,
-                                                       _pro, ctl))
+                           on_missed=flying_the_missed(bridge, intent.callsign,
+                                                       fix, ctl))
             if g.established and ctl.seen_on_final(intent.callsign):
                 print(f"  .. {intent.callsign} is already on final per radar; "
                       "not stacking him", flush=True)
@@ -3263,7 +3325,7 @@ def a_fresh_offer(handed_off: dict, cs: str, station) -> bool:
     return bool(name) and handed_off.get(cs) != name
 
 
-def his_station(bridge, ctl, profile, cs: str, fallback_hz: float = 0.0):
+def his_station(bridge, ctl, cs: str, fallback_hz: float = 0.0):
     """WHO is working this aeroplane, off the frequency he checked in on.
 
     The same lookup `watching_him` does to find `me`, extracted because the
@@ -3284,11 +3346,10 @@ def his_station(bridge, ctl, profile, cs: str, fallback_hz: float = 0.0):
     # has no radios for. `profile` stays the fallback for an aeroplane nobody
     # has cleared. [#150]
     return _theatre.station_on(hz / 1_000_000,
-                               procedure=_controller.procedure_of(
-                                   ctl.aircraft.get(ctl._resolve(cs)), profile))
+                               procedure=ctl.procedure_for(cs))
 
 
-def seat_named(name: str, profile=None):
+def seat_named(name: str):
     """The station with this NAME, or None.
 
     `his_station` answers the same question from a FREQUENCY, which is right
@@ -3310,7 +3371,7 @@ def seat_named(name: str, profile=None):
     return None
 
 
-def his_field(bridge, ctl, profile, cs: str, fallback_hz: float = 0.0) -> str:
+def his_field(bridge, ctl, cs: str, fallback_hz: float = 0.0) -> str:
     """Which AERODROME is working this aeroplane.
 
     Off the frequency he checked in on, which is the only thing that says whose
@@ -3318,11 +3379,11 @@ def his_field(bridge, ctl, profile, cs: str, fallback_hz: float = 0.0) -> str:
     one level up. A role is unique within an aerodrome and not across one, and
     so is a beacon.
     """
-    st = his_station(bridge, ctl, profile, cs, fallback_hz)
+    st = his_station(bridge, ctl, cs, fallback_hz)
     return getattr(st, "field", "") if st is not None else ""
 
 
-def final_channel(bridge, ctl, profile, cs: str, fallback_hz: float = 0.0) -> float:
+def final_channel(bridge, ctl, cs: str, fallback_hz: float = 0.0) -> float:
     """WHICH FREQUENCY THIS MAN'S FINAL IS FLOWN ON. His, not the thread's.
 
     One controller, one channel: the conversation, the vectors and the mile
@@ -3348,9 +3409,8 @@ def final_channel(bridge, ctl, profile, cs: str, fallback_hz: float = 0.0) -> fl
     Falls back to the frequency he checked in on, which is what a controller
     with no better answer should use and is what this thread did before.
     """
-    pro = _controller.procedure_of(
-        ctl.aircraft.get(ctl._resolve(cs)) if cs else None, profile)
-    fld = his_field(bridge, ctl, pro, cs, fallback_hz)
+    pro = ctl.procedure_for(cs) if cs else None
+    fld = his_field(bridge, ctl, cs, fallback_hz)
     role = "approach" if getattr(pro, "guidance", "") == "talkdown" else "tower"
     seats = _theatre.seats_now(pro)
     st = _stations.role_at(seats, role, fld) if fld else None
@@ -3364,7 +3424,7 @@ def final_channel(bridge, ctl, profile, cs: str, fallback_hz: float = 0.0) -> fl
     return st.freq_mhz * 1_000_000
 
 
-def watching_him(bridge, ctl, profile, cs, pos, scope, fallback_hz=0.0,
+def watching_him(bridge, ctl, cs, pos, scope, fallback_hz=0.0,
                  session_id: str = ""):
     """Who should have this aeroplane, and -- when nobody -- WHY NOT.
 
@@ -3410,7 +3470,7 @@ def watching_him(bridge, ctl, profile, cs, pos, scope, fallback_hz=0.0,
     # coming from the bridge. It reaches `station_on` (which asks it whether
     # the procedure staffs the ladder at all) and `next_controller` (which asks
     # it the talkdown question). [#150]
-    _pro = _controller.procedure_of(who, profile)
+    _pro = ctl._pro(who)
     me = _theatre.station_on(hz / 1_000_000, procedure=_pro)
     phase = getattr(who, "sortie_phase", "") or ""
     if me is None:
@@ -3804,7 +3864,7 @@ def filed_plan_rows() -> list[dict]:
     return list(_filed["rows"])                # type: ignore[arg-type]
 
 
-def whisper_vocabulary(bridge, profile, roster=None) -> str:
+def whisper_vocabulary(bridge, roster=None) -> str:
     """The priming text for the transcriber, from what is actually on the air.
 
     Rebuilt as radios identify themselves, because the callsigns are the half
@@ -3854,7 +3914,7 @@ def whisper_vocabulary(bridge, profile, roster=None) -> str:
                 spoken.append(C.parse(cs).spoken)
             except Exception:
                 spoken.append(cs)
-    stations = [s.name for s in _theatre.seats_now(profile)]
+    stations = [s.name for s in _theatre.seats_on_the_air()]
     # THE LOADED THEATRE'S FIXES. This primed Whisper with `core.route`'s --
     # the Caucasus strike route -- whatever map was up, so on Nevada the
     # recogniser was told to expect INGRESS and TSUTSNVATI and never NELLIS or
@@ -3866,8 +3926,7 @@ def whisper_vocabulary(bridge, profile, roster=None) -> str:
     # fact leaking into a theatre-neutral path; the theatre knows its own
     # arrival field and an empty string primes nothing rather than the wrong
     # thing.
-    field = (getattr(getattr(profile, "aerodrome", None), "name", "")
-             or _th.arrival or "")
+    field = _th.arrival or ""
     return stt.domain_prompt(stations, fixes, spoken, field, plan_labels())
 
 
@@ -3890,7 +3949,11 @@ PROJECTED: dict[str, tuple] = {}
 # board is quoted off the bullseye precisely BECAUSE no controller owns him.
 WHY_DESTINATION = "his destination"      # the field his plan ends at
 WHY_FIELD = "his field"                  # the aerodrome of the speaking seat
-WHY_APPROACH = "the loaded approach"     # ...whatever the bridge was started on
+# THE FIELD THE SORTIE RECOVERS AT, and it replaces "the loaded approach" --
+# whatever arrival the process happened to be started on. Same shape of answer,
+# a fact about the MAP rather than about a selection, so it is the same on every
+# restart and from every shell. See `field_origin`. [#160, #162]
+WHY_ARRIVAL = "the arrival field"
 WHY_BULLSEYE = "nobody is working him"   # display only, never spoken
 WHY_NONE = ""                            # and a blank renders blank
 
@@ -3966,12 +4029,13 @@ def datum_of(scope) -> dict | None:
     return (d.published() or None) if d else None
 
 
-def field_origin(profile, field: str = "") -> Datum:
-    """Where THIS controller measures from, AND WHY.
+def field_origin(field: str = "") -> Datum:
+    """Where THIS controller measures from, AND WHY. A FIELD, never a procedure.
 
-    The beacon when the field has one, because that is the published reference
-    every range on the plate is quoted against; the arrival fix otherwise. Not a
-    module constant, and not the director's -- see `Scope`.
+    His own aerodrome when the caller knows it; the sortie's arrival field
+    otherwise, because a controller with no field of his own -- a Center -- is
+    still working traffic that is going somewhere. Not a module constant, and
+    not the director's -- see `Scope`.
 
     `field` IS WHICH AERODROME IS ASKING, and without it every controller in the
     theatre measured from the profile's beacon -- which is Batumi's. That was
@@ -3990,13 +4054,24 @@ def field_origin(profile, field: str = "") -> Datum:
     for `.point`; a caller that is going to SHOW or SAY the number now has what
     it needs to name it. [#160]
 
-    THE CHOICE ITSELF IS UNCHANGED, deliberately. His own field first, then the
-    loaded approach's beacon -- the fallback nobody chose, which now prints its
-    own name instead of hiding in the arithmetic. `WHY_DESTINATION` is what a
-    controller working an aeroplane should get (the field HE is going to,
-    `legs[-1]` of his plan) and is not wired here: choosing differently MOVES A
-    NUMBER, `CENTER_NM` is computed against this same origin, and that is a
-    ghost flight's worth of verification and its own commit.
+    THE FALLBACK NO LONGER COMES OFF AN APPROACH, and that is this function's
+    half of #162. It took a `profile` and walked its aerodrome, arrival fix and
+    outer hold -- so a Center measured from whichever arrival the process had
+    been started on, and the number moved forty miles when somebody restarted
+    the radio from a different shell. Nothing chose it and nothing said so.
+
+    A datum is a PLACE. The arrival field is one, it is a fact about the sortie
+    rather than about a selection, and it is the same on every restart -- which
+    is what makes a range reproducible. On the Caucasus it resolves to Batumi,
+    which is the point this always returned; the difference is that it is now
+    Batumi because the sortie recovers there and says so, rather than because
+    `MARSHALL_APPROACH` was unset.
+
+    `WHY_DESTINATION` is what a controller working an aeroplane should get (the
+    field HE is going to, `legs[-1]` of his plan) and is still not wired here:
+    choosing differently MOVES A NUMBER, `CENTER_NM` is computed against this
+    same origin, and that is a ghost flight's worth of verification and its own
+    commit.
     """
     if field:
         # His own field first. PROJECTED is keyed by fix name and the fields are
@@ -4005,15 +4080,13 @@ def field_origin(profile, field: str = "") -> Datum:
         got = PROJECTED.get(field.upper())
         if got:
             return Datum(field.upper(), WHY_FIELD, got)
-    # THE AERODROME FIRST, and it is the same point this always returned --
-    # `beacon` held the field until #163. Naming it correctly is what lets
-    # the `why` above be honest: this is the LOADED APPROACH's field, not
-    # this aeroplane's, which is the whole of #160.
-    for attr in ("aerodrome", "arrival_fix", "outer_hold"):
-        f = getattr(profile, attr, None)
-        name = getattr(f, "name", "") if f is not None else ""
-        if name and name.upper() in PROJECTED:
-            return Datum(name.upper(), WHY_APPROACH, PROJECTED[name.upper()])
+    # THE SORTIE'S ARRIVAL AERODROME. Named, so the `why` above can be honest:
+    # this is where the traffic is going, not where this aeroplane is going and
+    # not what anybody was cleared for.
+    from marshall.core import theatre as _t
+    arrival = (_t.current().arrival or "").upper()
+    if arrival and arrival in PROJECTED:
+        return Datum(arrival, WHY_ARRIVAL, PROJECTED[arrival])
     return Datum()
 
 
@@ -4083,8 +4156,15 @@ class Scope(str):
         return None
 
 
-def push_sectors(base: str, profile) -> int:
+def push_sectors(base: str) -> int:
     """Publish the controllers' volumes, derived from the loaded theatre.
+
+    NO PROCEDURE ARGUMENT. It took one, to reach `seats_now(profile)` -- so
+    which controllers owned airspace depended on the arrival the process had
+    been started with, and an airspace volume is a fact about an aerodrome. The
+    ladder is the map's; see `theatre.seats_on_the_air` for the one place a
+    procedure's own seats are still unioned in, and why that union is safe
+    there and not here. [#162]
 
     THE BRIDGE KNOWS WHICH MAP IS LOADED AND THE DIRECTOR DOES NOT, which is the
     whole reason this is a push and not a query -- the same argument `push_fixes`
@@ -4098,14 +4178,14 @@ def push_sectors(base: str, profile) -> int:
     """
     from marshall.core import airspace as _air
     from marshall.core import theatre as _th
-    rows = _air.sectors_for(_th.current().fields, _th.seats_now(profile))
+    rows = _air.sectors_for(_th.current().fields, _th.stations_now())
     if not rows:
         return 0
     _put_json(f"{base}/sectors", {"sectors": rows})
     return len(rows)
 
 
-def push_stations(base: str, profile) -> int:
+def push_stations(base: str) -> int:
     """Publish the map's controllers: who they are and what they answer on.
 
     THE SAME SENTENCE AS ABOVE, and it is why this is a push. The director
@@ -4129,23 +4209,40 @@ def push_stations(base: str, profile) -> int:
     `feed.tracks.set_stations` for why the push REPLACES the table, and
     migration 032 for what may then be cleaned up.
 
-    `seats_now` and not `stations_now`, so the mode switch stays in one place:
-    a 1944 beacon letdown staffs no ladder -- the man you talk to IS the
-    frequency you home -- and publishing eight modern seats for it would put a
-    frequency directory in a Mustang.
+    THE LADDER, AND DELIBERATELY NOT THE UNION. This read `seats_now(profile)`
+    so that a 1944 letdown published its beacons instead of eight modern seats
+    -- right, while the process ran one arrival. With none, the tempting move
+    is to publish every procedure's seats together, and it is wrong: this table
+    backs `look_up_frequency`, which is asked BY ROLE AND FIELD, and a beacon
+    seat and a ladder seat share a name at one aerodrome ("Batumi Tower" on
+    132.0 and on 118.6). A union would answer one of them by row order, which
+    is the exact fault a role being unique only within an aerodrome exists to
+    prevent -- a real controller, a real frequency, the wrong one.
+
+    So the by-role directory is the ladder. What the EAR opens is the union,
+    because frequencies are unique across it: `theatre.seats_on_the_air`. And
+    a procedure whose seats are its beacons says so in its own plate section
+    (`briefing._own_seats`), in words, to the one reader who has to tell them
+    apart. [#140, #162]
     """
     from marshall.core import theatre as _th
     rows = [{"name": s.name, "field": s.field, "role": s.role,
              "freq_mhz": s.freq_mhz, "also": list(s.also)}
-            for s in _th.seats_now(profile) if s.name]
+            for s in _th.stations_now() if s.name]
     if not rows:
         return 0
     _put_json(f"{base}/stations", {"stations": rows})
     return len(rows)
 
 
-def push_fixes(base: str, profile) -> int:
+def push_fixes(base: str, procedures=()) -> int:
     """Project route.py's fixes with the SIM's own converter and push them.
+
+    TAKES EVERY PROCEDURE, not the loaded one. A fix a controller may be asked
+    to resolve is a fact about the MAP, and taking them off one arrival meant
+    the letdown's beacon reached the table only when the process happened to be
+    started on the letdown. Empty is fine: the theatre's own published fixes
+    are the bulk of this and need no procedure at all. [#162]
 
     The controller must never estimate a bearing or a range, so it needs a fix
     table it can compute against -- and the director cannot build one, because
@@ -4186,10 +4283,11 @@ def push_fixes(base: str, profile) -> int:
     # BOTH SLOTS. `beacon` was one field and is two: the aerodrome is always
     # there and a beacon only sometimes, and each is a place the controller
     # may need to resolve by name.
-    for attr in ("aerodrome", "navaid", "outer_hold", "arrival_fix"):
-        f = getattr(profile, attr, None)
-        if f is not None and getattr(f, "name", None):
-            fixes.setdefault(f.name, f)
+    for _p in procedures or ():
+        for attr in ("aerodrome", "navaid", "outer_hold", "arrival_fix"):
+            f = getattr(_p, attr, None)
+            if f is not None and getattr(f, "name", None):
+                fixes.setdefault(f.name, f)
     if not fixes:
         return 0
     # WHAT THE CONFIGURATION ALREADY KNOWS, taken first and for nothing.
@@ -4211,7 +4309,7 @@ def push_fixes(base: str, profile) -> int:
             out[name] = [float(la), float(lo)]
     unknown = {n: f for n, f in fixes.items() if n not in out}
     if not unknown:
-        return _finish_fixes(base, out, _th, profile)
+        return _finish_fixes(base, out, _th)
     # ADDED TO, NOT REPLACING. This was `out = {}` and it wiped the configured
     # coordinates the block above had just collected -- so the sim's answers for
     # the sortie's turning points survived and every PUBLISHED fix was dropped.
@@ -4223,7 +4321,7 @@ def push_fixes(base: str, profile) -> int:
     # winning. It survived a green suite and was caught by reading the published
     # table on a running bridge.
     out.update(_eval_fix_positions(unknown))
-    return _finish_fixes(base, out, _th, profile)
+    return _finish_fixes(base, out, _th)
 
 
 def _eval_fix_positions(unknown: dict) -> dict:
@@ -4269,7 +4367,7 @@ def _eval_fix_positions(unknown: dict) -> dict:
     return got
 
 
-def _finish_fixes(base: str, out: dict, _th, profile) -> int:
+def _finish_fixes(base: str, out: dict, _th) -> int:
     """Publish the projected table, whichever way the positions were got.
 
     One tail for both paths -- the configured coordinates and the sim's -- so
@@ -4345,7 +4443,7 @@ def engineering_turn(tx, transcript, srs, known, heard_hz, freq_hz,
     return True
 
 
-def speak(bridge, interact, message, transcript, known, heard_hz, fix, profile, ctl):
+def speak(bridge, interact, message, transcript, known, heard_hz, fix, ctl):
     """Hand the turn to the agent, and mark what it commits us to.
 
     EXTRACTED VERBATIM, 30 July -- [LAYERS.md] step 1. `interact` is passed in
@@ -4369,8 +4467,10 @@ def speak(bridge, interact, message, transcript, known, heard_hz, fix, profile, 
     _g = None
     if fix is not None:
         from marshall.atc import asr as _asr2
-        _g = _asr2.guide(fix, profile,
-                         on_missed=flying_the_missed(bridge, known, fix, profile, ctl)
+        _pro = ctl.procedure_for(known) if ctl is not None else None
+        _g = None if _pro is None else _asr2.guide(
+            fix, _pro,
+            on_missed=flying_the_missed(bridge, known, fix, ctl)
                          if known else False)
     interact(message, "pilot", route_tier(transcript),
              on_hz=heard_hz, guide=_g, to_callsign=known or "")
@@ -4601,7 +4701,7 @@ def become_tracked(ctl, known: str, track: str) -> bool:
     return True
 
 
-def decide(bridge, ctl, transcript, scope, known, track, engaged, profile):
+def decide(bridge, ctl, transcript, scope, known, track, engaged):
     """What the DETERMINISTIC side says about this transmission.
 
     EXTRACTED VERBATIM, 30 July -- [LAYERS.md] step 1. Two answers, and they
@@ -4669,7 +4769,7 @@ def decide(bridge, ctl, transcript, scope, known, track, engaged, profile):
     # Radar guidance for a vectored approach. Costs no model call, so it
     # runs for a single ship too -- which is the case that was flying with
     # no deterministic picture at all.
-    vectoring = asr_context(profile, scope, known, track)
+    vectoring = asr_context(ctl, scope, known, track)
     return directive, stack, vectoring
 
 
@@ -4723,7 +4823,7 @@ def phase_now(ctl, known: str, down: bool | None, fix) -> str:
     return phase
 
 
-def settle(bridge, directive, stack, vectoring, fix, profile, known, ctl,
+def settle(bridge, directive, stack, vectoring, fix, known, ctl,
            scope: str = "", track: str = "", handoff=None):
     """One aeroplane, one instruction. Which authority owns him this turn.
 
@@ -4787,8 +4887,13 @@ def settle(bridge, directive, stack, vectoring, fix, profile, known, ctl,
     _worked_by = getattr(getattr(ctl, "_me", None), "role", "") if ctl else ""
 
     flies = _phases.flies_geometry(phase)
-    guide = (_phases.guide(phase, fix, profile)
-             if fix is not None and not down and flies
+    # HIS PROCEDURE, resolved once for this turn. It was the bridge's, so an
+    # aeroplane recovering at Kobuleti was flown down Batumi's geometry; None
+    # means nobody has cleared him for anything and there is no geometry to
+    # fly him down, which is the honest answer rather than another field's.
+    _pro = ctl.procedure_for(known or "") if ctl is not None else None
+    guide = (_phases.guide(phase, fix, _pro)
+             if fix is not None and not down and flies and _pro is not None
              else None)
     # ...AND THE SAME GATE ON THE PROSE, which is the half that reached the air.
     #
@@ -4824,9 +4929,9 @@ def settle(bridge, directive, stack, vectoring, fix, profile, known, ctl,
         vectoring = ""
     # The missed-approach latch still belongs to the geometry that reads it, so
     # it is applied to the phase the dispatcher was given rather than lost.
-    if guide is not None and flying_the_missed(bridge, known or "?", fix,
-                                               profile, ctl):
-        guide = asr.guide(fix, profile, on_missed=True)
+    if (guide is not None and _pro is not None
+            and flying_the_missed(bridge, known or "?", fix, ctl)):
+        guide = asr.guide(fix, _pro, on_missed=True)
     # THE DECISIONS GO IN AND THE SURVIVORS COME BACK. A suppression that edited
     # only the words left the decision on the bridge, where #79's repair put it
     # straight back on the air -- a holding clearance to an aeroplane radar shows
@@ -5041,7 +5146,7 @@ def _plan_row(plan: dict, flying_it: str, on_board: dict, track_of: dict,
     }
 
 
-def worked_from(profile, owner: str, scope, track: str, fix):
+def worked_from(owner: str, scope, track: str, fix):
     """What THIS AEROPLANE's position is measured from -- and the numbers to match.
 
     A DATUM IS ONE PER `Scope` AND A BOARD IS NOT. The picture is drawn from a
@@ -5079,8 +5184,8 @@ def worked_from(profile, owner: str, scope, track: str, fix):
     Returns `(datum, range_nm, radial)` ready to publish.
     """
     _rng, _rad = getattr(fix, "range_nm", None), getattr(fix, "radial_deg", None)
-    seat = seat_named(owner or "", profile) if profile is not None else None
-    d = field_origin(profile, getattr(seat, "field", "") or "") if seat else None
+    seat = seat_named(owner or "")
+    d = field_origin(getattr(seat, "field", "") or "") if seat else None
     if not d or d.point == getattr(scope, "origin", None):
         return datum_of(scope), _rng, _rad
     c = scope.of(track) if track and isinstance(scope, Scope) else None
@@ -5224,7 +5329,7 @@ def publish_state(bridge, ctl, scope: str, session_id: str,
         # range and the radial come back with it, because a reference and the
         # number it refers to are one object. See `worked_from`. [#169]
         _datum, _range_nm, _radial = worked_from(
-            getattr(ctl, "profile", None), row.get("owner", ""), scope, track, fix)
+            row.get("owner", ""), scope, track, fix)
         board.append({**row, "track": track,
                       "freq_mhz": bridge.heard_on.get(cs, 0) / 1e6 or None,
                       "authority": (auth_of.get(cs)
@@ -5458,7 +5563,7 @@ def publish_state(bridge, ctl, scope: str, session_id: str,
         print(f"  !! could not publish state: {e}", flush=True)
 
 
-def hear(bridge, client, model, profile):
+def hear(bridge, client, model):
     """One transmission off the radio, as words. [LAYERS.md] L0 -> the turn.
 
     EXTRACTED VERBATIM, 30 July. Returns None where the loop used to
@@ -5478,7 +5583,7 @@ def hear(bridge, client, model, profile):
         return None
     transcript = stt.transcribe(
         model, pcm,
-        prompt=whisper_vocabulary(bridge, profile,
+        prompt=whisper_vocabulary(bridge,
                                   roster=getattr(client, "roster", None)))
     if not transcript:
         return None
@@ -5544,7 +5649,7 @@ def attribute(bridge, client, transcript, srs, session_id, radar_on, ctl,
 
 
 
-def _start_atis(host: str, ear, profile, session_id: str) -> None:
+def _start_atis(host: str, ear, session_id: str) -> None:
     """Put every broadcasting aerodrome on the air, each on its own client.
 
     NOT FROM THE TRANSMIT POOL, deliberately. An ATIS is twenty-two seconds of
@@ -5702,7 +5807,13 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         print("  !! THE SIM IS PAUSED. No radar, no ATIS weather, no AI "
               "movement -- and joining the server does not clear it. "
               "`uv run python tools/sim.py unpause`", flush=True)
-    profile = load_and_push_plate(_th.approach)       # DB is the source of truth
+    # EVERY PROCEDURE THIS MAP OFFERS, and no arrival for the process. This
+    # read `profile = load_and_push_plate(_th.approach)`, and that one name was
+    # the last of the singular: it briefed the controller on one approach,
+    # seeded the separation engine with it, and was handed to about
+    # twenty-five functions as the answer to "which procedure" for every
+    # aeroplane on the frequency. [#162]
+    procedures = load_and_push_plates()
     # THE FACILITY'S, NOT A PROCEDURE'S. This read `profile.atc.radar` off the
     # process-wide approach, so "has this controller got a scope" -- which
     # gates the entire proactive monitor, for every aeroplane, for the life of
@@ -5718,13 +5829,19 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
     # different person -- that is most of what makes a sector split feel real,
     # and it costs nothing but picking the right Voice before transmitting.
     voice = tts.Voice(voice_id=voice_id)
-    # THE SEATS THIS BRIDGE IS WORKING. The theatre's ladder, unless the loaded
-    # procedure says its controllers live on the beacons instead -- an ARA-8
-    # homes whatever it is tuned to, so on a 1944 letdown the man you talk to
-    # IS the frequency you home. That switch used to be "is the profile's
-    # station list empty", which is #152; it is a bit on the procedure now, and
-    # the list itself belongs to the map (#162).
-    _seats = tuple(_theatre.stations_now()) if profile.theatre_stations else ()
+    # EVERY SEAT ANYBODY ON THIS MAP COULD BE WORKED BY. The theatre's ladder,
+    # plus the beacon seats of any procedure whose controllers live on the
+    # navaids instead -- an ARA-8 homes whatever it is tuned to, so on a 1944
+    # letdown the man you talk to IS the frequency you home.
+    #
+    # It read `stations_now() if profile.theatre_stations else ()`, off the
+    # process-wide arrival, so WHICH CHANNELS THE EAR OPENED were decided by
+    # the shell the radio was started from: started on the letdown it opened
+    # none of the ladder, and started on anything else it could not hear a
+    # Mustang at all. What one facility can HEAR is not one aeroplane's
+    # procedure to decide. See `theatre.seats_on_the_air` for why the union is
+    # safe here and is not in the by-role station table. [#152, #162]
+    _seats = tuple(_theatre.seats_on_the_air())
     voices: dict[float, tts.Voice] = {}
     for _s in _seats:
         voices[round(_s.freq_mhz, 3)] = tts.Voice(voice_id=_s.voice)
@@ -5794,9 +5911,11 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # this wants is frequencies a pilot might call on, and an aerodrome
         # reference point is not a transmitter. A procedure with no beacon
         # contributes nothing, which the `is not None` already handles.
-        for fix in (profile.arrival_fix, profile.navaid, profile.outer_hold):
-            if fix is not None and fix.freq_mhz and fix.freq_mhz not in channels:
-                channels.append(fix.freq_mhz)
+        for _p in procedures.values():
+            for fix in (_p.arrival_fix, _p.navaid, _p.outer_hold):
+                if (fix is not None and fix.freq_mhz
+                        and fix.freq_mhz not in channels):
+                    channels.append(fix.freq_mhz)
     if freq_mhz not in channels:
         channels.insert(0, freq_mhz)
     # One SRS client, several controllers. It used to register under
@@ -5823,7 +5942,13 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
     # for a second and a half after every word.
     client.ignore_guids |= _pool.guids
     print(f"  transmitting on {config.RADIO_POOL_SIZE} clients", flush=True)
-    ctl = controller.Controller(profile)  # deterministic separation, seeded from the approach
+    # NO ARRIVAL. `Controller.profile` has been optional and documented as
+    # awaiting this since #162 was filed: it survived as `_pro`'s fallback for
+    # an aeroplane nobody had cleared, and filling it is what made that
+    # fallback a real approach to a real runway instead of the truth, which is
+    # that he has not been given one. Every seat below Approach, the whole
+    # ground ladder and the whole enroute half work with none. [#162]
+    ctl = controller.Controller()          # deterministic separation
     # ...AND REBUILT FROM THE TABLE, which is where the board actually lives.
     #
     # Started empty, a bridge restarted mid-sortie met everybody for the first
@@ -5860,7 +5985,12 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
     # gives it away, but a page that has to be read twice to be believed is not
     # doing its job.
     publish_state(bridge, ctl, "", session_id, plans=filed_plan_rows())
-    print(f"agent ATC live as {profile.controller} (voice {voice_id}, "
+    # THE SEAT ON THE TUNED CHANNEL, not an arrival's `controller` string.
+    # That named "Batumi Approach" whatever frequency this process answered
+    # on, which is the same lie the SRS registration was corrected for two
+    # dozen lines above. [#162]
+    _live_as = getattr(_stations.on_frequency(_seats, freq_mhz), "name", "")
+    print(f"agent ATC live as {_live_as or _th.name} (voice {voice_id}, "
           f"session {session_id})", flush=True)
     print("  monitoring " + ", ".join(f"{c:.3f}" for c in channels), flush=True)
 
@@ -6113,7 +6243,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             # a stale callsign cannot make the separation engine engage against
             # a pilot who is alone. Rides this tick because it is already here;
             # it costs one request and usually returns nothing.
-            _scope = (fetch_radar(session_id, profile=profile)
+            _scope = (fetch_radar(session_id)
                       if radar_on else Scope(""))
             for gone in release_stale(bridge, ctl, _scope):
                 print(f"  .. {gone} — nothing has accounted for him in "
@@ -6160,8 +6290,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 # and this used to throw away (#166). It decides two things a
                 # pilot notices: which field the ranges in the callback are
                 # measured from, and which channel it goes out on.
-                _seat = seat_named(hook.get("station") or "", profile)
-                scope = (fetch_radar(session_id, profile=profile,
+                _seat = seat_named(hook.get("station") or "")
+                scope = (fetch_radar(session_id,
                                      field=getattr(_seat, "field", "") or "")
                          if radar_on else Scope(""))
                 why = hook.get("why") or ""
@@ -6309,7 +6439,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 # be worse than no cache at all; it exists only so two aircraft
                 # at one aerodrome cost one fetch rather than two.
                 _seen: dict[str, Scope] = {}
-                _seen[""] = fetch_radar(session_id, profile=profile)
+                _seen[""] = fetch_radar(session_id)
                 scope = _seen[""]
                 # Sequencing: with a queue, only the aircraft that owns the
                 # approach is vectored. Everyone else is holding, and a vector
@@ -6347,13 +6477,13 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     # once from the bridge's profile -- so the guess
                     # about an unknown aeroplane came from another
                     # man's procedure. [#173]
-                    fld = his_field(bridge, ctl, profile, cs, freq_hz)
+                    fld = his_field(bridge, ctl, cs, freq_hz)
                     if fld not in _seen:
-                        _seen[fld] = fetch_radar(session_id, profile=profile,
+                        _seen[fld] = fetch_radar(session_id,
                                                  field=fld)
                     return _seen[fld]
 
-                fixes = radar_fixes(scope, profile, ctl, picture=_his_picture)
+                fixes = radar_fixes(scope, ctl=ctl, picture=_his_picture)
                 # Two contacts is traffic, and traffic means one at a time.
                 traffic = len(fixes) >= 2
                 for cs, pos, scope in fixes:
@@ -6363,7 +6493,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     # them. Two facts decide it and both are the aeroplane's:
                     # whether HIS procedure is a talkdown, and which field is
                     # HIS. [#173]
-                    _final_hz = final_channel(bridge, ctl, profile, cs, freq_hz)
+                    _final_hz = final_channel(bridge, ctl, cs, freq_hz)
                     # He is on the ground. Stop flying him.
                     #
                     # The approach ends when the aeroplane is on the runway, and
@@ -6443,7 +6573,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                             # stations, his Tower and his Ground, and both are
                             # unique only within his aerodrome.
                             ctl.report_down(cs, me=his_station(
-                                bridge, ctl, profile, cs, _final_hz))
+                                bridge, ctl, cs, _final_hz))
                             _txs = ctl.take_out()
                             bye = for_voice(" ".join(tx.text for tx in _txs))
                         except Exception:
@@ -6502,7 +6632,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     # transmission should not wait for the next poll.
                     _who = ctl.aircraft.get(ctl._resolve(cs))
                     _hz = bridge.heard_on.get(ctl._resolve(cs)) or _final_hz
-                    _nxt, _why = watching_him(bridge, ctl, profile, cs, pos,
+                    _nxt, _why = watching_him(bridge, ctl, cs, pos,
                                               scope, fallback_hz=_final_hz,
                                               session_id=session_id)
                     # SAY WHAT WAS DECIDED, INCLUDING NOTHING. Only when the
@@ -6545,14 +6675,14 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     # the bridge was started with. Two arrivals to two fields
                     # got one field's geometry, and every number in it is real,
                     # which is why it would not look wrong.
-                    _pro = ctl._pro(_who) if _who is not None else profile
+                    _pro = ctl._pro(_who) if _who is not None else None
                     if not may_vector(_pro):
                         continue                # a letdown he flies himself
                     if not may_be_vectored(bridge, ctl, cs, traffic=traffic,
                                            freq_hz=_final_hz):
                         continue                # holding, or nobody's turn yet
                     g = asr.guide(pos, _pro,
-                                  on_missed=flying_the_missed(bridge, cs, pos, _pro,
+                                  on_missed=flying_the_missed(bridge, cs, pos,
                                                               ctl))
                     note_missed(bridge, cs, g.phase, ctl)
                     if g.phase == "missed":
@@ -6662,7 +6792,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                               f"{why}", flush=True)
                         continue        # not marked as called; it repeats
                     called[cs] = mile
-                    text = for_voice(asr_call(bridge, cs, g, pos, profile))
+                    text = for_voice(asr_call(bridge, cs, g, pos, ctl.procedure_for(cs)))
                     note_issued(bridge, cs, text)
                     with radio_lock:
                         print(f"  ATC[asr] {text}", flush=True)
@@ -6723,10 +6853,10 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
     threading.Thread(target=engineering_radio, daemon=True).start()
     threading.Thread(target=scheduler, daemon=True).start()
     threading.Thread(target=asr_monitor, daemon=True).start()
-    _start_atis(host, client, profile, session_id)
+    _start_atis(host, client, session_id)
 
     while True:
-        heard = hear(bridge, client, model, profile)
+        heard = hear(bridge, client, model)
         if heard is None:
             continue
         transcript, srs, heard_hz = heard
@@ -6939,8 +7069,9 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         _lead_track = ""
         if (_mine := bridge.flights.of(_who)) is not None and _mine.lead:
             _lead_track = _track_of(scope, _mine.lead)
-        _fix = (radar_fix_by_track(scope, _lead_track or _ident.track, profile)
-                or radar_fix(scope, known, profile))
+        _my_field = getattr(getattr(ctl, "_me", None), "field", "") or ""
+        _fix = (radar_fix_by_track(scope, _lead_track or _ident.track, _my_field)
+                or radar_fix(scope, known, _my_field))
         record(session_id, kind="pilot", callsign=known or srs,
                # The provenance of the identity, not just the answer. Without
                # it a recording cannot be scored after the fact: "Pony 1-1" in
@@ -7020,8 +7151,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # what the geometry is -- so a Viper on the ILS beside a Mustang on the
         # letdown was getting whichever one the bridge was started with. [#150]
         directive, stack, vectoring = decide(
-            bridge, ctl, transcript, scope, known, _ident.track, engaged,
-            ctl.procedure_for(known))
+            bridge, ctl, transcript, scope, known, _ident.track, engaged)
 
         # WHAT THE ENGINE THINKS IS OUT THERE, AFTER IT HAS HEARD HIM.
         #
@@ -7096,7 +7226,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     _theatre.station_for("departure",
                                          field=getattr(getattr(ctl, "_me", None),
                                                        "field", ""),
-                                         procedure=profile),
+                                         procedure=ctl.procedure_for(known)),
                     "freq_mhz", None),
                 # THE SAME TWO THE DURABLE READ CARRIES. This cache is consulted
                 # BEFORE `_cleared_plan_now`, so a field missing here is a field
@@ -7140,7 +7270,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # missed-approach geometry, both of which belong to the procedure he is
         # actually flying. [#150]
         directive, stack, vectoring, _g, dropped = settle(bridge,
-            directive, stack, vectoring, _fix, ctl._pro(_ac), known, ctl,
+            directive, stack, vectoring, _fix, known, ctl,
             scope=scope, track=_ident.track or "", handoff=nxt)
         if dropped:
             print(f"  .. {dropped}", flush=True)
@@ -7186,9 +7316,18 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 _agreed["cleared"] = "approach"
             elif _g is not None and _g.phase == "missed":
                 _agreed["cleared"] = "missed"
-            if APPROACH_NAME:
-                _agreed.setdefault("procedure", APPROACH_NAME)
-                _agreed.setdefault("runway", profile.runway or None)
+            # NO DEFAULTED PROCEDURE. This read
+            #
+            #     _agreed.setdefault("procedure", APPROACH_NAME)
+            #
+            # writing the module global -- the arrival this process was
+            # started on -- into a PILOT'S agreed clearance as a default, and
+            # #162 names it as the thing that must not exist. It is the
+            # mechanism behind "why on earth is intent still ASR": a man who
+            # had asked for nothing was recorded as having agreed to whatever
+            # shell started the radio. What he is flying comes from what
+            # Approach ISSUED him; `flights.cleared_approach` holds it and
+            # `Controller.hydrate` brings it back. [#162]
             if _agreed:
                 flight_agree(_fid, **_agreed)
 
@@ -7291,8 +7430,9 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # By track, for the same reason everything else is: a stale label made
         # this None for a whole approach, which silently disabled the talkdown
         # guard below as well.
-        fix = (radar_fix_by_track(scope, _ident.track, profile)
-               or radar_fix(scope, known, profile))
+        fix = (radar_fix_by_track(scope, _ident.track,
+                                  getattr(me, "field", "") or "")
+               or radar_fix(scope, known, getattr(me, "field", "") or ""))
         # NOBODY IS HANDED OFF FROM THE RAMP.
         #
         #     "Tower handed me to approach, approach handed me to tower"
@@ -7332,8 +7472,13 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             print(f"  CONTROLLER: {directive}", flush=True)
         if stack:
             print(f"  SEPARATION: {stack}", flush=True)
+        # HIS PROCEDURE, not the radio's. `compose_message` reads a runway,
+        # a guidance kind and a final-intercept range off it, and all three
+        # are properties of the approach THIS aeroplane was cleared for.
+        # None is the ordinary case for a man who has not asked. [#162]
         message, message_parts = compose_message(
-            bridge, scope, known, transcript, profile, me, fix, nxt,
+            bridge, scope, known, transcript, ctl.procedure_for(known),
+            me, fix, nxt,
             directive, stack, vectoring, _flight, _flight_say, claim,
             _name_say)
         # Republish with what he was handed, now that it exists. The board is
@@ -7341,7 +7486,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         publish_state(bridge, ctl, scope, session_id, handed=message_parts,
                       plans=filed_plan_rows(),
                       names=getattr(client, 'roster', None))
-        speak(bridge, interact, message, transcript, known, heard_hz, _fix, profile, ctl)
+        speak(bridge, interact, message, transcript, known, heard_hz, _fix, ctl)
 
 
 if __name__ == "__main__":

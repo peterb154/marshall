@@ -1,9 +1,11 @@
-"""A restart that changes the procedure is not a restart.
+"""A restart cannot change the procedure, because there is none to change.
+
+WHAT THIS FILE USED TO GUARD, and why the guard is now the opposite assertion.
 
 `tools/bridge.py` had no test at all, and this is what it cost. `DEFAULT_ARGS`
 carried `--theatre` and never the approach, so `MARSHALL_APPROACH` survived a
 restart only if the operator happened to have exported it in the shell he was
-restarting from. From anywhere else it silently reverted to the map's default.
+restarting from. From anywhere else it silently reverted to the map's default:
 
     started:   MARSHALL_APPROACH=batumi-ils  ->  ILS runway 13, intercept
     restarted: (nothing carried)             ->  batumi-asr, a TALKDOWN
@@ -12,20 +14,38 @@ It happened twice on 13 August. Once by accident, mid-rehearsal, which
 invalidated the run and was noticed only because the agent flying it checked the
 log line before judging anything; once deliberately, to reproduce it.
 
-`theatre.py` already knows why this matters and says so about a different
-mechanism: *"an unknown one is named rather than silently swapped for the
-default, which is how a pilot came to fly a talkdown after asking for an ILS."*
-The same sentence applies to a restart, which is the far more common way to get
-there -- a live bridge is restarted several times in a sortie for a patch.
+The fix was to ASK THE RUNNING PROCESS -- `/proc/<pid>/environ` is the
+environment at exec time and does not follow any shell -- and to carry the
+answer across the stop. That was a correct fix, and it is gone. [#158]
 
-THE ANSWER IS TO ASK THE PROCESS. What is RUNNING is the only thing that knows
-which procedure is loaded; a restart that consults a note instead is right until
-somebody starts the bridge by hand. `/proc/<pid>/environ` is that question. [#158]
+IT WAS A CORRECT FIX TO A MECHANISM THAT SHOULD NOT HAVE EXISTED, which is
+#162:
+
+    "the radio should not have a default appproach it was loaded with.
+     Approaches should be assigned on a per flight basis at runtim"
+
+A restart cannot revert a procedure if no procedure is attached to the process.
+So the carry-forward is deleted rather than maintained, and this file asserts
+the DELETION -- which is the stronger guard, because a carry-forward can be
+forgotten, mis-set, or defeated by starting the radio by hand, and a thing that
+does not exist cannot be any of those.
+
+WHAT REPLACES IT is state that outlives the process: `flights.cleared_approach`
+holds what each aeroplane was ISSUED and `Controller.hydrate` restores it, so a
+restart mid-approach brings back every aeroplane's own procedure rather than one
+guess for all of them.
+
+ASSERTED ON THE AST, NOT ON THE TEXT. Every one of these names has to be
+QUOTED to be forbidden -- the paragraphs above say `MARSHALL_APPROACH` five
+times -- so `"MARSHALL_APPROACH" not in source` fails on a file that merely
+explains itself. That trap has misfired four times in this repository. The
+questions below are asked of the parsed module: which names it binds, which
+strings it compares argv against, which keys it writes into `os.environ`.
 """
 
 from __future__ import annotations
 
-import os
+import ast
 import sys
 import unittest
 from pathlib import Path
@@ -33,86 +53,138 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 import bridge
 
-
-class TestTheApproachIsReadOffTheRunningProcess(unittest.TestCase):
-
-    def test_it_finds_what_a_process_was_STARTED_with(self):
-        """A REAL child, because `/proc/<pid>/environ` is the environment at
-        EXEC time and does not follow `os.environ` afterwards.
-
-        That is not an inconvenience, it is the property being relied on: a
-        bridge started with `MARSHALL_APPROACH=batumi-ils` carries it there for
-        as long as it lives, whatever any shell does later. Setting the
-        variable in this interpreter and reading our own `environ` would have
-        tested nothing and passed anyway.
-        """
-        import subprocess
-        import time
-        env = dict(os.environ, MARSHALL_APPROACH="kobuleti-ils-07")
-        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"],
-                                 env=env)
-        try:
-            for _ in range(50):            # exec is not instant
-                if bridge.approach_of([child.pid]):
-                    break
-                time.sleep(0.02)
-            self.assertEqual(bridge.approach_of([child.pid]), "kobuleti-ils-07")
-        finally:
-            child.kill()
-            child.wait(timeout=5)
-
-    def test_a_process_that_was_not_told_answers_empty(self):
-        """Empty is a real answer: he is on the map's default and carrying
-        nothing forward is correct. It must not be confused with a failure to
-        read, which is why the caller checks for a value rather than a flag."""
-        os.environ.pop("MARSHALL_APPROACH", None)
-        self.assertEqual(bridge.approach_of([os.getpid()]), "")
-
-    def test_a_dead_pid_does_not_raise(self):
-        """`running()` races a bridge that is exiting, and a restart that
-        crashed on the way to stopping the old one would leave a pilot on a
-        dead frequency -- which is the failure this whole file exists for."""
-        self.assertEqual(bridge.approach_of([999_999_999]), "")
-
-    def test_it_takes_the_first_that_answers(self):
-        """Two bridges is already a refused state -- `start` says "another
-        bridge holds the frequency" -- so this need only be defined, not
-        clever."""
-        got = bridge.approach_of([999_999_999, os.getpid()])
-        self.assertEqual(got, "")   # this process has none set
+_TOOLS = Path(__file__).resolve().parent.parent / "tools"
+_SRC = Path(__file__).resolve().parent.parent / "src" / "marshall"
 
 
-class TestTheFlagAndTheInheritanceAgree(unittest.TestCase):
-    """`--approach` beats what is running, and both beat the map's default.
+def _tree(path: Path) -> ast.Module:
+    return ast.parse(path.read_text())
 
-    The same precedence `--theatre` has, which is the reason to spell it the
-    same way: an operator who has learned one has learned the other.
+
+def _env_writes(tree: ast.Module) -> set[str]:
+    """Every literal key assigned into `os.environ[...]`."""
+    out = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        for tgt in node.targets:
+            if (isinstance(tgt, ast.Subscript)
+                    and isinstance(tgt.value, ast.Attribute)
+                    and tgt.value.attr == "environ"
+                    and isinstance(tgt.slice, ast.Constant)):
+                out.add(tgt.slice.value)
+    return out
+
+
+def _string_constants(tree: ast.Module) -> set[str]:
+    """Literals used as VALUES, excluding docstrings and comments.
+
+    Comments are not in the AST at all, which is the property this file needs:
+    a module may explain at any length what it no longer does.
     """
+    docstrings = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef,
+                             ast.AsyncFunctionDef)):
+            doc = ast.get_docstring(node, clean=False)
+            if doc:
+                docstrings.add(doc)
+    return {n.value for n in ast.walk(tree)
+            if isinstance(n, ast.Constant) and isinstance(n.value, str)
+            and n.value not in docstrings}
 
-    def test_the_flag_is_parsed_like_theatre(self):
-        src = Path(bridge.__file__).read_text()
-        self.assertIn('if "--approach" in sys.argv:', src)
-        self.assertIn('os.environ["MARSHALL_APPROACH"] = '
-                      'sys.argv[sys.argv.index("--approach") + 1]', src)
 
-    def test_restart_reads_before_it_stops(self):
-        """Order matters and cannot be asserted by running it: after `stop()`
-        there is no process left to ask. So this pins the ORDER in the source,
-        which is the thing that would silently regress."""
-        src = Path(bridge.__file__).read_text()
-        block = src[src.index('if what == "restart":'):]
-        block = block[:block.index("return start()")]
-        self.assertLess(block.index("approach_of(running())"),
-                        block.index("stop()"),
-                        "the approach is read after the bridge is stopped, so "
-                        "there is nothing left to read it from")
+class TestTheBridgeCannotCarryAProcedure(unittest.TestCase):
+    """`tools/bridge.py`, which is where the carry-forward lived."""
 
-    def test_a_deliberate_change_is_announced(self):
-        """An operator may ask for a different procedure -- that is allowed.
-        Doing it in silence is not: #158's second criterion is a stop sign a
-        human can read."""
-        src = Path(bridge.__file__).read_text()
-        self.assertIn("the running bridge is on", src)
+    def setUp(self):
+        self.tree = _tree(_TOOLS / "bridge.py")
+
+    def test_the_reader_is_gone(self):
+        """`approach_of(pids)` opened `/proc/<pid>/environ` and returned the
+        procedure the running radio had been started with. Asked of the module
+        object, so a rename to something equally load-bearing still fails."""
+        self.assertFalse(hasattr(bridge, "approach_of"))
+
+    def test_nothing_writes_an_approach_into_the_environment(self):
+        """The `--approach` flag set `MARSHALL_APPROACH`, and so did the
+        carry-forward. `--theatre` still writes `MARSHALL_THEATRE`, which is
+        the control this SHOULD have been compared against all along: a map is
+        a property of the world the process is working, and an approach is a
+        property of one aeroplane's clearance."""
+        wrote = _env_writes(self.tree)
+        self.assertIn("MARSHALL_THEATRE", wrote,
+                      "the theatre flag stopped working, which is a real "
+                      "regression rather than the deletion this file guards")
+        self.assertNotIn("MARSHALL_APPROACH", wrote)
+
+    def test_no_command_line_flag_offers_one(self):
+        """A flag is a string compared against `sys.argv`. `--theatre` is
+        present for the same contrast as above."""
+        consts = _string_constants(self.tree)
+        self.assertIn("--theatre", consts)
+        self.assertNotIn("--approach", consts)
+
+
+class TestNothingInTheRadioReadsTheVariable(unittest.TestCase):
+    """The deletion has to hold everywhere, or the flag comes back by another
+    door: `bridge.py` clean while `theatre.py` still consults the environment
+    would restore the whole defect with no flag to notice it by."""
+
+    def test_no_module_reads_MARSHALL_APPROACH_from_the_environment(self):
+        offenders = []
+        for path in sorted(_SRC.rglob("*.py")) + sorted(_TOOLS.rglob("*.py")):
+            tree = _tree(path)
+            for node in ast.walk(tree):
+                # `os.environ.get("X")` and `os.environ["X"]`, which are the
+                # two ways this was ever read.
+                if (isinstance(node, ast.Call)
+                        and isinstance(node.func, ast.Attribute)
+                        and node.func.attr == "get"
+                        and isinstance(node.func.value, ast.Attribute)
+                        and node.func.value.attr == "environ"
+                        and node.args
+                        and isinstance(node.args[0], ast.Constant)
+                        and node.args[0].value == "MARSHALL_APPROACH"):
+                    offenders.append(str(path))
+                if (isinstance(node, ast.Subscript)
+                        and isinstance(node.value, ast.Attribute)
+                        and node.value.attr == "environ"
+                        and isinstance(node.slice, ast.Constant)
+                        and node.slice.value == "MARSHALL_APPROACH"):
+                    offenders.append(str(path))
+        self.assertEqual(offenders, [])
+
+    def test_and_the_theatre_publishes_no_singular_to_put_one_in(self):
+        """The other half. A variable with nowhere to land is harmless; a
+        `Theatre.approach` with no variable would just acquire a new one."""
+        from marshall.core import theatre as T
+        th = T.current()
+        self.assertFalse(hasattr(th, "approach"))
+        self.assertFalse(hasattr(th, "approach_key"))
+        self.assertTrue(th.approaches, "the map publishes no procedures at all")
+
+
+class TestWhatCarriesAcrossARestartInstead(unittest.TestCase):
+    """Not nothing -- the aeroplane's own clearance, which is durable."""
+
+    def test_the_engine_restores_a_procedure_per_aircraft(self):
+        """`hydrate` is the restart path and `cleared_approach` is the column.
+        A restart mid-approach brings back what each aeroplane was ISSUED,
+        which is more than the carry-forward ever managed: it restored ONE
+        procedure for everybody."""
+        from marshall.atc import controller as C
+        self.assertTrue(hasattr(C.Controller, "hydrate"))
+        self.assertTrue(hasattr(C.Controller, "assign_approach"))
+
+    def test_a_fresh_controller_holds_no_arrival_at_all(self):
+        """The property that makes the deletion safe: a Controller built with
+        nothing works for everything that is not an approach -- the whole
+        ground ladder, the whole enroute half, every seat below Approach."""
+        from marshall.atc import controller as C
+        ctl = C.Controller()
+        self.assertIsNone(ctl.profile)
+        self.assertIsNone(ctl.procedure_for("Nobody 1-1"))
 
 
 if __name__ == "__main__":

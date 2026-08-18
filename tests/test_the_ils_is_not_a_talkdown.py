@@ -32,6 +32,9 @@ from marshall.core.approach import may_vector
 from tests import theatre as T
 
 
+import tests.theatre as _T
+
+
 class TestMayVector(unittest.TestCase):
     """One question, asked one way. It was asked three and they disagreed."""
 
@@ -172,16 +175,14 @@ class TestEstablishedIsWhereHeStops(unittest.TestCase):
         # It is prose for the agent, so this asserts on what it is TOLD rather
         # than on a phrase: say nothing about range, heading, altitude or the
         # glidepath -- which we cannot see -- and hand him to Tower.
-        out = agent_atc.asr_context(ils, self.scope(ils, 6.0), "Pony 1-1")
+        out = agent_atc.asr_context(_T.flying(ils, "Pony 1-1"), self.scope(ils, 6.0), "Pony 1-1")
         self.assertIn("SAY NOTHING", out)
         self.assertIn("Tower", out)
 
     def test_the_guidance_context_vectors_before_that(self):
         # The bug in one assertion: this returned "" for the whole approach.
         ils = T.the_ils()
-        out = agent_atc.asr_context(
-            ils, self.scope(ils, 25.0, alt=ils.field_elev_ft + 6000),
-            "Pony 1-1")
+        out = agent_atc.asr_context(_T.flying(ils, "Pony 1-1"), self.scope(ils, 25.0, alt=ils.field_elev_ft + 6000), "Pony 1-1")
         self.assertNotEqual(out, "")
         self.assertIn("ILS", out)
 

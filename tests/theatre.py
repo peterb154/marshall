@@ -176,13 +176,54 @@ def approaches() -> dict:
 
 
 def the_arrival():
-    """The procedure this map's bridge is started on. `theatre.approach_key`."""
-    key = _TH.current().approach_key
-    got = approaches().get(key)
-    if got is None:                                 # pragma: no cover - config
-        raise AssertionError(f"{name()} names {key!r} as its arrival and does "
-                             f"not publish it")
-    return got
+    """A published procedure into this map's ARRIVAL FIELD, chosen HERE.
+
+    It read `theatre.current().approach_key` -- the arrival the radio was
+    started on -- so sixty-odd assertions across twenty-seven files were pinned
+    to whichever procedure a process global happened to name, and changing that
+    global moved every one of them. There is no such global now (#162), and a
+    test helper that wants one procedure has to SAY WHICH, which is #175's
+    finding one file over.
+
+    THE CHOICE IS DECLARED AND IT IS THE LOWEST KEY AT THE FIELD, not a
+    hard-coded name: `batumi-asr-13` on the Caucasus, `nellis-ils-21` on
+    Nevada. Sorted so it cannot depend on file order, and asserted rather than
+    defaulted -- a map that publishes nothing into the field it recovers at is
+    a broken map and should say so here rather than three assertions later.
+    """
+    want = (_TH.current().arrival or "").lower()
+    here = {k: p for k, p in sorted(approaches().items())
+            if p.aerodrome.name.lower() == want}
+    if not here:                                    # pragma: no cover - config
+        raise AssertionError(f"{name()} recovers at {want!r} and publishes no "
+                             f"approach there: {sorted(approaches())}")
+    return next(iter(here.values()))
+
+
+def flying(procedure, *callsigns):
+    """A `Controller` holding these aeroplanes, each CLEARED for this procedure.
+
+    THE INSTRUMENT #162 NEEDED. Everything that reads an arrival fact now asks
+    the aeroplane -- `asr_context`, `settle`, `flying_the_missed`, the whole
+    monitor -- because there is no process-wide approach left to ask. The
+    tests were handing those functions a bare `ApproachProfile`, which was
+    exactly the shape being deleted; a test that passes the old singleton is
+    not testing the new code, it is keeping the old path alive in the suite.
+
+    So a test that wants a procedure flown SAYS WHO IS FLYING IT. That is one
+    line here and it is the whole difference between "the bridge is on the ASR"
+    and "Pony 1-1 was cleared for the ASR", which is the distinction the issue
+    is about.
+
+    No callsigns is a real case and a useful one: a controller working traffic
+    nobody has cleared for anything. `_pro` answers None for all of them, which
+    is what the live code now has to cope with.
+    """
+    from marshall.atc import controller as _C
+    ctl = _C.Controller()
+    for cs in callsigns:
+        ctl.aircraft[cs] = _C.Aircraft(callsign=cs, profile=procedure)
+    return ctl
 
 
 def approach_of_kind(kind: str, field=None):

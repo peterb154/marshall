@@ -82,11 +82,11 @@ class TestItFindsHimWithNoTagInThePicture(unittest.TestCase):
         self.assertNotIn("[", str(self.scope))
 
     def test_and_he_is_found_anyway(self):
-        got = A.radar_fixes(self.scope, R.BATUMI_ASR, self.ctl)
+        got = A.radar_fixes(self.scope, ctl=self.ctl)
         self.assertEqual([cs for cs, _, _ in got], ["Sockeye"])
 
     def test_the_position_is_his_own(self):
-        (_, pos, _sc), = A.radar_fixes(self.scope, R.BATUMI_ASR, self.ctl)
+        (_, pos, _sc), = A.radar_fixes(self.scope, ctl=self.ctl)
         self.assertLess(pos.range_nm, 12.0)
         self.assertIsNotNone(pos.alt_ft)
 
@@ -94,7 +94,7 @@ class TestItFindsHimWithNoTagInThePicture(unittest.TestCase):
         """The dry-run tools pass no board. An unidentified aircraft on final is
         not somebody we can talk to, and guessing produces a confident call to
         the wrong man."""
-        self.assertEqual(A.radar_fixes(self.scope, R.BATUMI_ASR), [])
+        self.assertEqual(A.radar_fixes(self.scope), [])
 
 
 class TestItStillRefusesWhatItShould(unittest.TestCase):
@@ -107,7 +107,7 @@ class TestItStillRefusesWhatItShould(unittest.TestCase):
         ctl = board_with()
         ctl.aircraft["Sockeye"].track = ""
         scope = A.Scope("", contacts=[on_final()], origin=BATUMI)
-        self.assertEqual(A.radar_fixes(scope, R.BATUMI_ASR, ctl), [])
+        self.assertEqual(A.radar_fixes(scope, ctl=ctl), [])
 
     def test_a_track_the_scope_cannot_see_is_not_talked_down(self):
         """On the board, bound, and radar has lost him. The row survives -- that
@@ -115,13 +115,12 @@ class TestItStillRefusesWhatItShould(unittest.TestCase):
         position nobody can confirm."""
         ctl = board_with(track="362nd_somebody_else")
         scope = A.Scope("", contacts=[on_final()], origin=BATUMI)
-        self.assertEqual(A.radar_fixes(scope, R.BATUMI_ASR, ctl), [])
+        self.assertEqual(A.radar_fixes(scope, ctl=ctl), [])
 
     def test_an_empty_scope_finds_nobody(self):
         ctl = board_with()
         self.assertEqual(
-            A.radar_fixes(A.Scope("", contacts=[], origin=BATUMI),
-                          R.BATUMI_ASR, ctl), [])
+            A.radar_fixes(A.Scope("", contacts=[], origin=BATUMI), ctl=ctl), [])
 
 
 if __name__ == "__main__":

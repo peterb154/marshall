@@ -81,6 +81,25 @@ ARRIVALS = [
 ]
 
 
+# ONE PROCEDURE FOR THE SHIPS IN THIS REHEARSAL, printed. See
+# `ghost_flight._procedure`: a synthetic pilot has a clearance, which is a
+# different thing from the radio having an arrival. [#162]
+_WANT_APPROACH = ""
+
+
+def _procedure():
+    from marshall.core import theatre as _t
+    published = _t.approaches_now()
+    want = (_WANT_APPROACH or "").strip().lower()
+    if want and want not in published:
+        raise SystemExit(f"this map publishes {sorted(published)}, "
+                         f"not {want!r}")
+    got = published[want] if want else _t.a_procedure_into()
+    name = want or next(k for k, v in published.items() if v is got)
+    print(f"  the ships are flying {name}", flush=True)
+    return got
+
+
 def arrivals_for(th, n):
     """The fixture flights, at levels this theatre would not assign them.
 
@@ -89,7 +108,10 @@ def arrivals_for(th, n):
     below are looking at. Written as fixed altitudes once, and 11,000 is inside
     Nellis's stack.
     """
-    top = th.approach.stack_ft[-1]
+    # THE STACK OF THE PROCEDURE THESE SHIPS ARE FLYING. It read
+    # `th.approach`, which is the arrival the process was started on and no
+    # longer exists (#162). The rehearsal names one, as a pilot would.
+    top = _procedure().stack_ft[-1]
     return [(srs, voice, cs, brg, rng, top + 1000 * (i + 1))
             for i, (srs, voice, cs, brg, rng) in enumerate(ARRIVALS[:n])]
 
@@ -249,6 +271,9 @@ def show(board) -> str:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--approach", default="",
+                    help="the procedure the ships fly, e.g. batumi-ils-13. "
+                         "Default: one into the arrival field, printed.")
     ap.add_argument("--srs", default=config.SRS_HOST)
     ap.add_argument("--session", default="hooks")
     ap.add_argument("--ships", type=int, default=3,
@@ -260,6 +285,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-spawn", action="store_true")
     ap.add_argument("--no-restart", action="store_true")
     args = ap.parse_args(argv)
+    global _WANT_APPROACH
+    _WANT_APPROACH = args.approach
 
     n_ships = max(2, min(args.ships, len(ARRIVALS)))
     recorder = config.BUILD_DIR / "logs" / f"flight-{args.session}.jsonl"
@@ -271,7 +298,8 @@ def main(argv: list[str] | None = None) -> int:
 
     th = _th.current()
     ships = arrivals_for(th, n_ships)
-    profile = _aa.load_and_push_plate(th.approach)
+    _aa.load_and_push_plates()          # publish every procedure and the plates
+    profile = _procedure()
     stack_ft = list(profile.stack_ft)
 
     if not args.mhz:

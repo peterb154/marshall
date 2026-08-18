@@ -456,11 +456,10 @@ class TestHeIsBoundOnHisFirstCallNotHisSecond(unittest.TestCase):
     def test_decide_binds_him_in_the_same_breath(self):
         A.decide(A.Bridge(), self.ctl, "with you, request the approach",
                  self.scope, "sockeye", "362nd_Sockeye",
-                 engaged=False, profile=self.ctl.profile)
+                 engaged=False)
         self.admit()                      # the engine, later in the same turn
         A.decide(A.Bridge(), self.ctl, "level five thousand", self.scope,
-                 "sockeye", "362nd_Sockeye", engaged=False,
-                 profile=self.ctl.profile)
+                 "sockeye", "362nd_Sockeye", engaged=False)
         ac = self.ctl.aircraft["Sockeye"]
         self.assertEqual(ac.track, "362nd_Sockeye")
         self.assertEqual(ac.owner, "approach")
@@ -480,8 +479,7 @@ class TestHeIsBoundOnHisFirstCallNotHisSecond(unittest.TestCase):
         [#40] measured: 37 distinct names bound from 846 real transmissions.
         """
         A.decide(A.Bridge(), self.ctl, "Pony one one, request the approach",
-                 self.scope, "Pony 1-1", "", engaged=False,
-                 profile=self.ctl.profile)
+                 self.scope, "Pony 1-1", "", engaged=False)
         self.assertEqual(list(self.ctl.aircraft), [], "no ghost was minted")
 
     def test_nor_can_an_intention_put_him_on_the_board(self):
@@ -495,8 +493,7 @@ class TestHeIsBoundOnHisFirstCallNotHisSecond(unittest.TestCase):
         """The other half: contacting a controller from an aeroplane the sim can
         see IS how you become tracked. That is the whole transition."""
         A.decide(A.Bridge(), self.ctl, "Batumi Approach, with you", self.scope,
-                 "sockeye", "362nd_Sockeye", engaged=False,
-                 profile=self.ctl.profile)
+                 "sockeye", "362nd_Sockeye", engaged=False)
         self.assertIn("Sockeye", self.ctl.aircraft)
         self.assertEqual(self.ctl.aircraft["Sockeye"].owner, "approach")
 

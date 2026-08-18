@@ -87,7 +87,40 @@ def _channels(profile: R.ApproachProfile) -> list[str]:
     return out
 
 
-def _formation(flight: str, size: int, profile: R.ApproachProfile) -> list[str]:
+def _own_seats(profile: R.ApproachProfile) -> list[str]:
+    """The seats of a procedure that is NOT on the theatre's ladder.
+
+    One document may not contradict itself, and until this existed it did. The
+    shared block lists the map's controllers -- Batumi Tower on 118.6 -- and
+    the 1944 letdown's own channels paragraph puts Batumi Tower on 132.0,
+    because on that procedure the man you talk to IS the frequency you home.
+    Both are true and only one applies to any given aeroplane; a controller
+    reading them together would have had to guess, and the wrong guess sends a
+    Mustang to a frequency his ARA-8 cannot tune.
+
+    Empty for every modern approach, which is the normal case: `seats_now`
+    hands those the ladder and there is nothing to distinguish. See
+    `theatre.beacon_seats`, which is where the derivation lives -- this only
+    says it out loud. [#140, #162]
+    """
+    if getattr(profile, "theatre_stations", True):
+        return []
+    from marshall.core import theatre as _t
+    seats = _t.beacon_seats(profile)
+    if not seats:
+        return []
+    who = "; ".join(f"**{s.name} {freq_text(s.freq_mhz)}**" for s in seats)
+    return [
+        f"- **THE SEATS ON THIS PROCEDURE ARE ITS BEACONS**, and they are not "
+        f"the ladder listed above: {who}. An aeroplane flying this letdown "
+        f"tunes and homes one frequency at a time, so the controller working "
+        f"him sits on the beacon he is homing. Never read him the ladder's "
+        f"frequencies — they are real seats on radios he has not got.",
+    ]
+
+
+def _formation(flight: str, size: int,
+               profile: R.ApproachProfile | None = None) -> list[str]:
     """How to handle a formation. Deliberately says nothing about WHICH one.
 
     This block used to name the flight the mission expected -- callsign, size,
@@ -96,8 +129,19 @@ def _formation(flight: str, size: int, profile: R.ApproachProfile) -> list[str]:
     consequence immediately: Center greeted him already knowing where he was
     going. The plate describes the FIELD and its procedures; who turns up, in
     what, going where, is theirs to say and the controller's to ask.
+
+    NOR WHICH LADDER, when there is more than one procedure in front of him.
+    The break-up puts a level between two aeroplanes and the levels come from
+    the approach each is flying, so quoting one procedure's stack while
+    describing several is the same error the whole of #162 is about: a real
+    set of altitudes belonging to the wrong arrival. With no profile it points
+    at the procedure instead of naming numbers.
     """
-    ladder = ", ".join(f"{ft}" for ft in profile.stack_ft[:4])
+    ladder = (", ".join(f"{ft}" for ft in profile.stack_ft[:4])
+              if profile is not None else "")
+    ladder = (f"the ladder is {ladder}" if ladder
+              else "the holding stack is the one listed under his procedure "
+                   "below, bottom first")
     return [
         "- **A formation is ONE aircraft to you while it is together**: one "
         "clearance, one altitude, lead answers for all of them. Address it as "
@@ -107,7 +151,7 @@ def _formation(flight: str, size: int, profile: R.ApproachProfile) -> list[str]:
         "sequenced singles. Ask first whether they can maintain visual "
         "separation: in visual conditions they may split inside ONE level, in "
         "trail; in cloud you separate them yourself, a level each, lead lowest "
-        f"so he lands first (the ladder is {ladder}). Never assume — assuming "
+        f"so he lands first ({ladder}). Never assume — assuming "
         "they can see each other puts several aeroplanes on one level in cloud.",
         "- After the break-up they are ordinary singles on their own callsigns.",
     ]
@@ -125,27 +169,26 @@ def _setting(profile: R.ApproachProfile) -> str:
     return R.altimeter_spoken()
 
 
-def _asr_plate(profile: R.ApproachProfile, flight: str, size: int) -> str:
-    """The facts for a surveillance-radar approach.
+def _asr_lines(profile: R.ApproachProfile) -> list[str]:
+    """The facts for a surveillance-radar approach. THIS PROCEDURE ONLY.
 
     A different procedure needs a different briefing, not the letdown's with
     words changed: on an ASR the controller navigates, so what he must know is
     the course to put the pilot on, the altitudes, and where to stop -- there
     are no legs for the pilot to fly and nothing for him to home.
+
+    Returns LINES rather than a document, and that is what lets one prompt
+    describe every procedure the map publishes instead of the one the process
+    was started on. The theatre's own facts -- the seats, the departure field,
+    the sortie, what is shooting -- are `_theatre_lines` and are said once for
+    all of them. [#162]
     """
     inbound = profile.final_crs
     rwy = profile.runway or "in use"
-    # THE THEATRE'S CONTROLLERS, not the procedure's. A seat belongs to an
-    # aerodrome and the aerodrome does not change when another approach is
-    # loaded, which is why the table came off the profile (#162).
-    stations = "; ".join(f"**{s.name} {freq_text(s.freq_mhz)}**" for s in R.STATIONS)
-    return "\n".join([
-        "# This mission's plate (the field-specific facts)",
-        "",
+    return [
         f"- This is a **surveillance radar approach** to runway **{rwy}** at "
         f"**{profile.aerodrome.name}**. **You** navigate; the pilot flies the "
         "headings you give him. He has no approach aid of his own.",
-        f"- Controllers: {stations}.",
         f"- Final approach course **{inbound:03d}**. Vector him to intercept it "
         f"by **{profile.final_intercept_nm:.0f} miles** from the field.",
         f"- Vectoring altitude **{profile.platform_ft}** until established on "
@@ -174,12 +217,7 @@ def _asr_plate(profile: R.ApproachProfile, flight: str, size: int) -> str:
         "where it tells him what to expect in the flare.",
         f"- Assignable altitudes: **{profile.platform_ft}** vectoring, "
         f"**{profile.mda_ft}** MDA, **{profile.missed_ft}** missed. Nothing else.",
-        *_departure_field(),
-        *_mission(),
-        *_sortie(),
-        *_threats(),
-        *_formation(flight, size, profile),
-    ])
+    ]
 
 
 def _departure_field() -> list[str]:
@@ -386,16 +424,108 @@ def plate(profile: R.ApproachProfile,
     station passage and legs the pilot is not flying -- and on Nevada it also
     dereferenced an `arrival_fix` that does not exist and killed the bridge on
     startup.
+
+    ONE PROCEDURE. `plates` is what the live controller is given, because he
+    works whatever each aeroplane has been CLEARED for and not whatever the
+    process was started on. This stays for the tools that render a single
+    plate on purpose -- `python -m marshall.atc.briefing batumi-ils-13`, the
+    sweep, the tests -- where the caller has named one.
     """
+    return "\n".join([PLATE_HEADING, "",
+                      *_procedure_lines(profile),
+                      *_theatre_lines(flight, size, profile)])
+
+
+PLATE_HEADING = "# This mission's plate (the field-specific facts)"
+
+
+def _procedure_lines(profile: R.ApproachProfile) -> list[str]:
+    """Which of the three briefings this procedure gets. Nothing shared."""
     if getattr(profile, "vectored", False):
-        return _asr_plate(profile, flight, size)
+        return _asr_lines(profile)
     if (getattr(profile, "guidance", "") or "").lower() == "intercept":
-        return _ils_plate(profile, flight, size)
-    return _ndb_plate(profile, flight, size)
+        return _ils_lines(profile)
+    return _ndb_lines(profile)
 
 
-def _ils_plate(profile: R.ApproachProfile, flight: str, size: int) -> str:
-    """The facts for an instrument approach the PILOT flies.
+def _theatre_lines(flight: str, size: int,
+                   profile: R.ApproachProfile | None = None) -> list[str]:
+    """The facts every procedure on this map shares, said once.
+
+    THE SEATS ARE THE FIRST OF THEM and they used to be written into each
+    renderer separately. A seat belongs to an aerodrome, and the aerodrome does
+    not change when another approach is loaded -- which is why the station
+    table came off the profile in the first place (#162). So do the departure
+    field, today's sortie, and what is shooting at it: none of them is a
+    property of the arrival anybody has been cleared for.
+
+    `profile` is only the ladder in the formation paragraph, and `None` is a
+    real answer rather than a missing one: `plates` describes several
+    procedures at once and their stacks differ, so the break-up rule names the
+    procedure's own levels instead of one procedure's numbers.
+    """
+    stations = "; ".join(f"**{s.name} {freq_text(s.freq_mhz)}**"
+                         for s in R.STATIONS)
+    return [
+        f"- Controllers: {stations}.",
+        *_departure_field(),
+        *_mission(),
+        *_sortie(),
+        *_threats(),
+        *_formation(flight, size, profile),
+    ]
+
+
+def plates(procedures,
+           flight: str = R.FLIGHT_CALLSIGN,
+           size: int = R.FLIGHT_SIZE) -> str:
+    """EVERY procedure this map publishes, as the one 'plate' prompt part.
+
+    This is the half of #162 that the deletions on their own would have broken.
+    A controller was handed the plate for the arrival the process was started
+    with, so the radio could work exactly one approach: ask it for anything
+    else and it had the numbers for a different procedure, all of them real and
+    all of them wrong.
+
+        "make sure that the radio/srs is completely flexible to work any
+         approach"
+
+    It is when it has been briefed on all of them. A field OFFERS a set and
+    Approach issues one to one aeroplane, which is the shape everything else
+    already had -- `flights.cleared_approach`, `Controller._pro(ac)`, the
+    stack keyed per procedure. The prompt was the last thing still holding a
+    singular.
+
+    IT IS NOT FOUR TIMES THE TOKENS. Roughly half of a plate was never about
+    the procedure at all -- the seats, the departure field, today's tasking,
+    the filed route, what shoots -- and those are said once here for the map
+    rather than once per renderer. Four Caucasus procedures cost about twice
+    one plate, not four times.
+
+    TAKES THE KEYED MAPPING `theatre.approaches_now()` returns, because the key
+    is not on the profile: a procedure does not know what it is filed as, and
+    reconstructing `<field>-<kind>-<runway>` here would be a second copy of
+    `agent_atc._key_of` in a module that has no business deriving one.
+
+    Ordered by key so two runs of the same map produce the same bytes; a
+    prompt that reshuffles itself is one nobody can diff.
+    """
+    out = [PLATE_HEADING, "", *_theatre_lines(flight, size)]
+    for key, p in sorted(dict(procedures).items()):
+        # NAMED BY ITS KEY, because that is what a clearance says and what
+        # `flights.cleared_approach` stores. A section headed "ILS runway 13"
+        # is unambiguous to read and ambiguous to LOOK UP the moment a field
+        # publishes an approach to the other end -- which is #165's whole
+        # finding, one axis over.
+        out += ["", f"## Cleared for `{key}` — "
+                    f"{(p.kind or '').upper()} runway {p.runway or 'in use'} "
+                    f"at {p.aerodrome.name}", ""]
+        out += _procedure_lines(p)
+    return "\n".join(out)
+
+
+def _ils_lines(profile: R.ApproachProfile) -> list[str]:
+    """The facts for an instrument approach the PILOT flies. THIS ONE ONLY.
 
     What the controller owns here is small and it matters that he knows it is
     small: get the aeroplane onto the localiser at a sensible altitude and
@@ -406,19 +536,12 @@ def _ils_plate(profile: R.ApproachProfile, flight: str, size: int) -> str:
     th = _t.current()
     rwy = profile.runway or "in use"
     inbound = profile.final_crs
-    # THE THEATRE'S CONTROLLERS, not the procedure's. A seat belongs to an
-    # aerodrome and the aerodrome does not change when another approach is
-    # loaded, which is why the table came off the profile (#162).
-    stations = "; ".join(f"**{s.name} {freq_text(s.freq_mhz)}**" for s in R.STATIONS)
     dh = profile.mda_ft - profile.field_elev_ft
-    return "\n".join([
-        "# This mission's plate (the field-specific facts)",
-        "",
+    return [
         f"- This is an **ILS** to runway **{rwy}** at "
         f"**{profile.aerodrome.name}**. "
         "**He** navigates. You vector him to intercept, clear him, and hand him "
         "to Tower — the approach itself is his.",
-        f"- Controllers: {stations}.",
         f"- Final approach course **{inbound:03d}**. Vector to intercept it by "
         f"**{profile.final_intercept_nm:.0f} miles**, at or above "
         f"**{profile.platform_ft}** until established.",
@@ -447,18 +570,18 @@ def _ils_plate(profile: R.ApproachProfile, flight: str, size: int) -> str:
         f"- Assignable altitudes: **{profile.platform_ft}** vectoring, "
         f"**{profile.missed_ft}** missed, and the holding stack "
         f"**{profile.stack_ft[0]}** and up. Nothing else.",
-        *_departure_field(),
-        *_mission(),
-        *_sortie(),
-        *_threats(),
-        *_formation(flight, size, profile),
-    ])
+    ]
 
 
-def _ndb_plate(profile: R.ApproachProfile,
-               flight: str = R.FLIGHT_CALLSIGN,
-               size: int = R.FLIGHT_SIZE) -> str:
-    """The field-specific facts, as the markdown 'plate' prompt part."""
+def _ndb_lines(profile: R.ApproachProfile) -> list[str]:
+    """The 1944 beacon letdown. THIS PROCEDURE ONLY.
+
+    The formation paragraph used to sit in the middle of this list, between the
+    wind and the assignable levels, because this renderer predates the shared
+    helpers the other two grew. It is a theatre fact rather than a procedure's
+    and is said once for the map now, so the bullets a controller is given are
+    the same set in a different order. [#162]
+    """
     cap = profile.atc
     b = profile.navaid
     inbound = _inbound_hdg(profile)
@@ -467,13 +590,12 @@ def _ndb_plate(profile: R.ApproachProfile,
     mda, missed = profile.mda_ft, profile.missed_ft
     rwy = profile.runway or "in use"
 
-    return "\n".join([
-        "# This mission's plate (the field-specific facts)",
-        "",
+    return [
         f"- Controller **{profile.controller}**, recovering to runway **{rwy}**.",
         f"- Beacon **{b.name}**, **{freq_text(b.freq_mhz)}**, Morse ident "
         f"**{_phonetic(b.ident)}** — the pilot homes it.",
         *_channels(profile),
+        *_own_seats(profile),
         f"- Capability: radar **{'ON' if cap.radar else 'OFF'}**, "
         f"aircraft DME **{'yes' if cap.dme else 'NO'}**, "
         f"separation **{cap.separation}**, era **{cap.era}**.",
@@ -493,12 +615,11 @@ def _ndb_plate(profile: R.ApproachProfile,
         f"- Wind **{int(R.WIND_FROM_DEG):03d} at {int(R.WIND_MPH)}** briefed — "
         f"expect a tailwind float on {rwy}; plant it early. The wind you say on "
         f"the air is the ATIS's.",
-        *_formation(flight, size, profile),
         f"- Assignable levels: holding **{', '.join(str(f) for f in profile.stack_ft)}** "
         f"(bottom first), platform **{platform}**, MDA **{mda}**, missed "
         f"**{missed}** — and headings **{outbound:03d} out / {inbound:03d} in**. "
         "Nothing else.",
-    ])
+    ]
 
 
 if __name__ == "__main__":
@@ -511,7 +632,14 @@ if __name__ == "__main__":
     from marshall.core import theatre as _t
 
     _pubs = _t.approaches_now()
-    _key = _sys.argv[1] if len(_sys.argv) > 1 else _t.current().approach_key
+    # NO ARGUMENT MEANS ALL OF THEM, which is what the live controller is
+    # given. It used to fall back to `current().approach_key` -- the process's
+    # one arrival -- so the demo showed whichever procedure the shell had
+    # chosen and there was no way to see the others without knowing to ask.
+    if len(_sys.argv) <= 1:
+        print(plates(_pubs))
+        raise SystemExit(0)
+    _key = _sys.argv[1]
     if _key not in _pubs:
         raise SystemExit(f"{_t.current().name} publishes {sorted(_pubs)}, "
                          f"not {_key!r}")

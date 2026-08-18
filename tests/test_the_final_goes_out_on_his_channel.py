@@ -66,7 +66,7 @@ class TestTheChannelIsTheAEROPLANES(unittest.TestCase):
         ctl = controller_on(self.ils)
         ctl.bind("Viper 1", track="Viper 1")
         b = Bridge({ctl._resolve("Viper 1"): hz_of("approach", TH.arrival())})
-        self.assertEqual(A.final_channel(b, ctl, self.ils, "Viper 1", 0.0),
+        self.assertEqual(A.final_channel(b, ctl, "Viper 1", 0.0),
                          hz_of("tower", TH.arrival()))
 
     def test_a_TALKDOWN_goes_out_on_APPROACHS(self):
@@ -78,7 +78,7 @@ class TestTheChannelIsTheAEROPLANES(unittest.TestCase):
         ctl.bind("Mustang 2", track="Mustang 2")
         ctl.get("Mustang 2").profile = self.talkdown
         b = Bridge({ctl._resolve("Mustang 2"): hz_of("approach", TH.arrival())})
-        self.assertEqual(A.final_channel(b, ctl, self.ils, "Mustang 2", 0.0),
+        self.assertEqual(A.final_channel(b, ctl, "Mustang 2", 0.0),
                          hz_of("approach", TH.arrival()))
 
     def test_ONE_BRIDGE_GIVES_BOTH_ANSWERS(self):
@@ -91,8 +91,8 @@ class TestTheChannelIsTheAEROPLANES(unittest.TestCase):
         app = hz_of("approach", TH.arrival())
         b = Bridge({ctl._resolve("Viper 1"): app,
                     ctl._resolve("Mustang 2"): app})
-        viper = A.final_channel(b, ctl, self.ils, "Viper 1", 0.0)
-        mustang = A.final_channel(b, ctl, self.ils, "Mustang 2", 0.0)
+        viper = A.final_channel(b, ctl, "Viper 1", 0.0)
+        mustang = A.final_channel(b, ctl, "Mustang 2", 0.0)
         self.assertNotEqual(viper, mustang,
                             "two aircraft on two procedures share one channel")
         self.assertEqual(viper, hz_of("tower", TH.arrival()))
@@ -129,7 +129,7 @@ class TestAndItIsHisFIELDToo(unittest.TestCase):
         if st is None:
             self.skipTest(f"{other.name} publishes no terminal seat")
         b = Bridge({ctl._resolve("Away 1"): st.freq_mhz * 1_000_000})
-        got = A.final_channel(b, ctl, self.ils, "Away 1", 0.0)
+        got = A.final_channel(b, ctl, "Away 1", 0.0)
         self.assertEqual(got, tower_there.freq_mhz * 1_000_000)
         self.assertNotEqual(got, hz_of("tower", TH.arrival()),
                             "he got the arrival field's tower while being "
@@ -159,8 +159,7 @@ class TestTheBlindCasesAreHonest(unittest.TestCase):
         from marshall.core import theatre as _t
         if _t.station_on(want / 1_000_000) is not None:
             self.skipTest("199.9 is a real station on this map")
-        self.assertEqual(A.final_channel(Bridge(), ctl, self.ils, "Ghost 9",
-                                         want), want)
+        self.assertEqual(A.final_channel(Bridge(), ctl, "Ghost 9", want), want)
 
     def test_a_procedure_that_staffs_no_ladder_falls_back(self):
         """A 1944 letdown answers None for every role -- `theatre_stations` is
@@ -175,7 +174,7 @@ class TestTheBlindCasesAreHonest(unittest.TestCase):
         want = 124_000_000.0
         b = Bridge({ctl._resolve("Mustang 3"): hz_of("approach", TH.arrival())})
         self.assertEqual(
-            A.final_channel(b, ctl, self.ils, "Mustang 3", want), want)
+            A.final_channel(b, ctl, "Mustang 3", want), want)
 
 
 class TestTheMonitorNoLongerHoldsOneChannelForEverybody(unittest.TestCase):
@@ -234,7 +233,7 @@ class TestTheMonitorNoLongerHoldsOneChannelForEverybody(unittest.TestCase):
                     and [e.id for e in n.target.elts
                          if isinstance(e, ast.Name)] == ["cs", "pos", "scope"])
         first = ast.unparse(loop.body[0])
-        self.assertIn("final_channel(bridge, ctl, profile, cs, freq_hz)", first,
+        self.assertIn("final_channel(bridge, ctl, cs, freq_hz)", first,
                       "the channel is not resolved at the TOP of the "
                       "per-aircraft loop, so something above it may transmit "
                       "on the thread's own guess")

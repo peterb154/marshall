@@ -45,8 +45,11 @@ from marshall.atc import controller as C
 from marshall.atis import store
 from marshall.core import route as R
 from marshall.core import theatre as TH
+import tests.theatre as _theatre_help
 
-A_PROCEDURE = TH.approaches_now()[TH.current().approach_key]
+# NAMED, not taken off a process global. `TH.current().approach_key` is
+# gone (#162) and a test that wants one procedure has to say which.
+A_PROCEDURE = _theatre_help.the_arrival()
 
 
 def _clearance(seat, on_air=True, letter="Alpha"):
