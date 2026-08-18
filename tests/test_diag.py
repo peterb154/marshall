@@ -502,11 +502,37 @@ class TheFlightCardActuallyReachesTheCockpit(unittest.TestCase):
                          f"sections {missing} have no GUID and will not appear "
                          f"on the kneeboard at all")
 
-    def test_every_section_has_a_tab_label(self):
+    def test_every_FLIGHT_has_a_tab_label(self):
+        """A tab is a FLIGHT now, not a section.
+
+            "Maybe each tab should be a flight with things we should test top
+             to bottom."
+
+        This asserted that every section letter had an entry in `SHORT`, which
+        mapped "H" to "APPROACH" and gave it a page. Sections are the LIBRARY
+        now -- one copy of each row -- and the cockpit renders the running
+        order over them, so the thing that must be nameable is a flight.
+
+        The subject is unchanged and is the reason this test exists at all: a
+        page nobody can name is a page nobody opens, which is how eleven
+        sections were absent from the kneeboard while the builder warned about
+        it into a start-up log nobody read.
+        """
         from marshall.kneeboard import flighttest
-        letters = {letter for letter, _t, _r in self.sections()}
-        missing = [x for x in letters if x not in flighttest.SHORT]
-        self.assertEqual(missing, [], f"sections {missing} have no tab label")
+        labels = [label for _g, label, _s, _b in flighttest.pages()]
+        self.assertTrue(labels, "the kneeboard publishes no tabs at all")
+        for label in labels:
+            with self.subTest(label):
+                self.assertTrue(label.strip(), "a tab has no label")
+                self.assertNotEqual(label.strip(), "?", "a tab label was derived")
+        # ...AND EVERY FLIGHT REACHES ONE. A flight declared on the card and
+        # missing from the strip is the same fault one level up.
+        for name, _blurb, _ids in flighttest.flights():
+            with self.subTest(flight=name):
+                self.assertTrue(
+                    any(flighttest.guid_for(f"flight:{name}") == g
+                        for g, _l, _s, _b in flighttest.pages()),
+                    f"flight {name!r} is on the card and not in the cockpit")
 
     def test_no_two_sections_share_a_guid(self):
         # OpenKneeboard remembers the page a pilot was on; a reused identifier

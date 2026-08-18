@@ -37,6 +37,72 @@ So "the card looks enormous" is the library talking. **Fly the running order
 below**, which is one sortie; reach into the rest when a row near your change
 is worth re-flying.
 
+## Flights
+
+**A TAB IS A FLIGHT, and the rows are in the order you meet them.** The sections
+below are the LIBRARY -- one copy of each row, with its ID, its issue and its
+expectation. This is the running order over them, and it is what the cockpit
+kneeboard renders: one tab per flight, top to bottom, no flipping between
+themes while you are flying one continuous sortie.
+
+That was the fault. The card grew by theme -- H is "the approach", G is
+"clearance delivery" -- which is the right axis for WRITING tests and the wrong
+one for FLYING them. A pilot does not fly section H; he flies from the ramp to
+the parking spot and passes through six sections on the way.
+
+    "Maybe each tab should be a flight with things we should test top to
+     bottom."
+
+Rows appear in more than one flight and that is correct: H4 is the same test
+whichever sortie brings you to it, and the ID is what gets said on the radio.
+Written once, listed as many times as it is flown.
+
+`a..b` is an inclusive run of that section's live rows in card order. A row
+named here that does not exist in a section is a hard error, and a live row in
+no flight at all is one nobody will ever fly -- both are checked by
+`tests/test_the_card_is_flown_as_flights.py`.
+
+### FLIGHT 1 — the full recovery
+> Kobuleti to Batumi, IFR, cold and dark to parked. The standing sortie.
+
+    R1..R7 J1..J6 G3..G12 Q1..Q13 V9 P1..P11 V6 V7 V3 H4..H28 V8 V5 F1..F5b K1..K5 M1..M4
+
+### FLIGHT 2 — the VFR arrival
+> Nothing filed. Do not call Clearance at all; come into the airspace and talk
+> to Approach. **This is the sortie for this week's work** — before 18 August
+> the engine answered this pilot with silence.
+
+    V12 V13 V14 H4 H5 H9 H10 V15 V16 H11 F1 F3 S11
+
+### FLIGHT 3 — two aeroplanes
+> Needs a wingman. Cannot be flown solo: a formation is not one aeroplane, and
+> sequencing needs somebody to be sequenced against.
+
+    D1..D8 N1..N9 L1..L6 H18 H19 H13 V10
+
+### FLIGHT 4 — Nevada
+> Another map, another day. Needs the mission loading.
+
+    U1..U8
+
+### FLIGHT 5 — the Kobuleti ILS
+> The data-driven proof: a second field's approach flown with no code change.
+
+    T1..T4 V6 V8
+
+### EARS ONLY — all sortie, every flight
+> Not a flight. These ride along with whichever one you are flying, and no
+> machine will ever score them.
+
+    S1..S14
+
+### PARKED — do not fly
+> V11 exercises the 1944 NDB letdown and that procedure is being removed: in
+> DCS only the P-51D-30 carries a homing receiver and it works badly. The row
+> and #140 stay on the card so neither vanishes silently.
+
+    V11 Q0 U0
+
 ## Fly in this order
 
 **Rebuilt 16 August, re-scrubbed 18 August.** The previous order was written on

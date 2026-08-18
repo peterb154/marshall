@@ -106,18 +106,17 @@ def guid_for(section: str) -> str:
     """The stable tab identifier for a card section."""
     return "{" + str(uuid.uuid5(_NS, section)) + "}"
 
-# Tab labels. OpenKneeboard's tab strip is narrow and the pilot is reading it
-# at a glance, so these are hand-short rather than a truncated heading.
-# Sections B, C, D and F are gone -- every row in them was closed and their
-# scripts run from tools/check.py. Their GUIDs are NOT reused: OpenKneeboard
-# remembers the page a pilot was on, and handing an old identifier to a new
-# document would drop him somewhere he did not choose.
-SHORT = {"A": "PREFLT", "E": "KNOWN", "G": "CLNC", "H": "APPROACH",
-         "U": "NEVADA", "V": "DATUM",
-         "J": "WHO", "D": "FLIGHTS", "F": "LAND", "K": "MEMORY", "L": "CHANNEL",
-         "M": "SPEED", "N": "NAMES", "P": "TRACKED", "Q": "LADDER",
-         "R": "ATIS", "S": "SOUND", "T": "ILS"}
-
+# NO PER-LETTER TAB LABELS ANY MORE. `SHORT` mapped a section letter to a tab
+# name -- "H" to "APPROACH" -- and `build_section` rendered one page per letter.
+# Both are gone: a tab is a FLIGHT now, and `_tab_label` names those instead.
+#
+#     "Maybe each tab should be a flight with things we should test top to
+#      bottom."
+#
+# The section GUIDS above are kept and are NEVER reused, which is the same rule
+# section E retired under. OpenKneeboard remembers which page a pilot was on,
+# and handing an old identifier to a new document drops him somewhere he did
+# not choose -- so a retired identifier is a gravestone, not a spare.
 _SECTION = re.compile(r"^## ([A-Z]) — (.+)$", re.M)
 # A cockpit row. THE BOLD AND STRUCK FORMS ARE NOT DECORATION -- this pattern
 # matched only a bare `| H4 |`, so every section written since 2 August was
@@ -233,6 +232,64 @@ def sections() -> list[tuple[str, str, list[dict]]]:
     return out
 
 
+_FLIGHT = re.compile(r"^### (.+?)$\n(.*?)(?=\n### |\n## |\Z)", re.M | re.S)
+
+
+def flights() -> list[tuple[str, str, list[str]]]:
+    """(name, blurb, [row id]) for each flight, in the order they are written.
+
+    A TAB IS A FLIGHT. The sections are the LIBRARY -- one copy of each row --
+    and this is the running order over them, which is what the cockpit renders.
+
+    The card grew by THEME, which is the right axis for writing tests and the
+    wrong one for flying them: a pilot does not fly section H, he flies from
+    the ramp to the parking spot and passes through six sections on the way.
+
+        "Maybe each tab should be a flight with things we should test top to
+         bottom."
+
+    `a..b` is an inclusive run over that section's LIVE rows IN CARD ORDER --
+    not arithmetic on the number, because the numbers are not contiguous and
+    never have been: section H runs H18, H19, H11, H13, H10, H9, H4... in the
+    order somebody found the faults. Expanding `H4..H28` by counting would
+    invent rows that do not exist and skip ones that do.
+    """
+    card = _read("TEST_PLAN.md")
+    m = re.search(r"^## Flights$(.*?)(?=\n## )", card, re.M | re.S)
+    if not m:
+        return []
+    live = {}
+    for letter, _title, rows in sections():
+        live[letter] = [r["id"] for r in rows if r["id"]]
+    out = []
+    for fm in _FLIGHT.finditer(m.group(1)):
+        name = fm.group(1).strip()
+        body = fm.group(2)
+        blurb = " ".join(x.lstrip("> ").strip()
+                         for x in body.splitlines() if x.startswith(">"))
+        ids: list[str] = []
+        for tok in " ".join(x for x in body.splitlines()
+                            if x.startswith("    ")).split():
+            if ".." in tok:
+                lo, hi = tok.split("..", 1)
+                sect = re.match(r"[A-Z]+", lo)
+                pool = live.get(sect.group(0), []) if sect else []
+                if lo in pool and hi in pool:
+                    ids += pool[pool.index(lo):pool.index(hi) + 1]
+                else:
+                    # LOUD, NOT SILENT. A range naming a row that does not
+                    # exist would otherwise render as a shorter flight, and a
+                    # missing row looks exactly like one the pilot has not
+                    # scrolled to -- he flies the sortie never knowing it was
+                    # meant to be there. Same failure as a section with no GUID.
+                    print(f"!! flight {name!r}: range {tok} names a row that "
+                          f"is not live in the card", flush=True)
+            else:
+                ids.append(tok)
+        out.append((name, blurb, ids))
+    return out
+
+
 def issues() -> list[dict]:
     """Every issue, with its number and status, in the order it is written."""
     text = _read("ISSUES.md")
@@ -318,21 +375,50 @@ def _rows_html(rows: list[dict]) -> str:
     return "".join(out)
 
 
-def build_section(letter: str) -> str:
-    for ltr, title, rows in sections():
-        if ltr != letter:
-            continue
-        warn = ""
-        if letter == "E":
-            warn = ('<div class="warn"><b>Known broken — do not report these as '
-                    'new.</b> A reversal that is <b>not</b> listed here is the '
-                    'interesting one.</div>')
-        return (f"<title>{letter}</title><style>{CSS}</style>"
-                f'<div class="ft"><h1>{letter} &mdash; {_md(title)}</h1>'
-                f'<div class="sub">say the ID and the issue number on the radio'
-                f'</div>{warn}{_rows_html(rows)}</div>')
-    return f"<title>{letter}</title><style>{CSS}</style>" \
-           f'<div class="ft"><h1>{letter}</h1><p>no rows</p></div>'
+def build_flight(name: str) -> str:
+    """One flight, top to bottom, with each row's own section shown beside it.
+
+    The section letter stays VISIBLE because it is half the identifier a pilot
+    says on the radio and because it tells him which part of the system a
+    failure belongs to. What it no longer does is decide which page he is on.
+    """
+    want = None
+    for nm, blurb, ids in flights():
+        if nm == name:
+            want = (blurb, ids)
+    if want is None:
+        return (f"<title>{name}</title><style>{CSS}</style>"
+                f'<div class="ft"><h1>{_md(name)}</h1><p>no such flight</p></div>')
+    blurb, ids = want
+    known = {}
+    for _letter, _title, rows in sections():
+        for r in rows:
+            if r["id"]:
+                known[r["id"]] = r
+    rows, missing = [], []
+    for rid in ids:
+        if rid in known:
+            rows.append(known[rid])
+        else:
+            missing.append(rid)
+    if missing:
+        # A ROW NAMED IN A FLIGHT AND ABSENT FROM THE LIBRARY. Said out loud
+        # for the same reason a section with no GUID was: a page that silently
+        # renders one row short reads exactly like a page a pilot has not
+        # finished scrolling.
+        print(f"!! flight {name!r} names rows that do not exist: "
+              f"{', '.join(missing)}", flush=True)
+    warn = ""
+    if name.startswith("PARKED"):
+        warn = ('<div class="warn"><b>Do not fly these.</b> They exercise work '
+                'that is being removed. Kept so it does not vanish silently.'
+                '</div>')
+    return (f"<title>{name}</title><style>{CSS}</style>"
+            f'<div class="ft"><h1>{_md(name)}</h1>'
+            f'<div class="sub">{_md(blurb) if blurb else ""}</div>'
+            f'<div class="sub">{len(rows)} rows &middot; in the order you meet '
+            f'them &middot; say the ID and the issue number on the radio</div>'
+            f'{warn}{_rows_html(rows)}</div>')
 
 
 def build_issues() -> str:
@@ -374,27 +460,39 @@ def pages() -> list[tuple[str, str, str, object]]:
     # IN THE ORDER HE FLIES THEM, which is the order the card is written in --
     # ramp, clearance, approach, then the known-broken reference. Sorting them
     # alphabetically put the approach before the clearance that precedes it.
-    for letter, _title, _rows in sections():
-        # DERIVED WHERE IT IS NOT LISTED. A section with no GUID used to be
-        # dropped with a warning, and a page that is missing looks exactly like
-        # a page the pilot has not scrolled to -- he flies the sortie without
-        # ever knowing there were tests on it. That is a loud failure for a
-        # problem with a correct answer: the identifier only has to be STABLE,
-        # and `guid_for` derives a stable one from the letter.
-        #
-        # The listed letters still win, because they were issued before the
-        # recipe was written down and OpenKneeboard remembers which page a pilot
-        # was on. Reissuing one would drop him somewhere he did not choose.
-        guid = GUIDS.get(letter) or guid_for(letter)
-        if letter not in SHORT:
-            # The tab LABEL still has to be written by a person -- the strip is
-            # narrow and a truncated heading is not a name.
-            print(f"!! flight test section {letter} has no tab label; it will "
-                  f"appear as bare '{letter}'. Add one to SHORT.", flush=True)
-        out.append((guid, f"{letter} {SHORT.get(letter, '')}",
-                    f"ft-{letter.lower()}",
-                    (lambda l: (lambda: build_section(l)))(letter)))
+    # ONE TAB PER FLIGHT, not one per section. A pilot does not fly section H;
+    # he flies from the ramp to the parking spot and passes through six
+    # sections on the way, and the tab strip used to make him find them.
+    #
+    # THE SECTION TABS ARE GONE AND THEIR GUIDS ARE NOT REUSED -- the same rule
+    # section E retired under. OpenKneeboard remembers which page a pilot was
+    # on, and handing an old identifier to a new document drops him somewhere
+    # he did not choose. `guid_for` is namespaced on "flight:" so a flight can
+    # never collide with the letter of a section that once existed.
+    for name, _blurb, _ids in flights():
+        out.append((guid_for(f"flight:{name}"), _tab_label(name),
+                    "ft-" + re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-"),
+                    (lambda n: (lambda: build_flight(n)))(name)))
     return out
+
+
+def _tab_label(name: str) -> str:
+    """The strip is narrow and the pilot reads it at a glance.
+
+    "FLIGHT 2 -- the VFR arrival" becomes "2 VFR". Hand-shortened where the
+    card gives a name worth keeping, derived otherwise, because a tab with no
+    label is a page nobody opens.
+    """
+    short = {"FLIGHT 1": "1 RECOVERY", "FLIGHT 2": "2 VFR",
+             "FLIGHT 3": "3 TWO-SHIP", "FLIGHT 4": "4 NEVADA",
+             "FLIGHT 5": "5 KOB ILS", "EARS ONLY": "EARS",
+             "PARKED": "PARKED"}
+    head = name.split("—")[0].strip()
+    if head in short:
+        return short[head]
+    print(f"!! flight {name!r} has no tab label; add one to `_tab_label`",
+          flush=True)
+    return head[:12] or "?"
 
 
 if __name__ == "__main__":
