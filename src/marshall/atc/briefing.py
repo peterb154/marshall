@@ -479,49 +479,102 @@ def _theatre_lines(flight: str, size: int,
 def plates(procedures,
            flight: str = R.FLIGHT_CALLSIGN,
            size: int = R.FLIGHT_SIZE) -> str:
-    """EVERY procedure this map publishes, as the one 'plate' prompt part.
+    """The map's plate: the theatre's facts, and WHICH approaches it offers.
 
-    This is the half of #162 that the deletions on their own would have broken.
-    A controller was handed the plate for the arrival the process was started
-    with, so the radio could work exactly one approach: ask it for anything
-    else and it had the numbers for a different procedure, all of them real and
-    all of them wrong.
+    NOT THE PROCEDURES THEMSELVES. This is the static `plate` prompt part,
+    assembled once per agent (`SYSTEM_PROMPT_PARTS`) and pushed at start, so
+    everything in it is carried on every push-to-talk for the life of the
+    session. That makes it the wrong home for anything that varies per
+    aeroplane.
 
-        "make sure that the radio/srs is completely flexible to work any
-         approach"
+    It briefly WAS the wrong home. #162 put a full section here for every
+    published procedure, because the radio had to be able to work any of them
+    and a static prompt can only do that by containing all of them. Measured on
+    the Caucasus: 10,601 characters, of which ~4,800 described three approaches
+    nobody on the frequency was flying.
 
-    It is when it has been briefed on all of them. A field OFFERS a set and
-    Approach issues one to one aeroplane, which is the shape everything else
-    already had -- `flights.cleared_approach`, `Controller._pro(ac)`, the
-    stack keyed per procedure. The prompt was the last thing still holding a
-    singular.
+        "Why would the controller get briefed on multiple procedures rather
+         than just the one that is requested/assigned?"
 
-    IT IS NOT FOUR TIMES THE TOKENS. Roughly half of a plate was never about
-    the procedure at all -- the seats, the departure field, today's tasking,
-    the filed route, what shoots -- and those are said once here for the map
-    rather than once per renderer. Four Caucasus procedures cost about twice
-    one plate, not four times.
+    He should not, and the question separates two things this used to conflate:
 
-    TAKES THE KEYED MAPPING `theatre.approaches_now()` returns, because the key
-    is not on the profile: a procedure does not know what it is filed as, and
-    reconstructing `<field>-<kind>-<runway>` here would be a second copy of
-    `agent_atc._key_of` in a module that has no business deriving one.
+        what the field OFFERS    a list. 154 characters, genuinely static,
+                                 and what lets Approach ISSUE one or refuse a
+                                 request for one the field has not got
+        what HE is flying        the detail -- course, minima, missed approach,
+                                 mile-call rules. A property of his CLEARANCE,
+                                 known deterministically before the model is
+                                 called, and injected per turn by
+                                 `procedure_brief` through `compose_message`
 
-    Ordered by key so two runs of the same map produce the same bytes; a
-    prompt that reshuffles itself is one nobody can diff.
+    Anything else -- a procedure some other aeroplane is on, or one a pilot
+    asks about out of the blue -- is the `look_up_approach` tool. That is the
+    same axis `frequencies.py` argues for the station table, one step over:
+    *"the field a man is sitting at is cheap and constant, and the rest of the
+    map is neither."*
+
+    Ordered by key so two runs of the same map produce the same bytes; a prompt
+    that reshuffles itself is one nobody can diff.
     """
+    procs = sorted(dict(procedures).items())
     out = [PLATE_HEADING, "", *_theatre_lines(flight, size)]
-    for key, p in sorted(dict(procedures).items()):
-        # NAMED BY ITS KEY, because that is what a clearance says and what
-        # `flights.cleared_approach` stores. A section headed "ILS runway 13"
-        # is unambiguous to read and ambiguous to LOOK UP the moment a field
-        # publishes an approach to the other end -- which is #165's whole
-        # finding, one axis over.
-        out += ["", f"## Cleared for `{key}` — "
-                    f"{(p.kind or '').upper()} runway {p.runway or 'in use'} "
-                    f"at {p.aerodrome.name}", ""]
-        out += _procedure_lines(p)
+    if procs:
+        offer = "; ".join(
+            f"**`{k}`** ({(p.kind or '').upper()} runway "
+            f"{p.runway or 'in use'} at {p.aerodrome.name})" for k, p in procs)
+        out += [
+            f"- **THIS FIELD PUBLISHES {len(procs)} APPROACHES**: {offer}. "
+            "That is the whole list — you may issue one of these and nothing "
+            "else, and a pilot who asks for a procedure not on it is asking "
+            "for something that does not exist here. Say so plainly.",
+            "- **You are given the detail of the approach THIS AEROPLANE IS "
+            "CLEARED FOR**, and only that one — the course, the minima, the "
+            "missed approach and whether you make mile calls arrive with his "
+            "transmission. If there is no such block, he has not been cleared "
+            "for an approach and you have no numbers to read him.",
+            "- **For any OTHER approach, call `look_up_approach`.** A pilot "
+            "asking what else is available, or asking to change to one, is "
+            "asking about a procedure you were not briefed on. Numbers you "
+            "produce from memory for it are numbers you have invented, and a "
+            "minimum you invent is one somebody descends to.",
+        ]
     return "\n".join(out)
+
+
+def procedure_brief(profile, heading: bool = True) -> str:
+    """The approach THIS aeroplane is cleared for. The per-turn half.
+
+    Injected by `assembly.compose_message` on the turn, not carried in the
+    system prompt, because which procedure applies is a property of a CLEARANCE
+    and `Controller.procedure_for` resolves it before the model is called.
+
+    WHY NOT A TOOL, when `look_up_approach` exists two functions down. Two
+    reasons, and the second is the one that matters:
+
+    1. We already know the answer. A tool-call round trip roughly doubles the
+       turn -- the model call is a median 3.3 s and a worst case of 13.5 --
+       so making the model ask for something we are holding buys nothing.
+    2. **A tool call can fail, or simply not happen.** The model decides
+       whether to make it. This is the approach he is being talked down, and
+       the surveillance approach is the one procedure that never stops
+       talking; an injected block cannot fail to arrive, and a tool call at
+       three miles on final can.
+
+    Empty for `None`, which is an aeroplane nobody has cleared, and that is the
+    honest output rather than a default: he has no approach, so there are no
+    numbers to read him. [#176]
+    """
+    if profile is None:
+        return ""
+    lines = _procedure_lines(profile)
+    if not heading:
+        return "\n".join(lines)
+    return "\n".join([
+        f"HIS APPROACH — he is cleared for the {(profile.kind or '').upper()} "
+        f"to runway {profile.runway or 'in use'} at {profile.aerodrome.name}. "
+        f"These are the only approach numbers you may read him:",
+        *lines,
+    ])
 
 
 def _ils_lines(profile: R.ApproachProfile) -> list[str]:

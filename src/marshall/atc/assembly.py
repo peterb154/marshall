@@ -306,6 +306,32 @@ def compose_message(bridge, scope, known, transcript, profile, me, fix, nxt,
             "ASR (radar guidance, computed from the scope — voice these "
             "numbers exactly; you are navigating for him and he has no "
             f"approach aid of his own): {vectoring}")
+    # THE APPROACH THIS AEROPLANE IS CLEARED FOR, and no other.
+    #
+    #     "Why would the controller get briefed on multiple procedures
+    #      rather than just the one that is requested/assigned?"
+    #
+    # He would not, and until this line he was: #162 put a full section for
+    # every published procedure into the STATIC plate, because the radio had
+    # to work any of them and a system prompt can only do that by containing
+    # all of them. 10,601 characters on the Caucasus, of which ~4,800
+    # described approaches nobody on the frequency was flying.
+    #
+    # The detail belongs on the TURN, because which procedure applies is a
+    # property of a clearance and `procedure_for` resolves it before the
+    # model is called. The static plate keeps the OFFER -- 154 characters of
+    # keys, kinds and runways -- so he can still issue one or refuse a
+    # request for one the field has not got, and `look_up_approach` covers
+    # the rest.
+    #
+    # Injected rather than fetched, and the reason is not only the ~3.3 s a
+    # tool round trip costs: a tool call can fail or simply not happen, and
+    # this is the procedure he is being talked DOWN. [#176]
+    if profile is not None:
+        from marshall.atc import briefing as _brief
+        _his = _brief.procedure_brief(profile)
+        if _his:
+            parts.append(_his)
     if me and getattr(me, "role", "") in ("approach", "tower"):
         # THE RUNWAY IN USE WHERE HE HAS NO PROCEDURE. A man who has asked
         # for nothing has been cleared for nothing, so there is no arrival to

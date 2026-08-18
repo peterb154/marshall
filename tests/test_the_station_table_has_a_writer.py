@@ -210,11 +210,23 @@ class TestThePushCarriesThisMapsSeats(unittest.TestCase):
         p = T.letdown()
         if p is None or getattr(p, "theatre_stations", True):
             self.skipTest("this map publishes no letdown off the ladder")
-        said = briefing.plates(T.approaches())
+        # ON THE TURN, NOT IN THE STATIC PLATE. #176 moved every
+        # procedure's detail out of the system prompt and onto the
+        # transmission of the aeroplane cleared for it, so this sentence
+        # now reaches exactly the controller working the Mustang -- which
+        # is better targeting of the same correction, not a weaker one.
+        said = briefing.procedure_brief(p)
         self.assertIn("THE SEATS ON THIS PROCEDURE ARE ITS BEACONS", said)
         for s in TH.beacon_seats(p):
             with self.subTest(s.name):
                 self.assertIn(f"{s.name}", said)
+        # ...AND THE STATIC PLATE STILL LISTS THE LADDER, which is what the
+        # sentence above exists to contradict. Both halves must be present
+        # or the contradiction it resolves is not there to resolve.
+        static = briefing.plates(T.approaches())
+        self.assertIn("Controllers:", static)
+        self.assertNotIn("THE SEATS ON THIS PROCEDURE ARE ITS BEACONS",
+                         static)
 
 
 class TestASecondPushReplacesTheTable(unittest.TestCase):

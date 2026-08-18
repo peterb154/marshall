@@ -10840,5 +10840,64 @@ Code: `src/marshall/atc/briefing.py` (`plates`, `_procedure_lines`),
 `src/marshall/atc/agent_atc.py` (`load_and_push_plates`),
 `src/marshall/core/theatre.py` (`NEVADA_SORTIES`).
 
-**Status:** NOT BUILT. Filed 18 August out of #2's remainder.
+**Status:** PARTLY — 18 August, same day. Criterion 2 is built; 1, 3 and 4 are
+not.
+
+**The plate split, and the tool.** The static `plate` part is now the theatre's
+facts plus an OFFER — every key, kind, runway and field, 154 characters — and
+the detail of the approach an aeroplane is CLEARED for rides on his own
+transmission through `compose_message`. Caucasus: **10,601 characters down to
+4,694**, and the ~1,700 that describes a procedure now reaches only the
+controller working the aeroplane flying it.
+
+    "Can we give the agent a tool to lookup procedures on demand as he needs
+     them? Or does that cost too much latency if we know the agent is going to
+     need a procedure?"
+
+Both, split by whether we know in advance:
+
+    HIS approach       injected. `procedure_for` resolves it off the board
+                       BEFORE the model is called, so a tool would pay a round
+                       trip for something in hand -- and a round trip roughly
+                       doubles a call whose median is 3.3 s. The bigger reason
+                       is that a tool call can FAIL or simply not happen, and
+                       this is the procedure he is being talked down.
+    every OTHER one    `look_up_approach`, universal like `look_up_frequency`.
+                       Unpredictable, occasional, and landing on a
+                       CONVERSATIONAL turn -- so the ~3.3 s is paid where
+                       nobody is waiting on a heading.
+
+`frequencies.py` had already argued this axis for the station table: *"the
+field a man is sitting at is cheap and constant, and the rest of the map is
+neither."* Substitute the approach he is flying and it is unchanged.
+
+**TWO DEFECTS FELL OUT, both found by running it rather than by reading.**
+
+1. **The approaches table accumulated across maps.** `load_and_push_plates`
+   upserted each row and dropped none, so the live table held six rows across
+   two continents and `look_up_approach` offered a Caucasus controller Nellis
+   and Tonopah. That is exactly what `frequencies.py` records finding in
+   `stations`, and the fix is the one `set_stations` already makes: the push
+   REPLACES. `PUT /approaches` is the bulk route; the per-key one stays for
+   tools and tests. Verified live — six rows in, four out.
+2. **`profile_to_dict` is lossy and reasoning over the row cannot be made
+   correct.** `vectored` is a computed property (`kind == "asr"`) and
+   `asdict` keeps fields and drops properties, so the stored JSON has no
+   `vectored` at all. Describing an approach from the dict called the
+   surveillance approach unvectored AND, before that, called the 1944 letdown a
+   headings talkdown — which is the one instruction that would break it, since
+   a heading destroys the pilot's only reference. The row is rebuilt with
+   `profile_from_dict` and `may_vector` is asked. That function's docstring
+   already named the trap: *"ONE QUESTION, ONE ANSWER, and it was being asked
+   three different ways ... which disagreed."* This was a fourth.
+
+**And the image would not have built.** `services/Dockerfile` and the compose
+`dockerfile:` key still carried `director/` paths after the rename. Nothing in
+the suite builds the image, so check.py was green and the next deploy would
+have failed. Found by rebuilding.
+
+**Remaining:** criterion 1 (`MARSHALL_SORTIE`), 3 (recording what was loaded,
+which `LAYERS.md` names as the real cost of a per-call prompt) and 4 as a
+guarded assertion rather than a consequence.
+Labels: needs-flight-test
 ---

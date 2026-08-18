@@ -57,6 +57,47 @@ def upsert_approach(name: str, field: str, data: dict) -> None:
             (name, field, Json(data)))
 
 
+def replace_approaches(rows: list[dict]) -> int:
+    """Publish THIS map's whole offer, and drop what is not in it.
+
+    `set_stations`' bargain, taken verbatim: whatever the push no longer has,
+    the table no longer has. `upsert_approach` alone made this table a LOG of
+    every procedure any run had ever selected rather than a statement about the
+    map that is loaded, and the live table proved it -- six rows spanning two
+    continents, so a Caucasus controller asked what approaches were available
+    would have been offered Nellis and Tonopah.
+
+    That is the identical defect `frequencies.py` records finding in `stations`:
+    *"The rows this reads accumulate across every theatre ever loaded and it
+    used to take the alphabetically first, so a Nellis controller asked for
+    Tonopah's tower was told there is no such position and offered Batumi and
+    Kobuleti instead."* The fix there was to replace the table on every push.
+    Same fix, same reason, one table over. [#176]
+
+    A stale row here is worse than a stale station: it is a real minimum at a
+    real aerodrome on the wrong continent, and a minimum is an altitude
+    somebody descends to.
+
+    Rows are `{"name", "field", "data"}`. An EMPTY list is refused rather than
+    obeyed -- a push that computed nothing must not empty the table, because
+    the failure that would cause (a controller who can name no approach at all)
+    looks exactly like a map that publishes none.
+    """
+    if not rows:
+        return 0
+    _ensure()
+    with get_pool().connection() as c, c.transaction():
+        names = [r["name"] for r in rows]
+        for r in rows:
+            c.execute(
+                "INSERT INTO approaches (name, field, data) "
+                "VALUES (%s, %s, %s) ON CONFLICT (name) DO UPDATE SET "
+                "field=EXCLUDED.field, data=EXCLUDED.data",
+                (r["name"], r.get("field", ""), Json(r["data"])))
+        c.execute("DELETE FROM approaches WHERE name <> ALL(%s)", (names,))
+    return len(rows)
+
+
 def get_approach(name: str) -> dict | None:
     _ensure()
     with get_pool().connection() as c:

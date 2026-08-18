@@ -42,6 +42,7 @@ from marshall.feed.dcs import (
 from marshall.atc.agent.capability import capabilities, describe
 from marshall.atc.approaches import (
     active_flight_plan,
+    replace_approaches,
     get_approach,
     list_approaches,
     list_flight_plans,
@@ -52,6 +53,7 @@ from tools.busy import SeatLocks
 from marshall.atc.clearance import clearance_tools
 from marshall.atc.agent.context import RadioContext, scrub
 from marshall.atc.frequencies import frequency_tools
+from marshall.atc.procedures import procedure_tools
 from marshall.atc.agent.hooks import due_hooks, hook_tools
 from marshall.atc.identify import bindings_for, identify_tools
 from marshall.feed.events import start_events
@@ -222,6 +224,23 @@ def build_agent(session_id: str, role: str = "", also=(),
             # Tonopah's tower was told there is no such position and offered
             # Batumi and Kobuleti instead.
             *(frequency_tools(station) if "frequency" in may else []),
+            # ANY APPROACH ON THE MAP, on demand, and NOT the one he is
+            # working. That one arrives injected with the transmission --
+            # we resolve it off the board before the model is called, so a
+            # tool would pay a round trip for something already in hand,
+            # and a tool call can fail or simply not happen while an
+            # injected block cannot. The talkdown is the procedure that
+            # never stops talking; it must not depend on the model
+            # remembering to ask.
+            #
+            # This is for the OTHER procedures: "what else have you got",
+            # "can I have the ILS instead". Unpredictable, occasional, and
+            # landing on a conversational turn rather than a vectoring one,
+            # so the ~3.3 s is paid where nobody is waiting on a heading.
+            # Same bargain as the frequency tool one line up: an invented
+            # frequency sends a pilot to silence, and an invented MINIMUM
+            # is an altitude somebody descends to.
+            *(procedure_tools() if "procedure" in may else []),
             *(memory_tools(namespace=store) if "memory" in may else []),
             # THE OVERLORD'S HANDS, AND ONLY HIS. This was given to every seat,
             # with the overlord brief left to say who might use it -- an
@@ -528,8 +547,23 @@ def approach_endpoint(name: str) -> dict:
     return get_approach(name) or {}
 
 
+@app.put("/approaches")
+def put_approaches_endpoint(body: dict) -> dict:
+    """This map's WHOLE offer, replacing whatever was there.
+
+    `PUT /approaches/{name}` upserts one and leaves the rest, which made the
+    table a log of every procedure any run had selected instead of a statement
+    about the loaded map. See `approaches.replace_approaches`; the same bargain
+    `PUT /sectors` and `PUT /stations` already make. [#176]
+    """
+    return {"ok": True, "n": replace_approaches(body.get("approaches") or [])}
+
+
 @app.put("/approaches/{name}")
 def put_approach_endpoint(name: str, body: dict) -> dict:
+    """ONE approach, kept for the tools and tests that seed a single row.
+    `load_and_push_plates` uses the bulk route above, because a radio publishes
+    an offer rather than an accumulation."""
     upsert_approach(name, body.get("field", ""), body["data"])
     return {"ok": True, "name": name}
 

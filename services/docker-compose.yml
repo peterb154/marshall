@@ -1,8 +1,17 @@
-# Pinned so the project name does not follow the directory name. This stack was
-# born in its own repo (/opt/marshall-director) and its Postgres volume is
-# marshall-director_pgdata; after the move under marshall/director/ compose would
-# otherwise derive the project from the folder ("director"), mount a brand-new
-# empty volume, and silently come up with no contacts, sessions or approaches.
+# PINNED SO THE PROJECT NAME DOES NOT FOLLOW THE DIRECTORY NAME, and on
+# 18 August that is exactly what it bought: `director/` became `services/`
+# and this stack kept its containers and its data because compose had been
+# TOLD its project rather than deriving one from the folder.
+#
+# `marshall-director` is the running deployable's IDENTITY. It does not
+# follow the directory and must not -- renaming it here would orphan the
+# running stack, which is the opposite of what this line is for.
+#
+# The reason this comment used to give was wrong. It said the Postgres
+# volume is `marshall-director_pgdata` and an unpinned rename would mount a
+# brand-new empty one. There is no such volume: the database is the bind
+# mount to /srv/pgdata/data declared thirty lines below, which no project
+# name can miss. That claim deferred the rename for a fortnight. [#147]
 name: marshall-director
 
 services:
@@ -54,7 +63,7 @@ services:
       # The repo root, so the image can carry `src/marshall`. Paths inside the
       # Dockerfile are therefore repo-relative.
       context: ..
-      dockerfile: director/Dockerfile
+      dockerfile: services/Dockerfile
     depends_on:
       db:
         condition: service_healthy

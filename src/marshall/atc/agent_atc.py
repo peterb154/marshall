@@ -489,15 +489,23 @@ def load_and_push_plates(base: str = BASE_URL):
     _th = _theatre.current()
     procedures = _theatre.approaches_now()
     try:
-        # ALL OF THEM, EVERY START. One row was written and the other three
-        # were whatever a previous run had left, so the table a controller
-        # looks a procedure up in was a union of however many shells had
-        # started the radio. Publishing the whole offer makes the table a
-        # statement about the MAP rather than a log of what has been selected.
-        for _key, _p in sorted(procedures.items()):
-            _put_json(f"{base}/approaches/{_key}",
-                      {"field": _p.aerodrome.name,
-                       "data": R.profile_to_dict(_p)})
+        # ALL OF THEM, EVERY START, AND NOTHING ELSE. One row was written and
+        # the other three were whatever a previous run had left, so the table a
+        # controller looks a procedure up in was a union of however many shells
+        # had started the radio.
+        #
+        # PUBLISHING IS NOT ENOUGH; the push must REPLACE. Writing all four and
+        # leaving the rest made this an accumulation across every map ever
+        # loaded -- measured on the live table, six rows spanning two
+        # continents, so `look_up_approach` would have offered a Caucasus
+        # controller Nellis and Tonopah. That is the defect `frequencies.py`
+        # records finding in `stations`, and the fix is the one `set_stations`
+        # already makes: whatever the push no longer has, the table no longer
+        # has. [#176]
+        _rows = [{"name": _k, "field": _p.aerodrome.name,
+                  "data": R.profile_to_dict(_p)}
+                 for _k, _p in sorted(procedures.items())]
+        _put_json(f"{base}/approaches", {"approaches": _rows})
         print(f"  published {len(procedures)} approaches: "
               f"{', '.join(sorted(procedures))}", flush=True)
         # NO "approach: X (from the theatre)" LINE, because there is no such
@@ -552,8 +560,9 @@ def load_and_push_plates(base: str = BASE_URL):
 
     try:
         _put_json(f"{base}/prompts/plate", {"body": briefing.plates(procedures)})
-        print(f"  pushed a plate for each of {len(procedures)} procedures "
-              f"to the language brain", flush=True)
+        print(f"  pushed the plate: the theatre's facts and an offer of "
+              f"{len(procedures)} approaches. Each procedure's DETAIL rides "
+              f"with the aeroplane cleared for it", flush=True)
     except (urllib.error.URLError, TimeoutError, OSError) as e:
         print(f"  !! could not push plate: {e}", flush=True)
     return procedures

@@ -57,8 +57,16 @@ _TOOLSET = {
 
 # Given to every seat, because every controller needs them: knowing who is
 # calling, measuring a range, arranging to be woken, looking up a frequency he
-# was not briefed, and remembering the sortie.
-_UNIVERSAL = {"identify", "vector", "hooks", "frequency", "memory"}
+# was not briefed, looking up an approach he was not briefed, and remembering
+# the sortie.
+#
+# `procedure` is universal for the same reason `frequency` is: a pilot asks
+# whoever he is talking to. He asks Ground what approaches are in use as
+# readily as he asks Approach, and a controller who cannot answer a question
+# about his own aerodrome because of a capability table is a worse failure
+# than the tokens it saves. ISSUING one is still Approach's alone -- that is
+# separation, and it lives in the engine rather than in who may read a list.
+_UNIVERSAL = {"identify", "vector", "hooks", "frequency", "procedure", "memory"}
 
 
 def capabilities(role: str = "", also=()) -> set[str]:
