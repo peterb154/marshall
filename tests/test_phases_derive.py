@@ -362,7 +362,7 @@ class TakingOffIsNotBeingEstablishedOnFinal(unittest.TestCase):
     def setUp(self):
         from marshall.atc import agent_atc as A, controller as atc
         from marshall.core import route as R
-        self.A, self.R = A, R
+        self.A, self.R, self.atc = A, R, atc
         self.p = T.the_arrival()
         self.ctl = atc.Controller(self.p)
 
@@ -380,7 +380,6 @@ class TakingOffIsNotBeingEstablishedOnFinal(unittest.TestCase):
         self.ctl.check_in("sockeye")
         ac = self.ctl.get("sockeye")
         ac.sortie_phase = "departure"
-        before = ac.phase
         self.ctl.out.clear()
         scope = self.A.Scope("", contacts=[self.climbing_off_kobuleti()],
                              origin=(41.609594, 41.600234),
@@ -389,7 +388,17 @@ class TakingOffIsNotBeingEstablishedOnFinal(unittest.TestCase):
             self.A.Bridge(), self.ctl, "sockeye airborne", scope,
             known="sockeye", track="362nd_sockeye",
             intent=intents.Intent(intents.IntentKind.CHECK_IN, "sockeye"))
-        self.assertEqual(ac.phase, before,
+        # ASSERTED AS "NOT IN THE LETDOWN", which is what the name says and
+        # what the incident was. It used to read `phase == before`, and that
+        # was a proxy that worked only because `check_in` set ENROUTE for
+        # everybody -- so "unchanged" and "not cleared" were the same
+        # sentence. #184 stopped admitting a man who has never flown, `before`
+        # became UNKNOWN, and the proxy started failing on a transition that
+        # is correct: this fixture is airborne (472 ft, 341 kt, climbing off
+        # Kobuleti), so becoming ENROUTE is right and being put on an approach
+        # is not.
+        self.assertNotIn(ac.phase, (self.atc.Phase.CLEARED,
+                                    self.atc.Phase.HOLDING),
                          "he was cleared for an approach he had not started")
         self.assertEqual(ac.sortie_phase, "departure")
 

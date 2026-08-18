@@ -66,6 +66,9 @@ class TestStackEntry(unittest.TestCase):
         self.ctl = atc.Controller(profile())
 
     def test_check_in_does_not_assign_a_level(self):
+        # Airborne: this is about the STACK, and #184 keeps an aeroplane that
+        # has never flown out of the arrival queue entirely.
+        self.ctl.get("Sockeye").has_been_airborne = True
         self.ctl.check_in("Sockeye")
         self.assertEqual(self.ctl.get("Sockeye").phase, atc.Phase.ENROUTE)
         self.assertIsNone(self.ctl.get("Sockeye").assigned_ft)
@@ -1368,7 +1371,14 @@ class TestACheckInDoesNotUndoAClearance(unittest.TestCase):
         self.assertIs(ac.phase, atc.Phase.LANDED)
 
     def test_a_genuine_new_arrival_still_becomes_enroute(self):
-        """The guard must not stop the thing check_in is FOR."""
+        """The guard must not stop the thing check_in is FOR.
+
+        `has_been_airborne` set because that is what a GENUINE arrival is --
+        #184 stopped a man who has never left the ground being admitted to the
+        arrival queue on his first word, and this is the other side of that
+        line rather than an exception to it.
+        """
+        self.ctl.get("Hoover").has_been_airborne = True
         self.ctl.check_in("Hoover")
         self.assertIs(self.ctl.aircraft[self.ctl._resolve("Hoover")].phase,
                       atc.Phase.ENROUTE)

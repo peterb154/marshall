@@ -1766,7 +1766,47 @@ class Controller:
         # LANDED is held for the same reason: an aeroplane on the ground that
         # says something is not enroute, and demoting him would put a taxiing
         # jet back in the arrival flow.
-        if ac.phase not in (Phase.CLEARED, Phase.LANDED):
+        #
+        # ...AND NEITHER IS A MAN WHO HAS NOT TAKEN OFF YET, which is the same
+        # sentence one end of the sortie earlier and was not guarded at all.
+        # The FIRST transmission of a sortie is a check-in, so this admitted
+        # every aeroplane to the arrival queue before it started its engine.
+        # 18 August, every board snapshot of a ten-minute sortie:
+        #
+        #     15:12:51  phase ENROUTE   sortie_phase clearance   (cold, ramp)
+        #     15:16:34  phase ENROUTE   sortie_phase taxi
+        #     15:20:01  phase ENROUTE   sortie_phase holding_short
+        #
+        # It never changed, because there was nothing left for it to change
+        # to. The pilot read it off the board and asked the right question:
+        #
+        #     "the board says, arrival queue is checked in with the arrival
+        #      controller. His place in the let down and nothing else. My
+        #      issue with this is that I obviously have not checked in with
+        #      the arrival controller yet. What is this status actually?"
+        #
+        # `UNKNOWN` means "never admitted" -- #171 published those words in
+        # the legend precisely so the page could say it -- and no departure
+        # could ever be shown it, because this line overwrote it on his first
+        # word.
+        #
+        # THIS IS A TRUTH BUG AND NOT A SEPARATION ONE, and the difference is
+        # worth stating rather than leaving somebody to hope. Every reader of
+        # this field pairs `UNKNOWN` with `ENROUTE` -- stack admission at
+        # `report_beacon` and `_try_clear`, and the channel choice in
+        # `_channel` -- so nobody was sequenced differently. What was wrong is
+        # that the board asserted a fact about a man that was not true of him,
+        # on the one screen whose job is telling a real answer from a missing
+        # one.
+        #
+        # THE EVIDENCE IS #178's LATCH, which is why this is a guard and not a
+        # phase check. `has_been_airborne` is set only on positive radar --
+        # `not on_ground` is not `airborne`, which is #164's scar -- and it
+        # survives a restart in `flights`. An aeroplane radar has not yet
+        # placed simply stays UNKNOWN, which is honest and, since the two are
+        # read identically, costs nothing.  [#184]
+        if (ac.phase not in (Phase.CLEARED, Phase.LANDED)
+                and getattr(ac, "has_been_airborne", False)):
             ac.phase = Phase.ENROUTE
         ac.last_report_t = self.t
 

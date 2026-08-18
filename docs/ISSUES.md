@@ -11303,3 +11303,67 @@ belongs with the scoring, not in a second regex.
 4. The weights live somewhere they can be changed and tested.
 
 ---
+
+## [ARCH-41] Everybody joins the arrival queue on their first transmission — #184
+labels: bug, needs-flight-test
+
+**Status:** FIXED 18 August, NEEDS A PILOT — card row Q15. Guarded by `tests/test_a_departure_is_not_in_the_arrival_queue.py`, including a check that walks `controller.py` and fails if any reader starts telling `UNKNOWN` from `ENROUTE` — the day that happens this stops being a display fault. **A pilot is needed for criterion 1** because what is being tested is whether a man on the ramp, reading his own board, is told something true about himself; the engine can only prove the value changed.
+
+    "sitting on the ground here, getting ready to taxi, I look at the board,
+     the arrival cue says, check in with the arrival cue"
+
+    "the board says, arrival queue is checked in with the arrival controller.
+     His place in the let down and nothing else. My issue with this is that I
+     obviously have not checked in with the arrival controller yet. What is
+     this status actually?"
+
+He was right, and the board was faithfully reporting what the engine held.
+`phase` read `ENROUTE` on **every board snapshot of the sortie** — all eighteen,
+from his first word on a cold ramp to thirteen miles out:
+
+    15:12:51   phase ENROUTE   sortie_phase clearance      (cold, on the ramp)
+    15:16:34   phase ENROUTE   sortie_phase taxi
+    15:20:01   phase ENROUTE   sortie_phase holding_short
+    15:20:14   phase ENROUTE   sortie_phase departure
+
+It never changed, because there was nothing left for it to change to.
+
+**One line in `check_in`, guarded against the wrong end of the sortie.** It
+refused to demote a `CLEARED` or a `LANDED` aeroplane — both learned from #51,
+where a check-in on a new frequency knocked a man out of the letdown he was
+already in and he held at 44 nm and declared an emergency — and said nothing
+about a man who has not started his engine. The FIRST transmission of any
+sortie is a check-in, so every aeroplane joined the arrival queue before it
+moved.
+
+**`UNKNOWN` means "never admitted" and no departure could ever be shown it.**
+#171 published exactly those words in the legend so the page could tell a real
+answer from a missing one; this line overwrote the answer on his first word.
+
+**IT IS NOT A SEPARATION BUG, and that is asserted rather than hoped.** All
+three readers of the field pair `UNKNOWN` with `ENROUTE` — stack admission in
+`report_beacon` and `_try_clear`, the channel choice in `_channel` — so nobody
+was sequenced differently and no aeroplane held a slot it should not have. A
+test walks the source and fails if a reader ever starts telling them apart,
+because on that day this stops being a display fault.
+
+**My first write-up of this was wrong** and is corrected in the flight record.
+It read *"a field with no value rendering its caption instead of nothing"*,
+the same shape as #155. A missing value would have rendered `UNKNOWN` →
+*"never admitted"*, which is exactly right for a man on the ramp and is the
+case #171 built. He got the other value, which meant something had genuinely
+admitted him.
+
+**Fixed** with #178's latch: `has_been_airborne`, set only on positive radar
+(#164's scar — `not on_ground` is not `airborne`) and carried across a restart
+in `flights`. An aeroplane radar has not yet placed stays `UNKNOWN`, which is
+honest and costs nothing.
+
+**Acceptance criteria**
+1. A cold aeroplane's first transmission does not put it in the arrival queue,
+   and the board reads *"never admitted"* the whole way down the ground ladder.
+2. A genuine arrival checking in still becomes `ENROUTE`.
+3. A cleared aeroplane is still not demoted by a check-in on a new frequency.
+4. No aeroplane's place in the letdown changes.
+
+---
