@@ -436,6 +436,27 @@ class Verdict:
     station: object          # the Station that should have him
     role: str                # what that station answers as now
     same_station: bool       # True -> no frequency change, no transmission
+    # A RULE GOVERNS THIS AEROPLANE AND THE ANSWER IS "NOT YET".
+    #
+    # `due` used to return None for that, which is the same value it returns
+    # when no rule applies at all -- so a DECISION and an ABSENCE OF OPINION
+    # were the same answer, and `next_controller` reads the second as
+    # permission for the airspace volumes to decide instead.
+    #
+    # 18 August: Tower handed a departure over at about a mile. The table says
+    # five (`Rule("tower", "departure", "outbound_beyond", DEPARTURE_NM)`) and
+    # it works -- below five it declined, `due` returned None, and
+    # `leaving_my_airspace` treated the silence as its turn. Procedure lost to
+    # geometry without either knowing the other had spoken.
+    #
+    #     "tower, switch me over to departure pretty quick, should be at five
+    #      miles I think, just hit it off the end of the runway"
+    #
+    # This is `clearance_agreed is False` versus `None` (#181) one module over
+    # and one day later: "I decided no" collapsed into "I don't know". A
+    # deterministic engine that cannot say NOT YET has no way to hold a line.
+    # [#189]
+    keep: bool = False
 
     def __bool__(self) -> bool:
         return self.station is not None
@@ -498,6 +519,7 @@ def due(profile, me, st: State) -> Verdict | None:
             if nxt is not None:
                 same = (getattr(nxt, "name", None) == getattr(me, "name", None))
                 return Verdict(station=nxt, role=want, same_station=same)
+    governed = False
     for rule in RULES:
         if rule.frm != role and rule.frm not in getattr(me, "also", ()):
             continue
@@ -513,6 +535,13 @@ def due(profile, me, st: State) -> Verdict | None:
         if rule.terminal_edge:
             nm = reach_of(_at(me, profile)) or rule.nm
         if cond is None or not cond(st, nm, profile, rule):
+            # GOVERNED, BUT NOT YET. A rule for this seat exists and its
+            # condition has not been met, which is an ANSWER -- see
+            # `Verdict.keep`. Recorded rather than returned here, because a
+            # later rule may still fire: `approach -> tower` has a distance
+            # row and an `on_ground` row, and the first declining must not
+            # stop the second being asked.
+            governed = True
             continue
         # HIS FIELD, or the handoff crosses the theatre. A role is unique within
         # an aerodrome and not across one -- with Kobuleti and Batumi both on
@@ -528,4 +557,13 @@ def due(profile, me, st: State) -> Verdict | None:
             continue
         same = (getattr(nxt, "name", None) == getattr(me, "name", None))
         return Verdict(station=nxt, role=rule.to, same_station=same)
+    # A RULE HAD AN OPINION AND IT WAS "NOT YET". Returning None here is what
+    # let the airspace volumes overrule the table -- see `Verdict.keep`.
+    if governed:
+        # `same_station=True` DELIBERATELY: to every existing caller that
+        # means "no frequency change, no transmission", which is precisely
+        # what a rule saying not-yet amounts to. So nothing that unwraps a
+        # Verdict has to learn about `keep` -- only the one place that must
+        # stop asking the airspace, which is the whole point of the flag.
+        return Verdict(station=None, role="", same_station=True, keep=True)
     return None

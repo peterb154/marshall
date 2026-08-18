@@ -109,7 +109,7 @@ the flight below. The `..` ranges expand over LIVE rows in card order, so they
 cannot name a retired one again without the parser saying so out loud.
 
 ```rows
-R1..R4 N1 N2 M1 G3 G4 G7 G8 G10 G11 G12 G13 G14 G15 Q1 Q14 Q15 Q16 V9 V7 P1..P4
+R1..R4 N1 N2 M1 G3 G4 G7 G8 G10 G11 G12 G13 G14 G15 Q1 Q14 Q15 Q16 Q17 V9 V7 P1..P4
 V6 V3 H4 H5 H6 H7 H8 H9 H10 H11 V8 V5 F1..F5b V10 K1..K4
 ```
 ### FLIGHT 2 — the VFR arrival
@@ -977,6 +977,7 @@ have been answered with "nothing on file for you" — see [#56].
 | **Q14** | Holding short, ready for departure — **look at the board before you roll** | **Not `landed`.** You are in `departure` from Tower's first word and most of that is spent stationary; the phase used to read that as having flown. On 18 August the board said LANDED 47 seconds before the aeroplane left the ground, and Departure then posted him back to Tower **twelve times** over thirteen miles, because a landed aeroplane is Tower's. Fly the circuit and land for the other half: after a real landing it must read `landed` | [#178] | **P1** |
 | **Q15** | **Before you start the engine**, look at the ARRIVAL QUEUE column on the board | **"never admitted"** — you have not checked in with anybody, least of all the arrival controller. It read *"checked in with the arrival controller"* on 18 August, on every snapshot from the cold ramp to thirteen miles out, because the first transmission of any sortie is a check-in and that admitted everybody. Watch it the whole way down the ladder — clearance, taxi, holding short — and again on RECOVERY, where it must genuinely change once you are in the letdown | [#184] | P2 |
 | **Q16** | **Pause the server** for a few seconds mid-sortie, unpause, then ask any controller something that needs the board — a taxi request, a clearance, a handoff | He still knows who you are. Before #187 the mission key was `wall clock − sim elapsed`, and sim time stops while paused, so every process starting afterwards computed a different key and your own flight row became **unreachable** — the table reads empty rather than wrong. The symptom is a controller saying he has no flight under your callsign while your plan is plainly on file. Restart the radio (`tools/bridge.py restart`) and ask again: same answer, same rows | [#187] | P2 |
+| **Q17** | On the climb-out, **watch where Tower lets you go** | Around **five miles**, not off the end of the runway. On 18 August it came at about a mile: the rule table said five and said so, but a rule declining returned the same value as no rule existing, so the PostGIS airspace volumes answered over the top of it. Then check the other end — at the terminal-area boundary inbound you must still be handed on, which is the mechanism #51 was fixed by and which this change deliberately leaves alone | [#189] | **P1** |
 
 **What it is actually checking**
 

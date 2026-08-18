@@ -118,7 +118,7 @@ class TestNobodyIsHandedOffFromTheRamp(unittest.TestCase):
         the line. His only rule is outbound, and a parked jet is not that."""
         me = R.station_for("tower", field="Batumi")
         st = A._handoff_state(self.scope, "362nd_sockeye", self.fix)
-        self.assertIsNone(H.due(self.p, me, st))
+        self.assertFalse(H.due(self.p, me, st))
 
 
 class TestTheAgentMayNotInventAHandoff(unittest.TestCase):

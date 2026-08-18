@@ -3310,6 +3310,10 @@ def next_controller(scope, track: str, me, profile, fix, *, known: str = "",
     down = is_on_the_ground(scope, track, fix)
     # A man on the runway is Tower's and is going nowhere. The EVENT branch may
     # have said otherwise -- being down outranks it.
+    # `ruled` -- has the deterministic table already decided he stays? See
+    # `Verdict.keep` and #189: a refusal from a rule is an answer, and the
+    # airspace branch below must not treat it as an opening.
+    ruled = False
     nxt = None if down else handoff_on_the_event(scope, track, me, profile, fix)
     if nxt is None and me is not None:
         # `phase` is what he is DOING, and it is the only thing that can hand
@@ -3344,7 +3348,19 @@ def next_controller(scope, track: str, me, profile, fix, *, known: str = "",
         # Same man, different name -- Approach answering as Departure is not a
         # handoff and must never be spoken.
         nxt = None if (v is None or v.same_station) else v.station
-    if nxt is None and not down and me is not None and known:
+        # ...AND "NOT YET" IS AN ANSWER, WHICH THE AIRSPACE MAY NOT OVERRULE.
+        #
+        # `due` returned None both when a rule had decided he stays and when
+        # no rule applied, so the branch below read a deliberate refusal as
+        # silence and asked the PostGIS volumes instead. On 18 August Tower
+        # handed a departure over at about a mile: the table says five and
+        # said so, and geometry answered over the top of it.
+        #
+        # A rule that governs a transition owns it in BOTH directions. If it
+        # says not yet, nothing else gets a vote. [#189]
+        if v is not None and getattr(v, "keep", False):
+            ruled = True
+    if not ruled and nxt is None and not down and me is not None and known:
         # NOT WHILE HE IS ON THE RAMP, and leaving that out undid the guard
         # above three lines after setting it: a parked jet asking Tower for a
         # departure is "obviously leaving", so the handoff came straight back.

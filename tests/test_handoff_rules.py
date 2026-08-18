@@ -60,11 +60,11 @@ class TestOutbound(unittest.TestCase):
                          "handed to a radar controller at another aerodrome")
 
     def test_inside_five_miles_tower_still_has_him(self):
-        self.assertIsNone(H.due(P(), TOWER(), flying(2.0)))
+        self.assertFalse(H.due(P(), TOWER(), flying(2.0)))
 
     def test_and_on_the_runway_nothing_is_due(self):
         """The moment after he rotates is not the moment to hand him over."""
-        self.assertIsNone(H.due(P(), TOWER(), H.State(True, 0.2, False)))
+        self.assertFalse(H.due(P(), TOWER(), H.State(True, 0.2, False)))
 
 
 class TestInbound(unittest.TestCase):
@@ -90,7 +90,7 @@ class TestInbound(unittest.TestCase):
         """
         talkdown = T.letdown()
         self.assertEqual(talkdown.guidance, "talkdown")
-        self.assertIsNone(H.due(talkdown, APPROACH(), flying(4.0, inbound=True)))
+        self.assertFalse(H.due(talkdown, APPROACH(), flying(4.0, inbound=True)))
 
     def test_and_landing_hands_him_over_immediately(self):
         """The other half, and the reason suppressing the distance is safe: the
@@ -124,11 +124,11 @@ class TestInbound(unittest.TestCase):
         departing aircraft straight back to Tower, on his way out, which is the
         single most likely way to get this wrong.
         """
-        self.assertIsNone(H.due(T.letdown(), APPROACH(),
+        self.assertFalse(H.due(T.letdown(), APPROACH(),
                                 flying(4.0, inbound=False)))
 
     def test_beyond_five_miles_approach_keeps_him(self):
-        self.assertIsNone(H.due(P(), APPROACH(), flying(9.0, inbound=True)))
+        self.assertFalse(H.due(P(), APPROACH(), flying(9.0, inbound=True)))
 
     def test_on_the_ground_under_a_radar_controller_is_corrected(self):
         """He has landed and nobody noticed, or he never left. Either way the
@@ -416,7 +416,7 @@ class TestRangeWithoutDirectionIsAmbiguous(unittest.TestCase):
             if approach is None:
                 continue
             with self.subTest(field=f.name):
-                self.assertIsNone(H.due(P(), approach,
+                self.assertFalse(H.due(P(), approach,
                                         H.State(False, 25.0, True)),
                                   "an arrival was handed away from his own field")
 
@@ -438,7 +438,7 @@ class TestRangeWithoutDirectionIsAmbiguous(unittest.TestCase):
 
     def test_an_inbound_aircraft_on_tower_is_not_sent_to_departure(self):
         """The case that had been wrong all along and never asked."""
-        self.assertIsNone(H.due(P(), TOWER(), flying(6.0, inbound=True)))
+        self.assertFalse(H.due(P(), TOWER(), flying(6.0, inbound=True)))
 
     def test_every_distance_rule_reads_the_trend(self):
         """Structural, so a new rule cannot reintroduce this. A condition that
@@ -555,7 +555,7 @@ class TheGroundLadderCanActuallyLetGo(unittest.TestCase):
             if me is None:
                 continue
             with self.subTest(field=f.name):
-                self.assertIsNone(self.due(me, "landed"))
+                self.assertFalse(self.due(me, "landed"))
 
     def test_a_seat_that_also_works_the_next_role_does_not_hand_over(self):
         # A seat carrying also=("delivery", "clearance"): a pilot reading back a
@@ -568,7 +568,7 @@ class TheGroundLadderCanActuallyLetGo(unittest.TestCase):
                 f"so nobody can be handed to himself here")
         for me in both:
             with self.subTest(who=me.name):
-                self.assertIsNone(self.due(me, "taxi"),
+                self.assertFalse(self.due(me, "taxi"),
                                   "he handed the aircraft to the man already "
                                   "holding it")
 
@@ -627,7 +627,7 @@ class TestAnAirborneAeroplaneIsNeverGrounds(unittest.TestCase):
         aeroplane he is meant to have."""
         st = H.State(on_ground=True, range_nm=0.1, inbound=False,
                      phase="taxi_in")
-        self.assertIsNone(H.due(P(), self.GROUND, st))
+        self.assertFalse(H.due(P(), self.GROUND, st))
 
     def test_and_a_track_radar_has_LOST_is_left_where_he_is(self):
         """`not on_ground` is not `airborne`. A track that has gone quiet
@@ -637,7 +637,7 @@ class TestAnAirborneAeroplaneIsNeverGrounds(unittest.TestCase):
         left the world."""
         st = H.State(on_ground=False, range_nm=None, inbound=False,
                      phase="taxi_in")
-        self.assertIsNone(H.due(P(), self.GROUND, st))
+        self.assertFalse(H.due(P(), self.GROUND, st))
 
     def test_the_ramp_seat_cannot_hold_him_either(self):
         """Airborne off a taxiway with no take-off clearance at all. Nobody

@@ -116,7 +116,7 @@ class TestEachAircraftGetsHisOwnGuidanceRule(unittest.TestCase):
         relays it, and the pilot never changes frequency inside the final."
         Handing him over here abandons him at the moment the procedure starts;
         it did, live, at ten miles in cloud."""
-        self.assertIsNone(H.due(self.talkdown, self.me, self.st))
+        self.assertFalse(H.due(self.talkdown, self.me, self.st))
 
     def test_and_the_talkdown_IS_handed_over_once_he_is_down(self):
         """The half that stops the rule being a brake, and the half that makes
@@ -145,9 +145,13 @@ class TestEachAircraftGetsHisOwnGuidanceRule(unittest.TestCase):
 
         viper = H.due(ctl.procedure_for("Viper 1"), self.me, self.st)
         mustang = H.due(ctl.procedure_for("Mustang 2"), self.me, self.st)
-        self.assertIsNotNone(viper, "the Viper on the ILS was not handed over")
-        self.assertIsNone(mustang, "the Mustang on the talkdown was taken off "
-                                   "the frequency flying him down")
+        # `assertTrue`/`assertFalse` and not the None sentinel: since #189
+        # `due` answers "a rule governs this and says not yet" with a falsy
+        # keep-Verdict rather than with None, so what these assert is whether
+        # anybody is HANDED anywhere -- which is what the case is about.
+        self.assertTrue(viper, "the Viper on the ILS was not handed over")
+        self.assertFalse(mustang, "the Mustang on the talkdown was taken off "
+                                  "the frequency flying him down")
 
 
 class TestTheRADARPICTUREIsHisToo(unittest.TestCase):

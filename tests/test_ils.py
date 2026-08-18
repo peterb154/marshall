@@ -166,7 +166,7 @@ class TestItIsAnILSAndNotACopyOfTheRadarApproach(unittest.TestCase):
         self.assertEqual(v.station.role, "tower")
 
         mb = R.station_for("approach", field=R.ARRIVAL_FIELD)
-        self.assertIsNone(H.due(ASR(), mb, H.State(False, 4.0, True)),
+        self.assertFalse(H.due(ASR(), mb, H.State(False, 4.0, True)),
                           "the talkdown handed him away mid-procedure")
 
     def test_there_is_no_stepdown_table(self):

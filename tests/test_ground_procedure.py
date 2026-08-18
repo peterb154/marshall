@@ -124,7 +124,7 @@ class TestTheLadderDownToTheRunway(GroundCase):
         self.ctl.clearance_read_back("Sockeye", correct=False)
         ac = self.ctl.aircraft[self.ctl._resolve("Sockeye")]
         self.assertEqual(ac.sortie_phase, "clearance")
-        self.assertIsNone(H.due(P(), station(seat("clearance", HOME())),
+        self.assertFalse(H.due(P(), station(seat("clearance", HOME())),
                                 H.State(True, 0.3, False,
                                         phase=ac.sortie_phase)))
 
@@ -891,7 +891,7 @@ class GroundIsTheEndOfTheLadder(GroundCase):
         ac = self.ctl.aircraft[self.ctl._resolve("Sockeye")]
         self.assertEqual(ac.sortie_phase, "taxi_in")
         self.assertEqual(PH.get("taxi_in").follows, ())
-        self.assertIsNone(H.due(P(), me, H.State(True, 0.2, False,
+        self.assertFalse(H.due(P(), me, H.State(True, 0.2, False,
                                                phase=ac.sortie_phase)))
 
     def test_tower_does_not_answer_for_parking(self):
@@ -923,7 +923,7 @@ class GroundIsTheEndOfTheLadder(GroundCase):
         said = " ".join(t.text for t in self.ctl.out).lower()
         ac = self.ctl.aircraft[self.ctl._resolve("Sockeye")]
         self.assertEqual(ac.sortie_phase, "taxi_in")
-        self.assertIsNone(H.due(P(), me, H.State(True, 0.2, False,
+        self.assertFalse(H.due(P(), me, H.State(True, 0.2, False,
                                                phase=ac.sortie_phase)))
         self.assertIn("exit the runway when able", said)
         self.assertNotIn("contact", said)
@@ -1045,7 +1045,7 @@ class TowerGivesHimGroundOnTheRollOut(GroundCase):
         """
         _me, ac, _said = self.landed_under(seat("tower", HOME()))
         gnd = station(seat("ground", HOME()))
-        self.assertIsNone(H.due(P(), gnd, H.State(True, 0.2, False,
+        self.assertFalse(H.due(P(), gnd, H.State(True, 0.2, False,
                                                 phase=ac.sortie_phase)),
                           "Ground handed a landed aeroplane somewhere")
         self.assertEqual(PH.get("taxi_in").follows, ())

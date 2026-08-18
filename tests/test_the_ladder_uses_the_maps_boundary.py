@@ -115,7 +115,7 @@ class TestAnArrivalIsWithApproachBeforeHisProcedureStarts(unittest.TestCase):
     def test_and_kept_outside_it(self):
         pro = TH.the_ils(TH.arrival())
         reach = H.reach_of(TH.arrival().name)
-        self.assertIsNone(self.verdict(pro, reach + 5.0),
+        self.assertFalse(self.verdict(pro, reach + 5.0),
                           "Center gave him up before the area starts")
 
     def test_the_old_constant_alone_would_now_be_wrong(self):
@@ -145,7 +145,7 @@ class TestADepartureIsKeptToTheEdgeOfHisOwnArea(unittest.TestCase):
 
     def test_kept_inside_his_area(self):
         reach = H.reach_of(TH.departure().name)
-        self.assertIsNone(self.verdict(reach - 2.0))
+        self.assertFalse(self.verdict(reach - 2.0))
 
     def test_given_to_center_beyond_it(self):
         reach = H.reach_of(TH.departure().name)
@@ -164,7 +164,7 @@ class TestADepartureIsKeptToTheEdgeOfHisOwnArea(unittest.TestCase):
         """
         turned = H.State(on_ground=False, range_nm=11.0, inbound=True,
                          phase="departure")
-        self.assertIsNone(
+        self.assertFalse(
             H.due(TH.the_arrival(), self.me, turned),
             "a departure that has turned for his destination was sent to "
             "Center, which is a rung nobody flies on a hop this short")

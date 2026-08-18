@@ -11601,3 +11601,64 @@ retired route is one that passes while a pilot is told the wrong waypoint.
 4. `[sortie]` is renamed to what it now holds, or its remaining contents move.
 
 ---
+
+## [SEP-22] A rule that says "not yet" is read as having no opinion — #189
+labels: bug, architecture, needs-flight-test
+
+**Status:** FIXED 18 August, NEEDS A PILOT — card row Q17. Guarded by `tests/test_not_yet_is_an_answer.py`, which holds all three answers and the caller's gate. **Only a pilot can score criterion 1** because both the right and the wrong behaviour are a handoff that arrives — what differs is where he was when it did.
+
+    "tower, switch me over to departure pretty quick, should be at five miles
+     I think, just hit it off the end of the runway"
+
+The table says five miles and it works:
+
+    Rule("tower", "departure", "outbound_beyond", DEPARTURE_NM)   # 5.0
+
+Below five it declines; above five it fires. **What it could not do is say
+so.** `due` returned `None` both when a rule governed the transition and
+decided he stays, and when no rule applied at all — and `next_controller` reads
+the second as permission to ask the PostGIS airspace volumes instead:
+
+    v = _handoff.due(...)                    -> None (a rule said NOT YET)
+    nxt = ... else v.station                 -> None
+    if nxt is None and not down:
+        nxt = leaving_my_airspace(...)       -> Kobuleti Departure, at ~1 nm
+
+So geometry answered over the top of procedure and neither knew the other had
+spoken. The 5 nm was correct, tested, and unreachable in practice.
+
+**THIS IS #181 ONE MODULE OVER AND ONE DAY LATER.** There, `clearance_agreed is
+False` — *he was issued one and has not read it back* — was collapsed into
+`None` — *nobody has cleared him at all* — and taxi was granted to a man who
+had never been cleared. Same shape, found the same week, in the same engine:
+
+> A deterministic engine that cannot distinguish a DECISION from an ABSENCE OF
+> OPINION cannot hold a line, because every refusal reads as an invitation to
+> whoever asks next.
+
+**Three answers now, where there were two:**
+
+    a rule fired              Verdict with a station. Hand him over.
+    a rule governs, not yet   Verdict with keep=True. Nobody else decides.
+    no rule at all            None. The airspace may answer.
+
+`same_station=True` on the keep verdict is deliberate — to every existing
+caller that already means *"no frequency change, no transmission"*, which is
+exactly what not-yet amounts to, so nothing else had to learn about the flag.
+
+**The distinction cuts both ways and the test says so.** The airspace branch
+exists because a region has a shape and a rule has a number; turning every
+refusal into a keep would silence the mechanism #51 was fixed by, where a pilot
+held at 44 nm with nothing able to move him.
+
+**Sixteen assertions changed from `assertIsNone(due(...))` to `assertFalse`.**
+They meant *"nobody is handed anywhere"* and were written against the sentinel
+— which is how the ambiguity survived: the tests encoded it too.
+
+**Acceptance criteria**
+1. A departure stays with Tower to 5 nm, then is handed to Departure.
+2. An aeroplane no rule governs is still handed over by the airspace volumes.
+3. A pilot at the edge of a terminal area is still handed on (#51 does not
+   regress).
+
+---
