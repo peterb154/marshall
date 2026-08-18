@@ -602,14 +602,19 @@ _PAGE = """<!doctype html><html><head><meta charset="utf-8">
        the recorder is the age of the last thing anybody said. One number
        standing for both is how a running bridge got reported as a dead one and
        a dead one's board got reported as live. -->
-  <span class="stat">bridge <i id="bage">-</i></span>
+  <span class="stat">atc <i id="bage">-</i></span>
   <span class="stat">recorder <i id="age">-</i></span>
   <span class="stat">session <i id="sess">-</i></span>
   <span class="stat">contacts <i id="contacts">-</i></span>
   <span class="stat" id="verdict"></span>
 </header>
 <div id="control">
-  <span class="lbl">BRIDGE</span>
+  <!-- MARSHALL-ATC, NOT "BRIDGE". "Bridge" is a DIRECTORY name and is
+       deprecated as vocabulary (CLAUDE.md, docs/STRUCTURE.md) -- a folder name
+       carries no layer, so a reader cannot tell what a control acts on. This
+       one starts and stops the host process, which is `marshall-atc`: a real
+       command on the PATH since #147, and the name a pilot should say. -->
+  <span class="lbl">MARSHALL-ATC</span>
   <span id="bstate" class="pill">-</span>
   <button data-do="start">start</button>
   <button data-do="restart">restart</button>
@@ -1216,16 +1221,24 @@ async function tick() {
   }
 }
 // --- control ---------------------------------------------------------------
-// The token is not in the page. It is asked for once and kept in this tab, so
-// the page can be left open on a kneeboard without carrying the ability to
-// stop the bridge into a screenshot.
-let TOKEN = sessionStorage.getItem('marshall-token') || '';
+// The token is not in the page. That is the property worth keeping: `/diag`
+// can be left open on a kneeboard, screenshotted and pasted into an issue
+// without carrying the ability to stop the radio with it.
+//
+// KEPT PER BROWSER, NOT PER TAB. It was `sessionStorage`, which is scoped to
+// one tab and dies with it -- so every fresh tab, every reopened kneeboard and
+// every reload after a crash asked for it again, which is most of the times
+// anybody wants this panel. A control you have to authenticate to reach in an
+// emergency is a control you do not use. `localStorage` still keeps the token
+// out of the page source and out of any screenshot; it just stops asking
+// twenty times a sortie.
+let TOKEN = localStorage.getItem('marshall-token') || '';
 
 async function control(what) {
   if (!TOKEN) {
     TOKEN = prompt('Control token (MARSHALL_CONTROL_TOKEN in .env):') || '';
     if (!TOKEN) return;
-    sessionStorage.setItem('marshall-token', TOKEN);
+    localStorage.setItem('marshall-token', TOKEN);
   }
   const url = what === 'mission'
     ? '/control/mission/restart?token=' + encodeURIComponent(TOKEN)
@@ -1235,7 +1248,7 @@ async function control(what) {
   try {
     const r = await fetch(url, {method: 'POST', cache: 'no-store'});
     const d = await r.json();
-    if (r.status === 403) { sessionStorage.removeItem('marshall-token'); TOKEN = ''; }
+    if (r.status === 403) { localStorage.removeItem('marshall-token'); TOKEN = ''; }
     $('cmsg').textContent = d.ok
       ? (d.mission ? 'reloading ' + d.mission : (d.note || 'asked'))
       : (d.error || d.detail || 'refused');

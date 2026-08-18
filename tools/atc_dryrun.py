@@ -129,14 +129,24 @@ def run(script, session_id: str, sep_always: bool = True,
     """Drive `script` through the brain. `scope` is a canned radar picture --
     empty means no radar, so position reports are taken at face value exactly as
     they are on a non-radar field."""
-    # The SAME profile the live bridge runs. It used to seed the beacon letdown
-    # here, which is not merely a different script: `load_and_push_plates` WRITES
-    # what it is given, so a dry run replaced the stored radar approach -- and
-    # the stored approach is where the controllers and their frequencies live.
-    # Every station vanished from the database, and the first thing to notice was
-    # a clearance with no departure frequency in it.
-    profile = agent_atc.load_and_push_plates(R.BATUMI_ASR)
-    ctl = atc.Controller(profile)
+    # THE SAME PUBLISH THE LIVE RADIO DOES, and it takes no profile. It used to
+    # be `load_and_push_plate(R.BATUMI_ASR)` -- one procedure, chosen here --
+    # and the note that stood here warned against seeding the beacon letdown
+    # instead, because the call WRITES what it is given and a dry run could
+    # replace the stored radar approach. That hazard is gone with the argument:
+    # the publish is the map's whole offer either way, and #176 made it replace
+    # rather than accumulate, so a dry run leaves the table exactly as a live
+    # start would.
+    #
+    # It kept passing a profile after the rename and the argument landed in
+    # `base`, so the first thing this tool did was try to PUT a serialised
+    # `ApproachProfile` as a URL. The unit suite could not see it: nothing here
+    # is exercised by a test.
+    agent_atc.load_and_push_plates()
+    # NO ARRIVAL, like the live radio. `_pro` answers None for an aeroplane
+    # nobody has cleared, and a dry run that seeded one would be testing a
+    # controller the live process cannot be.
+    ctl = atc.Controller()
     # This run's own state -- see agent_atc.Bridge. It used to reach into the
     # module for the identity registry, which is the singleton [LAYERS.md]
     # step 2 removed.
@@ -233,7 +243,10 @@ def run(script, session_id: str, sep_always: bool = True,
         # a dry run genuinely does not have: no live handoff, no flight verdict,
         # no talkdown in progress.
         message, _blocks = assembly.compose_message(
-            bridge, scope=scope, known=known, transcript=text, profile=profile,
+            # HIS, resolved off the board -- the same call the live loop
+            # makes. There is no dry-run-wide profile to pass any more.
+            bridge, scope=scope, known=known, transcript=text,
+            profile=ctl.procedure_for(known),
             me=me, fix=None, nxt=None, directive=directive, stack=stack,
             vectoring="", _flight={}, _flight_say="", claim=claim,
             name_say=name_say)

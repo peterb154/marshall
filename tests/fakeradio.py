@@ -273,6 +273,37 @@ class Sortie:
         def fake_transcribe(_model, _pcm, prompt=None):
             return radio.consume()
 
+        def _like(real):
+            """A stub that REFUSES arguments the real function would refuse.
+
+            `fake_radar` was `(_session_id="", *a, **k)`, which swallows
+            anything -- so when #162 removed `fetch_radar`'s `profile`
+            parameter, a caller still passing `profile=` bound happily here and
+            the whole suite stayed green. The radio then crashed on the first
+            transmission of the first live sortie:
+
+                TypeError: fetch_radar() got an unexpected keyword argument
+                'profile'
+
+            A stub with a looser signature than the thing it replaces does not
+            merely fail to catch that -- it HIDES it, because the harness is
+            the only place the loop is exercised end to end. Binding the real
+            signature costs one line and turns a live crash into a unit
+            failure.
+            """
+            import functools
+            import inspect
+            sig = inspect.signature(real)
+
+            def wrap(fn):
+                @functools.wraps(fn)
+                def go(*a, **k):
+                    sig.bind(*a, **k)      # raises exactly as the real one would
+                    return fn(*a, **k)
+                return go
+            return wrap
+
+        @_like(A.fetch_radar)
         def fake_radar(_session_id="", *a, **k):
             # THE SCOPE PERSISTS. Radar does not go blank between reads, and the
             # loop reads it more than once per transmission -- the asr_monitor

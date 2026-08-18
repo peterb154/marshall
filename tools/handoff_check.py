@@ -83,7 +83,7 @@ def case(name: str, track: str, callsign: str, working_with: str,
     """One question, asked of the real code with a real track behind it."""
     profile = R.BATUMI_ASR
     me = R.station_for(me_role, field=R.ARRIVAL_FIELD)
-    scope = A.fetch_radar("handoff-check", profile=profile) if scope is None else scope
+    scope = A.fetch_radar("handoff-check") if scope is None else scope
     _post("/flights/bind", {"mission": MISSION, "callsign": callsign,
                             "track_name": _track(track)})
     rows = _get(f"/flights?mission={MISSION}")["flights"]

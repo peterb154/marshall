@@ -5617,11 +5617,16 @@ def attribute(bridge, client, transcript, srs, session_id, radar_on, ctl,
     aeroplanes.
     """
     # `field` is the SPEAKING controller's aerodrome, so his ranges and
-    # radials are measured from his own field rather than from the
-    # profile's beacon at the other end of the route. See `field_origin`.
-    scope = (fetch_radar(session_id, profile=getattr(ctl, "profile", None),
-                         field=field)
-             if radar_on else Scope(""))
+    # radials are measured from his own field rather than from an arrival's
+    # aerodrome at the other end of the route. See `field_origin`.
+    #
+    # IT PASSED `profile=getattr(ctl, "profile", None)` AND THAT CRASHED THE
+    # RADIO on the first transmission after #162, because `fetch_radar` no
+    # longer takes one. It survived the sweep that found the other
+    # twenty-five: that sweep looked for functions DECLARING a `profile`
+    # parameter, and this builds one inline at the call. A method that reads
+    # signatures cannot see an argument constructed by the caller.
+    scope = fetch_radar(session_id, field=field) if radar_on else Scope("")
 
     # What the WORDS claim, still by vote across the sortie: real callsigns
     # repeat and noise does not. Demoted from the answer to a claim, which
