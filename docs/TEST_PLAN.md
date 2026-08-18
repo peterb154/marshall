@@ -65,44 +65,87 @@ no flight at all is one nobody will ever fly -- both are checked by
 ### FLIGHT 1 — the full recovery
 > Kobuleti to Batumi, IFR, cold and dark to parked. The standing sortie.
 
-    R1..R7 J1..J6 G3..G12 Q1..Q13 V9 P1..P11 V6 V7 V3 H4..H28 V8 V5 F1..F5b K1..K5 M1..M4
+**THIS IS THE 16 AUGUST RUNNING ORDER, MINUS WHAT HAS SINCE BEEN RETIRED.**
 
+It was briefly not. The first version of this section expanded every section to
+its full range -- `R1..R7` where the order said R1–R4, `H4..H28` where it said
+H1–H12, all of J, all of P, all of Q -- and turned a 46-row sortie into 83.
+Nearly double, added on no authority, immediately after the card was judged to
+have too many tests in it.
+
+**And the order itself had gone stale**, which is why the ranges here are not a
+literal transcription of it. Of the 62 rows it named for the solo sortie, 16 no
+longer exist:
+
+    G1 G2 · Q2..Q8 · H1 H2 H3 H12 · F6 F7 F8
+
+They were struck as their issues closed and the running order was never
+re-read against the card -- the same drift the order itself was rebuilt on
+16 August to fix, recurring in three weeks. 46 live rows remain and they are
+the flight below. The `..` ranges expand over LIVE rows in card order, so they
+cannot name a retired one again without the parser saying so out loud.
+
+```rows
+R1..R4 N1 N2 M1 G3..G12 Q1 V9 V7 P1..P4
+V6 V3 H4 H5 H6 H7 H8 H9 H10 H11 V8 V5 F1..F5b V10 K1..K4
+```
 ### FLIGHT 2 — the VFR arrival
 > Nothing filed. Do not call Clearance at all; come into the airspace and talk
 > to Approach. **This is the sortie for this week's work** — before 18 August
 > the engine answered this pilot with silence.
 
-    V12 V13 V14 H4 H5 H9 H10 V15 V16 H11 F1 F3 S11
-
+```rows
+V12 V13 V14 H4 H5 H9 H10 V15 V16 H11 F1 F3 S11
+```
 ### FLIGHT 3 — two aeroplanes
 > Needs a wingman. Cannot be flown solo: a formation is not one aeroplane, and
 > sequencing needs somebody to be sequenced against.
 
-    D1..D8 N1..N9 L1..L6 H18 H19 H13 V10
-
+```rows
+D1..D8 N1..N9 L1..L6 H18 H19 H13 V10
+```
 ### FLIGHT 4 — Nevada
 > Another map, another day. Needs the mission loading.
 
-    U1..U8
-
+```rows
+U1..U8
+```
 ### FLIGHT 5 — the Kobuleti ILS
 > The data-driven proof: a second field's approach flown with no code change.
 
-    T1..T4 V6 V8
-
+```rows
+T1..T4 V6 V8
+```
 ### EARS ONLY — all sortie, every flight
 > Not a flight. These ride along with whichever one you are flying, and no
 > machine will ever score them.
 
-    S1..S14
+```rows
+S1..S14
+```
+### UNSCHEDULED — live rows the running order has never placed
+> **Not a sortie, and not a recommendation.** These are rows that are live on
+> the card and that no running order has ever scheduled. They are listed so
+> they are not invisible -- the guard in
+> `tests/test_the_card_is_flown_as_flights.py` requires every live row to be
+> reachable, and inventing a home for one is worse than admitting it has none.
+>
+> Deciding which of these belong on a real flight, and which should be struck,
+> is a judgement about how the aeroplane is actually flown. It wants the person
+> who flies it.
 
+```rows
+J1..J6 K5 M2..M4 P5..P11 Q0 Q1a Q1b Q3b Q4b Q12 Q13 R5..R7
+H13..H28 F4b
+```
 ### PARKED — do not fly
 > V11 exercises the 1944 NDB letdown and that procedure is being removed: in
 > DCS only the P-51D-30 carries a homing receiver and it works badly. The row
 > and #140 stay on the card so neither vanishes silently.
 
-    V11 Q0 U0
-
+```rows
+V11 Q0 U0
+```
 ## Fly in this order
 
 **Rebuilt 16 August, re-scrubbed 18 August.** The previous order was written on
@@ -936,13 +979,22 @@ than against whether the reply sounded competent.
 
 ## R — ATIS, and what a controller does with it
 
-**Never flown.** Built 2 August. The broadcast itself is not on the air yet —
-the transmitter is the last piece — so these rows are about what the
-**controller** does with the information letter, which works now.
+**Never flown.** Built 2 August, and this note was stale by 18 August: it said
+*"the broadcast itself is not on the air yet — the transmitter is the last
+piece"*. It is on the air. `agent_atc._start_atis` puts **every** broadcasting
+aerodrome up at start, one dedicated SRS client each — deliberately not from
+the transmit pool, because twenty-two seconds of audio every thirty would hold
+half a pool of ten permanently — and `atis/serve.py` does the transmitting.
+
+    Batumi ATIS    127.1
+    Kobuleti ATIS  127.4
+
+So these rows are now flyable end to end: **tune it, hear the letter, then use
+that letter with the controller.**
 
 | id | do this | expected | issue | pri |
 |---|---|---|---|---|
-| **R1** | Check in with Batumi Approach saying *"with information Bravo"* (use whatever `/diag` shows as current) | *"Information Bravo is current. Say your request."* | [R#17] | **P1** |
+| **R1** | **Tune Batumi ATIS on 127.1 and listen for the letter**, then check in with Batumi Approach saying *"with information ..."* using the one you heard | *"Information [that letter] is current. Say your request."* — the same letter you just heard. This row said "use whatever `/diag` shows as current" and **`/diag` does not show it**: the letter is in the `atis` table and reaches a pilot only by being broadcast. Listening is the point anyway, and it exercises the transmitter in the same breath | [R#17] | **P1** |
 | **R2** | Check in claiming the **wrong** letter — *"with Alpha"* | *"Information Bravo is current now, not Alpha."* Then he asks your request. **He must not refuse you anything** | [R#17] | **P1** |
 | **R3** | Check in mentioning **no** letter | *"Advise you have information Bravo."* A prompt, not a telling-off | [R#17] | P2 |
 | **R4** | Any of the above | Every one ends by asking **what you want**. He must never assume the ASR — that was a real complaint from the air, and there are two approaches published plus a visual | [R#17] | **P1** |

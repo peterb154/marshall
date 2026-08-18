@@ -267,15 +267,34 @@ def flights() -> list[tuple[str, str, list[str]]]:
         body = fm.group(2)
         blurb = " ".join(x.lstrip("> ").strip()
                          for x in body.splitlines() if x.startswith(">"))
+        # FENCED, NOT INDENTED. This read every four-space-indented line as
+        # row IDs, and a flight's PROSE is indented too -- so a paragraph
+        # listing the rows that had been retired ("G1 G2 · Q2..Q8 · H1 ...")
+        # was parsed as rows and put eleven dead IDs into the sortie. A format
+        # where documentation and data look identical is one that will be got
+        # wrong again; ```rows is unambiguous.
         ids: list[str] = []
-        for tok in " ".join(x for x in body.splitlines()
-                            if x.startswith("    ")).split():
+        fenced = "\n".join(re.findall(r"```rows\n(.*?)```", body, re.S))
+        for tok in fenced.split():
             if ".." in tok:
                 lo, hi = tok.split("..", 1)
                 sect = re.match(r"[A-Z]+", lo)
                 pool = live.get(sect.group(0), []) if sect else []
                 if lo in pool and hi in pool:
-                    ids += pool[pool.index(lo):pool.index(hi) + 1]
+                    got = pool[pool.index(lo):pool.index(hi) + 1]
+                    if not got:
+                        # REVERSED IN CARD ORDER, which is not the same as
+                        # wrong. `H4..H11` looks ascending and is not: section
+                        # H runs H18, H19, H11, H13, H10, H9, H4 ... so H11
+                        # comes SIX rows before H4 and the slice is empty. It
+                        # took eight approach rows out of the standing sortie
+                        # and said nothing, which is the failure this whole
+                        # file exists to stop -- a page one row short reads
+                        # exactly like one a pilot has not scrolled.
+                        print(f"!! flight {name!r}: range {tok} is empty -- "
+                              f"{hi} comes before {lo} in card order. List "
+                              f"them explicitly.", flush=True)
+                    ids += got
                 else:
                     # LOUD, NOT SILENT. A range naming a row that does not
                     # exist would otherwise render as a shorter flight, and a

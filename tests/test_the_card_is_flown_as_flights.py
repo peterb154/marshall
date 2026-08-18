@@ -75,13 +75,32 @@ class EveryFlightNamesRowsThatExist(unittest.TestCase):
         text = CARD.read_text(encoding="utf-8")
         m = re.search(r"^## Flights$(.*?)(?=\n## )", text, re.M | re.S)
         self.assertIsNotNone(m, "no Flights section")
+        # ONLY THE FENCED BLOCKS, which is what the parser reads. Scanning the
+        # whole section swept up the PROSE -- a paragraph naming the retired
+        # rows, "G1 G2 · Q2..Q8 · H1 H2 H3 H12", read as live ranges. Exactly
+        # the fault the fencing was introduced to fix, repeated in the test
+        # that guards it.
+        fenced = "\n".join(re.findall(r"```rows\n(.*?)```", m.group(1), re.S))
         ranges = re.findall(r"\b([A-Z]+\d+[a-z]?)\.\.([A-Z]+\d+[a-z]?)\b",
-                            m.group(1))
+                            fenced)
         self.assertTrue(ranges, "no ranges to check")
+        pool = {}
+        for letter, _t, rows in ft.sections():
+            pool[letter] = [r["id"] for r in rows if r["id"]]
         for lo, hi in ranges:
             with self.subTest(rng=f"{lo}..{hi}"):
                 self.assertIn(lo, self.live, f"{lo} is not a live row")
                 self.assertIn(hi, self.live, f"{hi} is not a live row")
+                # ...AND IN THAT ORDER. `H4..H11` reads as ascending and is
+                # not: section H runs H18, H19, H11, H13, H10, H9, H4 ... so
+                # H11 comes six rows BEFORE H4 and the slice is empty. It took
+                # eight approach rows out of the standing sortie silently.
+                sect = re.match(r"[A-Z]+", lo).group(0)
+                got = pool.get(sect, [])
+                self.assertLess(
+                    got.index(lo), got.index(hi) + 1,
+                    f"{lo}..{hi} is reversed in card order and expands to "
+                    f"nothing; list them explicitly")
 
     def test_no_flight_is_empty(self):
         for name, _blurb, ids in self.flights:
