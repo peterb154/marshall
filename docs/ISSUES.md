@@ -9378,9 +9378,17 @@ Tests: needs one; `tests/test_two_fields.py` is the right home.
 Code: `src/marshall/atc/agent_atc.py` (`field_origin`, ~3634; caller at 153),
 `CENTER_NM`.
 
-**Status:** BUILT, needs a pilot — 18 August, with #162. Both halves are now
-closed and they were closed a fortnight apart, which is worth recording because
-the first half alone looked like the fix.
+**Status:** CLOSED UNVERIFIED 18 August — flight-test bankruptcy, not a
+pilot's word, and closed unattested on the owner's instruction. Both halves are
+in code and they landed a fortnight apart, which is worth recording because the
+first half alone looked like the fix.
+
+**WHAT NO PILOT HAS CONFIRMED**, so that "closed" does not read as "flown": that
+a Center's ranges SOUND right measured from the arrival aerodrome. The number is
+the same one this system has always spoken on the Caucasus — Batumi — so a
+regression here would be silent on the map that is flown and audible only on
+Nevada, where a Nellis-recovery Center now measures from Nellis rather than from
+whichever ILS the radio was started on. Card rows for the enroute section.
 
 `3bb2cb7` landed `Datum` and the `WHY_*` reasons, so a range NAMES what it is
 measured from — necessary, and it left the number exactly where it was. The
@@ -9546,8 +9554,30 @@ Code: `src/marshall/core/theatre.py`, `src/marshall/atc/agent_atc.py`
 `src/marshall/atc/controller.py` (26 `self.profile` reads),
 `config/theatres/*.toml`.
 
-**Status:** BUILT, needs a pilot — 18 August. Step 1 has landed and there is
-now no such thing as the theatre's approach anywhere in the tree.
+**Status:** CLOSED UNVERIFIED 18 August — flight-test bankruptcy, not a
+pilot's word, and closed unattested on the owner's instruction. Step 1 has
+landed and there is now no such thing as the theatre's approach anywhere in the
+tree.
+
+**WHAT NO PILOT HAS CONFIRMED, AND IT IS NOT SMALL.** `_pro` answers None for
+an aeroplane nobody has cleared, so that man now gets:
+
+    no ASR guidance          `may_vector(None)` is False
+    no missed-approach latch there is no procedure to read the numbers off
+    "runway in use"          rather than another field's runway, in the
+                             visual-approach offer
+
+Every one of those is correct procedure and every one is a CHANGE from a radio
+that vectored everybody down one arrival. Whether the controller now sounds too
+quiet to a pilot who has not yet asked for an approach is an ear's question and
+nothing in the suite can reach it. The clearance that fills `ac.profile` comes
+from clearance delivery filing a plan that names an arrival, so the ordinary
+sortie is covered; a pilot who turns up cold is not, by design.
+
+Also unheard: the combined plate. The controller is briefed on four procedures
+instead of one, which is ~10,200 characters against ~5,300, and whether that
+makes him vaguer about the one being flown is exactly what #176 exists to fix
+and exactly what no test can score.
 
     Theatre.approach / .approach_key   DELETED, plural `approaches` only
     default_approach                   DELETED from catalogue + caucasus.toml
@@ -10754,6 +10784,7 @@ position out rather than requesting it — is untouched.
 ---
 
 ## [ARCH-34] Two knobs survive the per-flight profile, and one of them is the plate — #176
+labels: architecture
 
 The remainder of #2, lifted out of a closed issue so that it is readable. #2
 was closed on 11 August reading "all four criteria met"; #162 found that the
