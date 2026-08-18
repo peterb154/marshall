@@ -166,7 +166,39 @@ Code: `src/marshall/atc/approaches.py`, `director/migrations/`, `flights` table
 ## [ARCH-1] One approach profile per flight, not per bridge — #2
 labels: architecture
 
-**Status:** FIXED 11 August. All four criteria met.
+**Status:** CLOSED 11 August, and this entry is the correction rather than a
+reopening — GitHub owns open/closed state because closing is a human act, and
+what a human closed does not get reopened by a tool or by me. What it read was
+*"FIXED 11 August. All four criteria met"*, and #162 measured what that was
+worth: the mechanism had
+landed in 2 call sites out of 28, beside the singleton it was meant to replace.
+Every criterion below is about a flight GETTING its own profile, and none of
+them asks what fraction of the code reads it — so a parallel implementation
+satisfied all four.
+
+#162 finished the replacement on 18 August: `Theatre.approach` is deleted, the
+loop holds no `profile`, and `_pro` answers None for an aeroplane nobody has
+cleared. Two of the four criteria are now genuinely met, and the other two are
+still open and are named rather than assumed:
+
+    1  met      two aircraft, two fields, two approaches, no shared numbers
+    2  met      `asr_sweep.py --profile`, Batumi byte-identical
+    3  NOT MET  `MARSHALL_SORTIE` still exists (`core/theatre.py`). It no
+                longer picks a PROCEDURE -- #162 took that out of
+                `NEVADA_SORTIES` -- but it still picks the arrival field and
+                the filed plan, so the knob is smaller and present
+    4  NOT MET  the plate is pushed ONCE at startup and describes every
+                published procedure. That is the radio being able to work any
+                approach; it is not "the plate for the aircraft being spoken
+                to", which is a per-turn brief and is `LAYERS.md`'s brief
+                mechanism, still design intent
+
+**The criterion that was missing is now written down**, and it is #162's real
+contribution to this issue: *the old path is gone*. That one is met.
+
+**The two unmet criteria are re-homed rather than left inside a closed issue**,
+which is the whole failure mode this entry is a monument to: a remainder parked
+under a green tick is a remainder nobody reads. See [ARCH-34] / #176.
 
 Criterion 2 landed with the rest: `asr_sweep.py --profile nellis-ils`. Batumi's
 figures are byte-identical (1296/1296, 0 flips, 576 turns), and pointing it at an
@@ -2821,8 +2853,23 @@ written, and it is atmosphere.
 ## [ARCH-6] `agent_atc.py` is the bridge, the loop, the monitor and the assembly — #55
 labels: refactor
 
-**Status:** PARTLY DONE 3 August — 5,802 lines down to 4,713. Criteria 1 and 3
-are met; 2 is not.
+**Status:** PARTLY DONE — 5,802 lines down to 4,713 on 3 August and back up to
+**7,516** by 18 August. Criteria 1 and 3 are met; 2 is not, and the line count
+going the wrong way is the honest measure of why it matters: this is the file
+every live fix lands in.
+
+**One thing came out of it on 18 August and it was not the extraction.**
+`agent_atc.main` — the `__main__` block as a function, so `marshall-atc` is a
+real command (#147 criterion 3). That had been filed under THIS issue, beside
+`marshall-radio`, on the reasoning that "the receive loop is `_run_srs` inside
+`agent_atc.py`'s own `__main__`, so there is no function to name. Two
+entrypoints wait on one extraction."
+
+Half true, and the wrong half held both. `marshall-radio` is a separate PROCESS
+and genuinely waits on separating the transport from the control — this issue.
+`marshall-atc` IS this process and wanted nine lines of argument parsing lifted
+out of an `if` block. **A blocker that applies to one of two things filed
+together will hold both until somebody asks which.**
 
 **Remaining scope (10 Aug).** `voice`, `talkdown`, `addressing` and `assembly`
 are extracted and the dry-run and live paths share assembly. What is left is
@@ -8228,8 +8275,27 @@ or subtree moving.
 Code: `docs/STRUCTURE.md`, `CLAUDE.md`, `docs/START_HERE.md`, `pyproject.toml`,
 `services/` (was `director/`).
 
-**Status:** BUILT, needs a pilot — 18 August. 1, 2, 3 and 4 are met; 5 has
-gone further backwards and is now the only open criterion.
+**Status:** PARTLY — 18 August, and this line is a correction of the one I
+wrote an hour earlier, which said "1, 2, 3 and 4 are met". Criterion 3 is not
+met and saying it was is the exact failure #162 was filed about: **a criterion
+is met or it is not, and a nearly-met one closes an issue that then never gets
+finished.**
+
+    1  met      the scoreboard dates every claim
+    2  REWORDED it asked for the `marshall-director_pgdata` constraint to be
+                stated at the point of temptation. That constraint is FALSE --
+                there is no such volume -- so the criterion now asks for the
+                pin and the reason it does not follow the folder
+    3  NOT MET  two of four commands. `marshall-atc` and
+                `marshall-kneeboard` exist; `marshall-radio` waits on #55 and
+                `marshall-feed` is not a process
+    4  met      no ATC domain reasoning under `services/tools/`
+    5  NOT MET  36 routes against the 34 this was written about, and going
+                the wrong way
+
+**This issue does not close today.** The folder moved and the command exists,
+which is most of the value; two criteria remain and one of them (5) is really
+the CRUD-deletion work wearing this issue's number.
 
 **Criterion 3 is met, and the reason it took a fortnight is the finding.**
 `pyproject.toml` declared `marshall-kneeboard` alone, with a comment saying
@@ -8281,7 +8347,6 @@ route count is not a rename problem and belongs with the CRUD deletion.
 `marshall-director` survives as the compose PROJECT name. That is correct and
 is not leftover: the deployable's identity is not its directory, which is the
 whole argument this issue makes, arriving from the other side.
-Labels: needs-flight-test
 
 ---
 
@@ -10686,4 +10751,63 @@ its INS-alone rule corrected.
 STILL OPEN: `on_his_plan` has no caller, so a modern aeroplane is refused a
 hold at a fix he filed. And criterion 2 — a radar controller reading the
 position out rather than requesting it — is untouched.
+---
+
+## [ARCH-34] Two knobs survive the per-flight profile, and one of them is the plate — #176
+
+The remainder of #2, lifted out of a closed issue so that it is readable. #2
+was closed on 11 August reading "all four criteria met"; #162 found that the
+mechanism had landed in 2 call sites out of 28 and finished the replacement on
+18 August. Two of #2's four criteria are still genuinely unmet, and leaving
+them inside a closed entry is the same mistake one level down.
+
+### `MARSHALL_SORTIE` still exists
+
+#2 criterion 3 asked for it to disappear: *"the flight's assigned plan chooses
+its procedure."* #162 took the PROCEDURE out of `NEVADA_SORTIES` — a sortie
+says where you depart and where you recover, and Approach issues the approach —
+so the knob is smaller than it was. It still picks the arrival FIELD and the
+filed plan for a Nevada start.
+
+That is defensible in a way the approach never was: which of two filed sorties
+is being flown is a fact about the mission. It is still a process-wide choice
+made by an environment variable, and #111's answer (per-flight) is the right
+one. Low priority, and named so it is not rediscovered.
+
+### The plate is the map's, not the aeroplane's
+
+#2 criterion 4 asked that *"the plate the agent is given is the plate for the
+aircraft being spoken to."* What #162 built is a plate describing EVERY
+published procedure, pushed once at startup. That is the radio being able to
+work any approach, and it is not the same sentence:
+
+    what #162 delivered   the controller is briefed on all four procedures,
+                          so no aeroplane can be worked against the wrong one
+    what #2 asked for     the controller is handed HIS procedure, and not the
+                          other three
+
+The first is correct and was the blocker. The second is a per-turn brief, which
+is `docs/LAYERS.md`'s brief mechanism — *"what a controller is handed when it
+becomes relevant, and not before"* — and is design intent with nothing built.
+The measured cost of not having it: the Caucasus plate is ~10,200 characters
+against ~5,300 for one procedure, so about half of what the model reads on
+every push-to-talk is three approaches nobody on the frequency is flying.
+
+**Acceptance criteria**
+1. `MARSHALL_SORTIE` disappears, or its remaining job (arrival field, filed
+   plan) is a property of a flight rather than of the process.
+2. The plate part a controller is handed on a given turn describes the
+   procedure that aeroplane is cleared for, and the others are not in it.
+3. What was loaded is RECORDED, because once the prompt varies per call "what
+   did the controller actually know when he said that" is a question only the
+   recorder can answer. `LAYERS.md` names this as the real cost of the design.
+4. An aeroplane with no clearance gets no procedure section rather than a
+   default one — the same rule `_pro` already follows.
+
+Tests: `tests/test_a_profile_per_flight.py`, `tests/test_two_procedures_one_bridge.py`.
+Code: `src/marshall/atc/briefing.py` (`plates`, `_procedure_lines`),
+`src/marshall/atc/agent_atc.py` (`load_and_push_plates`),
+`src/marshall/core/theatre.py` (`NEVADA_SORTIES`).
+
+**Status:** NOT BUILT. Filed 18 August out of #2's remainder.
 ---
