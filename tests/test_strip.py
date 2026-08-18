@@ -49,13 +49,18 @@ class TestTheStripCarriesTheClearance(unittest.TestCase):
 
     def test_it_carries_the_route_and_the_cruise_level(self):
         said = flight_strip(CLEARED)
-        self.assertIn("KOBULETI-INITIAL-BATUMI", said)
+        # `>` AND NOT `-` SINCE #191. The separator changed with the labels:
+        # a route is ORDERED and a hyphenated list is not obviously so, and
+        # the fields are named now because "on BatumiTest, via FOO-BAR" told
+        # a controller neither what the name was nor what the points were.
+        self.assertIn("KOBULETI > INITIAL > BATUMI", said)
+        self.assertIn("ROUTE:", said)
         self.assertIn("5,000 ft", said)
 
     def test_the_route_does_not_read_as_more_fields(self):
         """The strip is already a comma list. A route inside it with its own
         commas reads as four more entries."""
-        self.assertNotIn("via KOBULETI, INITIAL", flight_strip(CLEARED))
+        self.assertNotIn("ROUTE: KOBULETI, INITIAL", flight_strip(CLEARED))
 
     def test_an_unacknowledged_clearance_says_so(self):
         """A read-back is what makes a clearance agreed, and `clearance_ack`

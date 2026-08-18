@@ -5459,6 +5459,33 @@ def publish_state(bridge, ctl, scope: str, session_id: str,
     # The engine's own rows, by callsign, so a strip can be asked whether
     # anything is flying under it.
     on_board = {r.get("callsign", ""): r for r in ctl.board()}
+    # WHAT HE IS ACTUALLY CLEARED ON, from the table that records it.
+    #
+    # The board could not say which flight plan an aeroplane was flying. It
+    # joined a spoken plan NAME out of the identity registry, so it was blank
+    # for anybody who had not happened to say one -- and the row it needed was
+    # in `flights` all along, written when the clearance was issued.
+    #
+    #     "I finally got the read back correct, which was good, but cleared
+    #      for, is still showing blank on my board"
+    #     "I wonder if Kobuleti Clearance actually put me on the clearance
+    #      because the board says cleared for Dash"
+    #
+    # He was right to doubt it and the doubt was expensive: he taxied back to
+    # Clearance to ask. The clearance was real -- `assigned_plans` held
+    # BatumiTest, origin Kobuleti, squawk 7457, acknowledged -- and no surface
+    # showed it. A board that cannot show a clearance that exists is
+    # indistinguishable from one reporting a clearance that does not. [#191]
+    cleared_on = {}
+    try:
+        _rows = _get_json(
+            f"{BASE_URL}/flights?mission={urllib.parse.quote(MISSION)}")
+        for _r in (_rows or {}).get("flights") or ():
+            key = _key_name(_r.get("callsign") or "")
+            if key:
+                cleared_on[key] = _r
+    except Exception as e:
+        log.warning("could not read the filed clearances for the board: %s", e)
     # What frequency the bridge last heard each one on. `may_be_vectored` uses
     # this to decide he has actually checked in here, so it is the same fact
     # that governs whether he gets worked -- worth showing beside what he is
@@ -5492,7 +5519,14 @@ def publish_state(bridge, ctl, scope: str, session_id: str,
         # number it refers to are one object. See `worked_from`. [#169]
         _datum, _range_nm, _radial = worked_from(
             row.get("owner", ""), scope, track, fix)
+        _filed = cleared_on.get(_key_name(cs), {})
         board.append({**row, "track": track,
+                      # THE PLAN HE WAS CLEARED ON, and the route it names.
+                      # Off `flights`, which is where the clearance was
+                      # written -- not off what he happened to say. [#191]
+                      "flight_plan": _filed.get("flight_plan_label") or "",
+                      "route": _filed.get("route") or "",
+                      "clearance_ack": bool(_filed.get("clearance_ack")),
                       "freq_mhz": bridge.heard_on.get(cs, 0) / 1e6 or None,
                       "authority": (auth_of.get(cs)
                                     or _auth_by_handle.get(_key_name(cs), "")),

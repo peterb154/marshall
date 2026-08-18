@@ -11721,3 +11721,57 @@ above `settle` fails two assertions by line number.
    transmission.
 
 ---
+
+## [ARCH-47] The board and the strip carry the facts and do not say what they are — #191
+labels: bug, needs-flight-test
+
+**Status:** FIXED 18 August, NEEDS A PILOT — card row G16. **Only a pilot can score it**: what is being tested is whether a man reading his own board can tell a real clearance from an absent one, which is a question about legibility and not about a value.
+
+Two findings from the 18 August evening sortie with one cause: the clearance
+was recorded correctly and every surface that showed it was unreadable.
+
+**THE BOARD.** *"cleared for"* renders `assigned_plans.approach` — the
+**approach**, not the plan. He had no approach yet, so it was correctly blank
+and read as a missing clearance:
+
+    21:31:11  NOTE  I finally got the read back correct ... but cleared for,
+                    is still showing blank on my board
+    21:33:30  NOTE  I wonder if Kobuleti Clearance actually put me on the
+                    clearance ... I'm guessing he just remembers that from the
+                    conversation history, not actually putting it in the
+                    database
+
+The guess was reasonable and wrong — `assigned_plans` held BatumiTest, origin
+Kobuleti, squawk 7457, acknowledged. **A board that cannot show a clearance
+that exists is indistinguishable from one reporting a clearance that does
+not**, and it cost him a taxi back to Clearance to find out which he had.
+
+The plan appeared on the board nowhere at all. The one join that existed went
+through a spoken plan NAME in the identity registry, so it was blank for anyone
+who had not happened to say one — while the row sat in `flights`.
+
+**THE STRIP.** The model's copy read:
+
+    STRIP: sockeye, on BatumiTest, via FOO-BAR-SPAM-INITIAL, cruise 10,000 ft
+
+    "my guess is that the llm doesnt know what \"on BatumiTest\" means..
+     Should it say \"FlightPlan: BatumiTest, Route: FOO>BAR>...\""
+
+Neither half says what it IS, in a line of comma-separated phrases where a
+route reads as more phrases. A controller holding exactly this was asked which
+plan the pilot was on and sent him back to Clearance (#4), and another asked
+for his second steerpoint answered off the theatre's route (#188) rather than
+the four names in its own message. **Neither was a knowledge gap.**
+
+**Fixed.** The board reads the authoritative `flights` row and shows
+`flight plan` + `route` + whether it was read back; *"cleared for"* is renamed
+`cleared approach`, which is the question it was always answering. The strip
+names its fields — `FLIGHT PLAN:`, `ROUTE:`, `CRUISE:` — and the route is
+`>`-separated because it is ordered.
+
+**Acceptance criteria**
+1. The board shows which flight plan an aeroplane is cleared on.
+2. A blank approach field cannot be read as a missing clearance.
+3. Asked which plan he is on, any controller answers from the strip.
+
+---

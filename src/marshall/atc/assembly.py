@@ -109,22 +109,37 @@ def flight_strip(f: dict) -> str:
     # cleared cruise altitude and asked him what he wanted. A strip exists
     # precisely so the next controller starts knowing that.
     if f.get("flight_plan") or f.get("route"):
+        # NAMED FIELDS, NOT PROSE. This read "on BatumiTest, via
+        # FOO-BAR-SPAM-INITIAL", and neither half says what it IS:
+        #
+        #     "my guess is that the llm doesnt know what \"on BatumiTest\"
+        #      means.. Should it say \"FlightPlan: BatumiTest, Route:
+        #      FOO>BAR>...\""
+        #
+        # On 18 August a controller with this exact strip in front of it was
+        # asked which plan the pilot was on and sent him back to Clearance,
+        # and one asked for his second steerpoint answered off the theatre's
+        # route instead of the four names sitting in its own message. Neither
+        # is a knowledge gap: the facts were there and unlabelled, in a line
+        # of comma-separated phrases where a route reads as more phrases.
+        #
+        # `>` between the points, because a route is ORDERED and a hyphenated
+        # list is not obviously so. [#191]
         _label = f.get("flight_plan_label") or f.get("label")
-        plan = [f"on {_label}" if _label else "IFR as filed"]
+        plan = [f"FLIGHT PLAN: {_label}" if _label else "FLIGHT PLAN: IFR as filed"]
         if f.get("origin") and f.get("destination"):
             plan.append(f"{f['origin']} to {f['destination']}")
         if f.get("route"):
-            # Hyphens, not commas. The strip is already a comma list and a route
-            # inside it reads as four more fields.
-            plan.append("via " + "-".join(
+            plan.append("ROUTE: " + " > ".join(
                 x.strip() for x in str(f["route"]).split(",") if x.strip()))
         if f.get("cruise_ft"):
-            plan.append(f"cruise {int(f['cruise_ft']):,} ft")
+            plan.append(f"CRUISE: {int(f['cruise_ft']):,} ft")
         # READ BACK OR NOT, because an unacknowledged clearance is not agreed
         # and the difference is exactly what `clearance_ack` was added to
         # record. A controller who assumes agreement has an aeroplane flying a
         # route nobody confirmed.
-        plan.append("read back" if f.get("clearance_ack") else "NOT read back")
+        plan.append("clearance read back"
+                    if f.get("clearance_ack") else "clearance NOT read back")
         bits.append(", ".join(plan))
     elif f.get("intent") or f.get("destination"):
         bits.append(f"{f.get('intent') or 'inbound'} "

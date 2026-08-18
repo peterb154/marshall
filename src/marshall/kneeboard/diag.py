@@ -816,7 +816,33 @@ function card(r, reasons) {
     // The interesting reading is the DISAGREEMENT: he asked for the ILS and is
     // cleared for the surveillance approach, or he is cleared for nothing at
     // all while being vectored. Neither is visible if only one is printed.
-    + kv('cleared for', val(r.cleared_approach))
+    // THE PLAN HE IS CLEARED ON, and the route it names. Off `flights`, which
+    // is where the clearance is written.
+    //
+    //     "I wonder if Kobuleti Clearance actually put me on the clearance
+    //      because the board says cleared for Dash, but I'm guessing he just
+    //      remembers that from the conversation history, not actually putting
+    //      it in the database"
+    //
+    // The guess was reasonable and wrong: `assigned_plans` held it. The board
+    // showed nothing, so a real clearance and an imaginary one looked the
+    // same, and he taxied back to Clearance to find out which he had. [#191]
+    + kv('flight plan', line([
+        `<span class="${r.flight_plan ? '' : 'dim'}">${val(r.flight_plan)}</span>`,
+        r.clearance_ack ? '<span class="pill">read back</span>'
+                        : (r.flight_plan ? '<span class="pill warn">NOT read back</span>' : '')]))
+    + (r.route ? kv('route', `<span class="dim">`
+        + esc(String(r.route).split(/[,>]/).map(x => x.trim())
+              .filter(Boolean).join(' > ')) + '</span>') : '')
+    // ...AND THE APPROACH, WHICH IS A DIFFERENT QUESTION AND SAID SO NOWHERE.
+    //
+    // This label read "cleared for", which a pilot reads as "cleared for
+    // WHAT" -- the whole clearance. It means the approach and nothing else,
+    // so an aeroplane properly cleared to Batumi and not yet given an
+    // approach showed a blank field that was entirely correct and read as a
+    // missing clearance. Naming the question is the fix; the value never
+    // changed. [#191]
+    + kv('cleared approach', val(r.cleared_approach))
     // THE TWO PHASE COLUMNS, EACH NAMING ITS OWN QUESTION. See `kvq`: the
     // labels used to read `separation` and `ladder`, which are two words for
     // what a reader had no reason not to take as one fact. [#171]
