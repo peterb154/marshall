@@ -431,13 +431,37 @@ def dispatch(ctl: atc.Controller, intent: Intent,
     if ctl.ambiguous_after_breakup(cs):
         ctl.say_again_who(cs)
         return True
+    # WHATEVER HE SAID IT ON. The information letter is a fact about the
+    # AEROPLANE -- "I have Whiskey" -- and not about the kind of call it
+    # arrived on, and this write lived inside the CHECK_IN branch alone.
+    #
+    # 18 August, live. The first transmission of the sortie was "Kobuleti
+    # Clearance, sockeye, with whiskey" and the letter was taken. Then:
+    #
+    #     PILOT  I would like Batumi Test, IFR to Batumi        (a request)
+    #     ATC    ... Advise you have information Whiskey.
+    #     PILOT  ...I do have information whiskey               (a request)
+    #     ATC    ... Advise you have information Whiskey.
+    #     PILOT  Ground, 121.8, sockeye                         (a read-back)
+    #     ATC    ... Advise you have information Whiskey.
+    #
+    # Five times. The pilot said it on three of them and every one was a kind
+    # of call this branch does not cover, so `ac.atis_letter` stayed empty and
+    # `_atis_phrase` went on asking:
+    #
+    #     "Kobuleti Clearance is asking whether or not I have information
+    #      whiskey over and over again, even though I've already told him.
+    #      That should probably be something in the database to record that I
+    #      have whiskey, so he doesn't keep asking"
+    #
+    # It is recorded -- `flights.atis_letter`, a column since migration 026 --
+    # and nothing was writing it unless he happened to say it while checking
+    # in. Hoisted out of the branch: he told the controller, so the controller
+    # knows, whatever else the transmission was about. [#180]
+    if intent.atis_letter:
+        ctl.get(cs).atis_letter = intent.atis_letter
     match intent.kind:
         case IntentKind.CHECK_IN:
-            # Carried on the aircraft rather than passed down, because the
-            # check-in reply is composed after the phase work and a parameter
-            # would have to be threaded through all of it.
-            if intent.atis_letter:
-                ctl.get(cs).atis_letter = intent.atis_letter
             ctl.check_in(cs, intent.flight_size)
         case IntentKind.REPORT_BEACON:
             ctl.report_beacon(cs, intent.altitude_ft, intent.flight_size)

@@ -11005,3 +11005,190 @@ his check-in gets asked anyway because the classifier put it in `wants` and
 nothing else did.
 Labels: needs-flight-test
 ---
+
+## [SEP-21] `departure` counts as having flown, so holding short derives as LANDED — #178
+labels: bug, needs-flight-test
+
+**Status:** FIXED 18 August, NEEDS A PILOT — card row D9. `has_flown` is a positive list, `departure` is declared as straddling, and migration 035 carries the `has_been_airborne` latch across a restart. A machine can score every criterion here — a phase moved, a handoff fired — so `tools/ladder_rehearsal.py` may close it with an attestation naming the run.
+
+    "I was handed to departure after takeoff. This is when I noticed my status
+     was landed. Then departure tried to send me back to tower"
+
+`phases.has_flown` answered from the phase, and that works for every phase but
+one. `departure` STRADDLES: you are in it from Tower's first word, through the
+roll, until Departure releases you — and most of that is spent stationary on
+the runway. The phase genuinely cannot say whether a man holding there has
+already flown a circuit, and it guessed in the dangerous direction:
+
+    15:20:12  PILOT  holding short, runway 7, ready for departure   (0 kt)
+    15:20:14  board  sortie_phase = departure
+    15:20:30  PILOT  clear for takeoff, runway seven                (0 kt)
+    15:20:33  board  sortie_phase = LANDED     <- never left the ground
+    15:21:20  PILOT  ...actually gets airborne, 47 seconds later
+
+For the next thirteen miles Kobuleti Departure posted him back to Kobuleti
+Tower, twelve times, because a landed aeroplane is Tower's. Tower's own
+"contact Departure when airborne" was refused as an unauthorised handoff for
+the same reason, so a read-back was answered with "go ahead".
+
+**What was built.** `has_flown` is now a POSITIVE list (`AIRBORNE_ONLY`) so a
+phase nobody classified fails safe, `departure` is declared as `STRADDLES`, and
+a `has_been_airborne` latch on `flights` carries the answer the phase cannot —
+set only on positive radar evidence, which is #164's rule and its scar (`not
+on_ground` is not `airborne`). Migration 035.
+
+**Acceptance criteria**
+1. Holding short after a `departure` handoff never derives as `landed`.
+2. Departure does not post an outbound aeroplane back to Tower.
+3. A radio restart mid-climb-out does not forget he has flown.
+
+---
+
+## [ARCH-36] We edit what the model said, with regex, instead of fixing the prompt — #179
+labels: architecture, needs-flight-test
+
+**Status:** FIXED 18 August, NEEDS A PILOT — card row D10. Both prompts corrected, `settle` no longer doubles the engine's talkdown, the history records what went out, and the two surviving filters are declared with the prompt fault each stands in for. **What a machine cannot score is whether it SOUNDS like one person**, which is the whole of criterion 1 — a pilot has to hear the read-back answered.
+
+    "regex guards like that are a smell we should look for, and actively try to
+     reduce, finding the root cause of hallucinations (usually our prompts
+     fault) rather than patching output"
+
+A pilot read back a take-off clearance and heard *"Sockeye, Kobuleti Tower, go
+ahead"* — an invitation to speak, answering a read-back. Following it back:
+
+    the model said     "Sockeye, that's correct, contact Kobuleti Departure one
+                       two three decimal three airborne, good day."
+    the engine had     authorised no handoff
+    the filter         deleted the clause containing "contact ... Departure",
+                       which — because controllers speak in commas rather than
+                       full stops — took "that's correct" with it
+    the fallback       spoke, because a rule says never transmit silence
+
+Every layer was defensible and the pilot got nonsense. **The model did not
+invent it. We told it, four times** — the plate, the per-turn message, its own
+history, and the transcript. The rules said "never send a pilot to another
+frequency off your own bat" while the plate said "a departure goes to Departure
+at 5 miles", and a regex adjudicated between them after the fact.
+
+**And the history kept the uncensored version.** `session_messages` held what
+the model wrote; the pilot heard what survived, so the controller believed it
+had handed him over. A filter that silently diverges the record from reality
+poisons every turn after it.
+
+**What was built.** Both prompts now name WHO and say the timing arrives as a
+HANDOFF line; `settle` no longer hands the voice guidance the engine is about
+to speak; the history records what went out.
+`tests/test_we_do_not_edit_what_the_model_said.py` is a registry — every filter
+declares the PROMPT FAULT it stands in for and an undeclared one fails. The
+count is a baseline and should go DOWN.
+
+**Acceptance criteria**
+1. A read-back is answered as a read-back, not with "go ahead".
+2. The mile calls on final go out; the model does not double them.
+3. The conversation history matches what was transmitted.
+
+---
+
+## [ARCH-37] The ATIS letter is asked for and thrown away, so the controller can never stop asking — #180
+labels: bug, architecture
+
+**Status:** FIXED 18 August. Guarded by `tests/test_he_only_has_to_say_the_letter_once.py`, which fails on either half — the classifier dropping the field, or `dispatch` recording it on check-ins only — and on the general case of a schema field nobody collects. Not labelled `needs-flight-test`: every criterion is a fact a test can assert, and the pilot's complaint was that he was asked twice, which is exactly what the suite now reproduces.
+
+    "Kobuleti Clearance is asking whether or not I have information whiskey
+     over and over again, even though I've already told him. That should
+     probably be something in the database to record that I have whiskey, so he
+     doesn't keep asking"
+
+It IS in the database — `flights.atis_letter`, a column since migration 026,
+on the `flight_state` view and restored by `hydrate`. The column was never the
+problem. Two faults, stacked, either of which alone would cause it:
+
+    bedrock_intent.classify   asks the model for `atis_letter` in
+                              INTENT_SCHEMA and never reads it off the
+                              response. `Intent.atis_letter` was always ""
+    intents.dispatch          wrote it only under `case IntentKind.CHECK_IN`,
+                              so it would have been dropped on the request and
+                              read-back calls even once populated
+
+The two writers of `ac.atis_letter` are `dispatch` and `hydrate` — and
+`hydrate` restores the column the board flushed *from that same field*. **A
+closed loop with no source**, so the field was empty on every call of every
+sortie ever flown.
+
+**And it stops the sortie dead**, which is why this is not cosmetic.
+`request_clearance` sets the phase, speaks the ATIS phrase and RETURNS — so an
+unmatched letter short-circuits the rung before any clearance is issued. Asked
+five times in three minutes on 18 August; no clearance was ever issued by the
+engine, and `assigned_plans` held no row for the sortie.
+
+**Why nothing caught it.** The field existed, typed, defaulting to `""`. Every
+reader compiled, every test constructing an `Intent` by hand passed, and an
+unfilled letter is indistinguishable from a pilot who never said one. It needs
+a SECOND transmission to show, and only a live pilot sends one.
+
+**What was built.** `classify` reads the field; `dispatch` records it whatever
+call it arrived on. Plus a schema-coverage check — every field `INTENT_SCHEMA`
+asks the model for must reach the `Intent`, and the mirror — because this is a
+CLASS of fault: the copy is hand-written by design (the clamps on
+`flight_size` and `wants` are why it is not a `**data` splat), so a field can
+be added to the schema and silently never collected.
+
+**Acceptance criteria**
+1. A pilot who gives the letter on any kind of call is not asked again.
+2. A pilot holding a stale letter is still corrected.
+3. A field in `INTENT_SCHEMA` that `classify` does not read fails the suite.
+
+---
+
+## [ARCH-38] Nobody may taxi without a clearance, and the gate asks the wrong question — #181
+labels: bug, architecture, needs-flight-test
+
+**Status:** OPEN — 18 August, root-caused and scoped, not yet built. Waiting on nothing: the predicate is safe to tighten now that a filed plan is a prerequisite. On-the-fly VFR plan creation is deliberately NOT in scope and wants its own issue.
+
+    "so we never got a clearance, because clearance never heard that we had
+     information whiskey? Then everybody just played along?"
+
+Yes. #180 stopped the clearance rung ever completing; this is why nothing
+downstream noticed. The engine issued no clearance, the language brain narrated
+one anyway, and Ground, Tower and Departure each waved him on.
+
+**The gate exists and asks the wrong question.** `request_taxi` refuses on:
+
+    if ac.clearance_agreed is False:
+
+`False` means *one was ISSUED and the read-back has not been accepted*. The
+read-back was judged `correct=None` — nobody could judge it, there being no
+clearance on the board to compare against — so `clearance_agreed` stayed
+`None`, and `None` passes straight through. The gate answers **"was the issued
+clearance read back?"** and never **"was one ever issued?"**
+
+`controller.py` says so itself, next to the field:
+
+    FILED, ISSUED and ACKNOWLEDGED became three real states in #105 so that
+    the next rung could ask which one he was in; nothing asked.
+
+**The rule is not IFR-specific.** At a controlled field a VFR departure calls
+Clearance too — *"VFR departure to the west"* — and that is a pre-req to taxi.
+The `None` branch was justified on "the ordinary case for VFR", which is wrong
+procedure, not just wrong bookkeeping.
+
+**Scope: a plan on file is required for now.** The whole clearance apparatus is
+filed-plan-shaped (`assign` copies a filed plan onto a flight), so there is no
+path by which a VFR aeroplane with nothing on file can reach ACKNOWLEDGED.
+On-the-fly VFR plan creation is deferred to its own issue; until then a filed
+plan is a prerequisite for clearance, which makes the existing path the only
+path and the predicate safe to tighten.
+
+**And the refusal must name the right problem.** *"Your IFR clearance has not
+been read back"* is wrong for a man who never called Clearance at all, and a
+pilot can only fix the fault he is told about — which is #135's own complaint.
+
+**Acceptance criteria**
+1. An aeroplane the engine never cleared is refused taxi, and told to contact
+   Clearance rather than told his read-back is outstanding.
+2. An aeroplane whose clearance was issued and not read back keeps the existing
+   refusal.
+3. A refused aeroplane stays on Clearance's rung — the phase is the handoff.
+4. A cleared and acknowledged aeroplane taxis with no extra step.
+
+---

@@ -86,7 +86,7 @@ the flight below. The `..` ranges expand over LIVE rows in card order, so they
 cannot name a retired one again without the parser saying so out loud.
 
 ```rows
-R1..R4 N1 N2 M1 G3..G12 Q1 V9 V7 P1..P4
+R1..R4 N1 N2 M1 G3..G13 Q1 Q14 V9 V7 P1..P4
 V6 V3 H4 H5 H6 H7 H8 H9 H10 H11 V8 V5 F1..F5b V10 K1..K4
 ```
 ### FLIGHT 2 — the VFR arrival
@@ -121,7 +121,7 @@ T1..T4 V6 V8
 > machine will ever score them.
 
 ```rows
-S1..S14
+S1..S15
 ```
 ### UNSCHEDULED — live rows the running order has never placed
 > **Not a sortie, and not a recommendation.** These are rows that are live on
@@ -414,6 +414,7 @@ cockpit, can actually get it down at the pace it is read.
 | G10 | P3 | Airborne later — *"what am I doing"* or *"where am I going next"* | He answers from your plan without you repeating it, and does not read you ranges you do not need | [R#1] `flight_plan_help` |
 | G11 | P1 | Ask for a clearance **under a callsign the board does not have** — say your callsign wrong on purpose, or call before the flight is created | He tells you he HAS the plan and names it — *"I have Domino, Kobuleti to Batumi"* — and separately that he has nothing under that callsign, and asks you to say it again. He must NOT say the plan is missing, unavailable or not on file: that sends you hunting where nothing is wrong | [#126] |
 | G12 | P1 | Read the clearance back with **two elements missing** — drop the altitude and the departure frequency | He asks for **both** back, in one transmission. Then supply only one, and he asks for the one still outstanding — never for the one you just gave him, and never a correction you cannot satisfy | [#157] |
+| G13 | P1 | Ask Ground to taxi **without ever calling Clearance** — cold start, straight to Ground on 121.8 | **Refused, and told the RIGHT thing**: he has no clearance and must contact Kobuleti Clearance. Not *"your clearance has not been read back"*, which is a different fault and sends a man hunting for a read-back he never made. He must also stay on **Clearance's rung** — the phase IS the handoff, so a refusal that also hands you to Ground is #135's complaint back again. On 18 August a pilot taxied, took off and flew two aerodromes on a clearance nobody had issued | [#181] |
 
 **What each one is actually checking**
 
@@ -948,6 +949,7 @@ have been answered with "nothing on file for you" — see [#56].
 | ~~Q11~~ | Inbound, say nothing | Inside **25 nm** Center hands you to **Batumi Approach, 124.425** unprompted. This is the fix for the sortie that ended in a Mayday: he sat at 44 nm with nothing in the system able to move him on | [#51] | **P1** |
 | **Q12** | At any point, ask a Kobuleti controller for something only Batumi can give — *"request the ASR"* on preset 2 | He should send you to the right man rather than inventing an answer. A controller who works one field must not clear you into another's approach | [R#21] | P3 |
 | **Q13** | On any Kobuleti frequency ask *"say again the ground frequency"*, then *"and tower?"* | **121.800** and **133.000**. Until 7 August he was handed no frequency but Departure's and invented the rest — he answered "Ground is one three three decimal zero" (that is Tower) and "Tower is one one eight decimal zero" (that is *Batumi* Tower). Both in faultless phraseology. He now carries his own field's list | [R#58] | **P1** |
+| **Q14** | Holding short, ready for departure — **look at the board before you roll** | **Not `landed`.** You are in `departure` from Tower's first word and most of that is spent stationary; the phase used to read that as having flown. On 18 August the board said LANDED 47 seconds before the aeroplane left the ground, and Departure then posted him back to Tower **twelve times** over thirteen miles, because a landed aeroplane is Tower's. Fly the circuit and land for the other half: after a real landing it must read `landed` | [#178] | **P1** |
 
 **What it is actually checking**
 
@@ -1031,6 +1033,7 @@ falsified from a transcript; this cannot, and I have no way to test it at all.
 | **S12** | Any digit in any transmission | **Never a spoken numeral.** "runway one three", not "thirteen"; "two thousand", not "two zero zero zero"; "one three three decimal zero", not "one thirty-three point oh". Every quantity is spelled on its way to the radio now | [#79] | **P1** |
 | ~~S13~~ | **The landing clearance, on short final** | It arrives. On 10 August the engine issued *"cleared to land runway one three"* and the pilot heard **nothing** — the director returned a 500 and the reply was empty. Report any transmission that simply does not come | [#87] | **P1** |
 | **S14** | **When Whisper mangles your callsign** — it will, roughly one transmission in seven — listen to what comes back | ONE sentence, his, not two. He must not tell you he does not have you on the board while clearing you in the same breath: radar named you before you keyed the microphone. A genuinely WRONG callsign — call yourself something that is not yours — must still be corrected, and that is the other half to try | [#172] | **P1** |
+| **S15** | **Read back a take-off clearance** and listen to the answer | *"That's correct"* — or whatever he chooses — answering the READ-BACK. Never *"go ahead"*, which invites you to speak and means he has treated your read-back as an opening call. On 18 August the engine composed the right transmission and a regex deleted the clause it objected to, taking *"that's correct"* with it, so the fallback greeting went out instead. **This is the row a machine cannot score**: the transcript will look reasonable either way and only an ear can tell an answer from an invitation | [#179] | **P1** |
 
 **Anything that sounds wrong is a line in a table**, not a code change — see
 `radio/tts.py`. Tell engineering the word and roughly what it sounded like.

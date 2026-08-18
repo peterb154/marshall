@@ -84,6 +84,19 @@ def classify(transcript: str) -> intents.Intent:
         # docs/STATE.md -- this is the field a pilot filled on every call and
         # nothing recorded.
         wants=(data.get("wants") or "").strip()[:120],
+        # ASKED FOR AND THROWN AWAY. `INTENT_SCHEMA` has described this field
+        # to the model since it was added, the model returns it correctly, and
+        # this constructor did not read it -- so `Intent.atis_letter` was
+        # always "" and the only writer of `ac.atis_letter` had nothing to
+        # write. A closed loop with no source: `hydrate` restores the column,
+        # the board flushes it from the field, and nothing ever put a letter
+        # in. The controller could not stop asking, and on 18 August it asked
+        # five times in three minutes.
+        #
+        # Same shape as `wants` above -- a field a pilot fills on every call
+        # and nothing records. That one was found by reading `STATE.md`; this
+        # one needed a sortie. See the schema-coverage test.  [#180]
+        atis_letter=(data.get("atis_letter") or "").strip()[:12],
     )
 
 
