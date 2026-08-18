@@ -57,7 +57,7 @@ ROOT = Path(__file__).resolve().parent.parent
 BASELINE = ROOT / "tools" / "unwired.json"
 
 # Where the SYSTEM lives, as opposed to what drives or tests it.
-SOURCE = (ROOT / "src" / "marshall", ROOT / "director")
+SOURCE = (ROOT / "src" / "marshall", ROOT / "services")
 # Everything that may legitimately be a caller. `tools/` counts: a script that
 # is the only caller of something is a real use, and saying otherwise would
 # report every diagnostic helper in the repo.
@@ -73,7 +73,7 @@ FRAMEWORK = {"tool", "app.get", "app.post", "app.put", "app.delete",
 AS_GOOD_AS_ASSIGNED = {"property", "cached_property", "functools.cached_property"}
 
 
-# NOT OURS, so not our problem. `director/strands_pg` is a stamp of the upstream
+# NOT OURS, so not our problem. `services/strands_pg` is a stamp of the upstream
 # framework and `_grpc` is generated from the DCS protos -- a library is full of
 # things this repo does not call, by design, and reporting them would bury the
 # handful that matter.

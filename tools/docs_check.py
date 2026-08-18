@@ -63,7 +63,7 @@ def endpoints() -> list[str]:
     """An HTTP path in prose is a promise the code has to keep."""
     src = "\n".join(f.read_text(encoding="utf-8", errors="replace")
                     for f in list((ROOT / "src").rglob("*.py"))
-                    + list((ROOT / "director").rglob("*.py")))
+                    + list((ROOT / "services").rglob("*.py")))
     bad = []
     pat = re.compile(r"`(/(?:atc|radar|hooks|prompts|flights|plans|events|diag)"
                      r"[a-z0-9/_{}-]*)`")
@@ -109,11 +109,11 @@ def commands() -> list[str]:
             if len(Path(m).stem) <= 1:
                 continue
             # TWO `tools/` DIRECTORIES, and the docs mean both. The repo has
-            # `tools/` and the director has `director/tools/` -- its agent-side
+            # `tools/` and the containers have `services/tools/` -- their agent-side
             # tools -- and prose says "tools/plans.py" for either. Checking only
             # the first reported eleven healthy references as broken, which is
             # how a checker teaches people to ignore it.
-            if not ((ROOT / m).exists() or (ROOT / "director" / m).exists()):
+            if not ((ROOT / m).exists() or (ROOT / "services" / m).exists()):
                 bad.append(f"{p.relative_to(ROOT)} names `{m}`, which does not exist")
     return bad
 

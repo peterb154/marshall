@@ -55,7 +55,7 @@ _OWN_DEFAULT = re.compile(
     r"""environ(?:\.get\(|\[)\s*["'](""" + "|".join(_HOSTS)
     + r""")["']\s*,\s*["'][^"']+["']""")
 
-_SEARCHED = ("src", "tools", "tests", "director", "deploy", "docs")
+_SEARCHED = ("src", "tools", "tests", "services", "deploy", "docs")
 _SKIP_DIRS = {"__pycache__", ".git", "node_modules", "_grpc", "build"}
 # The one file allowed to answer, and the example that exists to be copied.
 _ALLOWED = {"src/marshall/config.py", "deploy/.env.example"}

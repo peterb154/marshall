@@ -87,24 +87,24 @@ SRS_HOST = os.environ.get("SRS_HOST", "127.0.0.1")
 SRS_EAM_PASSWORD = os.environ.get("SRS_EAM_PASSWORD", "")
 
 # WHERE THE SIM IS. Same kind of fact as SRS_HOST, and it belongs here for the
-# same reason -- except that it also lives in `director/.env`, which compose
+# same reason -- except that it also lives in `services/.env`, which compose
 # reads for the container and no shell reads for a tool run by hand.
 #
 # So fourteen files rolled their own `os.environ.get("DCS_GRPC_ADDR", ...)` and
 # they did not agree: most defaulted to localhost, three hardcoded a LAN address
-# into a PUBLIC repo, and `tools/sim.py` alone read `director/.env` -- in a
+# into a PUBLIC repo, and `tools/sim.py` alone read `services/.env` -- in a
 # private helper, behind a comment naming this exact failure. The ladder
 # rehearsal asked `sim.py` where the sim was, got the truth, then asked
 # `spawn.py` to park an aeroplane there and got `Connection refused` from
 # localhost, two lines under a healthy status report.
 #
-# One door. `director/.env` is consulted because it is the file that already
+# One door. `services/.env` is consulted because it is the file that already
 # holds this, and the value is written back into the environment so a
 # subprocess, a later import or a library gets the same answer.
 def _grpc_addr() -> str:
     got = os.environ.get("DCS_GRPC_ADDR")
     if not got:
-        for line in _lines(REPO_ROOT / "director" / ".env"):
+        for line in _lines(REPO_ROOT / "services" / ".env"):
             if line.startswith("DCS_GRPC_ADDR="):
                 got = line.split("=", 1)[1].strip()
                 break

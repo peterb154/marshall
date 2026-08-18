@@ -40,7 +40,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 
 # WHERE THE SIM IS. This file used to resolve it privately -- env, else
-# `director/.env` -- behind a comment naming exactly the failure that comment
+# `services/.env` -- behind a comment naming exactly the failure that comment
 # describes, while thirteen other callers defaulted to localhost or hardcoded a
 # LAN address. It lives in `marshall.config` now, with the rest of the
 # machine-specific facts, and this is a caller like any other.

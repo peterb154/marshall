@@ -146,7 +146,7 @@ class TestTheDirectorBindsTheToolToTheSeat(unittest.TestCase):
     def setUp(self):
         H._HOOKS.clear()
         self.src = (Path(__file__).resolve().parent.parent
-                    / "director" / "app.py").read_text(encoding="utf-8")
+                    / "services" / "app.py").read_text(encoding="utf-8")
 
     def test_hook_tools_is_given_the_station_and_the_role(self):
         self.assertIn("hook_tools(session_id, station, role)", self.src)

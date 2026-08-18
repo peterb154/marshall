@@ -43,7 +43,7 @@ _bind()
 from marshall.core import route as R
 
 # WHERE THE SIM IS, from the one place that knows -- env, else
-# `director/.env`, which is the file compose reads and no shell does.
+# `services/.env`, which is the file compose reads and no shell does.
 # Rolling a local default here is how this tool ended up talking to
 # localhost while the sim ran on another machine. See `dcs.grpc_addr`.
 ADDR = _config.DCS_GRPC_ADDR

@@ -105,7 +105,7 @@ class TheDirectorActuallyHonoursIt(unittest.TestCase):
 
     def setUp(self):
         self.src = (Path(__file__).resolve().parent.parent
-                    / "director" / "app.py").read_text()
+                    / "services" / "app.py").read_text()
 
     def test_spawn_is_conditional(self):
         self.assertIn('*([spawn_ground] if "spawn" in may else [])', self.src)

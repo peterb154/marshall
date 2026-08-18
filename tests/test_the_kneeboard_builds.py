@@ -118,7 +118,7 @@ class TestAFrequencyKeepsItsDigits(unittest.TestCase):
         root = Path(__file__).resolve().parent.parent
         bad = []
         for path in list((root / "src").rglob("*.py")) + \
-                list((root / "director" / "tools").rglob("*.py")):
+                list((root / "services" / "tools").rglob("*.py")):
             # `core/say.py` DEFINES both renderers and quotes the defect in
             # prose as the example. Stripping `#` does not strip a docstring,
             # and the module that fixes a thing is allowed to name it.

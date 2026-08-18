@@ -161,7 +161,7 @@ flowchart TD
 | the **stores** | 1–3 | Postgres + PostGIS + pgvector, and the migrations | the agent container |
 | `marshall-kneeboard` | 7 surfaces | the page server | its own container |
 
-**"the bridge" and "the director" are DIRECTORY names, and are deprecated as vocabulary.** They say where a file happened to sit after a subtree merge on 25 July, and a folder name carries no layer — so a reader cannot tell whether a thing belongs where it is. This page has ~290 of them in prose written before that was decided; **read "the bridge" as `marshall-radio` + `marshall-atc` in one host process, and "the director" as the language brain plus the stores plus `marshall-feed`'s threads in one container.** The folders themselves have not moved and will not until #147 item 5; the words are not waiting for them.
+**"the bridge" and "the director" are DIRECTORY names, and are deprecated as vocabulary.** They say where a file happened to sit after a subtree merge on 25 July, and a folder name carries no layer — so a reader cannot tell whether a thing belongs where it is. This page has ~290 of them in prose written before that was decided; **read "the bridge" as `marshall-radio` + `marshall-atc` in one host process, and "the director" as the language brain plus the stores plus `marshall-feed`'s threads in one container.** The FOLDERS moved on 18 August — `director/` is `services/` (#147) — a fortnight after the words, which never waited for them. `marshall-director` survives as the compose PROJECT name, which is the running deployable's identity and deliberately did not follow the directory.
 
 **Then fourteen name-like things.** A bug in any one of them sounds, from the cockpit, exactly like a bug in any other — this table is the antidote.
 

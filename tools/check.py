@@ -46,7 +46,7 @@ PY = sys.executable
 
 # (name, argv, what it guards, needs the sim/SRS)
 CHECKS = [
-    ("lint", [PY, "-m", "ruff", "check", "src", "tools", "tests", "director"],
+    ("lint", [PY, "-m", "ruff", "check", "src", "tools", "tests", "services"],
      "undefined names, dead locals, loop-variable closures — it found two real "
      "bugs the first time it ran", False),
     ("unit suite", [PY, "-m", "pytest", "-q"],

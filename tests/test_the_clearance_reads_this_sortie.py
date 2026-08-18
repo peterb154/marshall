@@ -37,7 +37,7 @@ ROOT = Path(__file__).resolve().parent.parent
 class TestTheMissionReachesTheTools(unittest.TestCase):
 
     def setUp(self):
-        self.app = (ROOT / "director" / "app.py").read_text()
+        self.app = (ROOT / "services" / "app.py").read_text()
         self.clr = (ROOT / "src" / "marshall" / "atc" / "clearance.py").read_text()
 
     def test_the_tools_are_bound_to_a_mission(self):

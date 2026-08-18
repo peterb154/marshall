@@ -55,7 +55,7 @@ def sample(callsign: str | None) -> list[tuple]:
     out = subprocess.run(
         ["docker", "compose", "exec", "-T", "db", "psql", "-U", "strands",
          "-d", "strands", "-tAF", "|", "-c", SQL],
-        cwd=ROOT / "director", capture_output=True, text=True)
+        cwd=ROOT / "services", capture_output=True, text=True)
     rows = []
     for line in out.stdout.strip().splitlines():
         parts = line.split("|")

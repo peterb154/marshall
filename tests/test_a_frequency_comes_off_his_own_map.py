@@ -255,7 +255,7 @@ class TestTheDirectorBindsItToTheSeat(unittest.TestCase):
 
     def test_frequency_tools_is_given_the_station(self):
         src = (Path(__file__).resolve().parent.parent
-               / "director" / "app.py").read_text(encoding="utf-8")
+               / "services" / "app.py").read_text(encoding="utf-8")
         self.assertIn("frequency_tools(station)", src)
 
 

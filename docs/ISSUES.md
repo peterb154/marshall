@@ -8226,34 +8226,63 @@ or subtree moving.
    is in the issue when it changes.
 
 Code: `docs/STRUCTURE.md`, `CLAUDE.md`, `docs/START_HERE.md`, `pyproject.toml`,
-`director/`.
+`services/` (was `director/`).
 
-**Status:** PARTLY — 1, 2 and 4 are met. 3 is not built (`pyproject.toml`
-declares `marshall-kneeboard` alone, the other three blocked on #55) and 5 has
-gone BACKWARDS: `director/app.py` is 36 routes today against the 34 this was
-written about.
+**Status:** BUILT, needs a pilot — 18 August. 1, 2, 3 and 4 are met; 5 has
+gone further backwards and is now the only open criterion.
 
-**THE FOLDER RENAME IS NOT BLOCKED, AND THE THING EVERYONE THOUGHT BLOCKED IT
-IS WHAT MAKES IT SAFE.** `CLAUDE.md` warned that letting compose derive the
-project name would mount an empty `marshall-director_pgdata` and bring the
-agent up with no data. Measured 17 August: **there is no such volume.**
-`docker volume ls` shows no marshall volume at all and the database is a bind
-mount to `/srv/pgdata/data`, a dedicated LVM volume, which no project name can
-miss. The compose file also pins `name: marshall-director` explicitly, so the
-derivation the note feared cannot happen either way.
+**Criterion 3 is met, and the reason it took a fortnight is the finding.**
+`pyproject.toml` declared `marshall-kneeboard` alone, with a comment saying
+`marshall-radio` AND `marshall-atc` both waited on `_run_srs` leaving
+`agent_atc.py` (#55). Half of that was true:
 
-That note deferred this rename for a fortnight and nobody re-checked it,
-because a warning that specific reads as one somebody measured. Corrected in
-`CLAUDE.md` with the date and the evidence.
+    marshall-radio   a separate PROCESS. Genuinely #55. Still a comment.
+    marshall-atc     THIS process. Wanted a function to point at, which is
+                     nine lines of argument parsing lifted out of an `if`
+                     block into `agent_atc.main`. Never needed #55 at all.
 
-**AND THE MISSING COMMANDS ARE WHY THE OLD WORDS SURVIVE**, which is worth
-stating as a cause rather than a symptom. The vocabulary says to say
-`marshall-atc`; `pyproject.toml` declares no such command, so the thing an
-operator actually runs is `tools/bridge.py` and "bridge" is the only word that
-names something real. Renaming the parts while leaving the PROCESS unnamed and
-unrunnable is what keeps the deprecated term in every conversation — including
-mine, all week. Item 3 is not cosmetic; it is the half that makes the rest
-usable, and it is #55.
+Two questions filed as one, and the wrong half's blocker held both. That is
+the same shape as the folder and the vocabulary below, and as #162's `_seats`
+switch — a pattern worth naming, because in each case the honest answer was
+available the whole time behind a constraint that applied to something else.
+
+**Criterion 4 is met and the folder moved: `director/` is `services/`.** The
+three costs, measured rather than reasoned about:
+
+1. **The database — gone, and it never existed.** There is no
+   `marshall-director_pgdata`; `docker volume ls` shows no marshall volume and
+   the data is a bind mount to `/srv/pgdata/data`. The compose pin
+   `name: marshall-director` STAYS and does not follow the folder: it is the
+   running deployable's identity, which is why `cd services && docker compose
+   up -d` reached the same containers. Done live, with the stack up. Row
+   counts either side: contacts 0, flights 2, approaches 6, flight_plans 3,
+   stations 9 — identical.
+2. **The subtree — a flag, not a blocker.** A prefix is an argument you pass,
+   not a relationship stored in the repo. `git subtree pull --prefix=services`
+   and `diff -r /tmp/fresh-stamp services/`.
+3. **`director/.env` — evaporated on contact.** `git mv` on a DIRECTORY is a
+   filesystem rename, so the git-ignored credential file travelled with
+   everything else. Nothing was moved by hand. The cost was real to reason
+   about and nil to pay, and finding that out took reading what `git mv` does.
+
+**The correction that killed cost 1 landed in `CLAUDE.md` and stopped there.**
+`0d60d07` fixed `CLAUDE.md` and this file on 17 August and did not touch
+`docs/STRUCTURE.md` — which `START_HERE.md` names as *"read it before renaming
+a directory"*. So the fix for a stale constraint left the stale constraint in
+the document that decides the thing it was blocking, for another day. **A
+correction is not landed until it reaches the document somebody will actually
+consult.** That is the second-order lesson and it is worth more than the
+rename.
+
+**Criterion 5 is the only one open**, and it has gone backwards again:
+`services/app.py` has 36 routes against the 34 this was written about. The
+route count is not a rename problem and belongs with the CRUD deletion.
+
+`marshall-director` survives as the compose PROJECT name. That is correct and
+is not leftover: the deployable's identity is not its directory, which is the
+whole argument this issue makes, arriving from the other side.
+Labels: needs-flight-test
+
 ---
 
 ## [ATIS-4] The runway in use is measured, and the wind spoken beside it is a constant — #148

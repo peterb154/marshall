@@ -28,7 +28,7 @@ import time
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "director"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "services"))
 
 from tools.busy import SeatLocks
 
@@ -155,7 +155,7 @@ class TheDirectorActuallyKeysItOnTheSeat(unittest.TestCase):
 
     def setUp(self):
         self.src = (Path(__file__).resolve().parent.parent
-                    / "director" / "app.py").read_text(encoding="utf-8")
+                    / "services" / "app.py").read_text(encoding="utf-8")
 
     def test_the_lock_and_the_agent_cache_share_one_key(self):
         # THIS IS THE INVARIANT. A lock coarser than the thing it guards

@@ -50,7 +50,7 @@ def psql(sql: str) -> str:
     got = subprocess.run(
         ["docker", "compose", "exec", "-T", "db",
          "psql", "-U", "strands", "-d", "strands", "-Atc", sql],
-        cwd=str(ROOT / "director"), capture_output=True, text=True)
+        cwd=str(ROOT / "services"), capture_output=True, text=True)
     if got.returncode:
         raise RuntimeError((got.stderr or got.stdout).strip()[:400])
     return got.stdout.strip()

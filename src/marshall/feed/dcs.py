@@ -33,12 +33,12 @@ from dcs.group.v0 import group_pb2, group_pb2_grpc
 from dcs.hook.v0 import hook_pb2, hook_pb2_grpc
 
 # Your DCS server's gRPC endpoint. LAN-only, never public -- and this repo is,
-# so the address belongs in the environment (see director/.env), not here.
+# so the address belongs in the environment (see services/.env), not here.
 log = logging.getLogger(__name__)
 
 
 # WHERE THE SIM IS -- from `marshall.config`, which is where every
-# machine-specific fact lives and the only place that consults `director/.env`.
+# machine-specific fact lives and the only place that consults `services/.env`.
 # Re-exported under the name every caller in this package already imports.
 DCS_GRPC_ADDR = _config.DCS_GRPC_ADDR
 

@@ -16,7 +16,7 @@ this seat, and the tool must say so rather than read him somebody else's map."*
        talk-down must stop", so the merge stopped a talk-down for a man who never
        said he had anything in sight.
 
-    2  A FAILED RADAR READ IS RETURNED AS AN EMPTY SKY.  `director/app.py`
+    2  A FAILED RADAR READ IS RETURNED AS AN EMPTY SKY.  `services/app.py`
        `except Exception: got = []`, two lines under its own comment saying
        `contacts` returns None rather than [] precisely so a cold cache can be
        told from an empty sky. Silent, as well: a double radar failure and a
@@ -114,20 +114,20 @@ class TestAMergeKeepsAnAnswerOfNo(unittest.TestCase):
 class TestAFailedRadarReadIsReportedAsFailed(unittest.TestCase):
     """Site 2. Acceptance 2.
 
-    Read as SOURCE. `director/app.py` is a separate deployable -- strands,
+    Read as SOURCE. `services/app.py` is a separate deployable -- strands,
     fastapi, the gRPC stubs -- and the suite cannot import it; that is the same
     reasoning `tests/test_director_sql.py` is built on, and the fault is visible
     in the source either way.
     """
 
-    SRC = ROOT / "director" / "app.py"
+    SRC = ROOT / "services" / "app.py"
 
     def endpoint(self):
         src = self.SRC.read_text(encoding="utf-8")
         for node in ast.walk(ast.parse(src)):
             if isinstance(node, ast.FunctionDef) and node.name == "radar_endpoint":
                 return node, src
-        self.fail("director/app.py has no radar_endpoint")
+        self.fail("services/app.py has no radar_endpoint")
 
     def test_no_handler_answers_a_failure_with_an_empty_sky(self):
         node, _ = self.endpoint()

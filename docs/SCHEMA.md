@@ -6,7 +6,7 @@
 > **STATUS: SUPERSEDED PROPOSAL — do not read this as the running system.**
 > This is a design sketch from before the two-theatre work, kept for its
 > reasoning. It was **never applied as written**. The live schema is
-> `director/migrations/` (through 022) plus `docs/WIRING.md` for what reads it;
+> `services/migrations/` (through 022) plus `docs/WIRING.md` for what reads it;
 > in particular this document proposes deleting in-memory agent state, and
 > `app.py`'s `_atc_agents` cache is still there and still load-bearing.
 > Its central question — *is the second airfield cheap?* — was answered by

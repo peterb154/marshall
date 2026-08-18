@@ -40,19 +40,35 @@ dev = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "markdown>=3.5", "pydcs>=0.1
 #
 # The four names are `marshall-radio` (L0, the SRS voice client), `marshall-atc`
 # (L4-L5, separation and procedure), `marshall-feed` (L1, the sim mirrored into
-# Postgres) and `marshall-kneeboard` (L7, the surfaces). ONE OF THEM IS HERE,
-# and the absences are not oversights:
+# Postgres) and `marshall-kneeboard` (L7, the surfaces).
 #
-#   marshall-radio   blocked on #55. The receive loop is `_run_srs` inside
-#   marshall-atc     `atc/agent_atc.py`'s own `__main__`, so there is no
-#                    function to name. Two entrypoints wait on one extraction.
+# TWO OF THEM ARE HERE, AND THE THIRD ABSENCE IS THE INTERESTING ONE. This
+# table used to hold one name and say both missing commands were blocked on
+# #55: "the receive loop is `_run_srs` inside `atc/agent_atc.py`'s own
+# `__main__`, so there is no function to name. Two entrypoints wait on one
+# extraction."
+#
+# Half of that was true, and treating the two as one question is what kept
+# `marshall-atc` unrunnable for a fortnight -- the same shape as #147's other
+# half, where the vocabulary and the directory rename were also treated as one
+# and the words went unsaid because the folders had not moved.
+#
+#   marshall-radio   STILL BLOCKED ON #55, and genuinely: it is a separate
+#                    PROCESS, and splitting the transport off the control is
+#                    the extraction. A name here would be aspirational.
 #   marshall-feed    not a process. `start_streamer` and `start_events` are
 #                    started by the agent's HTTP door; the day it is its own
 #                    process is the day it gets a line here.
 #
+# `marshall-atc` needed no extraction at all. It is THIS process, the one that
+# runs today, and what it wanted was a function to point at -- nine lines of
+# argument parsing lifted out of an `if` block into `agent_atc.main`.
+#
 # A name in this table is a promise that `pip install marshall` puts a working
-# command on the PATH. An aspirational one is worse than none.
+# command on the PATH. An aspirational one is worse than none, which is why
+# `marshall-radio` is still a comment.
 [project.scripts]
+marshall-atc = "marshall.atc.agent_atc:main"
 marshall-kneeboard = "marshall.kneeboard.serve:main"
 
 [build-system]
@@ -148,13 +164,13 @@ ignore = [
 # the director's tools did -- the module moved, the reason did not.
 "src/marshall/feed/*.py" = ["E402", "E702"]
 "src/marshall/mission/*.py" = ["E402", "E702"]
-"director/*.py" = ["E402"]
+"services/*.py" = ["E402"]
 # A one-line stamp helper beside its only use; a def would be further
 # from the loop that reads it.
 "src/marshall/radio/atc_session.py" = ["E731"]
 # Test fixtures declare mutable class attributes on purpose.
 "tests/*.py" = ["RUF012"]
-"director/tools/*.py" = ["E402"]
+"services/tools/*.py" = ["E402"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

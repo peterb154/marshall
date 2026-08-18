@@ -69,12 +69,31 @@ class TheTableIsThere(unittest.TestCase):
         self.assertIn("deprecated", section)
 
     def test_the_pin_is_stated_where_somebody_is_tempted(self):
-        """The folder rename is the step after this one, and the volume is why
-        it is dangerous. Saying so in the vocabulary section is not padding --
-        it is where a reader arrives having just decided the names are wrong."""
+        """The compose PROJECT name is stated in the vocabulary section, which
+        is where a reader arrives having just decided the names are wrong.
+
+        THE EVIDENCE CHANGED AND THE TEST'S SUBJECT DID NOT. This asserted
+        `marshall-director_pgdata` -- the named Postgres volume that made a
+        folder rename dangerous, because compose derives its project from the
+        DIRECTORY and an unpinned rename would mount an empty one. There is no
+        such volume; the database is a bind mount to `/srv/pgdata/data`, and
+        the claim had been false for weeks while three documents repeated it.
+
+        The pin still matters, for the opposite reason. `marshall-director` is
+        the RUNNING DEPLOYABLE'S IDENTITY: it is what `docker compose` resolves
+        to from the new directory, which is why `services/` reaches the same
+        containers and the same data. It did not follow the folder and must
+        not -- changing it would orphan the stack.
+
+        So the assertion is on the pin and on the sentence that stops the next
+        reader "tidying" it, and NOT on absence of the old volume name. A
+        document that corrects a claim has to quote the claim, which is the
+        trap this repository has sprung four times.
+        """
         section = self.text.split("## What to call the parts", 1)[-1]
         section = section.split("\n## ", 1)[0]
-        self.assertIn("marshall-director_pgdata", section)
+        self.assertIn("marshall-director", section)
+        self.assertIn("did not follow the folder", section)
 
 
 class EveryPointerLands(unittest.TestCase):

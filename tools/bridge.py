@@ -47,6 +47,12 @@ def config_build() -> Path:
     """build/, the same directory config.BUILD_DIR resolves to."""
     return Path(os.environ.get("MARSHALL_BUILD", str(ROOT / "build")))
 LOG = os.environ.get("MARSHALL_BRIDGE_LOG", "/tmp/marshall-bridge-live.log")
+# THE MODULE FORM, DELIBERATELY, NOW THAT `marshall-atc` EXISTS. #147 put a
+# console script on the PATH and this does not use it: `running()` finds live
+# processes by matching this string in `ps -eo args`, and a console script
+# execs as `.venv/bin/marshall-atc`, which that match would miss -- leaving a
+# radio running that `status` reports as stopped and `restart` starts a second
+# copy of. Say the name in documentation; start it by module here.
 MODULE = "marshall.atc.agent_atc"
 
 # The live configuration. Read from the director's .env so there is ONE place
@@ -82,7 +88,7 @@ def _env() -> dict:
     env.setdefault("PYTHONPATH", str(ROOT / "src"))
     # Resolved by `marshall.config` on import, which also writes it back into
     # this process's environment -- so the child inherits the same answer as
-    # every tool run by hand. This used to be its own read of `director/.env`,
+    # every tool run by hand. This used to be its own read of `services/.env`,
     # one of fourteen.
     env["DCS_GRPC_ADDR"] = _config.DCS_GRPC_ADDR
     # READ OFF THE COMPOSE FILE, not written out here. The credentials and the
@@ -97,9 +103,9 @@ def _env() -> dict:
 
 
 def _compose_dsn() -> str:
-    """`postgresql://user:pass@localhost:PORT/db` from director/docker-compose.yml."""
+    """`postgresql://user:pass@localhost:PORT/db` from services/docker-compose.yml."""
     try:
-        text = (ROOT / "director" / "docker-compose.yml").read_text()
+        text = (ROOT / "services" / "docker-compose.yml").read_text()
     except OSError:
         return ""
     import re

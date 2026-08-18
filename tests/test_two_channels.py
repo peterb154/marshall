@@ -201,7 +201,7 @@ class OneControllerThinkingDoesNotSilenceAnother(unittest.TestCase):
     so his transmission comes back `{"response": "", "busy": true}` and is
     dropped in silence with nothing in his log.
 
-    THAT LOCK IS IN `director/`, WHICH THIS FILE CANNOT REACH. What is asserted
+    THAT LOCK IS IN `services/`, WHICH THIS FILE CANNOT REACH. What is asserted
     here is the bridge's half of the contract, which is the half that would
     have to be right anyway: a slow turn on one channel does not lose, misroute
     or re-channel the next turn on another. If it ever does, this fails before

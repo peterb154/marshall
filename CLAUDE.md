@@ -136,20 +136,25 @@ doing and at what layer when it's all lumped into 'bridge' and 'director'."*
 | `marshall-atc` | 4–5, control + procedure | separation, the board, approaches, clearances, handoffs, the ground | `atc/` |
 | `marshall-feed` | 1, world | the sim mirrored into Postgres | `feed/` |
 | `marshall-kneeboard` | 7, surfaces | the page server, and a real command since #147 | `kneeboard/` |
-| the **language brain** | 6, language | what we ask Bedrock, in what words; the conversation, the tools a seat is handed | `atc/agent/` + the HTTP door in `director/app.py` |
-| the **stores** | 1–3 | Postgres + PostGIS + pgvector and the migrations | `director/db`, `director/migrations`, read through `marshall.atc.*` |
+| the **language brain** | 6, language | what we ask Bedrock, in what words; the conversation, the tools a seat is handed | `atc/agent/` + the HTTP door in `services/app.py` |
+| the **stores** | 1–3 | Postgres + PostGIS + pgvector and the migrations | `services/db`, `services/migrations`, read through `marshall.atc.*` |
 
-**"Bridge" and "director" are DIRECTORY names and are deprecated as words.**
-Both are folders that grew into processes — the director was a separate
-repository merged in by subtree on 25 July, and the folder is the seam. Say the
+**"Bridge" and "director" are deprecated as words, AND THE FOLDERS ARE GONE.**
+Both were directories that grew into processes — the second was a separate
+repository merged in by subtree on 25 July, and the folder was the seam.
+`director/` is **`services/`** as of 18 August (#147). Say the
 layer you mean instead: `marshall-radio` for audio, GUIDs and frequencies;
 `marshall-atc` for separation, procedure and clearances; "the language brain"
 for the model half; "the stores" for Postgres. The canonical table, with the
 reasoning, is [`docs/STRUCTURE.md` → **What to call the parts**](docs/STRUCTURE.md#what-to-call-the-parts).
 
-**The FOLDERS have not moved and the rename is still deferred**, for the pin
-below and not for the vocabulary: the two questions were treated as one, and
-that is what kept the words unsaid for a fortnight (#147).
+**THE FOLDERS HAVE MOVED NOW, and the vocabulary did not wait for them.**
+`director/` became `services/` on 18 August; the words were correct a fortnight
+earlier. That gap IS the lesson: the rename and the vocabulary were treated as
+one question, so the words went unsaid while the folders had not moved (#147).
+The same conflation blocked `marshall-atc` from `[project.scripts]` — it was
+filed under #55 beside `marshall-radio`, and only one of the two ever needed
+the extraction.
 
 ### Where the code is
 
@@ -164,49 +169,59 @@ that is what kept the words unsaid for a fortnight (#147).
   multi-ship rehearsal test harness — it was `srs/` until 31 July, and SRS is a
   vendor's name for a transport), `feed/` (the sim mirrored into Postgres),
   `mission/` (pydcs `.miz` builder + `ai_control.lua`), `kneeboard/` (charts).
-- **`director/`** (its own container stack) — the language brain's HTTP door and
+- **`services/`** (its own container stack, `director/` until 18 August) — the language brain's HTTP door and
   the stores on strands-pg (Postgres + PostGIS + pgvector): the identity graph
   (`contacts`), the live PostGIS track cache (`tracks`), the `approaches` +
   `flight_plans` tables, and the DCS-gRPC tools. `marshall-atc` talks to it over
   HTTP (`/atc`, `/radar`, `/hooks/due`, `/prompts`, ...). Run it with
-  `cd director && docker compose up -d`.
+  `cd services && docker compose up -d`.
 
   **The ATC is no longer in here, and neither are the prompts.** The words moved
   to `src/marshall/atc/agent/prompts/` in `ebea93a`; the twelve modules of
   domain reasoning under `director/tools/` followed them in #147, ten into
-  `marshall.atc.*`. What is left in `director/tools/` is `busy` (one lock per
+  `marshall.atc.*`. What is left in `services/tools/` is `busy` (one lock per
   agent identity) and `ops` (`escalate`) — properties of running an agent behind
   HTTP, not of controlling aeroplanes. Nothing redirects: the old
   `tools.<name>` spelling raises, and `tests/test_the_atc_is_not_in_a_container.py`
   keeps it that way.
 
-  Its compose project name is **pinned to `marshall-director`** in
-  `docker-compose.yml`, and that pin is what makes the folder safe to RENAME:
-  compose derives a project from the directory unless told otherwise, and it
-  has been told.
+  Its compose project name stays **pinned to `marshall-director`** in
+  `docker-compose.yml`, and the pin is what made the folder safe to rename:
+  compose derives a project from the DIRECTORY unless told otherwise, and it
+  has been told, so `cd services && docker compose up -d` still reaches the
+  same containers. **The pin does not follow the folder and must not** — the
+  running deployable's identity is `marshall-director` whatever the directory
+  is called, and changing it would orphan the containers.
 
-  **The `marshall-director_pgdata` hazard this note used to describe is gone,
-  and saying so is the point of the correction.** It warned that letting
+  **The `marshall-director_pgdata` hazard this note used to describe never
+  survived to bite, and saying so is the point.** It warned that letting
   compose derive the project would mount an empty volume and bring the agent up
   with no contacts, sessions or approaches. That was true when the database
   lived in a named volume. It does not: `docker volume ls` shows no marshall
-  volume at all, and the data is a **bind mount to `/srv/pgdata/data`** — a
-  dedicated LVM volume — which no project name can miss. Verified 17 August.
+  volume, and the data is a **bind mount to `/srv/pgdata/data`** — a dedicated
+  LVM volume — which no project name can miss. Verified 17 and 18 August; the
+  rename was done with the containers up and the row counts were identical
+  either side.
 
   A documented constraint that has stopped being true is worse than no note:
-  this one deferred the `director/` rename for a fortnight (#147) and nobody
-  re-checked it, because a warning that specific reads as a warning somebody
-  measured. Rename the folder when the rest of #147 lands; the pin protects it.
+  this one deferred the rename for a fortnight (#147), and the correction that
+  killed it landed HERE on 17 August and not in `docs/STRUCTURE.md`, which is
+  the document `START_HERE.md` tells you to read before renaming a directory.
+  It sat there wrong for another day. **A correction is not landed until it
+  reaches the document somebody will actually consult.**
 
-  It is also a stamp of `strands-pgsql-agent-framework`; `diff -r
-  /tmp/fresh-stamp director/` still works for pulling upstream changes.
+  It is also a stamp of `strands-pgsql-agent-framework`. The subtree prefix
+  moved with the folder: `diff -r /tmp/fresh-stamp services/`, and a future
+  pull is `git subtree pull --prefix=services`. That workflow was the second
+  stated cost of the rename and it is a flag, not a blocker.
 
 ## How it runs
 **`marshall-radio` + `marshall-atc` are one host process today**
-(`python -m marshall.atc.agent_atc --srs <host> <freq> <voice> <session>`): it
+(`marshall-atc --srs <host> <freq> <voice> <session>`, or the `python -m
+marshall.atc.agent_atc` form `tools/bridge.py` starts it by): it
 injects radar plus any controller directive and POSTs each call to the language
 brain's `/atc`. Splitting them into two commands waits on #55. The language
-brain and the stores run under `docker compose` in `director/`. Model tier is all-Sonnet by default (thinking disabled
+brain and the stores run under `docker compose` in `services/`. Model tier is all-Sonnet by default (thinking disabled
 for speed); a Haiku fast tier is wired but dormant (`MARSHALL_FAST_TIER=1`).
 Deterministic separation engages only with real traffic (or `MARSHALL_SEP_ALWAYS=1`
 for the voice-only rehearsal).

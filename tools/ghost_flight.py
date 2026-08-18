@@ -116,7 +116,7 @@ def _dsn_from_compose() -> None:
     """Point at the director's Postgres, the way the bridge launcher does.
 
     NOT A FIFTEENTH READ OF THE CREDENTIALS. `tools/bridge.py` already derives
-    the DSN from `director/docker-compose.yml`, where the user, the password and
+    the DSN from `services/docker-compose.yml`, where the user, the password and
     the published port are declared -- and its own comment says why it is done
     there rather than copied: a second copy is how two files come to disagree,
     and this repo is public so they may not be pasted into it at all.

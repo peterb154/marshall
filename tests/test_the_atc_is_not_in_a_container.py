@@ -80,7 +80,7 @@ class TheDomainModulesAreInTheAtcPackage(unittest.TestCase):
                 self.assertTrue(importlib.import_module(dotted))
 
     def test_none_of_them_is_still_a_file_in_the_deployable(self):
-        left = sorted(p.stem for p in (ROOT / "director" / "tools").glob("*.py"))
+        left = sorted(p.stem for p in (ROOT / "services" / "tools").glob("*.py"))
         self.assertEqual(left, sorted(SERVING), (
             "`director/tools/` may hold only what serves the agent over HTTP. "
             "Anything else is ATC domain reasoning in a container's directory, "
@@ -123,16 +123,16 @@ class NobodySpellsItTheOldWay(unittest.TestCase):
              "the modules are `marshall.atc.*` now:", *bad]))
 
     def test_the_deployable_imports_the_new_names(self):
-        bad = self._offenders(ROOT / "director")
+        bad = self._offenders(ROOT / "services")
         self.assertEqual(bad, [], "\n".join(
-            ["`director/` still imports ATC domain logic from its own `tools/`; "
+            ["`services/` still imports ATC domain logic from its own `tools/`; "
              "the modules are `marshall.atc.*` now:", *bad]))
 
     def test_the_scripts_import_the_new_names(self):
         """THERE ARE TWO `tools/` DIRECTORIES and that is the trap. A script in
         the repo's own `tools/` saying `from tools import plans` reads as
         local, and resolved to the container's copy only because the line above
-        it put `director/` on `sys.path` -- which is how `tools/plan_sweep.py`
+        it put `services/` on `sys.path` -- which is how `tools/plan_sweep.py`
         was importing ATC domain logic out of a deployable in a tier-1 check.
         A name that names a real file in `tools/` is fine and is left alone."""
         local = {p.stem for p in (ROOT / "tools").glob("*.py")}
@@ -143,19 +143,19 @@ class NobodySpellsItTheOldWay(unittest.TestCase):
              "modules are `marshall.atc.*` now:", *bad]))
 
     def test_no_test_puts_the_deployable_on_the_import_path_for_them(self):
-        """`sys.path.insert(..., "director")` exists to import `tools.*`. Once
+        """`sys.path.insert(..., "services")` exists to import `tools.*`. Once
         the module is `marshall.*` the insert is a leftover that would let a
         redirect work again without anybody noticing."""
         bad = []
         for path in sorted((ROOT / "tests").glob("*.py")):
             text = path.read_text()
-            if 'sys.path.insert' not in text or '"director"' not in text:
+            if 'sys.path.insert' not in text or '"services"' not in text:
                 continue
             # Still legitimate for whatever `SERVING` keeps there.
             if not re.search(r"from tools(?:\.\w+)? import|import tools", text):
                 bad.append(str(path.relative_to(ROOT)))
         self.assertEqual(bad, [], "\n".join(
-            ["these tests still put `director/` on sys.path and no longer "
+            ["these tests still put `services/` on sys.path and no longer "
              "import anything from it:", *bad]))
 
 

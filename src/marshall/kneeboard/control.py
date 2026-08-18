@@ -16,7 +16,7 @@ than an open port.
 
 THE MISSION IS THE DIRECTOR'S because the director already holds the DCS-gRPC
 connection. It is a plain HTTP call to an endpoint that can only reload the
-mission ALREADY loaded -- see `director/app.py:mission_restart` for why loading
+mission ALREADY loaded -- see `services/app.py:mission_restart` for why loading
 a different one strands every connected client.
 
 WHY A COMMAND CAN GO UNANSWERED, which is worth knowing before trusting a

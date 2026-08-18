@@ -30,7 +30,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-sys.path.insert(0, str(ROOT / "director"))
+sys.path.insert(0, str(ROOT / "services"))
 
 from marshall import config as _config
 from marshall.feed.stubs import bind as _bind_dcs_stubs

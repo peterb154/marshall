@@ -59,8 +59,11 @@ src/marshall/
   feed/        marshall-feed: DCS-gRPC live tracks, events, sim control
   mission/     .miz generators (pydcs) + terrain survey tools
   kneeboard/   marshall-kneeboard: flight test card, diagnostics, docs, planner
-director/      a container stack: the language brain's HTTP door and the
-               stores (Postgres + PostGIS + pgvector) with their migrations
+services/      a container stack: the language brain's HTTP door and the
+               stores (Postgres + PostGIS + pgvector) with their migrations.
+               `director/` until 18 August; the compose project is still
+               pinned `marshall-director`, which is the deployable's identity
+               and deliberately does not follow the folder
 deploy/        docker-compose + env template
 tools/         render.sh — screenshot a chart with headless Edge/Chrome
 ```

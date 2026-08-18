@@ -187,8 +187,8 @@ class ComposeDsnSurvivesABindAddress(unittest.TestCase):
         mod = iu.module_from_spec(spec)
         spec.loader.exec_module(mod)
         with tempfile.TemporaryDirectory() as d:
-            (Path(d) / "director").mkdir()
-            (Path(d) / "director" / "docker-compose.yml").write_text(
+            (Path(d) / "services").mkdir()
+            (Path(d) / "services" / "docker-compose.yml").write_text(
                 "services:\n  db:\n    environment:\n"
                 "      POSTGRES_USER: strands\n"
                 "      POSTGRES_PASSWORD: strands\n"

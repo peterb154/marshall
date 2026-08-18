@@ -25,6 +25,7 @@ import json
 import os
 import pathlib
 import re
+import sys
 import threading
 import time
 import urllib.error
@@ -243,7 +244,7 @@ def ask_agent(session_id: str, message: str, tier: str = "sonnet",
                        # side and it already knows. Without it `clearance_tools`
                        # searched `mission='default'` while every row carried the
                        # instance key, so clearance delivery could never find
-                       # anybody -- see director/app.py.
+                       # anybody -- see services/app.py.
                        "mission": MISSION,
                        "also": list(also or ())}).encode()
     req = urllib.request.Request(url, data=body,
@@ -7489,28 +7490,56 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         speak(bridge, interact, message, transcript, known, heard_hz, _fix, ctl)
 
 
-if __name__ == "__main__":
-    import sys
+def main(argv: list[str] | None = None) -> int:
+    """`marshall-atc` — the receive loop, as a COMMAND rather than a file.
 
-    if len(sys.argv) > 1 and sys.argv[1] == "--srs":
-        # WHICH MAP, AS A START ARGUMENT. It is read from the environment by
-        # `theatre.current()`, and setting it here means the bridge is STARTED
-        # with a theatre rather than inheriting whatever happened to be exported
-        # -- which is the difference between a decision and an accident when the
-        # thing being decided is which airport a controller works.
-        if "--theatre" in sys.argv:
-            want = sys.argv[sys.argv.index("--theatre") + 1]
-            from marshall.core import theatre as _t
-            if want.strip().lower() not in _t.THEATRES:
-                print(f"no theatre called {want!r}. "
-                      f"Known: {', '.join(sorted(_t.THEATRES))}")
-                raise SystemExit(2)
-            os.environ["MARSHALL_THEATRE"] = want.strip().lower()
-        if not claim_the_frequency():
-            raise SystemExit(1)
-        voice = sys.argv[4] if len(sys.argv) > 4 and not sys.argv[4].startswith("--") else "Matthew"
-        session = sys.argv[5] if len(sys.argv) > 5 and not sys.argv[5].startswith("--") else None
-        _run_srs(sys.argv[2], float(sys.argv[3]), voice, session)
-    else:
-        print("usage: agent_atc.py --srs <host> <freq_mhz> [voice] [session] "
+    THIS WAS BLOCKED ON #55 AND IT WAS NOT. `pyproject.toml` declared only
+    `marshall-kneeboard`, with a comment saying `marshall-radio` and
+    `marshall-atc` both waited on the loop being extracted: "the receive loop
+    is `_run_srs` inside `atc/agent_atc.py`'s own `__main__`, so there is no
+    function to name. Two entrypoints wait on one extraction."
+
+    Half of that is true. `marshall-radio` is a SEPARATE PROCESS and genuinely
+    waits on splitting the transport off the control (#55). `marshall-atc` is
+    this process, running now, and needed nothing but a function to point at --
+    which is nine lines of argument parsing moved out of an `if` block.
+
+    Treating the two as one question is what kept the name unrunnable, and it
+    is the same shape as #147's other half: the vocabulary and the directory
+    rename were also treated as one, and that deferred the words for a
+    fortnight. A part named for what it does is a promise that
+    `pip install marshall` puts it on the PATH; until this existed, "the
+    bridge" was the only word in the table naming something a person could
+    start. [#147, #55]
+
+    Returns an exit code and takes `argv`, so it is testable without a shell --
+    which the `__main__` block never was.
+    """
+    argv = list(sys.argv if argv is None else argv)
+    if len(argv) <= 1 or argv[1] != "--srs":
+        print("usage: marshall-atc --srs <host> <freq_mhz> [voice] [session] "
               "[--theatre caucasus|nevada]")
+        return 2
+    # WHICH MAP, AS A START ARGUMENT. It is read from the environment by
+    # `theatre.current()`, and setting it here means the controller is STARTED
+    # with a theatre rather than inheriting whatever happened to be exported
+    # -- which is the difference between a decision and an accident when the
+    # thing being decided is which airport a controller works.
+    if "--theatre" in argv:
+        want = argv[argv.index("--theatre") + 1]
+        from marshall.core import theatre as _t
+        if want.strip().lower() not in _t.THEATRES:
+            print(f"no theatre called {want!r}. "
+                  f"Known: {', '.join(sorted(_t.THEATRES))}")
+            return 2
+        os.environ["MARSHALL_THEATRE"] = want.strip().lower()
+    if not claim_the_frequency():
+        return 1
+    voice = argv[4] if len(argv) > 4 and not argv[4].startswith("--") else "Matthew"
+    session = argv[5] if len(argv) > 5 and not argv[5].startswith("--") else None
+    _run_srs(argv[2], float(argv[3]), voice, session)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

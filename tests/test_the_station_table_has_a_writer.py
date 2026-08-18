@@ -335,7 +335,7 @@ class TestTheDirectorHasTheDoor(unittest.TestCase):
 
     def test_there_is_a_put_and_a_get(self):
         src = (Path(__file__).resolve().parent.parent
-               / "director" / "app.py").read_text(encoding="utf-8")
+               / "services" / "app.py").read_text(encoding="utf-8")
         self.assertIn('@app.put("/stations")', src)
         self.assertIn('@app.get("/stations")', src)
         self.assertIn("set_stations(body.get(\"stations\") or [])", src)
@@ -344,7 +344,7 @@ class TestTheDirectorHasTheDoor(unittest.TestCase):
         """Not lazily, at first use, inside the running agent -- which is what
         `fixes`, `approaches` and `flight_plans` do, and why an empty volume
         used to kill the container at boot (docs/AUDIT-2026-07-29)."""
-        d = Path(__file__).resolve().parent.parent / "director" / "migrations"
+        d = Path(__file__).resolve().parent.parent / "services" / "migrations"
         ddl = [p for p in d.glob("*.sql")
                if "CREATE TABLE IF NOT EXISTS stations" in
                p.read_text(encoding="utf-8")]
@@ -355,7 +355,7 @@ class TestTheDirectorHasTheDoor(unittest.TestCase):
         """The four old rows are what makes the lookup work TODAY, on a database
         no bridge carrying the push has started against yet. Dropping the key in
         the same migration turns a regression into an outage."""
-        d = Path(__file__).resolve().parent.parent / "director" / "migrations"
+        d = Path(__file__).resolve().parent.parent / "services" / "migrations"
         for p in d.glob("032_*.sql"):
             body = "\n".join(ln for ln in p.read_text(encoding="utf-8").splitlines()
                              if not ln.strip().startswith("--"))
