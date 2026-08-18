@@ -11192,3 +11192,114 @@ pilot can only fix the fault he is told about — which is #135's own complaint.
 4. A cleared and acknowledged aeroplane taxis with no extra step.
 
 ---
+
+## [ARCH-39] A plan named out loud comes back ambiguous, because the label is matched as typed — #182
+labels: bug
+
+**Status:** FIXED 18 August. Guarded by `tests/test_a_plan_named_out_loud_is_not_ambiguous.py` — 7 of its 9 tests fail on the old comparison. Not `needs-flight-test`: every criterion is a fact the resolver can be asked directly, which is how the bug was found. **A stopgap, and named as one** — the comparison is still string surgery and #183 is the real answer.
+
+    15:13:08  PILOT  Roger Sock, I would like Batumi Test, IFR to Batumi.
+    15:13:20  ATC    two plans fit that — say which: transit and recovery
+                     filed as Batumi Test, or transit and recovery filed as
+                     Domino.
+
+`score` gives 100 points for naming a plan outright — by a distance its
+strongest signal — and it could not fire. The test was a plain substring of the
+transcript, `label in said`, so `batumitest` was looked for inside *"i would
+like batumi test"* and not found.
+
+**A label is TYPED by whoever filed the plan and SPOKEN by the pilot**, and the
+two spellings never agree. This fails for every multi-word name, always.
+
+What scored instead was `destination`, worth a deliberate one point because
+every plan comes home to the same field — so the two tied and the resolver
+asked a question whose answer was already in the transmission. Bare *"Batumi
+Test"*, with nothing else said, tied identically.
+
+**And the filing rule is what guarantees the mismatch.** `_LABEL_OK` requires
+one word with no spaces, on migration 012's reasoning that *"Samovar One"* and
+*"Samovar Two"* are how the wrong sortie gets cleared. That is a good rule, and
+its effect is that anybody wanting a two-word name types `BatumiTest` — a
+spelling no pilot will ever say. The constraint did not cause the bug; it made
+it certain.
+
+**It looked like the model's fault and was not.** The disambiguation was not
+among the engine's decisions for that sortie, so it read as the language brain
+improvising, alongside the narrated clearance of #180/#181. Only running the
+resolver directly showed otherwise.
+
+**Fixed** by comparing on letters alone (`_squash`), which holds across
+`BatumiTest`, `Batumi Test`, `batumi-test` and whatever spacing Whisper picks.
+#165 is untouched: a request naming nothing is still ambiguous and still gets
+the question.
+
+**Acceptance criteria**
+1. A pilot who names a filed plan gets that plan, however he spaces it.
+2. A request naming no plan is still asked back with the candidates.
+3. An empty or unsaid label never scores as named.
+
+---
+
+## [ARCH-40] Plan resolution is hand-weighted string scoring where a similarity query belongs — #183
+labels: architecture
+
+**Status:** OPEN — 18 August, scoped, not started. Nothing blocks it: `pg_trgm` and `pgvector` are both already in the database. Filed straight after #182, whose one-line fix works and does not make the layer less fragile.
+
+    "that's weak ... this kind of string matching is lame"
+
+**Not a request for a particular tool** — the complaint is the approach, and it
+is correct. What is in the database today, for whoever picks this up: pgvector
+is installed and carries exactly one column, `memories.embedding`, so flight
+plans have no embedding at all; `pg_trgm` is installed and unused here.
+
+`plans.score` is a bespoke point system in Python over rows fetched from
+Postgres:
+
+    named the label     100
+    task word           10 each
+    route word          6 each
+    destination         1
+
+Nobody can tune those numbers, nothing tests the ratios, and #182 was one
+`in` operator inside it deciding a whole sortie. Logic where a query belongs —
+the same split `docs/CONFIG.md` already states.
+
+**Two dimensions, and conflating them is the trap** — whatever the mechanism
+turns out to be.
+
+    a NAME      an identifier. Wants trigram or phonetic similarity with an
+                explicit ambiguity MARGIN. Embeddings place `Domino`,
+                `Domingo` and `Dominoes` close together and would return a
+                confident wrong sortie, which is the one failure this domain
+                cannot absorb
+    a TASK      "the CAS over Tsutsnvati", "the weather run out to Ingress".
+                Genuinely semantic, today crude word overlap, and where an
+                embedding earns its keep
+
+**The margin is the part that must survive.** #165's rule is that an ambiguous
+request is asked back rather than resolved by list order, and a similarity
+score makes that expressible properly for the first time — two candidates
+within a threshold of each other is ambiguity, stated as a number rather than
+as an integer tie nobody chose.
+
+**The open design question is who resolves it at all.** Matching what a pilot
+said to a set of named plans is a language problem, and the language brain is
+already handed `plans.pick` as a tool — it could instead be handed the
+candidates and asked. What must stay the engine's is the ASSIGNMENT and the
+ambiguity margin: which plan an aeroplane is on decides what it is cleared for,
+and that may not be a thing the language half remembers having said. That is
+the same line #177 drew for approaches.
+
+**And it subsumes a live gap.** `_LABEL_OK` bans spaces and digits but not the
+hazard it was written for: `SamovarOne` passes, and now that #182 matches on
+letters, a pilot saying *"Samovar One"* resolves to it. The rule enforces its
+letter, not its reason, and CamelCase is the loophole. A confusability check
+belongs with the scoring, not in a second regex.
+
+**Acceptance criteria**
+1. Label matching survives spelling and spacing without a bespoke squash.
+2. Two plans whose names are confusable are reported as ambiguous, not ranked.
+3. A task described in the pilot's own words resolves without naming a plan.
+4. The weights live somewhere they can be changed and tested.
+
+---

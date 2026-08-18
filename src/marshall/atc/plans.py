@@ -117,6 +117,18 @@ def _words(text: str, drop: set[str] = frozenset()) -> set[str]:
             if w not in _NOISE and w not in drop and len(w) > 1}
 
 
+def _squash(text: str) -> str:
+    """Letters and digits only, so a plan NAME survives being said out loud.
+
+    A label is typed by whoever filed the plan and SPOKEN by the pilot, and the
+    two spellings never agree: `BatumiTest` is one token on a screen and two
+    words in a cockpit. Comparing on letters alone is the only test that holds
+    across "BatumiTest", "Batumi Test", "batumi-test" and whatever Whisper
+    decides the spacing was this time.
+    """
+    return re.sub(r"[^a-z0-9]+", "", (text or "").lower())
+
+
 def score(said: str, plan: dict) -> tuple[int, list[str]]:
     """How well this plan answers what he said, and on what grounds.
 
@@ -129,9 +141,32 @@ def score(said: str, plan: dict) -> tuple[int, list[str]]:
         return 0, [], 0
     pts, why, context = 0, [], 0
 
-    label = (plan.get("label") or "").lower()
-    if label and label in (said or "").lower():
-        pts += 100                       # he named it outright
+    # HE NAMED IT OUTRIGHT -- the strongest signal there is, and it could not
+    # fire for any label with a word boundary in it.
+    #
+    # This was a plain substring of the transcript, so `batumitest` was looked
+    # for inside "i would like batumi test, ifr to batumi" and not found. Every
+    # multi-word plan name fails that way, always, because a pilot says the
+    # space and Whisper writes it down.
+    #
+    # 18 August, live. Two plans on file, both ending at Batumi:
+    #
+    #     PILOT  Roger Sock, I would like Batumi Test, IFR to Batumi.
+    #     ATC    two plans fit that -- say which: transit and recovery filed
+    #            as Batumi Test, or transit and recovery filed as Domino.
+    #
+    # He named it. The only thing that scored was `destination`, worth one
+    # point and deliberately weak because every plan comes home to the same
+    # field -- so the two tied and the resolver asked a question whose answer
+    # was already in the transmission. Bare "Batumi Test", with nothing else
+    # said at all, tied the same way.
+    #
+    # #165's rule is that an ambiguous request is asked back rather than
+    # resolved by list order, and it is right. This was not an ambiguous
+    # request. [#182]
+    tag = _squash(plan.get("label"))
+    if tag and tag in _squash(said):
+        pts += 100
         why.append(f"named {plan['label']}")
 
     task_hits = want & _words(plan.get("task"))
