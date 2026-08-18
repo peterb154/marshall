@@ -258,8 +258,16 @@ def _departure_field() -> list[str]:
         f"With today's wind the runway in use is **{rwy:02d}** — taxi, "
         f"line-up and departures are all {rwy:02d}, and the reciprocal is "
         f"downwind. Do not offer the other end.",
-        f"- {f.name} is worked by {who}. A departure leaves the aerodrome's "
-        "controllers for Departure at about **5 miles**.",
+        # WHO WORKS THE FIELD, AND NOT WHEN ANYBODY IS HANDED ON. This ended
+        # "a departure leaves the aerodrome's controllers for Departure at
+        # about **5 miles**" -- a rule about WHEN, carried on every single
+        # transmission, to a voice that is told elsewhere it may never decide
+        # that. Two authorities on one question, and the model acted on the
+        # one written in persuasive English. [#179]
+        f"- {f.name} is worked by {who}. Which of them has a given aeroplane, "
+        "and when he is handed on, is decided for you and arrives as a HANDOFF "
+        "line — this list is so you can name a frequency he asks about or "
+        "correct the button he is holding.",
     ]
     # ONLY WHEN THEY ARE TWO PLACES. A sortie that recovers where it departed
     # has no other aerodrome to confuse, and warning a controller off a field he

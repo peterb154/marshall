@@ -545,14 +545,33 @@ def compose_message(bridge, scope, known, transcript, profile, me, fix, nxt,
                                  field=getattr(me, "field", ""),
                                  procedure=profile)
             if _dep is not None:
+                # WHO, NOT WHEN. This used to end "it is the ONLY one to
+                # send him to AFTER TAKEOFF", which is a rule about WHEN a
+                # pilot is handed on -- and that is the engine's alone.
+                #
+                # Telling the voice both things is telling it two authorities
+                # on one question, and it acted on the one it was given in
+                # words. 18 August: a pilot read back a take-off clearance,
+                # the model answered "that's correct, contact Kobuleti
+                # Departure one two three decimal three airborne, good day",
+                # the ladder had authorised no handoff because he was
+                # stationary on the runway, and the whole sentence was deleted
+                # on the way to the radio -- taking "that's correct" with it.
+                # He heard "go ahead".
+                #
+                # The model was not hallucinating. It applied a rule we had
+                # given it, at the wrong moment, and we censored the output
+                # rather than removing the rule. A filter on generated text is
+                # a patch for a prompt that says too much. [#179]
                 parts.append(
                     f"DEPARTURE FREQUENCY: {_dep.name} on "
                     f"{controller.spell_freq(_dep.freq_mhz)}. That is the "
-                    f"frequency in his IFR clearance and it is the ONLY one "
-                    f"to send him to after takeoff. Do not send a departing "
-                    f"aircraft to Center -- Center gets him from Departure, "
-                    f"later, and telling him otherwise contradicts a "
-                    f"clearance he has already read back.")
+                    f"frequency named in his IFR clearance, so it is the one "
+                    f"to read back to him if he asks what it is, or queries "
+                    f"the one he wrote down. WHEN he is handed over is not "
+                    f"yours: you will be given a HANDOFF line when it is due, "
+                    f"and until then he stays with you however far along he "
+                    f"looks.")
         if getattr(me, "role", "") == "overlord":
             parts.append(OVERLORD_BRIEF)
     if nxt:
