@@ -353,6 +353,27 @@ def audit() -> dict[str, list]:
     return found
 
 
+# WHY A BASELINED ENTRY IS STILL THERE. A name with no reason beside it is how
+# a mechanical check becomes prose again.
+#
+# `models:Flight` is the case that proved it. The owner asked for SQLAlchemy
+# models; a model was written; nothing used it; THIS TOOL FOUND IT on 13 August
+# and it was blessed into the baseline with `--bless`, which records the whole
+# audit and asks nothing. By 18 August it had rotted five columns behind the
+# table it claims to describe, and a sortie broke on one of them --
+# `sortie_phase`, which the model had never heard of.
+#
+# The check was not missing. Its escape hatch was silent. So an entry may sit
+# in the baseline, and now it has to say why and name the issue that removes
+# it; anything blessed without one is reported every run.
+WHY = {
+    "models:Flight":
+        "the read/write path is still hand-written SQL. #120 is the work that "
+        "makes this the way flights are read and written; until then it is "
+        "declared, tested against the live schema, and used by nothing",
+}
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--all", action="store_true", help="everything, not the drift")
@@ -366,7 +387,22 @@ def main(argv: list[str]) -> int:
         BASELINE.write_text(json.dumps(found, indent=1, sort_keys=True) + "\n")
         n = sum(len(v) for v in found.values())
         print(f"baseline recorded: {n} known, in {BASELINE.relative_to(ROOT)}")
+        # WHAT WAS JUST ACCEPTED WITHOUT A REASON. Blessing is how debt gets
+        # taken on, and taking it on silently is how it stops being debt and
+        # becomes the design. Named here rather than refused, because refusing
+        # would make the tool unusable on the day somebody needs it -- but a
+        # list nobody can read is the thing this whole file argues against.
+        loose = [r[0] for rows in found.values() for r in rows
+                 if r[0] not in WHY]
+        if loose:
+            print(f"  .. {len(loose)} of them carry no reason. Add one to WHY "
+                  f"in this file for anything that is DEBT rather than a "
+                  f"false positive, naming the issue that removes it.")
         return 0
+
+    def _why(name: str) -> str:
+        r = WHY.get(name)
+        return f"\n        .. {r}" if r else ""
 
     titles = {
         "unused": "DEFINED AND NOTHING CALLS IT",
@@ -382,7 +418,7 @@ def main(argv: list[str]) -> int:
         news += 0 if args.all else len(show)
         print(f"\n{titles[key]}")
         for name, where, kind in sorted(show, key=lambda r: r[1]):
-            print(f"  {name:34} {kind:9} {where}")
+            print(f"  {name:34} {kind:9} {where}{_why(name)}")
 
     if args.all:
         print(f"\n{sum(len(v) for v in found.values())} total; "

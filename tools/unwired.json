@@ -7,7 +7,7 @@
   ],
   [
    "asr:on_the_ground",
-   "src/marshall/atc/asr.py:757",
+   "src/marshall/atc/asr.py:781",
    "function"
   ],
   [
@@ -57,7 +57,12 @@
   ],
   [
    "models:Contact",
-   "src/marshall/atc/models.py:160",
+   "src/marshall/atc/models.py:181",
+   "class"
+  ],
+  [
+   "models:Flight",
+   "src/marshall/atc/models.py:30",
    "class"
   ],
   [
@@ -121,22 +126,22 @@
  "unused": [
   [
    "agent_atc:_type_of",
-   "src/marshall/atc/agent_atc.py:1217",
+   "src/marshall/atc/agent_atc.py:1241",
    "function"
   ],
   [
    "agent_atc:flight_handoff",
-   "src/marshall/atc/agent_atc.py:436",
+   "src/marshall/atc/agent_atc.py:447",
    "function"
   ],
   [
    "approach:briefed_msa_ft",
-   "src/marshall/core/approach.py:433",
+   "src/marshall/core/approach.py:586",
    "method"
   ],
   [
    "asr:_to_point",
-   "src/marshall/atc/asr.py:448",
+   "src/marshall/atc/asr.py:472",
    "function"
   ],
   [
@@ -145,13 +150,13 @@
    "function"
   ],
   [
-   "build:make_ident_audio",
-   "src/marshall/mission/build.py:110",
+   "board:save_board",
+   "src/marshall/atc/board.py:295",
    "function"
   ],
   [
-   "check_plate:check",
-   "src/marshall/kneeboard/check_plate.py:21",
+   "build:make_ident_audio",
+   "src/marshall/mission/build.py:132",
    "function"
   ],
   [
@@ -165,39 +170,19 @@
    "function"
   ],
   [
-   "board:save_board",
-   "src/marshall/atc/board.py:257",
-   "function"
-  ],
-  [
    "hooks:pending_hooks",
-   "src/marshall/atc/agent/hooks.py:51",
+   "src/marshall/atc/agent/hooks.py:106",
    "function"
   ],
   [
    "intents:parse",
-   "src/marshall/atc/intents.py:348",
+   "src/marshall/atc/intents.py:355",
    "function"
-  ],
-  [
-   "models:Flight",
-   "src/marshall/atc/models.py:29",
-   "class"
   ],
   [
    "models:FlightMember",
-   "src/marshall/atc/models.py:136",
+   "src/marshall/atc/models.py:157",
    "class"
-  ],
-  [
-   "navlog:morse",
-   "src/marshall/kneeboard/navlog.py:77",
-   "function"
-  ],
-  [
-   "nearby:morse",
-   "src/marshall/mission/survey/nearby.py:41",
-   "function"
   ],
   [
    "observation:wind_components",
@@ -211,17 +196,17 @@
   ],
   [
    "route:magnetic",
-   "src/marshall/core/route.py:166",
+   "src/marshall/core/route.py:168",
    "function"
   ],
   [
    "serve:_on_start",
-   "src/marshall/kneeboard/serve.py:150",
+   "src/marshall/kneeboard/serve.py:149",
    "function"
   ],
   [
    "tracks:reconcile",
-   "src/marshall/feed/tracks.py:337",
+   "src/marshall/feed/tracks.py:338",
    "function"
   ],
   [

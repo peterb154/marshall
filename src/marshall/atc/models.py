@@ -21,7 +21,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, Integer, Text, func
+from sqlalchemy import (BigInteger, Boolean, DateTime, ForeignKey, Index, Integer,
+                        Text, func)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from marshall.core.schema import Base
@@ -105,6 +106,26 @@ class Flight(Base):
     route: Mapped[str | None] = mapped_column(Text)
     cruise_ft: Mapped[int | None] = mapped_column(Integer)
     clearance_ack: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    flight_plan_label: Mapped[str | None] = mapped_column(Text)
+
+    # THE BOARD'S OWN FACTS, added by migration 026 and absent from this model
+    # for the eight days since. The model was written once and then went round:
+    # every read and write of a flight is hand-written SQL, so nothing ever
+    # failed when a column arrived without a `Mapped[]` beside it.
+    #
+    # `sortie_phase` is the one that cost a sortie. It answers "what is he
+    # DOING" -- a different question from `cleared`, which is the SEPARATION
+    # enum -- and `handoff.due` reads it to decide who owns him. On 18 August a
+    # pilot holding short derived as LANDED, Departure posted him back to Tower
+    # for thirteen miles, and the fact doing all of that was one this model had
+    # never heard of.
+    #
+    # A model that omits the columns the system turns on is not the schema, it
+    # is a document. [#120]
+    sortie_phase: Mapped[str | None] = mapped_column(Text)
+    on_visual: Mapped[bool | None] = mapped_column(Boolean)
+    approaches_flown: Mapped[int | None] = mapped_column(Integer)
+    atis_letter: Mapped[str | None] = mapped_column(Text)
 
     first_seen: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now())
