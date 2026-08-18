@@ -115,7 +115,7 @@ def record(session_id: str, **fields) -> None:
         with open(path, "a", encoding="utf-8") as fh:
             fh.write(json.dumps({"t": time.time(), **fields}) + "\n")
     except (OSError, TypeError, ValueError) as e:
-        print(f"  !! recorder: {e}", flush=True)     # never cost a transmission
+        log.warning(f"  !! recorder: {e}")     # never cost a transmission
 
 
 def _correlated(session_id: str) -> dict:
@@ -330,8 +330,6 @@ def mission_instance(default: str = "default") -> str:
     if got:
         return got
     try:
-        import time as _time
-
         import grpc
         from marshall.feed.stubs import bind as _bind
         _bind()
@@ -343,12 +341,24 @@ def mission_instance(default: str = "default") -> str:
             raw = str(custom_pb2_grpc.CustomServiceStub(ch).Eval(
                 custom_pb2.EvalRequest(lua="return timer.getTime()"),
                 timeout=10).json).strip('"')
-        started = int(_time.time() - float(raw))
-        return f"{name}@{started}"
+        # RESOLVED AGAINST THE STORE, not computed here. `timer.getTime()` is
+        # model time and stops while the mission is paused, so
+        # `now - elapsed` grows by every pause the server takes -- the key
+        # MOVED over the life of one mission and every process starting after
+        # a pause computed a different one. Measured 18 August, 6.7 days in:
+        # the board's rows were under ...@1786509383 and a fresh process
+        # computed ...@1786509377, so `board.find` matched nothing and a pilot
+        # was refused his clearance while his own row sat in `flights`.
+        #
+        # `missions.resolve` writes the key down the first time a mission is
+        # seen and reads it back afterwards; a reload is detected by model time
+        # going BACKWARDS, which a pause can never do. [#187]
+        from marshall.atc import missions as _missions
+        return _missions.resolve(name, float(raw))
     except Exception as e:
-        print(f"  !! could not identify the mission instance ({type(e).__name__}); "
-              f"flights will share the '{default}' bucket with previous sorties",
-              flush=True)
+        log.error("could not identify the mission instance (%s); flights will "
+                  "share the %r bucket with previous sorties",
+                  type(e).__name__, default)
         return default
 # NO `APPROACH_NAME`. It was a module global holding the key of the arrival
 # this process was started on, and it had seven readers -- including one that
@@ -383,7 +393,7 @@ def flight_bind(base: str = BASE_URL, **names) -> dict:
     try:
         return _post_json(f"{base}/flights/bind", {"mission": MISSION, **names})
     except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
-        print(f"  !! flight bind failed: {e}", flush=True)
+        log.warning(f"  !! flight bind failed: {e}")
         return {}
 
 
@@ -394,7 +404,7 @@ def flight_agree(flight_id: int, base: str = BASE_URL, **fields) -> dict:
     try:
         return _post_json(f"{base}/flights/{flight_id}/agree", fields)
     except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
-        print(f"  !! flight agree failed: {e}", flush=True)
+        log.warning(f"  !! flight agree failed: {e}")
         return {}
 
 
@@ -416,7 +426,7 @@ def _ack_the_clearance(bridge, known: str, base: str = BASE_URL) -> dict:
     try:
         return _post_json(f"{base}/flights/{fid}/clearance-ack", {})
     except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
-        print(f"  !! could not record the read-back: {e}", flush=True)
+        log.warning(f"  !! could not record the read-back: {e}")
         return {}
 
 
@@ -461,7 +471,7 @@ def flight_handoff(flight_id: int, to: str, base: str = BASE_URL) -> dict:
     try:
         return _post_json(f"{base}/flights/{flight_id}/handoff", {"to": to})
     except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
-        print(f"  !! flight handoff failed: {e}", flush=True)
+        log.warning(f"  !! flight handoff failed: {e}")
         return {}
 
 
@@ -485,7 +495,7 @@ def tell_the_agent_what_was_said(session_id: str, text: str, *, role: str = "",
                     "also": list(also or ()), "station": station,
                     "mission": MISSION})
     except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
-        print(f"  !! could not correct the transcript: {e}", flush=True)
+        log.warning(f"  !! could not correct the transcript: {e}")
 
 
 def load_and_push_plates(base: str = BASE_URL):
@@ -547,7 +557,7 @@ def load_and_push_plates(base: str = BASE_URL):
         # subject once nothing process-wide holds an arrival.
     except (urllib.error.URLError, TimeoutError, OSError, ValueError,
             KeyError) as e:
-        print(f"  !! approach bootstrap: {e}", flush=True)
+        log.warning(f"  !! approach bootstrap: {e}")
 
     try:
         n = push_fixes(base, procedures.values())
@@ -558,8 +568,8 @@ def load_and_push_plates(base: str = BASE_URL):
         print(f"  pushed {n} named fixes (published from the theatre file, "
               f"sortie waypoints from the sim)", flush=True)
     except Exception as e:      # a fix table is not worth failing to start for
-        print(f"  !! fix push failed, controller has the field only: {e}",
-              flush=True)
+        log.warning(f"  !! fix push failed, controller has the field only: {e}",
+                    flush=True)
 
     # AND THE AIRSPACE, from the same source and for the same reason. It used to
     # be three rows in a migration, hand-written -- so the second aerodrome
@@ -572,9 +582,9 @@ def load_and_push_plates(base: str = BASE_URL):
         print(f"  pushed {n} controller volumes (derived from the theatre)",
               flush=True)
     except Exception as e:
-        print(f"  !! sector push failed — AIRSPACE MAY BE STALE OR ABSENT, and "
-              f"with no volumes every controller hands his traffic to the "
-              f"Center: {e}", flush=True)
+        log.warning(f"  !! sector push failed — AIRSPACE MAY BE STALE OR ABSENT, and "
+                    f"with no volumes every controller hands his traffic to the "
+                    f"Center: {e}")
 
     # AND THE SEATS, which the volumes are not: half the ladder owns no airspace
     # and is absent from the sectors table. Until this existed the station list
@@ -586,9 +596,9 @@ def load_and_push_plates(base: str = BASE_URL):
         print(f"  pushed {n} controller seats (the map's station list)",
               flush=True)
     except Exception as e:
-        print(f"  !! station push failed — a controller asked for another "
-              f"field's frequency can only say he cannot look it up: {e}",
-              flush=True)
+        log.warning(f"  !! station push failed — a controller asked for another "
+                    f"field's frequency can only say he cannot look it up: {e}",
+                    flush=True)
 
     try:
         _put_json(f"{base}/prompts/plate", {"body": briefing.plates(procedures)})
@@ -596,7 +606,7 @@ def load_and_push_plates(base: str = BASE_URL):
               f"{len(procedures)} approaches. Each procedure's DETAIL rides "
               f"with the aeroplane cleared for it", flush=True)
     except (urllib.error.URLError, TimeoutError, OSError) as e:
-        print(f"  !! could not push plate: {e}", flush=True)
+        log.warning(f"  !! could not push plate: {e}")
     return procedures
 
 
@@ -791,8 +801,8 @@ def forget_flight(callsign: str, base: str = BASE_URL) -> None:
         if fid:
             _delete_json(f"{base}/flights/{fid}")
     except Exception as e:
-        print(f"  !! could not forget {callsign}'s row: {type(e).__name__}",
-              flush=True)
+        log.warning(f"  !! could not forget {callsign}'s row: {type(e).__name__}",
+                    flush=True)
 
 
 def fetch_due(session_id: str, url: str = HOOKS_URL, timeout: float = 5.0) -> list:
@@ -2938,7 +2948,7 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
         bridge.refuse_due[:] = [d for d in bridge.decided
                                 if getattr(d, "kind", "") == "refuse"]
     except Exception as e:                       # must not break the call
-        print(f"  !! controller classify failed: {e}", flush=True)
+        log.warning(f"  !! controller classify failed: {e}")
 
     # GONE, and what it was is the point:
     #
@@ -3127,9 +3137,9 @@ def claim_the_frequency(path=None) -> bool:
         fd.seek(0)
         who = fd.read().strip() or "unknown"
         fd.close()
-        print(f"!! another bridge already holds the frequency (pid {who}).\n"
-              f"   Two controllers on one channel is the bug this prevents.\n"
-              f"   Stop it first:  kill {who}", flush=True)
+        log.warning(f"!! another bridge already holds the frequency (pid {who}).\n"
+                    f"   Two controllers on one channel is the bug this prevents.\n"
+                    f"   Stop it first:  kill {who}")
         return False
     fd.seek(0)
     fd.truncate()
@@ -4474,7 +4484,7 @@ def engineering_turn(tx, transcript, srs, known, heard_hz, freq_hz,
                   encoding="utf-8") as fh:
             fh.write(f"- `{stamp}` **{who}** {transcript}\n")
     except OSError as e:
-        print(f"  !! could not write the note: {e}", flush=True)
+        log.warning(f"  !! could not write the note: {e}")
     reply = engineering_ack(True)
     # `tx` is the transmit POOL now, not the listening client -- it serialises
     # per frequency itself, so `radio_lock` is only holding the print in step
@@ -4676,7 +4686,7 @@ def classify_intent(transcript: str):
     try:
         return bedrock_intent.classify(transcript)
     except Exception as e:                        # must not break the call
-        print(f"  !! intent classify failed: {e}", flush=True)
+        log.warning(f"  !! intent classify failed: {e}")
         return None
 
 
@@ -5646,7 +5656,7 @@ def publish_state(bridge, ctl, scope: str, session_id: str,
         out.mkdir(parents=True, exist_ok=True)
         (out / "state.json").write_text(json.dumps(state))
     except (OSError, TypeError, ValueError) as e:
-        print(f"  !! could not publish state: {e}", flush=True)
+        log.warning(f"  !! could not publish state: {e}")
 
 
 def hear(bridge, client, model):
@@ -6068,8 +6078,8 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                   f"so a finished sortie rather than one in progress: "
                   f"{', '.join(sorted(set(ctl.skipped_stale)))}", flush=True)
     except Exception as e:
-        print(f"  !! could not restore the board ({type(e).__name__}); starting "
-              f"empty, which forgets anybody already flying", flush=True)
+        log.warning(f"  !! could not restore the board ({type(e).__name__}); starting "
+                    f"empty, which forgets anybody already flying")
     # PUBLISH BEFORE THE FIRST TRANSMISSION. Otherwise a restarted bridge shows
     # the PREVIOUS one's beliefs until somebody keys a mic -- a board with
     # aircraft on it, from an engine that has just been emptied. The age field
@@ -6207,7 +6217,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             reply = ask_agent(session_id, message, tier, url,
                               role=_role, also=_also, station=_station)
         except (urllib.error.URLError, TimeoutError, OSError) as e:
-            print(f"  !! agent error: {e}", flush=True)
+            log.warning(f"  !! agent error: {e}")
             reply = "Standby."
         dt = time.monotonic() - t0
         reply = for_voice(reply, agent=True)
@@ -6941,7 +6951,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                             # instruction; the bare "over the point" is not.
                             hold_the_channel_for_a_readback()
             except Exception as e:                 # never kill the metronome
-                print(f"  !! asr monitor: {e}", flush=True)
+                log.warning(f"  !! asr monitor: {e}")
 
     def engineering_radio() -> None:
         """Speak whatever the engineer types, on the frequency he was called on.
@@ -6981,7 +6991,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     try:
                         _pool.transmit(eng_voice.frames(line), hz, AM)
                     except Exception as e:
-                        print(f"  !! engineering transmit failed: {e}", flush=True)
+                        log.warning(f"  !! engineering transmit failed: {e}")
                 time.sleep(0.3)
 
     threading.Thread(target=engineering_radio, daemon=True).start()
@@ -7026,7 +7036,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                           encoding="utf-8") as fh:
                     fh.write(f"- `{stamp}` {note}\n")
             except OSError as e:
-                print(f"  !! could not write the note: {e}", flush=True)
+                log.warning(f"  !! could not write the note: {e}")
             continue
 
         # Never answer another controller. A second bridge left running on the

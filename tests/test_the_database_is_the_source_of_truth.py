@@ -100,7 +100,15 @@ MODEL_COLUMNS_BASELINE = 33
 # SQL; that is what it is for. Domain modules are not, because a query in a
 # domain module is a schema decision made where nobody will look for one.
 STORES = {"board.py", "approaches.py", "tracks.py", "events.py",
-          "store.py", "db.py", "schema.py", "models.py"}
+          "store.py", "db.py", "schema.py", "models.py",
+          # THE MISSION INSTANCE, and the reason it is a store rather than a
+          # computation is the whole of #187: the key used to be DERIVED on
+          # every process start from `wall_clock - timer.getTime()`, and model
+          # time stops while the sim is paused, so it drifted. Rows written
+          # under yesterday's key became unreachable and the table read as
+          # empty. Something has to remember the answer, and remembering is
+          # what a store is for.
+          "missions.py"}
 RAW_SQL_BASELINE = {"clearance.py": 4, "filing.py": 8, "frequencies.py": 1,
                     "identify.py": 7, "procedures.py": 1}
 

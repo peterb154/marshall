@@ -11443,7 +11443,7 @@ controller called the tool, was refused, spoke the refusal and stopped.
 ## [ARCH-43] Errors go to stdout through `print`, where a logger belongs — #186
 labels: architecture
 
-**Status:** OPEN — 18 August, measured and scoped, not swept. `agent_atc` has a logger now and the #185 path uses it; the other 22 exception paths are untouched. Deliberately not done in the same commit as #185: a 97-call sweep through the receive loop on the evening before a test flight is how a working sortie gets broken by tidying.
+**Status:** FIXED 18 August. All 22 exception paths converted; `tests/test_an_error_is_not_a_transcript.py` fails on a new one, and separately on a module that calls `log.` without defining one — which is how the first attempt at this shipped an undefined name that only ruff caught. The transcript prints are untouched and a test says so. **The guard itself hit this repo's oldest reading error on the way in**: it swept for `"log." in src` and failed on eight modules whose PROSE contains the word. Found by AST now.
 
     "print() should be a smell shouldnt it?"
 
@@ -11474,5 +11474,60 @@ issue.
 1. No `except` block in `atc/` reports through `print`.
 2. The sortie transcript still reaches the console unchanged.
 3. A check keeps it that way, since prose has not held on this before.
+
+---
+
+## [ARCH-44] The mission key drifts, so a sortie's own rows become unreachable — #187
+labels: bug, architecture, needs-flight-test
+
+**Status:** FIXED 18 August, NEEDS A PILOT — card row Q16. Verified against the live sim: the resolver now returns `...@1786509383`, the key the board's existing rows were already under, instead of the drifted `...@1786509377` — so rows orphaned before today are reachable again. **A pilot is needed because the fix is about what survives a PAUSE**, and pausing a running server is the one thing no unit test can do.
+
+    "We agreed weeks ago that a flight plan does not need to have a
+     pilot/aircraft on it. That any pilot can be assigned any plan - many to
+     many. Why would the agent respond like this?"
+
+It was never about the plan. The plan was found; the **aeroplane** was in
+another bucket.
+
+Every flight, contact and assigned plan is scoped to a `mission` key, which was
+DERIVED on each process start:
+
+    started = int(wall_clock_now - timer.getTime())
+
+`timer.getTime()` is DCS **model time**. It stops while the mission is paused
+and wall clock does not, so the difference is not a constant — it grows by
+every pause the server takes. Measured 18 August on a mission up 6.7 days:
+
+    rows on the board were written under   ...@1786509383
+    a process starting now computed        ...@1786509377
+
+Six seconds apart, so `board.find(mission=...)` matched nothing. **The rows
+were not deleted, they were unreachable** — which is worse, because the table
+reads as empty rather than as wrong. A pilot on the radio was refused his
+clearance with *"nobody is listed under that callsign"* while his own row sat
+in `flights` under a key nobody would compute again.
+
+**A tolerance would not have fixed it.** Rounding the derived value only widens
+the window in which two processes agree and calls that a fix — the same trade
+`_squash` made in #182 and which was deleted for it. The key is now WRITTEN
+DOWN the first time a mission is seen and read back afterwards.
+
+**A genuine reload is still a different world**, detected by the one signal
+that cannot be faked: model time RESTARTS. Elapsed is monotonic within a
+mission, so going backwards means the sim loaded something new. A pause moves
+the derived start; it can never move elapsed backwards. That asymmetry is the
+whole design, and it is why the reload check needs no fuzzy matching.
+
+Migration 036 adopts every `mission` value already in `flights`, so this does
+not orphan the rows it exists to stop orphaning.
+
+**Its test talks to Postgres and SKIPS LOUDLY without it**, because a stubbed
+pool here would reproduce the very failure being fixed — see #120.
+
+**Acceptance criteria**
+1. Pausing the server mid-sortie does not change which rows the board can see.
+2. A radio restart mid-sortie finds the flights it wrote before the restart.
+3. Loading a different mission does start a fresh bucket.
+4. The previous instance's rows still exist and are still reachable by key.
 
 ---
