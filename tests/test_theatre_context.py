@@ -79,9 +79,10 @@ class NevadaPublishesNellis(_OnTheMap):
         self.assertFalse(names & {"KOBULETI", "BATUMI", "INGRESS", "FEET WET"},
                          "a Nevada bridge is publishing Caucasus fixes")
 
-    def test_the_route_is_numbered_for_steerpoints(self):
-        self.assertEqual([(n, f.name) for n, f in self.th.waypoints],
-                         [(1, "NELLIS"), (2, "TONOPAH"), (3, "NELLIS")])
+    # test_the_route_is_numbered_for_steerpoints DELETED in #188:
+    # Nevada declared its route in PYTHON (`NEVADA_ROUTE`), which is the
+    # same fault as the Caucasus toml one file further out. A map
+    # publishes places; which route an aeroplane flies is its own.
 
 
 class TheRadarPictureIsMeasuredFromThisMap(_OnTheMap):

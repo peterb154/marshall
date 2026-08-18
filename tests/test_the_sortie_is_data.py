@@ -44,43 +44,6 @@ def sortie_or_skip():
     return got
 
 
-class TestTheRouteComesOffTheFile(unittest.TestCase):
-
-    def test_the_map_declares_one(self):
-        s = sortie_or_skip()
-        self.assertTrue(s.route, "a [sortie] with no route")
-        self.assertTrue(s.label, "an unnamed mission is one nobody can cite")
-
-    def test_the_numbered_points_are_built_from_it(self):
-        s = sortie_or_skip()
-        got = [f.name for _, f in T.sortie_route()]
-        self.assertEqual(got, list(s.route))
-
-    def test_the_numbering_starts_at_one(self):
-        """"Distance to waypoint three" is how a pilot asks, and he counts from
-        one. An off-by-one here is a controller confidently naming the wrong
-        place."""
-        sortie_or_skip()
-        got = T.sortie_route()
-        self.assertEqual([n for n, _ in got], list(range(1, len(got) + 1)))
-
-    def test_altitudes_are_per_LEG_so_one_shorter(self):
-        s = sortie_or_skip()
-        self.assertEqual(len(s.alt_ft), len(s.route) - 1)
-
-    def test_a_point_used_twice_is_one_definition(self):
-        """BATUMI opens and closes the strike. Naming points rather than
-        embedding them is what makes that one row and two visits."""
-        s = sortie_or_skip()
-        if len(set(s.route)) == len(s.route):
-            self.skipTest("this mission visits nothing twice")
-        seen = [f for _, f in T.sortie_route()]
-        names = [f.name for f in seen]
-        twice = next(n for n in names if names.count(n) > 1)
-        same = [f for f in seen if f.name == twice]
-        self.assertIs(same[0], same[-1],
-                      "two visits to one point produced two objects, which is "
-                      "how a route comes to disagree with itself")
 
 
 class TestThePrivatePointsAreNotPublished(unittest.TestCase):
@@ -126,7 +89,7 @@ class TestThePrivatePointsAreNotPublished(unittest.TestCase):
         TYPE and the two functions that reason about a route; the route itself
         is data."""
         for name in ("FEET_WET", "INGRESS", "HOMEBOUND", "TARGET_AREA",
-                     "AIR_START", "SORTIE", "SORTIE_LEGS", "SORTIE_ALT_FT",
+                     "AIR_START",
                      "DEFENDED"):
             with self.subTest(name):
                 self.assertFalse(hasattr(F, name),
@@ -136,12 +99,22 @@ class TestThePrivatePointsAreNotPublished(unittest.TestCase):
         """`route` is the module every caller imports and is a READER over the
         files. Moving data must not mean editing three hundred call sites."""
         sortie_or_skip()
-        for name in ("FEET_WET", "INGRESS", "HOMEBOUND", "TARGET_AREA",
-                     "AIR_START"):
+        # ONE LEFT. The other four aliased the 1944 strike's turning points
+        # and went with the route in #188 -- a dead alias to a mission that no
+        # longer exists is how a controller describes somebody else's route to
+        # a pilot holding his own. REHEARSAL is not a turning point: it is
+        # where a test aeroplane spawns, which is a fact about this map.
+        for name in ("AIR_START",):
             with self.subTest(name):
                 got = getattr(R, name)
                 self.assertIsNotNone(got, f"R.{name} resolves to nothing")
                 self.assertTrue(got.name)
+        for gone in ("FEET_WET", "INGRESS", "HOMEBOUND", "TARGET_AREA"):
+            with self.subTest(gone):
+                self.assertIsNone(
+                    getattr(R, gone, None),
+                    f"R.{gone} is back. It names a point in somebody's flight "
+                    f"plan, not a place on the map.")
 
 
 class TestAPointMayBeDeclaredAndNeverFlown(unittest.TestCase):
@@ -157,7 +130,10 @@ class TestAPointMayBeDeclaredAndNeverFlown(unittest.TestCase):
         s = sortie_or_skip()
         if "REHEARSAL" not in {p.name for p in s.point}:
             self.skipTest("this map declares no rehearsal point")
-        self.assertNotIn("REHEARSAL", [x.upper() for x in s.route])
+        # NOTHING TO BE ON. #188 removed theatre-level routes outright, so a
+        # declared point cannot be on one -- which is this test's claim,
+        # arrived at by deletion rather than by discipline.
+        self.assertFalse(hasattr(s, "route"))
 
     def test_and_is_found_anyway(self):
         s = sortie_or_skip()
@@ -178,42 +154,6 @@ class TestAPointMayBeDeclaredAndNeverFlown(unittest.TestCase):
         self.assertIsNotNone(T.sortie_point(pub.name))
 
 
-class TestARouteThatNamesNothingIsRefused(unittest.TestCase):
-    """Not skipped, because skipping renumbers everything after it.
-
-    A route point nothing defines would shift every later steerpoint by one, so
-    "waypoint four" would mean a different place than the chart shows -- and
-    nothing would say so. That is the failure this project keeps finding: an
-    absence read as an answer.
-    """
-
-    def test_it_raises_naming_the_point(self):
-        import types
-        real = C.sortie
-        broken = types.SimpleNamespace(
-            route=["BATUMI", "NOWHERE AT ALL"], alt_ft=[2000],
-            point=[], defended=[], label="broken")
-        C.sortie = lambda theatre="": broken
-        try:
-            with self.assertRaises(KeyError) as caught:
-                T.sortie_route()
-            self.assertIn("NOWHERE AT ALL", str(caught.exception))
-        finally:
-            C.sortie = real
-
-    def test_and_the_bridge_still_comes_up(self):
-        """A malformed mission must not stop a bridge starting: the ladder, the
-        approaches and the whole ground half do not touch the strike route. It
-        is named on the way past rather than swallowed."""
-        import types
-        real = C.sortie
-        C.sortie = lambda theatre="": types.SimpleNamespace(
-            route=["NOWHERE AT ALL"], alt_ft=[], point=[], defended=[],
-            label="broken")
-        try:
-            self.assertEqual(T._sortie_wp(), ())
-        finally:
-            C.sortie = real
 
 
 class TestThePublishedFixesHaveOneAuthorToo(unittest.TestCase):

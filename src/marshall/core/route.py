@@ -277,18 +277,23 @@ _FROM_THEATRE = {
     # ...and the MISSION the map is set up to fly. Its turning points are not
     # published fixes and never were: they belong to the sortie, and the only
     # thing that used to make that true was which Python module they sat in.
-    "SORTIE": ("sortie", "route"),
-    "SORTIE_LEGS": ("sortie", "legs"),
-    "SORTIE_ALT_FT": ("sortie", "alt_ft"),
+    # NO ROUTE, NO LEGS, NO ALTITUDES. `SORTIE`, `SORTIE_LEGS` and
+    # `SORTIE_ALT_FT` read a mission out of the theatre file, and #188 removed
+    # both the data and the fields it lived in: a map publishes places, not
+    # somebody's flight plan. `DEFENDED` stays -- where the guns are is a fact
+    # about the ground, true whoever is flying over it.
     "DEFENDED": ("sortie", "defended"),
-    # The named ones, for the callers that want one point rather than the
-    # route -- the briefing names the target, the mission builder spawns at the
-    # rehearsal point. A map that does not declare one answers None, which is
-    # what `briefing.py` already handles with `getattr(R, "TARGET_AREA", None)`.
-    "TARGET_AREA": ("sortie_point", "TSUTSNVATI"),
-    "FEET_WET": ("sortie_point", "FEET WET"),
-    "INGRESS": ("sortie_point", "INGRESS"),
-    "HOMEBOUND": ("sortie_point", "EGRESS"),
+    # ONE NAMED POINT LEFT, and the other four went with the route.
+    #
+    # `TARGET_AREA`, `FEET_WET`, `INGRESS` and `HOMEBOUND` pointed at the 1944
+    # strike's turning points. They were dead the moment [sortie].route came
+    # out of the theatre file -- a map does not fly a mission -- and dead
+    # aliases to a mission that no longer exists are how a controller ends up
+    # describing somebody else's route to a pilot holding his own. [#188]
+    #
+    # `AIR_START` stays because REHEARSAL is not a turning point: it is where
+    # a test aeroplane is spawned, which is a fact about this map's usable
+    # airspace rather than about anybody's sortie. `mission/build.py` reads it.
     "AIR_START": ("sortie_point", "REHEARSAL"),
     # ...and the PUBLISHED places, which were module constants here AND rows in
     # the theatre file, holding the same numbers and agreeing only because

@@ -137,12 +137,19 @@ def draw(ch, coalition: int = -1) -> str:
         mid += 1
 
     # The target: a circle you can fly to, not a coordinate you have to find.
-    t = R.TARGET_AREA
-    lines.append(
-        f'trigger.action.circleToAll({coalition}, {mid}, '
-        f'{{x = {t.x}, y = 0, z = {t.z}}}, {5 * 1852}, {RED}, {RED_FILL}, 1, '
-        f'true, "")')
-    mid += 1
+    #
+    # ONLY IF THE MAP DECLARES ONE. `TARGET_AREA` was an alias for the 1944
+    # strike's turning point and went with `[sortie].route` in #188 -- a
+    # theatre publishes a map, not a mission, and there are as many targets as
+    # there are flight plans. Drawing nothing is right for a map that flies
+    # many sorties; drawing the last one's target on all of them is not.
+    t = getattr(R, "TARGET_AREA", None)
+    if t is not None:
+        lines.append(
+            f'trigger.action.circleToAll({coalition}, {mid}, '
+            f'{{x = {t.x}, y = 0, z = {t.z}}}, {5 * 1852}, {RED}, '
+            f'{RED_FILL}, 1, true, "")')
+        mid += 1
 
     # And what shoots. The radius is the guns' REACH -- what a pilot needs to
     # see is where it becomes unwise, not where the barrels are.

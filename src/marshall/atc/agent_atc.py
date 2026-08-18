@@ -4330,8 +4330,12 @@ def push_fixes(base: str, procedures=()) -> int:
     # own bootstrap plan for a fix that exists in the source and never reached
     # the sim, and a stale row in the database would hide it. [CODEX_NTTR_AUDIT]
     _th = _theatre.current()
+    # PUBLISHED FIXES ONLY. This used to fold in `_th.waypoints` -- the
+    # theatre's strike route -- so FEET WET, INGRESS and TSUTSNVATI were pushed
+    # as resolvable places on every sortie and a controller asked for a
+    # steerpoint was offered one of them. #188 deleted the route; this is the
+    # push that carried it. [#188]
     fixes = {f.name: f for f in _th.fixes}
-    fixes.update({f.name: f for _, f in _th.waypoints})
     # BOTH SLOTS. `beacon` was one field and is two: the aerodrome is always
     # there and a beacon only sometimes, and each is a place the controller
     # may need to resolve by name.
@@ -4426,12 +4430,12 @@ def _finish_fixes(base: str, out: dict, _th) -> int:
     the numeric aliases, the push and the kept copy cannot come to differ
     depending on whether the server happened to be up.
     """
-    # Steerpoint NUMBERS too -- "distance to waypoint three" is how a pilot
-    # asks, and the name is what the chart shows.
-    for n, f in _th.waypoints:
-        if f.name in out:
-            out[f"waypoint {n}"] = out[f.name]
-            out[f"steerpoint {n}"] = out[f.name]
+    # NO STEERPOINT NUMBERS FROM THE THEATRE. "distance to waypoint three" is
+    # how a pilot asks, and the numbering he means is HIS FLIGHT PLAN's -- so
+    # publishing the map's made "steerpoint 2" resolve to the 1944 strike's
+    # second turning point for every aeroplane on the field. That is how a
+    # pilot on BatumiTest, whose waypoint 2 is BAR, was told it was FEET WET.
+    # Numbering an aeroplane's own route belongs with the aeroplane. [#188]
     _put_json(f"{base}/fixes", {"fixes": out})
     # KEPT, not just pushed. The bridge projected these through the sim's own
     # converter and then discarded them, so the one process that knows where its

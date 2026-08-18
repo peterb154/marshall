@@ -11531,3 +11531,73 @@ pool here would reproduce the very failure being fixed — see #120.
 4. The previous instance's rows still exist and are still reachable by key.
 
 ---
+
+## [ARCH-45] The theatre file declared one mission, and every controller read it out — #188
+labels: bug, architecture, needs-flight-test
+
+**Status:** BUILT 18 August, NEEDS A PILOT — card row G15. **The data went first and that was not the fix.** Removing the Caucasus route left the mechanism, and Nevada turned out to declare its own route in PYTHON (`NEVADA_ROUTE`) — the same fault one file further out.
+
+    "If a route like that exists in code and of being handed to an llm,
+     something is fundamentally wrong. Fix the core not the system"
+
+So the route-shaped hole is gone, not just what was in it: `Theatre.waypoints`, `Theatre.legs`, `sortie_route`, `_sortie_wp`, `_sortie_legs`, `sortie_alt_ft`, `NEVADA_ROUTE`, the `R.SORTIE*` aliases, the fix-push that folded route points into the published table, the `steerpoint N` aliases, and `Sortie.route`/`alt_ft` from the model — so a theatre file that declares a route now RAISES instead of being quietly obeyed. `briefing._sortie()` is a stub returning nothing. **Only a pilot can score criterion 1**: what has to be true is that asked about his own route he hears HIS route, and a confidently wrong answer sounds exactly like a right one.
+
+    "The theatre file, whatever that is, should handle hundreds of different
+     flights all with different flight plans? There is some plan stuck in
+     there? Get rid of it"
+
+`config/theatres/caucasus.toml` carried a `[sortie]` block — the 1944 strike —
+as **the** mission this map flies:
+
+    route  = ["BATUMI", "FEET WET", "INGRESS", "TSUTSNVATI", "EGRESS", "BATUMI"]
+    alt_ft = [2000, 500, 3000, 9000, 11000]
+
+`briefing._sortie()` read it and put it in front of every controller on every
+transmission as *"Today's filed route"*, numbered by steerpoint with leg
+headings. On 18 August an F-16 on a filed `BatumiTest` clearance asked what his
+second steerpoint was:
+
+    21:38:00  PILOT  can you tell me what my second waypoint is
+    21:38:06  ATC    steerpoint two is feet wet, heading two seven zero for one
+                     two miles off steerpoint one
+    21:38:34  NOTE   that's a serious issue ... The waypoint two for my flight
+                     plan is bar. I'm ending this mission
+
+Read straight off the block — waypoint 2 was FEET WET and leg 1→2 was 270 at
+12 nm. His actual route, `FOO BAR SPAM INITIAL`, was in the same message two
+lines away on his own flight strip.
+
+**THE AUTHORITY ARGUMENT IS THE ONE THAT MATTERS, and it is stronger than the
+provenance argument.** He was cleared to BatumiTest — issued, read back,
+stamped in `assigned_plans` at 21:30:46. Even if the theatre's route had been a
+current, correctly-filed plan, quoting it to a man cleared on another is wrong.
+A cleared aeroplane's route has exactly one source.
+
+**Third escape for the same four names.** `catalogue.py` records the previous
+two — published as navaids, then scraped out of `route.py` into
+`theatre.fixes` — and both fixes addressed the FIXES. Nobody touched the
+route, so it kept broadcasting.
+
+**What was removed.** `[sortie].route`, `alt_ft` and the four turning points
+from the theatre file; the dead `R.FEET_WET`, `R.INGRESS`, `R.HOMEBOUND` and
+`R.TARGET_AREA` aliases. `REHEARSAL` stays — an air-start point is a fact about
+the map, not about a mission — and so do the defended areas. Nevada already
+declared no `[sortie]`, so the no-route path existed and was already correct.
+`tools/draw.py` no longer assumes a target exists.
+
+**Zero live code references to the name remain.** What is left in `src/` is
+incident history in comments, which this repository keeps on purpose.
+
+**Still over-fitted, and filed here rather than fixed:** `tools/plan_sweep.py`
+and `tools/plan_assign_check.py` bake the 1944 route into their fixtures, and
+34 references remain across `tests/`. A harness that only ever resolves the
+retired route is one that passes while a pilot is told the wrong waypoint.
+
+**Acceptance criteria**
+1. Asked about his own route, a cleared aeroplane is answered from
+   `assigned_plans` and nothing else.
+2. No controller volunteers a route the pilot was not cleared on.
+3. A map with no `[sortie]` briefs correctly (Nevada already does).
+4. `[sortie]` is renamed to what it now holds, or its remaining contents move.
+
+---

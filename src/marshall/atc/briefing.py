@@ -323,44 +323,21 @@ def _mission() -> list[str]:
 
 
 def _sortie() -> list[str]:
-    """The route the squadron is flying today, so a controller recognises it.
+    """DELETED IN #188. Kept as a stub so nothing calls it by accident.
 
-    Without this a pilot says "we are routing via FEET WET to NORTH" and the
-    controller has never heard either name -- it can vector him perfectly well
-    but cannot talk about his PLAN, which is most of what an enroute controller
-    does. With it, "cleared as filed" means something, "report NORTH" is a
-    trigger he owns, and a request to route direct can be answered against what
-    was actually filed.
+    It read the theatre's route and rendered "**Today's filed route** (the
+    squadron's, not every aircraft's)" into every controller's brief, numbered
+    by steerpoint with leg headings. Its own docstring warned about the risk --
+    "a controller who assumes every arrival is flying it will greet a stranger
+    by name, which is the over-fitting that got caught once already" -- and the
+    caption did not stop the model using it.
 
-    It is today's plan, not a permanent fact about the field. Wording matters:
-    a controller who assumes every arrival is flying it will greet a stranger
-    by name, which is the over-fitting that got caught once already.
+    A CONTROLLER IS TOLD WHICH ROUTE AN AEROPLANE IS ON BY ITS FLIGHT STRIP,
+    which carries `assigned_plans` -- what he was actually CLEARED to. That is
+    the only source, because a clearance is a fact the engine issued and
+    stamped, and there are as many routes as there are aircraft.
     """
-    # THE LOADED THEATRE'S ROUTE. This read `core.route`'s strike sortie
-    # whatever map was up, so a Nellis controller's plate carried FEET WET,
-    # TSUTSNVATI and a leg over the Black Sea.
-    from marshall.core import theatre as _t
-    th = _t.current()
-    if not th.legs or not th.waypoints:
-        return []
-    legs = R.solve_route(legs=list(th.legs))
-    line = ", ".join(f"**{n}** {f.name}" for n, f in th.waypoints)
-    detail = "; ".join(
-        f"{R.steerpoint(l.frm)} to {R.steerpoint(l.to)}, "
-        f"{l.heading_mag:03.0f} at {l.distance_nm:.0f} nm" for l in legs)
-    return [
-        f"- **Today's filed route** (the squadron's, not every aircraft's): "
-        f"{line}. Legs: {detail}.",
-        "- **Use the NUMBERS on the radio.** \"Report steerpoint two\" "
-        "survives a bad channel and a worse accent; \"report FEET WET\" "
-        "arrives as \"fee twet\", and TSUTSNVATI has no chance at all. The "
-        "names are for the chart he is reading, the numbers for the radio he "
-        "is listening to.",
-        "- He may not be flying it. Ask what he wants rather than assuming he "
-        "is on the frag — a pilot who has never mentioned it is just an "
-        "aeroplane going somewhere.",
-    ]
-
+    return []
 
 def _threats() -> list[str]:
     """What is shooting, and how far it reaches.

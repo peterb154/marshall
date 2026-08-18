@@ -101,19 +101,12 @@ class Theatre:
     # sim. An old row in the database would hide it, which is exactly the
     # accidental success a second theatre is meant to expose.
     #
-    # `waypoints` are the NUMBERED ones -- "distance to waypoint three" is how a
-    # pilot asks. Empty is honest: a theatre with no strike route has no
-    # steerpoints, and inventing them from another map's is how this started.
     fixes: tuple = ()
-    waypoints: tuple = ()          # ((1, Fix), (2, Fix), ...)
     # WHAT SHOOTS, if anything. A 1944 Caucasus sortie transits past defended
     # aerodromes and the controller has to be able to talk about them; a
     # peacetime training flight over Nevada does not. Empty is the normal case
     # and the plate says nothing rather than inventing a war.
     defended: tuple = ()
-    # THE LEGS, solved, for the plate's route paragraph. Empty where a theatre
-    # has no filed strike route -- which is most of them.
-    legs: tuple = ()
     extra: dict = field(default_factory=dict)
 
     def field_named(self, name: str):
@@ -375,72 +368,21 @@ def _approaches_cached(name: str) -> dict:
     return published_approaches(_fields_cached(name), name)
 
 
-# ONE OBJECT PER FIX, for the same reason the seats and the fields get one:
-# `NEVADA_ROUTE = [LSV, TPH, LSV]` was one `Fix` appearing twice, and the
-# numbered route and the published table were the same objects. Rebuilt per
-# call they are two copies that happen to agree, which is how they come to
-# differ -- so the conversion is cached on the resolved map name like the rest.
-def sortie_route(theatre: str = "") -> tuple:
-    """The mission's numbered steerpoints, from the file. `((1, Fix), ...)`.
-
-    NAMES RESOLVE AGAINST THE MISSION'S OWN POINTS FIRST AND THE PUBLISHED
-    CATALOGUE SECOND, which is what lets a private route use a public
-    aerodrome without copying it: BATUMI opens and closes the 1944 strike and
-    is one row in `[[fix]]`, visited twice.
-
-    Private first rather than public first, deliberately. A mission that
-    defines a point of its own under a published name means it, and silently
-    handing it the map's version instead would move a turning point without
-    saying so -- the mirror of #143, where our INITIAL collided with a real
-    cartridge's. A collision is the mission's to resolve and this is not the
-    layer that can.
-
-    Empty where the file declares no `[sortie]`, which is Nevada: a map may
-    publish a catalogue and fly nothing private. [#137]
-    """
-    from marshall.core import catalogue
-    from marshall.core.fixes import Fix
-    name = _map_name(theatre)
-    s = catalogue.sortie(name)
-    if s is None or not s.route:
-        return ()
-    mine = {p.name.upper(): Fix(p.name, "", p.x, p.z, None, note=p.note or "",
-                                navaid_kind="", lat=p.lat, lon=p.lon)
-            for p in s.point}
-    public = {f.name.upper(): f for f in _fixes_cached(name)}
-    out = []
-    for n, want in enumerate(s.route, start=1):
-        f = mine.get(want.upper()) or public.get(want.upper())
-        if f is None:
-            # NAMED, NOT SKIPPED. A route point nothing defines would otherwise
-            # renumber every steerpoint after it, so "waypoint four" would mean
-            # a different place than the chart says -- silently.
-            raise KeyError(
-                f"{name}: [sortie].route names {want!r}, which is neither a "
-                f"[[sortie.point]] nor a published [[fix]]")
-        out.append((n, f))
-    return tuple(out)
-
-
-def _sortie_wp(theatre: str = "") -> tuple:
-    """`sortie_route`, and empty rather than fatal when the file is wrong.
-
-    A malformed `[sortie]` must not stop a bridge coming up: the strike route
-    is one mission's chart and the ladder, the approaches and the whole ground
-    half do not touch it. Named on the way past, because a route that silently
-    vanished would read as a map that has no mission.
-    """
-    try:
-        return sortie_route(theatre)
-    except (KeyError, ValueError) as exc:
-        print(f"!! {_map_name(theatre)}: no sortie route -- {exc}", flush=True)
-        return ()
-
-
-def _sortie_legs(theatre: str = "") -> tuple:
-    """Consecutive pairs down the route, which is what a planner walks."""
-    pts = [f for _, f in _sortie_wp(theatre)]
-    return tuple(zip(pts, pts[1:]))
+# NO ROUTE LIVES HERE ANY MORE, and the mechanism went with the data.
+#
+# `sortie_route`, `_sortie_wp`, `_sortie_legs` and `sortie_alt_ft` built a
+# numbered strike route out of the theatre file, and `Theatre.waypoints` /
+# `.legs` carried it to `briefing._sortie()`, which put it in front of every
+# controller on every transmission as "Today's filed route".
+#
+#     "If a route like that exists in code and of being handed to an llm,
+#      something is fundamentally wrong. Fix the core not the system"
+#
+# Deleting the Caucasus route from the toml fixed one map. This deletes the
+# ROUTE-SHAPED HOLE: there is now nowhere for a mission's turning points to be
+# declared at theatre level, so nothing can be handed a route that is not the
+# aeroplane's own. Which route he is flying is `assigned_plans`, joined onto
+# his flight strip, and there are as many as there are aircraft. [#188]
 
 
 def procedure_point(want: str, theatre: str = ""):
@@ -503,13 +445,6 @@ def sortie_defended(theatre: str = "") -> tuple:
     if s is None:
         return ()
     return tuple((d.name, d.x, d.z, d.reach_nm) for d in s.defended)
-
-
-def sortie_alt_ft(theatre: str = "") -> tuple:
-    """Planned altitude per LEG -- one shorter than the route."""
-    from marshall.core import catalogue
-    s = catalogue.sortie(_map_name(theatre))
-    return tuple(s.alt_ft) if s is not None else ()
 
 
 @_lru_cache(maxsize=4)
@@ -819,9 +754,7 @@ def caucasus() -> Theatre:
         # sections because they are two kinds of thing, which is the whole
         # point: what is published is a fact about the map, what is here goes
         # home with the sortie that flies it.
-        waypoints=_sortie_wp("caucasus"),
-        defended=sortie_defended("caucasus"),
-        legs=_sortie_legs("caucasus"))
+        defended=sortie_defended("caucasus"))
 
 
 # WHICH NEVADA SORTIE. Two are filed and they recover at different fields, so
@@ -852,15 +785,6 @@ NEVADA_SORTIES = {
 # sortie actually is, so it is the default and the transit is a flag away.
 DEFAULT_SORTIE = "nellis"
 
-# THE ROUTE IS THE SORTIE'S, NOT THE MAP'S, which is why it is a list of names
-# here rather than a table in `nevada.toml`: a mission's turning points belong
-# to the mission (docs/CONFIG.md), and publishing them is exactly what put FEET
-# WET in front of every controller on the Caucasus. Names rather than
-# coordinates, so the route cannot come to disagree with the catalogue it is
-# drawn from. Nellis out to the VORTAC and home.
-NEVADA_ROUTE = ("NELLIS", "TONOPAH", "NELLIS")
-
-
 def nevada() -> Theatre:
     """Out of Nellis and home to Nellis, or one-way to Tonopah. ILS either end.
 
@@ -888,19 +812,18 @@ def nevada() -> Theatre:
               f"{DEFAULT_SORTIE!r}", flush=True)
         want = DEFAULT_SORTIE
     plan, arrival = NEVADA_SORTIES[want]
-    # ONE CALL, so the numbered route and the published table hold the SAME
-    # objects -- `NEVADA_ROUTE = [LSV, TPH, LSV]` was one Fix appearing twice,
-    # and two copies that happen to agree is how they come to differ.
+    # The numbered route this used to build alongside the published table is
+    # gone with #188 -- Nevada declared its own in PYTHON, `NEVADA_ROUTE =
+    # ("NELLIS", "TONOPAH", "NELLIS")`, which is the same fault as the
+    # Caucasus toml one file further out. A map publishes places.
     fixes = fixes_now("nevada")
-    at = {f.name: f for f in fixes}
     return Theatre(
         name=me.name, terrain=me.terrain, fields=fields, stations=stations,
         departure=me.departure, arrival=arrival,
         approaches=tuple(procedures.values()),
         wind_from_deg=me.wind_from_deg, wind_mph=me.wind_mph,
         bootstrap_plan=plan,
-        fixes=fixes,
-        waypoints=tuple(enumerate((at[n] for n in NEVADA_ROUTE), start=1)))
+        fixes=fixes)
 
 
 THEATRES = {"caucasus": caucasus, "nevada": nevada}

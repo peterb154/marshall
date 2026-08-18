@@ -146,7 +146,8 @@ class TestEveryApproachFitsInsideItsOwnArea(unittest.TestCase):
         being unable to measure anything. Every fix carrying no position is a
         silent exemption."""
         blind = [f.name for f in T.fixes_now() if f.lat is None]
-        blind += [f.name for _, f in T.sortie_route() if f.lat is None]
+        # THE SORTIE ROUTE IS NOT A SOURCE OF FIXES any more -- #188 removed
+        # theatre-level routes outright, so there is nothing here to locate.
         self.assertEqual(blind, [],
                          "these fixes have no position, so nothing above "
                          "measured them -- run tools/seed_fixes.py")

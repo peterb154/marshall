@@ -421,7 +421,25 @@ class Defended(_File):
 
 
 class Sortie(_File):
-    """The mission this map is set up to fly: its route and what it avoids.
+    """This map's private points and the areas a route is planned AROUND.
+
+    NO ROUTE, AND THE FIELD IS GONE RATHER THAN EMPTY. `route` and `alt_ft`
+    declared the mission this map flies, and `briefing._sortie()` put it in
+    front of every controller on every transmission as "Today's filed route" --
+    so an F-16 cleared on BatumiTest was told his second steerpoint was FEET
+    WET, off the 1944 strike, with the leg heading.
+
+        "If a route like that exists in code and of being handed to an llm,
+         something is fundamentally wrong. Fix the core not the system"
+
+    Deleting the Caucasus route fixed one map. Deleting the FIELDS means there
+    is nowhere for a route to be declared at theatre level at all -- a file
+    that tries raises rather than being quietly obeyed. Which route an
+    aeroplane flies is `assigned_plans`, joined onto its strip, and there are
+    as many as there are aircraft. [#188]
+
+    ORIGINALLY: "The mission this map is set up to fly: its route and what it
+    avoids."
 
     ONE MISSION PER MAP TODAY, and that is a limit worth naming rather than
     hiding. The 1944 strike is the Caucasus file's; Nevada's route is two
@@ -436,8 +454,6 @@ class Sortie(_File):
     """
     label: str = ""
     point: list[SortiePoint] = []
-    route: list[str] = []
-    alt_ft: list[int] = []
     defended: list[Defended] = []
 
 

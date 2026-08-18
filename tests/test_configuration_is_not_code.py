@@ -434,24 +434,30 @@ class TheTwoSourcesOfPositionAreMERGED(unittest.TestCase):
 
         configured = R.Fix("BATUMI", "OS", -355811, 617386, 132.0,
                            lat=41.6096, lon=41.6002)
-        sortie_only = R.Fix("FEET WET", "", -355811, 595162, None)
+        # THE SECOND FIX IS A PUBLISHED ONE WITH NO POSITION, not a sortie
+        # point. This used to pair BATUMI with a route point the theatre
+        # folded into the push -- and #188 deleted the fold-in, because a map
+        # publishes places and a mission's turning points belong to the
+        # mission. The invariant is unchanged and is about the MERGE: a fix
+        # the file locates keeps its own numbers, and one it does not gets the
+        # sim's. Both have to survive the same push.
+        unlocated = R.Fix("INITIAL", "", -355811, 595162, None)
 
         class Theatre:
-            fixes = (configured,)
-            waypoints = ((1, sortie_only),)
+            fixes = (configured, unlocated)
 
         pushed = {}
         with mock.patch.object(A, "_theatre") as th, \
              mock.patch.object(A, "_put_json",
                                side_effect=lambda url, body: pushed.update(body)), \
              mock.patch.object(A, "_eval_fix_positions",
-                               return_value={"FEET WET": [41.629, 41.336]}):
+                               return_value={"INITIAL": [41.629, 41.336]}):
             th.current.return_value = Theatre()
             A.push_fixes("http://unused", ())
 
         got = pushed.get("fixes") or {}
         self.assertIn("BATUMI", got, "the configured fix was wiped by the sim branch")
-        self.assertIn("FEET WET", got, "the sim's answer was lost")
+        self.assertIn("INITIAL", got, "the sim's answer was lost")
 
 
 class TheFilesAreTheOnlyCopy(unittest.TestCase):
@@ -737,12 +743,12 @@ class BothMapsAreRows(unittest.TestCase):
         self.assertIs(N.NELLIS_CLEARANCE, T.stations_now("nevada")[0])
         self.assertIs(N.NELLIS_ILS, T.approaches_now("nevada")["nellis-ils-21"])
         self.assertIs(N.TONOPAH_ILS, T.approaches_now("nevada")["tonopah-ils-15"])
-        # ...and the numbered route is ONE fix appearing twice, not two that
-        # happen to agree. `NEVADA_ROUTE = [LSV, TPH, LSV]` was literally that,
-        # and a conversion rebuilt per call would quietly make it two.
-        route = N.NEVADA_ROUTE
-        self.assertIs(route[0], route[2])
-        self.assertIs(N.LSV, route[0])
+        # ...and the PUBLISHED table is one object per fix. This also checked
+        # that `NEVADA_ROUTE = [LSV, TPH, LSV]` was one Fix appearing twice
+        # rather than two that agree -- a real hazard, for a route that no
+        # longer exists: #188 deleted theatre-level routes, Nevada's included,
+        # because declaring one in PYTHON is the same fault as declaring it in
+        # the Caucasus toml one file further out.
         self.assertIs(N.LSV, T.fixes_now("nevada")[0])
 
     def test_the_module_defines_no_instances_at_all(self):

@@ -109,7 +109,7 @@ the flight below. The `..` ranges expand over LIVE rows in card order, so they
 cannot name a retired one again without the parser saying so out loud.
 
 ```rows
-R1..R4 N1 N2 M1 G3 G4 G7 G8 G10 G11 G12 G13 G14 Q1 Q14 Q15 Q16 V9 V7 P1..P4
+R1..R4 N1 N2 M1 G3 G4 G7 G8 G10 G11 G12 G13 G14 G15 Q1 Q14 Q15 Q16 V9 V7 P1..P4
 V6 V3 H4 H5 H6 H7 H8 H9 H10 H11 V8 V5 F1..F5b V10 K1..K4
 ```
 ### FLIGHT 2 — the VFR arrival
@@ -439,6 +439,7 @@ cockpit, can actually get it down at the pace it is read.
 | G12 | P1 | Read the clearance back with **two elements missing** — drop the altitude and the departure frequency | He asks for **both** back, in one transmission. Then supply only one, and he asks for the one still outstanding — never for the one you just gave him, and never a correction you cannot satisfy | [#157] |
 | G13 | P1 | Ask Ground to taxi **without ever calling Clearance** — cold start, straight to Ground on 121.8 | **Refused, and told the RIGHT thing**: he has no clearance and must contact Kobuleti Clearance. Not *"your clearance has not been read back"*, which is a different fault and sends a man hunting for a read-back he never made. He must also stay on **Clearance's rung** — the phase IS the handoff, so a refusal that also hands you to Ground is #135's complaint back again. On 18 August a pilot taxied, took off and flew two aerodromes on a clearance nobody had issued | [#181] |
 | G14 | P1 | Ask for a clearance **under a callsign the board does not have**, then keep talking as though you had been cleared — read back an altitude and a squawk you made up | He must **not** play along. The tool refuses him (the plan is on file, you are not on the board) and he says so — he must not fill the gap, reconstruct a clearance from the conversation, or answer your invented read-back with *"readback correct"*. On 18 August he was refused and then read out a full IFR clearance the engine had no record of, and Ground, Tower and Departure all believed it. Check `/diag` afterwards: an unbacked claim is recorded | [#185] |
+| G15 | P1 | **Airborne on your filed clearance**, ask any controller what your second steerpoint is, or where you go after the first fix | **YOUR** route, off the plan you were cleared on — for BatumiTest that is BAR. On 18 August this answered *"steerpoint two is feet wet, heading two seven zero for one two miles"*, read off a 1944 strike route the theatre file declared as THE mission this map flies, while his own route sat two lines away on his flight strip. He must never volunteer a route you were not cleared on; if he has no assignment for you he says so | [#188] |
 
 **What each one is actually checking**
 

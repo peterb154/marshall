@@ -2041,57 +2041,47 @@ source = "caucasus-Beacons.lua, the sim's own table"
 # `[[fix]]` above is what this MAP publishes: citable, and true whoever is
 # flying. Everything below belongs to ONE mission and goes home with it. [#137]
 [sortie]
-label = "362nd strike, Batumi to Tsutsnvati and home"
+# WHAT IS LEFT IS NOT A SORTIE, and the section name is now a misnomer worth
+# fixing separately: an air-start point for testing, and the places a route
+# should be planned AROUND. Both are facts about this MAP. Renaming the
+# section touches the model and every reader, so it is #188's follow-up
+# rather than something to do on the evening of a test flight.
+label = "Caucasus — the map's private points and defended areas"
 
-# The route, in order, BY NAME -- so BATUMI, which opens and closes the strike,
-# is one definition and two visits. Names resolve against the points below
-# first and the published catalogue second, which is what lets a private route
-# use a public aerodrome without copying it.
-route = ["BATUMI", "FEET WET", "INGRESS", "TSUTSNVATI", "EGRESS", "BATUMI"]
-
-# Altitude per LEG, so this list is always one shorter than the route. The
-# shape of the sortie is in these numbers rather than in the route: go out low
-# where nobody is looking, come home high because the way home is over
-# mountains. Terrain under each leg was sampled from the sim, not guessed --
-# 32 ft climbing out over the coast, 0 ft on the open-water leg, 1,865 ft on
-# the run east, 6,684 ft climbing away from the target, 8,832 ft over the top.
-# Five hundred feet over the sea is deliberate: low enough that nobody on the
-# coast has anything to report, and nothing out there to hit. Eleven thousand
-# clears the highest ridge on the line home by two, which is the margin you
-# want when the alternative is a hillside.
-alt_ft = [2000, 500, 3000, 9000, 11000]
-
-[[sortie.point]]
-name = "FEET WET"
-x = -355811
-z = 595162
-lat = 41.629174
-lon = 41.336384
-note = "Off 31 to the west, over water. Climb here."
-
-[[sortie.point]]
-name = "INGRESS"
-x = -259507
-z = 595162
-lat = 42.487235
-lon = 41.450197
-note = "52 nm north of Batumi, 12 nm offshore -- water the whole way, and north of Kutaisi. Turn east for the target from here; this is where the run in starts."
-
-[[sortie.point]]
-name = "TSUTSNVATI"
-x = -268955
-z = 713840
-lat = 42.288573
-lon = 42.861266
-note = "CAS area: the town on the western shore of the lake, 18 nm east of Kutaisi. Hostile ground. The lake is the only water for miles, which makes it the one landmark that reads the same at eight thousand feet as it does on a chart -- and the town sits on its western edge, so a target can be described by where it is rather than by a coordinate nobody can see. N42 17.314 E42 51.676, given rather than derived: a terrain sweep found a lake nearby and picked the wrong one, and somebody who has flown over the place beats a surface-type search every time. THE PROSE SAID 11 nm AND IT IS 18: the grid metres and the sim's projection agree with each other and disagree with that sentence, which had been carried along unchecked since the point was written. Corrected 14 August, and it is the reason `lat`/`lon` being IN the file matters -- a number nothing can measure against is a number nobody can catch."
-
-[[sortie.point]]
-name = "EGRESS"
-x = -318936
-z = 712429
-lat = 41.846475
-lon = 42.775433
-note = "Off the target and heading home, 24 nm south-east of Kutaisi. Over the high ground: a climb in exchange for 15 nm of clearance from every battery."
+# NO ROUTE, AND THAT IS THE CHANGE. This file used to declare one:
+#
+#     route  = ["BATUMI", "FEET WET", "INGRESS", "TSUTSNVATI", "EGRESS", "BATUMI"]
+#     alt_ft = [2000, 500, 3000, 9000, 11000]
+#
+# the 1944 strike, as THE mission this map flies. `briefing._sortie()` read it
+# and put it in front of every controller on every transmission as "Today's
+# filed route", numbered by steerpoint and with leg headings.
+#
+# 18 August, an F-16 on a filed BatumiTest clearance asked what his second
+# steerpoint was:
+#
+#     PILOT  can you tell me what my second waypoint is
+#     ATC    steerpoint two is feet wet, heading two seven zero for one two
+#            miles off steerpoint one
+#
+# Read straight off this block -- waypoint 2 was FEET WET and leg 1-2 was 270
+# at 12 nm. His actual route was FOO, BAR, SPAM, INITIAL, and it was in the
+# same message, two lines away, on his own flight strip.
+#
+#     "The theatre file, whatever that is, should handle hundreds of
+#      different flights all with different flight plans? There is some plan
+#      stuck in there? Get rid of it"
+#
+# A THEATRE IS A MAP. It publishes fields, fixes, frequencies and procedures --
+# facts that are true whoever is flying. WHICH route an aeroplane is on is a
+# fact about that aeroplane, it lives in `flight_plans` and `assigned_plans`,
+# and there are as many of them as there are aircraft. A singleton here could
+# only ever be right by luck, and when it was wrong it was wrong confidently:
+# with numbers, in phraseology, to a pilot holding a different chart.
+#
+# The same four names have escaped twice before -- published as navaids, then
+# scraped out of `route.py` into `theatre.fixes` -- and both fixes addressed
+# the FIXES. Nobody touched the route, so it kept broadcasting. [#188]
 
 [[sortie.point]]
 name = "REHEARSAL"
