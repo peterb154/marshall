@@ -636,16 +636,30 @@ _PAGE = """<!doctype html><html><head><meta charset="utf-8">
        "I want to make sure that it represents what atc is seeing and thinking
         so that I can rationalize why something is happening"
 
-     So: who he thinks is flying, then what he decided NOT to do about them --
-     which is the answer when nothing is happening, and it is above the last
-     turn because a pilot asking that question has by definition not just had
-     one. -->
+     So: who he thinks is flying, then WHAT HE JUST DID AND WHY, then what he
+     decided not to do.
+
+     THE LAST TURN MOVED ABOVE "DECIDED AGAINST" ON 18 AUGUST, mid-sortie:
+
+       "let's reorder the board, the DAG board, to put the reasoning from AI
+        above the decided against, I can't see in a single flash what the AI
+        is thinking"
+
+     It sat second on the reasoning that "a pilot asking that question has by
+     definition not just had one" -- true of the empty case and wrong about
+     which case is common. A pilot glances at this page BECAUSE something was
+     said and he wants to know why, and the turn that produced it is the only
+     panel carrying the `org-agent` half. Below the fold it may as well not be
+     there, on a page whose whole job is "what atc is seeing and thinking".
+
+     "Decided against" is still directly under it, which is where it earns its
+     keep: the two read together as what he did and what he would not. -->
 <section><h2>Who ATC is working<span class="src" id="s-board"></span></h2>
   <div id="board"></div></section>
-<section><h2>Decided against<span class="src" id="s-quiet"></span></h2>
-  <div id="quiet"></div></section>
 <section><h2>The last turn, stage by stage<span class="src" id="s-last"></span></h2>
   <div id="last"></div></section>
+<section><h2>Decided against<span class="src" id="s-quiet"></span></h2>
+  <div id="quiet"></div></section>
 <section><h2>Untracked<span class="src" id="s-untracked"></span></h2>
   <div id="untracked"></div></section>
 <section><h2>Flights<span class="src" id="s-flights"></span></h2>
