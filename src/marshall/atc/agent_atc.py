@@ -3408,7 +3408,8 @@ def next_controller(scope, track: str, me, profile, fix, *, known: str = "",
     # `Verdict.keep` and #189: a refusal from a rule is an answer, and the
     # airspace branch below must not treat it as an opening.
     ruled = False
-    nxt = None if down else handoff_on_the_event(scope, track, me, profile, fix)
+    nxt = None if down else handoff_on_the_event(
+        scope, track, me, profile, fix, phase=phase)
     if nxt is None and me is not None:
         # `phase` is what he is DOING, and it is the only thing that can hand
         # over the ground half of a sortie -- see `handoff.due`. A parked
@@ -3713,7 +3714,7 @@ def _handoff_state(scope, track: str, pos, phase: str = "") -> object:
 
 
 def handoff_on_the_event(scope: str, track: str, me, profile,
-                         fix=None) -> object | None:
+                         fix=None, phase: str = "") -> object | None:
     """Touching down ends the approach. Getting airborne ends Tower's business.
 
         "Landing / takeoff event should be triggers to switch to/from tower"
@@ -3783,6 +3784,37 @@ def handoff_on_the_event(scope: str, track: str, me, profile,
         # Tower is the man who owns him.
         if coming_towards_us(fix):
             return None
+        # ...AND A DEPARTURE IS NOT A GO-AROUND, which this could not tell
+        # apart. Both are "airborne, with Tower", and the event fired at
+        # ROTATION -- so a jet leaving Kobuleti was handed on before the end of
+        # the runway, twice, in two sorties:
+        #
+        #     "he sent me to departure before I even hit the end of the runway"
+        #
+        # This branch was written for the go-around, and its docstring still
+        # says "getting airborne ends Tower's business" -- which is true of an
+        # aeroplane that has just flown an approach and false of one that has
+        # just taken off. #189 gave the rule table the last word over the
+        # airspace volumes and this ran BEFORE both: three mechanisms, and I
+        # fixed the wrong one.
+        #
+        # A departure is `handoff.RULES`'s business -- Tower keeps him to
+        # DEPARTURE_NM and hands him over there, which is what the card says
+        # and what a pilot expects. [#200]
+        #
+        # AND NOT ON THE ROLL-OUT EITHER, which is the same fault at the other
+        # end of the flight. Fifteen seconds after touchdown, still rolling and
+        # still reading as airborne to radar, Tower offered him to Approach:
+        #
+        #     "I have touched down for about 15 seconds, and then he sent me
+        #      to approach or departure, I can't remember what he just said"
+        #
+        # A go-around is an aeroplane that has flown an approach and is
+        # climbing away from it. A departure has not flown one yet and a
+        # roll-out has finished. All three are "airborne, with Tower", and only
+        # the phase tells them apart. [#200]
+        if (phase or "").lower() in ("departure", "landed", "taxi_in"):
+            return None
         return _theatre.station_for("approach", field=fld, procedure=profile)
     return None
 
@@ -3824,6 +3856,21 @@ def leaving_my_airspace(base: str, session_id: str, callsign: str, me,
     # separates them is whether this controller is working him, which is a fact
     # we have and were not using.
     if under_our_vectors:
+        return None
+    # ...AND BEING CLEARED FOR AN APPROACH IS THE DURABLE VERSION OF THAT.
+    #
+    # `under_our_vectors` is true only while a vector is actually in flight, so
+    # a man established and flying it himself falls through -- and on 19 August
+    # an aeroplane on the Batumi ILS was offered to Georgia Center mid-approach
+    # because he was, at that instant, not being vectored.
+    #
+    # An aeroplane cleared for MY approach is mine until the rule table hands
+    # him to Tower. Geography does not get a vote on a procedure it cannot see;
+    # that is the same sentence as #189, one mechanism over.
+    #
+    # `profile` here is HIS -- `_pro(ac)` -- so this is "he is on an approach I
+    # cleared him for", not "this bridge loaded one". [#200]
+    if profile is not None and getattr(me, "role", "") in ("approach", "tower"):
         return None
     # AN INBOUND AEROPLANE IS NOT LEAVING ANYBODY'S AIRSPACE, which is the
     # question this function is named after and was not asking.

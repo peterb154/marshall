@@ -12195,3 +12195,47 @@ or contradicts a pilot. It reaches the controller on the strip:
 4. A fix flown wide still counts as passed.
 
 ---
+
+## [SEP-25] Three mechanisms decide a handoff, and I fixed the wrong one first — #200
+labels: bug, needs-flight-test
+
+**Status:** FIXED 19 August, NEEDS A PILOT — card rows Q17 and H31. `tests/test_three_mechanisms_one_ladder.py` holds the cascade's ORDER and each branch's guard, and asserts at every call site that the cascade is handed the AEROPLANE's procedure and not a bridge's. **A pilot scores all four**: every one of these is a handoff that arrives, and what differs is where he was when it did.
+
+`next_controller` asks in order: the sim's **events**, the **rule table**, then
+the **airspace volumes**. #189 gave the rule table the last word over the
+volumes — and the events branch runs before both.
+
+**"Getting airborne ends Tower's business."** That is the events branch's own
+docstring, written for a go-around, and it is true of an aeroplane that has
+just flown an approach and false of every other way to be airborne with Tower:
+
+    departure    handed on at ROTATION, twice in two sorties —
+                 "he sent me to departure before I even hit the end of the
+                  runway". The table says DEPARTURE_NM and never got a word
+    roll-out     fifteen seconds after touchdown, still reading as airborne to
+                 radar, Tower offered him to Approach —
+                 "I have touched down for about 15 seconds, and then he sent
+                  me to approach or departure"
+    go-around    genuinely this branch's, and the only one of the three it was
+                 written for
+
+All three are *"airborne, with Tower"*. Only the **phase** tells them apart,
+and the branch could not see it.
+
+**AND THE AIRSPACE TOOK A MAN OFF AN APPROACH.** `under_our_vectors` guards
+that, and it is only true while a vector is actually in flight — so an
+aeroplane established on the ILS and flying it himself fell through, and was
+offered to Georgia Center mid-approach. Being **cleared** for an approach is
+the durable version of the same fact; geography does not get a vote on a
+procedure it cannot see.
+
+**Both are the same sentence as #189**, one mechanism over: a decision made
+somewhere upstream must not be silently overruled by whoever is asked next.
+
+**Acceptance criteria**
+1. Tower keeps a departure to about five miles.
+2. Nothing hands a rolling-out aeroplane to Approach.
+3. A go-around still goes back to Approach.
+4. An aeroplane cleared for an approach is never offered to Center.
+
+---
