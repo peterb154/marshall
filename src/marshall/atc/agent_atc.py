@@ -3778,43 +3778,42 @@ def handoff_on_the_event(scope: str, track: str, me, profile,
     fld = getattr(me, "field", "")
     if unit.on_ground and role == "approach":
         return _theatre.station_for("tower", field=fld, procedure=profile)
-    if unit.in_air is True and role == "tower":
-        # Airborne again: Tower owns the runway, not the departure -- unless he
-        # is pointed AT the runway, in which case he is an arrival on final and
-        # Tower is the man who owns him.
-        if coming_towards_us(fix):
-            return None
-        # ...AND A DEPARTURE IS NOT A GO-AROUND, which this could not tell
-        # apart. Both are "airborne, with Tower", and the event fired at
-        # ROTATION -- so a jet leaving Kobuleti was handed on before the end of
-        # the runway, twice, in two sorties:
-        #
-        #     "he sent me to departure before I even hit the end of the runway"
-        #
-        # This branch was written for the go-around, and its docstring still
-        # says "getting airborne ends Tower's business" -- which is true of an
-        # aeroplane that has just flown an approach and false of one that has
-        # just taken off. #189 gave the rule table the last word over the
-        # airspace volumes and this ran BEFORE both: three mechanisms, and I
-        # fixed the wrong one.
-        #
-        # A departure is `handoff.RULES`'s business -- Tower keeps him to
-        # DEPARTURE_NM and hands him over there, which is what the card says
-        # and what a pilot expects. [#200]
-        #
-        # AND NOT ON THE ROLL-OUT EITHER, which is the same fault at the other
-        # end of the flight. Fifteen seconds after touchdown, still rolling and
-        # still reading as airborne to radar, Tower offered him to Approach:
-        #
-        #     "I have touched down for about 15 seconds, and then he sent me
-        #      to approach or departure, I can't remember what he just said"
-        #
-        # A go-around is an aeroplane that has flown an approach and is
-        # climbing away from it. A departure has not flown one yet and a
-        # roll-out has finished. All three are "airborne, with Tower", and only
-        # the phase tells them apart. [#200]
-        if (phase or "").lower() in ("departure", "landed", "taxi_in"):
-            return None
+    # AIRBORNE WITH TOWER IS THE RULE TABLE'S, NOT AN EVENT'S.
+    #
+    # This branch used to hand him to Approach the moment radar called him
+    # airborne, at any range. It was written for the go-around -- "getting
+    # airborne ends Tower's business" -- and could not tell one from a
+    # departure or from a roll-out, because all three are airborne with Tower
+    # and only the PHASE separates them. It fired at rotation, twice, in two
+    # sorties, and fifteen seconds after a touchdown.
+    #
+    # The first fix taught it the phase. That was still three mechanisms
+    # answering one question:
+    #
+    #     "I don't see why the handoff to departure is any different on a go
+    #      around. Still use the 5nm airspace rule right?"
+    #
+    # It is not different. A go-around and a departure are the same shape and
+    # the same range; only the destination differs, and a table row says that
+    # in one line -- `Rule("tower", "approach", "going_around_beyond",
+    # DEPARTURE_NM)`. So the branch does not decide it at all now.
+    #
+    # WHAT STAYS IS THE EVENT THAT IS GENUINELY AN EVENT: touching down. A
+    # landing is a fact and outranks any geometry, which is what this cascade
+    # puts first and why. Getting airborne is a fact too -- and what follows
+    # from it is a matter of range, which is the table's.
+    #
+    # ...EXCEPT WHERE THERE IS NO RANGE TO ASK ABOUT. `outbound_beyond` needs a
+    # position, so a controller with no radar picture would never hand an
+    # airborne aeroplane on at all -- and this file already carries that rule
+    # in the test that guards it: "a guard that needs a picture must not disarm
+    # a controller who has none."
+    #
+    # So the event answers exactly the case the table cannot: airborne, with
+    # Tower, and nothing on the scope. The blind procedural controller behaves
+    # as he always did, and everyone with radar gets one mechanism and one
+    # range. [#200]
+    if unit.in_air is True and role == "tower" and fix is None:
         return _theatre.station_for("approach", field=fld, procedure=profile)
     return None
 

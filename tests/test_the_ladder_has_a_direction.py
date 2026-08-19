@@ -157,13 +157,30 @@ class AirborneIsNotAnEvent(unittest.TestCase):
                                            self.tower, self.p,
                                            self.at(nm, 311, 131)))
 
-    def test_a_departure_is_still_handed_to_approach(self):
-        """The case the branch exists for, and it must survive: he rotated, he
-        is going away, and Tower owns the runway rather than the departure."""
+    def test_a_departure_with_radar_is_the_TABLE_S_and_not_this_branch_s(self):
+        """INVERTED IN #200, and it completes this class's own thesis.
+
+        It read "the case the branch exists for, and it must survive: he
+        rotated, he is going away" -- and asserted the handoff at TWO MILES.
+        That is the transmission a pilot complained about twice:
+
+            "he sent me to departure before I even hit the end of the runway"
+
+        Airborne is not an event, which is the name of this class. What follows
+        from getting airborne is a matter of RANGE, and the range lives in the
+        rule table -- `Rule("tower", "departure", "outbound_beyond",
+        DEPARTURE_NM)` -- which said five miles all along and was never asked.
+
+            "I don't see why the handoff to departure is any different on a go
+             around. Still use the 5nm airspace rule right?"
+
+        Right, and the go-around is a table row now too, at the same range and
+        with a different destination.
+        """
         got = A.handoff_on_the_event(self.JUST_OFF, "362nd_sockeye", self.tower,
                                      self.p, self.at(2.0, 112, 112))
-        self.assertIsNotNone(got)
-        self.assertIn("approach", got.name.lower())
+        self.assertIsNone(got, "the event branch handed a departure away at "
+                               "two miles, before the table could say five")
 
     def test_a_controller_with_no_radar_behaves_exactly_as_before(self):
         """No fix, no opinion about direction -- and the old answer stands. A

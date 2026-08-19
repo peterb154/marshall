@@ -50,35 +50,55 @@ import unittest
 from marshall.atc import agent_atc as A
 
 
-class ADepartureIsNotAGoAround(unittest.TestCase):
-    """Asserted on the source, because reaching the branch needs a live radar
-    scope with a unit in it. What must be true is structural: the phase is
-    consulted before Tower gives up a man who is airborne."""
+class AirborneWithTowerIsTheTablesQuestion(unittest.TestCase):
+    """The events branch does not decide it at all any more.
+
+    The first fix taught the branch the phase, so it could tell a departure
+    from a roll-out from a go-around. That was still three mechanisms
+    answering one question:
+
+        "I don't see why the handoff to departure is any different on a go
+         around. Still use the 5nm airspace rule right?"
+
+    It is not different. Both are an aeroplane climbing away from the runway,
+    both at the same range; only the destination differs, and a table row says
+    that in one line. So the branch answers only what the table CANNOT -- an
+    airborne aeroplane with no radar picture at all, where there is no range to
+    ask about and a blind controller would otherwise never let anybody go.
+    """
 
     def setUp(self):
         self.src = inspect.getsource(A.handoff_on_the_event)
 
-    def test_the_branch_knows_what_he_is_doing(self):
-        self.assertIn("phase", inspect.signature(
-            A.handoff_on_the_event).parameters,
-            "the events branch cannot tell a departure from a go-around")
-
-    def test_a_departure_is_left_with_tower(self):
+    def test_with_radar_the_branch_says_nothing(self):
         at = self.src.index('in_air is True and role == "tower"')
-        self.assertIn("departure", self.src[at:],
-                      "airborne with Tower hands a DEPARTURE away, at "
-                      "rotation, before the rule table gets a word")
+        self.assertIn("fix is None", self.src[at:],
+                      "the events branch still decides an airborne handoff "
+                      "when there is a picture to measure instead")
 
-    def test_and_so_is_a_roll_out(self):
-        at = self.src.index('in_air is True and role == "tower"')
-        window = self.src[at:]
-        for phase in ("landed", "taxi_in"):
-            with self.subTest(phase):
-                self.assertIn(phase, window)
+    def test_and_without_radar_it_still_answers(self):
+        """A guard that needs a picture must not disarm a controller who has
+        none -- `test_the_ladder_has_a_direction` has held that since #138."""
+        self.assertIn("station_for(\"approach\"", self.src)
 
-    def test_the_caller_passes_it(self):
-        src = inspect.getsource(A.next_controller)
-        self.assertIn("phase=phase", src)
+    def test_the_go_around_is_a_rule_and_not_a_special_case(self):
+        from marshall.atc import handoff as H
+        rows = [(r.frm, r.to, r.when) for r in H.RULES]
+        self.assertIn(("tower", "approach", "going_around_beyond"), rows)
+
+    def test_at_the_same_range_as_a_departure(self):
+        from marshall.atc import handoff as H
+        go = next(r for r in H.RULES if r.when == "going_around_beyond")
+        dep = next(r for r in H.RULES
+                   if r.frm == "tower" and r.to == "departure")
+        self.assertEqual(go.nm, dep.nm)
+        self.assertEqual(go.nm, H.DEPARTURE_NM)
+
+    def test_and_it_is_asked_first_because_it_is_the_specific_one(self):
+        from marshall.atc import handoff as H
+        order = [r.when for r in H.RULES if r.frm == "tower"]
+        self.assertLess(order.index("going_around_beyond"),
+                        order.index("outbound_beyond"))
 
 
 class TheAirspaceDoesNotTakeAManOffAnApproach(unittest.TestCase):

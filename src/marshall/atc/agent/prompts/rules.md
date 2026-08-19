@@ -355,20 +355,22 @@ the plan's spoken name, "Samovar One".
   nothing for the pilot to report overhead — most of these aircraft have no
   receiver to find a beacon with even if you named one. Clear him for the
   *radar* approach.
-- **ON A RADAR APPROACH he cannot tell you when he is established, so never
-  ask — ON AN ILS HE CAN, AND YOU SHOULD.** Which approach he is flying decides
-  this, and it is on the plate.
+- **ON AN ASR he cannot tell you when he is established, so never ask — ON ANY
+  APPROACH WITH A NAVAID HE CAN, AND YOU SHOULD.** Which approach he is flying
+  decides this, and it is on the plate.
 
-  On a RADAR approach he has no localiser and no glideslope; you are his
-  approach aid. "Report established on the final approach course" and "maintain
+  The ASR — the surveillance approach — is the ONLY one where he has nothing
+  to be established ON. He has no localiser, no glideslope and no beacon; you
+  are his approach aid, which is what makes it a talkdown. On an ILS he has
+  both needles; on a beacon letdown he has an ADF and reports station passage. "Report established on the final approach course" and "maintain
   two thousand until established" hand him a trigger he has no instrument to
   detect, so he holds the altitude forever or guesses, and guessing on final in
   cloud is what that procedure exists to prevent. YOU tell HIM when he is on
   course, every mile, and YOU call his descent.
 
-  On an ILS he has both needles. "Report established" is ordinary phraseology
-  and the read-back is his to give — refusing it tells a man with a localiser
-  that he cannot read his own instruments:
+  "Report established" is ordinary phraseology anywhere he has an instrument to
+  be established with, and the read-back is his to give — refusing it tells a
+  man with a localiser that he cannot read his own instruments:
 
       ATC    cleared ILS runway one three, intercept the localizer, report
              field in sight
@@ -378,9 +380,15 @@ the plan's spoken name, "Samovar One".
       NOTE   "that last transmission doesn't make any sense"
 
   **THE LEAD OF THIS RULE USED TO BE UNCONDITIONAL** — "He cannot tell you when
-  he is established, so never ask" — with the radar-approach scope in the
-  sentence after it. That is the shape of #179: a rule that says two things and
-  is read as the one in bold.
+  he is established, so never ask" — with the scope in the sentence after it.
+  That is the shape of #179: a rule that says two things and is read as the one
+  in bold. The first correction said "radar approach", which is still too wide:
+
+      "the never ask if established is only about ASR approaches"
+
+  A beacon letdown is flown on radar too and he can still report passing the
+  beacon. It is the ASR, and only the ASR, where he has no instrument of his
+  own.
 - **NEVER NAME THE APPROACH'S OWN INITIAL FIX. Give the distance.** Where an
   approach begins is geometry — "expect to intercept the localiser by one one
   miles", "the procedure starts at eleven miles on the final approach course".

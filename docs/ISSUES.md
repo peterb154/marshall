@@ -12199,7 +12199,7 @@ or contradicts a pilot. It reaches the controller on the strip:
 ## [SEP-25] Three mechanisms decide a handoff, and I fixed the wrong one first — #200
 labels: bug, needs-flight-test
 
-**Status:** FIXED 19 August, NEEDS A PILOT — card rows Q17 and H31. `tests/test_three_mechanisms_one_ladder.py` holds the cascade's ORDER and each branch's guard, and asserts at every call site that the cascade is handed the AEROPLANE's procedure and not a bridge's. **A pilot scores all four**: every one of these is a handoff that arrives, and what differs is where he was when it did.
+**Status:** FIXED 19 August, NEEDS A PILOT — card rows Q17 and H31. **The first fix was still three mechanisms**: it taught the events branch the phase so it could tell a departure from a roll-out from a go-around. *"I don't see why the handoff to departure is any different on a go around. Still use the 5nm airspace rule right?"* — right, so the go-around is a table row now, `Rule("tower", "approach", "going_around_beyond", DEPARTURE_NM)`, at the same range as a departure and with a different destination. The events branch answers only what the table CANNOT: airborne with no radar picture, where there is no range to ask about and a blind controller would otherwise never let anybody go. `test_the_ladder_has_a_direction` had asserted the two-mile handoff as "the case the branch exists for"; it is inverted, which completes that file's own thesis that airborne is not an event.
 
 `next_controller` asks in order: the sim's **events**, the **rule table**, then
 the **airspace volumes**. #189 gave the rule table the last word over the

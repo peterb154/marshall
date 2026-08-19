@@ -120,6 +120,12 @@ class Rule:
 # other.
 RULES: tuple[Rule, ...] = (
     # Outbound. Tower keeps him until he is clear of the circuit.
+    #
+    # A GO-AROUND FIRST, because it is the more specific case and the order is
+    # the priority. Same range, same shape -- climbing away from the runway --
+    # and a different destination: he has already flown an approach, so he goes
+    # back to Approach to be sequenced rather than on to Departure. [#200]
+    Rule("tower", "approach", "going_around_beyond", DEPARTURE_NM),
     Rule("tower", "departure", "outbound_beyond", DEPARTURE_NM),
     # ENROUTE TO TERMINAL. Center gives him up at the edge of the area.
     #
@@ -271,11 +277,36 @@ def _airborne(st, nm: float | None, profile=None, rule=None) -> bool:
     return bool(not st.on_ground and st.range_nm is not None)
 
 
+def _going_around_beyond(st, nm: float | None, profile=None,
+                         rule=None) -> bool:
+    """Climbing away after an approach, and far enough out to hand back.
+
+    THE SAME RANGE AS A DEPARTURE, and that is the point:
+
+        "I don't see why the handoff to departure is any different on a go
+         around. Still use the 5nm airspace rule right?"
+
+    Right. A go-around and a departure are the same shape -- an aeroplane
+    climbing away from the runway -- and Tower keeps both until they are clear
+    of the circuit. What differs is only WHO gets him: a departure goes to
+    Departure, a man who has just missed goes back to Approach to be sequenced
+    again.
+
+    That was decided by the sim-EVENT branch instead, which fired the moment he
+    was airborne, at any range, and could not tell a go-around from a departure
+    or from a roll-out (#200). Expressed as a rule it is one mechanism, one
+    range, and a row somebody can read.
+    """
+    return (st.phase or "").lower() == "missed" and _outbound_beyond(
+        st, nm, profile, rule)
+
+
 CONDITIONS = {
     "outbound_beyond": _outbound_beyond,
     "inbound_within": _inbound_within,
     "on_ground": _on_ground,
     "airborne": _airborne,
+    "going_around_beyond": _going_around_beyond,
 }
 
 # THE PHASES THAT HAPPEN ON THE GROUND. `holding_short` is deliberately not
