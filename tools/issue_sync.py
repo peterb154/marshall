@@ -62,6 +62,24 @@ sys.path.insert(0, str(ROOT / "src"))
 from marshall import config as _config       # noqa: F401  (imported for .env)
 
 ISSUES = ROOT / "docs" / "ISSUES.md"
+
+# ...AND THE CLOSED ONES, which live in their own file since #201.
+#
+# `ISSUES.md` was 12,241 lines and 59% of it was settled work, so the file
+# somebody opens to find out what is still wrong was mostly what is not. The
+# split is about which file a person reads; BOTH are still compared against
+# GitHub here, because an archived issue that quietly disagrees with its own
+# record is exactly the drift this tool exists to catch.
+ARCHIVE = ROOT / "docs" / "ISSUES-CLOSED.md"
+
+
+def _both() -> str:
+    """Every issue we hold, live and closed, as one document."""
+    text = ISSUES.read_text(encoding="utf-8")
+    if ARCHIVE.exists():
+        text += "\n" + ARCHIVE.read_text(encoding="utf-8")
+    return text
+
 CARD = ROOT / "docs" / "TEST_PLAN.md"
 
 HEAD = re.compile(r"^## \[([A-Z]+-\d+)\]\s+(.*?)(?:\s+—\s+#(\d+))?\s*$", re.M)
@@ -108,41 +126,54 @@ ROW = re.compile(r"^\|\s*(~~)?\**([A-Z]\d+[a-z]?)\**~?~?\s*\|.*?\[(R)?#(\d+)\]",
 DONE = {"VALIDATED", "CLOSED", "DONE", "FIXED", "SHIPPED"}
 
 
+# A `--limit` IS A SILENT TRUNCATION, and it took the oldest issue first.
+#
+# Every query below asked `gh` for 200 issues and the tracker reached 201, so
+# it returned the 200 NEWEST and #1 -- [FP-1], the first issue this project
+# ever had -- came back as "not on GitHub". Nothing was wrong with the entry.
+# The report named a real-sounding fault in the wrong place, which is worse
+# than a crash, because it sends you to read an issue that is perfectly fine.
+#
+# The fix is not a bigger number; that is the same bug with a later date. A
+# result that is EXACTLY the limit may have been cut, and a check that cannot
+# tell "all of them" from "the first N" must not guess.
+LIMIT = 1000
+
+
+def gh_list(*args: str) -> list[dict] | None:
+    """`gh issue list`, refusing a result that may have been truncated."""
+    gh = shutil.which("gh") or str(Path.home() / ".local" / "bin" / "gh")
+    out = subprocess.run([gh, "issue", "list", "--limit", str(LIMIT), *args],
+                         capture_output=True, text=True)
+    if out.returncode != 0:
+        return None
+    rows = json.loads(out.stdout or "[]")
+    if len(rows) >= LIMIT:
+        raise SystemExit(
+            f"gh returned {len(rows)} issues -- the whole limit, so the list "
+            f"may be cut and every check here would be wrong about the OLDEST "
+            f"issues. Raise LIMIT in tools/issue_sync.py.")
+    return rows
+
+
 def gh_titles() -> dict[int, str]:
     """Every issue's title on GitHub, so an orphan can be named rather than
     merely counted."""
-    gh = shutil.which("gh") or str(Path.home() / ".local" / "bin" / "gh")
-    out = subprocess.run(
-        [gh, "issue", "list", "--state", "all", "--limit", "200",
-         "--json", "number,title"], capture_output=True, text=True)
-    if out.returncode != 0:
-        return {}
-    return {i["number"]: i.get("title") or ""
-            for i in json.loads(out.stdout or "[]")}
+    rows = gh_list("--state", "all", "--json", "number,title")
+    return {i["number"]: i.get("title") or "" for i in rows or []}
 
 
 def gh_labels() -> dict[int, set]:
     """Every issue's labels on GitHub, open and closed."""
-    gh = shutil.which("gh") or str(Path.home() / ".local" / "bin" / "gh")
-    out = subprocess.run(
-        [gh, "issue", "list", "--state", "all", "--limit", "200",
-         "--json", "number,labels"], capture_output=True, text=True)
-    if out.returncode != 0:
-        return {}
+    rows = gh_list("--state", "all", "--json", "number,labels")
     return {i["number"]: {x["name"] for x in i.get("labels", [])}
-            for i in json.loads(out.stdout or "[]")}
+            for i in rows or []}
 
 
 def gh_flight_test() -> dict[int, list[str]]:
     """Open issues a human is the only instrument for."""
-    gh = shutil.which("gh") or str(Path.home() / ".local" / "bin" / "gh")
-    out = subprocess.run(
-        [gh, "issue", "list", "--state", "open", "--limit", "200",
-         "--json", "number,labels"], capture_output=True, text=True)
-    if out.returncode != 0:
-        return {}
     got = {}
-    for i in json.loads(out.stdout or "[]"):
+    for i in gh_list("--state", "open", "--json", "number,labels") or []:
         labs = [l["name"] for l in i.get("labels", [])]
         if "needs-flight-test" in labs:
             got[i["number"]] = labs
@@ -156,21 +187,15 @@ def gh_bodies() -> dict[int, str]:
     is the kind of cost that gets a check quietly dropped from the gate. The
     list endpoint returns bodies just as happily.
     """
-    gh = shutil.which("gh") or str(Path.home() / ".local" / "bin" / "gh")
-    out = subprocess.run(
-        [gh, "issue", "list", "--state", "all", "--limit", "300",
-         "--json", "number,body"], capture_output=True, text=True)
-    if out.returncode != 0:
-        return {}
-    return {i["number"]: (i.get("body") or "")
-            for i in json.loads(out.stdout or "[]")}
+    rows = gh_list("--state", "all", "--json", "number,body")
+    return {i["number"]: (i.get("body") or "") for i in rows or []}
 
 
 def gh_states() -> dict[int, str] | None:
     """GitHub's state per issue, or None when GitHub cannot be reached."""
     gh = shutil.which("gh") or str(Path.home() / ".local" / "bin" / "gh")
     out = subprocess.run(
-        [gh, "issue", "list", "--state", "all", "--limit", "200",
+        [gh, "issue", "list", "--state", "all", "--limit", str(LIMIT),
          "--json", "number,state"], capture_output=True, text=True)
     if out.returncode != 0:
         # EXIT 2 -- "could not run", not "they disagree". `tools/check.py` reads
@@ -190,7 +215,13 @@ def gh_states() -> dict[int, str] | None:
         print(f"cannot reach GitHub, so ISSUES.md and the card were NOT "
               f"compared: {why.splitlines()[0]}", file=sys.stderr)
         return None
-    return {i["number"]: i["state"] for i in json.loads(out.stdout or "[]")}
+    rows = json.loads(out.stdout or "[]")
+    if len(rows) >= LIMIT:
+        # Not a SKIP. A truncated list is a WRONG answer, and this one decides
+        # every other check in the file.
+        raise SystemExit(
+            f"gh returned {len(rows)} issues -- the whole limit. Raise LIMIT.")
+    return {i["number"]: i["state"] for i in rows}
 
 
 def entries(text: str) -> list[dict]:
@@ -215,7 +246,7 @@ def main() -> int:
                     help="write GitHub's closed state back into ISSUES.md")
     args = ap.parse_args()
 
-    text = ISSUES.read_text(encoding="utf-8")
+    text = _both()
     card = CARD.read_text(encoding="utf-8")
     state = gh_states()
     if state is None:
@@ -224,6 +255,27 @@ def main() -> int:
     have_labels = gh_labels()
     titles = gh_titles()
     items = entries(text)
+    # WHICH OF THE TWO FILES AN ISSUE SITS IN IS ITSELF A CLAIM (#201).
+    #
+    # `ISSUES-CLOSED.md` opens by saying "Every issue here is CLOSED on GitHub"
+    # and "an issue moves when it closes", and the split shipped with nothing
+    # enforcing either -- the same fault it was cleaning up after, one file
+    # over. The live file's entire purpose is that opening it shows what is
+    # still wrong; one closed entry left behind is the 59% growing back, and
+    # an OPEN issue buried in the archive is worse, because it is invisible.
+    archived = {int(e["num"]) for e in entries(
+        ARCHIVE.read_text(encoding="utf-8") if ARCHIVE.exists() else "")
+        if e["num"]}
+    misfiled = []
+    for e in items:
+        if not e["num"]:
+            continue
+        n = int(e["num"])
+        here = n in archived
+        if state.get(n) == "CLOSED" and not here:
+            misfiled.append((e["slug"], n, "closed -- belongs in ISSUES-CLOSED.md"))
+        elif state.get(n) == "OPEN" and here:
+            misfiled.append((e["slug"], n, "OPEN -- belongs in ISSUES.md"))
     declared_labels = {}
     # AN ENTRY WITH NO `labels:` LINE AT ALL, which is worth its own report
     # because of what it does to anybody EDITING this file.
@@ -428,6 +480,12 @@ def main() -> int:
         print("NOT FILED (run tools/file_issues.py)")
         for s in unfiled:
             print(f"  {s}")
+    if misfiled:
+        print("IN THE WRONG FILE")
+        for slug, n, why in misfiled:
+            print(f"  {slug:10} #{n}  {why}")
+        print("  Move the entry whole -- heading through its `---` -- and change")
+        print("  nothing else. The archive is not summarised or trimmed.")
     if drift:
         print("OUT OF STEP")
         for e, n, why in drift:
@@ -492,21 +550,30 @@ def main() -> int:
         print("  chosen by hand and is what anybody says out loud. Renumber the")
         print("  LATER one -- first use keeps the name.")
     if not (drift or unfiled or stale_rows or unflown or dup_slugs or body_drift
-            or dup_rows):
+            or dup_rows or misfiled):
         print("in step: statuses match, everything filed, every row still earns "
               "its place, and no two issues share a name")
         return 0
 
     if args.fix and drift:
         # Only ever closed-on-GitHub -> CLOSED, and only the status word.
-        for e, n, _why in sorted(drift, key=lambda d: -(d[0]["status_at"] or (0, 0))[0]):
-            if n is None or state.get(n) != "CLOSED" or not e["status_at"]:
-                continue
+        #
+        # RE-PARSED FROM `ISSUES.md` ALONE, because `text` is both files since
+        # #201 and writing it back would append the entire archive to the live
+        # file. The spans above index the CONCATENATION; the only safe thing to
+        # edit with them is the concatenation, so this asks the live file for
+        # its own.
+        want = {n for e, n, _ in drift
+                if n is not None and state.get(n) == "CLOSED" and e["status_at"]}
+        live = ISSUES.read_text(encoding="utf-8")
+        mine = [e for e in entries(live)
+                if e["num"] and int(e["num"]) in want and e["status_at"]]
+        for e in sorted(mine, key=lambda e: -e["status_at"][0]):
             a, b = e["status_at"]
-            text = text[:a] + "CLOSED" + text[b:]
-        ISSUES.write_text(text, encoding="utf-8")
-        print(f"\nwrote {sum(1 for e, n, _ in drift if n and state.get(n) == 'CLOSED')} "
-              f"status lines back into docs/ISSUES.md")
+            live = live[:a] + "CLOSED" + live[b:]
+        text = live
+        ISSUES.write_text(live, encoding="utf-8")
+        print(f"\nwrote {len(mine)} status lines back into docs/ISSUES.md")
         return 0
     return 1
 

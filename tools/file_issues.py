@@ -66,6 +66,24 @@ from marshall import config as _config       # noqa: F401  (imported for .env)
 
 ISSUES = ROOT / "docs" / "ISSUES.md"
 
+# ...AND THE CLOSED ONES, which live in their own file since #201.
+#
+# `ISSUES.md` was 12,241 lines and 59% of it was settled work, so the file
+# somebody opens to find out what is still wrong was mostly what is not. The
+# split is about which file a person reads; BOTH are still compared against
+# GitHub here, because an archived issue that quietly disagrees with its own
+# record is exactly the drift this tool exists to catch.
+ARCHIVE = ROOT / "docs" / "ISSUES-CLOSED.md"
+
+
+def _both() -> str:
+    """Every issue we hold, live and closed, as one document."""
+    text = ISSUES.read_text(encoding="utf-8")
+    if ARCHIVE.exists():
+        text += "\n" + ARCHIVE.read_text(encoding="utf-8")
+    return text
+
+
 # "## [SLUG] Title" with an optional "— #12" already appended.
 HEAD = re.compile(r"^## \[([A-Z]+-\d+)\]\s+(.*?)(?:\s+—\s+#(\d+))?\s*$")
 
@@ -117,14 +135,28 @@ def ensure_labels(gh: str, labels: set[str]) -> None:
         subprocess.run([gh, "label", "create", name], capture_output=True)
 
 
+LIMIT = 1000
+
+
 def known_numbers(gh: str) -> set[int]:
     """Every issue number GitHub actually holds, open or closed."""
-    r = subprocess.run([gh, "issue", "list", "--state", "all", "--limit", "500",
+    # LIMIT, not 500. The sibling check asked for 200, the tracker reached 201,
+    # and the OLDEST issue came back as "not on GitHub" -- a real-sounding
+    # fault reported against an entry that was perfectly fine (#201). This one
+    # decides which numbers are already taken, so a truncated list here would
+    # hand a live issue's number to a new entry.
+    r = subprocess.run([gh, "issue", "list", "--state", "all",
+                        "--limit", str(LIMIT),
                         "--json", "number", "-q", ".[].number"],
                        capture_output=True, text=True)
     if r.returncode != 0:
         raise SystemExit(f"could not read the issue list: {r.stderr.strip()}")
-    return {int(n) for n in r.stdout.split()}
+    got = {int(n) for n in r.stdout.split()}
+    if len(got) >= LIMIT:
+        raise SystemExit(
+            f"gh returned {len(got)} issues -- the whole limit, so the numbers "
+            f"already taken cannot be known. Raise LIMIT.")
+    return got
 
 
 def main() -> int:
@@ -139,7 +171,7 @@ def main() -> int:
               "if you have one", file=sys.stderr)
 
     gh = gh_path()
-    text = ISSUES.read_text(encoding="utf-8")
+    text = _both()
     issues = parse(text)
 
     # ASK GITHUB WHAT IT HAS. An entry is filed when GitHub holds that number,
@@ -175,7 +207,22 @@ def main() -> int:
 
     ensure_labels(gh, {l for i in todo for l in i["labels"]})
 
-    lines = text.splitlines()
+    # WRITTEN BACK INTO `ISSUES.md` ALONE, not into `text`.
+    #
+    # `text` is BOTH files since #201, and writing it back appends the whole
+    # 129-entry archive to the live file -- which is exactly what happened on
+    # the run that filed this issue, silently, because the result is still a
+    # perfectly well-formed document. A new issue can only ever be in the live
+    # file (an archived one already has a number), and the live file is the
+    # PREFIX of the concatenation, so the line indices carry over. That is an
+    # assumption, so it is asserted rather than relied on.
+    lines = ISSUES.read_text(encoding="utf-8").splitlines()
+    for i in todo:
+        want = f"## [{i['slug']}] {i['title']}"
+        if i["line"] >= len(lines) or lines[i["line"]].rstrip() != want:
+            print(f"  !! [{i['slug']}] is not where the parse said; nothing "
+                  f"written", file=sys.stderr)
+            return 1
     for i in todo:
         cmd = [gh, "issue", "create", "--title", f"[{i['slug']}] {i['title']}",
                "--body", i["body"]]
