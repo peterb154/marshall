@@ -63,7 +63,10 @@ _FIELDS = ("sortie_phase", "on_visual", "approaches_flown", "atis_letter",
            # carrying only the key can either read a database row aloud or say
            # nothing, and it said nothing.
            "flight_plan_label",
-           "origin", "route", "cruise_ft", "clearance_ack")
+           # NO `cruise_ft`. A plan has a level per leg and no cruise; #192
+           # dropped the column. The level he is HELD to is `assigned_ft`,
+           # written when the clearance is issued.
+           "origin", "route", "clearance_ack")
 
 
 def _row(r, cols) -> dict:

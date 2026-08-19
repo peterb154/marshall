@@ -72,8 +72,8 @@ class TestTheStripCarriesTheClearance(unittest.TestCase):
         """A read-back is what makes a clearance agreed, and `clearance_ack`
         exists to record the difference. A controller who assumes agreement has
         an aeroplane flying a route nobody confirmed."""
-        self.assertIn("read back", flight_strip(CLEARED))
-        self.assertIn("NOT read back",
+        self.assertIn("READ BACK: yes", flight_strip(CLEARED))
+        self.assertIn("READ BACK: NO",
                       flight_strip({**CLEARED, "clearance_ack": None}))
 
     def test_a_flight_with_no_plan_reads_as_it_always_did(self):

@@ -150,8 +150,8 @@ def flight_strip(f: dict) -> str:
         # and the difference is exactly what `clearance_ack` was added to
         # record. A controller who assumes agreement has an aeroplane flying a
         # route nobody confirmed.
-        plan.append("clearance read back"
-                    if f.get("clearance_ack") else "clearance NOT read back")
+        plan.append("READ BACK: yes" if f.get("clearance_ack")
+                    else "READ BACK: NO")
         bits.append(", ".join(plan))
     elif f.get("intent") or f.get("destination"):
         bits.append(f"{f.get('intent') or 'inbound'} "

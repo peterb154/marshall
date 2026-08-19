@@ -2255,7 +2255,7 @@ def _cleared_plan_now(known: str) -> dict:
             continue
         if not row.get("squawk"):
             return {}
-        return {"cruise_ft": row.get("cruise_ft"),
+        return {"assigned_ft": row.get("assigned_ft"),
                 "squawk": row.get("squawk") or "",
                 # WHETHER HE HAS ALREADY AGREED IT. #105 made FILED, ISSUED and
                 # ACKNOWLEDGED three real states and this read the row without
@@ -2453,7 +2453,7 @@ def _read_back_correct(bridge, known: str,
         return None, [], {}
     d = _decision.Decision(
         kind="clearance", to=known,
-        altitude_ft=plan.get("cruise_ft") or None,
+        altitude_ft=plan.get("assigned_ft") or None,
         frequency_mhz=plan.get("departure_mhz") or None,
         squawk=plan.get("squawk") or "")
     if not _decision.accepted_forms(d):
@@ -2538,7 +2538,7 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
         # silently empty. A misheard word must not cost a man his clearance.
         if known:
             _plan = _cleared_plan_now(known)
-            _cl = _plan.get("cruise_ft")
+            _cl = _plan.get("assigned_ft")
             if _cl:
                 ctl.note_cleared_level(known, int(_cl))
             # ...AND WHETHER HE HAS AGREED IT, which is the same fact-from-the-
@@ -7468,9 +7468,9 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # read-back. A clearance and its read-back are never the same turn, so
         # caching it as the board hands it over is enough and costs no extra
         # read. See `_read_back_correct`.
-        if known and (_flight.get("cruise_ft") or _flight.get("squawk")):
+        if known and (_flight.get("assigned_ft") or _flight.get("squawk")):
             bridge.cleared_plan[known.lower()] = {
-                "cruise_ft": _flight.get("cruise_ft"),
+                "assigned_ft": _flight.get("assigned_ft"),
                 "squawk": _flight.get("squawk") or "",
                 "departure_mhz": getattr(
                     _theatre.station_for("departure",

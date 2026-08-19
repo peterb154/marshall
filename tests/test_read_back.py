@@ -38,7 +38,11 @@ class Bridge:
 
 def plan(**over) -> dict:
     """The clearance actually issued at Kobuleti on 12 August."""
-    return {"cruise_ft": 10000, "squawk": "3350", "departure_mhz": 123.3,
+    # `assigned_ft` -- the level the ENGINE ISSUED and the only one he is held
+    # to. This said `cruise_ft`, which was `max(alt_ft)` stored under a name no
+    # plan has; #192 removed it, and the clearance now records what it cleared
+    # him to maintain.
+    return {"assigned_ft": 10000, "squawk": "3350", "departure_mhz": 123.3,
             "acknowledged": False, "sortie_phase": "clearance", **over}
 
 

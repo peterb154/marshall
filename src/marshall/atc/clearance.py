@@ -588,6 +588,24 @@ def clearance_tools(mission: str = "default", station: str = "") -> list:
         words = P.clearance(plan, flight_id=f["id"],
                             departure_freq=departure_freq(here),
                             initial_ft=_initial)
+        # THE LEVEL HE IS NOW HELD TO, written down at the moment it is issued.
+        #
+        # A clearance IS an altitude assignment -- "maintain five thousand" --
+        # and nothing recorded it. `cruise_ft` was standing in, which is the
+        # highest level his ROUTE reaches and not the one he may fly now, and
+        # #192 removed it. `assigned_ft` is the level the engine issued and the
+        # only one separation reads, so this is where it starts. [#192]
+        # THROUGH `board.agree`, which is the store's own words for this:
+        # "Record something that was AGREED. The only way state changes ...
+        # a clearance, a level, a place in the queue." Writing the UPDATE here
+        # would have been one more raw statement in a domain module, and the
+        # architecture check said so before this comment did.
+        if _initial:
+            try:
+                from marshall.atc import board as _F
+                _F.agree(f["id"], assigned_ft=int(_initial))
+            except Exception as _e:
+                log.warning("could not record the cleared level: %s", _e)
         why = ", ".join(hit.get("why") or []) or "the one on file"
         return (f"SAY THIS, verbatim and complete, after his callsign: {words}\n"
                 f"(matched on {why}; plan {got.get('label') or plan.get('name')}. "
