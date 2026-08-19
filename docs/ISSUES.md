@@ -12009,3 +12009,77 @@ frequency read-backs, and the baseline moved in the same commit.
 3. The ghost corpus does not regress past 22.
 
 ---
+
+## [SEP-24] The engine threw on every arrival turn, and the failure was a log line — #197
+labels: bug, architecture, needs-flight-test
+
+**Status:** FIXED 19 August, NEEDS A PILOT — card row H29. Guarded by `tests/test_no_procedure_is_not_a_beacon.py`, which drives real intents through `dispatch` for an aeroplane the engine cannot place and asserts the whole turn survives. **Only a pilot can score criteria 1 and 3**: an engine that is not running sounds exactly like one that is — the model answers pleasantly either way, which is how this survived a full sortie.
+
+    "why oh why would it be treated as a vector approach? first, I was assigned
+     the ILS ... there hsould be no default appaorch"
+
+There is no default — `Controller()` has carried `profile=None` since #162 —
+and that is exactly the case three separate places mishandled. **One absence,
+three faults, one sortie flown with the deterministic half switched off.**
+
+**1. The engine was not running.** `asr.guide(fix, None)` reads
+`profile.final_crs_true`. `separation_context` catches everything, because a
+classifier failure must cost a label and never a transmission — so the
+exception was total and silent:
+
+    !! controller classify failed: 'NoneType' object has no attribute
+       'final_crs_true'                                    ... eleven times
+
+No directive, no engine line, no approach issued, and a model answering alone
+with nothing to voice. **The engine was not wrong about the arrival; it was not
+running.**
+
+**2. Unknown was inverted into a beacon.**
+
+    beacon_flown = not may_vector(procedure_for(callsign))
+
+`may_vector` answers *"may this controller give headings?"*, for which "I do not
+know what he is flying" is correctly **no**. Inverting it turns an absence into
+a positive claim. Ten position reports refused with *"you have not reached the
+fix, continue inbound"* — to a departure, outbound, at nineteen miles. *"I'm
+not inbound at all."*
+
+**3. And "inbound" was assumed.** That instruction is only sound for an
+arrival; it is now only given to one.
+
+**4. `reachable` refused his position reports too**, on the reasoning that
+*"there is no station to pass"* — which we cannot know without a procedure. A
+controller with radar can always answer where a man is; it is the one thing he
+never needs a procedure for.
+
+**AND THE APPROACH CLEARANCE WAS NARRATED, WHICH IS WHY HE HAD NO PROCEDURE.**
+
+    01:51:34  PILOT  Sakai would request the ILS-13 approach.
+    01:51:48  ATC    Sockeye, cleared ILS runway one three approach ...
+
+No engine line between them. `unbacked_claims` — written for exactly this in
+#185 — watched *"cleared to"* and *"readback correct"* and not a single
+approach phrase. It does now.
+
+**The engine path itself is sound and always was**: the classifier returns
+`REQUEST_APPROACH` with `wants='ILS 13'`, `dispatch` reaches
+`request_approach`, and it issues. It never ran because fault 1 threw three
+lines earlier.
+
+**AND THE LOG COULD NOT SHOW IT.** #186 moved 22 exception paths onto module
+loggers and nothing anywhere calls `basicConfig`, so all of them fell to
+Python's `lastResort` handler — no timestamp, no level, no logger name, in a
+file that also carries the whole sortie transcript. A diagnostic nobody can
+pick out of the noise is the failure #186 was written about, relocated rather
+than fixed. Configured now, with `MARSHALL_LOG_LEVEL`.
+
+**Acceptance criteria**
+1. An aeroplane with no assigned approach produces no exception on any turn.
+2. His position reports are answered from radar, not refused.
+3. Asking for an approach by name gets one ISSUED — `assigned_plans.approach`
+   is written and the strip shows it.
+4. A spoken approach clearance with no record reaches the recorder as
+   `unbacked`.
+5. Nothing tells an outbound aeroplane to continue inbound.
+
+---

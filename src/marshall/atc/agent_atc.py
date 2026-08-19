@@ -2824,7 +2824,27 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
         # had not reached it, and on a bridge loaded with the letdown a Viper
         # claiming the ILS would be believed about a beacon he does not
         # have. [#150]
-        beacon_flown = not _may_vector(ctl.procedure_for(intent.callsign))
+        # A KNOWN BEACON PROCEDURE, not the absence of a known vectored one.
+        #
+        # This read `not may_vector(...)`, and `may_vector` answers "may this
+        # controller give headings?" -- for which "I do not know what he is
+        # flying" is correctly NO. Inverting that turns an absence into a
+        # positive claim that he is homing a beacon.
+        #
+        # 19 August: an F-16 with no procedure assigned reported his own
+        # steerpoints on the departure leg and was told TEN times that he had
+        # not reached the beacon and should continue inbound, while outbound at
+        # nineteen miles.
+        #
+        #     "why oh why would it be treated as a vector approach? first, I
+        #      was assigned the ILS ... there hsould be no default appaorch"
+        #
+        # There is no default -- `Controller()` carries `profile=None` since
+        # #162 -- and that is exactly the case this line mishandled. Unknown
+        # must stay unknown: an engine that cannot say what he is flying has no
+        # business contradicting him about where he is. [#197]
+        _his = ctl.procedure_for(intent.callsign)
+        beacon_flown = _his is not None and not _may_vector(_his)
         if (beacon_flown and intent.kind is intents.IntentKind.REPORT_BEACON
                 and nm is not None and nm > OVERHEAD_NM):
             print(f"  !! rejected: claims the beacon, radar shows {nm:.1f} nm",
@@ -2836,9 +2856,17 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
             # while it still matters. [#160]
             _rej = getattr(scope, "datum", None)
             _rfrm = f" {_rej.spoken}" if _rej else " out"
+            # ...AND "INBOUND" IS NOT ASSUMED. This ended "have him continue
+            # inbound" whatever he was doing, so a departure climbing away was
+            # told to continue inbound -- "I'm not inbound at all". The
+            # instruction is only sound for an arrival, so it is only given to
+            # one. [#197]
+            _way = "inbound" if getattr(scope, "inbound", None) else ""
+            _carry = (f"Correct him and have him continue {_way}; "
+                      if _way else "Correct him; ")
             return (f"POSITION REJECTED: he reports over the beacon but radar "
-                    f"shows him {nm:.0f} miles{_rfrm}. Correct him and have him "
-                    f"continue inbound; he has NOT reached the fix.", "")
+                    f"shows him {nm:.0f} miles{_rfrm}. {_carry}"
+                    f"he has NOT reached the fix.", "")
 
         # WHAT HE IS FLYING, before the engine decides anything about him.
         # In the real world a controller reads the equipment suffix off the IFR
@@ -2946,10 +2974,30 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
             # a judgement about geometry that is entirely a property of the
             # approach he was cleared for, asked here of the bridge's. [#150]
             _pro = ctl.procedure_for(intent.callsign)
+            # ...AND ONLY IF HE HAS ONE. `asr.guide` reads
+            # `profile.final_crs_true` -- there is no final approach course
+            # for an aeroplane nobody has cleared for an approach, and asking
+            # raised `AttributeError` on None.
+            #
+            # 19 August, ELEVEN TIMES IN ONE SORTIE:
+            #
+            #     !! controller classify failed: 'NoneType' object has no
+            #        attribute 'final_crs_true'
+            #
+            # `separation_context` catches everything -- a classifier failure
+            # must cost a label and never a transmission -- so the whole
+            # deterministic half of the turn was thrown away and the model
+            # answered alone. That is why an approach clearance was spoken
+            # that nothing issued, and why no engine line appears anywhere in
+            # the arrival. The engine was not wrong; it was not running.
+            #
+            # The guard is the same sentence as #197's other half: an engine
+            # that does not know what he is flying must not answer questions
+            # about the approach he is flying. [#197]
             g = _asr.guide(fix, _pro,
                            on_missed=flying_the_missed(bridge, intent.callsign,
-                                                       fix, ctl))
-            if g.established and ctl.seen_on_final(intent.callsign):
+                                                       fix, ctl)) if _pro is not None else None
+            if g is not None and g.established and ctl.seen_on_final(intent.callsign):
                 print(f"  .. {intent.callsign} is already on final per radar; "
                       "not stacking him", flush=True)
 
@@ -7810,6 +7858,29 @@ def main(argv: list[str] | None = None) -> int:
     Returns an exit code and takes `argv`, so it is testable without a shell --
     which the `__main__` block never was.
     """
+    # LOGGING, CONFIGURED, and the missing half of #186.
+    #
+    # That issue moved 22 exception paths off `print` and onto module loggers,
+    # and stopped there -- nothing anywhere calls `basicConfig`, so every one
+    # of them fell to Python's `lastResort` handler: WARNING and above, to
+    # stderr, with no timestamp, no level and no logger name. Not lost, but
+    # unfindable in a file that also carries the whole sortie transcript.
+    #
+    # It cost a sortie four hours later. `separation_context` caught an
+    # `AttributeError` on every arrival turn and logged it, and the line in the
+    # log was:
+    #
+    #     !! controller classify failed: 'NoneType' object has no attribute
+    #        'final_crs_true'
+    #
+    # eleven times, indistinguishable from ordinary chatter, while the entire
+    # deterministic half of the turn was being thrown away. A diagnostic
+    # nobody can pick out of the noise is the failure #186 was written about,
+    # relocated rather than fixed. [#197, #186]
+    logging.basicConfig(
+        level=os.environ.get("MARSHALL_LOG_LEVEL", "INFO").upper(),
+        format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
+        datefmt="%H:%M:%S")
     argv = list(sys.argv if argv is None else argv)
     if len(argv) <= 1 or argv[1] != "--srs":
         print("usage: marshall-atc --srs <host> <freq_mhz> [voice] [session] "

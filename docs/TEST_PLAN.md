@@ -110,7 +110,7 @@ cannot name a retired one again without the parser saying so out loud.
 
 ```rows
 R1..R4 N1 N2 M1 G3 G4 G7 G8 G10 G11 G12 G13 G14 G15 G16 G17 Q1 Q14 Q15 Q16 Q17 Q18 V9 V7 P1..P4
-V6 V3 H4 H5 H6 H7 H8 H9 H10 H11 V8 V5 F1..F5b V10 K1..K4
+V6 V3 H4 H5 H6 H7 H8 H9 H10 H11 H29 V8 V5 F1..F5b V10 K1..K4
 ```
 ### FLIGHT 2 — the VFR arrival
 > Nothing filed. Do not call Clearance at all; come into the airspace and talk
@@ -561,6 +561,7 @@ name in one sortie.
 | H18 | P1 | **Cleared for the approach, ask for it again.** Once you have the approach clearance, request it a second time — "Sockeye, request the approach" | *"You are cleared"*, in some form. **Never "number two"** — behind whom? There is nobody else up. On Fred's 31 July sortie this told the only aeroplane in the sky he was second behind himself, four transmissions running at 44 nm, and he declared an emergency to break the loop. From the cockpit it is indistinguishable from being forgotten | [R#50] |
 | H19 | P1 | Then **change frequency and check in again** while still cleared | Still cleared. The root cause of H18 was a check-in resetting a CLEARED aircraft to en-route on *every* frequency change — so the ladder, which changes frequency seven times, was the thing most likely to trigger it | [R#50] |
 | H11 | P2 | With Shooter, or by asking for the approach while somebody else is on it: **get yourself held** | *"hold at five thousand, right turns, one eight zero outbound one minute, then three six zero inbound one minute"* — a shape and a clock you can actually fly with no navaid. Not "hold at BATUMI as published" | hold |
+| **H29** | **Airborne with no approach assigned**, report your own steerpoints and ask for a position report | He answers from radar — *"one eight miles from Kobuleti, on the zero four two radial"* — and never tells you that you have not reached a beacon, or to continue **inbound** while you are climbing out. On 19 August that produced ten refusals and, underneath them, `asr.guide` raising on a `None` procedure ELEVEN times: the whole deterministic half of every arrival turn was thrown away and only the log knew. Then ask for the ILS by name: it must be ISSUED — check `/diag` shows `cleared approach` filled, not just spoken | [#197] | **P1** |
 | H13 | P2 | Fly the approach **fast** — 400 kt or more — and watch the turn from base onto final | He may overshoot: **known open**, criterion 2. The sweep at 450 kt says 181 dithering events and a 5.1 nm turn radius against a 3 nm base leg — so expect **left/right reversals**, not a clean overshoot. Report how far through you go | [R#39] |
 | H10 | P1 | Arrive high — **5,000 ft or above, 30 nm out** — and ask for the approach. Note where he starts you down | He keeps you high, then sends you down **once**, timed so you reach 2,000 arriving at the initial fix. Not levelled at 2,000 ten miles early | [#37] descent |
 | H9 | P1 | Once established, listen to the **altitude** part of each mile call | *"four miles, on course, **descend to** one thousand three hundred"* — an instruction for the NEXT mile, arriving in time to fly it. Not "altitude should be", which tells you where you already ought to be | anticipatory |

@@ -253,6 +253,22 @@ _CLAIMS = (
     ("readback correct", "acknowledged"),
     ("read back correct", "acknowledged"),
     ("readback is correct", "acknowledged"),
+    # THE APPROACH CLEARANCE, and leaving it out is what let #185 happen again
+    # one rung further on. 19 August:
+    #
+    #     01:51:34  PILOT  Sakai would request the ILS-13 approach.
+    #     01:51:48  ATC    Sockeye, cleared ILS runway one three approach ...
+    #
+    # No engine line between them. The model spoke it, nothing issued it,
+    # `assigned_plans.approach` stayed NULL -- and every rung after believed
+    # he was on an approach nobody had put him on. The check I wrote for the
+    # IFR clearance watched two phrases and this was not one of them. [#197]
+    ("cleared ils", "approach"),
+    ("cleared for the ils", "approach"),
+    ("cleared asr", "approach"),
+    ("cleared for the asr", "approach"),
+    ("cleared for the approach", "approach"),
+    ("cleared approach", "approach"),
 )
 
 
@@ -311,6 +327,8 @@ def unbacked_claims(mission: str, callsign: str, said: str) -> list[str]:
         bad.append("said CLEARED TO with no clearance issued")
     if "acknowledged" in wanted and not (got or {}).get("acked_at"):
         bad.append("said READBACK CORRECT with nothing acknowledged")
+    if "approach" in wanted and not (got or {}).get("approach"):
+        bad.append("cleared him for an APPROACH that is not recorded")
     return bad
 
 

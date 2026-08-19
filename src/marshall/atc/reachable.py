@@ -85,6 +85,20 @@ def has_station_passage(profile) -> bool:
     backing him up -- and a non-radar controller working anything at all cannot
     do without it.
     """
+    # UNKNOWN IS NOT "NO". An aeroplane nobody has cleared for an approach has
+    # no procedure, and this answered False for him -- so his position reports
+    # were declared unreachable and the engine stood down, on the reasoning
+    # that "there is no station to pass and the scope has his position".
+    #
+    # The second half is true and the first is an invention: we do not know
+    # what he is flying, so we cannot say there is no station. He is left with
+    # the model answering alone, which on 19 August is exactly what happened --
+    # ten position reports, no engine line behind any of them.
+    #
+    # A controller with radar can always answer where a man is. That is the
+    # one thing he never needs a procedure for. [#197]
+    if profile is None:
+        return True
     if (getattr(profile, "kind", "") or "").lower() == "ndb":
         return True
     atc = getattr(profile, "atc", None)
@@ -124,6 +138,6 @@ def why_not(kind, profile, *, on_ground: bool | None = None) -> str:
         return f"{kind.value} is not something he can do airborne"
     if kind is K.REPORT_BEACON:
         return (f"{kind.value} has no meaning on a "
-                f"{getattr(profile, 'kind', '?')} approach with radar — "
+                f"{getattr(profile, 'kind', None) or 'radar'} approach — "
                 f"there is no station to pass and the scope has his position")
     return f"{kind.value} is not reachable here"
