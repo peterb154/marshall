@@ -298,8 +298,16 @@ file-ownership briefs anyway: a conflict you have to resolve is cheaper than a
 clobber you never see, but it is not free.
 
 ## Every commit names an issue
-Work is tracked in **`docs/ISSUES.md`** and mirrored to GitHub issues; the
-flight test card (`docs/TEST_PLAN.md`) cites the same numbers. So a commit ends
+Work is tracked in **`docs/ISSUES.md`** — the **live** issues — and mirrored to
+GitHub; the flight test card (`docs/TEST_PLAN.md`) cites the same numbers.
+Closed entries move to **`docs/ISSUES-CLOSED.md`** verbatim, and that file is
+where most of a month's work has started: read one for the *account* — what the
+symptom was, what the cause turned out to be, and which of the two the first fix
+addressed. Both files are parsed and both are checked against GitHub, so an
+archived issue still cannot drift. **Do not move an entry by hand** — the
+obvious slice to the next `---` overshoots an unterminated entry and eats the
+next issue, which is how #169 was deleted; run
+`uv run python tools/issue_sync.py --archive`. So a commit ends
 with a trailer saying which one it belongs to:
 
     Refs #11            touches it

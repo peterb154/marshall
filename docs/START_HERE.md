@@ -136,7 +136,8 @@ When two sources disagree, believe them in this order:
 | `STATE.md` | current diagnosis (+ target, fenced) | **where the truth lives, who owns it, when it dies** — read before adding anything that remembers |
 | `LAYERS.md` | current reference (+ future design, fenced) | what may depend on what |
 | `GOTCHAS.md` | current reference | traps that cost real time |
-| `ISSUES.md` | work record | the backlog, with acceptance criteria |
+| `ISSUES.md` | work record | the backlog — **live issues only**, with acceptance criteria |
+| `ISSUES-CLOSED.md` | work record | the same entries, verbatim, once they close. Read for the *account*: symptom, cause, and which of the two the first fix addressed |
 | `TEST_PLAN.md` | work record | the card a pilot flies |
 | `PHRASEOLOGY.md` | current reference | where the controller's words come from |
 | `PLANNER.md` | current reference | the flight planner, phase 1 built |
@@ -150,6 +151,18 @@ When two sources disagree, believe them in this order:
 
 `docs/ISSUES.md` is the **source**. GitHub is a **projection** of it, not a
 second document.
+
+**It holds the LIVE issues; the closed ones are `docs/ISSUES-CLOSED.md`.** They
+were one file until 19 August, by which point 129 of 198 entries were settled
+work — so the document you open to find out what is still wrong was mostly a
+record of what is not (#201). Nothing was summarised or trimmed in the move.
+
+The split is about which file a person opens and **nothing else**: both are
+parsed and both are compared against GitHub, so an archived issue still cannot
+drift, and `issue_sync` reports an entry sitting in the wrong file by name.
+An issue moves when it closes, and moving it is a command —
+`uv run python tools/issue_sync.py --archive` — because the obvious way to do
+it by hand is a string slice to the next `---`, which is what deleted #169.
 
 - It reads with no network and no token, the kneeboard renders it in the
   cockpit, and it is versioned alongside the commit that fixed each issue.
