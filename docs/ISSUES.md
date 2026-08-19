@@ -11933,3 +11933,79 @@ check-in. **21/21 on Haiku and Sonnet**, up from 16/17 and 15/17.
 4. The bench runs, and covers the new kind in both directions.
 
 ---
+
+## [ARCH-50] "Go ahead" is said to calls that have already been made — #195
+labels: bug, needs-flight-test
+
+**Status:** FIXED 18 August, NEEDS A PILOT — card row S16. The rule is in `rules.md` and names the phrase, what it is for, and the incident. **Only a pilot can score it**: "go ahead" is perfectly good phraseology in the wrong place, so nothing in a transcript looks wrong — you have to be the man who just spoke.
+
+    "I just gave Kobuleti Tower a read back, and he said, go ahead afterwards.
+     Don't know what that's all about."
+
+Heard three times now, from three different causes, and it is the same sentence
+to a pilot every time. The third, 18 August, on a garbled read-back the engine
+had already judged:
+
+    21:30:12  ENGINE  Sockeye, negative — say again one two three decimal
+                      three, seven four five seven.
+    21:30:15  ATC     Sockeye, Kobuleti Clearance, go ahead. Say again one two
+                      three decimal three, squawk seven four five seven.
+
+The recorder shows `REPAIRED say_again`, so the model's own words were
+*"Sockeye, Kobuleti Clearance, go ahead."* and the engine's correction was
+**appended** by `decision.repair`. The controller line was in front of it and it
+opened by inviting a call that had just been made.
+
+**We had never told it.** Unlike #179, "go ahead" appears in no prompt — the
+model reaches for it as stock phraseology when it has nothing else to open
+with. So there was no rule to break and none to find; the fault is an absence.
+
+**The rule now names the phrase and what it is for.** *"Go ahead" means I am
+listening, transmit* — it belongs only to a call with nothing in it. Said to a
+read-back, a report or a request, it tells a man who has just spoken to speak,
+and he cannot tell whether he was heard. **If a controller line is present, the
+answer is that line** — there is nothing left to invite.
+
+**Not a filter.** #179 settled that: the fix for a model saying the wrong thing
+is the sentence we did or did not write, and this one was missing.
+
+**Acceptance criteria**
+1. A read-back is answered, never invited.
+2. "Say again" is used when a transmission genuinely was not received, and
+   names what was missed.
+3. "Go ahead" still answers a bare call — "Kobuleti Clearance, Sockeye".
+
+---
+
+## [ARCH-51] A frequency read-back was extracted as an aeroplane — #196
+labels: bug
+
+**Status:** FIXED 18 August. `"decimal"` is a stop word; the ghost corpus went 25 wrong to 22 and the baseline moved in the same commit. Not `needs-flight-test`: the corpus is 33 real transmissions off the recorder and holds it better than a sortie would.
+
+    'Sockeye, one two one decimal eight'   ->  ["Decimal 8"]
+
+Reading a frequency back puts a spelled digit after the word "decimal", and
+`callsign.extract_all` built a callsign out of it — **dropping his own name to
+do it**. Heard on 18 August when the pilot read back the departure frequency;
+the reply was recorded as addressed to *"Decimal 3"*.
+
+**It cost nothing this time and that is luck.** The transmitter GUID is the
+anchor, so nothing was misrouted. What reads the extracted name is the
+callsign-correction path (#172), which tells a pilot the name he used belongs
+to nobody on the board — off a fragment of a frequency he was correctly
+reading back.
+
+`"decimal"` is a stop word now, beside the others that "turn up immediately
+before a number in ordinary radio speech" — the list that already exists for
+exactly this, and whose own comment says *"a false positive puts a ghost in the
+holding stack"*.
+
+**The ghost corpus improved: 25 wrong -> 22.** Three of its hard cases are
+frequency read-backs, and the baseline moved in the same commit.
+
+**Acceptance criteria**
+1. Reading a frequency back does not produce a callsign.
+2. A real callsign in the same transmission is still extracted.
+3. The ghost corpus does not regress past 22.
+
+---

@@ -118,7 +118,12 @@ CORPUS = [
 # deliberately concentrated on the failures -- 33 hand-picked transmissions out
 # of 846. Over the whole 846, most calls bind correctly. This number measures
 # the hard cases, which is what a regression check is for.
-BASELINE_WRONG = 25
+# 25 -> 22 on 18 August: "decimal" joined the stop words, so reading a
+# frequency back no longer mints an aeroplane out of the digit after it
+# ("Sockeye, one two one decimal eight" was extracting "Decimal 8", and
+# dropping his own name to do it). Three of this corpus's hard cases are
+# frequency read-backs. [#196]
+BASELINE_WRONG = 22
 
 
 def bind(transcript: str) -> str:

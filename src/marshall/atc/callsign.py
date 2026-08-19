@@ -146,6 +146,17 @@ _NOT_A_NAME = {
     "ground", "point", "at", "to", "and", "on", "of", "in", "for", "over",
     "number", "wind", "knots", "miles", "mile", "radial", "degrees", "time",
     "minutes", "seconds", "plus", "contact", "report", "cleared", "traffic",
+    # A FREQUENCY IS NOT AN AEROPLANE. Reading one back puts a spelled digit
+    # after the word "decimal", and the extractor built a callsign out of it:
+    #
+    #     "Sockeye, one two one decimal eight"   ->  ["Decimal 8"]
+    #
+    # His own name dropped, and a name nobody answers to in its place -- which
+    # is what the callsign-correction path (#172) fires on. Heard on 18 August
+    # when he read back the departure frequency: the reply was recorded as
+    # addressed to "Decimal 3". The GUID is the anchor so nothing was
+    # misrouted, and that is luck rather than design. [#196]
+    "decimal", "decimals",
     # Words that turn up immediately before a number in ordinary radio speech.
     # Without them the extractor invents an aeroplane out of a sentence: "I have
     # two aircraft" became "Have 2", and a garbled call bound a real radio to

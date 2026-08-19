@@ -144,7 +144,7 @@ T1..T4 V6 V8
 > machine will ever score them.
 
 ```rows
-S1..S15
+S1..S16
 ```
 ### UNSCHEDULED — live rows the running order has never placed
 > **Not a sortie, and not a recommendation.** These are rows that are live on
@@ -1065,6 +1065,7 @@ falsified from a transcript; this cannot, and I have no way to test it at all.
 | ~~S13~~ | **The landing clearance, on short final** | It arrives. On 10 August the engine issued *"cleared to land runway one three"* and the pilot heard **nothing** — the director returned a 500 and the reply was empty. Report any transmission that simply does not come | [#87] | **P1** |
 | **S14** | **When Whisper mangles your callsign** — it will, roughly one transmission in seven — listen to what comes back | ONE sentence, his, not two. He must not tell you he does not have you on the board while clearing you in the same breath: radar named you before you keyed the microphone. A genuinely WRONG callsign — call yourself something that is not yours — must still be corrected, and that is the other half to try | [#172] | **P1** |
 | **S15** | **Read back a take-off clearance** and listen to the answer | *"That's correct"* — or whatever he chooses — answering the READ-BACK. Never *"go ahead"*, which invites you to speak and means he has treated your read-back as an opening call. On 18 August the engine composed the right transmission and a regex deleted the clause it objected to, taking *"that's correct"* with it, so the fallback greeting went out instead. **This is the row a machine cannot score**: the transcript will look reasonable either way and only an ear can tell an answer from an invitation | [#179] | **P1** |
+| **S16** | **Anything you say that has content in it** — a read-back, a position, a request | He ANSWERS it. *"Go ahead"* means *I am listening, transmit*, and belongs only to a bare call with nothing in it (*"Kobuleti Clearance, Sockeye"*). Heard three times now from three different causes, most recently prefixed onto a correction the engine had already composed. Try a bare call too — that one SHOULD get *"go ahead"* | [#195] | **P1** |
 
 **Anything that sounds wrong is a line in a table**, not a code change — see
 `radio/tts.py`. Tell engineering the word and roughly what it sounded like.
