@@ -5008,3 +5008,77 @@ somewhere upstream must not be silently overruled by whoever is asked next.
 4. An aeroplane cleared for an approach is never offered to Center.
 
 ---
+
+## [TEST-7] The harness could not tell "wrong" from "never got there" — #202
+labels: chore
+
+**Status:** FIXED 19 August, in `4eadc8f`. *"You should also fly actual tests on
+the server yourself to validate the fixes."* First run of
+`tools/ladder_rehearsal.py` over real SRS, real Polly and real Whisper: 5 PASS,
+2 FAIL, 4 SKIP. **None of the four were the engine.**
+
+- **Q4/Q5 failed because Q3 SKIPPED.** The ladder is a sequence — the read-back
+  at Q3 agrees the clearance, and since #181 nothing taxis without one. A lost
+  number in the audio loop made Q4 ask for taxi, get correctly refused, and be
+  scored as a defect. **A harness that cannot tell "wrong" from "never got
+  there" is worse than none**, because that is the one thing it is for.
+  Unreachable rows now SKIP and name the row they waited on (`_NEEDS`).
+- **Q1a had skipped ALWAYS since #192**, because its guard asked for
+  `plan["cruise_ft"]` — which #192 deleted. After that commit the guard was
+  permanently true, so the row never ran. **A skip that cannot fail is a check
+  that has been switched off**, and it read exactly like a pass.
+- A read-back was matched without the callsign, so a transmission not for us
+  could score the row.
+- The recorder was read from offset 0, so a previous run's events counted.
+
+Final: **10 PASS, 1 SKIP**, and the skip is honest — a fixture that departed in
+words has not landed, and the engine is right to refuse it.
+
+**Its number was hand-written and is wrong.** `4eadc8f` and five comments in
+`ladder_rehearsal.py` say `#201`, guessed because 200 was the highest at the
+time. `tools/file_issues.py` then assigned #201 to something else entirely.
+That is the trap `ISSUES.md` already warns about in its own preamble — *never
+hand-write a number* — and it produces the worst kind of citation: one that
+resolves, to the wrong thing. The comments are corrected to this issue; the
+commit trailer is pushed and stays wrong, which is why this entry names it.
+
+**Acceptance criteria**
+1. A row whose prerequisite did not run SKIPs and names it, never FAILs.
+2. No row's guard can be permanently satisfied by a deleted field.
+3. A read-back only scores when it carries our callsign.
+
+---
+
+## [RAD-14] The identity alarm cried on every clean shutdown — #203
+labels: bug
+
+**Status:** FIXED 19 August. `radio/client.py` announced
+
+    !! SRS roster tracking stopped (stopped); radios will read as GUID stubs
+       and identity falls back to weaker evidence
+
+on nearly every line of a `stack_rehearsal` transcript. Nothing had gone
+wrong. `why` initialised to `"stopped"`, and the drain loop's own exit
+condition is `self._stop.is_set()` — so **every orderly close fell out of the
+loop with that value still in hand** and printed the warning. Each synthetic
+pilot opens a client, speaks, and closes it, so the alarm fired per pilot per
+turn.
+
+**It cost a real diagnosis.** A failing stack rehearsal read as *"identity fell
+back to weaker evidence"*, which is a plausible explanation for the sequencer
+losing an aeroplane, and it is not what happened.
+
+**One value meaning two things**, again — `""` is now "we asked it to stop" and
+a reason is only recorded when there is one. `clearance_agreed` (#181), `due`
+(#189), `may_vector` (#197) and this are the same sentence four times.
+
+**The test file already had three cases** — a closed connection, a real error,
+and a client that never started — and not the fourth, the orderly shutdown that
+happens every single time. That is why it shipped. `test_srs_roster.py` covers
+it now, deliberately (`_stop.set()` then drain), not on a timer.
+
+**Acceptance criteria**
+1. A clean `close()` prints nothing and leaves `roster_ended` empty.
+2. A dropped connection and a socket error still say so, with the reason.
+
+---

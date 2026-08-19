@@ -80,6 +80,24 @@ class TestItNeverStopsSILENTLY(unittest.TestCase):
         c = drain([ConnectionResetError("reset by peer")])
         self.assertIn("ConnectionResetError", c.roster_ended)
 
+    def test_asking_it_to_stop_is_NOT_a_fault(self):
+        """The gap that let the false alarm ship.
+
+        Three cases were covered -- a closed connection, a real error, and a
+        client that never started -- and the fourth, the ORDERLY shutdown that
+        happens every single time, was not. `why` initialised to "stopped" and
+        the loop's own exit condition left it there, so every clean close
+        announced that identity had degraded. It had not.
+        """
+        c = SRSClient("localhost", name="test")
+        c.tcp = FakeSocket([])
+        c._stop.set()                      # exactly what `close()` does
+        c._drain_tcp()
+        self.assertEqual(c.roster_ended, "",
+                         "a deliberate stop reported itself as a failure, so "
+                         "the warning fires on every rehearsal and stops "
+                         "meaning anything on a real one")
+
     def test_a_healthy_client_reports_nothing(self):
         c = SRSClient("localhost", name="test")
         self.assertEqual(c.roster_ended, "")

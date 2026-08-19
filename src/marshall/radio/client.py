@@ -190,7 +190,22 @@ class SRSClient:
         # keep the socket drained so it never wedges, and harvest GUID -> Name so
         # a voice packet's origin GUID can be resolved to "Sockeye".
         buf = b""
-        why = "stopped"
+        # "" IS "WE ASKED IT TO STOP", not "no reason recorded".
+        #
+        # This initialised to "stopped", and the loop's own exit condition is
+        # `self._stop.is_set()` -- so every ORDERLY close fell out of the loop
+        # with that value still in hand and printed the identity-degradation
+        # warning below. Each synthetic pilot in a rehearsal opens a client,
+        # speaks, and closes it, so the transcript carried the alarm on nearly
+        # every line and it cost a real diagnosis: a failing `stack_rehearsal`
+        # read as "identity fell back to weaker evidence" when nothing of the
+        # sort had happened.
+        #
+        # One value meaning both "I have no reason" and "the reason is that we
+        # stopped it" is the same fault as `clearance_agreed` (#181), `due`
+        # (#189) and `may_vector` (#197). A warning that cries on a clean
+        # shutdown is a warning nobody reads on a real one.
+        why = ""
         try:
             while not self._stop.is_set():
                 try:
@@ -225,9 +240,10 @@ class SRSClient:
         # keeps working with worse evidence, which is the failure mode nobody
         # catches. If it ends, say so where somebody will see it.
         self.roster_ended = why
-        print(f"  !! SRS roster tracking stopped ({why}); radios will read as "
-              f"GUID stubs and identity falls back to weaker evidence",
-              flush=True)
+        if why:
+            print(f"  !! SRS roster tracking stopped ({why}); radios will read "
+                  f"as GUID stubs and identity falls back to weaker evidence",
+                  flush=True)
 
     def _harvest_roster(self, line: bytes) -> None:
         """Pull {GUID: Name} out of any client records in one TCP message.
