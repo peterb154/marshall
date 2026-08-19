@@ -7302,3 +7302,37 @@ same shape — a value used somewhere it had quietly stopped being right for:
 5. A `gh` list that comes back exactly full is refused, not used.
 
 ---
+
+## [RAD-14] The identity alarm cried on every clean shutdown — #203
+labels: bug
+
+**Status:** FIXED 19 August. `radio/client.py` announced
+
+    !! SRS roster tracking stopped (stopped); radios will read as GUID stubs
+       and identity falls back to weaker evidence
+
+on nearly every line of a `stack_rehearsal` transcript. Nothing had gone
+wrong. `why` initialised to `"stopped"`, and the drain loop's own exit
+condition is `self._stop.is_set()` — so **every orderly close fell out of the
+loop with that value still in hand** and printed the warning. Each synthetic
+pilot opens a client, speaks, and closes it, so the alarm fired per pilot per
+turn.
+
+**It cost a real diagnosis.** A failing stack rehearsal read as *"identity fell
+back to weaker evidence"*, which is a plausible explanation for the sequencer
+losing an aeroplane, and it is not what happened.
+
+**One value meaning two things**, again — `""` is now "we asked it to stop" and
+a reason is only recorded when there is one. `clearance_agreed` (#181), `due`
+(#189), `may_vector` (#197) and this are the same sentence four times.
+
+**The test file already had three cases** — a closed connection, a real error,
+and a client that never started — and not the fourth, the orderly shutdown that
+happens every single time. That is why it shipped. `test_srs_roster.py` covers
+it now, deliberately (`_stop.set()` then drain), not on a timer.
+
+**Acceptance criteria**
+1. A clean `close()` prints nothing and leaves `roster_ended` empty.
+2. A dropped connection and a socket error still say so, with the reason.
+
+---
