@@ -12130,3 +12130,68 @@ LIVE vocabulary and not the fallback.
 3. A name with a respelling always has priming — asserted, not hoped.
 
 ---
+
+## [ARCH-53] Nobody knew where he was on his own flight plan — #199
+labels: architecture, needs-flight-test
+
+**Status:** BUILT 19 August, NEEDS A PILOT — card row H30. Twelve tests over HIS route with the real coordinates, including the two algorithms that failed on it. **Only a pilot can score criterion 1**, because a confident wrong fix name sounds exactly like a right one — which is how #188 survived a whole sortie.
+
+    "obviously she doesn't know where those waypoints are and where I'm at on
+     my flight plan"
+
+    "I would expect that since my flight plan steerpoints have coordinates, the
+     system can figure out where I am relative to my steer point and which leg
+     im on"
+
+The engine measured one thing — range from the FIELD. The pilot navigates by
+his steerpoints. The two were never joined, so a controller asked for his next
+fix answered off the theatre file (#188), and asked again after landing named
+the first fix of the plan he had just flown.
+
+Every leg carries `lat`/`lon` and radar carries his position. `progress.where`
+is the join.
+
+**THE ROUTE IS WHY THIS TOOK THREE ALGORITHMS.** `FOO -> BAR -> SPAM -> INITIAL
+-> BATUMI` turns through nearly 180 degrees at BAR. Every simple rule works on
+a straight line, and this plan is not one:
+
+    each fix tested independently,   standing exactly ON FOO read as "past
+    abeam by projection              INITIAL, next fix BATUMI" — the
+                                     perpendicular through a fix four legs
+                                     later, pointing elsewhere, was already
+                                     behind him. An abeam test is a statement
+                                     about ONE leg
+
+    sequential walk, abeam by        the BAR-SPAM midpoint read as "past FOO,
+    "closer to the next than         next fix BAR". "Closer to the next" only
+     to this one"                    becomes true past the leg's MIDPOINT — it
+                                     lagged half a leg, every leg
+
+Both were proxies. The question is which leg he is nearest, and only distance
+to the **segment** survives a route that turns.
+
+**And the case neither had:** on the ramp at Kobuleti, seventeen miles from the
+first fix and near no leg at all, nearest-leg picked whichever was least far
+and answered *"past BAR, next fix SPAM"* before the engine was running. Off the
+route, only the nearest FIX means anything — `OFF_ROUTE_NM` draws that line,
+and it is not an accuracy tolerance.
+
+**Hybrid, as chosen.** `REACHED_NM` is the explainable normal case — *"you are
+inside two miles of BAR"* — and the segment geometry is the backstop that stops
+him welding to one leg when he flies a fix wide.
+
+**Stateless, and that is a requirement.** A pure function of (legs, position),
+so a restart, a dropped radar frame or a reconnect cannot lose his place.
+
+**It answers; it does not decide.** Nothing issues a clearance, moves a phase
+or contradicts a pilot. It reaches the controller on the strip:
+
+    ON ROUTE: past BAR, next fix SPAM, 19 miles on 265
+
+**Acceptance criteria**
+1. Asked for his next steerpoint, he is told his own — by name and range.
+2. On the ramp the answer is the first fix, not a leg he has not flown.
+3. After landing the route reads complete, not "next fix FOO".
+4. A fix flown wide still counts as passed.
+
+---

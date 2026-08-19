@@ -79,7 +79,7 @@ Keep transmissions short. You are talking to somebody flying an aeroplane."""
 # is translated rather than allowed to spread.
 
 
-def flight_strip(f: dict) -> str:
+def flight_strip(f: dict, fix=None) -> str:
     """The row as a controller would read a paper strip.
 
     This is what a handoff actually delivers, and the reason the table earns its
@@ -182,6 +182,27 @@ def flight_strip(f: dict) -> str:
         bits.append(f"ASSIGNED: {f['assigned_ft']:,} ft")
     if f.get("promised"):
         bits.append(f"we promised: {f['promised']}")
+    # WHERE HE IS ON HIS OWN ROUTE, when radar can place him on it.
+    #
+    # The strip already carried the route; it could not say which part of it he
+    # was flying, so a controller asked "what is my next steerpoint" had the
+    # names and no way to pick one. On 19 August that produced an answer off
+    # the theatre file, and after landing, the first fix of the plan he had
+    # just flown.
+    #
+    #     "obviously she doesn't know where those waypoints are and where I'm
+    #      at on my flight plan"
+    #
+    # Computed from the legs and his radar position, both of which were already
+    # here. `progress.where` returns None when it cannot say, and nothing is
+    # added rather than something guessed. [#199]
+    if fix is not None:
+        from marshall.atc import progress as _prog
+        _p = _prog.spoken(_prog.where(
+            {"legs": f.get("legs")}, getattr(fix, "lat", None),
+            getattr(fix, "lon", None)))
+        if _p:
+            bits.append(f"ON ROUTE: {_p}")
     return "STRIP: " + ", ".join(b for b in bits if b) + "."
 
 
@@ -313,7 +334,7 @@ def compose_message(bridge, scope, known, transcript, profile, me, fix, nxt,
             f"from anything he said, so this is certain. Address him as "
             f"{known}.{_also} Same aircraft as every other call from {known} "
             f"-- keep them together.")
-    _strip = flight_strip(_flight)
+    _strip = flight_strip(_flight, fix)
     if _strip:
         parts.append(
             _strip + " This is what is already known about him and it "

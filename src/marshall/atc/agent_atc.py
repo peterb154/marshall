@@ -7634,6 +7634,26 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # deciding is done.
         if _fid:
             _flight = flight_now(_fid) or _flight
+        # HIS LEGS, ATTACHED TO THE FROZEN PICTURE.
+        #
+        # `flights` carries the route as a STRING -- "FOO, BAR, SPAM" -- which
+        # names the points and cannot locate them. The coordinates are on the
+        # filed plan, and without them nothing can say which leg he is on, so
+        # a controller asked for his next steerpoint had the names and no way
+        # to choose between them.
+        #
+        # Resolved here rather than in `assembly`, which has no business
+        # reading a store, and after the freeze so it describes the aeroplane
+        # this turn ended with. Best effort: no legs means the strip says
+        # nothing about the route rather than guessing. [#199]
+        if _flight and _flight.get("flight_plan_label"):
+            try:
+                from marshall.atc import clearance as _cl
+                _p = _cl.resolve(_flight["flight_plan_label"])
+                if _p and _p.get("legs"):
+                    _flight = {**_flight, "legs": _p["legs"]}
+            except Exception as _e:
+                log.warning("could not read his legs for the strip: %s", _e)
         if dropped:
             print(f"  .. {dropped}", flush=True)
 
