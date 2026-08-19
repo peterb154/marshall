@@ -72,7 +72,11 @@ class TestTheStripCarriesTheClearance(unittest.TestCase):
         """A read-back is what makes a clearance agreed, and `clearance_ack`
         exists to record the difference. A controller who assumes agreement has
         an aeroplane flying a route nobody confirmed."""
-        self.assertIn("READ BACK: yes", flight_strip(CLEARED))
+        # NOTHING WHEN IT WAS READ BACK. That is the ordinary case and #181
+        # refuses taxi until it is true, so on every strip a later controller
+        # ever sees the answer is yes -- a field with one possible value. The
+        # exception is what carries information.
+        self.assertNotIn("READ BACK", flight_strip(CLEARED))
         self.assertIn("READ BACK: NO",
                       flight_strip({**CLEARED, "clearance_ack": None}))
 

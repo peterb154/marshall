@@ -351,7 +351,13 @@ class TestAfterBreakUp(unittest.TestCase):
         self.ctl.report_missed("Pony 1-1")
         texts(self.ctl)
         self.ctl.report_missed("Pony 1-1")
-        self.assertEqual(self.ctl.get("Pony 1-1").phase, atc.Phase.BANISHED)
+        # HOLDING, plus the derivation. #193 retired `Phase.BANISHED`: being
+        # sent to the outer hold behaves as holding everywhere separation
+        # looks and differed only in words and channel, so it is derived
+        # from `approaches` -- a column that already exists -- rather than
+        # costing the enum a member and the round trip its exactness.
+        self.assertEqual(self.ctl.get("Pony 1-1").phase, atc.Phase.HOLDING)
+        self.assertTrue(atc._sent_to_the_outer_hold(self.ctl.get("Pony 1-1")))
         self.assertEqual(self.ctl.get("Pony 1-2").phase, atc.Phase.CLEARED)
 
     def test_the_flight_name_belongs_to_nobody_now(self):

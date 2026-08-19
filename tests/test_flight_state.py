@@ -31,7 +31,14 @@ class TestPhaseTranslation(unittest.TestCase):
     def test_banished_is_still_holding(self):
         # Sent to the outer hold is a kind of holding, not a state of its own --
         # he is still waiting his turn and still in the sequence.
-        self.assertEqual(agent_atc._PHASE_OF["BANISHED"], "holding")
+        # NO `BANISHED` TO TRANSLATE. #193 retired it, so the mapping is a
+        # strict inverse again -- which is what this class is really about:
+        # every phase that goes into `flights.cleared` comes back as itself.
+        self.assertNotIn("BANISHED", agent_atc._PHASE_OF)
+        from marshall.atc.controller import PHASE_FROM_WORD
+        for name, word in agent_atc._PHASE_OF.items():
+            with self.subTest(name):
+                self.assertEqual(PHASE_FROM_WORD[word], name)
 
 
 class TestTheStrip(unittest.TestCase):

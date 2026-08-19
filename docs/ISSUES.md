@@ -11821,3 +11821,53 @@ carry both:
    his route reaches — `assigned_ft` already answers the first.
 
 ---
+
+## [SEP-23] `BANISHED` cost the separation enum a member for a resequencing corner — #193
+labels: architecture
+
+**Status:** FIXED 18 August. Enum down to 6, `PHASE_FROM_WORD` a strict inverse, nothing lost on a round trip — asserted in `test_flight_state` over every member rather than for the one that used to collide. Not `needs-flight-test`: the behaviour is unchanged and the three existing tests still hold it.
+
+    "Banished is a tiny little feature in a formation landing procedure that is
+     earning way too big a spot in the system"
+
+    "it's only used when a flight is stacked on an approach and we need to
+     handle sending him out to resequence. That was discussed very early when i
+     thought this system would be easy and we got way ahead of ourselves. We're
+     still trying to get a clean single ship clearance."
+
+`Phase.BANISHED` — a pilot parked at the top after `MAX_APPROACHES` goes —
+behaved as `HOLDING` everywhere separation actually looks: `_occupied` excluded
+both, `_free_slot` saw neither. What differed was the WORDS and the CHANNEL.
+
+**What that cost, in order:**
+
+    a 7th member of the separation enum
+    -> `PHASE_WORD` maps two members onto one word ("holding")
+    -> the round trip through `flights.cleared` is lossy
+    -> a paragraph in `controller.py` explaining why losing it is safe
+
+Four things, none of them separation, for a corner of a procedure that has
+never been flown by a human on this system.
+
+**Now derived, and from a column that already exists.** The first attempt made
+it a flag on the `Aircraft` and `test_the_database_is_the_source_of_truth`
+refused it — correctly: a fact that lives only in memory is one a restart
+forgets. `approaches_flown` is already a column and already restored by
+`hydrate`, so "at the top of the stack, out of goes" is something the board can
+answer without a new fact anywhere.
+
+**The enum is 6 and the round trip is exact** — nothing is lost through
+`flights.cleared` any more, so the paragraph explaining the loss is gone too.
+
+**The wider point is the one worth keeping.** This was speculative complexity,
+added early against a multi-ship future, sitting in the middle of the one path
+that still does not work cleanly. Every remaining finding from the 18 August
+sortie — #5 the regex short-circuit, #6 the "go ahead" prefix, #8 the repeated
+handoff, #9 the callsign artifact — is on the SINGLE SHIP clearance path.
+
+**Acceptance criteria**
+1. Two missed approaches still parks him at the top and frees his slot.
+2. He is still worked on the outer hold's channel and told so in those words.
+3. A restart restores him as he was — the round trip is exact.
+
+---

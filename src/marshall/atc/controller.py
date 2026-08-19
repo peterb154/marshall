@@ -65,7 +65,34 @@ from marshall.core.say import (  # noqa: F401
 
 CLEARANCE_TIMEOUT_SEC = 12 * 60      # silent aircraft -> assume clear, move on
 REPORT_OVERDUE_SEC = 5 * 60          # prompt a quiet holder for a position
-MAX_APPROACHES = 2                   # then banish to the outer hold
+MAX_APPROACHES = 2                   # then send him to the outer hold
+
+
+def _sent_to_the_outer_hold(ac) -> bool:
+    """Has he been parked at the top after too many goes?
+
+    DERIVED, NOT STORED, and not a phase either. This was `Phase.BANISHED` --
+    a seventh member of the separation enum for a state that behaves as
+    HOLDING everywhere separation looks (`_occupied` excludes both,
+    `_free_slot` sees neither) and differs only in the WORDS and the CHANNEL:
+
+        "Banished is a tiny little feature in a formation landing procedure
+         that is earning way too big a spot in the system"
+
+    It cost the enum a member, which forced `PHASE_WORD` to map two members
+    onto one word, which made the round trip through `flights.cleared` lossy,
+    which needed a paragraph explaining why losing it was safe.
+
+    AND IT IS NOT A NEW FACT. The first attempt at this made it a flag on the
+    `Aircraft`, and the architecture check refused it -- correctly: a fact that
+    lives only in memory is one a restart forgets. `approaches_flown` is
+    already a column and already restored by `hydrate`, so being at the top of
+    the stack having used up your approaches is something the board can already
+    answer. [#193]
+    """
+    return (ac is not None
+            and getattr(ac, "approaches", 0) >= MAX_APPROACHES
+            and getattr(ac, "phase", None) is Phase.HOLDING)
 
 
 class Phase(Enum):
@@ -74,7 +101,6 @@ class Phase(Enum):
     HOLDING = auto()
     CLEARED = auto()        # in the letdown
     MISSED = auto()         # front of the line, at missed_ft
-    BANISHED = auto()       # sent to the outer hold
     LANDED = auto()
 
 
@@ -370,13 +396,14 @@ class Tx:
 # what "approach" means. `agent_atc` imports it.
 PHASE_WORD = {
     "UNKNOWN": "unknown", "ENROUTE": "enroute", "HOLDING": "holding",
-    "CLEARED": "approach", "MISSED": "missed", "BANISHED": "holding",
+    "CLEARED": "approach", "MISSED": "missed",
     "LANDED": "landed",
 }
-# Not a strict inverse: BANISHED and HOLDING share a word, so a rebuilt board
-# reads "holding" as HOLDING. That is the safe direction -- a banished aircraft
-# restored as a holder is one the controller will sequence rather than one he
-# has forgotten about.
+# A STRICT INVERSE, since #193. It was not: `BANISHED` mapped onto "holding"
+# too, so a rebuilt board could not tell them apart and the code carried a
+# paragraph explaining why losing the distinction was the safe direction.
+# Being sent to the outer hold is a flag on the aircraft (`sent_away`), not a
+# phase, so there is nothing left to lose.
 PHASE_FROM_WORD = {"unknown": "UNKNOWN", "enroute": "ENROUTE",
                    "holding": "HOLDING", "approach": "CLEARED",
                    "missed": "MISSED", "landed": "LANDED"}
@@ -1377,7 +1404,7 @@ class Controller:
         """
         ac = ref if ref is not None else self.aircraft.get(to)
         enroute = ac is None or ac.phase in (Phase.UNKNOWN, Phase.ENROUTE)
-        banished = ac is not None and ac.phase is Phase.BANISHED
+        banished = _sent_to_the_outer_hold(ac)
         name, freq = self._channel(ac, enroute=enroute, banished=banished)
         self.out.append(Tx(to, text, self.t, freq, name, decision=decided))
 
@@ -1612,7 +1639,7 @@ class Controller:
         """
         return {a.assigned_ft for a in self.aircraft.values()
                 if a.assigned_ft is not None
-                and a.phase not in (Phase.HOLDING, Phase.LANDED, Phase.BANISHED)
+                and a.phase not in (Phase.HOLDING, Phase.LANDED)
                 and self._same_stack(a, ref)}
 
     def _free_slot(self, ac=None) -> int | None:
@@ -2204,7 +2231,7 @@ class Controller:
         # the board that no chart supports. See `_missed_instruction`.
         pro = self._pro(ac)
         if ac.approaches >= MAX_APPROACHES:
-            ac.phase, ac.assigned_ft = Phase.BANISHED, getattr(pro, "top_ft", None)
+            ac.phase, ac.assigned_ft = Phase.HOLDING, getattr(pro, "top_ft", None)
             return True
         ac.phase, ac.assigned_ft = Phase.MISSED, getattr(pro, "missed_ft", None)
         return False

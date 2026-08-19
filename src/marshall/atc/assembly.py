@@ -150,8 +150,16 @@ def flight_strip(f: dict) -> str:
         # and the difference is exactly what `clearance_ack` was added to
         # record. A controller who assumes agreement has an aeroplane flying a
         # route nobody confirmed.
-        plan.append("READ BACK: yes" if f.get("clearance_ack")
-                    else "READ BACK: NO")
+        # ONLY WHEN IT IS NOT. A read-back that happened is the ordinary case
+        # and says nothing: #181 refuses taxi until the clearance is agreed, so
+        # by the time a strip reaches Ground, Tower or Departure the answer is
+        # always yes -- a field with one possible value on every strip that
+        # will ever be read. Delivery, the one seat where it can be NO, has
+        # just judged it himself.
+        #
+        # The exception IS information, so that is what is printed.
+        if not f.get("clearance_ack"):
+            plan.append("READ BACK: NO")
         bits.append(", ".join(plan))
     elif f.get("intent") or f.get("destination"):
         bits.append(f"{f.get('intent') or 'inbound'} "
@@ -164,8 +172,14 @@ def flight_strip(f: dict) -> str:
     # a thing. Same fault as the board's "cleared for", one surface over. [#191]
     if f.get("cleared") and f["cleared"] != "unknown":
         bits.append(f"SEPARATION: {f['cleared']}")
+    # ASSIGNED, NOT "MAINTAINING". This is `assigned_ft` -- the last level the
+    # engine ISSUED him -- and whether he has reached it is a different fact,
+    # answered by radar (`observed_alt_ft`, and `alt_error_ft` on the view).
+    # Saying "maintaining" asserts something about the aeroplane from a column
+    # that only records what was said to it, which is the same overclaim as
+    # calling a route maximum a cruise level.
     if f.get("assigned_ft"):
-        bits.append(f"MAINTAINING: {f['assigned_ft']:,} ft")
+        bits.append(f"ASSIGNED: {f['assigned_ft']:,} ft")
     if f.get("promised"):
         bits.append(f"we promised: {f['promised']}")
     return "STRIP: " + ", ".join(b for b in bits if b) + "."

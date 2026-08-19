@@ -185,7 +185,13 @@ class TestMissedApproach(unittest.TestCase):
         self.ctl.report_missed("Lead 1")
         texts(self.ctl)
         self.ctl.report_missed("Lead 1")
-        self.assertEqual(self.ctl.get("Lead 1").phase, atc.Phase.BANISHED)
+        # HOLDING, plus the derivation. #193 retired `Phase.BANISHED`: being
+        # sent to the outer hold behaves as holding everywhere separation
+        # looks and differed only in words and channel, so it is derived
+        # from `approaches` -- a column that already exists -- rather than
+        # costing the enum a member and the round trip its exactness.
+        self.assertEqual(self.ctl.get("Lead 1").phase, atc.Phase.HOLDING)
+        self.assertTrue(atc._sent_to_the_outer_hold(self.ctl.get("Lead 1")))
         # And the field is freed for whoever was waiting.
         self.assertEqual(self.ctl.get("Two 1").phase, atc.Phase.CLEARED)
 
