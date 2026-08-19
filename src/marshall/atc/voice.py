@@ -4,7 +4,7 @@ Three jobs that all answer the same question -- what does the pilot actually
 HEAR -- and each of them was somewhere in the middle of the receive loop:
 
     route_tier                which model gets this turn
-    simple_response           the answers that need no model at all
+    radio_check_reply         the one answer that needs no model at all
     strip_unauthorised_handoff  ...and the one that must be taken back out
     for_voice                 prose to speech: what Polly may not be given
 
@@ -71,81 +71,38 @@ _CLOSE = re.compile(r"down and stopped|clear of the (?:runway|active)|off the ru
 _ASKS = re.compile(r"\brequest\b|\btaxi\b|\bcan i\b|\bready\b|\?", re.I)
 
 
-def simple_response(transcript: str, known: str = "") -> str | None:
-    """Instant canned reply for the handful of calls where the rich agent adds
-    nothing -- a radio check, a closing acknowledgement. Returns None for anything
-    with substance, which goes to the agent. Deterministic simple responses inside
-    the rich experience, at zero cost/latency.
+def radio_check_reply(known: str = "") -> str:
+    """"Sockeye, loud and clear." Nothing else, and no matching.
 
-    `known` IS THE ANSWER TO "WHO IS THIS", and passing it is the whole of the
-    fix below. This function predates GUID identity and never learned about it:
-    it dug a callsign out of the WORDS with a regex, which is the mistake the
-    rest of the system spent a fortnight removing.
+    THIS WAS `simple_response`, AND IT MATCHED. A grammar of `_CHECK`, `_CLOSE`
+    and `_ASKS` patterns ran BEFORE the classifier and before the engine, so a
+    regex decided whether the deterministic half of a turn happened at all:
 
-        "Batumi Ground, sockeye just off runway one three, request taxi"
-            -> "Runway one three, roger, welcome, taxi to parking..."
+        _CLOSE = "down and stopped|clear of the (?:runway|active)|off the
+                  runway|parking|shutting down|clear of active"
+        _ASKS  = "request|taxi|can i|ready|?"
 
-        "...will exit the runway when able, and I will contact ground"
-            -> "The one, roger, welcome, taxi to parking..."
+    On 18 August the first transmission of the sortie was "Kobuleti Clearance,
+    sockeye, parking spot, number 22 with information, Delta." `_CLOSE` matched
+    the word "parking", `_ASKS` matched nothing, and a cold opening call was
+    answered "roger, welcome, good day" with the engine never seeing it.
 
-    A pilot's report of this was that Batumi Ground "seems to be from a prior
-    generation... not using callsigns, mispronouncing my callsign", which is
-    exactly right: it IS from a prior generation, and closing calls are the ones
-    that land here, so Ground and Tower are where it shows.
+        "that regex matching has bit us so many any times and is way too
+         brittle"
 
-    The radio already told us who keyed the mic. Nothing in a transcript beats
-    that, and the regex stays only for the case where the bridge has not
-    identified him at all.
+    It had bitten before in this same function, on "clear of active, request
+    taxi to parking" -- `_ASKS` was the patch then, and "parking spot" walked
+    straight past it. A second grammar competing with the classifier will keep
+    losing, because the classifier is the thing that reads.
+
+    WHAT IS LEFT IS THE RENDERING. Which calls deserve a canned answer is now
+    `IntentKind.RADIO_CHECK`, decided by the classifier; the closing
+    acknowledgement is gone from here entirely, because "clear of the active"
+    moves him to `taxi_in` and a phase transition IS a handoff (#77). [#194]
     """
-    from marshall.atc import callsign as C, intents
-    m = re.search(r"\b([A-Za-z]+(?:\s+(?:one|two|three|four|five|six|seven|eight|"
-                  r"niner|nine|\d+))+)", transcript, re.I) if not known else None
-    # SPOKEN, not canonical. This interpolated "Falcon 1-1" straight into
-    # speech, and Polly reads the hyphen: it comes out "Falcon one TO one",
-    # which a pilot hears as "Falcon one two one" and reports as the controller
-    # not knowing who he is.
-    #
-    #     "batumi tower thought I was falcon 121 again.. approach never did that"
-    #
-    # Approach never did it because every other path spells the callsign with
-    # .spoken. Only the canned replies -- a radio check, a closing
-    # acknowledgement -- took the shortcut, and closing calls are exactly what
-    # Tower gets. Verified through Polly and Whisper rather than guessed at.
-    if known:
-        cs = C.parse(known).spoken or known
-    elif m:
-        cs = intents.normalize_callsign(m.group(1))
-        cs = C.parse(cs).spoken or cs
-    else:
-        cs = "Station calling"
-    if _CHECK.search(transcript):
-        return f"{cs}, loud and clear."
-    # A CLOSING ACKNOWLEDGEMENT ASKS FOR NOTHING. That is what makes it safe to
-    # answer without the engine -- and "clear of the active, REQUEST TAXI TO
-    # PARKING" is not one, it is a request, and it belongs to Ground.
-    #
-    # This swallowed it, and answered from whatever seat was speaking:
-    #
-    #     PILOT: Batumi Tower, sockeye is clear of active, request taxi to
-    #            parking.
-    #     ATC:   Sockeye, roger, welcome, taxi to parking when ready, good day.
-    #
-    #     "Batumi Tower ... just gave me clearance to taxi to parking when
-    #      that's ground's job"
-    #
-    # Two faults in one line. Tower issued a clearance that is not his -- the
-    # aerodrome half of the invariant -- and the short-circuit meant the ENGINE
-    # never saw the call, so the sortie phase never moved to `taxi` and nothing
-    # ever handed him to Ground (#77). Sending it on fixes both: `request_taxi`
-    # refuses it from Tower, names Ground with the frequency, and moves the
-    # phase that carries the handoff.
-    if _CLOSE.search(transcript) and not _ASKS.search(transcript):
-        # And the acknowledgement is now only that. It used to end "taxi to
-        # parking when ready", which is a clearance, and no seat may issue one
-        # it does not own -- including this one, which does not know which seat
-        # it is.
-        return f"{cs}, roger, welcome, good day."
-    return None
+    from marshall.atc import callsign as C
+    cs = (C.parse(known).spoken or known) if known else "Station calling"
+    return f"{cs}, loud and clear."
 
 # When woken by a hook (or asked anything) the agent may decide no call is
 # warranted; it replies with this and the bridge stays off the air.

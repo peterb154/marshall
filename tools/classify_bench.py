@@ -32,16 +32,30 @@ CASES = [
     # --- formations: the new, load-bearing cases ------------------------
     ("Batumi Approach, Pony one one, flight of four, checking in.",
      K.CHECK_IN, "Pony 1-1", 4, None),
-    # --- visual separation: the answer decides whether four aeroplanes may
-    # share one holding level, so a wrong read here is a separation error.
-    ("Pony one flight, affirmative, we can maintain visual separation.",
-     K.REPORT_CONDITIONS, "Pony 1", 1, True),
-    ("Pony one one, affirm, VMC, we have each other in sight.",
-     K.REPORT_CONDITIONS, "Pony 1-1", 1, True),
-    ("Pony one flight, negative, we're in cloud.",
-     K.REPORT_CONDITIONS, "Pony 1", 1, False),
-    ("Pony one one, negative visual, IMC.",
-     K.REPORT_CONDITIONS, "Pony 1-1", 1, False),
+    # --- THE RADIO CHECK, split out of check_in in #194 so that the fast
+    # path is decided by the classifier instead of by a regex. Both
+    # directions matter and the second more: calling a check-in a radio
+    # check answers it instantly and throws the transmission away, which is
+    # what the regex did on 18 August with the word "parking".
+    # No callsign at all -- the classifier says so with its own sentinel
+    # rather than an empty string, and a controller answers "station
+    # calling, loud and clear".
+    ("Batumi Approach, radio check.", K.RADIO_CHECK, "<UNKNOWN>", 1, None),
+    ("Sockeye, how do you read?", K.RADIO_CHECK, "Sockeye", 1, None),
+    ("Kobuleti Departure, this is Sockeye on 124.0, how do you read?",
+     K.CHECK_IN, "Sockeye", 1, None),
+    ("Sockeye, how do you read, request taxi.", K.REQUEST_TAXI, "Sockeye", 1, None),
+    # --- THE VISUAL-SEPARATION CASES ARE GONE, and this file did not run for
+    # weeks because of it. `REPORT_CONDITIONS` was deleted by [ARCH-4] "Toss
+    # the visual-separation negotiation" -- the question was never the
+    # controller's to ask -- and the four cases naming it stayed here, so the
+    # bench raised `AttributeError` on import.
+    #
+    # CLAUDE.md sends you here after touching the schema or the system prompt,
+    # "the taxonomy wording moves the score more than the model does". That
+    # advice has been unenforceable since, and nothing said so: this is a tool,
+    # not a check, so `tools/check.py` never ran it and never reported it
+    # skipped. [#194]
     ("Batumi Approach, Pony one flight, four ship, with you.",
      K.CHECK_IN, "Pony 1", 4, None),
     ("Pony one one, flight of two, over the beacon, six thousand.",

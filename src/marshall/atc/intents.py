@@ -26,6 +26,22 @@ from marshall.atc import controller as atc
 
 class IntentKind(str, Enum):
     CHECK_IN = "check_in"           # "Pony 1 checking in"
+    # A RADIO CHECK IS NOT A CHECK-IN, and splitting it is what let a regex
+    # stop deciding whether the engine runs at all.
+    #
+    # "how do you read" asks about the RADIO. It moves no phase, needs no
+    # controller, and the rich agent adds nothing to "loud and clear" -- which
+    # is why a fast path existed. That path matched on regexes BEFORE the
+    # classifier, so it decided whether the deterministic half of the turn
+    # happened, and it got it wrong on the first transmission of the 18 August
+    # sortie: "_CLOSE" matched the word "parking" in
+    #
+    #     "Kobuleti Clearance, sockeye, parking spot, number 22 with
+    #      information, Delta."
+    #
+    # and answered a cold opening call with "roger, welcome, good day", with
+    # the engine never seeing it. [#194]
+    RADIO_CHECK = "radio_check"     # "how do you read", "radio check"
     REPORT_BEACON = "report_beacon"  # "Pony 1 over the beacon, four thousand"
     REPORT_MISSED = "report_missed"  # "Pony 1 going around"
     REPORT_LANDED = "report_landed"  # "Pony 1 field in sight, landing"
@@ -145,9 +161,19 @@ INTENT_SCHEMA = {
             # says beacon and nothing told them a bare level report is the same
             # kind of thing. The names are for us; the model only sees this.
             "description": (
-                "check_in: first contact on this frequency, a radio check, or "
-                "'with you' -- he is announcing himself, not reporting a "
-                "position.\n"
+                "check_in: first contact on this frequency, or 'with you' -- "
+                "he is announcing himself, not reporting a position. A pilot "
+                "who states where he is parked, what stand he is on, or which "
+                "information letter he has is still checking in.\n"
+                "radio_check: he asks about the RADIO and NOTHING ELSE, and "
+                "is not introducing himself -- 'how do you read', 'radio "
+                "check', 'do you read me'. If he also names himself to this "
+                "controller ('this is Sockeye on 124.0, how do you read') it "
+                "is a check_in, and if he asks for anything ('how do you read, "
+                "request taxi') it is that request. WHEN IN DOUBT IT IS NOT "
+                "THIS ONE: a radio check is answered instantly without the "
+                "controller, so calling something else a radio check throws "
+                "the transmission away.\n"
                 "report_beacon: ANY position, altitude or progress report from an "
                 "aircraft already working this controller -- 'over the beacon', "
                 "'level five thousand', 'established inbound', 'turning "

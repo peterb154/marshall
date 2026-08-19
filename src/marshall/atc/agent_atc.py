@@ -66,8 +66,8 @@ from marshall.atc import picture as _picture
 
 from marshall.atc.voice import (  # noqa: F401
     FAST_TIER_ON, NO_CALL, _CHECK, _CLOSE, _COMPLEX, _DEBUG, _SENDS_HIM_AWAY,
-    _SPOKEN_CALLSIGN, _digit_words, debug_note, for_voice, route_tier,
-    simple_response, strip_unauthorised_handoff)
+    _SPOKEN_CALLSIGN, _digit_words, debug_note, for_voice,
+    radio_check_reply, route_tier, strip_unauthorised_handoff)
 from marshall.atc.talkdown import (  # noqa: F401
     SPEED_REPEAT_SEC, SPEED_TOLERANCE_KT, _DIGIT_RUN, _TALKDOWN_WORDS,
     _callsign_numbers, _spoken_numbers, altitude_instruction,
@@ -7369,10 +7369,34 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         _on_mhz = (heard_hz or freq_hz) / 1_000_000
         ctl._me = _stations.on_frequency(_seats, _on_mhz)
 
-        # Deterministic short-circuit: a radio check or a closing acknowledgement
-        # gets an instant canned reply -- the rich agent adds nothing. Not mid-
-        # sequence, where the controller may need to react to it.
-        canned = simple_response(transcript, known)
+        # THE CLASSIFIER DECIDES, NOT A REGEX.
+        #
+        # This called `simple_response(transcript)` -- a grammar of `_CLOSE`,
+        # `_ASKS` and `_CHECK` patterns -- BEFORE anything else, and a match
+        # meant the engine never saw the transmission at all. So a regex chose
+        # whether the deterministic half of the turn happened, and on 18 August
+        # it chose wrong on the first call of the sortie: `_CLOSE` matched the
+        # word "parking" in "parking spot, number 22 with information, Delta"
+        # and a cold opening call was answered "roger, welcome, good day".
+        #
+        #     "that regex matching has bit us so many any times and is way too
+        #      brittle"
+        #
+        # `classify_intent` already runs on every transmission from anybody on
+        # the board, so asking it here costs a Haiku call only for a caller the
+        # engine has no row for -- and buys the taxonomy instead of a second,
+        # worse grammar. [#194]
+        _kind = None
+        _early = classify_intent(transcript) if transcript.strip() else None
+        if _early is not None:
+            _kind = _early.kind
+        # ONLY A RADIO CHECK. The closing acknowledgement went with the
+        # regexes: "clear of the active" moves him to `taxi_in`, which is a
+        # phase transition and therefore a handoff, and this path skipping the
+        # engine is what #77 was. A radio check asks about the RADIO -- no
+        # phase, no clearance, nothing for the engine to do and nothing the
+        # rich agent adds to "loud and clear".
+        canned = radio_check_reply(known) if _kind is _intents.IntentKind.RADIO_CHECK else None
         if canned and not engaged:
             canned = for_voice(canned)
             # RECORDED, like every other transmission. This one was not, and it

@@ -11871,3 +11871,65 @@ handoff, #9 the callsign artifact — is on the SINGLE SHIP clearance path.
 3. A restart restores him as he was — the round trip is exact.
 
 ---
+
+## [ARCH-49] A regex decided whether the engine ran at all — #194
+labels: bug, architecture, needs-flight-test
+
+**Status:** FIXED 18 August, NEEDS A PILOT — card row G17. Bench at **21/21** on Haiku and Sonnet (was 16/17 and 15/17, and before that it did not run at all). **Only a pilot can score criterion 1**: the failure is a controller answering pleasantly and the sortie quietly not starting, which reads as a normal exchange on the transcript.
+
+    "that regex matching has bit us so many any times and is way too brittle"
+
+`simple_response` matched a grammar of patterns BEFORE the classifier and
+before the engine, and a match meant the transmission was answered and
+**dropped**:
+
+    _CLOSE = "down and stopped|clear of the (?:runway|active)|off the runway|
+              parking|shutting down|clear of active"
+    _ASKS  = "request|taxi|can i|ready|?"
+
+The first transmission of the 18 August sortie was *"Kobuleti Clearance,
+sockeye, parking spot, number 22 with information, Delta."* `_CLOSE` matched
+**"parking"**, `_ASKS` matched nothing, and a cold opening call was answered
+*"roger, welcome, good day"* — with the engine never seeing it.
+
+    "he didn't ask what I wanted, just said good day"
+
+**It had bitten in this same function before**, on *"clear of active, request
+taxi to parking"*, and `_ASKS` was the patch. "parking spot" walked past it. A
+second grammar competing with the classifier will keep losing, because the
+classifier is the thing that reads.
+
+**Which calls deserve a canned answer is the classifier's now.**
+`IntentKind.RADIO_CHECK` is split out of `check_in`, and `radio_check_reply
+(known)` renders and matches nothing — it takes the GUID-resolved name and has
+no transcript to mine, so the class of fault `test_frequency` was written for
+is unreachable rather than guarded.
+
+**The closing acknowledgement is gone from the fast path entirely.** *"Clear of
+the active"* moves him to `taxi_in`, which is a phase transition and therefore
+a handoff — skipping the engine there is #77.
+
+**The new kind is biased AGAINST itself**, because the failure is asymmetric: a
+radio check answered instantly costs nothing, and a check-in mistaken for one
+is thrown away. *"WHEN IN DOUBT IT IS NOT THIS ONE"* is in the schema, and the
+bench holds both directions.
+
+**AND THE BENCH HAD NOT RUN FOR WEEKS.** `tools/classify_bench.py` raised
+`AttributeError` on import — it named `REPORT_CONDITIONS`, deleted by [ARCH-4]
+"Toss the visual-separation negotiation", and was never updated. CLAUDE.md
+sends you there after touching the schema, *"the taxonomy wording moves the
+score more than the model does"*, and that advice has been unenforceable since.
+Nothing said so: it is a tool, not a check, so `tools/check.py` neither ran it
+nor reported it skipped.
+
+Repaired, and it earned its keep on the first run — the new kind was too greedy
+and swallowed *"this is Sockeye on 124.0, how do you read"*, which is a
+check-in. **21/21 on Haiku and Sonnet**, up from 16/17 and 15/17.
+
+**Acceptance criteria**
+1. A pilot's opening call reaches the engine whatever words it contains.
+2. A bare radio check is still answered instantly.
+3. "Clear of the active" moves the phase and hands him to Ground.
+4. The bench runs, and covers the new kind in both directions.
+
+---

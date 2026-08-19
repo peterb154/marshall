@@ -234,15 +234,36 @@ class TestRoster(unittest.TestCase):
             {"ddd": "Hawk"})
 
 
-class TestSimpleResponse(unittest.TestCase):
-    def test_radio_check_is_answered_without_the_agent(self):
-        out = agent_atc.simple_response("Batumi Approach, Pony one one, radio check")
-        self.assertIsNotNone(out)
-        self.assertIn("loud and clear", out.lower())
+class TestTheOneCannedReply(unittest.TestCase):
+    """`simple_response` MATCHED, and this class used to test the matching.
 
-    def test_substance_goes_to_the_agent(self):
-        self.assertIsNone(
-            agent_atc.simple_response("Pony one one, over the beacon, four thousand"))
+    It was a grammar of `_CHECK`, `_CLOSE` and `_ASKS` patterns that ran before
+    the classifier and before the engine, so a regex decided whether the
+    deterministic half of a turn happened. On 18 August `_CLOSE` matched the
+    word "parking" in "parking spot, number 22 with information, Delta" and a
+    cold opening call was answered "roger, welcome, good day".
+
+    WHICH CALLS DESERVE A CANNED ANSWER IS THE CLASSIFIER'S NOW --
+    `IntentKind.RADIO_CHECK` -- so what is left here is the rendering, and
+    "substance goes to the agent" is a question about the taxonomy rather than
+    about this function. `tools/classify_bench.py` scores that. [#194]
+    """
+
+    def test_it_names_him(self):
+        out = agent_atc.radio_check_reply("Pony 1-1")
+        self.assertIn("loud and clear", out.lower())
+        self.assertIn("Pony one one", out)
+
+    def test_and_answers_a_caller_it_cannot_name(self):
+        """A radio check from somebody unidentified is still a radio check."""
+        self.assertIn("loud and clear", agent_atc.radio_check_reply("").lower())
+
+    def test_it_decides_nothing(self):
+        """The whole point: it renders, it does not match. A function that
+        takes a transcript is one that can disagree with the classifier."""
+        import inspect
+        sig = inspect.signature(agent_atc.radio_check_reply)
+        self.assertEqual(list(sig.parameters), ["known"])
 
 class TestTransmitterIdentity(unittest.TestCase):
     """The radio is the anchor: its NAME is irrelevant, its stability is not."""

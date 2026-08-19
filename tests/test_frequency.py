@@ -89,14 +89,12 @@ class TestNoWrittenCallsignReachesThePilot(unittest.TestCase):
     def test_the_canned_replies_spell_it_at_the_source(self):
         """The backstop must not be the only defence: a reply composed wrongly
         is still wrong in the log, which is what anybody debugging reads."""
-        from marshall.atc.agent_atc import simple_response
-        # A CLOSING ACKNOWLEDGEMENT, not a request. "taxi to parking" is now a
-        # REQUEST and goes to the engine, where Ground answers it and Tower
-        # refuses -- so it is no longer a canned reply at all (#77). The point
-        # of this test is how a canned reply SPELLS a callsign, so it needs a
-        # transcript that still gets one.
-        said = simple_response("Batumi Tower, Falcon one one, down and stopped, "
-                               "good day.")
+        from marshall.atc.agent_atc import radio_check_reply
+        # THE ONE CANNED REPLY LEFT. The closing acknowledgement went to the
+        # engine in #77 and the regex that recognised it went in #194 -- what
+        # remains is a radio check, and the point of this test is unchanged:
+        # how a canned reply SPELLS a callsign.
+        said = radio_check_reply("Falcon 1-1")
         self.assertIsNotNone(said)
         self.assertNotIn("1-1", said)
         self.assertIn("Falcon one one", said)
@@ -122,46 +120,35 @@ class TestNoWrittenCallsignReachesThePilot(unittest.TestCase):
                 self.assertEqual(for_voice(text), text)
 
 
-class TestTheCannedRepliesKnowWhoIsTalking(unittest.TestCase):
+class TestTheCannedReplyKnowsWhoIsTalking(unittest.TestCase):
     """A pilot's report: Batumi Ground "seems to be from a prior generation...
     not using callsigns, mispronouncing my callsign".
 
-    It was from a prior generation. `simple_response` predates GUID identity and
-    never learned about it -- it dug a callsign out of the WORDS with a regex,
-    which is the mistake the rest of the system spent a fortnight removing. And
-    closing calls are what land in this path, so Ground and Tower are where it
-    showed.
+    It was. `simple_response` predates GUID identity and never learned about
+    it -- it dug a callsign out of the WORDS with a regex, which is the mistake
+    the rest of the system spent a fortnight removing.
+
+    IT CANNOT NOW. `radio_check_reply(known)` takes the resolved name and
+    nothing else: there is no transcript to mine, so the whole class of fault
+    this file was written for is unreachable rather than guarded. #194 removed
+    the matching along with the regexes.
     """
 
-    def canned(self, said, known="Sockeye"):
-        from marshall.atc.voice import simple_response
-        return simple_response(said, known) or ""
-
-    def test_a_readback_fragment_is_never_used_as_a_name(self):
-        # Both are CLOSING acknowledgements. The taxi request that used to sit
-        # here now goes to the engine instead of getting a canned reply (#77):
-        # only Ground may clear a taxi, and a short-circuit that answers from
-        # whatever seat is speaking cannot know which seat it is.
-        for said in ("sockeye just off runway one three, down and stopped",
-                     "sockeye is down and stopped, clear of the active"):
-            with self.subTest(said=said):
-                got = self.canned(said)
-                self.assertTrue(got.startswith("Sockeye,"), got)
-                self.assertNotIn("Runway", got)
-                self.assertNotIn("The one", got)
-
-    def test_the_radio_beats_the_transcript(self):
-        """He calls himself something else entirely; the GUID says Sockeye."""
-        got = self.canned("Falcon one one, clear of the runway")
-        self.assertTrue(got.startswith("Sockeye,"), got)
-
-    def test_with_no_identity_it_still_falls_back_to_the_words(self):
-        """The regex earns its place only here -- an unidentified radio is the
-        one case where what he said is all there is."""
-        got = self.canned("Batumi Tower, Falcon one one, clear of the runway",
-                          known="")
-        self.assertTrue(got.startswith("Falcon one one,"), got)
+    def test_it_uses_the_name_it_was_given(self):
+        from marshall.atc.voice import radio_check_reply
+        self.assertTrue(radio_check_reply("Sockeye").startswith("Sockeye,"))
 
     def test_and_never_a_hyphenated_callsign_over_the_air(self):
         """Polly reads "Falcon 1-1" as "Falcon one TO one"."""
-        self.assertNotIn("-", self.canned("clear of the runway", "Falcon 1-1"))
+        from marshall.atc.voice import radio_check_reply
+        got = radio_check_reply("Falcon 1-1")
+        self.assertNotIn("-", got)
+        self.assertIn("Falcon one one", got)
+
+    def test_it_takes_no_transcript_to_get_it_wrong_from(self):
+        """The structural half. A canned reply that reads the words can
+        disagree with the identity ladder; one that cannot read them cannot."""
+        import inspect
+        from marshall.atc.voice import radio_check_reply
+        self.assertEqual(list(inspect.signature(radio_check_reply).parameters),
+                         ["known"])
