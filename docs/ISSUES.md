@@ -12083,3 +12083,50 @@ than fixed. Configured now, with `MARSHALL_LOG_LEVEL`.
 5. Nothing tells an outbound aeroplane to continue inbound.
 
 ---
+
+## [ARCH-52] We can say his name and cannot hear it — #198
+labels: bug, needs-flight-test
+
+**Status:** FIXED 19 August, NEEDS A PILOT — card row S17. Offline test asserts every configured name reaches the prompt; the 0/7 -> 6/7 measurement is in the commit rather than the suite, because scoring the recogniser costs a model and eight seconds of synthesis per voice.
+
+    "Sakai would request the ILS-13 approach."
+    "Batumi Ground, Sakai, is clear of active runway 07"
+
+All night, in every transcript. `Sockeye` is a word the recogniser has no
+reason to expect and every reason to hear as a commoner name, and priming is
+the lever — `whisper_vocabulary` already carries stations, fixes and plan
+labels, and its own comment has said so since it was written.
+
+**It seeded the wrong table.** `route.SQUADRON_CALLSIGNS` is
+`("Pony", "Hammer", "Spit", "Whistler")` — the flight names the mission builder
+gives AI aircraft. The man flying was Sockeye, and `config/callsigns.toml` had
+held his respelling all along, because the TTS half needed it to **say** his
+name. The STT half needed the same word to **hear** it and was reading a
+different table.
+
+**One fact, two tables**, and the wrong one decides what the transcript says —
+which is then what the callsign-correction guard fires on (#196's other half)
+and what a controller reads back at him.
+
+**Measured**, by rendering the name in seven Polly voices and transcribing each
+back through the real recogniser:
+
+    unprimed          0/7 correct   ("Sakai" x6, "Suck I" x1)
+    live vocabulary   6/7 correct
+
+**And the seventh is Joey**, which gives "Socke" where the other six give
+"Sockeye" exactly. That is independent corroboration of the one thing I could
+not test directly — *"only batumi tower says sakai"* — since Batumi Tower is
+the Joey seat. The pronunciation question stays open, but it is no longer my
+guess against yours: two different measurements now single out the same voice.
+
+**`default_prompt` still names nobody, deliberately.** Priming for another
+sortie's callsigns is worse than not priming, which is why the fix feeds the
+LIVE vocabulary and not the fallback.
+
+**Acceptance criteria**
+1. His callsign appears correctly in the transcript.
+2. The callsign-correction guard does not fire on his own name.
+3. A name with a respelling always has priming — asserted, not hoped.
+
+---

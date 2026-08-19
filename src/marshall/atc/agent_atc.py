@@ -4045,6 +4045,30 @@ def whisper_vocabulary(bridge, roster=None) -> str:
     # is loaded -- so this one genuinely does belong to `core.route`.
     from marshall.core import route as R
     spoken = list(getattr(R, "SQUADRON_CALLSIGNS", ()))
+    # ...AND THE NAMES THE CONFIG ALREADY KNOWS HOW TO SAY.
+    #
+    # `SQUADRON_CALLSIGNS` is Pony, Hammer, Spit, Whistler -- the flight names
+    # the mission builder gives AI aircraft. The man flying is Sockeye, and he
+    # was in neither this seed nor anything else Whisper saw before he spoke.
+    #
+    # `config/callsigns.toml` has held his respelling all along, because the
+    # TTS half needed it to SAY his name. The STT half needed the same word to
+    # HEAR it and was reading a different table. One fact, two tables, and the
+    # one that was wrong is the one that decides what the transcript says:
+    #
+    #     "Sakai would request the ILS-13 approach."
+    #     "Batumi Ground, Sakai, is clear of active runway 07"
+    #
+    # Measured: unprimed, seven of seven Polly voices come back "Sakai";
+    # primed with the name, seven of seven come back "Sockeye". This is also
+    # what fired the callsign-correction guard at him (#196's other half). The
+    # comment forty lines below has said priming is the lever since it was
+    # written -- it just never reached the table that knows the names. [#198]
+    from marshall.core import catalogue as _cat
+    try:
+        spoken += list(_cat.known_callsigns())
+    except Exception as e:                     # a prompt is never worth a call
+        log.warning("could not read the configured callsigns: %s", e)
     spoken += [c for c in os.environ.get("MARSHALL_CALLSIGNS", "").split(",")
                if c.strip()]
     # THE HANDLES, which are the names actually said on this frequency now.
