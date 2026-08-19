@@ -232,6 +232,7 @@ def entries(text: str) -> list[dict]:
         body = text[m.end():end]
         st = STATUS.search(body)
         out.append({"slug": m.group(1), "num": m.group(3),
+                    "at": m.start(),
                     "status": st.group(1) if st else "",
                     "span": (m.end(), end),
                     "status_at": (m.end() + st.start(1), m.end() + st.end(1))
@@ -239,11 +240,46 @@ def entries(text: str) -> list[dict]:
     return out
 
 
+def archive(state: dict[int, str]) -> int:
+    """Move every closed entry out of `ISSUES.md` and into `ISSUES-CLOSED.md`.
+
+    BY PARSE, NEVER BY SLICE. The obvious way to find an entry's extent is
+    `text.index("\n---", start)`, and on an entry whose `---` is missing that
+    runs straight past the next heading and takes the following issue with it.
+    That is how #169 was deleted from this file on 14 August -- silently, and
+    noticed only because a later edit could not find it.
+
+    So the entry runs from its own heading to the NEXT heading, which is what
+    `entries` already computes and what cannot overshoot by construction.
+    """
+    live = ISSUES.read_text(encoding="utf-8")
+    old = ARCHIVE.read_text(encoding="utf-8") if ARCHIVE.exists() else ""
+    done = [e for e in entries(live)
+            if e["num"] and state.get(int(e["num"])) == "CLOSED"]
+    if not done:
+        print("nothing to archive")
+        return 0
+    moved = []
+    for e in sorted(done, key=lambda e: -e["at"]):
+        a, b = e["at"], e["span"][1]
+        moved.append(live[a:b].rstrip() + "\n")
+        live = live[:a] + live[b:]
+    for chunk in reversed(moved):                 # back into number order
+        old = old.rstrip() + "\n\n" + chunk
+    ISSUES.write_text(live.rstrip() + "\n", encoding="utf-8")
+    ARCHIVE.write_text(old.rstrip() + "\n", encoding="utf-8")
+    for e in sorted(done, key=lambda e: int(e["num"])):
+        print(f"  moved {e['slug']:10} #{e['num']}")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--fix", action="store_true",
                     help="write GitHub's closed state back into ISSUES.md")
+    ap.add_argument("--archive", action="store_true",
+                    help="move closed entries into docs/ISSUES-CLOSED.md")
     args = ap.parse_args()
 
     text = _both()
@@ -251,6 +287,8 @@ def main() -> int:
     state = gh_states()
     if state is None:
         return 2                      # SKIP, not FAIL -- see gh_states
+    if args.archive:
+        return archive(state)
     flight_test = gh_flight_test()
     have_labels = gh_labels()
     titles = gh_titles()
