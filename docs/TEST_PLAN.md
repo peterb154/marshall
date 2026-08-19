@@ -65,6 +65,16 @@ no flight at all is one nobody will ever fly -- both are checked by
 ### FLIGHT 1 — the full recovery
 > Kobuleti to Batumi, IFR, cold and dark to parked. The standing sortie.
 
+**59 ROWS BECAME 36, AND NOTHING WAS DELETED.** Twenty-three of them cited only
+issues that are CLOSED and attested — settled work, re-flown every sortie,
+competing for attention with the rows that still decide something. They are in
+REGRESSION now, where `tools/ladder_rehearsal.py` scores them in five minutes
+with nobody in a jet.
+
+Across the whole card that was 84 rows of 164. A card a pilot stops reading is
+a card that tests nothing, and the fastest way to get one is to keep adding
+rows and never take any off.
+
 **FLOWN ON `BatumiTest`, AND THAT IS THE POINT.** The clearance rows used to
 name Domino, Samovar, Kettle, Lantern, Marlin and Anvil — the plan set every
 resolver, sweep and fixture in this repository was written against.
@@ -109,8 +119,7 @@ the flight below. The `..` ranges expand over LIVE rows in card order, so they
 cannot name a retired one again without the parser saying so out loud.
 
 ```rows
-R1..R4 N1 N2 M1 G3 G4 G7 G8 G10 G11 G12 G13 G14 G15 G16 G17 Q1 Q14 Q15 Q16 Q17 Q18 V9 V7 P1..P4
-V6 V3 H4 H5 H6 H7 H8 H9 H10 H11 H29 H30 H31 V8 V5 F1..F5b V10 K1..K4
+N1 N2 M1 G4 G11 G12 G13 G14 G15 G16 G17 Q14 Q15 Q16 Q17 Q18 V9 V7 P1 P2 P3 P4 V6 V3 H4 H5 H6 H9 H10 H11 H29 H30 H31 V8 V5 V10
 ```
 ### FLIGHT 2 — the VFR arrival
 > Nothing filed. Do not call Clearance at all; come into the airspace and talk
@@ -118,33 +127,33 @@ V6 V3 H4 H5 H6 H7 H8 H9 H10 H11 H29 H30 H31 V8 V5 F1..F5b V10 K1..K4
 > the engine answered this pilot with silence.
 
 ```rows
-V12 V13 V14 H4 H5 H9 H10 V15 V16 H11 F1 F3 S11
+V12 V13 V14 H4 H5 H9 H10 V15 V16 H11 S11
 ```
 ### FLIGHT 3 — two aeroplanes
 > Needs a wingman. Cannot be flown solo: a formation is not one aeroplane, and
 > sequencing needs somebody to be sequenced against.
 
 ```rows
-D1..D8 N1..N9 L1..L6 H18 H19 H13 V10 G9
+D6 N1 N2 N2a N2b N2c N3 N4 N5 N6 N7 N8 N9 V10
 ```
 ### FLIGHT 4 — Nevada
 > Another map, another day. Needs the mission loading.
 
 ```rows
-U1..U8
+U6b
 ```
 ### FLIGHT 5 — the Kobuleti ILS
 > The data-driven proof: a second field's approach flown with no code change.
 
 ```rows
-T1..T4 V6 V8
+T1 T2 T3 T4 V6 V8
 ```
 ### EARS ONLY — all sortie, every flight
 > Not a flight. These ride along with whichever one you are flying, and no
 > machine will ever score them.
 
 ```rows
-S1..S17
+S8 S9 S10 S11 S12 S14 S15 S16 S17
 ```
 ### UNSCHEDULED — live rows the running order has never placed
 > **Not a sortie, and not a recommendation.** These are rows that are live on
@@ -158,9 +167,26 @@ S1..S17
 > who flies it.
 
 ```rows
-J1..J6 K5 M2..M4 P5..P11 Q0 Q1a Q1b Q3b Q4b Q12 Q13 R5..R7 G5 G6
-H13..H28 F4b
+M2 M3 M4 P5 P6 P7 P8 Q1a R7 H10 H9 H4 H5 H6 H20 H21 H24 H26
 ```
+### REGRESSION — the rehearsal flies these, not you
+> **Do not fly these to test them.** Every row here cites only issues that are
+> CLOSED and attested. They are kept because a tested thing is not deleted, it
+> becomes the regression check — but re-flying settled work is how a card grows
+> to a hundred and sixty rows and a pilot stops reading it.
+>
+> `tools/ladder_rehearsal.py` scores the structural half of these over real SRS,
+> real Polly and real Whisper in about five minutes, with nobody in a jet. Run
+> that instead. Anything here that a machine genuinely cannot judge — whether a
+> seam is audible, whether it sounds like one person — is on EARS ONLY.
+>
+> If one of these starts failing, it has ROTTED: reopen the issue it cites and
+> put the row back on a flight.
+
+```rows
+D1 D2 D3 D4 D5 D7 D8 F1 F2 F3 F3b F4 F4b F5 F5b G10 G3 G5 G6 G7 G8 G9 H13 H14 H15 H16 H17 H18 H19 H22 H23 H25 H27 H28 H7 H8 J1 J2 J3 J4 J5 J6 K1 K2 K3 K4 K5 L1 L2 L3 L4 L5 L6 P10 P11 P9 Q0 Q1 Q12 Q13 Q1b Q3b Q4b R1 R2 R3 R4 R5 R6 S1 S2 S3 S4 S5 S6 S7 U0 U1 U2 U3 U4 U5b U7 U8
+```
+
 ### PARKED — do not fly
 > V11 exercises the 1944 NDB letdown and that procedure is being removed: in
 > DCS only the P-51D-30 carries a homing receiver and it works badly. The row

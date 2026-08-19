@@ -83,7 +83,18 @@ class EveryFlightNamesRowsThatExist(unittest.TestCase):
         fenced = "\n".join(re.findall(r"```rows\n(.*?)```", m.group(1), re.S))
         ranges = re.findall(r"\b([A-Z]+\d+[a-z]?)\.\.([A-Z]+\d+[a-z]?)\b",
                             fenced)
-        self.assertTrue(ranges, "no ranges to check")
+        # NO RANGES IS THE BEST OUTCOME, not a broken test. #201 rewrote every
+        # running order as an explicit list when the closed-issue rows moved to
+        # the regression pool, which removes the hazard this guards rather than
+        # guarding against it: a list cannot expand to the wrong rows, or to
+        # none, or silently drop eight approach rows because somebody wrote the
+        # ends the wrong way round.
+        #
+        # Kept, because a range is the obvious thing to reach for the next time
+        # somebody adds twenty rows.
+        if not ranges:
+            self.skipTest("every running order is an explicit list -- there is "
+                          "no range to expand wrongly")
         pool = {}
         for letter, _t, rows in ft.sections():
             pool[letter] = [r["id"] for r in rows if r["id"]]
