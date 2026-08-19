@@ -491,10 +491,19 @@ class ARowWithNoPlanCannotPass(unittest.TestCase):
 
     def test_and_a_real_plan_is_still_judged_both_ways(self):
         import ladder_rehearsal as L
-        plan = {"destination": "BATUMI", "cruise_ft": 10000}
+        # LEGS, NOT `cruise_ft`. #192 deleted that column -- a plan has a
+        # level per leg -- and the guard this exercises reads the legs now.
+        # The fixture kept the old shape, so the guard saw no level and
+        # skipped, which is a check that cannot pass rather than one that
+        # failed. [#201]
+        plan = {"destination": "BATUMI",
+                "legs": [{"fix": "FOO", "lat": 42.0, "lon": 42.2,
+                          "alt_ft": 5000},
+                         {"fix": "BATUMI", "lat": 41.6, "lon": 41.6,
+                          "alt_ft": 10000}]}
         row = L.only_if_there_is_a_plan(
             plan, L.said("cleared to", "batumi"),
-            L.said(L._alt_words(plan["cruise_ft"])))
+            L.said(L._alt_words(L._top_of(plan))))
         self.assertTrue(row(self.reply(
             "cleared to Batumi as filed, maintain one zero thousand"))[0])
         self.assertIs(False, row(self.reply(

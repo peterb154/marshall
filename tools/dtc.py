@@ -173,7 +173,7 @@ def main(argv: list[str] | None = None) -> int:
               f"needs ONE sayable word for a pilot to request it by.",
               file=sys.stderr)
         return 2
-    print(f"\nfiling {plan['name']}: {plan['route']} at {plan['cruise_ft']}, "
+    print(f"\nfiling {plan['name']}: {plan['route']}, "
           f"recovering on {plan['approach']}")
     try:
         out = _post(f"{args.base}/plans",

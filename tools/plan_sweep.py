@@ -59,23 +59,23 @@ from marshall.atc import plans as P
 # you catch this copy drifting from what is actually on file.
 FILED = [
     {"name": "362nd-batumi-asr", "label": "Samovar", "callsign": None,
-     "origin": "Batumi", "destination": "Batumi", "cruise_ft": 11000,
+     "origin": "Batumi", "destination": "Batumi",
      "route": "BATUMI, FEET WET, INGRESS, TSUTSNVATI, EGRESS, BATUMI",
      "task": "CAS over Tsutsnvati"},
     {"name": "362nd-batumi-ndb", "label": "Kettle", "callsign": None,
-     "origin": "Batumi", "destination": "Batumi", "cruise_ft": 11000,
+     "origin": "Batumi", "destination": "Batumi",
      "route": "BATUMI, FEET WET, INGRESS, TSUTSNVATI, EGRESS, BATUMI",
      "task": "CAS over Tsutsnvati, beacon letdown on return"},
     {"name": "362nd-ingress-weather", "label": "Lantern", "callsign": None,
-     "origin": "Batumi", "destination": "Batumi", "cruise_ft": 5000,
+     "origin": "Batumi", "destination": "Batumi",
      "route": "BATUMI, FEET WET, INGRESS, FEET WET, BATUMI",
      "task": "Weather reconnaissance out to Ingress"},
     {"name": "362nd-coast-patrol", "label": "Marlin", "callsign": None,
-     "origin": "Batumi", "destination": "Batumi", "cruise_ft": 3000,
+     "origin": "Batumi", "destination": "Batumi",
      "route": "BATUMI, FEET WET, KOBULETI, BATUMI",
      "task": "Night patrol of the coastline"},
     {"name": "362nd-kobuleti-escort", "label": "Anvil", "callsign": None,
-     "origin": "Batumi", "destination": "Batumi", "cruise_ft": 4000,
+     "origin": "Batumi", "destination": "Batumi",
      "route": "BATUMI, KOBULETI, BATUMI",
      "task": "Escort a transport as far as Kobuleti"},
     # THE ONE THAT DOES NOT DEPART BATUMI, and the reason the two cases below
@@ -84,7 +84,7 @@ FILED = [
     # every single transmission -- so the request that must resolve to this plan
     # arrives pre-loaded with a token that scores for a different one.
     {"name": "362nd-kobuleti-batumi", "label": "Domino", "callsign": None,
-     "origin": "Kobuleti", "destination": "Batumi", "cruise_ft": 5000,
+     "origin": "Kobuleti", "destination": "Batumi",
      "route": "KOBULETI, INITIAL, BATUMI",
      "task": "Transit and radar recovery"},
 ]
@@ -321,7 +321,7 @@ def main(argv: list[str]) -> int:
     if plan:
         print("\nthe clearance, as it would be spoken:")
         print("  " + P.clearance(plan, flight_id=7, departure_freq=124.0,
-                                 initial_ft=plan.get("cruise_ft") or 0))
+                                 initial_ft=(plan.get("legs") or [{}])[0].get("alt_ft") or 0))
 
     if skipped:
         # Named, every time. "Skipped is reported, never silent" -- a check that

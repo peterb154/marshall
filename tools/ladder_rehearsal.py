@@ -197,7 +197,7 @@ def engine_decided(*words: str):
 _READ_BACK = "\x00read-back\x00"
 
 
-def read_back_of(ev) -> str:
+def read_back_of(ev, who: str = "") -> str:
     """What the controller just cleared him to, said back to him.
 
     The last clearance in the turn, minus the address. Reading back the words
@@ -209,7 +209,16 @@ def read_back_of(ev) -> str:
         if str(e.get("kind", "")).startswith("atc/") and "cleared" in (
                 e.get("text") or "").lower():
             said = re.sub(r"^\s*\w+[,\s]+", "", e["text"]).strip()
-            return said.rstrip(".") + ", {who}."
+            # HIS NAME, NOT THE PLACEHOLDER. This returned a literal "{who}" --
+            # an f-string brace in a plain string -- and the synthetic pilot
+            # transmitted it:
+            #
+            #     PILOT: ... cleared for takeoff, wind zero nine zero at five,
+            #            {who}.
+            #
+            # Polly said it, Whisper heard something, and the row failed for a
+            # reason that had nothing to do with the engine. [#201]
+            return said.rstrip(".") + f", {who}."
     return ""
 
 
@@ -396,7 +405,12 @@ def only_if_there_is_a_plan(plan: dict, *checks):
     not naming a letter nobody is broadcasting.
     """
     def check(ev):
-        if not plan.get("destination") or not plan.get("cruise_ft"):
+        # THE LEVEL COMES FROM THE LEGS. This asked for `cruise_ft`, which
+        # #192 deleted -- so after that commit the guard was always true and
+        # every row behind it skipped, reporting "no plan on file" about a
+        # plan that was on file the whole time. A skip that cannot become a
+        # pass is a check that has been switched off. [#201]
+        if not plan.get("destination") or not _top_of(plan):
             return None, ("no plan on file to be cleared on -- nothing here "
                           "knows the destination or the level to check for")
         return all_of(*checks)(ev)
@@ -516,7 +530,7 @@ def ladder_for(th, who: str = "Sockeye"):
          only_if_there_is_a_plan(
              plan,
              said("cleared to", plan.get("destination", "").lower()),
-             said(_alt_words(plan.get("cruise_ft") or 0))),
+             said(_alt_words(_top_of(plan)))),
          "the clearance is issued from the plan on file"),
 
         ("Q3b", clr.freq_mhz,
@@ -539,6 +553,12 @@ def ladder_for(th, who: str = "Sockeye"):
          all_of(handed_to(gnd.name), phase_is("taxi")),
          "a correct read-back ends Delivery's business (#90)"),
 
+        # WHICH ROWS CANNOT BE JUDGED UNTIL AN EARLIER ONE HAS PASSED.
+        #
+        # Only the ground ladder needs this, and only because #181 made a taxi
+        # clearance conditional on an agreed IFR clearance -- which is correct
+        # procedure and makes Q4 onwards genuinely unreachable when the
+        # read-back does not survive the audio loop.
         ("Q4", gnd.freq_mhz,
          f"{gnd.name}, {who}, ready to taxi.",
          engine_decided("taxi to runway", "hold short"),
@@ -599,6 +619,24 @@ def _alt_words(ft) -> str:
 
 _SPELL = {"0": "zero", "1": "one", "2": "two", "3": "three", "4": "four",
           "5": "five", "6": "six", "7": "seven", "8": "eight", "9": "nine"}
+
+
+# THE GROUND LADDER'S PRECONDITIONS. `Q3` is the read-back that agrees the
+# clearance; since #181 nothing moves without one, so every rung after it is
+# unreachable rather than wrong when Q3 could not be judged. [#201]
+_NEEDS = {"Q4": "Q3", "Q5": "Q3", "Q6": "Q3", "Q7": "Q3"}
+
+
+def _top_of(plan) -> int:
+    """The highest level this route asks for, from the LEGS.
+
+    Was `plan["cruise_ft"]`, which #192 deleted -- a plan has a level per leg
+    and no cruise altitude, and the column was `max(alt_ft)` stored under a
+    name nobody filed. The harness went on reading it and checked the clearance
+    against zero.
+    """
+    from marshall.atc import plans as _P
+    return _P.top_of_route(plan)
 
 
 def _freq_words(mhz: float) -> str:
@@ -1044,6 +1082,11 @@ def main(argv: list[str] | None = None) -> int:
         print()
 
     results, skipped = [], []
+    # WHERE THIS RUN STARTS IN THE RECORDER. A read-back is of the clearance he
+    # was just given, and `events_since(recorder, 0)` is the whole file -- so
+    # `--only Q3` read back a take-off clearance from a previous run and failed
+    # for not matching the IFR one it never heard. [#201]
+    _t0 = size(recorder)
     for rid, mhz, line, check, why in steps:
         print(f"── {rid}  on {mhz:.3f}")
         print(f"   {why}")
@@ -1052,7 +1095,11 @@ def main(argv: list[str] | None = None) -> int:
         # mishearing of the same audio is a fact about the pipeline rather than
         # bad luck, and repeating forever would hide it.
         if line is _READ_BACK:
-            line = read_back_of(events_since(recorder, 0)) or (
+            # ...AND ONLY WHAT THIS RUN SAID. `events_since(recorder, 0)` is
+            # the whole file, so `--only Q3` read back a take-off clearance
+            # left behind by an earlier run and then failed for not matching
+            # the IFR one. A read-back is of the clearance he was just given.
+            line = read_back_of(events_since(recorder, _t0), args.name) or (
                 f"Cleared as filed, {args.name}.")
         for attempt in (1, 2):
             ev, intact, gap = say_it(
@@ -1067,6 +1114,29 @@ def main(argv: list[str] | None = None) -> int:
         ok, detail = check(ev) if intact else (None, gap)
         if not intact:
             print("   MISHEARD")
+        # A ROW THAT COULD NOT BE REACHED IS NOT A ROW THAT FAILED.
+        #
+        # The ladder is a SEQUENCE: the read-back at Q3 is what agrees the
+        # clearance, and since #181 nothing taxis without one. So when Q3 skips
+        # -- a number lost through Polly and back through Whisper, which the
+        # audio loop does about one run in three -- Q4 asks Ground for taxi,
+        # gets refused, and the harness scored the refusal as a defect:
+        #
+        #     PILOT  Kobuleti Ground, Lancer23, ready to taxi.
+        #     ATC    you haven't been cleared yet -- contact Kobuleti Clearance
+        #     FAIL   the engine never decided: taxi to runway, hold short
+        #
+        # The engine was right at every step and two rows read as red. A
+        # harness that cannot tell "wrong" from "never got there" is worse than
+        # no harness, because the one thing it is for is telling those apart.
+        #
+        # Reported as SKIP, naming the row it waited on -- which is this file's
+        # own rule: "Skipped is not passed. A row that could not be judged is a
+        # row nothing is watching." [#201]
+        if ok is False and rid in _NEEDS and _NEEDS[rid] in {r for r, _d in skipped}:
+            ok, detail = None, (f"{_NEEDS[rid]} did not complete, so he was "
+                                f"never cleared -- this row was unreachable, "
+                                f"not wrong")
         if ok is None:
             skipped.append((rid, detail))
             print(f"   SKIP   {detail}\n")
