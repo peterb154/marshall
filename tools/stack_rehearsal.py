@@ -61,7 +61,7 @@ from marshall import config
 # `text`, folding Whisper's digits, clearing the director's flights as well as
 # restarting the bridge. A second copy would be a second set of those bugs.
 from ladder_rehearsal import (
-    a_clean_board, events_since, fly_an_aeroplane, say_it, size, take_it_away)
+    a_clean_board, fly_an_aeroplane, say_it, take_it_away)
 
 # WHERE THEY COME FROM. Different radials so the scope can tell them apart, and
 # far enough out that they are Center's before they are Approach's -- an arrival
@@ -122,6 +122,13 @@ def arrivals_for(th, n):
 ROUNDS = [
     ("{who}, checking in, inbound.", "everybody arrives"),
     ("{who}, over the beacon, request approach.", "everybody wants it"),
+    # CHOOSING IS ITS OWN TRANSMISSION, and no round ever made it. Since the
+    # approach offer landed, "request approach" is answered with a MENU of
+    # three, so a fixture that only ever ASKS is offered the menu for ever and
+    # never enters the stack. Nine turns, three aircraft, every one of them
+    # ENROUTE from first word to last -- and every separation invariant
+    # vacuously green over a stack with nothing in it. [#204]
+    ("{who}, request the radar approach.", "and each one CHOOSES one"),
     ("{who}, request approach.", "and asks again"),
 ]
 
@@ -336,7 +343,7 @@ def main(argv: list[str] | None = None) -> int:
         time.sleep(20.0)
         print()
 
-    violations, turns, judged = [], 0, 0
+    violations, turns, judged, stacked = [], 0, 0, set()
     try:
         for line, why in ROUNDS:
             print(f"── {why}")
@@ -344,16 +351,28 @@ def main(argv: list[str] | None = None) -> int:
                 said = line.format(who=callsign)
                 a = argparse.Namespace(srs=args.srs, name=srs_name, voice=voice,
                                        wait=args.wait)
-                mark = size(recorder)
                 print(f"   {callsign:15} {said}")
-                say_it(a, args.mhz, said, recorder, SRSClient, radio, AM, tts)
-                ev = events_since(recorder, mark)
+                # TAKE THE TURN say_it ATTRIBUTED, do not re-read the window.
+                # Re-reading gives back every record since the mark, including
+                # a previous turn's late reply, which is the attribution bug
+                # `mine_only` exists to fix. [#204]
+                ev, intact, why = say_it(a, args.mhz, said, recorder,
+                                         SRSClient, radio, AM, tts)
+                if not intact:
+                    print(f"      MISHEARD ({why})")
                 for e in ev:
                     if str(e.get("kind", "")).startswith("atc/") and e.get("text"):
                         print(f"      ATC: {e['text'][:110]}")
                 board = last_board(ev)
                 turns += 1
                 judged += 1 if board else 0
+                # WHO WAS EVER ACTUALLY SEQUENCED. Not "was there a board" --
+                # every rule below is about aircraft holding or in the letdown,
+                # so a board of ENROUTE aeroplanes satisfies all of them
+                # without answering any. [#204]
+                stacked |= {a.get("callsign") for a in board
+                            if a.get("phase") in ("HOLDING", "CLEARED")
+                            or a.get("assigned_ft") or a.get("in_letdown")}
                 bad = (two_at_one_level(board) + two_in_the_letdown(board)
                        + a_hole_in_the_stack(board, stack_ft) + forgotten(board)
                        + sent_away_and_ordered(ev))
@@ -387,11 +406,30 @@ def main(argv: list[str] | None = None) -> int:
               "every rule above")
         print("  passed by being unreachable. That is not a green run.")
         return 2
+    # A RUN THAT NEVER ENTERED THE STACK HAS NOT TESTED THE STACK, and the
+    # empty-board guard above does not catch it: these aeroplanes were all on
+    # the board, all run long, all ENROUTE. Every rule here is about holders
+    # and the letdown, so with nobody sequenced they are true of nothing and
+    # the run prints the same four congratulatory lines as a real pass. That
+    # is the vacuous green this file's docstring forbids, one level up. [#204]
+    if not stacked:
+        print("  NOBODY EVER ENTERED THE STACK. Every aircraft stayed ENROUTE "
+              "for the whole")
+        print("  run: none held, none was assigned a level, none was cleared. "
+              "So \"no two")
+        print("  aircraft shared a level\" was true of a stack with nothing in "
+              "it, and the")
+        print("  holding engine -- the reason this file exists -- was never "
+              "asked anything.")
+        print("  That is not a green run.")
+        return 2
     if violations:
         print(f"  {len(violations)} SEPARATION VIOLATION(S):")
         for v in violations:
             print(f"    {v}")
     else:
+        print(f"  {len(stacked)} aircraft were actually sequenced "
+              f"({', '.join(sorted(str(s) for s in stacked))}).")
         print(f"  {judged} of {turns} turns had somebody on the board, and in "
               f"none of them")
         print("  did two aircraft share a level. One letdown at a time, the "

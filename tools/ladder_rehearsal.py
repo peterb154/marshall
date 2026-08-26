@@ -842,6 +842,37 @@ def arrived_intact(ev, said_it: str) -> tuple[bool, str]:
                    f"words -- missing {', '.join(sorted(lost))}")
 
 
+def mine_only(ev: list) -> list:
+    """The records from THIS turn: everything from the moment the bridge heard ME.
+
+    AN `atc/` RECORD NEWER THAN `mark` IS NOT EVIDENCE THAT HE ANSWERED ME.
+    A reply that missed its own turn's deadline is written after the NEXT turn
+    has taken its mark, so the next turn sees an `atc/` record immediately,
+    stops waiting, and reports its predecessor's reply as its own. From then on
+    every turn is one behind, and nothing in the output says so -- the reply
+    printed under a pilot's name simply belongs to the aeroplane before him.
+
+    `stack_rehearsal.py` ran that way for three flights and scored four
+    separation violations against an engine that had never been asked the
+    question: Bandit's turns kept collecting Sockeye's answers, so Bandit's own
+    never landed inside his window and he was never worked at all. The board
+    then said, correctly, that an identified aircraft had been given nothing --
+    and the harness read that as the sequencer losing him.
+
+    The bridge writes a `pilot` record when it hears the transmission, so that
+    record is the boundary: anything before it belongs to somebody else's turn.
+    It is kept, because `arrived_intact` reads its transcript to decide whether
+    the question arrived at all.
+
+    No `pilot` record yet means the bridge has not heard us, and the honest
+    answer is nothing -- not the reply that happens to be sitting there. [#204]
+    """
+    for i, e in enumerate(ev):
+        if e.get("kind") == "pilot":
+            return ev[i:]
+    return []
+
+
 def say_it(args, mhz, line, recorder, SRSClient, radio, AM, tts, first=True):
     """Transmit one line and collect the turn. Returns (events, intact, why).
 
@@ -872,7 +903,7 @@ def say_it(args, mhz, line, recorder, SRSClient, radio, AM, tts, first=True):
         spoke_at = None
         while time.monotonic() < deadline:
             time.sleep(1.0)
-            got = events_since(recorder, mark)
+            got = mine_only(events_since(recorder, mark))
             if any(str(e.get("kind", "")).startswith("atc/") for e in got):
                 spoke_at = spoke_at or time.monotonic()
                 # A turn can be two transmissions -- a reply and a handoff.
@@ -881,7 +912,14 @@ def say_it(args, mhz, line, recorder, SRSClient, radio, AM, tts, first=True):
                     break
     finally:
         client.close()
-    ev = events_since(recorder, mark)
+    raw = events_since(recorder, mark)
+    ev = mine_only(raw)
+    stale = len(raw) - len(ev)
+    if stale and any(str(e.get("kind", "")).startswith("atc/") for e in raw[:stale]):
+        # SAY IT. A discarded reply is the previous turn overrunning its
+        # deadline, which is a fact about the run worth seeing.
+        print(f"   (ignored {stale} record(s) from before the bridge heard me "
+              f"-- the previous turn answered late)")
     intact, why = arrived_intact(ev, line)
     return ev, intact, why
 
