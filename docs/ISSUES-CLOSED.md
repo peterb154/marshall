@@ -7376,3 +7376,87 @@ commit trailer is pushed and stays wrong, which is why this entry names it.
 3. A read-back only scores when it carries our callsign.
 
 ---
+
+## [HARNESS-4] A reply belongs to the turn that earned it — #204
+
+labels: tooling
+
+**Status:** FIXED and FLOWN. `mine_only` in `tools/ladder_rehearsal.py`,
+guarded by `tests/test_a_reply_belongs_to_its_own_turn.py`.
+
+`say_it` decided the controller had answered by looking for any `atc/` record
+written since the byte offset it took before transmitting. That is also true of
+a reply to somebody ELSE: one that overruns its own turn's deadline is written
+after the NEXT turn has taken its mark, so the next turn sees an `atc/` record
+immediately, stops waiting, and reports its predecessor's answer as its own.
+From then on every turn is one behind and nothing in the output says so.
+
+`stack_rehearsal.py` ran that way for three flights and scored four separation
+violations. The transcript said it plainly and it did not look like a harness
+fault, because the symptom is a controller using the wrong callsign and that is
+a real bug we have actually had:
+
+    pilot transmits          reply addresses
+    Pony one two             "Pony one one ... you are Sockeye"
+    Pony one one             "Pony one three ... you are Hoover"
+    Pony one three           "Pony one one ... you are Bandit"
+
+Bandit's turns kept collecting Sockeye's answers, so Bandit's own never landed
+inside his window and he was never worked at all. The board then said --
+correctly -- that an identified aircraft had been given nothing, and `forgotten`
+read that as the sequencer losing him. **The engine was never asked the
+question, and the harness reported the answer as a defect.** Same shape as #202
+in the sibling file: a harness that cannot tell "wrong" from "never got there"
+is worse than none.
+
+The bridge writes a `pilot` record when it hears the transmission, so that
+record is the boundary: anything before it belongs to somebody else's turn.
+No `pilot` record yet means the bridge has not heard us, and the honest answer
+is nothing rather than whatever reply happens to be lying there.
+
+`stack_rehearsal.py` also re-read the recorder window itself after `say_it`
+returned, which handed back the untrimmed view and undid the fix; it now takes
+the turn `say_it` attributed.
+
+**Acceptance criteria**
+1. A reply written before the bridge heard this transmission is not attributed
+   to it. — met, `mine_only`
+2. The `pilot` record is retained so `arrived_intact` can still judge the
+   transmission. — met
+3. No `pilot` record yields an empty turn, which reports MISHEARD rather than
+   passing on somebody else's reply. — met
+4. `stack_rehearsal.py` reports what the separation engine does with three
+   arrivals, and the result is believable either way. — met, see below
+
+**FIXING IT TURNED THE RUN GREEN AND THE GREEN WAS WORTHLESS.** With the
+attribution right, all nine turns were judged, every ship was correctly named,
+nothing was forgotten and the run exited 0 — over a board on which all three
+aeroplanes were ENROUTE from the first word to the last. Twenty-four board
+rows, no holder, no assigned level, no letdown. Every rule in this file is
+about aircraft holding or in the letdown, so "no two aircraft shared a level"
+was true of a stack with nothing in it.
+
+The cause was in the fixture: `ROUNDS` only ever ASKED for an approach, and
+since the approach offer landed that is answered with a MENU of three. Nobody
+ever chose, so nobody was ever sequenced. A round that chooses one was added.
+
+The docstring already forbade this -- "A VACUOUS PASS IS NOT A PASS" -- but the
+guard it describes only catches an EMPTY board, and this board was full. So the
+guard now asks who was actually SEQUENCED, and a run where nobody entered the
+stack exits 2 (unreachable) rather than printing the four congratulatory lines.
+
+**What the engine did once it was finally asked**, which is the first real
+evidence we have for the stack:
+
+    Bandit    CLEARED   5,000 ft   <- letdown
+    Hoover    HOLDING   6,000 ft   "you're number two, expect approach shortly"
+
+One in the letdown, the holder on the level above him, filled from the bottom,
+and the sequence said out loud. The separation invariant held.
+
+**One loose end, not a separation fault.** Sockeye said "request the radar
+approach" -- the same words that worked for the other two, heard intact, no
+mishear -- and got "say again your request", so he was never sequenced. That is
+the intent classifier, and `tools/classify_bench.py` is the instrument for it.
+
+---
