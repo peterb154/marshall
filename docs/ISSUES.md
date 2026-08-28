@@ -421,6 +421,61 @@ says whose sortie it belonged to.
 
 ---
 
+## [STATE-11] A capital letter took a pilot off his own board — #210
+
+labels: bug, needs-flight-test
+
+**Status:** FIXED 28 August in `board.find`, live, with a pilot in the seat.
+Needs the sortie flown end to end to close.
+
+`board.find` matched names with `=`:
+
+    SELECT * FROM flight_state WHERE mission = %s AND callsign = %s
+
+The row is bound `sockeye` -- lower case, as the identity ladder writes it --
+and the controller asks for `Sockeye`, because that is how the agent says a
+name. No match. Every clearance tool goes through `_flight()`, so all of them
+answered as though the aeroplane did not exist, and the refusal printed the
+row it had just failed to match:
+
+    "Sockeye IS NOT ON THE BOARD ... On the board: sockeye."
+
+**What it cost.** `request_clearance` could not clear him, `clearance_state`
+could not tell him why, and the controller filled the gap with the reassurance
+that fits: *"you are already cleared on the BatumiTest flight plan, as filed,
+maintain five thousand"*, while `assigned_plans` held nothing at all. Ground --
+which reads the record -- refused taxi, correctly. The pilot could neither be
+cleared nor taxi, and spent twenty minutes on the ramp being told two opposite
+things by two seats:
+
+    ATC  (Clearance) you are already cleared on the BatumiTest flight plan
+    ATC  (Ground)    negative, you have not been cleared yet
+    PILOT "clearly, on the DIAG page, and with Kobuleti Ground, I'm not
+           cleared for a flight plan, but Kobuleti Clearance thinks that I am"
+
+**A NAME IS NOT AN IDENTIFIER, and the fix is that distinction.** `srs_guid`
+and `track_name` are the sim's own strings and still match exactly -- a loose
+comparison there would bind the wrong aeroplane, which is a separation fault.
+`callsign` and `srs_name` are NAMES: written by whoever bound the row, spoken
+by a pilot, title-cased on the way through the agent. They match without regard
+to case now.
+
+**It hid behind two better stories.** The seat's conversation really had gone
+stale (#209) and really did need clearing, and clearing it changed nothing --
+which is what ruled it out. And the fabricated clearance really is #185's
+shape, an agent covering a refusal it could not voice. Both were true and
+neither was the cause. The tell was in the tool's own output the whole time,
+naming the row in the sentence that denied it.
+
+**Acceptance criteria**
+1. A callsign matches its row whatever the case, for `callsign` and `srs_name`.
+2. `srs_guid` and `track_name` still match exactly.
+3. A refusal that names the board cannot name the callsign it just refused.
+4. A pilot is cleared, reads it back, and taxis -- end to end, no seat
+   disagreeing with another about whether he holds a clearance.
+
+---
+
 ## [TEST-1] Fly Kobuleti ILS to prove the data drives it — #3
 labels: test, needs-flight-test
 

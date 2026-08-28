@@ -86,13 +86,32 @@ def find(mission: str = "default", *, callsign: str | None = None,
     better than not matching at all, which used to mean minting a new row for
     every transmission from a pilot we had not yet tied to a track.
     """
+    # A NAME IS MATCHED WITHOUT REGARD TO CASE; AN IDENTIFIER IS NOT.
+    #
+    # `srs_guid` and `track_name` are the sim's own strings and must match
+    # exactly. `callsign` and `srs_name` are NAMES -- written by whoever bound
+    # the row, spoken by a pilot, and title-cased on the way through the agent.
+    # The row is bound "sockeye"; the controller asks for "Sockeye"; the
+    # comparison was `=` and missed.
+    #
+    # 28 August, live, with a pilot on the ramp. `clearance_state` answered
+    #
+    #     "Sockeye IS NOT ON THE BOARD ... On the board: sockeye."
+    #
+    # -- printing the row it had just failed to match, in the same breath. So
+    # `request_clearance` could not clear him, nothing could tell him why, and
+    # the controller filled the gap with "you are already cleared on the
+    # BatumiTest flight plan" while `assigned_plans` was empty. He could not
+    # taxi and could not be cleared, and the only evidence was a capital S.
+    _EXACT = ("srs_guid", "track_name")
     for col, val in (("srs_guid", srs_guid), ("track_name", track_name),
                      ("callsign", callsign), ("srs_name", srs_name)):
         if not val:
             continue
+        where = (f"{col} = %s" if col in _EXACT else f"lower({col}) = lower(%s)")
         with get_pool().connection() as c:
             cur = c.execute(
-                f"SELECT * FROM flight_state WHERE mission = %s AND {col} = %s "
+                f"SELECT * FROM flight_state WHERE mission = %s AND {where} "
                 "ORDER BY updated_at DESC LIMIT 1", (mission, val))
             r = cur.fetchone()
             if r:
