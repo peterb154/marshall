@@ -2173,6 +2173,30 @@ def challenge_for(transcript: str) -> str:
 # HIS channel, and nobody else -- see `may_be_vectored`.
 
 
+def why_not_vectored(bridge, ctl, cs: str, traffic: bool = False,
+                     freq_hz: float | None = None) -> str:
+    """WHICH condition refused, for the log. Never used to decide anything.
+
+    `may_be_vectored` is the decision and stays the decision -- two
+    implementations of one question is the fault this codebase keeps finding.
+    This re-asks the same conditions only to name the first that fails, and is
+    called solely on the path where the answer was already NO.
+    """
+    key = ctl._resolve(cs)
+    if key not in ctl.aircraft:
+        return ("he has never spoken to this controller about arriving -- the "
+                "blind engine does not know him, so the radar thread will not "
+                "fly him")
+    ac = ctl.aircraft.get(key)
+    if ac is not None and getattr(ac, "on_visual", False):
+        return "he is cleared for a visual and is flying it himself"
+    if may_be_vectored(bridge, ctl, cs, traffic=traffic, freq_hz=freq_hz):
+        return "no reason -- he may be vectored"
+    return ("he has not checked in on this frequency, or it is not his turn: "
+            "a vector is the invitation to start the approach and only the "
+            "aircraft that owns the letdown gets one")
+
+
 def may_be_vectored(bridge, ctl, cs: str, traffic: bool = False,
                     freq_hz: float | None = None) -> bool:
     """May the radar thread turn this aircraft right now?
@@ -6841,6 +6865,9 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # Cleared for the ILS, so it goes out once. Dropped on the ground and on
         # a missed approach: a second approach is a second clearance.
         cleared_ils: set[str] = set()
+        # The last reason each aeroplane was NOT vectored, so a 2 s poll
+        # logs a refusal once instead of four hundred times.
+        _no_vector: dict[str, str] = {}
         # The last reason nobody was handed over, per aircraft, so the line is
         # printed on the CHANGE rather than every poll.
         _watch: dict[str, str] = {}
@@ -7123,7 +7150,32 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                         continue                # a letdown he flies himself
                     if not may_be_vectored(bridge, ctl, cs, traffic=traffic,
                                            freq_hz=_final_hz):
+                        # SAY WHICH PRECONDITION REFUSED, once per aeroplane.
+                        #
+                        # This was a bare `continue`, and it is the reason a
+                        # silent approach was a mystery for a day. A pilot flew
+                        # the whole ILS with five vectors decided and none
+                        # transmitted, asked "why has he gone quiet", and there
+                        # was nothing anywhere that said. `may_be_vectored`
+                        # answers one bool over half a dozen separate
+                        # conditions -- known to the engine, not on a visual,
+                        # checked in on THIS frequency, whose turn it is -- and
+                        # a refusal that does not name itself is the same fault
+                        # as the phase refusal #197 was written for.
+                        #
+                        # Once per aeroplane per reason, so a 2 s poll does not
+                        # fill the log with the same line four hundred times.
+                        _why_not = why_not_vectored(bridge, ctl, cs,
+                                                    traffic=traffic,
+                                                    freq_hz=_final_hz)
+                        if _no_vector.get(cs) != _why_not:
+                            _no_vector[cs] = _why_not
+                            print(f"  .. not vectoring {cs}: {_why_not}",
+                                  flush=True)
+                            record(session_id, kind="not_vectored",
+                                   callsign=cs, text=_why_not)
                         continue                # holding, or nobody's turn yet
+                    _no_vector.pop(cs, None)
                     g = asr.guide(pos, _pro,
                                   on_missed=flying_the_missed(bridge, cs, pos,
                                                               ctl))
