@@ -50,7 +50,7 @@ from marshall.atc.approaches import (
     upsert_flight_plan,
 )
 from tools.busy import SeatLocks
-from marshall.atc.clearance import clearance_tools
+from marshall.atc.clearance import clearance_tools, flightplan_tools
 from marshall.atc.agent.context import RadioContext, scrub
 from marshall.atc.frequencies import frequency_tools
 from marshall.atc.procedures import procedure_tools
@@ -207,6 +207,11 @@ def build_agent(session_id: str, role: str = "", also=(),
             # ...AND THE SEAT, which is what makes the ORIGIN a fact. A pilot
             # calling Kobuleti Clearance is on Kobuleti's ramp; see #127.
             *(clearance_tools(mission, station) if "clearance" in may else []),
+            # READING his plan, for every seat that is not already getting
+            # the whole clearance set. The man vectoring him needs to know
+            # where he is going; he does not need to be able to clear him.
+            *(flightplan_tools(mission, station)
+              if "flightplan" in may and "clearance" not in may else []),
             # ANY FREQUENCY ON THE MAP, on demand. His OWN field's are in the
             # brief -- a controller works one aerodrome and knows it cold -- and
             # everywhere else is unbounded: thirty fields at four to eight seats

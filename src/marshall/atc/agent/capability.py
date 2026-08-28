@@ -66,7 +66,14 @@ _TOOLSET = {
 # about his own aerodrome because of a capability table is a worse failure
 # than the tokens it saves. ISSUING one is still Approach's alone -- that is
 # separation, and it lives in the engine rather than in who may read a list.
-_UNIVERSAL = {"identify", "vector", "hooks", "frequency", "procedure", "memory"}
+# `flightplan` is universal for exactly the reason `frequency` and
+# `procedure` are, and it was not: reading an aeroplane's plan rode inside
+# the CLEARANCE capability, so the only seats that could see where a man
+# was going were the two that issue clearances. Departure told a pilot it
+# did not have his steerpoints and was telling the truth. Issuing a
+# clearance is a power; knowing what he is doing is not. [#199]
+_UNIVERSAL = {"identify", "vector", "hooks", "frequency", "procedure",
+              "memory", "flightplan"}
 
 
 def capabilities(role: str = "", also=()) -> set[str]:

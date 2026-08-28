@@ -775,7 +775,43 @@ def clearance_tools(mission: str = "default", station: str = "") -> list:
             out.append(f"Unresolved on his route: {', '.join(missing)}.")
         return "\n".join(out)
 
+    # ISSUING A CLEARANCE IS A POWER; KNOWING WHAT HE IS DOING IS NOT.
+    #
+    # `flight_plan_help` rode in this list, and the list is handed out only
+    # when "clearance" is in the seat's capabilities -- which is Clearance and
+    # Delivery and nobody else. So Departure, Approach, Center, Ground and
+    # Tower had no way to read the plan of the aeroplane they were working.
+    #
+    # 28 August, airborne, asking the seat that vectors him:
+    #
+    #     PILOT  request vectors to my next steerpoint
+    #     ATC    negative on vectors, I don't have your steerpoints
+    #
+    # Which was TRUE. He had no such tool. Two fixes went into that tool this
+    # evening -- the plan's own leg positions, then a bearing and range for
+    # each fix -- and neither could ever have reached the seat that asked.
+    #
+    # It is universal for the reason `frequency` and `procedure` are, and the
+    # capability table already says so in prose: a pilot asks, and the man
+    # working him should not have to send him back to Delivery to find out
+    # where he is going. See `flightplan_tools`. [#199]
     return [request_clearance, clearance_state, flight_plan_help]
+
+
+def flightplan_tools(mission: str = "default", station: str = "") -> list:
+    """READING a flight plan, for every seat. Not issuing one.
+
+    The same `flight_plan_help` the clearance seats get, without
+    `request_clearance` or `clearance_state` -- those decide whether an
+    aeroplane may go, and that is Delivery's alone.
+    """
+    # BY `__name__`, and nothing else. A second lookup on a `_tool_spec`
+    # attribute was written here as a defensive fallback for an API that does
+    # not have one -- `tools/unwired.py` caught it on the first run as a thing
+    # read and never assigned, which is exactly what a guess about somebody
+    # else's interface looks like from the outside.
+    return [t for t in clearance_tools(mission, station)
+            if getattr(t, "__name__", "") == "flight_plan_help"]
 
 
 def _known_fixes() -> dict:
