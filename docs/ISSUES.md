@@ -66,6 +66,54 @@ whether the cockpit card still cites something closed — and runs in
 
 ---
 
+## [CARD-4] The running order is never checked for being a running ORDER — #205
+
+labels: tooling
+
+**Status:** FLIGHT 1 re-ordered by hand (28 August). The GUARD is not built,
+which is why this stays open.
+
+`tests/test_the_card_is_flown_as_flights.py` checks that every row a flight
+names exists, that no live row is in no flight at all, and that an `a..b` range
+expands in card order. It does not check the one property the flights exist FOR
+-- that the rows come in the order a pilot meets them. The card was reorganised
+by flight on 16 August precisely because theme order is the wrong axis for
+flying, and the sequence within a flight was then left unguarded.
+
+Three rows in FLIGHT 1 could not be flown where they sat:
+
+    P1 P2   "slot into a cold jet and SAY NOTHING" / "still silent"
+            -- listed 19th and 20th, after clearance, taxi and departure
+    G17     "open the sortie with an odd FIRST call" -- listed 11th
+    G15     "AIRBORNE on your filed clearance" -- listed 9th, at the ramp
+
+Four more were out of sequence (H10 after "once established"; H5 after H4;
+H31, the roll-out, before V8 and V5, which are on final), and V10 -- "two
+aircraft worked by seats at DIFFERENT aerodromes" -- was on the solo sortie.
+
+**Nothing was wrong with any ROW.** Every one exists, is live, cites an open
+issue and is in a flight, so every check passed. The card was wrong in the only
+dimension nothing reads, which is the same shape as #204 one document over: a
+guard that cannot see the axis the fault moves along reports green while the
+thing it guards is unusable.
+
+**What a guard would need.** Rows carry a `when` column, but it is prose --
+"P1", "Holding short, ready for departure", "**Airborne on your filed
+clearance**" -- and prose cannot be sorted. A checkable version needs the stage
+as DATA: a small ordered vocabulary (ramp, clearance, taxi, departure, enroute,
+approach, final, rollout, board) with each row declaring one, and the test
+asserting a flight's stages never go backwards. That is the fix; hand-ordering
+is not, and this entry exists so the next drift is not found by a pilot.
+
+**Acceptance criteria**
+1. Every row declares a stage from a closed vocabulary, as data rather than
+   prose.
+2. A flight whose rows go backwards through the stages fails the suite.
+3. A row that needs a second aeroplane cannot appear in a solo flight.
+4. FLIGHT 1 passes without hand-ordering.
+
+---
+
 ## [TEST-1] Fly Kobuleti ILS to prove the data drives it — #3
 labels: test, needs-flight-test
 

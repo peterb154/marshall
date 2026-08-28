@@ -65,7 +65,7 @@ no flight at all is one nobody will ever fly -- both are checked by
 ### FLIGHT 1 — the full recovery
 > Kobuleti to Batumi, IFR, cold and dark to parked. The standing sortie.
 
-**59 ROWS BECAME 36, AND NOTHING WAS DELETED.** Twenty-three of them cited only
+**59 ROWS BECAME 35, AND NOTHING WAS DELETED.** Twenty-three of them cited only
 issues that are CLOSED and attested — settled work, re-flown every sortie,
 competing for attention with the rows that still decide something. They are in
 REGRESSION now, where `tools/ladder_rehearsal.py` scores them in five minutes
@@ -114,12 +114,38 @@ longer exist:
 
 They were struck as their issues closed and the running order was never
 re-read against the card -- the same drift the order itself was rebuilt on
-16 August to fix, recurring in three weeks. 46 live rows remain and they are
+16 August to fix, recurring in three weeks. 35 live rows remain and they are
 the flight below. The `..` ranges expand over LIVE rows in card order, so they
 cannot name a retired one again without the parser saying so out loud.
 
+**RE-ORDERED 28 AUGUST, AND THREE ROWS COULD NOT BE FLOWN WHERE THEY SAT.** The
+list was in the order the rows were WRITTEN, not the order a sortie meets them,
+and `tests/test_the_card_is_flown_as_flights.py` cannot see that: it checks that
+every row named exists and that a range expands in card order, never that the
+sequence is a flight. So the drift it was built to stop moved into the one axis
+it does not read.
+
+    P1 P2   "slot into a cold jet and SAY NOTHING", "still silent" -- listed
+            19th and 20th, after clearance, taxi and departure
+    G17     "open the sortie with an odd FIRST call" -- listed 11th
+    G15     "AIRBORNE on your filed clearance" -- listed 9th, at the ramp
+
+Four more were merely out of sequence: H10 (arrive high at thirty miles and ask
+for the approach) sat after the rows that begin "once established"; H5 ("before
+established") after H4 ("once established"); and H31, which is the roll-out,
+before V8 and V5, which happen on final.
+
+**V10 came off this flight entirely.** It reads "with two aircraft worked by
+seats at DIFFERENT aerodromes", and this sortie is solo -- it was asking a
+pilot on his own to compare two rows he could not produce. It was already in
+FLIGHT 3, where the wingman is, so nothing was lost.
+
+N1, N2 and M1 all address BATUMI. They were the first three rows of a sortie
+that starts cold at Kobuleti, so they now sit with the arrival, where there is
+somebody on that frequency to answer them.
+
 ```rows
-N1 N2 M1 G4 G11 G12 G13 G14 G15 G16 G17 Q14 Q15 Q16 Q17 Q18 V9 V7 P1 P2 P3 P4 V6 V3 H4 H5 H6 H9 H10 H11 H29 H30 H31 V8 V5 V10
+P1 P2 G17 G13 G14 G11 G4 G12 G16 Q14 V9 Q17 Q15 Q18 G15 Q16 V7 N1 N2 M1 P3 P4 H10 V6 V3 H5 H6 H4 H9 H11 H29 H30 V8 V5 H31
 ```
 ### FLIGHT 2 — the VFR arrival
 > Nothing filed. Do not call Clearance at all; come into the airspace and talk
@@ -197,11 +223,20 @@ V11 Q0 U0
 ```
 ## Fly in this order
 
-**Rebuilt 16 August, re-scrubbed 18 August.** The previous order was written on
-2 August and named six issues that had since closed; it also predates sections
-P, L, U and V.
+**THE FLIGHTS ABOVE ARE THE RUNNING ORDER. THIS SECTION IS THE REASONING
+BEHIND IT, AND IT IS OLDER THAN THEY ARE.** Where the two disagree, fly the
+flight: it is what the kneeboard renders and what
+`tests/test_the_card_is_flown_as_flights.py` reads. This stage table was
+rebuilt on 16 August and re-scrubbed on 18 August, and the work of 19--26
+August landed after it, so its counts and its notion of "this week" are both
+behind. Kept because the STAGES are still the right way to think about a
+sortie, and a pilot deciding what to fly wants the reasoning as well as the
+list.
 
-**Twenty-four issues are waiting on a pilot** and every one has a live row.
+**Thirty-seven issues are waiting on a pilot** (28 August) and every one has a
+live row -- `tools/issue_sync.py` checks that on every run of `check.py`. The
+prose below still says twenty-four in places and names #176/#177 as the reason
+to fly today; that was true on 18 August.
 Two of those rows were added on 18 August and are the reason to fly today --
 #177 (Approach asks which approach) and #176 (he is briefed on HIS approach and
 not all four). Both were labelled `needs-flight-test` and had NO ROW for
