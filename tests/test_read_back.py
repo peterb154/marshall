@@ -87,12 +87,46 @@ class TheExchangeCanBeFinished(unittest.TestCase):
         self.assertIs(ok, True, "what he said the first time is still said")
         self.assertEqual(missed, [])
 
-    def test_the_carried_transcript_is_dropped_once_agreed(self):
+    def test_the_carried_transcript_survives_the_verdict(self):
+        """AGREED IS NOT RECORDED, and only the record may drop it. [#208]
+
+        This used to assert the opposite: `_read_back_correct` popped its own
+        accumulator the moment nothing was outstanding. That is safe only while
+        the acknowledgement always lands -- and `_ack_the_clearance` could fail
+        silently, so the engine believed him agreed, the memory of what he had
+        said was gone, and the durable row still read ISSUED. Ground refused
+        taxi for ever and NO transmission could end it, because every later
+        word was then judged as a fresh read-back of the whole clearance.
+
+        A pilot aborted a sortie on that on 28 August.
+        """
+        b = Bridge(plan())
+        agent_atc._read_back_correct(b, "sockeye", "one two three decimal three")
+        ok, _missed, _facts = agent_atc._read_back_correct(
+            b, "sockeye", "one zero thousand, three three five zero")
+        self.assertIs(ok, True)
+        self.assertIn("sockeye", getattr(b, "read_back_said", {}),
+                      "the verdict alone must not discard what he said")
+
+    def test_and_is_dropped_once_the_agreement_is_written_down(self):
         b = Bridge(plan())
         agent_atc._read_back_correct(b, "sockeye", "one two three decimal three")
         agent_atc._read_back_correct(
             b, "sockeye", "one zero thousand, three three five zero")
+        agent_atc._forget_the_read_back(b, "sockeye")
         self.assertNotIn("sockeye", getattr(b, "read_back_said", {}))
+
+    def test_a_word_after_an_UNRECORDED_agreement_does_not_restart_it(self):
+        """The exact shape of the abort: he is told correct, says one more
+        thing, and is told he is negative on numbers he has already given."""
+        b = Bridge(plan())
+        agent_atc._read_back_correct(b, "sockeye", "one two three decimal three")
+        agent_atc._read_back_correct(
+            b, "sockeye", "one zero thousand, three three five zero")
+        # The write failed, so nothing forgets. He keeps talking.
+        ok, missed, _facts = agent_atc._read_back_correct(
+            b, "sockeye", "sockeye will maintain one zero thousand")
+        self.assertIs(ok, True, f"he is still agreed; missing {missed}")
 
     def test_two_aircraft_do_not_share_a_read_back(self):
         """The accumulator is keyed on the callsign, or one pilot finishes

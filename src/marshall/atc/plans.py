@@ -92,7 +92,42 @@ def whats_filed(plans: list[dict]) -> str:
     over: he was told his flight was missing when his PLAN was on file the
     whole time, and went hunting where nothing was wrong.
     """
-    live = [p.get("label") for p in plans if p.get("label")]
+    # WHAT EACH ONE IS, NOT JUST WHAT IT IS CALLED.
+    #
+    # `resolve` is an exact lookup on the LABEL, deliberately -- the judgment
+    # about which plan a pilot means belongs upstairs, with the words. But the
+    # controller was handed the names and nothing else, so he had nothing to
+    # judge WITH: a pilot who asks by what he is DOING names a task and a
+    # destination and never a label, and no amount of reasoning gets from
+    # "BatumiTest" to "the transit and recovery to Batumi" without being told
+    # what BatumiTest is.
+    #
+    # 28 August, live, card row G4:
+    #
+    #     PILOT  request clearance for the transit and recovery to Batumi
+    #     ATC    no plan filed under that name. I have BatumiTest and
+    #            NellisTest on file. Which do you want.
+    #     PILOT  "I cannot specify what I'm doing, I have to use the name."
+    #
+    # Both plans carry the task "Transit and recovery", so by task alone the
+    # question is fair. He also said BATUMI, and only one of them goes there --
+    # the fact that separates them was on the row and never left this function.
+    #
+    # THE OLDER FORM DID THIS and it was trimmed to bare labels: `filed`'s own
+    # docstring still quotes "Domino, transit and radar recovery; Redflag,
+    # local transit and instrument recovery". [#183]
+    def _one(p: dict) -> str:
+        label = p.get("label")
+        task, dest = (p.get("task") or "").strip(), (p.get("destination") or "").strip()
+        if task and dest:
+            return f"{label} ({task.lower()}, to {dest.title()})"
+        if task:
+            return f"{label} ({task.lower()})"
+        if dest:
+            return f"{label} (to {dest.title()})"
+        return f"{label}"
+
+    live = [_one(p) for p in plans if p.get("label")]
     if not live:
         return "Nothing is on file at all."
     if len(live) == 1:

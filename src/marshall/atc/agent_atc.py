@@ -455,7 +455,8 @@ def flight_agree(flight_id: int, base: str = BASE_URL, **fields) -> dict:
         return {}
 
 
-def _ack_the_clearance(bridge, known: str, base: str = BASE_URL) -> dict:
+def _ack_the_clearance(bridge, known: str,
+                       base: str = BASE_URL) -> dict | None:
     """He read it back and the VERIFIER agreed. Record the agreement.
 
     CLEARED AND AGREED ARE NOT THE SAME THING, which is why `clearance_ack`
@@ -467,14 +468,22 @@ def _ack_the_clearance(bridge, known: str, base: str = BASE_URL) -> dict:
     Written from the bridge now, on the deterministic verdict, which is the same
     rule as everywhere else here: the engine decides, the agent phrases.
     """
+    # NONE IS "NOT RECORDED"; A DICT IS "RECORDED". They were both `{}`, and
+    # the caller discarded the return anyway -- so a read-back the engine had
+    # agreed could fail to be written and the sortie carried on as though it
+    # had. That is exactly the failure this function's own docstring describes
+    # having cost a whole flight once, back when `_flight_id_of` could not find
+    # the row. Whether it landed is now an answer. [#185]
     fid = _flight_id_of(known)
     if not fid:
-        return {}
+        log.warning("  !! could not record the read-back: no flight row for "
+                    f"{known!r} in {MISSION!r}")
+        return None
     try:
-        return _post_json(f"{base}/flights/{fid}/clearance-ack", {})
+        return _post_json(f"{base}/flights/{fid}/clearance-ack", {}) or {}
     except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
         log.warning(f"  !! could not record the read-back: {e}")
-        return {}
+        return None
 
 
 def _flight_id_of(known: str, base: str = BASE_URL) -> int:
@@ -2502,9 +2511,18 @@ def _read_back_correct(bridge, known: str,
     lost = _decision.unspoken(d, whole)
     missed = _decision.verify(d, whole)
     facts = {f.field: getattr(d, f.field) for f in lost}
-    if not missed:
-        said.pop(key, None)              # agreed; nothing left to carry
+    # THE POP MOVED OUT. Discarding what he has said is safe only once the
+    # agreement is RECORDED -- see `_forget_the_read_back`, called by the one
+    # place that knows whether the write landed. Dropping it on the verdict
+    # alone is what left an exchange with no ending. [#208]
     return (not missed), missed, facts
+
+
+def _forget_the_read_back(bridge, known: str) -> None:
+    """The clearance is agreed AND written down; stop carrying what he said."""
+    said = getattr(bridge, "read_back_said", None)
+    if said:
+        said.pop((known or "").lower(), None)
 
 
 def separation_context(bridge, ctl, transcript: str, scope: str = "",
@@ -2626,7 +2644,26 @@ def separation_context(bridge, ctl, transcript: str, scope: str = "",
             # defaults to True. The verdict and the record are one thing now,
             # and it is the deterministic verdict.
             if _ok is True:
-                _ack_the_clearance(bridge, known)
+                # AGREED IS NOT RECORDED, and only the record ends this.
+                #
+                # The verdict used to be enough: `_read_back_correct` dropped
+                # its accumulator the moment nothing was outstanding, and this
+                # line fired and forgot. So when the write failed the engine
+                # believed him agreed, the working memory of what he had said
+                # was gone, and the durable row still read ISSUED -- Ground
+                # refused taxi for ever and no transmission could end it,
+                # because every later word was judged as a fresh read-back of
+                # the whole clearance. A pilot aborted the sortie on 28 August
+                # with "he says my read back is correct, but on the diag page
+                # it's still showing not read back". [#185] [#208]
+                if _ack_the_clearance(bridge, known) is None:
+                    _ok = None                    # unjudged, not agreed
+                    intent = dataclasses.replace(intent, correct=None)
+                    print("  !! the read-back was correct and could NOT be "
+                          "recorded — he is not cleared to taxi and nothing "
+                          "downstream will think so", flush=True)
+                else:
+                    _forget_the_read_back(bridge, known)
 
         # THE LEVEL HE WAS CLEARED TO, onto the engine, every turn.
         #
