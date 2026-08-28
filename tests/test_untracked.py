@@ -690,7 +690,26 @@ class TestAGhostDoesNotOutliveTheSim(unittest.TestCase):
         """Radar is plainly working: it is drawing somebody else."""
         return A.Scope("", contacts=[airborne(name="362nd_Other",
                                               label="362nd_Other")],
-                       origin=BATUMI, bullseye=BULLSEYE)
+                       origin=BATUMI, bullseye=BULLSEYE, ok=True)
+
+    def test_an_empty_sky_that_radar_ANSWERED_releases_them(self):
+        """The last aeroplane to leave must still be reapable.
+
+        This is the live failure of 28 August: a pilot deslotted, the scope
+        went empty, and because empty meant "radar is unreliable" his
+        `radar_identified` flag bought him the benefit of the doubt on every
+        tick for ever. HIS OWN DEPARTURE was what emptied the picture. He sat
+        on the board as LANDED, owned by a controller who could not see him,
+        for the next sortie under that callsign to inherit. [#207]
+        """
+        ctl, b = self.board(), A.Bridge()
+        answered = A.Scope("", contacts=[], origin=BATUMI,
+                           bullseye=BULLSEYE, ok=True)
+        A.release_stale(b, ctl, answered, now=0.0)
+        gone = A.release_stale(b, ctl, answered, now=A.STALE_BOARD_SEC + 1)
+        self.assertEqual(sorted(gone), ["Check", "Sockeye"],
+                         "radar answered and held nobody -- they are gone")
+        self.assertEqual(list(ctl.aircraft), [])
 
     def test_they_come_off(self):
         ctl, b = self.board(), A.Bridge()
@@ -700,11 +719,17 @@ class TestAGhostDoesNotOutliveTheSim(unittest.TestCase):
         self.assertEqual(sorted(gone), ["Check", "Sockeye"])
         self.assertEqual(list(ctl.aircraft), [])
 
-    def test_but_an_empty_picture_still_protects_them(self):
+    def test_but_a_FAILED_poll_still_protects_them(self):
         """An absent answer is not a negative answer. Radar hiccups, the
-        director restarts, the sim pauses when empty -- and dropping a live
-        aeroplane on one blank poll is the failure this function exists to
-        prevent. With nothing on the picture we know nothing."""
+        director restarts, the sim pauses -- and dropping a live aeroplane on
+        one failed poll is the failure this function exists to prevent.
+
+        THE FIXTURE IS UNCHANGED AND ITS MEANING IS NOT. It used to be called
+        "an empty picture", because an empty picture and a failed poll were the
+        same value; `Scope.ok` separates them, and this Scope has never polled
+        anything. The empty-but-ANSWERED case is the sibling test below, and it
+        must come out the other way. [#207]
+        """
         ctl, b = self.board(), A.Bridge()
         blank = A.Scope("", contacts=[], origin=BATUMI, bullseye=BULLSEYE)
         A.release_stale(b, ctl, blank, now=0.0)

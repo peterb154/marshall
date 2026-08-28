@@ -97,6 +97,16 @@ class F4U_1D(PlaneType):
     panel_radio = P_51D_30_NA.panel_radio
 
 
+# WHERE THE SESSION JETS PARK, by aerodrome. Empty or absent means "let pydcs
+# choose", which is right for the squadron and wrong for the two aeroplanes a
+# sortie is actually flown in: a test bed whose taxi is longer than the thing
+# under test wastes the tester's afternoon. Slot names are the field's own,
+# zero-padded, and `parking_slot` takes them as ints.
+PINNED_SLOTS: dict[str, tuple[str, ...]] = {
+    "Kobuleti": ("01", "02"),
+}
+
+
 # The allied line-up, and how many of each sit on the ramp.
 #
 # Batumi has TEN parking slots and that is the whole constraint. Three of each
@@ -382,9 +392,40 @@ def add_session_slots(m, usa, air_alt_ft: dict | None = None,
     for name, kind, how, home in (
             ("Viper", F_16C_50, StartType.Warm, "Kobuleti"),
             ("Pony", P_51D_30_NA, StartType.Cold, "Batumi")):
+        airport = m.terrain.airports[home]
+        # WHERE THE VIPERS SIT, PINNED. Left to pydcs the slot is whatever is
+        # free first, and on 28 August that was Kobuleti spot 22 -- the far end
+        # of the ramp, several minutes of taxi before the sortie under test
+        # even begins:
+        #
+        #     "let's move the F-16s at Kobuleti to parking spot one, the taxi
+        #      and testing will be much shorter going forward"
+        #
+        # 01 and 02 report `helicopter=True`, which is CAPABILITY AND NOT
+        # EXCLUSIVITY -- they also carry `airplanes=True`, and at 20.5 x 18.0 m
+        # they take an F-16's 14.52 x 9.45 comfortably. Reading the helicopter
+        # flag as "helicopter only" is what made these look unusable.
+        # BY NAME, NOT BY INDEX. `Airport.parking_slot(i)` takes a position in
+        # the list; the ramp numbers a pilot reads off his kneeboard are
+        # `slot_name`, zero-padded strings, and the two do not line up.
+        slots = PINNED_SLOTS.get(home)
+        want = None
+        if slots:
+            by_name = {str(s.slot_name): s for s in airport.parking_slots}
+            want = [by_name.get(n) for n in slots[:each]]
+            missing = [n for n, s in zip(slots[:each], want) if s is None]
+            if missing:
+                raise SystemExit(f"{home} has no parking slot(s) {missing}")
+            too_small = [f"{n} ({s.length:.1f}x{s.width:.1f} m)"
+                         for n, s in zip(slots[:each], want)
+                         if not s.airplanes or s.length < kind.length
+                         or s.width < kind.width]
+            if too_small:
+                raise SystemExit(f"{kind.id} ({kind.length}x{kind.width} m) "
+                                 f"does not fit {home} slot(s) {too_small}")
         grp = m.flight_group_from_airport(
             country=usa, name=name, aircraft_type=kind,
-            airport=m.terrain.airports[home],
+            airport=airport, parking_slots=want,
             start_type=how, group_size=each)
         # THE FIRST RUNG OF HIS OWN LADDER, not Tower.
         #
@@ -792,10 +833,24 @@ def _brief_text() -> str:
     the tables become lines and the frequencies stay where a pilot can find them
     before he has a kneeboard open.
     """
-    legs = R.solve_route(legs=R.SORTIE_LEGS)
+    # THE HOP THAT IS ACTUALLY FLOWN, which is `solve_route`'s own default.
+    # This asked for `SORTIE_LEGS` -- the 1944 strike's route -- and #188
+    # deleted it along with the rest of the mission the theatre file used to
+    # declare, on the grounds that a map publishes places and not somebody's
+    # flight plan. The data went; this caller did not, so `build.py` has raised
+    # AttributeError on every run since and the .miz could not be rebuilt at
+    # all. A removal is not finished until the last reader of it is.
+    legs = R.solve_route()
+    # NUMBERED DOWN THE TRANSIT, said so rather than defaulted. `steerpoint`
+    # still defaults to the 1944 strike's route, which #188 deleted -- so the
+    # default raises, and the only two callers of it are these two lines. The
+    # transit is the only route left on this map and it is the one being
+    # briefed, so it is named here instead of relying on a default that points
+    # at nothing.
+    fixes = R.FIXES
     route = "\n".join(
-        f"    {R.steerpoint(l.frm)}. {l.frm.name:<11s} -> "
-        f"{R.steerpoint(l.to)}. {l.to.name:<11s}  hdg {l.heading_mag:03.0f}   "
+        f"    {R.steerpoint(l.frm, fixes)}. {l.frm.name:<11s} -> "
+        f"{R.steerpoint(l.to, fixes)}. {l.to.name:<11s}  hdg {l.heading_mag:03.0f}   "
         f"{l.distance_nm:5.1f} nm   {l.time_str}" for l in legs)
     total_nm = sum(l.distance_nm for l in legs)
     p = R.BATUMI_ASR

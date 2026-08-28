@@ -2319,6 +2319,49 @@ class Controller:
         if ac.phase is Phase.LANDED:
             self.report_down(cs)
             return
+        # HE CANNOT HAVE LANDED IF HE HAS NEVER FLOWN, and saying he has is not
+        # evidence that he did. A CLAIM IS NOT A FACT -- the same sentence as
+        # #48, where a pilot may not name himself, one field over.
+        #
+        # 28 August, live: the sortie's FIRST transmission, cold and dark on
+        # Kobuleti spot 22, was "sockeye is down and stopped, spot 22" -- card
+        # row G17's prescribed odd opening call, and the taxonomy sends "down"
+        # here. The separation phase went LANDED before he had started an
+        # engine, and the sim never said anything of the kind: his whole event
+        # history for the mission was two births and a takeoff, with no landing
+        # in it anywhere.
+        #
+        # It did not stay cosmetic. `phases._wanted` reads `sep == "landed"` as
+        # evidence of having flown, which BYPASSES `has_flown` -- and #178 had
+        # taken `departure` out of `AIRBORNE_ONLY` precisely so a man holding on
+        # the runway is not called landed. So at take-off the sortie phase flipped
+        # to `landed`, after the sim's own takeoff event, and Kobuleti Departure
+        # posted him back to Tower for fourteen miles.
+        #
+        # WHICH RUNG HE IS ON, and two wrong answers were tried first.
+        #
+        # `has_been_airborne` alone is wrong: that latch is set from positive
+        # RADAR and this controller is designed to work BLIND -- a `_th.radar`
+        # off mission is supported -- so keying the refusal on it made a
+        # genuine landing unreportable on any procedural sortie, and took
+        # seventeen tests with it, every one an aeroplane that had flown an
+        # approach and landed off it.
+        #
+        # `Phase.UNKNOWN` alone is also wrong: a VFR arrival who talks to
+        # nobody until Tower is UNKNOWN on short final, and refusing HIM is the
+        # same bug pointed the other way.
+        #
+        # The rung is the fact. `sortie_phase` is driven by the CONVERSATION --
+        # clearance, taxi, holding short are the three rungs that exist only
+        # before an aeroplane has flown, and a man standing on one of them has
+        # not landed however plainly he says he has. Sockeye was on `clearance`
+        # when he said it. An arrival is on none of them. [#206]
+        if (str(getattr(ac, "sortie_phase", "")).lower()
+                in ("clearance", "taxi", "holding_short")
+                and not getattr(ac, "has_been_airborne", False)):
+            self._anomaly(f"{ac.callsign} reported down and has never been "
+                          f"airborne -- not moving him to LANDED")
+            return
         ac.phase, ac.last_report_t = Phase.LANDED, self.t
         ac.map_t = None
         if self._in_letdown(ac) == ac.callsign:

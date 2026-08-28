@@ -231,7 +231,8 @@ def fetch_radar(session_id: str = "", url: str = RADAR_URL,
     if contacts and not origin:
         print("  !! no projected origin for this controller -- the picture "
               "carries no ranges", flush=True)
-    return Scope(drawn or got.get("picture", "").strip(),
+    # ok=True: the read SUCCEEDED. Whether it found anybody is `contacts`.
+    return Scope(drawn or got.get("picture", "").strip(), ok=True,
                  contacts=contacts, origin=origin, datum=datum,
                  bullseye=got.get("bullseye"))
 
@@ -717,9 +718,14 @@ def accounted_for(ac, cs: str, here: set, called: set,
     # sim pauses -- and dropping a live aeroplane because one poll came back
     # blank is the failure this whole function was written to prevent.
     #
-    # So: if the picture has ANY aircraft on it, radar is working and his
-    # absence from it is real. If the picture is empty we know nothing, and the
-    # flag buys him the benefit of the doubt.
+    # So: if radar ANSWERED, his absence from the picture is real -- an empty
+    # answer is still an answer. Only when the poll FAILED do we know nothing,
+    # and the flag buys him the benefit of the doubt.
+    #
+    # `scope_working` used to mean "the picture has aircraft on it", which made
+    # an empty sky indistinguishable from a broken radar. The last pilot to
+    # deslot could then never be released: his own departure emptied the
+    # picture, which read as a hiccup, which reset his clock. [#207]
     return bool(ac.radar_identified and not scope_working)
 
 
@@ -773,7 +779,11 @@ def release_stale(bridge, ctl, scope: str = "", now: float | None = None) -> lis
         # default "assume seen now" made every unaccounted entry immortal --
         # which is precisely the leftover this exists to remove.
         bridge.seen_at.setdefault(cs, t)
-        if accounted_for(ac, cs, here, called, bool(here)):
+        # THE POLL SUCCEEDED, not "the poll found somebody". This asked
+        # `bool(here)`, so an empty sky read as a broken radar and every
+        # `radar_identified` entry had its clock reset for ever -- see
+        # `Scope.ok`. [#207]
+        if accounted_for(ac, cs, here, called, getattr(scope, "ok", bool(here))):
             bridge.seen_at[cs] = t
     freed = []
     for cs in list(ctl.aircraft):
@@ -4353,9 +4363,28 @@ class Scope(str):
     # this is the half that reaches a pilot. See `Datum` and [#160].
     datum: object
 
+    # DID THE POLL SUCCEED -- which is NOT "did it find anybody".
+    #
+    # These were one value for a long time: callers asked `bool(contacts)` and
+    # read an empty picture as "radar is unreliable, believe nothing". That is
+    # right for a hiccup and wrong for the ordinary state of an aerodrome with
+    # nobody flying, and the two are indistinguishable from the outside.
+    #
+    # 28 August, live: the last pilot deslotted, the scope went empty, and
+    # `accounted_for` therefore gave him the benefit of the doubt on every tick
+    # for ever -- so the last aeroplane to leave could never be reaped, because
+    # HIS OWN DEPARTURE was what emptied the picture. He sat on the board as
+    # LANDED, owned by a controller who could not see him, waiting to be
+    # inherited by the next sortie under that callsign. [#207]
+    #
+    # Defaults FALSE: a Scope built by a test fixture or an old caller has not
+    # polled anything, and "we do not know" is the safe answer.
+    ok: bool
+
     def __new__(cls, picture: str = "", contacts=None, origin=None,
-                bullseye=None, datum=None):
+                bullseye=None, datum=None, ok: bool = False):
         self = super().__new__(cls, picture or "")
+        self.ok = bool(ok)
         self.contacts = list(contacts or [])
         self.origin = origin
         self.bullseye = dict(bullseye or {})

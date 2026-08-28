@@ -7460,3 +7460,532 @@ mishear -- and got "say again your request", so he was never sequenced. That is
 the intent classifier, and `tools/classify_bench.py` is the instrument for it.
 
 ---
+
+## [SEP-21] `departure` counts as having flown, so holding short derives as LANDED — #178
+labels: bug, needs-flight-test
+
+**Status:** FIXED 18 August, NEEDS A PILOT — card row D9. `has_flown` is a positive list, `departure` is declared as straddling, and migration 035 carries the `has_been_airborne` latch across a restart. A machine can score every criterion here — a phase moved, a handoff fired — so `tools/ladder_rehearsal.py` may close it with an attestation naming the run.
+
+    "I was handed to departure after takeoff. This is when I noticed my status
+     was landed. Then departure tried to send me back to tower"
+
+`phases.has_flown` answered from the phase, and that works for every phase but
+one. `departure` STRADDLES: you are in it from Tower's first word, through the
+roll, until Departure releases you — and most of that is spent stationary on
+the runway. The phase genuinely cannot say whether a man holding there has
+already flown a circuit, and it guessed in the dangerous direction:
+
+    15:20:12  PILOT  holding short, runway 7, ready for departure   (0 kt)
+    15:20:14  board  sortie_phase = departure
+    15:20:30  PILOT  clear for takeoff, runway seven                (0 kt)
+    15:20:33  board  sortie_phase = LANDED     <- never left the ground
+    15:21:20  PILOT  ...actually gets airborne, 47 seconds later
+
+For the next thirteen miles Kobuleti Departure posted him back to Kobuleti
+Tower, twelve times, because a landed aeroplane is Tower's. Tower's own
+"contact Departure when airborne" was refused as an unauthorised handoff for
+the same reason, so a read-back was answered with "go ahead".
+
+**What was built.** `has_flown` is now a POSITIVE list (`AIRBORNE_ONLY`) so a
+phase nobody classified fails safe, `departure` is declared as `STRADDLES`, and
+a `has_been_airborne` latch on `flights` carries the answer the phase cannot —
+set only on positive radar evidence, which is #164's rule and its scar (`not
+on_ground` is not `airborne`). Migration 035.
+
+**Acceptance criteria**
+1. Holding short after a `departure` handoff never derives as `landed`.
+2. Departure does not post an outbound aeroplane back to Tower.
+3. A radio restart mid-climb-out does not forget he has flown.
+
+---
+
+## [ARCH-36] We edit what the model said, with regex, instead of fixing the prompt — #179
+labels: architecture, needs-flight-test
+
+**Status:** FIXED 18 August, NEEDS A PILOT — card row D10. Both prompts corrected, `settle` no longer doubles the engine's talkdown, the history records what went out, and the two surviving filters are declared with the prompt fault each stands in for. **What a machine cannot score is whether it SOUNDS like one person**, which is the whole of criterion 1 — a pilot has to hear the read-back answered.
+
+    "regex guards like that are a smell we should look for, and actively try to
+     reduce, finding the root cause of hallucinations (usually our prompts
+     fault) rather than patching output"
+
+A pilot read back a take-off clearance and heard *"Sockeye, Kobuleti Tower, go
+ahead"* — an invitation to speak, answering a read-back. Following it back:
+
+    the model said     "Sockeye, that's correct, contact Kobuleti Departure one
+                       two three decimal three airborne, good day."
+    the engine had     authorised no handoff
+    the filter         deleted the clause containing "contact ... Departure",
+                       which — because controllers speak in commas rather than
+                       full stops — took "that's correct" with it
+    the fallback       spoke, because a rule says never transmit silence
+
+Every layer was defensible and the pilot got nonsense. **The model did not
+invent it. We told it, four times** — the plate, the per-turn message, its own
+history, and the transcript. The rules said "never send a pilot to another
+frequency off your own bat" while the plate said "a departure goes to Departure
+at 5 miles", and a regex adjudicated between them after the fact.
+
+**And the history kept the uncensored version.** `session_messages` held what
+the model wrote; the pilot heard what survived, so the controller believed it
+had handed him over. A filter that silently diverges the record from reality
+poisons every turn after it.
+
+**What was built.** Both prompts now name WHO and say the timing arrives as a
+HANDOFF line; `settle` no longer hands the voice guidance the engine is about
+to speak; the history records what went out.
+`tests/test_we_do_not_edit_what_the_model_said.py` is a registry — every filter
+declares the PROMPT FAULT it stands in for and an undeclared one fails. The
+count is a baseline and should go DOWN.
+
+**Acceptance criteria**
+1. A read-back is answered as a read-back, not with "go ahead".
+2. The mile calls on final go out; the model does not double them.
+3. The conversation history matches what was transmitted.
+
+---
+
+## [ARCH-38] Nobody may taxi without a clearance, and the gate asks the wrong question — #181
+labels: bug, architecture, needs-flight-test
+
+**Status:** CLOSED 18 August, NEEDS A PILOT — card row G13. The gate now requires ACKNOWLEDGED, and the two refusals say different things. Nine tests failed on the tightening and every one of them was a case that had never been cleared — including `test_nobody_cleared_him_at_all_still_taxis`, which asserted the old rule by name and is now inverted with the reasoning recorded. What survives from that rule is its OTHER half: an empty board must not produce silence, and the refusal names the seat and the frequency. **Only a pilot can score criterion 1**, because the transcript reads plausibly either way — what is being tested is whether the sentence he hears points him at the right fault. On-the-fly VFR plan creation is deliberately NOT in scope and wants its own issue.
+
+    "so we never got a clearance, because clearance never heard that we had
+     information whiskey? Then everybody just played along?"
+
+Yes. #180 stopped the clearance rung ever completing; this is why nothing
+downstream noticed. The engine issued no clearance, the language brain narrated
+one anyway, and Ground, Tower and Departure each waved him on.
+
+**The gate exists and asks the wrong question.** `request_taxi` refuses on:
+
+    if ac.clearance_agreed is False:
+
+`False` means *one was ISSUED and the read-back has not been accepted*. The
+read-back was judged `correct=None` — nobody could judge it, there being no
+clearance on the board to compare against — so `clearance_agreed` stayed
+`None`, and `None` passes straight through. The gate answers **"was the issued
+clearance read back?"** and never **"was one ever issued?"**
+
+`controller.py` says so itself, next to the field:
+
+    FILED, ISSUED and ACKNOWLEDGED became three real states in #105 so that
+    the next rung could ask which one he was in; nothing asked.
+
+**The rule is not IFR-specific.** At a controlled field a VFR departure calls
+Clearance too — *"VFR departure to the west"* — and that is a pre-req to taxi.
+The `None` branch was justified on "the ordinary case for VFR", which is wrong
+procedure, not just wrong bookkeeping.
+
+**Scope: a plan on file is required for now.** The whole clearance apparatus is
+filed-plan-shaped (`assign` copies a filed plan onto a flight), so there is no
+path by which a VFR aeroplane with nothing on file can reach ACKNOWLEDGED.
+On-the-fly VFR plan creation is deferred to its own issue; until then a filed
+plan is a prerequisite for clearance, which makes the existing path the only
+path and the predicate safe to tighten.
+
+**And the refusal must name the right problem.** *"Your IFR clearance has not
+been read back"* is wrong for a man who never called Clearance at all, and a
+pilot can only fix the fault he is told about — which is #135's own complaint.
+
+**Acceptance criteria**
+1. An aeroplane the engine never cleared is refused taxi, and told to contact
+   Clearance rather than told his read-back is outstanding.
+2. An aeroplane whose clearance was issued and not read back keeps the existing
+   refusal.
+3. A refused aeroplane stays on Clearance's rung — the phase is the handoff.
+4. A cleared and acknowledged aeroplane taxis with no extra step.
+
+---
+
+## [ARCH-49] A regex decided whether the engine ran at all — #194
+labels: bug, architecture, needs-flight-test
+
+**Status:** FIXED 18 August, NEEDS A PILOT — card row G17. Bench at **21/21** on Haiku and Sonnet (was 16/17 and 15/17, and before that it did not run at all). **Only a pilot can score criterion 1**: the failure is a controller answering pleasantly and the sortie quietly not starting, which reads as a normal exchange on the transcript.
+
+    "that regex matching has bit us so many any times and is way too brittle"
+
+`simple_response` matched a grammar of patterns BEFORE the classifier and
+before the engine, and a match meant the transmission was answered and
+**dropped**:
+
+    _CLOSE = "down and stopped|clear of the (?:runway|active)|off the runway|
+              parking|shutting down|clear of active"
+    _ASKS  = "request|taxi|can i|ready|?"
+
+The first transmission of the 18 August sortie was *"Kobuleti Clearance,
+sockeye, parking spot, number 22 with information, Delta."* `_CLOSE` matched
+**"parking"**, `_ASKS` matched nothing, and a cold opening call was answered
+*"roger, welcome, good day"* — with the engine never seeing it.
+
+    "he didn't ask what I wanted, just said good day"
+
+**It had bitten in this same function before**, on *"clear of active, request
+taxi to parking"*, and `_ASKS` was the patch. "parking spot" walked past it. A
+second grammar competing with the classifier will keep losing, because the
+classifier is the thing that reads.
+
+**Which calls deserve a canned answer is the classifier's now.**
+`IntentKind.RADIO_CHECK` is split out of `check_in`, and `radio_check_reply
+(known)` renders and matches nothing — it takes the GUID-resolved name and has
+no transcript to mine, so the class of fault `test_frequency` was written for
+is unreachable rather than guarded.
+
+**The closing acknowledgement is gone from the fast path entirely.** *"Clear of
+the active"* moves him to `taxi_in`, which is a phase transition and therefore
+a handoff — skipping the engine there is #77.
+
+**The new kind is biased AGAINST itself**, because the failure is asymmetric: a
+radio check answered instantly costs nothing, and a check-in mistaken for one
+is thrown away. *"WHEN IN DOUBT IT IS NOT THIS ONE"* is in the schema, and the
+bench holds both directions.
+
+**AND THE BENCH HAD NOT RUN FOR WEEKS.** `tools/classify_bench.py` raised
+`AttributeError` on import — it named `REPORT_CONDITIONS`, deleted by [ARCH-4]
+"Toss the visual-separation negotiation", and was never updated. CLAUDE.md
+sends you there after touching the schema, *"the taxonomy wording moves the
+score more than the model does"*, and that advice has been unenforceable since.
+Nothing said so: it is a tool, not a check, so `tools/check.py` neither ran it
+nor reported it skipped.
+
+Repaired, and it earned its keep on the first run — the new kind was too greedy
+and swallowed *"this is Sockeye on 124.0, how do you read"*, which is a
+check-in. **21/21 on Haiku and Sonnet**, up from 16/17 and 15/17.
+
+**Acceptance criteria**
+1. A pilot's opening call reaches the engine whatever words it contains.
+2. A bare radio check is still answered instantly.
+3. "Clear of the active" moves the phase and hands him to Ground.
+4. The bench runs, and covers the new kind in both directions.
+
+---
+
+## [ID-5] Tracked and untracked, and who owns him — #49
+
+labels: architecture, needs-flight-test
+
+**Status:** CLOSED 31 July, unflown. Guards: `tests/test_untracked.py`,
+`TestThePageDoesNotJoin` and `TestAnIndicatorThatCannotGoRed` in
+`tests/test_diag.py`. **Code:** `atc/controller.py`, `atc/agent_atc.py`,
+`kneeboard/diag.py`.
+
+    "I sign into the sim, get in a jet, I am UNTRACKED. The sim knows that I am
+     362nd_Sockeye, knows what im in, where im at and what my as/gs/alt is. The
+     sim even knows what my callsign will be 'Sockeye' - because the process of
+     stripping a squad off a name should be deterministic and instant."
+
+It is deterministic and instant, and it always was. `identity.handle` is a pure
+function over a string the sim publishes on every radar poll. It was reachable
+only through `Registry.resolve`, which is the TRANSMISSION path — so a name
+available for free was not derived until a pilot keyed a microphone, and the
+untracked table printed the raw label.
+
+### The model
+
+**UNTRACKED** — the sim sees him. Named, positioned, owned by nobody. This is
+where every aircraft starts and it requires no radio.
+
+**TRACKED** — on the board, and exactly one controller owns him. Enterable
+**only** from untracked, which is what makes the ghost class structurally
+impossible: a tracked aircraft must have had a sim contact behind it, so no
+transcript can mint one. [#40] says *"corroboration is the only filter that can
+work, and the obvious version is circular"* — the circularity was corroborating
+against a scope tagged by the binding under test. This is not circular, because
+untracked is populated before anyone speaks.
+
+**Entering:** contact a controller. Airborne that means radar identification —
+"radar contact" is a specific thing a controller says. On the ground it does
+not: nobody radar-identifies a man parked on the ramp, and the check-in is
+enough.
+
+**Two exits, and only one of them is a release.** A handoff changes the OWNER
+and nothing else; he is never unowned in between. Dropping him to untracked
+mid-approach loses his level, his place in the letdown and his approach count at
+the exact moment two controllers are relying on them — which is materially what
+`release_stale` was doing nine times in one sortie.
+
+### Three columns, three authorities
+
+`doing` conflated facts with different sources, which is the shape of every bug
+in `tests/test_tonight.py` — a guard reading the wrong input.
+
+| | source | when known |
+|---|---|---|
+| **state** — parked, taxiing, rolling, airborne | the sim | always, free |
+| **intent** — ASR approach, en route, departure | the pilot, when asked | after the controller asks |
+| **doing** — HOLDING, CLEARED, MISSED | the separation engine | from its own state machine |
+
+Blank intent is the useful part: it means nobody has established intentions,
+which is the first thing a controller is supposed to do.
+
+`sim_state` reads `is_on_the_ground`, never the raw `on_ground` flag — that flag
+comes from land/takeoff EVENTS, so an aeroplane that spawned parked never
+generated one and it reads False at thirty-nine feet and zero knots. Reading it
+directly is the fourth-caller mistake `test_tonight.py` exists to prevent.
+
+### What this fixed on the way
+
+Both faults in `HANDOFF-board.md`, structurally rather than by repair. A board
+row now carries its own track, bound by `Controller.bind` at the one place that
+holds both names, so `publish_state` looks nothing up. `release_stale` compares
+the board's key against what each scope label DERIVES to, using the same
+function the untracked table uses.
+
+The prescribed fix — "extract one join, make it case-insensitive" — would have
+left every formation blank while looking correct for a single ship: in a flight
+the board key is the FLIGHT's name and no folding relates "Apex" to "sockeye".
+
+**A guard that could not fire.** The first version refused to release an entry
+whose track was on the scope. It was dead code: the refresh loop already asks
+`accounted_for`, so anything radar can account for has had its clock reset and
+never reaches the check. And the failure it was meant to catch is the one it
+cannot see — the entries dropped wrongly are exactly those our own matcher
+failed to relate, and asking the same matcher twice fails identically. There is
+no automatic version. So the release is published WITH the scope contents and a
+human is the detector: *"released Sockeye; the scope held 362nd_Sockeye"*.
+
+**An indicator that could not go red.** The verdict banner read `d.ghosts`.
+Nothing ever published it, so `(d.ghosts || []).length` was 0 on every render the
+field ever had and the page reported "board and radar agree" for its whole life,
+including while displaying a ghost row underneath.
+
+### The page represents state; it does not enrich
+
+    "Please make sure the diag tool represents state and doesn't enrich
+     information. I'm using it to understand how the system works or doesn't"
+
+`board()` opened by looking its own row up in the scope list, with the page's own
+fourth copy of the name squasher, falling back to `{}` — so a failed join
+rendered as four empty columns, which reads as "the sim did not say" rather than
+"this page cannot find him". The bridge had always sent those fields. Removed,
+along with `key()`, and guarded by a test that greps the page.
+
+### Acceptance criteria
+
+1. Sitting in a cold jet, before any transmission, the untracked table names him
+   and shows the translation `362nd_Sockeye → Sockeye`.  DONE
+2. A board entry is never dropped while radar paints the aircraft.  DONE
+3. Every release is published with the scope as it stood.  DONE
+4. A handoff changes the owner and preserves level, letdown place and track.  DONE
+5. `state`, `intent` and `doing` are separately sourced and separately shown.  DONE
+6. The page performs no lookup between panels.  DONE
+7. **A pilot flies it** — slots in cold, watches himself appear untracked and
+   named, checks in, and confirms he moves to tracked with the right owner and
+   is never silently dropped. NOT DONE — needs a sortie.
+
+Related: [#40] (the board's key), [#48] (nobody may name himself), [#42] (a
+person is his handle), [#41] (the sim already tells us).
+
+---
+
+## [SEAM-12] Clearance delivery searched an empty board, and said so three times — #126
+labels: bug, needs-flight-test
+
+    "clearly he doesn't know how to find my flight plan"
+
+    PILOT: Kobuleti Clearance, sockeye, IFR to Batumi with information delta.
+    ATC:   Sockeye, I have no flight of that name on the board.
+    PILOT: Call sign is Sakai requesting instruments to Batumi.
+    ATC:   Sockeye, I have no flight on the board under either Sockeye or Sakai.
+    PILOT: Kobuleti Clearance, sockeye, requesting Domino Flight plan.
+    ATC:   Sockeye, negative, I have no flight on the board under that callsign.
+
+`Domino` was on the board the whole time and resolves from the plainest request
+there is — `pick()` matches it on the destination alone, and on "the only one on
+file" with no destination at all.
+
+**THE TOOL NEVER REACHED THE PLAN.** `request_clearance` opens by finding the
+AEROPLANE — `_flight(callsign)` — and answers `not_on_the_board` when it cannot.
+`flights.find` filters on `mission`; `clearance_tools` takes one as an argument
+DEFAULTING to `"default"`; and `app.py` called `clearance_tools()` with none. The
+bridge writes every row under the instance key, so the lookup searched an empty
+bucket and refused before it ever looked at what was filed.
+
+**It was correct until #119**, which gave rows a real mission instance earlier
+the same evening. The shape this project keeps finding, and the fifth time this
+month: *while every row was `mission='default'`, a hard-coded "default" could not
+be wrong.* I changed what a mission key MEANS and did not follow it into the
+director's tools.
+
+**Invisible because this is the one tool factory whose argument has a default.**
+`identify_tools(session_id)` and `hook_tools(session_id)` take the session and
+would have raised a `TypeError` the first time they were called wrongly. This one
+quietly took `"default"`.
+
+The mission now travels on the `/atc` body from the bridge — the trusted side,
+the same reason `role` and `station` do — and the agent cache is keyed on it,
+because a cached agent built under the previous sortie would go on reading the
+previous sortie's flights.
+
+**AND THE SENTENCE IS WRONG EVEN WHEN THE LOOKUP IS RIGHT.** `flight_plans` is
+what somebody filed; `flights` is who is airborne. "I have no flight on the
+board" is a true statement about the second that says nothing about the first —
+and a pilot hears it as his flight plan having gone missing, which is exactly
+what happened. Clearance delivery is the one seat where the pilot has NOT yet
+been bound to a track, so it is the seat where that confusion is guaranteed.
+Open: the refusal should say which board it means, and should look at what is
+filed before it decides it cannot help.
+
+**Status:** CLOSED 13 August — the mission wiring `471c0a7` fixed was real, and the symptom this issue is NAMED for is not: `request_clearance` still returns `_not_on_the_board` before it ever calls `resolve(said, callsign)`. Clearance delivery still decides it cannot help without looking at what is filed.
+mission travels on the `/atc` body, `director/app.py` calls
+`clearance_tools(mission, station)` and keys the agent cache on it, and
+`tests/test_the_clearance_reads_this_sortie.py` pins all four legs of that
+wiring including that the no-argument form is gone. Half of the "Open:" above
+landed with it — `not_on_the_board` now says which board it means and is told in
+so many words not to tell him a plan is missing.
+
+**That item has now landed.** `request_clearance` resolves the plan FIRST --
+`resolve` is a pure lookup over `flight_plans` with no side effects and no
+dependence on the board, so there was never a reason for it to run second, only
+the habit of validating the caller first.
+
+The refusal that did not exist is `found_but_not_him`, and it says both facts:
+the plan is on file, named, with its origin and destination, AND nothing on the
+board answers to that callsign. A pilot who hears "I have Domino, Kobuleti to
+Batumi, but nothing under Sockeye" knows in one breath that his filing is fine
+and his IDENTITY is the problem, which is the one thing he can fix from the
+cockpit. It is still a refusal: `assign` writes against a flight row, and a
+sentence must not create the aeroplane.
+
+`nothing is on file` and `not on the board` stay separate, and a test asserts
+the fix did not collapse them the other way -- a pilot who really has filed
+nothing must not be told his identity is wrong.
+
+**Status:** FIXED 13 August, NEEDS A PILOT — card row G11. The two sibling
+tools were checked and deliberately left alone: `clearance_state` and
+`flight_plan_help` look up what was ISSUED to an aeroplane, so "you are not on
+the board" is the correct and complete answer there, and reordering them would
+be a change made by pattern-matching rather than by reading.
+---
+
+## [ARCH-42] Nothing asks whether a clearance the controller spoke was ever issued — #185
+labels: bug, architecture, needs-flight-test
+
+**Status:** CLOSED 18 August, NEEDS A PILOT — card row G14. The prompt fault is fixed, the inverse check records unbacked claims, and a prompt/tool signature check now guards the two-brain seam. Verified end to end on `tools/atc_dryrun.py --script kobuleti` — the controller called the tool, was refused, spoke the refusal and stopped, inventing nothing. **Only a pilot can score criterion 1** because a fabricated clearance sounds exactly like a real one; what a machine can now say is whether the record backs it, which is criterion 3 and is guarded.
+
+    "so we never got a clearance ... Then everybody just played along?"
+
+`decision.verify` asks which of the engine's facts did not survive being spoken
+— the DROP — and has caught real transmissions since #102. **Nothing asked the
+opposite.** On 18 August the engine issued no clearance at all and the
+controller said:
+
+    15:13:52  Sockeye, Kobuleti Clearance, cleared to Batumi, as filed,
+              maintain five thousand, expect one zero thousand, departure
+              frequency one two three decimal three, squawk ...
+    15:14:33  Sockeye, readback correct, contact Kobuleti Ground ...
+
+`assigned_plans` held no row; `flights` held none either. Ground taxied him,
+Tower launched him, and he flew to another aerodrome on a clearance that
+existed only in the air. **Every rung believed it, because nothing anywhere
+asked whether it was real** — which is why it was the last of the seven
+findings to be understood and took a day of reading transcripts.
+
+**Where the numbers came from: nowhere.** Unlike #179, we did not tell it. The
+per-turn prompt carries the departure frequency and nothing else; `found_but_
+not_him` names the label and the endpoints; `flight_plan_help` needs an
+assigned plan and refuses without one. The altitude and the squawk were
+invented after the tool refused him.
+
+**And the rules already forbade it** — *"never search your memory for a plan"*,
+*"a clearance you improvised is an aeroplane cleared to an altitude nobody
+wrote down"*. What they never said is that **a refusal is terminal**. Every
+rule covered what to do with what comes BACK; none covered nothing coming back.
+That is the prompt fault, and it is fixed.
+
+**A LIVE DEFECT WAS FOUND WHILE FIXING THIS.** #183 changed the tool to
+`request_clearance(callsign, plan)` and left `rules.md` telling the controller
+to pass the pilot's words through unedited. Flown, every clearance request in
+the next sortie would have been refused — `named("Roger Sock, I would like
+Batumi Test...")` matches no label. The suite was green, ruff was clean, the
+tool's own docstring was correct and tested, and the prompt is a markdown file
+nothing parses. **The seam between the two brains was the only contract in the
+system with no check on it.**
+
+**What was built.**
+
+    rules.md                   the contract corrected, plus the rule that was
+                               missing: a refusal is not a clearance, and if
+                               the tool did not hand you the words you have
+                               none
+    clearance.unbacked_claims  the inverse of `verify` — what did he say that
+                               the record denies? Answered from the DATABASE,
+                               because what the turn believes is the thing in
+                               question, and silent when it cannot ask
+    the receive loop           RECORDS it (`kind="unbacked"`), never edits it.
+                               Cutting the clause would be a regex guard on a
+                               model's words, which is #179
+    a prompt/tool check        every `tool(args)` spelled in the prompts must
+                               match the real tool. It fails on the exact
+                               defect above
+
+**Verified end to end** on `tools/atc_dryrun.py --script kobuleti`: the
+controller called the tool, was refused, spoke the refusal and stopped.
+
+**Acceptance criteria**
+1. A controller refused a clearance says so and does not invent one.
+2. "Readback correct" is not said before anything is acknowledged.
+3. An unbacked claim reaches the recorder on the transmission it happened on.
+4. No transmission is edited to achieve any of the above.
+
+---
+
+## [SEP-22] A rule that says "not yet" is read as having no opinion — #189
+labels: bug, architecture, needs-flight-test
+
+**Status:** FIXED 18 August, NEEDS A PILOT — card row Q17. Guarded by `tests/test_not_yet_is_an_answer.py`, which holds all three answers and the caller's gate. **Only a pilot can score criterion 1** because both the right and the wrong behaviour are a handoff that arrives — what differs is where he was when it did.
+
+    "tower, switch me over to departure pretty quick, should be at five miles
+     I think, just hit it off the end of the runway"
+
+The table says five miles and it works:
+
+    Rule("tower", "departure", "outbound_beyond", DEPARTURE_NM)   # 5.0
+
+Below five it declines; above five it fires. **What it could not do is say
+so.** `due` returned `None` both when a rule governed the transition and
+decided he stays, and when no rule applied at all — and `next_controller` reads
+the second as permission to ask the PostGIS airspace volumes instead:
+
+    v = _handoff.due(...)                    -> None (a rule said NOT YET)
+    nxt = ... else v.station                 -> None
+    if nxt is None and not down:
+        nxt = leaving_my_airspace(...)       -> Kobuleti Departure, at ~1 nm
+
+So geometry answered over the top of procedure and neither knew the other had
+spoken. The 5 nm was correct, tested, and unreachable in practice.
+
+**THIS IS #181 ONE MODULE OVER AND ONE DAY LATER.** There, `clearance_agreed is
+False` — *he was issued one and has not read it back* — was collapsed into
+`None` — *nobody has cleared him at all* — and taxi was granted to a man who
+had never been cleared. Same shape, found the same week, in the same engine:
+
+> A deterministic engine that cannot distinguish a DECISION from an ABSENCE OF
+> OPINION cannot hold a line, because every refusal reads as an invitation to
+> whoever asks next.
+
+**Three answers now, where there were two:**
+
+    a rule fired              Verdict with a station. Hand him over.
+    a rule governs, not yet   Verdict with keep=True. Nobody else decides.
+    no rule at all            None. The airspace may answer.
+
+`same_station=True` on the keep verdict is deliberate — to every existing
+caller that already means *"no frequency change, no transmission"*, which is
+exactly what not-yet amounts to, so nothing else had to learn about the flag.
+
+**The distinction cuts both ways and the test says so.** The airspace branch
+exists because a region has a shape and a rule has a number; turning every
+refusal into a keep would silence the mechanism #51 was fixed by, where a pilot
+held at 44 nm with nothing able to move him.
+
+**Sixteen assertions changed from `assertIsNone(due(...))` to `assertFalse`.**
+They meant *"nobody is handed anywhere"* and were written against the sentinel
+— which is how the ambiguity survived: the tests encoded it too.
+
+**Acceptance criteria**
+1. A departure stays with Tower to 5 nm, then is handed to Departure.
+2. An aeroplane no rule governs is still handed over by the airspace volumes.
+3. A pilot at the edge of a terminal area is still handed on (#51 does not
+   regress).
+
+---
