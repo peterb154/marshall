@@ -361,6 +361,66 @@ recorded rather than on the verdict alone.
 
 ---
 
+## [STATE-10] A controller's memory outlives the sortie, and cannot be pruned per pilot — #209
+
+labels: bug, needs-flight-test
+
+**Status:** OPEN. Found live, 28 August, with a pilot sitting on the ramp
+unable to get a clearance.
+
+Every seat keeps a conversation in `session_messages`, keyed `hooks:<seat>`.
+`hooks` never changes, so the conversation outlives the mission instance, the
+bridge restart and the sortie. Kobuleti Clearance held 36 messages reaching
+back to 18:33 -- the PREVIOUS sortie, plus a `--only Q1` smoke test -- and
+answered from them:
+
+    ATC     Sockeye, information Sierra current, and you are already cleared
+            on the BatumiTest flight plan, as filed, maintain five thousand.
+    ATC     (Kobuleti Ground) negative, you have not been cleared yet
+    PILOT   "Kobuleti Clearance is using memory, maybe, rather than the
+             database to figure out what I'm filed for"
+
+`assigned_plans` was EMPTY. He had never been cleared, Ground and `/diag` were
+right, and Clearance was reciting a clearance it had issued an hour earlier in
+a different mission instance. **It also contradicted its own tool**:
+`clearance_state("Sockeye")` returned "IS NOT ON THE BOARD" at that moment.
+
+**THE BLUNT FIX IS WRONG AND WAS TRIED.** Deleting `where session_id like
+'hooks:%'` unblocked the pilot and would have been destructive with a second
+aeroplane up:
+
+    "we have to be careful clearing session history -- as when a new pilot
+     comes in, we dont want the controller to forget everything."
+
+A seat's conversation legitimately spans several pilots; a controller DOES
+remember everyone he is working. What must not survive is the turns of a sortie
+that has ENDED -- and that is not the same as "everything in this seat".
+
+**Nor is keying the session on the mission instance enough.** It would handle a
+mission change, and not the case that actually bit twice: a pilot deslots and
+re-slots WITHIN one mission (28 August, births at 17:11:53 and 17:13:46), so
+his old sortie's turns are still the same instance and still wrong.
+
+**THE ROOT IS THAT THERE IS NOTHING TO PRUNE BY.** The schema is
+`session_id, agent_id, message_id, data, created_at` -- no mission, no
+callsign, no flight id. Identity was never recorded, so surgical cleaning is
+impossible by construction and the only available tool is matching text inside
+the JSON, which is regex over model output and the thing #179 exists to stop.
+Whatever the policy turns out to be, it cannot be implemented until a message
+says whose sortie it belonged to.
+
+**Acceptance criteria**
+1. A message records the mission instance and the flight it belongs to, at
+   write time.
+2. Ending a sortie removes that flight's turns and leaves every other pilot's
+   in place.
+3. Two aircraft on one seat's frequency: clearing one does not change what the
+   controller remembers of the other.
+4. A new mission instance starts every seat with no memory of the last one.
+5. No pruning is done by matching text inside a message.
+
+---
+
 ## [TEST-1] Fly Kobuleti ILS to prove the data drives it — #3
 labels: test, needs-flight-test
 

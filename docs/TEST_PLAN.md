@@ -145,7 +145,7 @@ that starts cold at Kobuleti, so they now sit with the arrival, where there is
 somebody on that frequency to answer them.
 
 ```rows
-G18 G4 G14 G19 G20 G12 G16 V9 Q15 Q18 G15 Q16 V7 N1 N2 M1 H10 V6 V3 H5 H6 H4 H9 H11 H29 H30 V8 V5 H31 K6
+G18 G4 G14 G19 G20 G12 G16 V9 Q15 Q18 G15 Q16 V7 N1 N2 M1 H10 V6 V3 H5 H6 H4 H9 H11 H29 H30 V8 V5 H31 K6 K7
 ```
 ### FLIGHT 2 — the VFR arrival
 > Nothing filed. Do not call Clearance at all; come into the airspace and talk
@@ -807,6 +807,7 @@ else on this card can be flown one call at a time; this cannot.
 | K4 | P2 | Somewhere mid-sortie, ask engineering to dump the last message sent to the model | **No radar picture in any remembered turn** — only your words and his replies. A stale scope in there is the bug, whatever else looks fine | [R#43] no stale situation |
 | K5 | P3 | Fly a long sortie, then ask engineering for the transcript | Postgres still has **all** of it. Trimming what he is SENT must not trim what can be replayed afterwards | [R#43] |
 | K6 | P1 | **Fly, land, deslot — then watch `/diag` for ten minutes with nobody in the sim** | He comes OFF the board. On 28 August he did not: the last aeroplane to leave emptied the scope, an empty scope read as a broken radar, and his `radar_identified` flag bought him the benefit of the doubt on every tick for ever. He sat there LANDED, owned by Kobuleti Departure, for the next sortie under that callsign to inherit. Then **re-slot as the same callsign** and check you start on the clearance rung, not eight steps down someone else's ladder | [#207] |
+| K7 | P1 | **Fly a sortie, then start a second one without anybody touching the database** — ask Clearance what you are cleared for before you ask for anything | He does not remember the last one. On 28 August Kobuleti Clearance held 36 messages back to the previous sortie and told a pilot on the ramp he was *already cleared on BatumiTest* while `assigned_plans` was empty and its own `clearance_state` tool said he was not on the board. **With a wingman**: get one of you re-cleared and check the controller still remembers the OTHER — forgetting everyone is not an acceptable fix | [#209] |
 
 **What it is actually checking**
 
