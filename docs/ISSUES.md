@@ -539,6 +539,76 @@ this codebase keeps discovering that one aeroplane at a time.
 
 ---
 
+## [SEP-27] Approach terminated radar service and sent him to Center, on the ILS — #213
+
+labels: bug, needs-flight-test
+
+**Status:** OPEN. Found by a pilot, live, 28 August, established inbound.
+
+    20:09:04  ATC   Sockeye, cleared ILS approach runway one three, vector to
+                    intercept, maintain at or above two thousand until
+                    established, report established
+    20:09:29  ATC   Sockeye, contact Georgia Center one three nine decimal zero.
+    20:09:44  ATC   Sockeye, radar service terminated, contact Georgia Center
+                    one three nine decimal zero.
+    PILOT           "he just sent me to center while I'm on an approach"
+
+Twenty-five seconds after clearing him for the approach, the seat working the
+approach gave him away -- to the ENROUTE controller, backwards down the ladder,
+with the words that mean he is on his own. He then had to ask Approach for the
+same clearance again at 20:09:59 and was told "you remain cleared", so the
+engine had not let go of him: the handoff was the agent's.
+
+An approach clearance is the one instruction that says who is working you until
+the runway. Handing him to Center after it is the same fault as #135's refusal
+that also hands over -- an instruction and a farewell in one breath -- except
+this one sends him to a controller who cannot take him.
+
+**Acceptance criteria**
+1. A flight cleared for an approach is not handed to an enroute controller.
+2. "Radar service terminated" is not said to an aircraft being vectored to an
+   intercept.
+3. If a handoff really is due, the engine authorises it -- `atc/handoff` --
+   rather than the agent voicing one.
+
+---
+
+## [SEAM-23] A frequency read-back is only accepted in one of its spoken forms — #214
+
+labels: bug
+
+**Status:** OPEN. Low priority, and named as such by the pilot -- it costs a
+transmission, not a sortie.
+
+A pilot reading back one two three decimal three says it however he says it:
+
+    "one two three decimal three"      "123.3"
+    "one two three point three"        "1-2-3-3"
+    "one two three dot three"          "one twenty three three"
+
+`decision.accepted_forms` builds a single spoken form and matches on it, so a
+read-back that is CORRECT in a different idiom reads as missing -- and the
+correction that follows asks for the number he just said. On 28 August a
+read-back exchange ran four transmissions with the frequency right from the
+second one.
+
+    "we should accept 1,2,3,3  1,2,3,dot,3  1,2,3,decimal,3  1,2,3,point,3 ...
+     all work. I dont really care - its a lower priority bug - but its a bug."
+
+The renderer is settled -- `core.say.spell_freq` is the one place a frequency
+is SAID, and #191 fixed a caller that had its own. This is the other
+direction: one way of saying it, many ways of hearing it, and the reader is
+the half that has to be generous.
+
+**Acceptance criteria**
+1. decimal / point / dot / bare-digit / grouped forms of one frequency all
+   verify against the same decision.
+2. A form that names a DIFFERENT frequency still fails.
+3. The spoken form the controller uses is unchanged -- this widens what is
+   accepted, never what is said.
+
+---
+
 ## [TEST-1] Fly Kobuleti ILS to prove the data drives it — #3
 labels: test, needs-flight-test
 
@@ -1654,6 +1724,35 @@ caught it the moment the last caller moved.
 5. Offline tests, with a fake agent that omits a fact, prove 1 and 2.
 
 ---
+
+**FLOWN 28 AUGUST AND FAILED, and this is the worst result of that sortie.**
+Ten decided facts were not voiced, four were repaired, **six were lost** -- and
+all six of the lost ones were the approach:
+
+    vector: one two thousand, zero nine five
+    vector: one two thousand, zero eight five
+    vector: one two thousand, one zero zero
+    vector: one two thousand, zero nine five
+    vector: three thousand, one three zero
+    vector: two thousand, one two five
+
+The engine turned him and descended him from twelve thousand to two thousand
+across five instructions and **the aeroplane heard none of them**. The pilot
+flew the whole ILS on his own needles and said so at the time:
+
+    "clearly there's an issue with a split brain on the approach. He thinks
+     he's not supposed to say anything"
+
+He is right about the cause. The ASR block handed to the agent reads *"The
+turns and altitudes are transmitted automatically -- do NOT [repeat them]"*,
+so the agent is correctly told to stay off them, and whatever transmits them
+automatically did not. Both halves are behaving; the seam between them is
+empty, and `not_voiced` recorded every one of the six without anything acting
+on it.
+
+This is the SEPARATION half of the two-brain invariant going out over nothing.
+A vector that is decided and not transmitted is worse than one never decided:
+the engine believes he is turning.
 
 ## [SEAM-2] `reconcile` arbitrates authority by searching prose for the word "hold" — #80
 labels: bug, architecture
@@ -4751,6 +4850,19 @@ is the sentence we did or did not write, and this one was missing.
 3. "Go ahead" still answers a bare call — "Kobuleti Clearance, Sockeye".
 
 ---
+
+**FLOWN 28 AUGUST AND FAILED.** Twice on the approach, to calls with content
+in them:
+
+    20:12:24  PILOT  Batumi Approach, Sockeye is established, ILS one three.
+    20:12:37  ATC    Sockeye, Batumi Approach, go ahead.
+    20:14:03  PILOT  established on the ILS one three. What do you show as my
+                     final destination for my flight plan?
+    20:14:14  ATC    Sockeye, Batumi Approach, go ahead.
+
+Both are reports, one carries a question, and "go ahead" was the answer to
+each. Both turns also had a decided vector that was never voiced (#79) -- so
+"go ahead" was what went out INSTEAD of a turn and a descent.
 
 ## [SEP-24] The engine threw on every arrival turn, and the failure was a log line — #197
 labels: bug, architecture, needs-flight-test
