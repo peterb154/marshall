@@ -111,11 +111,52 @@ _ASSIGNED_COLS = ("id", "flight_id", "template", "label", "origin",
 
 
 def assigned(flight_id: int) -> dict | None:
+    """The clearance this flight holds -- WITH the positions of its own fixes.
+
+    `assign` copies a filed plan onto a flight and the copy keeps the route as
+    NAMES: `assigned_plans` has no `legs` column, so the coordinates are left
+    behind in `flight_plans`. `plans.route_fixes` looks up a plan's private
+    fixes from `legs` FIRST, deliberately -- a steerpoint in the pilot's
+    cartridge is where his aeroplane is actually going -- and it was being
+    handed a plan with no legs at all, so every private fix came back
+    unresolved.
+
+    28 August, airborne, on the leg between FOO and BAR:
+
+        PILOT   passing steerpoint FOO, request vectors to my next steerpoint
+        ATC     negative on vectors, I don't have your steerpoints
+        ATC     I only see radar returns, not your flight plan waypoints --
+                you'll have to navigate FOO, BAR, SPAM, INITIAL yourself
+        PILOT   "why doesn't Kobuleti Departure have my steer points and
+                 their coordinates?"
+
+    He could recite the names off the strip and could not say where one was,
+    which reads as a controller with no plan and was a controller with half of
+    one. Only INITIAL resolved, because INITIAL is also a published fix.
+
+    The legs come back with the row rather than being copied into it: one
+    home for a coordinate is the whole reason `route_fixes` exists. An amended
+    route is unaffected -- matching is by NAME, so a leg the amendment dropped
+    is simply never asked for. [#199]
+    """
     with _pool().connection() as c:
         r = c.execute(
             f"SELECT {', '.join(_ASSIGNED_COLS)} FROM assigned_plans "
             f"WHERE flight_id=%s", (flight_id,)).fetchone()
-    return dict(zip(_ASSIGNED_COLS, r)) if r else None
+    if not r:
+        return None
+    got = dict(zip(_ASSIGNED_COLS, r))
+    # THROUGH `filed`, NOT A SECOND QUERY. It already selects `legs`, and a new
+    # SELECT here would be a fifth SQL statement in this module -- which
+    # `tests/test_the_database_is_the_source_of_truth.py` refuses, correctly:
+    # the query belongs where the plans are read, and there is already exactly
+    # one place that reads them.
+    if got.get("template"):
+        tpl = next((q for q in filed()
+                    if (q.get("name") or "") == got["template"]), None)
+        if tpl and tpl.get("legs"):
+            got["legs"] = tpl["legs"]
+    return got
 
 
 def assign(flight_id: int, plan: dict, *, mission: str = "default",
@@ -685,7 +726,14 @@ def clearance_tools(mission: str = "default", station: str = "") -> list:
             return f"{callsign} has no assigned flight plan."
         nav = P.nav_of(aircraft_type(f))
         legs, missing = P.route_fixes(plan, _known_fixes())
-        route = " -> ".join(x["name"] for x in legs) or "(no route filed)"
+        # NAMES AND LEVELS, not names alone. This printed "FOO -> BAR -> SPAM"
+        # and a pilot who asked what altitude his steerpoints were at got told
+        # the controller had no such data -- which was true of the STRING and
+        # false of the plan it came from. The level is on the leg. [#199]
+        def _leg(x: dict) -> str:
+            ft = x.get("alt_ft")
+            return f"{x['name']} ({ft:,} ft)" if ft else x["name"]
+        route = " -> ".join(_leg(x) for x in legs) or "(no route filed)"
         out = [f"{callsign}: {plan.get('task') or 'no task filed'}",
                f"route {route}",
                f"top of route {P.top_of_route(plan) or '?'} ft, "

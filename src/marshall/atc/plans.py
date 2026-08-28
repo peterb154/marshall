@@ -288,8 +288,13 @@ def route_fixes(plan: dict, fixes: dict) -> tuple[list[dict], list[str]]:
         # to avoid. This used to check the catalogue first, which is how a
         # plan's own INITIAL was silently discarded.
         if mine:
+            # THE LEVEL COMES WITH THE POINT. A steerpoint carries an altitude
+            # in the cartridge and this dropped it, so a controller could say
+            # where FOO was and not what he should be at over it -- which is
+            # half an answer to "do you know the altitude of my steerpoints?"
+            # and reads as not knowing. [#199]
             out.append({"name": name, "lat": mine["lat"], "lon": mine["lon"],
-                        "private": True})
+                        "alt_ft": mine.get("alt_ft"), "private": True})
         elif ll:
             out.append({"name": name, "lat": ll[0], "lon": ll[1]})
         else:
