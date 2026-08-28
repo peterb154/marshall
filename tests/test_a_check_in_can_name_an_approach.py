@@ -27,7 +27,6 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from marshall.atc import controller as C  # noqa: E402
-from marshall.core import route as R  # noqa: E402
 
 
 class ACheckInCanNameAnApproach(unittest.TestCase):
