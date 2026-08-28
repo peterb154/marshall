@@ -162,8 +162,30 @@ def flight_strip(f: dict, fix=None) -> str:
             plan.append("READ BACK: NO")
         bits.append(", ".join(plan))
     elif f.get("intent") or f.get("destination"):
-        bits.append(f"{f.get('intent') or 'inbound'} "
-                    f"{f.get('destination') or ''}".strip())
+        # WHAT HE ASKED FOR, SAID TO BE THAT, AND NOT A CLEARANCE.
+        #
+        # This was bare prose, so a pilot who had been cleared got a LABELLED
+        # strip -- "FLIGHT PLAN: BatumiTest", "READ BACK: NO" -- and a pilot
+        # who had not got an unlabelled phrase that reads exactly like one:
+        #
+        #     STRIP: sockeye, transit and recovery to Batumi.
+        #
+        # That is his `intent` column: the words he used asking. On 28 August
+        # Kobuleti Clearance read it back to him as a clearance he already
+        # held -- "you are cleared on the BatumiTest flight plan, as filed,
+        # maintain five thousand" -- for twenty minutes, with `assigned_plans`
+        # empty, while Ground read the record and refused taxi. The seat whose
+        # whole job is ISSUING clearances was the one being told he had one.
+        #
+        # Same fault as #191 one column over, and the un-cleared case is the
+        # one that matters: a strip that cannot say NO is worse than no strip,
+        # because the absence of a clearance is exactly what Delivery must act
+        # on. So it is stated, not left to be inferred from a missing line.
+        want = (f"{f.get('intent') or 'inbound'} "
+                f"{f.get('destination') or ''}").strip()
+        bits.append(f"REQUESTED (his words, NOT a clearance): {want}")
+        bits.append("CLEARANCE: NONE ISSUED — he has been read nothing and "
+                    "has agreed to nothing")
     if f.get("procedure"):
         bits.append(f"on the {f['procedure']}"
                     + (f" runway {f['runway']}" if f.get("runway") else ""))

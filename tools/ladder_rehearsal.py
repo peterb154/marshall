@@ -1002,6 +1002,29 @@ def a_clean_board() -> bool:
         ok = False
         print(f"  !! could not clear the director's flights ({type(e).__name__}); "
               "a clearance already on file makes the early rows unrepeatable")
+    # AND THE CONTROLLERS FORGET, which restarting the bridge does NOT do.
+    #
+    # A seat's conversation lives in the agent CONTAINER -- rows in
+    # `session_messages` and a cached `Agent` holding them in memory -- and
+    # neither is touched by anything above. So every run of this harness seeded
+    # the controllers with a rehearsal, and they carried it into the next
+    # sortie: on 28 August Kobuleti Clearance told a pilot he was "already
+    # cleared on the BatumiTest flight plan" from a transcript that included a
+    # `--only Q1` smoke test of mine, while `assigned_plans` was empty and he
+    # could not taxi. A clean board that leaves the controller remembering the
+    # last aeroplane is not a clean board. [#209] [#212]
+    try:
+        req = urllib.request.Request(
+            "http://localhost:8000/atc/forget",
+            data=json.dumps({"session_id": "hooks"}).encode(),
+            headers={"content-type": "application/json"}, method="POST")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            print(f"  the controllers forgot the last sortie: "
+                  f"{resp.read().decode('utf-8', 'replace')[:80]}")
+    except Exception as e:
+        ok = False
+        print(f"  !! could not clear the controllers' memory ({type(e).__name__}); "
+              "they will answer the early rows from the last run")
     r = subprocess.run([sys.executable, str(ROOT / "tools" / "bridge.py"), "restart"],
                        check=False, capture_output=True, text=True, timeout=180)
     if r.returncode != 0:

@@ -494,6 +494,87 @@ def atc_transmitted_endpoint(body: dict) -> dict:
 
 # The voice bridge reads this before every /chat and prepends it, so the
 # controller always has a fresh scope with no tool round-trip in the hot path.
+@app.post("/atc/forget")
+def atc_forget(body: dict) -> dict:
+    """Make a controller forget. BOTH COPIES, or it is not forgetting.
+
+    THERE WAS NO WAY TO DO THIS AND IT COST A SORTIE. A conversation lives in
+    two places -- `session_messages`, which a restart restores from, and
+    `agent.messages` inside a cached `Agent` in this process -- and nothing
+    could clear the second short of restarting the container. So a pilot on
+    the ramp on 28 August was told for forty minutes that he was "already
+    cleared on the BatumiTest flight plan", from a transcript of a DIFFERENT
+    sortie, while `assigned_plans` was empty and every tool said otherwise.
+    The rows were deleted three times and changed nothing: the cache had been
+    up nine days.
+
+    `/atc/transmitted` already says this in its own docstring -- "correcting
+    one leaves the other lying until the next restart" -- and there was no
+    endpoint that acted on it.
+
+    SCOPED, AND THAT IS THE POINT. A seat's conversation legitimately spans
+    several pilots, and a controller who forgets everyone because one aeroplane
+    went home is a worse bug than the one being fixed:
+
+        "we have to be careful clearing session history -- as when a new pilot
+         comes in, we dont want the controller to forget everything."
+
+    So `station` forgets ONE seat and leaves the others. Forgetting a single
+    PILOT within a seat is not possible yet and is not faked here: nothing in
+    `session_messages` records whose sortie a turn belonged to, so the only
+    available filter would be matching text inside the JSON -- see #209, which
+    carries the schema change that makes it answerable.
+    """
+    session_id = (body.get("session_id") or "").strip()
+    if not session_id:
+        return {"ok": False, "why": "session_id is required"}
+    station = (body.get("station") or "").strip()
+    role = (body.get("role") or "").strip().lower()
+
+    # THE LIVE COPY FIRST. If the rows go and the process keeps its cache, the
+    # next turn writes the remembered conversation straight back.
+    seats, evicted = set(), 0
+    for key in list(_atc_agents):
+        k_session, k_station, k_role = key[0], key[1], key[2]
+        if k_session != session_id:
+            continue
+        if station and (k_station or "").strip().lower() != station.lower():
+            continue
+        if role and (k_role or "").strip().lower() != role:
+            continue
+        seats.add(store_id(k_session, k_role or "", k_station or ""))
+        _atc_agents.pop(key, None)
+        evicted += 1
+
+    # ...AND THE DURABLE ONE. A seat with no cached agent still has rows, and a
+    # fresh agent would load them: an uncached seat is not a forgotten one.
+    if not seats:
+        seats = ({store_id(session_id, role, station)} if (station or role)
+                 else set())
+    rows = 0
+    try:
+        from marshall.core.db import pool as get_pool
+        with get_pool().connection() as c:
+            if seats:
+                for s in seats:
+                    rows += c.execute(
+                        "DELETE FROM session_messages WHERE session_id = %s",
+                        (s,)).rowcount or 0
+            else:
+                rows = c.execute(
+                    "DELETE FROM session_messages WHERE session_id = %s "
+                    "OR session_id LIKE %s",
+                    (session_id, f"{session_id}:%")).rowcount or 0
+    except Exception as e:
+        # THE CACHE IS ALREADY GONE, so say what happened rather than pretend
+        # the whole thing failed -- a half-forget nobody is told about is how
+        # this bug lasted a day.
+        return {"ok": False, "evicted": evicted, "rows": 0, "error": str(e),
+                "why": "the cached agents were dropped; the rows were not"}
+    return {"ok": True, "evicted": evicted, "rows": rows,
+            "seats": sorted(seats) or ["(all seats in this session)"]}
+
+
 @app.get("/radar")
 def radar_endpoint(session_id: str = "") -> dict:
     """The picture, and the facts it was drawn from.

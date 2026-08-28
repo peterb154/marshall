@@ -476,6 +476,69 @@ naming the row in the sentence that denied it.
 
 ---
 
+## [ARCH-56] A cache is a second copy, and this project has been bitten by that eight times — #211
+
+labels: architecture
+
+**Status:** OPEN. The lever is built (`POST /atc/forget`, 28 August); the RULE
+is not, and the rule is the issue.
+
+A controller's conversation lives in two places: rows in `session_messages`,
+and `agent.messages` inside a cached `Agent` in the director process. On 28
+August a pilot spent forty minutes on the ramp being told he was *"already
+cleared on the BatumiTest flight plan, maintain five thousand"* -- a verbatim
+replay of a DIFFERENT sortie -- while `assigned_plans` was empty and every
+tool said otherwise. The rows were deleted three times and nothing changed:
+`_atc_agents` had been up nine days.
+
+    "an in-memory cache of Agent objects, wtf man!? how many times we going
+     to let this eat our lunch?"
+
+**Eight, counting this one.** The archive is full of the same sentence:
+
+    #120  ARCH-16  the board is in memory; the database is the source of truth
+    #126  SEAM-12  clearance delivery searched an empty board
+    #153  ARCH-28  the director states an absence as a fact, in three places
+    #81   SEAM-3   one agent per session became seven, sharing one counter
+    #137  ARCH-23  fixes are Python, published as though they were data
+    #47   RAD-5    the geometry reads structure, not prose
+    #209  STATE-10 a controller's memory outlives the sortie
+    #212  ARCH-55  this one
+
+**Every one was fixed as an instance and none as a class.** #120 is literally
+titled "the board is in memory; the database is the source of truth", is
+CLOSED, and the same shape bit again today in a different store. `docs/STATE.md`
+says where truth lives and says nothing about who is holding a copy of it.
+
+**The tell was already written down.** `/atc/transmitted`, four lines below the
+cache it needs to know about:
+
+    BOTH COPIES, because there are two. The row in `session_messages` is what
+    a restart restores; `agent.messages` is what the live process is reasoning
+    from, and correcting one leaves the other lying until the next restart.
+
+That paragraph is correct, was there before today, and there was no endpoint
+that acted on it -- so the only way to make a controller forget was to restart
+his container, which nothing in the harness or the ops tooling ever did.
+
+**What a rule would look like.** Every module-level mutable cache in a serving
+path declares, in one registry: what it holds, what its key is, what evicts it,
+and which durable copy it shadows. A test walks the AST for module-level
+mutable state and fails on one that is not registered -- the same enforcement
+shape as `test_a_phase_is_in_exactly_one_list.py` and
+`test_the_atc_is_not_in_a_container.py`. The point is not to forbid caches; it
+is that a cache with no documented eviction is a second source of truth, and
+this codebase keeps discovering that one aeroplane at a time.
+
+**Acceptance criteria**
+1. A registry names every module-level mutable cache in `services/` and the
+   bridge: contents, key, eviction, and the durable copy it shadows.
+2. A test fails on module-level mutable state that is not in the registry.
+3. Every registered cache has an eviction path reachable without a restart.
+4. Clearing any state clears both copies, or says which one it did not.
+
+---
+
 ## [TEST-1] Fly Kobuleti ILS to prove the data drives it — #3
 labels: test, needs-flight-test
 

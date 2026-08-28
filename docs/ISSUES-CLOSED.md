@@ -7917,3 +7917,28 @@ They meant *"nobody is handed anywhere"* and were written against the sentinel
    regress).
 
 ---
+
+## [ARCH-55] A controller could only be made to forget by restarting his container — #212
+
+labels: bug
+
+**Status:** FIXED 28 August -- `POST /atc/forget` clears the cached `Agent` and
+the `session_messages` rows together, scoped to a seat.
+
+Nothing could evict `_atc_agents`. Deleting the rows left the live agent
+reasoning from the copy in Python, and a bridge restart does not touch the
+director's container. So a stale conversation was unfixable in the field, and
+during a live sortie it took a container restart to clear -- with a pilot
+sitting in the seat.
+
+Scoped deliberately: `station` forgets ONE seat and leaves the others, because
+a seat's conversation legitimately spans several pilots and a controller who
+forgets everybody because one aeroplane went home is a worse bug than the one
+being fixed. Forgetting a single PILOT within a seat is not possible yet and is
+not faked -- nothing records whose sortie a turn belonged to. That is #209.
+
+`tools/ladder_rehearsal.py`'s `a_clean_board()` now calls it, which closes a
+hole of my own making: every smoke test I ran seeded the controllers, and one
+of those transcripts is what the pilot was being answered from.
+
+---
