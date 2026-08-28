@@ -730,9 +730,41 @@ def clearance_tools(mission: str = "default", station: str = "") -> list:
         # and a pilot who asked what altitude his steerpoints were at got told
         # the controller had no such data -- which was true of the STRING and
         # false of the plan it came from. The level is on the leg. [#199]
+        # WHERE EACH ONE IS, IN THE FRAME THE RADAR BLOCK ALREADY SPEAKS.
+        #
+        #     "ATC better know where each steerpoint is and be able to use a
+        #      tool to get vectors to any - and where I am on the flight plan."
+        #
+        # The names and levels alone cannot answer "vectors to my next
+        # steerpoint": the controller has the aeroplane as a range and radial
+        # from the field, and had the route as four words. Both sides are given
+        # from the SAME datum now -- the plan's own origin or destination,
+        # whichever is a published fix -- so the two can be compared without
+        # anybody parsing prose or guessing a frame.
+        #
+        # Magnetic, because that is what a pilot flies and what a vector is
+        # spoken in. `geo.magnetic` is the one conversion; there is no second
+        # answer for this to be out by. [#199]
+        datum, datum_name = None, ""
+        for cand in (plan.get("origin"), plan.get("destination")):
+            hit = _known_fixes().get(str(cand or "").strip().lower())
+            if hit:
+                datum, datum_name = hit, str(cand).title()
+                break
+
         def _leg(x: dict) -> str:
-            ft = x.get("alt_ft")
-            return f"{x['name']} ({ft:,} ft)" if ft else x["name"]
+            bits = [x["name"]]
+            if x.get("alt_ft"):
+                bits.append(f"{x['alt_ft']:,} ft")
+            if datum and x.get("lat") is not None:
+                from marshall.core import geo as _geo
+                from marshall.feed.tracks import _magvar
+                nm, brg = _geo.range_bearing_true((datum[0], datum[1]),
+                                                  x["lat"], x["lon"])
+                bits.append(f"{_geo.magnetic(brg, _magvar()):03.0f}M "
+                            f"{nm:.0f} nm from {datum_name}")
+            return f"{x['name']} (" + ", ".join(bits[1:]) + ")" if len(bits) > 1 \
+                else x["name"]
         route = " -> ".join(_leg(x) for x in legs) or "(no route filed)"
         out = [f"{callsign}: {plan.get('task') or 'no task filed'}",
                f"route {route}",

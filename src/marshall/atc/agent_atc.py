@@ -7786,7 +7786,14 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
 
         if vectoring:
             print(f"  {vectoring}", flush=True)
-            record(session_id, kind="asr", callsign=known, text=vectoring)
+            # `vectoring` NAMES ITS OWN PROCEDURE -- "ILS: he is being
+            # vectored to intercept" -- and this kind said ASR whatever
+            # it was. A pilot reading the recorder after an ILS sortie
+            # asked why ASR appeared when nothing had named one, which
+            # is a fair question to ask of a label that is always wrong
+            # for three of the four procedures this map publishes.
+            record(session_id, kind="talkdown", callsign=known,
+                   text=vectoring)
         if directive:
             record(session_id, kind="controller", text=directive)
 

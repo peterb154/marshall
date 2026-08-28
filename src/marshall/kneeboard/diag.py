@@ -179,7 +179,7 @@ def published() -> dict:
 # order a reader wants them: what it was, then what each brain did about it.
 _TRAIL = ("dropped", "ship-to-ship", "atc/challenge", "flight/created",
           "flight/joined", "flight/refused", "flight/left", "flight/dissolved",
-          "controller", "asr", "atc/pilot", "atc/simple", "atc/vector",
+          "controller", "asr", "talkdown", "atc/pilot", "atc/simple", "atc/vector",
           "atc/range", "atc/landed", "board")
 
 # THE RECORDS OF DOING NOTHING, which is the half nothing displayed.
@@ -438,7 +438,7 @@ def _voiced(trail: list[dict]) -> dict:
     # figures a clearance is made of.
     want: list[str] = []
     for t in trail:
-        if t.get("kind") in ("controller", "asr"):
+        if t.get("kind") in ("controller", "asr", "talkdown"):
             want += _INSTRUCTION.findall(t.get("text") or "")
     if not want:
         return {}
