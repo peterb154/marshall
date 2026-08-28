@@ -1616,7 +1616,8 @@ VECTOR_CHANGE_DEG = 12
 VECTOR_MIN_SEC = 20.0
 
 
-def radar_fixes(scope: str, field: str = "", ctl=None, picture=None
+def radar_fixes(scope: str, field: str = "", ctl=None, picture=None,
+                dropped: list | None = None
                 ) -> list[tuple[str, object]]:
     """Every aircraft we can talk down, as (callsign, Position).
 
@@ -1648,6 +1649,13 @@ def radar_fixes(scope: str, field: str = "", ctl=None, picture=None
         for row in ctl.board():
             cs, track = row.get("callsign", ""), row.get("track", "")
             if not (cs and track):
+                # NOT BOUND TO AN AEROPLANE. The engine knows a voice and has
+                # not tied it to a contact, so there is no position to guide
+                # from -- and this is the FIRST silent drop on the path to the
+                # proactive monitor, before the procedure, the queue or the
+                # picture are ever consulted. [#79]
+                if dropped is not None and cs:
+                    dropped.append((cs, track or "(no track bound)"))
                 continue
             # HIS AERODROME'S PICTURE. A range is measured FROM somewhere, and
             # with two fields on the route there are two somewheres -- so a
@@ -1663,6 +1671,19 @@ def radar_fixes(scope: str, field: str = "", ctl=None, picture=None
             fix = radar_fix_by_track(his, track, field)
             if fix is not None:
                 out.append((cs, fix, his))
+            elif dropped is not None:
+                # A BOARD ROW WITH A TRACK THAT THE PICTURE DOES NOT HOLD.
+                #
+                # The last silent drop on the way to the proactive monitor, and
+                # the monitor is what transmits vectors -- so an aeroplane lost
+                # here gets no turns, no descents and no mile calls, and
+                # nothing anywhere says why. A pilot flew a whole ILS that way.
+                #
+                # Reported to the CALLER rather than printed: this function is
+                # on a two-second poll and also serves the dry-run tools, so it
+                # collects rather than logs and the monitor decides what to say
+                # once per aeroplane. [#79]
+                dropped.append((cs, track))
         return out
     # NO BOARD TO ASK -- the dry-run tools and the older tests. The prose path
     # stays for them and dies with the last caller that cannot supply one.
@@ -6953,7 +6974,22 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                                                  field=fld)
                     return _seen[fld]
 
-                fixes = radar_fixes(scope, ctl=ctl, picture=_his_picture)
+                _dropped: list = []
+                fixes = radar_fixes(scope, ctl=ctl,
+                                    picture=_his_picture,
+                                    dropped=_dropped)
+                for _cs, _tk in _dropped:
+                    # Once per aeroplane: the poll is two seconds.
+                    if _no_vector.get(_cs) != _tk:
+                        _no_vector[_cs] = _tk
+                        print(f"  .. not vectoring {_cs}: the board "
+                              f"binds him to {_tk!r} and his field's "
+                              f"picture does not hold that track — "
+                              f"the monitor cannot see him at all",
+                              flush=True)
+                        record(session_id, kind="not_vectored",
+                               callsign=_cs,
+                               text=f"track {_tk!r} not on his picture")
                 # Two contacts is traffic, and traffic means one at a time.
                 traffic = len(fixes) >= 2
                 for cs, pos, scope in fixes:
@@ -7147,6 +7183,22 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     # which is why it would not look wrong.
                     _pro = ctl._pro(_who) if _who is not None else None
                     if not may_vector(_pro):
+                        # THE LAST SILENT CONTINUE ON THIS PATH, and the one
+                        # that answers "no procedure" and "a letdown he flies
+                        # himself" with the same nothing. `_pro` is None for an
+                        # aeroplane the blind engine does not hold, and
+                        # `may_vector(None)` is False -- so an unknown aircraft
+                        # and a beacon letdown leave identical traces. [#79]
+                        _r = ("nothing has assigned him a procedure, so there "
+                              "is nothing to vector him on"
+                              if _pro is None else
+                              f"{getattr(_pro, 'key', '?')} is flown by the "
+                              f"pilot, not vectored")
+                        if _no_vector.get(cs) != _r:
+                            _no_vector[cs] = _r
+                            print(f"  .. not vectoring {cs}: {_r}", flush=True)
+                            record(session_id, kind="not_vectored",
+                                   callsign=cs, text=_r)
                         continue                # a letdown he flies himself
                     if not may_be_vectored(bridge, ctl, cs, traffic=traffic,
                                            freq_hz=_final_hz):
