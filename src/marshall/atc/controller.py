@@ -3104,6 +3104,56 @@ class Controller:
         rwy = getattr(p, "runway", "") or ""
         return f"{spoken} runway {rwy}" if rwy else spoken
 
+    def note_wants_approach(self, cs: str, wants: str) -> None:
+        """He named an approach. Give him the procedure; do not sequence him.
+
+        A pilot's first call to Approach is usually one breath:
+
+            "Batumi Approach, Probe88, 23 miles northwest, descending eight
+             thousand, information Alpha, request the ILS runway one three."
+
+        The classifier reads that as a CHECK_IN -- correctly, it is one -- and
+        extracts `wants='ILS runway 13'` at the same time. Only the
+        REQUEST_APPROACH branch ever read `wants`, so the engine answered a man
+        who had just named his approach with:
+
+            "report the field in sight ... Say your request."
+
+        Both halves of which are wrong, and the second is absurd: it is asking
+        for a request it is holding. The first is worse than absurd. With no
+        procedure assigned, `_pro(ac)` is None, `may_vector(None)` is False, and
+        `_report_trigger` falls to the un-vectored branch -- so an ILS arrival
+        is told to look out of the window, and the proactive monitor skips him
+        for the rest of the approach. No vectors, no mile calls, nothing. That
+        is one missing read costing an entire arrival.
+
+        HOISTED, EXACTLY AS THE ATIS LETTER WAS. `intents.apply` already lifts
+        `atis_letter` out of the branch for #180 -- "he told the controller, so
+        the controller knows, whatever else the transmission was about" -- and
+        what he wants to fly is the same kind of fact.
+
+        ASSIGNS ONLY. `request_approach` also enters him in the stack and may
+        clear him, and a check-in is not the moment for either: he has just
+        arrived on the frequency. This gives him a procedure so the arrival
+        machinery can see him, and leaves the sequencing to the request he will
+        make in his own time.
+
+        Silent when the words match nothing or match several -- offering the
+        menu is `request_approach`'s job and doing it here would say it twice.
+        """
+        ac = self.get(cs)
+        if self._pro(ac) is not None:
+            return                      # already flying one; his choice stands
+        # `_me` is set from the frequency the last transmission came in on and
+        # does not exist on a Controller nobody has spoken to yet -- a fresh
+        # engine, and every unit test. An empty field searches the whole map,
+        # which is the right answer when we do not know whose seat this is.
+        want, _maybe = _match_spoken(
+            wants, _published_now(),
+            field=getattr(getattr(self, "_me", None), "field", "") or "")
+        if want is not None:
+            self.assign_approach(ac.callsign, want)
+
     def request_approach(self, cs: str, wants: str = "") -> None:
         # A pilot who calls up asking for the approach directly (no prior check-in
         # or beacon report) should still be worked, not ignored. Enter a new

@@ -1672,6 +1672,16 @@ def radar_fixes(scope: str, field: str = "", ctl=None, picture=None,
             if fix is not None:
                 out.append((cs, fix, his))
             elif dropped is not None:
+                # WHY it did not resolve, from inside the process that owns the
+                # picture. Asking this from a shell is what wasted an evening:
+                # `PROJECTED` is filled at bridge start, so an out-of-process
+                # probe gets an empty datum and reads as a bug that is not
+                # there. The answer has to come from here.
+                _o = getattr(his, "origin", None)
+                _hit = his.of(track) if isinstance(his, Scope) else None
+                _detail = (f"origin={'set' if _o else 'NONE'}, "
+                           f"of({track!r})={'found' if _hit else 'None'}, "
+                           f"contacts={len(getattr(his, 'contacts', []) or [])}")
                 # A BOARD ROW WITH A TRACK THAT THE PICTURE DOES NOT HOLD.
                 #
                 # The last silent drop on the way to the proactive monitor, and
@@ -1683,7 +1693,7 @@ def radar_fixes(scope: str, field: str = "", ctl=None, picture=None,
                 # on a two-second poll and also serves the dry-run tools, so it
                 # collects rather than logs and the monitor decides what to say
                 # once per aeroplane. [#79]
-                dropped.append((cs, track))
+                dropped.append((cs, f"{track} [{_detail}]"))
         return out
     # NO BOARD TO ASK -- the dry-run tools and the older tests. The prose path
     # stays for them and dies with the last caller that cannot supply one.

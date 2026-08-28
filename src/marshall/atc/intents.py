@@ -486,6 +486,18 @@ def dispatch(ctl: atc.Controller, intent: Intent,
     # knows, whatever else the transmission was about. [#180]
     if intent.atis_letter:
         ctl.get(cs).atis_letter = intent.atis_letter
+    # ...AND WHAT HE SAID HE WANTS TO FLY, for exactly the same reason.
+    #
+    # `wants` was read only inside the REQUEST_APPROACH branch, and a pilot's
+    # first call to Approach is usually one breath -- position, altitude, ATIS
+    # and the approach he wants. That classifies as CHECK_IN, correctly, with
+    # `wants` extracted all the same. So the engine answered a man who had just
+    # named his approach with "report the field in sight ... say your request":
+    # asking for a request it was holding, and telling an ILS arrival to look
+    # out of the window because with no procedure assigned he is not a vectored
+    # aircraft. The monitor then skipped him for the whole approach. [#177]
+    if getattr(intent, "wants", "") and intent.kind is not IntentKind.REQUEST_APPROACH:
+        ctl.note_wants_approach(cs, intent.wants)
     match intent.kind:
         case IntentKind.CHECK_IN:
             ctl.check_in(cs, intent.flight_size)
