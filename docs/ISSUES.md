@@ -210,6 +210,157 @@ on the BOARD.
 
 ---
 
+## [ARCH-42] Nothing asks whether a clearance the controller spoke was ever issued — #185
+labels: bug, architecture, needs-flight-test
+
+**Status:** CLOSED 18 August, NEEDS A PILOT — card row G14. The prompt fault is fixed, the inverse check records unbacked claims, and a prompt/tool signature check now guards the two-brain seam. Verified end to end on `tools/atc_dryrun.py --script kobuleti` — the controller called the tool, was refused, spoke the refusal and stopped, inventing nothing. **Only a pilot can score criterion 1** because a fabricated clearance sounds exactly like a real one; what a machine can now say is whether the record backs it, which is criterion 3 and is guarded.
+
+    "so we never got a clearance ... Then everybody just played along?"
+
+`decision.verify` asks which of the engine's facts did not survive being spoken
+— the DROP — and has caught real transmissions since #102. **Nothing asked the
+opposite.** On 18 August the engine issued no clearance at all and the
+controller said:
+
+    15:13:52  Sockeye, Kobuleti Clearance, cleared to Batumi, as filed,
+              maintain five thousand, expect one zero thousand, departure
+              frequency one two three decimal three, squawk ...
+    15:14:33  Sockeye, readback correct, contact Kobuleti Ground ...
+
+`assigned_plans` held no row; `flights` held none either. Ground taxied him,
+Tower launched him, and he flew to another aerodrome on a clearance that
+existed only in the air. **Every rung believed it, because nothing anywhere
+asked whether it was real** — which is why it was the last of the seven
+findings to be understood and took a day of reading transcripts.
+
+**Where the numbers came from: nowhere.** Unlike #179, we did not tell it. The
+per-turn prompt carries the departure frequency and nothing else; `found_but_
+not_him` names the label and the endpoints; `flight_plan_help` needs an
+assigned plan and refuses without one. The altitude and the squawk were
+invented after the tool refused him.
+
+**And the rules already forbade it** — *"never search your memory for a plan"*,
+*"a clearance you improvised is an aeroplane cleared to an altitude nobody
+wrote down"*. What they never said is that **a refusal is terminal**. Every
+rule covered what to do with what comes BACK; none covered nothing coming back.
+That is the prompt fault, and it is fixed.
+
+**A LIVE DEFECT WAS FOUND WHILE FIXING THIS.** #183 changed the tool to
+`request_clearance(callsign, plan)` and left `rules.md` telling the controller
+to pass the pilot's words through unedited. Flown, every clearance request in
+the next sortie would have been refused — `named("Roger Sock, I would like
+Batumi Test...")` matches no label. The suite was green, ruff was clean, the
+tool's own docstring was correct and tested, and the prompt is a markdown file
+nothing parses. **The seam between the two brains was the only contract in the
+system with no check on it.**
+
+**What was built.**
+
+    rules.md                   the contract corrected, plus the rule that was
+                               missing: a refusal is not a clearance, and if
+                               the tool did not hand you the words you have
+                               none
+    clearance.unbacked_claims  the inverse of `verify` — what did he say that
+                               the record denies? Answered from the DATABASE,
+                               because what the turn believes is the thing in
+                               question, and silent when it cannot ask
+    the receive loop           RECORDS it (`kind="unbacked"`), never edits it.
+                               Cutting the clause would be a regex guard on a
+                               model's words, which is #179
+    a prompt/tool check        every `tool(args)` spelled in the prompts must
+                               match the real tool. It fails on the exact
+                               defect above
+
+**Verified end to end** on `tools/atc_dryrun.py --script kobuleti`: the
+controller called the tool, was refused, spoke the refusal and stopped.
+
+**Acceptance criteria**
+1. A controller refused a clearance says so and does not invent one.
+2. "Readback correct" is not said before anything is acknowledged.
+3. An unbacked claim reaches the recorder on the transmission it happened on.
+4. No transmission is edited to achieve any of the above.
+
+---
+
+**REOPENED 28 AUGUST. IT WAS CLOSED ON HALF ITS CRITERIA.** A pilot flew G14 --
+a clearance requested under a callsign the board does not have, then talked as
+though cleared -- and the controller correctly refused to invent one. That is
+criterion 1. It was attested and the issue was closed on it.
+
+Criterion 2 was never exercised by that row and failed on the very next sortie:
+
+    18:51:38  ATC    Sockeye, readback correct.
+    18:52:55  ENGINE Sockeye, your IFR clearance has not been read back,
+                     contact Kobuleti Clearance one two five decimal one.
+    18:54:48  ATC    Sockeye, readback correct.
+    18:55:04  PILOT  "he says my read back is correct, but on the diag page
+                      it's still showing not read back. I'm going to abort
+                      this flight"
+
+`assigned_plans.acked_at` was NULL throughout. `_ack_the_clearance` is gated on
+the ENGINE's verdict, correctly -- so the agent may SAY "readback correct" while
+nothing records it, and Ground goes on refusing taxi for ever. The sortie was
+unwinnable from the moment the words and the record diverged.
+
+**Nothing reconciles the two**, which is the issue's own title pointed at the
+acknowledgement instead of the clearance: nothing asks whether a "readback
+correct" the controller spoke was ever recorded. A refusal the pilot cannot see
+is the same fault as a clearance nobody issued.
+
+**The closing lesson, which is the reason this note is here rather than in a new
+issue:** an attestation names what was flown, and G14 did not fly criterion 2.
+An issue with four criteria is not closed by evidence for one of them.
+
+---
+
+## [SEAM-22] An agreed read-back is thrown away, so the next word restarts it — #208
+
+labels: bug, needs-flight-test
+
+**Status:** OPEN. Found 28 August from a pilot's sortie, reproduced in isolation.
+
+`_read_back_correct` carries what a pilot has said forward across a correction,
+so a man told two items are missing may read back exactly those two and be
+finished -- that is #157 and it works. When nothing is left outstanding it then
+does this:
+
+    if not missed:
+        said.pop(key, None)              # agreed; nothing left to carry
+
+and the accumulator is gone. The clearance is supposed to be marked
+`acknowledged` in the same breath, which makes the next call early-return with
+nothing to judge -- so the pop is harmless only for as long as the
+acknowledgement actually lands. **When it does not, the next thing the pilot
+says is judged as a fresh read-back of the WHOLE clearance and fails**, naming
+items he read back correctly two transmissions ago. Driven in isolation:
+
+    turn 1  "...maintain 5,000 ... frequency 1-2-3-4-5, and squawk"   missing freq, squawk
+    turn 2  "departure frequency one two three decimal three, squawking 6789"  missing squawk
+    turn 3  "corrections, squawking 0055"                              AGREED -- accumulator popped
+    turn 4  "Sockeye will maintain 5,000."                             missing freq, squawk
+
+Turn 4 is a man being told he is wrong about two numbers he has already got
+right, immediately after being told he was correct. On the sortie he read that
+as the correction never terminating, and aborted.
+
+**The state lives in two places and only one of them is cleared.** `said` is
+the working memory of an unfinished read-back; `acknowledged` is the durable
+record that it finished. Popping the first while the second may silently fail
+to be written leaves no memory of a conversation that, as far as everything
+downstream is concerned, never concluded. Whichever way #185 is fixed, this
+one wants the pop to depend on the acknowledgement having actually been
+recorded rather than on the verdict alone.
+
+**Acceptance criteria**
+1. After an agreed read-back, a further transmission is not judged as a fresh
+   read-back of the whole clearance.
+2. The accumulator is only discarded once the acknowledgement is durably
+   recorded, not merely decided.
+3. A pilot who keeps talking after "readback correct" is never told he is
+   negative on items he has already read back.
+
+---
+
 ## [TEST-1] Fly Kobuleti ILS to prove the data drives it — #3
 labels: test, needs-flight-test
 
@@ -3024,6 +3175,19 @@ it. Not "fails quietly" — reports success. That is why nothing ever noticed;
 the check ran on every turn and had nothing to look for.
 ---
 
+**FLOWN 28 AUGUST AND FAILED, card row G12.** The correction itself was right --
+*"negative on two items -- departure frequency is one two three decimal three,
+and squawk is zero zero five five. Read those back."* -- and both items were
+named and voiced, which is what this issue is about. What went wrong is the
+turn after: the pilot read back exactly those two and the engine came back with
+*"say again five thousand"*, an item he had read back correctly first time.
+
+Every engine utterance in that exchange is explained by each transmission being
+judged ALONE, not cumulatively. Driven in isolation with a shared bridge the
+carry-forward works, so the logic is right and something about its lifetime in
+the live process is not. See #208, which is the other end of the same
+accumulator.
+
 ## [ARCH-31] An approach is identified by its runway, and a navaid by its ident — #165
 
 Two findings from reading one table out loud:
@@ -4048,6 +4212,22 @@ belongs with the scoring, not in a second regex.
 4. The weights live somewhere they can be changed and tested.
 
 ---
+
+**FLOWN 28 AUGUST AND FAILED, card row G4**, for a reason the row did not
+anticipate. The pilot asked by what he was DOING and named the destination:
+
+    PILOT  Kobuleti Clearance, Sockeye, request clearance for the transit
+           and recovery to Batumi.
+    ATC    Sockeye, no plan filed under that name. I have BatumiTest and
+           NellisTest on file. Which do you want.
+
+The card's premise was that nothing here is ambiguous, "one ending at Batumi,
+one three thousand miles away". By TASK they are identical -- `flight_plans`
+holds "Transit and Recovery" for BatumiTest and "Transit and recovery" for
+NellisTest -- so asking which is defensible on the task alone. **The
+destination he named was never used**, and it is the thing that separates them.
+The pilot's own note: *"I cannot specify what I'm doing, I have to use the
+name."*
 
 ## [ARCH-41] Everybody joins the arrival queue on their first transmission — #184
 labels: bug, needs-flight-test
