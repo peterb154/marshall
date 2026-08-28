@@ -299,7 +299,12 @@ def state(session: str = "", scope: str | None = None) -> dict:
         },
         "recorder_age": recorder_age,
         "bridge_age": live.get("age"),
-        "radar_ok": bool(live.get("scope")),
+        # WHAT THE BRIDGE SAID, not what this page can infer. `bool(scope)`
+        # answered "is anybody flying" and called it "is radar working", so the
+        # lamp went red every time the sky emptied. `None` if the bridge has not
+        # published it -- unknown is its own answer and must not be rendered as
+        # a fault. See `agent_atc.publish_state`. [#207]
+        "radar_ok": live.get("radar_ok"),
         "board": board,
         "scope": live.get("scope", []),
         # Three answers, and the bridge decided all three. UNSEEN is the only

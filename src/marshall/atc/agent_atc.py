@@ -5791,6 +5791,21 @@ def publish_state(bridge, ctl, scope: str, session_id: str,
         # until now -- somebody who IS talking whose identity never closed, so
         # every call he makes is answered and nothing is ever sequenced.
         "scope": [_contact(u, scope, board_tracks) for u in units],
+        # DID RADAR ANSWER -- which is NOT "is anybody flying".
+        #
+        # `/diag` computed this itself as `bool(scope)`, so the page reported
+        # radar DOWN whenever the sky was empty, which is the ordinary state of
+        # an aerodrome at rest. That is the same conflation that kept a
+        # deslotted pilot on the board for ever (#207), one surface up -- and it
+        # is a false alarm, which is worse than no lamp: an operator who has
+        # learned that the red light means "nobody is flying" will not look at
+        # it on the day radar really has stopped.
+        #
+        # The bridge is the only thing that knows, because it is the thing that
+        # polled. A page deriving it from the contact list is a surface acting
+        # as an authority, which is the fault this whole function exists to fix.
+        # `None` means this bridge did not say -- not "broken".
+        "radar_ok": bool(getattr(scope, "ok", False)),
         # THE MEANING OF THE VALUES, published with them. A page that knows
         # `radar` is better than `plan`, or which recorder kinds belong to which
         # stage, is a page holding domain knowledge -- and it will be wrong the
