@@ -554,6 +554,77 @@ the half that has to be generous.
 
 ---
 
+## [ARCH-57] We invented a name for a plate, and the removal never reached the table — #215
+
+labels: bug
+
+**Status:** OPEN. Found by a pilot filing a plan, 29 August.
+
+    "how about we dont make up names for approach plates. INITIAL is no where
+     on those plates right?"
+
+Correct. `INITIAL` is not on any published plate. It is the initial approach
+fix of a procedure this project invented, on a plate this project generates,
+and `config/theatres/caucasus.toml` says so -- quoting the SAME COMPLAINT from
+the last time it collided:
+
+    # INITIAL IS NOT HERE ANY MORE, and where it went is the point... It is the
+    # initial approach fix of the 1944 Batumi letdown -- a procedure we made
+    # up, on a plate we generate
+    #
+    #     "I created a private fix called INITIAL this seems to be conflicting
+    #      with a fix in your list"
+
+#143 removed it from `[[fix]]`. The theatre publishes three: BATUMI, KOBULETI,
+KUTAISI. **The `fixes` table has four**, and `filing.known_fixes` validates a
+filed route against the TABLE -- so a pilot naming his own steerpoint INITIAL
+is still refused, by the exact conflict that was supposedly fixed.
+
+**THE REMOVAL DID NOT REACH THE PLUMBING, BY THREE SEPARATE ROUTES.**
+`push_fixes` republishes `aerodrome`, `navaid`, `outer_hold` and `arrival_fix`
+from every procedure, plus the transit's own points:
+
+    batumi-ndb-12     arrival_fix = INITIAL
+    kobuleti-ils-07   outer_hold  = INITIAL   (and iaf = INITIAL)
+    transit FIXES     KOBULETI -> INITIAL -> BATUMI
+
+Taking it out of one list while four other fields still name it is not a
+removal. Third "correction that did not reach the plumbing" this week, after
+`SORTIE_LEGS` and the staleness filter.
+
+**AND THE TABLE CANNOT TELL THE TWO KINDS APART.** `fixes` is `name, lat, lon`.
+There is no column saying whether a row is a PLACE ON THE MAP or a point on a
+plate we drew, so the validator cannot warn about one and not the other even
+once the leak is plugged. The controller genuinely does need to resolve a
+procedure's own points by name for the aeroplane flying it -- that is why they
+are published -- so the answer is not "stop publishing them", it is that the
+catalogue has to record which kind each row is. Same shape as
+`session_messages` having no key to prune a single pilot by (#209).
+
+**A SEPARATE DATA ERROR, FOUND ON THE WAY.** One point at 41.787527, 41.368361
+serves as the IAF for three procedures at two aerodromes:
+
+    INITIAL is 14.9 nm on the 316 from Batumi     -- sensible for runway 13
+    INITIAL is 23.7 nm on the 249 from Kobuleti   -- behind a runway 07 approach
+
+`kobuleti-ils-07` carries it as BOTH `iaf` and `outer_hold`. An initial approach
+fix twenty-four miles away on the reciprocal side of the runway is not an IAF.
+Nothing has flown that approach, which is why it has never been noticed.
+
+**Acceptance criteria**
+1. A pilot may file a steerpoint named INITIAL without a conflict, because the
+   catalogue no longer publishes it as a place on the map.
+2. The `fixes` table records which kind each row is, and `known_fixes` asks for
+   places rather than everything.
+3. A controller can still resolve a procedure's own points by name for the
+   aeroplane flying that procedure.
+4. `kobuleti-ils-07` names an initial approach fix that is in front of runway
+   07, or names none.
+5. Removing a fix from the theatre file removes it from the table -- checked,
+   not assumed.
+
+---
+
 ## [TEST-1] Fly Kobuleti ILS to prove the data drives it — #3
 labels: test, needs-flight-test
 
