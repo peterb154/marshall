@@ -964,6 +964,10 @@ class Bridge:
         # agent's reply instead of being dropped on the promise of a
         # transmission that never happens. [#79]
         self.vec_said: dict[str, float] = {}
+        # WHAT THE ENGINE SAID THIS TURN, so that refusing the agent's reply
+        # does not also throw the engine's answer away. See the `keep_him`
+        # fallback in `say_it`.
+        self.directive_now: str = ""
         # WHO CAME OFF THE BOARD, AND WHAT WAS ON THE SCOPE WHEN HE DID.
         #
         # A release is the one board event with no trace of itself: the entry is
@@ -4842,6 +4846,40 @@ def engineering_turn(tx, transcript, srs, known, heard_hz, freq_hz,
     return True
 
 
+def _keep_him_here(bridge, to_callsign: str, me) -> str:
+    """What to say instead of a handoff nobody authorised.
+
+    "GO AHEAD" IS AN ANSWER TO A MAN WHO SAID ONLY HIS NAME, and this said it
+    to men who had just made a complete report:
+
+        PILOT  Batumi Approach, Ratler Flight, established on the ILS one
+               three, twelve miles out.
+        ATC    Rattler, Batumi Approach, go ahead.
+        PILOT  "Split brain -- go ahead is obviously being choked, trying not
+                to give us any instructions"
+
+    He read it exactly right, and the log shows the choking one turn earlier:
+
+        controller   Ratler, Georgia Center, radar contact.   <- the engine
+        atc/pilot    Ratler, Georgia Center, go ahead.        <- the air
+
+    `strip_unauthorised_handoff` is doing its job -- a handoff is a control
+    action and the model does not get to invent one (#138). But when the WHOLE
+    reply was that handoff, the fallback was a fixed string chosen at this call
+    site, so refusing the model's sentence also threw away the ENGINE's, which
+    was in the prompt and is the one thing here nobody has to guess. A stock
+    phrase stood in for an answer the system already had.
+
+    So the engine's directive goes to the air, and "go ahead" is kept for the
+    case it is actually true of: nothing to say and nobody has asked anything.
+    """
+    if bridge is not None and getattr(bridge, "directive_now", ""):
+        return for_voice(bridge.directive_now)
+    if to_callsign and me:
+        return f"{_callsign.parse(to_callsign).spoken}, {me.name}, go ahead."
+    return ""
+
+
 def speak(bridge, interact, message, transcript, known, heard_hz, fix, ctl):
     """Hand the turn to the agent, and mark what it commits us to.
 
@@ -6663,9 +6701,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             # proposes a handoff nobody authorised -- which Tower did most.
             # Everything else goes through `callsign.parse().spoken`; this was
             # the one path that did not.
-            keep_him=(f"{_callsign.parse(to_callsign).spoken}, "
-                      f"{_me_here.name}, go ahead."
-                      if to_callsign and _me_here else ""))
+            keep_him=_keep_him_here(bridge, to_callsign, _me_here))
         if sent:
             print(f"  .. refused an unauthorised handoff: {sent}",
                   flush=True)
@@ -8202,6 +8238,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         publish_state(bridge, ctl, scope, session_id, handed=message_parts,
                       plans=filed_plan_rows(),
                       names=getattr(client, 'roster', None))
+        bridge.directive_now = directive or ""
         speak(bridge, interact, message, transcript, known, heard_hz, _fix, ctl)
 
 
