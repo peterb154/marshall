@@ -3149,6 +3149,32 @@ class Controller:
         menu is `request_approach`'s job and doing it here would say it twice.
         """
         ac = self.get(cs)
+        # NOT WHILE HE IS STILL ON THE RAMP. A runway number in a DEPARTURE
+        # clearance request is his departure runway, and this read it as an
+        # approach:
+        #
+        #     PILOT  Kobuleti Tower, holding short, runway 7, ready for departure
+        #
+        # -- and it is not one unlucky phrasing. EVERY ground call that names
+        # the departure runway resolves to the ILS into that field:
+        #
+        #     "runway 7"                                   -> ils-07
+        #     "holding short runway 7 ready for departure"  -> ils-07
+        #     "taxi to runway zero seven"                   -> ils-07
+        #     "runway zero seven cleared for take-off"      -> ils-07
+        #
+        # So a flight was silently assigned an approach into the field it was
+        # about to leave, by saying the runway it was departing from, and every
+        # seat afterwards worked it as an arrival into Kobuleti. The pilot found
+        # out forty minutes later, inbound to Batumi, when he could not change
+        # it -- "I didn't request rwy 7?". He had not.
+        #
+        # Clearance, taxi and holding short are the three rungs that exist only
+        # before an aeroplane has flown; a man on one of them is not choosing
+        # an approach. Once airborne the same words mean what they say. [#177]
+        if str(getattr(ac, "sortie_phase", "") or "").lower() in (
+                "clearance", "taxi", "holding_short"):
+            return
         if self._pro(ac) is not None:
             return                      # already flying one; his choice stands
         # `_me` is set from the frequency the last transmission came in on and
