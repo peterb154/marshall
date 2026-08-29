@@ -172,6 +172,23 @@ labels: bug, needs-flight-test
 **Status:** OPEN. Found by a pilot, live, 28 August, and visible on `/diag`
 right now with nobody in the sim:
 
+**28 AUGUST: THE REAPER WAS RIGHT AND UNREACHABLE.** `reconcile` runs every
+thirty seconds and refused to act on an EMPTY set, because "the sim told us
+about nobody" and "we failed to ask" were one value at that layer. They are
+distinguishable one layer up, in `_sweep`, which knows whether its Eval
+returned -- and that was thrown away at the boundary. So with an empty sky
+nothing was ever reaped and two ghosts sat on the scope for three hours.
+The caller says which it has now. Verified live: five stale rows, one sweep,
+`reconcile: the sim reports an empty sky; 5 row(s) gone`.
+
+**A STALENESS FILTER IS THE WRONG FIX AND WAS TRIED.** `StreamUnits` is a
+CHANGE feed, so a parked aeroplane stops being reported -- filtering reads on
+`last_seen` would delete a pilot sitting in a cold jet two minutes after he
+sat down. Reverted. `STALE_POS_SEC` and `core/scope.contacts` both say so.
+
+Also fixed: `ghost_flight` deletes its own track, and `POST /atc/forget` (#212)
+clears a seat's memory without a container restart.
+
     Sockeye   phase=LANDED   sortie=landed   plan=(blank)   owner=Kobuleti Departure
     TRACKED:    (empty)
     UNTRACKED:  (empty)
@@ -1624,6 +1641,22 @@ is not always red.
 labels: bug, architecture
 
 **Status:** OPEN. Highest priority of the split-brain seam work.
+
+**28 AUGUST: NOT FIXED, AND THE DIAGNOSIS CHANGED.** A pilot flew an ILS with
+five vectors decided and none transmitted. I reported that as the engine
+deciding and the air losing it, which was wrong. The vector monitor never saw
+the aeroplane at all: nothing had assigned him an approach (#177), so
+`_pro(ac)` was None, `may_vector(None)` was False, and every arrival mechanism
+skipped him.
+
+Four silent `continue`s on the path to the monitor now name themselves --
+no bound track; the picture does not hold it; no procedure assigned versus a
+letdown he flies himself; `may_be_vectored` refusing, which is six conditions
+wearing one face. A refusal that does not name itself is what made a mute
+approach a day-long mystery.
+
+Whether vectors now TRANSMIT is unproven: the ghost harness cannot check in
+with Approach the way a pilot does, so the last gate is untested. Card row H32.
 
 `decision.py` already knows the answer and does nothing with it:
 
@@ -4426,6 +4459,19 @@ nothing else did.
 Labels: needs-flight-test
 ---
 
+**FIXED 28 AUGUST.** The classifier extracts `wants` from a CHECK_IN -- a
+pilot's first call is one breath, position, altitude, ATIS and the approach he
+wants -- and only the REQUEST_APPROACH branch read it. So the engine asked a
+man to say the request it was holding:
+
+    PILOT   ...information alpha, request the ILS runway 1 tree.
+    ENGINE  report the field in sight. Say your request.
+
+Hoisted exactly as the ATIS letter was for #180. `note_wants_approach` assigns
+the procedure and does NOT sequence him -- a check-in is not the moment to be
+entered in a stack. Guarded by `tests/test_a_check_in_can_name_an_approach.py`.
+Still needs a pilot: card rows G18 and H32.
+
 ## [ARCH-40] Plan resolution is hand-weighted string scoring where a similarity query belongs — #183
 labels: architecture
 
@@ -4989,6 +5035,24 @@ LIVE vocabulary and not the fallback.
 labels: architecture, needs-flight-test
 
 **Status:** BUILT 19 August, NEEDS A PILOT — card row H30. Twelve tests over HIS route with the real coordinates, including the two algorithms that failed on it. **Only a pilot can score criterion 1**, because a confident wrong fix name sounds exactly like a right one — which is how #188 survived a whole sortie.
+
+**28 AUGUST: THE CONTROLLER HAD THE NAMES AND NOT THE PLACES.** Airborne, asked
+for vectors to his next steerpoint, Departure said "I don't have your
+steerpoints" -- and was telling the truth three times over:
+
+  * `assign` copies a plan onto a flight and `assigned_plans` has no `legs`
+    column, so the coordinates were left behind in `flight_plans`. The legs
+    come back with the row now, read through `filed`.
+  * `route_fixes` dropped `alt_ft`, so "do you know the altitude of my
+    steerpoints" got no.
+  * `flight_plan_help` rode inside `clearance_tools`, handed out only to seats
+    with the CLEARANCE capability -- Clearance and Delivery. Every seat that
+    works an aeroplane in the air had no way to read its plan at all. Reading a
+    plan is universal now; issuing one is still Delivery's.
+
+    FOO (5,000 ft, 064M 16.8 nm from Kobuleti) -> BAR (10,000 ft, 028M 18.5 nm)
+
+Needs a pilot: ask any seat for vectors to a steerpoint.
 
     "obviously she doesn't know where those waypoints are and where I'm at on
      my flight plan"
