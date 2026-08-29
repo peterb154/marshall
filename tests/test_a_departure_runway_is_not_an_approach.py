@@ -69,9 +69,28 @@ class ADepartureRunwayIsNotAnApproach(unittest.TestCase):
         self.c.note_wants_approach("Sockeye", "ILS runway one three")
         self.assertEqual(_kind(self._pro()), "ils-13")
 
+    def test_a_bare_runway_is_not_a_choice_in_the_air_either(self):
+        """WHAT THE RUNG GUARD WOULD HAVE MISSED, and why it was a smell.
+
+        Refusing the three pre-flight rungs fixed the sortie and left the same
+        bug airborne, where a runway is just as often a fact and not a request.
+        These are ordinary arrival transmissions, none of them choosing a
+        procedure:"""
+        self.ac.sortie_phase = "enroute"
+        for said in ("runway one three in sight",
+                     "field in sight, runway one three",
+                     "negative, we were told runway one three"):
+            with self.subTest(said=said):
+                c = C.Controller()
+                c.check_in("Sockeye")
+                c.get("Sockeye").sortie_phase = "enroute"
+                c.note_wants_approach("Sockeye", said)
+                self.assertIsNone(c._pro(c.get("Sockeye")),
+                                  "a runway he MENTIONS is not one he chose")
+
     def test_the_departing_runway_really_does_resolve(self):
-        """The guard is load-bearing: without it these words DO match, which is
-        why this was silent rather than an error."""
+        """The fix is load-bearing: unqualified, these words DO match a real
+        procedure, which is why this was silent rather than an error."""
         from marshall.core.approach import match_spoken
         got, _ = match_spoken("visual runway 07", C._published_now(), field="")
         self.assertIsNotNone(got, "if this stops matching the guard is moot")

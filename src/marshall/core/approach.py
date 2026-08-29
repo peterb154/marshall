@@ -183,7 +183,8 @@ _SPOKEN_KIND = {
 }
 
 
-def match_spoken(said: str, procedures, field: str = ""):
+def match_spoken(said: str, procedures, field: str = "",
+                 named_only: bool = False):
     """Which published approach a pilot's WORDS mean. `(profile, candidates)`.
 
         "when a pilot approaches the field -- on a flight plan or not (just
@@ -265,6 +266,23 @@ def match_spoken(said: str, procedures, field: str = ""):
                 in {r.lstrip("0") for r in rwys})]
     if not kinds and not rwys:
         return None, tuple(p for _k, p in rows)
+    # A RUNWAY IS NOT AN APPROACH, and `named_only` is the caller saying he
+    # never asked for one. The classifier's `wants` is documented to hold "an
+    # approach he wants, A RUNWAY, VFR or IFR" -- so on any transmission that
+    # is not a REQUEST_APPROACH, the runway in it is the runway he is USING,
+    # not a procedure he is choosing. Every ordinary ground call at Kobuleti
+    # said "runway 7" and every one of them resolved to the ILS 07:
+    #
+    #     "holding short runway 7, ready for departure"   -> ils-07
+    #     "taxi to runway zero seven"                     -> ils-07
+    #     "runway zero seven, cleared for take-off"       -> ils-07
+    #
+    # A flight was assigned an approach INTO the field it was leaving, and the
+    # pilot found out inbound to Batumi when he could not change it. He is
+    # choosing a procedure when he names its KIND -- "the ILS one three" -- or
+    # the plate itself, which is #177's case and still matches above.
+    if named_only and not kinds:
+        return None, ()
     if len(hit) == 1:
         return hit[0], ()
     return None, tuple(hit)

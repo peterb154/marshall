@@ -3149,32 +3149,26 @@ class Controller:
         menu is `request_approach`'s job and doing it here would say it twice.
         """
         ac = self.get(cs)
-        # NOT WHILE HE IS STILL ON THE RAMP. A runway number in a DEPARTURE
-        # clearance request is his departure runway, and this read it as an
-        # approach:
+        # A RUNWAY IS NOT AN APPROACH, AND THE GUARD THAT USED TO BE HERE WAS
+        # A SMELL. It refused this whole method on the three pre-flight rungs,
+        # which fixed the sortie and hid the real fault one layer down: the
+        # classifier's `wants` is documented to hold "an approach he wants, A
+        # RUNWAY, VFR or IFR", and this read every one of those as a procedure.
+        # So every ordinary ground call assigned an approach into the field the
+        # aeroplane was LEAVING:
         #
         #     PILOT  Kobuleti Tower, holding short, runway 7, ready for departure
+        #            -> assigned kobuleti-ils-07
         #
-        # -- and it is not one unlucky phrasing. EVERY ground call that names
-        # the departure runway resolves to the ILS into that field:
+        # -- and the pilot found out forty minutes later, inbound to Batumi,
+        # when he could not change it: "I didn't request rwy 7?". He had not.
         #
-        #     "runway 7"                                   -> ils-07
-        #     "holding short runway 7 ready for departure"  -> ils-07
-        #     "taxi to runway zero seven"                   -> ils-07
-        #     "runway zero seven cleared for take-off"      -> ils-07
-        #
-        # So a flight was silently assigned an approach into the field it was
-        # about to leave, by saying the runway it was departing from, and every
-        # seat afterwards worked it as an arrival into Kobuleti. The pilot found
-        # out forty minutes later, inbound to Batumi, when he could not change
-        # it -- "I didn't request rwy 7?". He had not.
-        #
-        # Clearance, taxi and holding short are the three rungs that exist only
-        # before an aeroplane has flown; a man on one of them is not choosing
-        # an approach. Once airborne the same words mean what they say. [#177]
-        if str(getattr(ac, "sortie_phase", "") or "").lower() in (
-                "clearance", "taxi", "holding_short"):
-            return
+        # Fixing it by rung would have left the same bug airborne, where the
+        # words are just as ambiguous: "runway one three in sight" is not a
+        # request for the ILS 13. `named_only` says he never asked for an
+        # approach, so only naming its KIND or its plate chooses one -- which is
+        # #177's case, a check-in that says "request the ILS runway one three",
+        # and it still matches. [#177]
         if self._pro(ac) is not None:
             return                      # already flying one; his choice stands
         # `_me` is set from the frequency the last transmission came in on and
@@ -3183,7 +3177,8 @@ class Controller:
         # which is the right answer when we do not know whose seat this is.
         want, _maybe = _match_spoken(
             wants, _published_now(),
-            field=getattr(getattr(self, "_me", None), "field", "") or "")
+            field=getattr(getattr(self, "_me", None), "field", "") or "",
+            named_only=True)
         if want is not None:
             self.assign_approach(ac.callsign, want)
 
