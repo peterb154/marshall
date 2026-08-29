@@ -112,14 +112,41 @@ class TheThirdAnswerSurvivesTheJourney(unittest.TestCase):
         bare.pop("in_air", None)
         self.assertIsNone(self.unit(bare).in_air)
 
+    def test_the_deleted_producer_stayed_deleted(self):
+        """`feed/tracks.contacts` must go on delegating, not build its own.
+
+        It is the reader that was deleted; if it grows a dict again the table
+        has two producers and this whole family of bug is back.
+        """
+        src = (ROOT / "src" / "marshall" / "feed" / "tracks.py").read_text()
+        tree = ast.parse(src)
+        node = next(n for n in ast.walk(tree)
+                    if isinstance(n, ast.FunctionDef) and n.name == "contacts")
+        keys = {k.value for d in ast.walk(node)
+                if isinstance(d, ast.Dict) for k in d.keys
+                if isinstance(k, ast.Constant)}
+        self.assertNotIn("on_ground", keys,
+                         "it is a delegate; building the picture here is the "
+                         "duplication that was removed")
+        body = ast.get_source_segment(src, node) or ""
+        self.assertIn("scope", body,
+                      "it must reach core.scope for the picture")
+
     def test_every_producer_of_a_picture_emits_it(self):
         """Acceptance 4, and the reason it is a source check: these three build
         the dict in three files and only one of them can be run without a
         database or a sim. A producer that quietly stops emitting `in_air`
         hands every consumer a `None` that means "not known" and is really
         "nobody wrote it down"."""
+        # TWO PRODUCERS NOW, NOT THREE. `feed/tracks.contacts` built the dict
+        # from hand-written PostGIS that returned exactly what
+        # `core/scope.contacts` returns through the `Track` model -- proven
+        # identical on the same row -- so the table had two readers and a rule
+        # applied to one was not applied to the other. That is how a track
+        # nobody had seen for two hours stayed a live contact. It delegates
+        # now, so it is no longer a place `in_air` can be dropped; the
+        # invariant is enforced where the dict is actually built.
         want = {"marshall/core/scope.py": "contacts",
-                "marshall/feed/tracks.py": "contacts",
                 "marshall/feed/dcs.py": "contacts_live"}
         for rel, fn in want.items():
             with self.subTest(producer=f"{rel}:{fn}"):

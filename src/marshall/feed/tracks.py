@@ -718,76 +718,37 @@ def radar_cached(bindings: dict | None = None) -> list[str] | None:
 # expressed as a FIELD naming the lead, not by deleting the wingmen. Every
 # aircraft keeps its own position, which is [#47] acceptance 3.
 def contacts(bindings: dict | None = None) -> list[dict] | None:
-    """Every fresh track, as data. None if the cache cannot be read."""
-    bindings = bindings or {}
+    """Every fresh track, as data. None if the cache cannot be read.
+
+    THE SQL IS GONE AND THE CONTRACT IS NOT. This was a hand-written PostGIS
+    query returning exactly what `core.scope.contacts` already returns through
+    the `Track` model -- proven identical on the same row, same keys, same
+    values -- so the table had two readers and a rule applied to one of them
+    was not applied to the other. That is how a track nobody had seen for two
+    hours stayed a live contact: the staleness filter went into the SQL first
+    and `fetch_radar` comes through the ORM.
+
+        "why do we need SQL at all when we have an ORM that forces one view of
+         the structure?"
+
+    We do not. `core/scope.py` was already doing the geospatial work through
+    GeoAlchemy2, cast and all, which is the proof that PostGIS was never the
+    reason -- see `core/geo.py`, which allows the database computing over
+    indexed geography and asks only for ONE HOME PER RULE.
+
+    `None` IS LOAD-BEARING and is the reason this function still exists rather
+    than the caller being repointed. `scope.contacts` returns a list; the
+    `/radar` endpoint distinguishes "the cache cannot be read" from "the sky is
+    empty" and falls back to a live gRPC scan on the first. Collapsing the two
+    would turn a cold cache into an empty sky, silently, which is the same
+    absence-versus-decision fault this module has already been bitten by.
+    """
     try:
-        _ensure_table()
-        with get_pool().connection() as conn:
-            rows = conn.execute(
-                """
-                WITH bcn AS (
-                    SELECT ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography AS g)
-                SELECT t.label, t.name, t.type, t.alt_ft, t.heading, t.speed_kt,
-                       ST_Distance(t.geog, bcn.g) / 1852.0 AS nm,
-                       degrees(ST_Azimuth(bcn.g, t.geog)) AS radial,
-                       COALESCE(t.player, '') AS player,
-                       COALESCE(t.category, '') AS category,
-                       ST_Y(t.geog::geometry) AS lat,
-                       ST_X(t.geog::geometry) AS lon,
-                       t.coalition,
-                       t.in_air
-                FROM tracks t, bcn
-                WHERE t.last_seen > now() - make_interval(secs => %s)
-                ORDER BY nm
-                """, (_home()[1], _home()[0], FRESH_SEC)).fetchall()
+        from marshall.core import scope as _scope
+        return _scope.contacts(bindings=bindings or {})
     except Exception as e:
         log.warning("contacts failed: %s", e)
         return None
-    # DOWN, PER THE SIM. `in_air` comes straight from `Unit.inAir()` in the
-    # sweep. This used to read a set rebuilt from land/takeoff events, which is
-    # the same fact reconstructed from a lossy log -- blank for anything that
-    # spawned parked, gone after a director restart. NULL here means the sweep
-    # has not run yet, and that is not the same as "airborne".
-    #
-    # AND THE ROW CARRIES THAT THIRD ANSWER OUT, which this comment used to
-    # promise and the dict below used to drop: two sets ("down" and everything
-    # else) cannot say "not known", so a unit the sweep had not reached left
-    # here looking exactly like one the sim says is flying. `in_air` is emitted
-    # beside `on_ground` -- same shape as `core/scope.contacts`, because these
-    # two functions serve the same dict to the same consumers and a fact that
-    # survives one path and not the other is worse than one that survives
-    # neither. [#149]
-    down = {r[1] for r in rows if r[13] is False}
-    air = {r[1]: r[13] for r in rows}
-    naming = _unique_labels(rows)
-    out = []
-    for group in _clusters(rows):
-        lead = group[0][1]
-        for r in group:
-            label, name, typ, alt_ft, heading, speed_kt = r[0], r[1], r[2], r[3], r[4], r[5]
-            out.append({
-                "name": name,
-                "label": naming.get(name, label),
-                "type": typ or "",
-                "category": (r[9] or ""),
-                "manned": bool(r[8]),
-                "player": r[8] or "",
-                "in_air": air.get(name),
-                "on_ground": name in down,
-                "lat": r[10], "lon": r[11],
-                "alt_ft": alt_ft, "heading": heading, "speed_kt": speed_kt,
-                "coalition": r[12],
-                # The callsign something has already correlated to this track,
-                # which is what the prose prints in [brackets]. Corroboration,
-                # never the primary key -- see atc/identity.py -- but identity
-                # needs it and it must not be recovered by re-reading the prose.
-                "callsign": bindings.get(naming.get(name, label), ""),
-                # The lead's unit name, on every member INCLUDING the lead, so
-                # "is this a formation" is one comparison and "who is it led by"
-                # needs no second pass. "" would have meant two questions.
-                "formation": lead if len(group) > 1 else "",
-            })
-    return out
 
 
 # `_BULLSEYE` LIVED HERE, a module dict cached for the life of the process. It
