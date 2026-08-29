@@ -7942,3 +7942,102 @@ hole of my own making: every smoke test I ran seeded the controllers, and one
 of those transcripts is what the pilot was being answered from.
 
 ---
+
+## [SEP-26] "Down and stopped" is believed from an aeroplane that has never flown — #206
+
+labels: bug, needs-flight-test
+
+**Status:** CLOSED. Found by a pilot, live, 28 August.
+
+Cold and dark on Kobuleti spot 22, the sortie's first transmission was
+*"Kobuleti Clearance, sockeye is down and stopped, spot 22"* -- card row G17's
+prescribed odd opening call. `Controller.report_landed` latched
+`Phase.LANDED`, and the very first board snapshot of the sortie read:
+
+    17:16:29   sep_phase=LANDED   sortie_phase=clearance
+
+**The sim never said he landed.** His entire event history for the mission is
+three records -- `birth` 17:11:53, `birth` 17:13:46 (he re-slotted), `takeoff`
+17:25:11. There is no landing event anywhere in it. LANDED came from words.
+
+`report_landed` guards against reporting down TWICE (`if ac.phase is
+Phase.LANDED`) and does not ask the only question that matters: **has he ever
+been airborne.** `Aircraft.has_been_airborne` exists, is a durable latch, and
+is documented "SET ON POSITIVE EVIDENCE ONLY" -- and this path never reads it.
+
+**What it then cost, which is the reason this is not cosmetic.** The sortie
+phase walked correctly the whole way -- clearance, taxi, holding_short,
+departure -- driven by the conversation. At take-off `phases._wanted` ran:
+
+    if on_ground is True:
+        if was_airborne or has_flown(current) or sep == "landed":
+            return "landed"
+
+`has_flown("departure")` is False, deliberately: #178 moved `departure` out of
+`AIRBORNE_ONLY` precisely so a man holding on the runway is not called landed.
+That protection is **bypassed by the `sep == "landed"` disjunct**, which reads
+the separation phase as evidence of having flown when it may itself have come
+from a claim. So the board went `landed` at 17:26:00 -- after the sim's own
+takeoff event -- and Kobuleti Departure posted him back to Tower for fourteen
+miles, because a landed aeroplane is Tower's.
+
+Same sentence as #48, one field over: **a claim is not a fact.** He may no more
+declare himself down than he may name himself.
+
+**Acceptance criteria**
+1. `report_landed` refuses an aeroplane that has never been airborne, and says
+   so rather than silently doing nothing.
+2. A pilot who says "down and stopped" while parked, having never flown, does
+   not move the separation phase.
+3. A real landing after a real flight still reports down exactly as now.
+4. The `sep == "landed"` disjunct cannot be fed a phase that came from a claim.
+
+---
+
+## [SEAM-22] An agreed read-back is thrown away, so the next word restarts it — #208
+
+labels: bug, needs-flight-test
+
+**Status:** CLOSED. Found 28 August from a pilot's sortie, reproduced in isolation.
+
+`_read_back_correct` carries what a pilot has said forward across a correction,
+so a man told two items are missing may read back exactly those two and be
+finished -- that is #157 and it works. When nothing is left outstanding it then
+does this:
+
+    if not missed:
+        said.pop(key, None)              # agreed; nothing left to carry
+
+and the accumulator is gone. The clearance is supposed to be marked
+`acknowledged` in the same breath, which makes the next call early-return with
+nothing to judge -- so the pop is harmless only for as long as the
+acknowledgement actually lands. **When it does not, the next thing the pilot
+says is judged as a fresh read-back of the WHOLE clearance and fails**, naming
+items he read back correctly two transmissions ago. Driven in isolation:
+
+    turn 1  "...maintain 5,000 ... frequency 1-2-3-4-5, and squawk"   missing freq, squawk
+    turn 2  "departure frequency one two three decimal three, squawking 6789"  missing squawk
+    turn 3  "corrections, squawking 0055"                              AGREED -- accumulator popped
+    turn 4  "Sockeye will maintain 5,000."                             missing freq, squawk
+
+Turn 4 is a man being told he is wrong about two numbers he has already got
+right, immediately after being told he was correct. On the sortie he read that
+as the correction never terminating, and aborted.
+
+**The state lives in two places and only one of them is cleared.** `said` is
+the working memory of an unfinished read-back; `acknowledged` is the durable
+record that it finished. Popping the first while the second may silently fail
+to be written leaves no memory of a conversation that, as far as everything
+downstream is concerned, never concluded. Whichever way #185 is fixed, this
+one wants the pop to depend on the acknowledgement having actually been
+recorded rather than on the verdict alone.
+
+**Acceptance criteria**
+1. After an agreed read-back, a further transmission is not judged as a fresh
+   read-back of the whole clearance.
+2. The accumulator is only discarded once the acknowledgement is durably
+   recorded, not merely decided.
+3. A pilot who keeps talking after "readback correct" is never told he is
+   negative on items he has already read back.
+
+---
