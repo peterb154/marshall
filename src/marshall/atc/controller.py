@@ -3196,12 +3196,31 @@ class Controller:
             self._not_mine(ac, "approach", "the approach clearance")
             return
         if ac.phase == Phase.CLEARED:
-            # Already cleared (e.g. the aircraft ahead just landed and freed the
-            # letdown for him) -- re-affirm, don't send him back to the hold.
-            self.say(ac.callsign,
-                     f"{self._addr(ac)}, cleared {self._approach_name(ac)} runway "
-                     f"{getattr(self._pro(ac), 'runway', '') or 'in use'}, continue.")
-            return
+            # ...UNLESS HE IS ASKING FOR A DIFFERENT ONE, and this return is
+            # what made an approach final. A flight cleared for the Kobuleti
+            # ILS 07 said "cancel that approach into Kobuleti, change it to the
+            # ILS one three" and was answered "cleared I-L-S approach runway
+            # 07, continue" -- twice, on two sorties. The re-match added below
+            # never ran, because this fired first.
+            #
+            # Re-affirming is right for a man who asks again for what he has
+            # (the aircraft ahead landed, the letdown freed, he wants to know he
+            # is still on it). It is wrong for a man naming something else. [#177]
+            _asked, _amb = _match_spoken(
+                wants, _published_now(),
+                field=getattr(getattr(self, "_me", None), "field", "") or "")
+            if _asked is None or _asked is self._pro(ac):
+                self.say(ac.callsign,
+                         f"{self._addr(ac)}, cleared {self._approach_name(ac)} runway "
+                         f"{getattr(self._pro(ac), 'runway', '') or 'in use'}, continue.")
+                return
+            # A CHANGE PUTS HIM BACK IN THE QUEUE. He is no longer flying the
+            # procedure he was cleared for, so the letdown he held is not his:
+            # keeping it would hold everybody behind an aeroplane that has left.
+            self.assign_approach(ac.callsign, _asked)
+            if self._in_letdown(ac) == ac.callsign:
+                self._set_letdown(ac, None)
+            ac.phase = Phase.ENROUTE
         if not self.may_be_sequenced(ac):
             # NOT RADAR IDENTIFIED. He does not get a level, he does not get a
             # place in the queue, and nobody is held behind him -- because we
@@ -3243,8 +3262,16 @@ class Controller:
         # asks rather than guessing between two. [#177]
         _have = self._pro(ac)
         if _have is None or wants:
+            # `_me` IS SET FROM THE FREQUENCY A TRANSMISSION ARRIVED ON and
+            # does not exist on a Controller nobody has spoken to yet -- a
+            # fresh engine, and every bench test. `getattr(self._me, ...)`
+            # raises on the ATTRIBUTE, not on the default, so this was
+            # untestable without standing up a bridge. An empty field searches
+            # the whole map, which is the right answer when we do not know
+            # whose seat this is.
             want, maybe = _match_spoken(
-                wants, _published_now(), field=getattr(self._me, "field", ""))
+                wants, _published_now(),
+                field=getattr(getattr(self, "_me", None), "field", "") or "")
             if want is not None and want is not _have:
                 self.assign_approach(ac.callsign, want)
             elif _have is not None:

@@ -3599,7 +3599,37 @@ def a_fresh_offer(handed_off: dict, cs: str, station) -> bool:
     offer every four seconds, is kept exactly.
     """
     name = getattr(station, "name", "") or str(station)
-    return bool(name) and handed_off.get(cs) != name
+    if not name:
+        return False
+    # AND THE LADDER DOES NOT RUN BACKWARDS. `handed_off` records who he was
+    # given TO, which stops one offer repeating; nothing recorded who GAVE HIM
+    # AWAY, so the reverse offer looked brand new.
+    #
+    # That is a real bounce, reported from the cockpit on 29 August: "georgia
+    # center cant clear me for the approach so he hands me off while still in
+    # his airspace. approach then tries to send me back". Both halves are
+    # behaving. Center is right that an approach clearance is not his to give.
+    # Approach is right that the volume still says Center. Between them the
+    # pilot is handed in a circle, and each transmission is individually
+    # correct -- which is why neither seat can be blamed and why it has to be
+    # settled here, where both are visible.
+    #
+    # A handoff BACK to the man who just handed him over is refused. He was
+    # given away deliberately; the geometry has not stopped being true, it has
+    # been overruled on purpose. [#213]
+    if handed_off.get(_from_key(cs)) == name:
+        return False
+    return handed_off.get(cs) != name
+
+
+def _from_key(cs: str) -> str:
+    """The slot recording who handed this aeroplane over, kept in the same dict.
+
+    A second dict threaded through the monitor would be a second thing to keep
+    in step; a reserved key in the one that already exists cannot drift from
+    it, and both are cleared together when he is released.
+    """
+    return f"\x00from:{cs}"
 
 
 def his_station(bridge, ctl, cs: str, fallback_hz: float = 0.0):
@@ -7163,6 +7193,9 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                                     # and gets parsed as a callsign (#52).
                                     note_issued(bridge, cs, bye)
                                     handed_off[cs] = _ho.station
+                                    handed_off[_from_key(cs)] = (
+                                        getattr(_me_now, 'name', '')
+                                        if (_me_now := ctl._me) else '')
                                     record(session_id, kind="atc/handoff",
                                            callsign=cs, text=bye,
                                            to=_ho.role)
@@ -7210,6 +7243,10 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                         free, why = channel_is_free(on_hz=_hz)
                         if free:
                             handed_off[cs] = _nxt.name
+                            # WHO GAVE HIM AWAY, so the seat he lands on
+                            # cannot hand him straight back. [#213]
+                            handed_off[_from_key(cs)] = getattr(
+                                ctl._me, 'name', '') or ''
                             _say = for_voice(
                                 f"{cs}, contact {_nxt.name} "
                                 f"{controller.spell_freq(_nxt.freq_mhz)}.")
