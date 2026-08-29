@@ -23,6 +23,32 @@ docstring and wrong to have been:
     PostGIS ST_Azimuth  the database computing it over indexed geography, for
                         queries that must not drag rows into Python to sort them.
 
+WHEN POSTGIS IS THE RIGHT TOOL, and the test is one question:
+
+    "Postgis should be used for queries like 'show me the nearest airports'
+     not as a calculator right?"
+
+Yes. PostGIS earns its place when the DATABASE has to FIND or ORDER rows --
+which sector contains this aeroplane, what is within ten miles, sort these by
+distance. That is a set question over indexed geography and it belongs where
+the index is.
+
+It does NOT earn its place when both points are already in Python and one
+number is wanted. That is the database used as a calculator, and it is how a
+SIXTH implementation of bearing survived the fold above: `feed.tracks.vector`
+held two positions in Python, asked Postgres for the trig, and disagreed with
+this module by a tenth of a degree and twenty metres -- in the function that
+hands a pilot a heading to fly.
+
+    core.geo   -> 316.353 deg, 29.1133 nm
+    this query -> 316.246 deg, 29.1326 nm
+
+THE TEST IS "DO YOU ALREADY HAVE BOTH POINTS?", and it is better than the
+sentence above it because it is answerable by LOOKING. "Must not drag rows into
+Python" needs a judgement about how many rows and how expensive; "are both
+points already in local variables" does not, and the calculator sat here for
+months under the vaguer rule.
+
 The rule is one home per RULE, not one function per formula. Two operations
 that share a trig call are still two operations, and collapsing them because
 they both say `atan2` would be a mistake dressed as tidying.

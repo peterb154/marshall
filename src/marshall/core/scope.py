@@ -92,8 +92,7 @@ def contacts(origin: tuple[float, float] | None = None,
     picture, because a controller at another field measures from his own.
     """
     from geoalchemy2 import Geometry
-    from sqlalchemy import func, select
-    from marshall.feed.tracks import FRESH_SEC as _FRESH_SEC
+    from sqlalchemy import select
 
     from marshall.core import db
     from marshall.core.schema import Track
@@ -106,27 +105,9 @@ def contacts(origin: tuple[float, float] | None = None,
                 # geography column Postgres refuses with "function st_y(geography)
                 # does not exist", which reads like a missing extension and is
                 # not. The hand-written SQL this replaces cast it too.
-                # FRESH ONLY, and this is the ORM half of a filter that has
-                # to exist in two places because the table is read two ways.
-                #
-                # `feed.tracks` reads it in hand-written SQL and this reads it
-                # through the model, and the staleness rule was in neither --
-                # though `feed.tracks`'s own docstring promised it. So a track
-                # written by hand, which gets no `gone` event from the sim, was
-                # a live contact for ever: two ghosts from a test harness were
-                # still on the scope two hours after the run, and the board
-                # would not release the aeroplane either, because
-                # `accounted_for` correctly refuses to drop anybody radar can
-                # see. Adding it to the SQL alone would have fixed the read
-                # nobody uses -- `fetch_radar` comes through HERE.
-                #
-                # Two readers of one table is the thing to fix; until then the
-                # window is named once, in `feed.tracks`, and imported.
                 select(Track,
                        Track.geog.cast(Geometry).ST_Y().label("lat"),
-                       Track.geog.cast(Geometry).ST_X().label("lon"))
-                .where(Track.last_seen > func.now()
-                       - func.make_interval(0, 0, 0, 0, 0, 0, _FRESH_SEC))).all():
+                       Track.geog.cast(Geometry).ST_X().label("lon"))).all():
             who = t.label or t.name
             out.append({
                 "name": t.name,

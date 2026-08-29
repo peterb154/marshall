@@ -184,27 +184,22 @@ _started = False
 _lock = threading.Lock()
 
 
-# HOW OLD A CONTACT MAY BE AND STILL BE ON THE SCOPE.
+# THERE IS NO STALENESS WINDOW, AND ADDING ONE IS A KNOWN WAY TO HURT A PILOT.
 #
-# The module docstring has always said "every read filters on `last_seen` -- a
-# stale track reads as no-contact", and NO READ DID. `FROM tracks t, bcn` with
-# no WHERE, three times over, so every row ever written was a live contact
-# until something deleted it by name.
+# Written after doing exactly that. Two ghosts from `tools/ghost_flight.py` sat
+# on the scope for two hours, so I filtered every read on `last_seen` -- and
+# `StreamUnits` is a CHANGE feed. `max_backoff` exists expressly to "postpone
+# polling units that haven't moved recently", so a parked aeroplane STOPS BEING
+# REPORTED and its row stops being touched. A time filter therefore deletes the
+# pilot sitting in a cold jet on the ramp, which is the founding case this
+# whole system exists for and is far worse than the ghosts it was aimed at.
+# See STALE_POS_SEC below, which says all of this and which I did not read.
 #
-# What that costs: a ghost from `tools/ghost_flight.py` was still on the scope
-# two hours after the run ended, because a hand-written track gets no `gone`
-# event from the sim and nothing ages it out. The board would not release the
-# aeroplane either -- correctly, since `accounted_for` refuses to drop anybody
-# radar can see -- so a pilot's next sortie began with two aircraft on the
-# frequency that had not existed since the previous evening, and queue
-# discipline applied to phantoms.
-#
-# GENEROUS ON PURPOSE. The feed updates a track on every sweep, so a live
-# aeroplane is refreshed in seconds and two minutes is a long hiccup. Short
-# enough that yesterday's ghost is gone; long enough that a stuttering stream,
-# a slow reconcile or a moment's pause does not blank the scope under somebody
-# on final -- which is the failure this must not cause while fixing the other.
-FRESH_SEC = 120
+# EXISTENCE IS `gone`, AND THE WORLD RESETTING IS `mission_start`/`mission_end`.
+# Both are explicit, both come from the sim, and neither needs a clock. A row
+# the sim never knew about gets no `gone` -- which is why the ghosts persisted,
+# and why the fix belongs in the thing that WROTE them: a harness that invents
+# a track deletes it. See `ghost_flight.forget_him`.
 
 
 def _ensure_table() -> None:
@@ -358,7 +353,7 @@ def clear_all(why: str = "") -> dict[str, int]:
     return freed
 
 
-def reconcile(names: set[str]) -> int:
+def reconcile(names: set[str], *, answered: bool = False) -> int:
     """Delete rows for units the sim no longer has. The safety net.
 
     `gone` is the primary and this is the backstop, because `gone` can only
@@ -373,12 +368,38 @@ def reconcile(names: set[str]) -> int:
     exactly like every aircraft leaving at once. So it only ever removes what
     the sim has positively stopped reporting.
 
-    Given an EMPTY set it does nothing at all. "The sim told us about nobody"
-    and "we failed to ask" are indistinguishable at this layer, and deleting
-    the world on a failed scan is precisely the mistake this is guarding.
+    AN EMPTY SET USED TO DO NOTHING AT ALL, and the docstring said why: "the
+    sim told us about nobody" and "we failed to ask" are indistinguishable AT
+    THIS LAYER. True, and the wrong conclusion -- they are perfectly
+    distinguishable ONE LAYER UP, in `_sweep`, which knows whether its Eval
+    returned. That knowledge was thrown away at this boundary and the ambiguity
+    was then accepted as a fact of life.
+
+    What it cost: with an empty sky nothing was EVER reaped. Two ghosts written
+    by `tools/ghost_flight.py` sat on the scope for three hours with the sim
+    running and healthy, because the mission had no units, so `flying` was
+    empty, so this returned 0 every thirty seconds for ever. It reads exactly
+    like a broken reconciler and the reconciler was doing what it was told.
+
+    Worse, it sent me looking for a staleness window -- which would have made a
+    pilot parked on the ramp vanish after two minutes, `StreamUnits` being a
+    CHANGE feed. The real answer was here, and it is the same sentence this
+    project keeps rediscovering: one value must not mean both "no answer" and
+    "the answer is nobody".
+
+    So the caller says which it has. `answered=True` means the sim was asked
+    and replied; an empty set then means an empty sky and the rows go. The
+    default is False, so anything that cannot vouch for its scan keeps the old
+    protection and no caller is made dangerous by omission.
     """
-    if not names:
+    if not names and not answered:
         return 0
+    if not names:
+        with get_pool().connection() as conn:
+            n = conn.execute("DELETE FROM tracks").rowcount
+        if n:
+            log.info("reconcile: the sim reports an empty sky; %d row(s) gone", n)
+        return n
     with get_pool().connection() as conn:
         n = conn.execute("DELETE FROM tracks WHERE NOT (name = ANY(%s))",
                          (list(names),)).rowcount
@@ -545,7 +566,11 @@ def _sweep(stop: threading.Event) -> None:
                 clear_all("the mission restarted")
             if flying:
                 _note_in_air(flying)
-            reconcile(set(flying))
+            # ANSWERED, because we are inside the try that proves it: the
+            # Eval returned and was parsed. An empty `flying` here is an
+            # empty SKY, not a failed scan -- the failed scan is the
+            # `except` below, which reconciles nothing.
+            reconcile(set(flying), answered=True)
         except Exception as e:
             # A failed sweep must never delete anything -- see `reconcile`.
             log.warning("sweep failed: %s", str(e)[:80])
@@ -699,10 +724,9 @@ def radar_cached(bindings: dict | None = None) -> list[str] | None:
                        t.coalition,
                        t.in_air
                 FROM tracks t, bcn
-                WHERE t.last_seen > now() - make_interval(secs => %s)
                 ORDER BY nm
                 """,
-                (_home()[1], _home()[0], FRESH_SEC)).fetchall()
+                (_home()[1], _home()[0])).fetchall()
     except Exception as e:
         log.warning("radar_cached failed: %s", e)
         return None
@@ -757,7 +781,14 @@ def contacts(bindings: dict | None = None) -> list[dict] | None:
     """
     try:
         from marshall.core import scope as _scope
-        return _scope.contacts(bindings=bindings or {})
+        # ORIGIN, OR THE FORMATIONS ARE LOST. `scope.contacts` uses it for one
+        # thing -- clustering -- so without it four aeroplanes in close
+        # formation come back as four independent contacts, which is precisely
+        # the picture `_clusters` exists to stop a controller being handed.
+        # Proven by the one-row comparison NOT catching it: a single contact
+        # cannot form a formation, so "identical output" was measured on the
+        # only case where the difference cannot appear.
+        return _scope.contacts(origin=_home(), bindings=bindings or {})
     except Exception as e:
         log.warning("contacts failed: %s", e)
         return None
@@ -926,8 +957,7 @@ def in_formation(label: str) -> bool:
                        degrees(ST_Azimuth(bcn.g, t.geog)),
                        COALESCE(t.player, '')
                 FROM tracks t, bcn
-                WHERE t.last_seen > now() - make_interval(secs => %s)
-                """, (_home()[1], _home()[0], FRESH_SEC)).fetchall()
+                """, (_home()[1], _home()[0])).fetchall()
         # THE SAME COLUMNS, IN THE SAME ORDER, AS THE PICTURE QUERY. They had
         # drifted apart -- this one had no groundspeed -- so the two callers
         # handed _clusters rows of different widths and whichever convention it
