@@ -184,6 +184,29 @@ _started = False
 _lock = threading.Lock()
 
 
+# HOW OLD A CONTACT MAY BE AND STILL BE ON THE SCOPE.
+#
+# The module docstring has always said "every read filters on `last_seen` -- a
+# stale track reads as no-contact", and NO READ DID. `FROM tracks t, bcn` with
+# no WHERE, three times over, so every row ever written was a live contact
+# until something deleted it by name.
+#
+# What that costs: a ghost from `tools/ghost_flight.py` was still on the scope
+# two hours after the run ended, because a hand-written track gets no `gone`
+# event from the sim and nothing ages it out. The board would not release the
+# aeroplane either -- correctly, since `accounted_for` refuses to drop anybody
+# radar can see -- so a pilot's next sortie began with two aircraft on the
+# frequency that had not existed since the previous evening, and queue
+# discipline applied to phantoms.
+#
+# GENEROUS ON PURPOSE. The feed updates a track on every sweep, so a live
+# aeroplane is refreshed in seconds and two minutes is a long hiccup. Short
+# enough that yesterday's ghost is gone; long enough that a stuttering stream,
+# a slow reconcile or a moment's pause does not blank the scope under somebody
+# on final -- which is the failure this must not cause while fixing the other.
+FRESH_SEC = 120
+
+
 def _ensure_table() -> None:
     global _ready
     if _ready:
@@ -664,9 +687,10 @@ def radar_cached(bindings: dict | None = None) -> list[str] | None:
                        t.coalition,
                        t.in_air
                 FROM tracks t, bcn
+                WHERE t.last_seen > now() - make_interval(secs => %s)
                 ORDER BY nm
                 """,
-                (_home()[1], _home()[0])).fetchall()
+                (_home()[1], _home()[0], FRESH_SEC)).fetchall()
     except Exception as e:
         log.warning("radar_cached failed: %s", e)
         return None
@@ -713,8 +737,9 @@ def contacts(bindings: dict | None = None) -> list[dict] | None:
                        t.coalition,
                        t.in_air
                 FROM tracks t, bcn
+                WHERE t.last_seen > now() - make_interval(secs => %s)
                 ORDER BY nm
-                """, (_home()[1], _home()[0])).fetchall()
+                """, (_home()[1], _home()[0], FRESH_SEC)).fetchall()
     except Exception as e:
         log.warning("contacts failed: %s", e)
         return None
@@ -928,7 +953,8 @@ def in_formation(label: str) -> bool:
                        degrees(ST_Azimuth(bcn.g, t.geog)),
                        COALESCE(t.player, '')
                 FROM tracks t, bcn
-                """, (_home()[1], _home()[0])).fetchall()
+                WHERE t.last_seen > now() - make_interval(secs => %s)
+                """, (_home()[1], _home()[0], FRESH_SEC)).fetchall()
         # THE SAME COLUMNS, IN THE SAME ORDER, AS THE PICTURE QUERY. They had
         # drifted apart -- this one had no groundspeed -- so the two callers
         # handed _clusters rows of different widths and whichever convention it

@@ -709,6 +709,27 @@ def forget_him(name: str, base: str) -> None:
                   f"{type(e).__name__}: {e} -- the NEXT run will meet him")
 
 
+    # ...AND THE TRACK, WHICH IS THE HALF THAT WAS MISSING.
+    #
+    # This tool writes straight into `tracks` -- that is what makes it work
+    # without a sim -- and a hand-written row gets no `gone` event, so nothing
+    # ever deleted it. Two ghosts from a test run were still on the scope two
+    # hours later, and the board would not release them either: `accounted_for`
+    # correctly refuses to drop an aeroplane radar can see. A pilot's next
+    # sortie began with two aircraft on his frequency that had not existed
+    # since the previous evening, and queue discipline applied to phantoms.
+    #
+    # `feed.tracks.FRESH_SEC` now ages a stale contact off the scope anyway,
+    # which is the real fix and belongs there. This is the tool cleaning up
+    # after itself so the next run does not have to wait two minutes for it.
+    try:
+        from marshall.feed import tracks as _tk
+        for _n in (f"362nd_{name}", name):
+            _tk._delete(_n)
+    except Exception as e:
+        print(f"  !! {name}'s track is still on the scope: "
+              f"{type(e).__name__}: {e}", flush=True)
+
 def _inbound(args, th, field, recorder) -> int:
     """Fly him AT the field, and judge the four rungs an arrival climbs.
 
