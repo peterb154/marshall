@@ -432,13 +432,22 @@ def expire(mission: str = "default", older_than_sec: float = 900.0) -> int:
     This is what makes `DELETE /flights` a debugging convenience rather than
     load-bearing. Nothing should ever have to be cleaned by hand.
     """
+    from marshall.feed.tracks import FRESH_SEC as _FRESH_SEC
+
     with get_pool().connection() as c:
         cur = c.execute(
             "DELETE FROM flights f WHERE f.mission = %s "
             "  AND f.updated_at < now() - (%s || ' seconds')::interval "
             "  AND NOT EXISTS (SELECT 1 FROM tracks t "
-            "                  WHERE t.name = f.track_name)",
-            (mission, str(int(older_than_sec))))
+            "                  WHERE t.name = f.track_name "
+            # A STALE TRACK MUST NOT KEEP A FLIGHT ALIVE. Without this the
+            # reaper asks "does a row exist" and a contact nobody has seen for
+            # two hours answers yes, so the flight it belongs to is immortal --
+            # which is the same fault as the scope showing that contact, one
+            # table over. See `feed.tracks.FRESH_SEC`.
+            "                    AND t.last_seen > now() "
+            "                        - make_interval(secs => %s))",
+            (mission, str(int(older_than_sec)), _FRESH_SEC))
         return cur.rowcount
 
 
