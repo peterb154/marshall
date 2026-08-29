@@ -765,6 +765,30 @@ def release_stale(bridge, ctl, scope: str = "", now: float | None = None) -> lis
     the event once the identifiers are reconciled.
     """
     t = time.time() if now is None else now
+    # A TICK THAT CANNOT SEE HAS NO OPINION, and it must not write the clock.
+    #
+    # `bridge.seen_at` is ONE dict shared by every controller thread, and
+    # `radar_on` is PER THREAD -- a procedural seat polls with `Scope("")`.
+    # That reached `accounted_for` as `scope_working=False`, which returns True
+    # for anybody radar-identified (the #207 benefit of the doubt) -- so a
+    # blind seat REFRESHED the shared timer for every ghost the seeing seat was
+    # trying to run down, once per tick, for ever. `362nd_andre` and `Apex` sat
+    # on the board for the whole two-hour sortie of 29 August while `Shooter`
+    # was reaped in eight minutes; the difference was only which thread last
+    # touched the clock.
+    #
+    # Giving an aeroplane the benefit of the doubt is right. RECORDING it as
+    # evidence he exists is not, and one value was doing both. A blind tick
+    # neither refreshes nor expires: it leaves the clock where the last seeing
+    # tick left it, so a countdown SURVIVES a radar hiccup instead of being
+    # reset by it.
+    #
+    # CONTACTS COUNT AS HAVING SEEN, whatever `ok` says. A scope holding an
+    # aeroplane demonstrably polled something, and `ok` defaults False on every
+    # Scope built before it existed -- so testing `ok` alone calls the entire
+    # existing suite blind. #207 is unchanged: an EMPTY scope that says `ok` is
+    # an empty SKY and still reaps.
+    _seeing = bool(getattr(scope, "ok", False) or identity.units_on(scope))
     # THE BOARD'S OWN TRACKS AGAINST THE SCOPE'S OWN NAMES. Both sides are the
     # sim's string for the aeroplane, so this is an identity comparison and not
     # a join.
@@ -792,7 +816,11 @@ def release_stale(bridge, ctl, scope: str = "", now: float | None = None) -> lis
         # `bool(here)`, so an empty sky read as a broken radar and every
         # `radar_identified` entry had its clock reset for ever -- see
         # `Scope.ok`. [#207]
-        if accounted_for(ac, cs, here, called, getattr(scope, "ok", bool(here))):
+        # EVIDENCE REFRESHES; BLINDNESS ONLY REFRAINS FROM CONDEMNING. Those
+        # were one branch, and the difference is the bug: a blind tick answered
+        # `accounted_for` with the benefit of the doubt and that answer was
+        # written to the clock as though somebody had SEEN him.
+        if _seeing and accounted_for(ac, cs, here, called, True):
             bridge.seen_at[cs] = t
     freed = []
     for cs in list(ctl.aircraft):
@@ -815,6 +843,14 @@ def release_stale(bridge, ctl, scope: str = "", now: float | None = None) -> lis
         # saying "released Sockeye; the scope held 362nd_Sockeye" is the whole
         # bug, legible at a glance, on the page somebody is already reading.
         ac = ctl.aircraft.get(cs)
+        # A MAN RADAR LAST SAW IS NOT CONDEMNED BY A TICK THAT CANNOT LOOK.
+        # This is the other half of the split above: the doubt still protects
+        # him -- it just no longer pretends to be evidence, so his countdown is
+        # where the last SEEING tick left it and resumes there rather than
+        # starting again. An entry nothing ever accounted for still ages out,
+        # blind tick or not: there was never anything to run down.
+        if not _seeing and getattr(ac, "radar_identified", False):
+            continue
         if ctl.release(cs):
             bridge.releases.append(
                 {"callsign": cs, "track": getattr(ac, "track", ""),
