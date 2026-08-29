@@ -654,16 +654,28 @@ def vector(from_contact: str, to: str) -> str:
         return f"No radar contact on '{from_contact}' -- can't vector from it."
     if not b:
         return f"No radar contact on '{to}' -- can't vector to it."
-    with get_pool().connection() as conn:
-        brg, nm = conn.execute(
-            "SELECT degrees(ST_Azimuth("
-            "  ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography,"
-            "  ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography)),"
-            " ST_Distance("
-            "  ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography,"
-            "  ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography) / 1852.0",
-            (a[1], a[0], b[1], b[0], a[1], a[0], b[1], b[0])).fetchone()
-    return f"{to}: heading {(brg - _magvar()) % 360:03.0f}, {nm:.0f} miles"
+    # `core.geo`, NOT A SIXTH IMPLEMENTATION OF BEARING.
+    #
+    # This asked POSTGRES for the geometry -- with both points already in
+    # Python. It was not a query over the table; it was the database used as a
+    # calculator, and `core/geo.py` exists precisely to be the one home for
+    # this. Its docstring lists the five implementations of "bearing between
+    # two points" it folded, one of which was wrong and live. This was a sixth,
+    # it survived the fold by hiding in SQL, and it DISAGREED:
+    #
+    #     core.geo      -> 316.353 deg, 29.1133 nm
+    #     this query    -> 316.246 deg, 29.1326 nm
+    #
+    # A tenth of a degree and twenty metres, in the function that hands a pilot
+    # a heading to fly. Small, and exactly the class of drift that module was
+    # written to end -- two answers with nothing saying which governs.
+    #
+    # It also fails `core/geo.py`'s own test for when PostGIS is the right
+    # tool: "queries that must not drag rows into Python to sort them". Both
+    # rows are already here.
+    from marshall.core import geo as _geo
+    nm, brg = _geo.range_bearing_true((a[0], a[1]), b[0], b[1])
+    return f"{to}: heading {_geo.magnetic(brg, _magvar()):03.0f}, {nm:.0f} miles"
 
 
 def radar_cached(bindings: dict | None = None) -> list[str] | None:
