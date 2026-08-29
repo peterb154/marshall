@@ -31,6 +31,7 @@ except ImportError:
 
 from marshall.core.db import pool as get_pool
 from marshall.feed import categories as _cat
+from marshall.core import names as _names
 from marshall.feed.dcs import DCS_GRPC_ADDR, _M_TO_FT, home_field
 
 _MS_TO_KT = 1.94384
@@ -258,7 +259,9 @@ def _ensure_table() -> None:
 
 
 def _upsert(u, category: str = "") -> None:
-    label = u.player_name or u.callsign or u.name
+    # A BARE INDEX IS NOT A NAME. See `names.label_for` -- two AI aircraft
+    # both came back labelled '1'.
+    label = _names.label_for(u.player_name, u.callsign, u.name)
     with get_pool().connection() as conn:
         conn.execute(
             """

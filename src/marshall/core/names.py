@@ -69,6 +69,45 @@ def squash(s: str) -> str:
     return "".join(c for c in folded.lower() if c.isalnum())
 
 
+def label_for(player_name: str, callsign: str, unit_name: str) -> str:
+    """The name for a track, and it must identify ONE aeroplane.
+
+    The feed had this inline as `player_name or callsign or name`, and the
+    middle term does not identify anybody. DCS gives an AI unit its INDEX
+    within its group, so two aircraft in the world at once came back as:
+
+        label='1'  name='Traffic 1-1'
+        label='1'  name='Traffic 2-1'
+
+    -- reproduced live on 29 August. `label` is what `Scope.of` matches FIRST
+    and the key `contacts()` looks bindings up by, so one aeroplane's binding
+    reached the other and a lookup for either returned whichever the poll
+    listed first. It is the failure the feed's own history already names: "two
+    AI groups both labelled themselves 'Enfield11', so the scope showed one
+    name at four miles and the same name at fifteen".
+
+    A player name identifies a human. A unit name is the `tracks` PRIMARY KEY,
+    so it identifies an aeroplane by construction. A callsign is neither: at
+    best it names a FLIGHT, which is several aircraft, and at worst it is an
+    index. It is kept only when it is not a bare number -- a real word is
+    better prose for an AI flight than a slot name -- and `Scope.of` refuses it
+    when two tracks answer to it, which is the guarantee this cannot give
+    alone.
+
+    IT LIVES HERE AND NOT IN THE FEED because it is a rule about names and
+    nothing else, and the feed cannot be imported without the gRPC stubs, whose
+    `dcs` package shadows pydcs's. Putting a pure rule behind that import made
+    twelve unrelated tests fail by import ORDER the first time it was written
+    there.
+    """
+    if player_name:
+        return player_name
+    cs = (callsign or "").strip()
+    if cs and not cs.isdigit():
+        return cs
+    return unit_name
+
+
 def same(a: str, b: str) -> bool:
     """Do these two names refer to one aeroplane?
 

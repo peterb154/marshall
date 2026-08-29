@@ -4546,9 +4546,22 @@ class Scope(str):
         want = _key_name(track or "")
         if not want:
             return None
-        for c in self.contacts:
-            if _key_name(c.get("label", "")) == want:
-                return c
+        # AMBIGUITY IS NOT A MATCH. A label is supposed to name one aeroplane
+        # and the feed cannot always promise it: DCS hands an AI unit its INDEX
+        # within its group, so two aircraft came back labelled '1' and '1'.
+        # Taking the first would bind a controller to whichever the poll listed
+        # first -- a real contact, a real position, the wrong aeroplane, and no
+        # way to tell from the outside. `identity.unit_for_radio` settled this
+        # for the radio side long ago and the reasoning is the same one:
+        # refusing ambiguity is the only answer that cannot be silently wrong.
+        #
+        # It falls through to `name`, which is the tracks PRIMARY KEY and so
+        # unique by construction -- so a caller holding the sim's unit name
+        # still finds him when the labels have collided.
+        hits = [c for c in self.contacts
+                if _key_name(c.get("label", "")) == want]
+        if len(hits) == 1:
+            return hits[0]
         for c in self.contacts:
             if _key_name(c.get("name", "")) == want:
                 return c
@@ -7097,9 +7110,19 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                                     picture=_his_picture,
                                     dropped=_dropped)
                 for _cs, _tk in _dropped:
-                    # Once per aeroplane: the poll is two seconds.
-                    if _no_vector.get(_cs) != _tk:
-                        _no_vector[_cs] = _tk
+                    # ONCE PER AEROPLANE, AND KEYED ON SOMETHING THAT HOLDS
+                    # STILL. This compared the whole detail string, which
+                    # carries `contacts=N` -- so it repeated every time the
+                    # count moved and said nothing while a steady failure
+                    # persisted. Exactly backwards: 322 records in one sortie,
+                    # 190 of them an empty sky after everybody had landed, and
+                    # not one line covering the five minutes a pilot flew an
+                    # ILS with no calls. That is why this stayed unfalsifiable
+                    # for days -- the instrument was loudest when nothing was
+                    # wrong.
+                    _seen_key = _tk.split(" [")[0]
+                    if _no_vector.get(_cs) != _seen_key:
+                        _no_vector[_cs] = _seen_key
                         print(f"  .. not vectoring {_cs}: the board "
                               f"binds him to {_tk!r} and his field's "
                               f"picture does not hold that track — "
