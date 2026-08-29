@@ -499,6 +499,7 @@ def add_session_slots(m, usa, air_alt_ft: dict | None = None,
 
 
 def build(weather: str = "light", traffic: bool = False,
+          start_hour: int = 9,
           formation: bool = False, testbed: bool = False,
           session: bool = False, ceiling_ft: int = 0,
           tops_ft: int = 0, visibility_m: int = 0,
@@ -512,7 +513,12 @@ def build(weather: str = "light", traffic: bool = False,
     m.set_sortie_text("Operation Samovar")
     m.set_description_text(_brief_text())
     m.set_description_bluetask_text(_brief_text())
-    m.start_time = m.start_time.replace(hour=9, minute=0)
+    # THE CLOCK IS THE LIGHT SWITCH. DCS exposes no API for airfield or runway
+    # lighting -- not in the mission scripting engine and not over DCS-gRPC --
+    # so the only way to turn the runway lights on is to fly when it is dark.
+    # 09:00 was hardcoded, which is why every sortie so far has been in
+    # daylight. `--hour` moves it. [#199]
+    m.start_time = m.start_time.replace(hour=int(start_hour), minute=0)
 
     # Weather modes:
     #   clear -- CAVOK. A first VMC look to fly the geometry and find where the
@@ -1289,6 +1295,8 @@ if __name__ == "__main__":
                     help="client slots per type per position (default 2, so "
                          "--each 4 gives sixteen: four of each type on the "
                          "ramp and four of each airborne)")
+    ap.add_argument("--hour", type=int, default=9,
+                    help="mission start hour, 24h local. DCS has no\n                          lighting API -- runway lights come on because\n                          it is dark. 20 is dusk at Batumi.")
     ap.add_argument("--session", action="store_true",
                     help="eight client slots for a two-pilot session: 2 F-16 "
                          "and 2 P-51 cold on the ramp, 2 of each airborne")
@@ -1317,7 +1325,7 @@ if __name__ == "__main__":
                         air_alt_ft={k: v for k, v in
                                     (("Viper", args.viper_alt),
                                      ("Pony", args.pony_alt)) if v},
-                        session_each=args.each)
+                        session_each=args.each, start_hour=args.hour)
     out = Path(args.out) if args.out else OUT
     mission.save(str(out))
     write_presets(out, ids)

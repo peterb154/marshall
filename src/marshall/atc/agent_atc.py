@@ -907,6 +907,13 @@ def fetch_due(session_id: str, url: str = HOOKS_URL, timeout: float = 5.0) -> li
 # about what is on file. Moving them would be finishing the job wrongly.
 
 
+# HOW RECENTLY THE MONITOR MUST HAVE SPOKEN for a vector to count as
+# already transmitted. Longer than its poll so a monitor between ticks is
+# not second-guessed; short enough that a monitor which has stopped is not
+# trusted for a whole approach. [#79]
+VECTOR_SPOKEN_SEC = 25.0
+
+
 class Bridge:
     """Everything ONE bridge knows, for one frequency. [LAYERS.md] step 2.
 
@@ -952,6 +959,11 @@ class Bridge:
         self.flights = fl.Roster()
         # When each board entry was last accounted for. See release_stale.
         self.seen_at: dict[str, float] = {}
+        # When the monitor last actually TRANSMITTED a vector to each
+        # aeroplane. A decided turn it did NOT speak is repaired onto the
+        # agent's reply instead of being dropped on the promise of a
+        # transmission that never happens. [#79]
+        self.vec_said: dict[str, float] = {}
         # WHO CAME OFF THE BOARD, AND WHAT WAS ON THE SCOPE WHEN HE DID.
         #
         # A release is the one board event with no trace of itself: the entry is
@@ -6674,7 +6686,16 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             print(f"  .. NOT VOICED [{_d.kind}] {', '.join(_lost)}", flush=True)
             record(session_id, kind="not_voiced", callsign=_d.to,
                    text=f"{_d.kind}: {', '.join(_lost)}")
-            _add = _decision.repair(_d)
+            # DID THE ENGINE'S OWN CHANNEL ACTUALLY SPEAK? A vector belongs
+            # to the monitor and is not repaired here while the monitor works.
+            # It did not on 29 August -- three turns decided on one ILS,
+            # `atc/vector` transmitted zero times -- so the fact was dropped on
+            # the promise of a transmission that never happened. Asked per
+            # aeroplane, and only about the recent past, so a monitor that is
+            # merely between polls is not overridden. [#79]
+            _spoke = (time.time() - bridge.vec_said.get(
+                (_d.to or "").lower(), 0.0)) < VECTOR_SPOKEN_SEC
+            _add = _decision.repair(_d, spoken=_spoke)
             if not _add:
                 # No rendering for this kind. Say nothing rather than invent it.
                 continue
@@ -7328,6 +7349,7 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                             # The board is the record of what was agreed, and
                             # this thread agrees things.
                             ctl.note_vectored(cs, g.altitude_ft)
+                            bridge.vec_said[(cs or "").lower()] = time.time()
                             record(session_id, kind="atc/vector", callsign=cs,
                                    range_nm=round(g.range_nm, 2),
                                    heading=want, alt=g.altitude_ft, text=text)

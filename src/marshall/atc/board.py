@@ -73,7 +73,7 @@ def _row(r, cols) -> dict:
     return {c: v for c, v in zip(cols, r)}
 
 
-def find(mission: str = "default", *, callsign: str | None = None,
+def find(mission: str | None = "default", *, callsign: str | None = None,
          srs_guid: str | None = None, track_name: str | None = None,
          srs_name: str | None = None) -> dict | None:
     """The row for this aeroplane, by whichever name we happen to have.
@@ -109,10 +109,22 @@ def find(mission: str = "default", *, callsign: str | None = None,
         if not val:
             continue
         where = (f"{col} = %s" if col in _EXACT else f"lower({col}) = lower(%s)")
+        # `mission=None` MEANS ANY MISSION, and it exists because not every
+        # caller has one. A tool that runs inside the agent container reads
+        # `MARSHALL_MISSION` from an environment that does not set it -- the
+        # mission arrives per REQUEST there -- so `vector` looked up a pilot's
+        # own steerpoints under the mission "default", found no flight, and
+        # told him it had no fix for a waypoint sitting on his own strip. The
+        # sim's unit name is unique across a running world, so dropping the
+        # filter narrows nothing that matters and the newest row still wins.
         with get_pool().connection() as c:
-            cur = c.execute(
+            cur = (c.execute(
+                f"SELECT * FROM flight_state WHERE {where} "
+                "ORDER BY updated_at DESC LIMIT 1", (val,))
+                if mission is None else
+                c.execute(
                 f"SELECT * FROM flight_state WHERE mission = %s AND {where} "
-                "ORDER BY updated_at DESC LIMIT 1", (mission, val))
+                "ORDER BY updated_at DESC LIMIT 1", (mission, val)))
             r = cur.fetchone()
             if r:
                 return _row(r, [d[0] for d in cur.description])

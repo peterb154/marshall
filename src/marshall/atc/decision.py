@@ -599,7 +599,7 @@ def _altitudes_in(hay: str) -> list[float]:
     return out
 
 
-def repair(d: Decision, said: str = "") -> str:
+def repair(d: Decision, said: str = "", spoken: bool = True) -> str:
     """The words that must be added because the agent did not say them.
 
     THE POINT OF THE WHOLE MODULE, and the thing it did not do until now. The
@@ -643,7 +643,20 @@ def repair(d: Decision, said: str = "") -> str:
     # reported on 11 August as "I'm getting redundant instructions" and "he's
     # stepping on me". VERIFYING them is still worth everything: it is how the
     # MVA altitude going missing became visible at all.
-    if d.kind in SPOKEN_BY_THE_ENGINE:
+    # ...UNLESS THE ENGINE DID NOT SPEAK. `spoken` is the caller telling us
+    # whether the transmission this kind belongs to actually went out.
+    #
+    # The exclusion above is right when the monitor works. On 29 August it did
+    # not: a pilot flew a whole ILS reporting established at 25, 21 and 15
+    # miles, three vectors were decided, `atc/vector` was transmitted ZERO
+    # times, and every turn and descent was recorded `not_voiced` and dropped
+    # here on the grounds that something else would say it. Nothing did. The
+    # engine believed it was turning him and he flew the approach himself.
+    #
+    # A fact the engine decided must reach the air by SOME route, and this is
+    # the only other one. `spoken=True` restores the old behaviour exactly, so
+    # a working monitor still cannot be doubled up on. [#79]
+    if d.kind in SPOKEN_BY_THE_ENGINE and spoken:
         return ""
     from marshall.atc import phrasebook
     try:

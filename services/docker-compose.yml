@@ -107,6 +107,32 @@ services:
       - ./tools:/app/tools
       - ./app.py:/app/app.py
       - ./migrations:/app/migrations
+      # THE THEATRE FILES, AND WITHOUT THEM HALF THE TOOLS ARE DEAD IN HERE.
+      #
+      # `config/theatres/<map>.toml` carries the fixes, the fields and the
+      # published procedures. The code was mounted above and its DATA was not,
+      # so every tool that resolves a place -- `vector`, anything reaching
+      # `_load_fixes` or `_field_aliases` -- raised inside this container and
+      # nowhere else:
+      #
+      #     Error: FileNotFoundError - no configuration at
+      #            /config/theatres/caucasus.toml
+      #
+      # Live, 29 August, with a pilot orbiting: he asked four controllers for a
+      # vector to his own steerpoint and every one refused. Three fixes were
+      # made and deployed against that symptom -- the plan's legs, the mission
+      # constant, the callsign lookup -- and each tested green OUTSIDE the
+      # container, where the file exists, and changed nothing inside it. One of
+      # those controllers reported the error honestly ("tooling is down for
+      # this map") and I read it as the model inventing an excuse.
+      #
+      # The Dockerfile COPYs `config/` like the rest, so a built image is
+      # self-contained; this only overrides it in place, same as the code
+      # above. #147's own lesson, one directory over: a container that ignores
+      # your edits and reports success is indistinguishable from a bug in the
+      # edit -- and mounting the code while leaving the data behind is the same
+      # trap with a smaller blast radius until it isn't.
+      - ../config:/config
     ports:
       # NOT loopback, and it is worth saying why rather than leaving it looking
       # like an oversight beside the database above.

@@ -640,10 +640,93 @@ def start_streamer() -> None:
         log.info("track streamer started (sweep every %ds)", SWEEP_SEC)
 
 
-def _resolve(name: str) -> tuple[float, float] | None:
-    """A target name -> (lat, lon): a named fix, else a fresh radar track (matched
-    on its scope label or unit name)."""
+def _track_of(who: str) -> tuple[float, float] | None:
+    """Where the aeroplane with this CALLSIGN is, via the track bound to it.
+
+    `_resolve` matches a radar label or a sim unit name. A controller holds a
+    callsign -- "Sockeye" -- and the two are not the same string: the identity
+    ladder binds `362nd_sockeye` to `sockeye` and the board records the join.
+    Without this a vector could resolve its DESTINATION off the pilot's own
+    flight plan and still fail on the aeroplane asking for it. [#199]
+    """
+    try:
+        from marshall.atc import board as _F
+        f = _F.find(None, callsign=who) or _F.find(None, srs_name=who)
+        tn = (f or {}).get("track_name")
+        return _resolve(tn) if tn else None
+    except Exception as e:
+        log.warning("could not find a track for %s: %s", who, e)
+        return None
+
+
+def _plan_fix(asked_by: str, key: str) -> tuple[float, float] | None:
+    """A leg of the plan THIS aeroplane is cleared on, by name. [#199]
+
+    Read through `clearance.assigned`, which carries the template's legs, so
+    the coordinates keep their one home in `flight_plans` and nothing is
+    copied. Best effort: a caller with no clearance, an unreachable store or a
+    name that is not on his route all return None and the ordinary lookups
+    follow.
+    """
+    try:
+        # ANY MISSION, because this runs in BOTH deployables and only one of
+        # them has one. `agent_atc.MISSION` is read from the environment at
+        # import; the agent container does not set it -- the mission arrives
+        # per request there -- so keying on it looked the pilot up under
+        # "default", found nothing, and told him there was no fix for a
+        # waypoint on his own strip. The sim's unit name is unique in a running
+        # world; the newest row wins.
+        from marshall.atc import board as _F, clearance as _C
+        f = None
+        for who in (asked_by, (asked_by or "").split("_")[-1]):
+            if not who:
+                continue
+            f = _F.find(None, track_name=who) or _F.find(None, callsign=who)
+            if f:
+                break
+        if not f:
+            return None
+        plan = _C.assigned(f["id"]) or {}
+        for leg in plan.get("legs") or ():
+            if ((leg.get("fix") or "").strip().lower() == key
+                    and leg.get("lat") is not None
+                    and leg.get("lon") is not None):
+                return (leg["lat"], leg["lon"])
+    except Exception as e:
+        log.warning("could not read %s's own fixes: %s", asked_by, e)
+    return None
+
+
+def _resolve(name: str, asked_by: str = "") -> tuple[float, float] | None:
+    """A target name -> (lat, lon).
+
+    HIS OWN STEERPOINTS FIRST, then a published fix, then a radar track.
+
+    `asked_by` is the aeroplane the vector is FOR, and without it this could
+    only resolve places everybody shares -- so a pilot asking for a heading to
+    his second steerpoint was refused:
+
+        PILOT  can you give me vectors to my second steer point bar
+        ATC    negative on that vector, my equipment's down at the moment
+
+    Nothing was down. BAR and SPAM are his plan's PRIVATE fixes: on his strip,
+    on his kneeboard, in his cartridge, and in no table this resolver read. The
+    controller had the route in front of him with a bearing and a range for
+    every leg and no way to turn a name into a heading, and then covered the
+    gap by inventing an equipment failure -- which is its own fault and is not
+    this one.
+
+    HIS OWN FIRST IS THE SAME RULE `plans.route_fixes` ALREADY STATES: a
+    steerpoint in the pilot's cartridge is where his aeroplane is actually
+    going, so if a name means one thing to him and another to the catalogue,
+    his wins -- a controller working from ours would be wrong about where the
+    aircraft will be. [#199]
+    """
     key = (name or "").strip().lower()
+    if asked_by:
+        own = _plan_fix(asked_by, key)
+        if own is not None:
+            return own
     _load_fixes()
     if key in _FIXES:
         return _FIXES[key]
@@ -674,7 +757,23 @@ def vector(from_contact: str, to: str) -> str:
     ('Batumi', 'the field') OR another aircraft's radar label (for a join-up).
     Returns 'heading XXX, N miles'. Use it when a pilot asks for vectors, a heading,
     or a distance -- the geometry is exact here, never estimated."""
-    a, b = _resolve(from_contact), _resolve(to)
+    # HIS plan, for the destination: the vector is for HIM.
+    #
+    # AND THE AEROPLANE IS FOUND BY WHATEVER NAME THE CALLER HAS. The docstring
+    # asks for "the requesting aircraft's radar label", and a controller has
+    # his CALLSIGN -- that is what a pilot said on the radio and what the strip
+    # is keyed on. So `vector('Sockeye', 'SPAM')` failed on the FROM end while
+    # the destination resolved perfectly, and the controller reported no fix
+    # for a steerpoint it had already located:
+    #
+    #     _plan_fix('Sockeye','spam') -> (42.12675, 41.256)
+    #     vector('Sockeye','Spam')    -> No radar contact on 'Sockeye'
+    #
+    # The board joins the two: it holds the callsign AND the track the identity
+    # ladder bound to it. Asking it is one lookup and it is the same join
+    # `_plan_fix` already does.
+    a = _resolve(from_contact) or _track_of(from_contact)
+    b = _resolve(to, asked_by=from_contact)
     if not a:
         return f"No radar contact on '{from_contact}' -- can't vector from it."
     if not b:

@@ -51,13 +51,25 @@ class TestATransmissionGetsThrough(unittest.TestCase):
              .replies("RADIO: Pony one one, Batumi Approach, radar contact.")
              .fly())
         self.assertEqual(len(s.asked()), 1)
-        self.assertEqual(s.said(), ["Pony one one, Batumi Approach, radar contact."])
+        # THE TURN IS APPENDED, and that is the fix rather than a change of
+        # subject. The engine decided a vector on this transmission; the
+        # monitor -- which owns vectors and does not exist in a unit test --
+        # never transmitted one, so the fact is repaired onto the reply instead
+        # of being dropped on the promise of a transmission that never happens.
+        # A pilot flew a whole ILS that way on 29 August. [#79]
+        self.assertEqual(
+            s.said(),
+            ["Pony one one, Batumi Approach, radar contact. Fly heading three "
+             "one five, descend and maintain two thousand."])
 
     def test_the_reply_goes_out_on_the_frequency_it_arrived_on(self):
         s = (sortie()
              .say(GUID, NAME, "Batumi Approach, Pony one one, ten miles")
              .radar(SCOPE).replies("RADIO: roger").fly())
-        self.assertEqual(s.said_on(124.0), ["roger"])
+        self.assertEqual(
+            s.said_on(124.0),
+            ["roger. Fly heading three one five, descend and maintain two "
+             "thousand."], "the decided turn rides out on the same frequency")
 
 
 class TestWhatTheDirectorIsHanded(unittest.TestCase):
