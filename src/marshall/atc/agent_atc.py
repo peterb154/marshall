@@ -4875,6 +4875,27 @@ def membership(bridge, _who, transcript, scope, _ident, session_id):
     # CREATING A FLIGHT. He says a name; he is its lead and its only member
     # until somebody joins.
     if _who:
+        # ...AND ENDING ONE, which had no path at all. `Roster.dissolve`
+        # existed and nothing could ask for it, so a lead said "would like to
+        # dissolve A-Flight, sockeye will be a singleton" to two controllers on
+        # 29 August and stayed a flight for the rest of the sortie. Checked
+        # before creation so "dissolve X flight" cannot read as forming one.
+        _gone = fl.parse_dissolve(transcript, bridge.flights.names())
+        if _gone:
+            _members = bridge.flights.dissolve(_gone)
+            print(f"  .. {_gone} dissolved: "
+                  + (", ".join(_members) or "nobody") + " are singletons now",
+                  flush=True)
+            record(session_id, kind="flight/dissolved", callsign=_gone,
+                   text=", ".join(_members))
+            # THE ENGINE'S OWN BREAK-UP IS NOT DONE HERE. The controller is not
+            # in scope on this path, and `request_breakup` already has an
+            # intent route -- "break up" -- that reaches it properly. Doing
+            # half of it from here would leave the radio and the separation
+            # engine disagreeing about whether the formation exists, which is
+            # worse than the roster alone being right. A lead who wants both
+            # says both; if that turns out to be a hardship it is a wiring job,
+            # not a reason to reach for a variable that is not there.
         _name = fl.parse_create(transcript)
         if _name:
             _f, _why = bridge.flights.create(_name, _who)

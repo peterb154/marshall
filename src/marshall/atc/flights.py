@@ -63,9 +63,30 @@ from dataclasses import dataclass, field
 # English "REPLACED the first class and cannot be blacklisted: the supply of
 # English content words is unbounded". A flight is being created only when the
 # man says so twice: a creation verb AND the noun.
+# "request creation of Apex flight", "form Apex flight", and -- the way a
+# pilot actually says it -- "create a flight called Rattler".
+#
+# THE ARTICLE IS NOT THE NAME. The optional `a\s+` was optional, so "create a
+# flight called Rattler" fell through to capturing "a" and formed A FLIGHT
+# CALLED "A". Live, 29 August, with two pilots: everything downstream then
+# worked perfectly on the wrong name -- the clearance, the taxi, the take-off,
+# all issued to "A flight" -- which is what made it hard to see. The name is
+# the one thing in this transmission that carries information, and it was the
+# one thing being thrown away.
+# TWO PATTERNS, TRIED IN THIS ORDER, and the order is the point: as one
+# alternation the general branch matches EARLIER in the sentence and wins with
+# the article, so "create a flight called Rattler" resolved to "a" before the
+# explicit name was ever considered.
+_CALLED = re.compile(
+    r"\bflight\s+(?:call\w*|nam\w*)\s+([A-Za-z][A-Za-z'-]*)", re.I)
 _CREATE = re.compile(
-    r"\b(?:creat\w*|form\w*)\s+(?:of\s+|a\s+)?"
+    r"\b(?:creat\w*|form\w*)\s+(?:of\s+|a\s+|an\s+|the\s+)?"
     r"([A-Za-z][A-Za-z'-]*)\s+flight", re.I)
+
+# Words that are never a flight name, however the sentence parses. An article
+# captured as a name is a flight nobody asked for, and it is indistinguishable
+# downstream from one somebody did.
+_NOT_A_NAME = {"a", "an", "the", "my", "our", "this", "that", "new", "of"}
 
 # "Andre, joining Apex", "join Apex flight", "Apex, joining".
 _JOINING = re.compile(r"\bjoin(?:ing|s|ed)?\b", re.I)
@@ -75,6 +96,19 @@ _JOINING = re.compile(r"\bjoin(?:ing|s|ed)?\b", re.I)
 _LEAVING = re.compile(
     r"\b(?:separat\w*|break\w*\s+(?:out|away|off)|detach\w*|"
     r"depart\w*\s+the\s+flight|leav\w*)\b", re.I)
+
+# "dissolve Apex flight", "disband Apex", "break up the flight".
+#
+# THE LEAD ENDING THE WHOLE FLIGHT, which is a different act from one member
+# leaving it and had no parser at all. `Roster.dissolve` existed and nothing
+# could ask for it, so on 29 August a lead said "would like to dissolve
+# A-Flight, sockeye will be a singleton" twice, to two controllers, and stayed
+# a flight. `_LEAVING` does not cover it: that is a member breaking HIMSELF
+# out, and matching this there would have taken the lead out and left the
+# formation standing with a wingman in it.
+_DISSOLVE = re.compile(
+    r"\b(?:dissolv\w*|disband\w*)\s+(?:the\s+)?"
+    r"([A-Za-z][A-Za-z'-]*)", re.I)
 
 # "Apex 1-2", "Apex two" -- how a flight talks to itself.
 _MEMBER = re.compile(r"^\s*([A-Za-z][A-Za-z'-]*)\s*\d+\s*-\s*\d+\s*$")
@@ -158,8 +192,14 @@ def parse_create(said: str) -> str:
     on his own radio, so every member has been heard by construction -- and a
     count is one more thing Whisper can get wrong for no benefit.
     """
-    m = _CREATE.search((said or "").strip().rstrip("."))
-    return m.group(1).strip().title() if m else ""
+    text = (said or "").strip().rstrip(".")
+    m = _CALLED.search(text) or _CREATE.search(text)
+    if not m:
+        return ""
+    name = (m.group(1) or "").strip()
+    if name.lower() in _NOT_A_NAME:
+        return ""
+    return name.title()
 
 
 def parse_joining(said: str, flight_names: list[str]) -> tuple[str, str]:
@@ -198,6 +238,38 @@ def parse_joining(said: str, flight_names: list[str]) -> tuple[str, str]:
     if (hit := near_name(spoken, flight_names)):
         return hit, hit
     return "", spoken.title()
+
+
+def parse_dissolve(said: str, flight_names: list[str]) -> str:
+    """"dissolve Apex flight" -> the flight to end, or "".
+
+    THE WHOLE FLIGHT, not one member. Returns a flight the roster actually
+    holds -- `near_name` so a mangled name still resolves -- because dissolving
+    something nobody has is a no-op worth reporting rather than performing.
+
+    A lead may dissolve his own flight and nobody else's; the caller checks
+    that, because only it knows who is speaking.
+    """
+    m = _DISSOLVE.search(said or "")
+    if not m:
+        return ""
+    # THE WORD IN THE SLOT, not the sentence. `near_name` is documented as
+    # "only ever called on the word in the GRAMMATICAL SLOT -- never scanned
+    # across the whole transmission", because a fuzzy match over a sentence
+    # eventually catches ordinary English. "A-Flight" is one word to Whisper,
+    # so the suffix comes off before the name is matched.
+    word = re.sub(r"[-\s]*flight$", "", m.group(1).strip(), flags=re.I)
+    if not word:
+        return ""
+    # AN EXACT NAME WINS OUTRIGHT. `near_name` is a fuzzy match and refuses a
+    # single letter -- rightly, one character is one edit from everything --
+    # but a flight really called "A" is not a guess when he said "A". That
+    # happened: a mis-parsed creation made a flight called A, and the lead
+    # could not dissolve the thing he had accidentally created.
+    for known in flight_names:
+        if (known or "").strip().lower() == word.lower():
+            return known
+    return near_name(word, flight_names)
 
 
 def parse_leaving(said: str, flight_names: list[str]) -> str:

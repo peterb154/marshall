@@ -3232,11 +3232,23 @@ class Controller:
         # approach clearance puts an aeroplane into a letdown that holds ONE,
         # so which procedure he is on decides who contends with whom. It may
         # not be a thing the language half remembers having said. [#177]
-        if self._pro(ac) is None:
+        # ...AND HE MAY CHANGE HIS MIND. This ran only when he had NO procedure,
+        # so the first one assigned was final: a flight cleared for the Kobuleti
+        # ILS 07 asked for something else and was told what it was already on,
+        # for the rest of the sortie. Live, 29 August, with two aircraft.
+        #
+        # Naming a DIFFERENT approach is a request, not noise. Silence when he
+        # names nothing keeps what he has -- "request approach" from a man
+        # already on one is not an amendment -- and an ambiguous request still
+        # asks rather than guessing between two. [#177]
+        _have = self._pro(ac)
+        if _have is None or wants:
             want, maybe = _match_spoken(
                 wants, _published_now(), field=getattr(self._me, "field", ""))
-            if want is not None:
+            if want is not None and want is not _have:
                 self.assign_approach(ac.callsign, want)
+            elif _have is not None:
+                want = _have          # he named nothing new; his stands
             elif self.offer_approaches(ac, maybe):
                 # ASKED, AND NOT STACKED. He has no procedure, so there is no
                 # stack of his to enter and nothing to sequence him against --
