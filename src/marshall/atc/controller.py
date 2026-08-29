@@ -2356,7 +2356,14 @@ class Controller:
         # before an aeroplane has flown, and a man standing on one of them has
         # not landed however plainly he says he has. Sockeye was on `clearance`
         # when he said it. An arrival is on none of them. [#206]
-        if (str(getattr(ac, "sortie_phase", "")).lower()
+        # NOT `""` -- TRIED TWICE, WRONG TWICE. An empty sortie phase means
+        # "nothing has established a rung", which is TRUE OF AN ARRIVAL who has
+        # just checked in as well as of a man on the ramp, so widening this to
+        # cover it refused fifteen genuine landings. In the live path the rung
+        # is derived and set before this is reached -- Sockeye was on
+        # `clearance` when he said "down and stopped" -- and a bare Controller
+        # in a probe is not that shape. [#206]
+        if (str(getattr(ac, "sortie_phase", "") or "").lower()
                 in ("clearance", "taxi", "holding_short")
                 and not getattr(ac, "has_been_airborne", False)):
             self._anomaly(f"{ac.callsign} reported down and has never been "

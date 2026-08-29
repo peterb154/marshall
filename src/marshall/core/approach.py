@@ -233,6 +233,31 @@ def match_spoken(said: str, procedures, field: str = ""):
     kinds = {kind for kind, spellings in _SPOKEN_KIND.items()
              if any(w in words for w in spellings)}
     import re as _re
+    # A PILOT SAYS "ONE THREE", NEVER "13". This looked for digits, so a runway
+    # spoken the way every runway is spoken parsed as no runway at all -- and
+    # with no runway to narrow on, "the ILS one three" matched every ILS on the
+    # map and came back ambiguous. Masked at a field with one ILS, which is why
+    # it survived: the question only has to be asked at a field with two, or
+    # when no field narrows it.
+    #
+    # Folded before the digits are read, and a pair like "one three" becomes 13
+    # rather than 1 and 3 -- a runway is spoken digit by digit and it is the
+    # PAIR that names it.
+    _SPOKEN = {"zero": "0", "one": "1", "two": "2", "three": "3", "four": "4",
+               "five": "5", "fife": "5", "six": "6", "seven": "7", "eight": "8",
+               "nine": "9", "niner": "9"}
+    _folded, _run = [], []
+    for w in words.split():
+        if w in _SPOKEN:
+            _run.append(_SPOKEN[w])
+            continue
+        if _run:
+            _folded.append("".join(_run))
+            _run = []
+        _folded.append(w)
+    if _run:
+        _folded.append("".join(_run))
+    words = " ".join(_folded)
     rwys = set(_re.findall(r"\b(\d{1,2})\b", words))
     hit = [p for _k, p in rows
            if (not kinds or (getattr(p, "kind", "") or "").lower() in kinds)
