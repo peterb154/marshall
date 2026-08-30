@@ -5157,7 +5157,7 @@ somewhere upstream must not be silently overruled by whoever is asked next.
 
 ---
 
-## [ARCH-51] The engine's outbox is drained into one directive whatever the addressee says — #216
+## [ARCH-58] The engine's outbox is drained into one directive whatever the addressee says — #216
 labels: bug, architecture
 
 **Status:** OPEN. Found by probe, not by a pilot, on 30 August.

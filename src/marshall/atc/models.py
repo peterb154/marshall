@@ -126,6 +126,10 @@ class Flight(Base):
     approaches_flown: Mapped[int | None] = mapped_column(Integer)
     atis_letter: Mapped[str | None] = mapped_column(Text)
     has_been_airborne: Mapped[bool | None] = mapped_column(Boolean)
+    # ...AND WHETHER HE HAS REPORTED CLEAR OF THE RUNWAY. Migration 038, and a
+    # fact of its own because no RUNG can answer it: `sortie_phase` moves to
+    # `taxi_in` when Tower hands him to Ground, while he is still rolling.
+    runway_vacated: Mapped[bool | None] = mapped_column(Boolean)
 
     first_seen: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now())
