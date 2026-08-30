@@ -249,19 +249,21 @@ class TestNobodyIsClearedToLandOntoAnOccupiedRunway(unittest.TestCase):
         self.assertIn("continue approach", said(c))
         self.assertIn("shooter", said(c))
 
-    def test_the_man_on_the_runway_is_asked_to_report_clear(self):
-        """WITHOUT THIS IT DEADLOCKS. His report is the only thing that frees
-        the strip, and a pilot who has landed and gone quiet will never make it
-        unprompted -- so the aeroplane on final is told to continue for ever.
-        A real Tower asks, and nobody asked Shooter anything on 30 August."""
+    def test_only_the_arriving_pilot_is_addressed(self):
+        """NOT A PROMPT TO THE MAN ON THE RUNWAY, however much he needs one.
+
+        One was written and the engine queued it correctly; `take_out` drains
+        the outbox into a single directive whatever each `Tx.to` says, so it
+        was spoken to the ARRIVING pilot instead -- "expedite exit expected,
+        report clear" said to the man on final. Until the bridge honours the
+        addressee it already has, one transmission out of here, to one
+        aeroplane. See #216."""
         c = field_controller()
         put(c, "Shooter", "landed")
         self._on_final(c)
         c.out.clear()
         c.report_landed("Sockeye")
-        to_shooter = " ".join(x.text for x in c.out
-                              if "shooter" in x.text.lower()).lower()
-        self.assertIn("report clear of the runway", to_shooter)
+        self.assertEqual([x.to for x in c.out], ["Sockeye"])
 
     def test_and_that_report_frees_it(self):
         c = field_controller()

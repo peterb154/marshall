@@ -5156,3 +5156,57 @@ somewhere upstream must not be silently overruled by whoever is asked next.
 4. An aeroplane cleared for an approach is never offered to Center.
 
 ---
+
+## [ARCH-51] The engine's outbox is drained into one directive whatever the addressee says — #216
+labels: bug, architecture
+
+**Status:** OPEN. Found by probe, not by a pilot, on 30 August.
+
+`Controller.say(to, text, ...)` records **who** each transmission is for, and
+`Tx` carries `to` and `freq_mhz` — the channel that aeroplane is actually on.
+The bridge throws both away:
+
+    _taken = ctl.take_out()
+    directive = " | ".join(tx.text for tx in _taken)
+
+Every queued line becomes one directive, handed to the agent as the reply to
+whoever just keyed the mic. That is correct only while everything in the outbox
+belongs to that pilot, which nobody guarantees.
+
+It bit immediately. The occupied-runway fix (#170) queued a prompt to the man
+ON the runway beside the answer to the man on final:
+
+    engine  Sockeye, continue approach, traffic on runway 13, Shooter is on the
+            runway.
+          | Shooter, traffic on short final, expedite your exit and report clear
+            of the runway.
+    air     Sockeye, Batumi Tower, continue approach, traffic on the runway,
+            expedite exit expected, report clear.
+
+One aeroplane's instruction, spoken to another, with no seam a pilot could
+detect. The prompt was removed rather than shipped — worse than none — so the
+runway fix currently tells the ARRIVING pilot what is on the strip and says
+nothing to the man standing on it.
+
+**The consequence that outlives that one line.** The only thing that frees a
+runway is the occupant's report (`Aircraft.runway_vacated`), so a pilot who
+lands and goes quiet blocks the field until the reaper takes him. Tower cannot
+ask, because asking is a transmission to somebody else. The same limit applies
+to every cross-addressee instruction the engine may ever want: traffic
+advisories, go-around instructions to a third aircraft, a hold for the man
+behind.
+
+**The likely proper cure is one rung up.** A landed aeroplane is told to exit
+AND to contact Ground in one breath, before he has vacated — real Tower keeps
+him until he reports clear. If the handoff waited for the report, the prompt
+and the occupancy fact would both belong to the seat that owns the runway. That
+touches #100's ladder and is not a small change.
+
+**Acceptance criteria**
+1. A transmission the engine addressed to A is never spoken to B.
+2. `Tx.freq_mhz` is honoured — a line for an aeroplane on another frequency
+   goes out on that frequency or not at all.
+3. Tower can ask the man on the runway to report clear, and does.
+4. Nothing that used to arrive still arrives, silently dropped instead.
+
+---

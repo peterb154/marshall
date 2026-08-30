@@ -2448,20 +2448,25 @@ class Controller:
                      decided=D.Decision(kind="continue_approach",
                                         to=ac.callsign,
                                         runway=self._runway_in_use(ac)))
-            # AND ASK THE MAN ON IT, because otherwise this deadlocks. The only
-            # thing that frees the runway is his report, and a pilot who has
-            # landed and gone quiet will never make it unprompted -- so the
-            # aeroplane on final would be told to continue for ever. A real
-            # Tower breaks that the same way: he asks.
+            # ASKING THE MAN ON THE RUNWAY BELONGS HERE AND CANNOT LIVE HERE
+            # YET, and the probe that proved it is worth the note. A second
+            # `say(busy, ...)` -- "expedite your exit and report clear" -- was
+            # written, and the engine queued it correctly. It reached the wrong
+            # pilot:
             #
-            # It is also the transmission that was missing on 30 August in the
-            # other direction. Nobody asked Shooter anything; the board simply
-            # decided he had parked.
-            self.say(busy,
-                     f"{self._addr(self.get(busy))}, traffic on short final, "
-                     f"expedite your exit and report clear of the runway.",
-                     decided=D.Decision(kind="report_clear", to=busy,
-                                        runway=self._runway_in_use(ac)))
+            #     engine  Sockeye, continue approach, traffic on runway 13,
+            #             Shooter is on the runway.
+            #           | Shooter, traffic on short final, expedite your exit
+            #             and report clear of the runway.
+            #     air     Sockeye, Batumi Tower, continue approach, traffic on
+            #             the runway, expedite exit expected, report clear.
+            #
+            # `take_out` drains the outbox into ONE directive whatever each
+            # `Tx.to` says, so an instruction for another aeroplane is put in
+            # this one's mouth. `Tx` carries `to` and `freq_mhz` already; the
+            # bridge throws both away. Until that is fixed a prompt like this
+            # is worse than none, so the arriving pilot is told what is on the
+            # runway -- by name -- and that is all. See #216.
             self._try_clear()
             return
         self.say(ac.callsign,
