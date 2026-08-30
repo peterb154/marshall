@@ -278,6 +278,23 @@ class Aircraft:
     # sortie, and the fact has to survive the aeroplane stopping.
     has_been_airborne: bool = False
 
+    # HAS HE REPORTED CLEAR OF THE RUNWAY. A separate fact from the rung he is
+    # on, and the reason is the whole of #170's landing half: `sortie_phase`
+    # moves to `taxi_in` the moment Tower hands him to Ground, which is TRUE of
+    # who owns him and FALSE of where his aeroplane is. He is still rolling.
+    #
+    #     17:03:29  Shooter ... welcome. Exit the runway, contact Ground
+    #     17:06:24  board: Shooter taxi_in  <- "off the runway, to a stand"
+    #     17:06:53  Sockeye ... cleared to land runway one three
+    #     17:07:33  "I see shooter on the runway right now"
+    #
+    # A LATCH THE OTHER WAY ROUND from `has_been_airborne`: false until there is
+    # positive evidence, and the evidence is his own report. There is no
+    # geometry to fall back on -- an aerodrome row carries a position and a
+    # landing heading and no thresholds -- so this is what a real Tower uses,
+    # and it fails SAFE: an aeroplane nobody has heard from holds the runway.
+    runway_vacated: bool = False
+
     # HOW MANY, which is all a flight report tells you. "Flight of four" is a
     # number; it is not four names, and the engine used to turn it into four by
     # minting "Pony 1-1" through "Pony 1-4" off the flight key. That worked
@@ -780,6 +797,12 @@ class Controller:
             # exists to fix.
             if row.get("has_been_airborne"):
                 ac.has_been_airborne = True
+            # AND THE OTHER LATCH, the opposite way round. A restart that
+            # forgot this would read a landed strip as vacated and free a
+            # runway somebody is standing on -- the exact clear-to-land this
+            # column exists to stop.
+            if row.get("runway_vacated"):
+                ac.runway_vacated = True
             if row.get("assigned_ft"):
                 ac.assigned_ft = int(row["assigned_ft"])
             # `cleared_ft` comes off `assigned_ft` -- the level the engine
@@ -2425,6 +2448,20 @@ class Controller:
                      decided=D.Decision(kind="continue_approach",
                                         to=ac.callsign,
                                         runway=self._runway_in_use(ac)))
+            # AND ASK THE MAN ON IT, because otherwise this deadlocks. The only
+            # thing that frees the runway is his report, and a pilot who has
+            # landed and gone quiet will never make it unprompted -- so the
+            # aeroplane on final would be told to continue for ever. A real
+            # Tower breaks that the same way: he asks.
+            #
+            # It is also the transmission that was missing on 30 August in the
+            # other direction. Nobody asked Shooter anything; the board simply
+            # decided he had parked.
+            self.say(busy,
+                     f"{self._addr(self.get(busy))}, traffic on short final, "
+                     f"expedite your exit and report clear of the runway.",
+                     decided=D.Decision(kind="report_clear", to=busy,
+                                        runway=self._runway_in_use(ac)))
             self._try_clear()
             return
         self.say(ac.callsign,
@@ -2809,6 +2846,10 @@ class Controller:
         ladder. [#100]
         """
         ac = self.get(cs)
+        # THE ONE THING THAT FREES THE RUNWAY. This method is the pilot saying
+        # he is clear of it; the rung being set to `taxi_in` elsewhere is a
+        # HANDOFF and not a sighting. See `Aircraft.runway_vacated`.
+        ac.runway_vacated = True
         ac.sortie_phase, ac.last_report_t = "taxi_in", self.t
         if not self._owns("ground"):
             # Not his to give. Same shape as Ground refusing a take-off: name
@@ -2983,7 +3024,23 @@ class Controller:
             if other is ac or self._key(other) != want:
                 continue
             ph = (getattr(other, "sortie_phase", "") or "").lower()
-            if ph == "landed":
+            # DOWN AND NOT YET REPORTED CLEAR. This asked `sortie_phase ==
+            # "landed"`, which stops being true the instant Tower hands him to
+            # Ground -- the rung moves to `taxi_in` for OWNERSHIP (#100) while
+            # the aeroplane is still rolling down the strip. So the check went
+            # blind exactly when it mattered, and cleared a second aircraft to
+            # land over a man the board had already called parked.
+            #
+            # `Phase.LANDED` is the separation phase and does not move on a
+            # handoff; `runway_vacated` is his own report. Both are facts about
+            # the aeroplane rather than about who is talking to him.
+            # Either rung is evidence he came DOWN here: `landed` is Tower's
+            # and `taxi_in` is Ground's, and the move between them is a handoff,
+            # not a sighting. `Phase.LANDED` catches the same fact on the
+            # separation axis. Only his own report gets him off the strip.
+            if ((ph in ("landed", "taxi_in")
+                 or getattr(other, "phase", None) is Phase.LANDED)
+                    and not getattr(other, "runway_vacated", False)):
                 return other.callsign
             # AND A DEPARTING AEROPLANE IS ON IT TOO. This asked only about
             # `landed` -- a man who had come DOWN on the strip -- so the

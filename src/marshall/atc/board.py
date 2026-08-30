@@ -53,6 +53,12 @@ _FIELDS = ("sortie_phase", "on_visual", "approaches_flown", "atis_letter",
            # that forgot it would leave an aeroplane unable to be recognised
            # as landed. See migration 035. [#178]
            "has_been_airborne",
+           # ...AND WHETHER HE IS OFF THE RUNWAY, which no rung can answer.
+           # `sortie_phase` moves to `taxi_in` on the HANDOFF to Ground while
+           # he is still rolling, so occupancy needs its own fact. Durable for
+           # the same reason: a restart that forgot it would free a runway
+           # somebody is standing on. See migration 038. [#170]
+           "runway_vacated",
            "callsign", "track_name", "srs_guid", "srs_name", "intent",
            "destination", "claimed_size", "controller", "procedure", "runway",
            "cleared", "assigned_ft", "assigned_hdg", "sequence_no",

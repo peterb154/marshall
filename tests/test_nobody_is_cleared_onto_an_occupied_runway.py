@@ -115,10 +115,17 @@ class TestAndClearedWhenTheRunwayIsFree(unittest.TestCase):
         self.assertIn("cleared for take-off", said(self.c))
 
     def test_a_man_who_has_VACATED_does_not_block_him(self):
-        """`taxi_in` is "off the runway, to a stand" -- he is on the taxiways
-        and the strip is free. Blocking on him would stop every departure for
-        as long as anybody was taxiing in."""
-        put(self.c, "Parked 1", "taxi_in")
+        """He is on the taxiways and the strip is free. Blocking on him would
+        stop every departure for as long as anybody was taxiing in.
+
+        CHANGED ON PURPOSE, AND THE DIFF IS THE RECORD. This used to put him on
+        the `taxi_in` RUNG and expect the runway free, which is the belief that
+        caused the incursion of 30 August: the rung moves to `taxi_in` the
+        moment Tower hands him to Ground, while the aeroplane is still rolling.
+        Now he is vacated by the thing that actually means it -- HIS OWN
+        REPORT, which is what `taxi_in()` is -- and the concern this test was
+        written for still holds."""
+        self.c.taxi_in("Parked 1")
         put(self.c, "Waiting 2", "holding_short")
         self.c.out.clear()
         self.c.request_takeoff("Waiting 2")
@@ -241,6 +248,29 @@ class TestNobodyIsClearedToLandOntoAnOccupiedRunway(unittest.TestCase):
         c.report_landed("Sockeye")
         self.assertIn("continue approach", said(c))
         self.assertIn("shooter", said(c))
+
+    def test_the_man_on_the_runway_is_asked_to_report_clear(self):
+        """WITHOUT THIS IT DEADLOCKS. His report is the only thing that frees
+        the strip, and a pilot who has landed and gone quiet will never make it
+        unprompted -- so the aeroplane on final is told to continue for ever.
+        A real Tower asks, and nobody asked Shooter anything on 30 August."""
+        c = field_controller()
+        put(c, "Shooter", "landed")
+        self._on_final(c)
+        c.out.clear()
+        c.report_landed("Sockeye")
+        to_shooter = " ".join(x.text for x in c.out
+                              if "shooter" in x.text.lower()).lower()
+        self.assertIn("report clear of the runway", to_shooter)
+
+    def test_and_that_report_frees_it(self):
+        c = field_controller()
+        put(c, "Shooter", "landed")
+        self._on_final(c)
+        c.taxi_in("Shooter")
+        c.out.clear()
+        c.report_landed("Sockeye")
+        self.assertIn("cleared to land", said(c))
 
     def test_a_departing_aeroplane_blocks_a_landing_as_well(self):
         c = field_controller()
