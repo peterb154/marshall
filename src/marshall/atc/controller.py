@@ -2401,6 +2401,32 @@ class Controller:
         # field's -- so Kobuleti Tower cleared a landing on runway one three,
         # which is at Batumi. Same source as the taxi and take-off clearances,
         # so all three name one runway; see `_runway_in_use`.
+        # NOT ONTO AN OCCUPIED RUNWAY, and this never asked. `_on_the_runway`
+        # has existed since #170 with exactly ONE caller -- `request_takeoff` --
+        # so the engine would refuse to let you LEAVE a busy strip and clear you
+        # to land on the same one without a word.
+        #
+        #     16:21:33  Sockeye, roger, cleared to land runway one three
+        #     16:22:18  "Batumi Tower, I am still on the runway, shooter"
+        #     16:22:34  "sockeye is down on the runway, and I almost ran into
+        #                shooter"
+        #
+        # A LATE CLEARANCE, NOT A REFUSAL, and that is the difference from
+        # take-off. "Hold short" is a thing a stationary aeroplane can do; a man
+        # on final cannot, so what he is owed is the truth about the runway and
+        # the decision left with him. He keeps coming, he is told what is on it,
+        # and the clearance follows when it is clear -- which is what `_try_clear`
+        # and his next report already drive.
+        busy = self._on_the_runway(ac)
+        if busy:
+            self.say(ac.callsign,
+                     f"{self._addr(ac)}, continue approach, traffic on runway "
+                     f"{self._runway_in_use(ac)}, {busy} is on the runway.",
+                     decided=D.Decision(kind="continue_approach",
+                                        to=ac.callsign,
+                                        runway=self._runway_in_use(ac)))
+            self._try_clear()
+            return
         self.say(ac.callsign,
                  f"{self._addr(ac)}, roger, cleared to land runway "
                  f"{self._runway_in_use(ac)}, {self._wind_phrase()}")
@@ -2956,7 +2982,32 @@ class Controller:
         for other in self.aircraft.values():
             if other is ac or self._key(other) != want:
                 continue
-            if (getattr(other, "sortie_phase", "") or "").lower() == "landed":
+            ph = (getattr(other, "sortie_phase", "") or "").lower()
+            if ph == "landed":
+                return other.callsign
+            # AND A DEPARTING AEROPLANE IS ON IT TOO. This asked only about
+            # `landed` -- a man who had come DOWN on the strip -- so the
+            # commonest way to put two aircraft on one runway was invisible:
+            # both of them leaving.
+            #
+            #     15:58:06  Shooter, runway zero seven, cleared for take-off
+            #     15:59:09  Sockeye, runway zero seven, cleared for take-off
+            #     15:59:31  "Shooter is sitting on the runway right now, and
+            #                Tower just cleared me for takeoff"
+            #
+            # 30 August, and the engine issued both. `departure` is the phase
+            # that STRADDLES -- see `phases.STRADDLES`: you are in it from
+            # Tower's first word, through the roll, until Departure lets you
+            # go, "and most of that is spent stationary". So the phase alone
+            # cannot say whether he is still on the tarmac, and the fact that
+            # can is the one `phases` already names: positive radar evidence
+            # that he got airborne. Without it he is still on the runway.
+            #
+            # Still no geometry, which is what makes this buildable at all --
+            # an aerodrome row has a position and a landing heading and no
+            # thresholds. It is a scan of the board, as the rest of this is.
+            if ph == "departure" and not getattr(
+                    other, "has_been_airborne", False):
                 return other.callsign
         return None
 

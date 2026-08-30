@@ -157,5 +157,106 @@ class TestTheRunwayBelongsToItsOwnAerodrome(unittest.TestCase):
         self.assertIn("cleared for take-off", said(c))
 
 
+class TestADepartingAeroplaneIsOnTheRunwayToo(unittest.TestCase):
+    """THE COMMONEST WAY TO PUT TWO ON ONE STRIP, and it was invisible.
+
+    The scan above looked only for `landed` -- a man who had come DOWN on it.
+    Both of them LEAVING was not a state anybody asked about:
+
+        15:58:06  Shooter, runway zero seven, cleared for take-off
+        15:59:09  Sockeye, runway zero seven, cleared for take-off
+        15:59:31  "Shooter is sitting on the runway right now, and Tower just
+                   cleared me for takeoff"
+
+    30 August, two singletons, and the ENGINE issued both.
+
+    `departure` is the phase that STRADDLES (`phases.STRADDLES`): it runs from
+    Tower's first word, through the roll, until Departure lets him go, "and
+    most of that is spent stationary". So the phase alone cannot say whether he
+    is still on the tarmac -- the fact that can is the one `phases` already
+    names, positive radar evidence that he got airborne.
+    """
+
+    def test_a_departure_who_has_not_flown_holds_the_runway(self):
+        c = field_controller()
+        put(c, "Shooter", "departure")
+        put(c, "Sockeye", "holding_short")
+        c.out.clear()
+        c.request_takeoff("Sockeye")
+        self.assertIn("hold short", said(c))
+        self.assertNotIn("cleared for take-off", said(c))
+
+    def test_and_is_named_so_the_pilot_knows_what_is_out_there(self):
+        c = field_controller()
+        put(c, "Shooter", "departure")
+        put(c, "Sockeye", "holding_short")
+        c.out.clear()
+        c.request_takeoff("Sockeye")
+        self.assertIn("traffic on the runway", said(c))
+
+    def test_but_once_he_is_airborne_the_runway_is_free(self):
+        """Otherwise every field would seize after one departure: `departure`
+        outlasts the roll by many miles."""
+        c = field_controller()
+        gone = put(c, "Shooter", "departure")
+        gone.has_been_airborne = True
+        put(c, "Sockeye", "holding_short")
+        c.out.clear()
+        c.request_takeoff("Sockeye")
+        self.assertIn("cleared for take-off", said(c))
+
+
+class TestNobodyIsClearedToLandOntoAnOccupiedRunway(unittest.TestCase):
+    """`_on_the_runway` had ONE caller. Leaving a busy strip was refused;
+    arriving onto the same one was never asked about.
+
+        16:21:33  Sockeye, roger, cleared to land runway one three
+        16:22:18  "Batumi Tower, I am still on the runway, shooter"
+        16:22:34  "sockeye is down on the runway, and I almost ran into shooter"
+
+    A LATE CLEARANCE, NOT A REFUSAL, which is the difference from take-off:
+    "hold short" is something a stationary aeroplane can do and a man on final
+    cannot. He is told what is on the runway and keeps coming.
+    """
+
+    def _on_final(self, c, cs="Sockeye"):
+        ac = put(c, cs, "approach")
+        ac.has_been_airborne = True
+        ac.on_visual = True
+        return ac
+
+    def test_he_is_not_cleared_to_land_over_somebody(self):
+        c = field_controller()
+        put(c, "Shooter", "landed")
+        self._on_final(c)
+        c.out.clear()
+        c.report_landed("Sockeye")
+        self.assertNotIn("cleared to land", said(c))
+
+    def test_he_is_told_to_continue_and_what_is_on_it(self):
+        c = field_controller()
+        put(c, "Shooter", "landed")
+        self._on_final(c)
+        c.out.clear()
+        c.report_landed("Sockeye")
+        self.assertIn("continue approach", said(c))
+        self.assertIn("shooter", said(c))
+
+    def test_a_departing_aeroplane_blocks_a_landing_as_well(self):
+        c = field_controller()
+        put(c, "Shooter", "departure")
+        self._on_final(c)
+        c.out.clear()
+        c.report_landed("Sockeye")
+        self.assertNotIn("cleared to land", said(c))
+
+    def test_a_clear_runway_still_clears_him(self):
+        c = field_controller()
+        self._on_final(c)
+        c.out.clear()
+        c.report_landed("Sockeye")
+        self.assertIn("cleared to land", said(c))
+
+
 if __name__ == "__main__":
     unittest.main()
