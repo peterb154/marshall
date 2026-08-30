@@ -26,7 +26,9 @@ from dcs.mission import Mission, StartType
 from dcs.mapping import Point
 from dcs.planes import F_16C_50, MosquitoFBMkVI, P_47D_30, P_51D_30_NA, SpitfireLFMkIX  # noqa: F401
 from dcs.planes import PlaneType
-from dcs.task import CAP, OrbitAction
+from typing import ClassVar
+
+from dcs.task import CAP, CAS, GroundAttack, Intercept, OrbitAction
 from dcs.terrain import Caucasus
 from dcs.triggers import TriggerStart
 
@@ -102,8 +104,68 @@ class F4U_1D(PlaneType):
 # sortie is actually flown in: a test bed whose taxi is longer than the thing
 # under test wastes the tester's afternoon. Slot names are the field's own,
 # zero-padded, and `parking_slot` takes them as ints.
+class F_100D(PlaneType):
+    """The Hun, and pydcs has never heard of it.
+
+    TWO AIRFRAMES THIS PROJECT FLIES ARE NOT IN `dcs.planes`, for two different
+    reasons, and both had to be asked of the SERVER rather than guessed:
+
+        F-100D      an official module since a few months back, newer than the
+                    pinned pydcs. I called it a community mod; the pilot said
+                    it was official and the server settled it -- it is in
+                    `CoreMods/aircraft/F-100D`, declaring `name = "F-100D"`
+        F-4E-45MC   pydcs DOES carry an `F_4E`, and it is the old AI-ONLY
+                    Phantom with `flyable = False`. Taking it would have built
+                    a client slot nobody can occupy, which looks like a working
+                    mission until somebody tries to fly it
+
+    Dimensions are the airframe's, and they are load-bearing rather than
+    decoration: `PINNED_SLOTS` refuses a parking slot the aeroplane does not
+    fit, so a wrong number here is a mission that fails to build or an aircraft
+    wedged into a stand.
+
+    No `panel_radio`, which is a real gap and a quiet one. `set_channels` reads
+    `plane_map` and these are not in it, so it writes nothing and these two get
+    the stock presets instead of the ladder's -- their kneeboard card and their
+    radio will disagree. Everything else about them works.
+    """
+    id = "F-100D"
+    flyable = True
+    height = 4.95
+    width = 11.81
+    length = 15.09
+    fuel_max = 3000
+    max_speed = 1390.0
+    category = "Interceptor"
+    task_default = CAP
+    tasks: ClassVar[list] = [CAP, GroundAttack, CAS]
+
+
+class F_4E_45MC(PlaneType):
+    """The flyable Phantom. See `F_100D` for why neither is imported."""
+    id = "F-4E-45MC"
+    flyable = True
+    height = 5.02
+    width = 11.68
+    length = 19.2
+    fuel_max = 6000
+    max_speed = 2390.0
+    category = "Interceptor"
+    task_default = CAP
+    tasks: ClassVar[list] = [CAP, GroundAttack, CAS, Intercept]
+
+
 PINNED_SLOTS: dict[str, tuple[str, ...]] = {
     "Kobuleti": ("01", "02"),
+}
+
+# WHERE THE OTHER AIRFRAMES SIT, one entry per flight so they cannot collide.
+# `PINNED_SLOTS` is keyed by FIELD and was written when one flight parked at
+# each; a second Kobuleti flight would have taken 01 and 02 straight back off
+# the Vipers.
+EXTRA_SLOTS: dict[str, tuple[str, ...]] = {
+    "Sabre": ("03", "04"),
+    "Phantom": ("05", "06"),
 }
 
 
@@ -389,8 +451,14 @@ def add_session_slots(m, usa, air_alt_ft: dict | None = None,
     # missions anyway -- so parking him where his own controllers are is the
     # honest arrangement rather than giving him a card he cannot use.
     mine: list[tuple[int, str, str]] = []
+    # HOT ON THE RAMP, both of them -- `StartType.Warm` is engines running at
+    # the stand, which is what "hot" means and what was asked for. They sit at
+    # Kobuleti beside the Vipers so they fly the same two-field ladder, on
+    # their own pinned stands out of `EXTRA_SLOTS`.
     for name, kind, how, home in (
             ("Viper", F_16C_50, StartType.Warm, "Kobuleti"),
+            ("Sabre", F_100D, StartType.Warm, "Kobuleti"),
+            ("Phantom", F_4E_45MC, StartType.Warm, "Kobuleti"),
             ("Pony", P_51D_30_NA, StartType.Cold, "Batumi")):
         airport = m.terrain.airports[home]
         # WHERE THE VIPERS SIT, PINNED. Left to pydcs the slot is whatever is
@@ -408,7 +476,9 @@ def add_session_slots(m, usa, air_alt_ft: dict | None = None,
         # BY NAME, NOT BY INDEX. `Airport.parking_slot(i)` takes a position in
         # the list; the ramp numbers a pilot reads off his kneeboard are
         # `slot_name`, zero-padded strings, and the two do not line up.
-        slots = PINNED_SLOTS.get(home)
+        # HIS FLIGHT'S STANDS BEFORE HIS FIELD'S, so two flights at one
+        # aerodrome do not both claim 01 and 02.
+        slots = EXTRA_SLOTS.get(name) or PINNED_SLOTS.get(home)
         want = None
         if slots:
             by_name = {str(s.slot_name): s for s in airport.parking_slots}
