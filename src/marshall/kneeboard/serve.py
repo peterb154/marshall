@@ -308,6 +308,66 @@ async def plans_read():
 #
 # Server-side because it is gzip inside base64, and because `core.dtc` is where
 # the format lives -- see its docstring on why not in the tool.
+async def _published_fixes() -> dict:
+    """The director's fix catalogue, or nothing. Shared by both importers.
+
+    Read from the director because it is what validates the route afterwards --
+    one table, so a route either reader proposes cannot be refused by the thing
+    checking it.
+    """
+    try:
+        got = await _director("GET", "/fixes")
+        return json.loads(bytes(got.body)).get("fixes") or {}
+    except Exception:
+        return {}
+
+
+async def _read_design(design: str, body: dict):
+    """File from a DKS kneeboard design. See `core/okb.py` for the format.
+
+    THE ROUTE GOES THROUGH THE SAME BUILDER the cartridge uses --
+    `dtc.plan_from_route` -- because two ways to turn a route into a plan is how
+    two readers come to disagree about what a pilot filed. Only the reading
+    differs; the filing does not.
+    """
+    from marshall.core import catalogue as _cat
+    from marshall.core import dtc as _dtc
+    from marshall.core import okb as _okb
+    try:
+        got = _okb.fetch(design)
+    except Exception as e:
+        return JSONResponse(
+            {"refused": [f"cannot read that kneeboard design: {e}"]},
+            status_code=400, headers=NO_CACHE)
+    # WHERE HE IS PARKED, which the route does not say: a design's waypoints
+    # begin after take-off, so the only aerodrome among them is the recovery
+    # field and both ends would come out the same.
+    try:
+        places = {a.name: (a.lat, a.lon) for a in _cat.aerodromes()}
+    except Exception:
+        places = {}
+    try:
+        draft = _dtc.plan_from_route(
+            _okb.waypoints(got), _okb.comms_card(got),
+            (body.get("name") or "").strip() or (got.get("name") or "untitled"),
+            label=(body.get("label") or "").strip(),
+            origin=_okb.origin_from_start(got, places),
+            catalogue=await _published_fixes())
+    except Exception as e:
+        return JSONResponse({"refused": [f"cannot read the route: {e}"]},
+                            status_code=400, headers=NO_CACHE)
+    # WHAT HE IMPORTED, so he can see he imported the right thing. A design id
+    # is a UUID and tells a pilot nothing; the aeroplane, the crew and the
+    # recovery field tell him at a glance whether this is the sortie he meant.
+    #
+    # `home_plate.radios` is the one worth reading twice: it is the frequency
+    # pair HIS card carries, and the first real design disagreed with us --
+    # 131.00 for Batumi, which is the sim's simplified number, against the
+    # published 118.600 our Tower answers on.
+    return JSONResponse({"draft": draft, "design": _okb.facts(got)},
+                        headers=NO_CACHE)
+
+
 @app.post("/dtc")
 async def read_cartridge(request: Request):
     from marshall.core import dtc as _dtc
@@ -320,6 +380,20 @@ async def read_cartridge(request: Request):
     if not text:
         return JSONResponse({"refused": ["paste a cartridge first"]},
                             status_code=400, headers=NO_CACHE)
+    # A KNEEBOARD DESIGN IS THE OTHER WAY IN, and it is the only way in for
+    # some aeroplanes.
+    #
+    #     "when using DKS, and a jet without a DTC (i.e. F4-C) it doesnt let us
+    #      download the dtc file, so we need another way to import easily"
+    #
+    # A cartridge is an F-16 thing. The Phantoms on the Kobuleti ramp cannot
+    # export one, so their pilots had nothing to paste. Same box, same button:
+    # what he pasted decides which reader runs, because a UUID and a base64
+    # cartridge cannot be mistaken for each other.
+    from marshall.core import okb as _okb
+    design = _okb.design_id(text)
+    if design:
+        return await _read_design(design, body)
     try:
         d = _dtc.decode(text)
     except Exception as e:

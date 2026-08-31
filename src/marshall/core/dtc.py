@@ -274,15 +274,50 @@ def plan_from(d: dict, name: str, approach: str = "", label: str = "",
     if not wps:
         raise ValueError("no waypoints in the cartridge")
     seats = ladder(d)
+    return plan_from_route(wps, seats, name, approach=approach, label=label,
+                           origin=origin, catalogue=catalogue,
+                           steerpoints=steerpoints, task=task_from(d))
+
+
+def plan_from_route(wps: list[dict], seats: list[str], name: str,
+                    approach: str = "", label: str = "", origin: str = "",
+                    catalogue: dict | None = None,
+                    steerpoints: bool = False, task: str = "") -> dict:
+    """A filed plan from a route and a comms ladder, whatever produced them.
+
+    THE CARTRIDGE IS ONE WIRE FORMAT AND NOT THE ONLY ONE. A Phantom has no DTC
+    to export, so `core/okb.py` reads the same route out of a DKS kneeboard
+    design -- and the moment there were two importers, the question was whether
+    there would also be two ways to turn a route into a plan. There is one. Both
+    formats normalise to `{seq, name, lat, lon, alt_ft}` and arrive here.
+
+    Everything below this line was `plan_from`'s body and reads nothing that is
+    format-specific: which end is the aerodrome, what the cruise is, which
+    steerpoints are named. `seats` may be empty -- a DKS comms card usually is --
+    and the aerodromes in the route answer instead.
+    """
+    if not wps:
+        raise ValueError("no waypoints in the route")
     start = origin or (seats[0] if seats else "")
-    dest = (seats[-1] if seats else "") or start
+    # THE ROUTE IS ASKED BEFORE THE OTHER END IS ASSUMED. This read
+    # `dest = seats[-1] or start`, so an origin known by any other means made
+    # `dest` truthy immediately and the fallback below never ran. With a DKS
+    # design that is every time: its comms card is usually blank and its
+    # `startPoint` names the departure field, so a Kobuleti-to-Batumi sortie
+    # filed as Kobuleti to KOBULETI -- the one aerodrome in the route ignored
+    # because the other end had already been guessed.
+    #
+    # A sortie that ends nowhere in particular still recovers where it started;
+    # that is a LAST resort and not a first one.
+    dest = seats[-1] if seats else ""
     if not start or not dest:
-        # No usable ladder. Fall back to a waypoint that names an aerodrome --
-        # DKS writes the field's own name on it -- and then to the other end.
+        # Fall back to a waypoint that names an aerodrome -- DKS writes the
+        # field's own name on it -- and only then to the other end.
         fields = [w["name"] for w in wps if w["name"] and w["name"] != "STPT"
                   and w["name"].upper() == w["name"].title().upper()]
         dest = dest or (fields[-1] if fields else "")
         start = start or dest
+        dest = dest or start
     ends = {(start or "").upper(), (dest or "").upper()}
     enroute = [w for w in wps if w["name"].upper() not in ends]
     cruise = max([w["alt_ft"] for w in enroute] or [w["alt_ft"] for w in wps])
@@ -335,7 +370,11 @@ def plan_from(d: dict, name: str, approach: str = "", label: str = "",
             #
             # Editable afterwards rather than final: the notes are HIS prose
             # and may be a checklist, a frequency card or nothing at all.
-            "task": task_from(d),
+            # HANDED IN, because it is the one format-specific thing left in
+            # here. A cartridge's is `KneeboardNotes`; a DKS design has no
+            # equivalent and passes nothing, which is an empty task and not a
+            # missing one.
+            "task": task,
             # STILL RETURNED, and no longer filed. `origin` is settled when he
             # asks for his clearance, `destination` is the last leg, `route`
             # is the legs spoken, and `cruise_ft` is the highest of them --
