@@ -2490,7 +2490,7 @@ class Controller:
         # the decision left with him. He keeps coming, he is told what is on it,
         # and the clearance follows when it is clear -- which is what `_try_clear`
         # and his next report already drive.
-        busy = self._on_the_runway(ac)
+        busy = self.who_is_on_the_runway(ac)
         if busy:
             self.say(ac.callsign,
                      f"{self._addr(ac)}, continue approach, traffic on runway "
@@ -3105,6 +3105,18 @@ class Controller:
 
         `None` means nobody looked, and is not the same as nobody being there.
         A list -- empty or not -- is an observation.
+
+        TOWER ALWAYS SEES THE RUNWAY IN THIS WORLD, and that is a decision
+        rather than an oversight:
+
+            "we dont need to simulate low-visibility - tower will always be
+             able to see the runway in our world. simpler"
+
+        So nothing here consults the weather, and a fog that would blind a real
+        controller does not blind this one. The verbal report is left with one
+        narrow job -- what he has when there is no geometry to look at, a map
+        whose runways did not come back or a poll that failed -- and is not a
+        weather fallback.
         """
         # KEYED ON A SQUASHED NAME, because the two sides reach it differently:
         # the bridge has a field name off the handoff ladder and the engine has
@@ -3141,7 +3153,7 @@ class Controller:
         self._runway_by.pop(k, None)
         self._runway_since_by.pop(k, None)
 
-    def _on_the_runway(self, ac=None) -> str | None:
+    def who_is_on_the_runway(self, ac=None) -> str | None:
         """Who has this aeroplane's runway, if anybody. HIS field's.
 
         SCOPED TO HIS AERODROME, via `_key`, because a man on the runway at
@@ -3223,7 +3235,7 @@ class Controller:
         # hold, which is what a controller says; the engine does not remember
         # the request and issue it later, because a clearance that arrives
         # without being asked for is one a pilot is not braced for.
-        occupied = self._on_the_runway(ac)
+        occupied = self.who_is_on_the_runway(ac)
         if occupied:
             self.say(ac.callsign,
                      f"{self._addr(ac)}, hold short runway "

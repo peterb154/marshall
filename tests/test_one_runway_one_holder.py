@@ -47,7 +47,7 @@ class TheRunwayHasOneHolder(unittest.TestCase):
         put(c, "First 1", "holding_short")
         c.request_takeoff("First 1")
         self.assertIn("cleared for take-off", said(c))
-        self.assertEqual(c._on_the_runway(c.get("Second 2")), "First 1")
+        self.assertEqual(c.who_is_on_the_runway(c.get("Second 2")), "First 1")
 
     def test_and_the_next_man_is_refused_by_name(self):
         c = tower()
@@ -66,14 +66,14 @@ class TheRunwayHasOneHolder(unittest.TestCase):
         c = tower()
         put(c, "First 1", "holding_short")
         c.request_takeoff("First 1")
-        self.assertIsNone(c._on_the_runway(c.get("First 1")))
+        self.assertIsNone(c.who_is_on_the_runway(c.get("First 1")))
 
     def test_getting_airborne_releases_it(self):
         c = tower()
         me = put(c, "First 1", "holding_short")
         c.request_takeoff("First 1")
         me.has_been_airborne = True
-        self.assertIsNone(c._on_the_runway(c.get("Second 2")))
+        self.assertIsNone(c.who_is_on_the_runway(c.get("Second 2")))
 
     def test_a_landing_clearance_commits_it_too(self):
         """Two cleared to land on one strip is the same accident as two cleared
@@ -83,7 +83,7 @@ class TheRunwayHasOneHolder(unittest.TestCase):
         ac.on_visual = True
         c.report_landed("Arriving 1")
         self.assertIn("cleared to land", said(c))
-        self.assertEqual(c._on_the_runway(c.get("Behind 2")), "Arriving 1")
+        self.assertEqual(c.who_is_on_the_runway(c.get("Behind 2")), "Arriving 1")
 
     def test_a_go_around_gives_it_back(self):
         """Without this an aeroplane climbing away holds the aerodrome for
@@ -93,7 +93,7 @@ class TheRunwayHasOneHolder(unittest.TestCase):
         ac.on_visual = True
         c.report_landed("Arriving 1")
         c.report_missed("Arriving 1")
-        self.assertIsNone(c._on_the_runway(c.get("Behind 2")))
+        self.assertIsNone(c.who_is_on_the_runway(c.get("Behind 2")))
 
     def test_leaving_the_board_gives_it_back(self):
         """A deslotted pilot must not seize the strip for ever."""
@@ -101,16 +101,16 @@ class TheRunwayHasOneHolder(unittest.TestCase):
         put(c, "First 1", "holding_short")
         c.request_takeoff("First 1")
         c.release("First 1")
-        self.assertIsNone(c._on_the_runway(c.get("Second 2")))
+        self.assertIsNone(c.who_is_on_the_runway(c.get("Second 2")))
 
     def test_a_hold_does_not_outlive_the_timeout(self):
         """The backstop, and the letdown is the precedent. A pilot who lands and
         goes quiet would otherwise block every movement at the field."""
         c = tower()
         put(c, "Quiet 1", "landed")
-        self.assertEqual(c._on_the_runway(c.get("Behind 2")), "Quiet 1")
+        self.assertEqual(c.who_is_on_the_runway(c.get("Behind 2")), "Quiet 1")
         c.tick(atc.RUNWAY_HOLD_SEC + 1)
-        self.assertIsNone(c._on_the_runway(c.get("Behind 2")))
+        self.assertIsNone(c.who_is_on_the_runway(c.get("Behind 2")))
 
     def test_the_other_field_is_untouched(self):
         """#170's scoping. A check that ignored the field would refuse every
@@ -121,7 +121,7 @@ class TheRunwayHasOneHolder(unittest.TestCase):
         home = put(c, "Waiting 2", "holding_short")
         if c._key(away) == c._key(home):
             self.skipTest("this map publishes one aerodrome")
-        self.assertIsNone(c._on_the_runway(home))
+        self.assertIsNone(c.who_is_on_the_runway(home))
 
 
 class GroundCanClearHimToo(unittest.TestCase):
@@ -141,9 +141,9 @@ class GroundCanClearHimToo(unittest.TestCase):
     def test_asking_ground_for_a_stand_frees_the_runway(self):
         c = tower()
         put(c, "Landed 1", "landed")
-        self.assertEqual(c._on_the_runway(c.get("Waiting 2")), "Landed 1")
+        self.assertEqual(c.who_is_on_the_runway(c.get("Waiting 2")), "Landed 1")
         c.taxi_in("Landed 1")
-        self.assertIsNone(c._on_the_runway(c.get("Waiting 2")))
+        self.assertIsNone(c.who_is_on_the_runway(c.get("Waiting 2")))
 
     def test_it_frees_it_even_when_the_seat_cannot_answer(self):
         """The vacate is a FACT he reported; whether this seat owns parking is
@@ -154,7 +154,7 @@ class GroundCanClearHimToo(unittest.TestCase):
         put(c, "Landed 1", "landed")
         c.taxi_in("Landed 1")
         self.assertTrue(c.get("Landed 1").runway_vacated)
-        self.assertIsNone(c._on_the_runway(c.get("Waiting 2")))
+        self.assertIsNone(c.who_is_on_the_runway(c.get("Waiting 2")))
 
 
 class WhatRadarSeesBeatsWhatAnybodySaid(unittest.TestCase):
@@ -174,7 +174,7 @@ class WhatRadarSeesBeatsWhatAnybodySaid(unittest.TestCase):
         c = tower()
         put(c, "Quiet 1", "taxi_in", vacated=True)     # says he is clear
         c.note_on_the_runway(self._fld(c), ["Quiet 1"])
-        self.assertEqual(c._on_the_runway(c.get("Waiting 2")), "Quiet 1",
+        self.assertEqual(c.who_is_on_the_runway(c.get("Waiting 2")), "Quiet 1",
                          "he is standing on it whatever he reported")
 
     def test_an_empty_strip_releases_a_hold_nobody_would_have(self):
@@ -183,9 +183,9 @@ class WhatRadarSeesBeatsWhatAnybodySaid(unittest.TestCase):
         assumption."""
         c = tower()
         put(c, "Quiet 1", "landed")
-        self.assertEqual(c._on_the_runway(c.get("Waiting 2")), "Quiet 1")
+        self.assertEqual(c.who_is_on_the_runway(c.get("Waiting 2")), "Quiet 1")
         c.note_on_the_runway(self._fld(c), [])
-        self.assertIsNone(c._on_the_runway(c.get("Waiting 2")))
+        self.assertIsNone(c.who_is_on_the_runway(c.get("Waiting 2")))
         self.assertTrue(c.get("Quiet 1").runway_vacated)
 
     def test_nobody_looking_is_not_an_empty_runway(self):
@@ -195,9 +195,9 @@ class WhatRadarSeesBeatsWhatAnybodySaid(unittest.TestCase):
         c = tower()
         put(c, "Quiet 1", "landed")
         c.note_on_the_runway(self._fld(c), [])
-        self.assertIsNone(c._on_the_runway(c.get("Waiting 2")))
+        self.assertIsNone(c.who_is_on_the_runway(c.get("Waiting 2")))
         c.note_on_the_runway(self._fld(c), None)
-        self.assertEqual(c._on_the_runway(c.get("Waiting 2")), "Quiet 1")
+        self.assertEqual(c.who_is_on_the_runway(c.get("Waiting 2")), "Quiet 1")
 
     def test_the_field_name_is_matched_loosely(self):
         """The two sides reach the key differently -- the bridge off the
@@ -206,7 +206,7 @@ class WhatRadarSeesBeatsWhatAnybodySaid(unittest.TestCase):
         c = tower()
         put(c, "Quiet 1", "landed")
         c.note_on_the_runway(self._fld(c).upper() + " ", [])
-        self.assertIsNone(c._on_the_runway(c.get("Waiting 2")))
+        self.assertIsNone(c.who_is_on_the_runway(c.get("Waiting 2")))
 
     def test_a_report_does_not_beat_a_sighting(self):
         """He says he is clear and Tower can see he is not.
@@ -219,7 +219,7 @@ class WhatRadarSeesBeatsWhatAnybodySaid(unittest.TestCase):
         c.note_on_the_runway(self._fld(c), ["Rolling 1"])
         c.taxi_in("Rolling 1")
         self.assertFalse(c.get("Rolling 1").runway_vacated)
-        self.assertEqual(c._on_the_runway(c.get("Waiting 2")), "Rolling 1")
+        self.assertEqual(c.who_is_on_the_runway(c.get("Waiting 2")), "Rolling 1")
 
     def test_but_a_report_still_works_when_nobody_can_see(self):
         """The honest role of the verbal protocol: it is what Tower has when he
@@ -228,16 +228,16 @@ class WhatRadarSeesBeatsWhatAnybodySaid(unittest.TestCase):
         put(c, "Rolling 1", "landed")
         c.taxi_in("Rolling 1")
         self.assertTrue(c.get("Rolling 1").runway_vacated)
-        self.assertIsNone(c._on_the_runway(c.get("Waiting 2")))
+        self.assertIsNone(c.who_is_on_the_runway(c.get("Waiting 2")))
 
     def test_an_ai_that_never_reports_is_still_seen(self):
         """The case a verbal protocol can never cover."""
         c = tower()
         put(c, "Enfield 1", "landed")       # AI: will never say "clear"
         c.note_on_the_runway(self._fld(c), ["Enfield 1"])
-        self.assertEqual(c._on_the_runway(c.get("Waiting 2")), "Enfield 1")
+        self.assertEqual(c.who_is_on_the_runway(c.get("Waiting 2")), "Enfield 1")
         c.note_on_the_runway(self._fld(c), [])
-        self.assertIsNone(c._on_the_runway(c.get("Waiting 2")))
+        self.assertIsNone(c.who_is_on_the_runway(c.get("Waiting 2")))
 
 
 class ItAdoptsAnOccupantNobodyRecorded(unittest.TestCase):
@@ -249,24 +249,24 @@ class ItAdoptsAnOccupantNobodyRecorded(unittest.TestCase):
     def test_a_man_already_down_is_adopted(self):
         c = tower()
         put(c, "Landed 1", "landed")
-        self.assertEqual(c._on_the_runway(c.get("Waiting 2")), "Landed 1")
+        self.assertEqual(c.who_is_on_the_runway(c.get("Waiting 2")), "Landed 1")
 
     def test_and_one_already_rolling(self):
         c = tower()
         put(c, "Rolling 1", "departure")
-        self.assertEqual(c._on_the_runway(c.get("Waiting 2")), "Rolling 1")
+        self.assertEqual(c.who_is_on_the_runway(c.get("Waiting 2")), "Rolling 1")
 
     def test_but_not_a_man_who_has_reported_clear(self):
         c = tower()
         put(c, "Parked 1", "taxi_in", vacated=True)
-        self.assertIsNone(c._on_the_runway(c.get("Waiting 2")))
+        self.assertIsNone(c.who_is_on_the_runway(c.get("Waiting 2")))
 
     def test_nor_one_holding_short_beside_him(self):
         """Two aeroplanes at the holding point are both OFF the runway. A check
         that counted them would deadlock the field."""
         c = tower()
         put(c, "Waiting 1", "holding_short")
-        self.assertIsNone(c._on_the_runway(c.get("Waiting 2")))
+        self.assertIsNone(c.who_is_on_the_runway(c.get("Waiting 2")))
 
 
 if __name__ == "__main__":
