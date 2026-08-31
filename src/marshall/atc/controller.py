@@ -64,6 +64,18 @@ from marshall.core.say import (  # noqa: F401
 )
 
 CLEARANCE_TIMEOUT_SEC = 12 * 60      # silent aircraft -> assume clear, move on
+
+# HOW LONG ONE AEROPLANE MAY HOLD A RUNWAY before the engine takes it back.
+#
+# Shorter than the letdown's twelve minutes because the runway is a smaller
+# thing to be wrong about and a bigger thing to lose: an aeroplane is on a
+# strip for a minute or two, not a procedure's worth of time, and a hold that
+# outlives him blocks every arrival and every departure at that field.
+#
+# It is a BACKSTOP and never the normal path. Every ordinary case is released
+# by evidence -- airborne, or reported clear -- and this only fires for a pilot
+# who went quiet on the runway, which is exactly what happened on 30 August.
+RUNWAY_HOLD_SEC = 5 * 60
 REPORT_OVERDUE_SEC = 5 * 60          # prompt a quiet holder for a position
 MAX_APPROACHES = 2                   # then send him to the outer hold
 
@@ -531,6 +543,26 @@ class Controller:
     # approach contend; two aircraft on two approaches do not. See `_key`.
     _letdown_by: dict = field(default_factory=dict)
     _letdown_since_by: dict = field(default_factory=dict)
+    # WHO HAS THE RUNWAY, one holder per aerodrome, exactly as the letdown
+    # holds one aeroplane.
+    #
+    #     "we need to have some form of ownership for each runway and only one
+    #      aircraft or flight can use it at a time"
+    #
+    # This was a SCAN before -- "is anybody in a state that implies he is on the
+    # strip" -- and both of 30 August's incursions were that inference being
+    # wrong. First `departure` was not in the list of states, so two aeroplanes
+    # were cleared to take off. Then `taxi_in` was, and it lies: the rung moves
+    # when Tower hands a landed aeroplane to Ground, while he is still rolling.
+    # A guess that has to enumerate every state that means "on the runway" will
+    # keep missing one.
+    #
+    # A holder cannot fail that way, because the engine RECORDS the decision it
+    # made rather than re-deriving it from rungs that answer other questions.
+    # It is taken when the runway is given to somebody and released on positive
+    # evidence that he is done with it.
+    _runway_by: dict = field(default_factory=dict)
+    _runway_since_by: dict = field(default_factory=dict)
     # STATES THAT SHOULD BE IMPOSSIBLE, recorded when they happen anyway.
     #
     # The separation engine has invariants -- one aircraft in the letdown, a
@@ -693,6 +725,11 @@ class Controller:
         if key not in self.aircraft:
             return False
         ac = self.aircraft[key]
+        # ...AND THE RUNWAY WITH IT. An aeroplane that leaves the board takes
+        # its hold with it, or a deslotted pilot seizes the strip for ever --
+        # the same argument `_set_letdown(None)` makes two lines down.
+        if self._runway_by.get(self._key(ac)) == key:
+            self._free_runway(ac)
         if self._in_letdown(ac) == key:
             # He owned the approach. Free it or the next arrival waits behind
             # somebody who has gone home.
@@ -2302,6 +2339,12 @@ class Controller:
 
     def report_missed(self, cs: str) -> None:
         ac = self.get(cs)
+        # HE IS GOING AROUND, SO THE RUNWAY IS FREE. A landing clearance takes
+        # the strip; a go-around is the moment he stops needing it, and without
+        # this it would stay held by an aeroplane climbing away -- seizing the
+        # aerodrome for everybody behind him. Shooter went around at Batumi on
+        # 30 August, which is the case that makes this reachable.
+        self._free_runway(ac)
         banished = self._do_missed(ac)
         addr = self._addr(ac)
         prefix = f"{addr}, " if banished else f"{addr} roger, "
@@ -2469,6 +2512,10 @@ class Controller:
             # runway -- by name -- and that is all. See #216.
             self._try_clear()
             return
+        # ...AND A LANDING CLEARANCE COMMITS IT TOO. Two aeroplanes cleared to
+        # land on one strip is the same accident as two cleared to leave it,
+        # and it does not become one only when the wheels touch.
+        self._take_runway(ac)
         self.say(ac.callsign,
                  f"{self._addr(ac)}, roger, cleared to land runway "
                  f"{self._runway_in_use(ac)}, {self._wind_phrase()}")
@@ -2855,6 +2902,7 @@ class Controller:
         # he is clear of it; the rung being set to `taxi_in` elsewhere is a
         # HANDOFF and not a sighting. See `Aircraft.runway_vacated`.
         ac.runway_vacated = True
+        self._free_runway(ac)
         ac.sortie_phase, ac.last_report_t = "taxi_in", self.t
         if not self._owns("ground"):
             # Not his to give. Same shape as Ground refusing a take-off: name
@@ -3003,73 +3051,78 @@ class Controller:
         ac = self.get(cs)
         ac.sortie_phase, ac.last_report_t = "holding_short", self.t
 
-    def _on_the_runway(self, ac=None) -> str | None:
-        """Who is physically on the strip at this aeroplane's field, if anybody.
+    def _done_with_it(self, ac) -> bool:
+        """Has this aeroplane finished with the runway? POSITIVE EVIDENCE ONLY.
 
-        NO GEOMETRY, AND THAT IS WHY THIS IS BUILDABLE. `report_down`'s
-        docstring records why runway occupancy was never built -- an aerodrome
-        row carries a position and a landing heading and no runway length or
-        thresholds, so there is no polygon to test a point against. That is
-        true and it is not the question. `phases.py` already DEFINES the state:
+        Two ends, two kinds of proof, and neither is a rung:
 
-            landed    "Down and still on the runway, which is Tower's."
-            taxi_in   "Off the runway, to a stand."
+            departing   radar says he got airborne (`has_been_airborne`, the
+                        latch #178 exists for). `departure` STRADDLES the
+                        ground and the air and most of it is spent stationary,
+                        so the phase cannot answer this
+            arriving    he reported clear (`runway_vacated`). There is no
+                        geometry to fall back on -- an aerodrome row carries a
+                        position and a landing heading and no thresholds -- so
+                        it is what a real Tower uses
 
-        A phase is an observable that needs no survey, and the ladder already
-        moves an aeroplane between those two on facts the sim reports. So the
-        answer is a scan of the board, not a computation.
-
-        SCOPED TO HIS FIELD, via `_key`, because a man on the runway at
-        Kobuleti says nothing whatever about the runway at Batumi -- and a
-        check that ignored the field would refuse every take-off on the map
-        the moment anybody landed anywhere. [#170]
+        Anything else is "not yet", which is the safe answer: an aeroplane
+        nobody has heard from keeps the runway.
         """
-        want = self._key(ac)
+        ph = (getattr(ac, "sortie_phase", "") or "").lower()
+        if ph in ("landed", "taxi_in") or getattr(ac, "phase", None) is Phase.LANDED:
+            return bool(getattr(ac, "runway_vacated", False))
+        if ph == "departure":
+            return bool(getattr(ac, "has_been_airborne", False))
+        # He is neither rolling out nor rolling: airborne, holding short, or on
+        # an approach. He is not standing on it.
+        return True
+
+    def _take_runway(self, ac, who: str = "") -> None:
+        """Give the runway to one aeroplane. A FLIGHT IS ONE HOLDER: the key is
+        a callsign, and a formation has a single one until it breaks up, so a
+        four-ship departing together holds the strip once and not four times."""
+        k = self._key(ac)
+        self._runway_by[k] = who or ac.callsign
+        self._runway_since_by[k] = self.t
+
+    def _free_runway(self, ac=None, key: str | None = None) -> None:
+        k = self._key(ac) if key is None else key
+        self._runway_by.pop(k, None)
+        self._runway_since_by.pop(k, None)
+
+    def _on_the_runway(self, ac=None) -> str | None:
+        """Who has this aeroplane's runway, if anybody. HIS field's.
+
+        SCOPED TO HIS AERODROME, via `_key`, because a man on the runway at
+        Kobuleti says nothing whatever about the runway at Batumi -- and a
+        check that ignored the field would refuse every take-off on the map the
+        moment anybody landed anywhere. [#170]
+
+        The holder is authoritative and self-cleaning: it is dropped as soon as
+        the aeroplane holding it is done (`_done_with_it`) or has left the
+        board entirely, so a stale hold cannot seize an aerodrome.
+
+        AND IT ADOPTS AN UNRECORDED OCCUPANT, which is what keeps this honest
+        across a restart and for an aeroplane that got onto the strip without
+        our clearance. The holder dict is in memory, like the letdown's; the
+        facts it is rebuilt from are on the aircraft and durable. So a bridge
+        that comes up mid-rollout still finds him.
+        """
+        k = self._key(ac)
+        who = self._runway_by.get(k)
+        if who is not None:
+            holder = self.aircraft.get(who)
+            if holder is None or self._done_with_it(holder):
+                self._free_runway(key=k)
+            elif holder is not ac:
+                return who
+            else:
+                return None                 # his own hold does not block him
         for other in self.aircraft.values():
-            if other is ac or self._key(other) != want:
+            if other is ac or self._key(other) != k:
                 continue
-            ph = (getattr(other, "sortie_phase", "") or "").lower()
-            # DOWN AND NOT YET REPORTED CLEAR. This asked `sortie_phase ==
-            # "landed"`, which stops being true the instant Tower hands him to
-            # Ground -- the rung moves to `taxi_in` for OWNERSHIP (#100) while
-            # the aeroplane is still rolling down the strip. So the check went
-            # blind exactly when it mattered, and cleared a second aircraft to
-            # land over a man the board had already called parked.
-            #
-            # `Phase.LANDED` is the separation phase and does not move on a
-            # handoff; `runway_vacated` is his own report. Both are facts about
-            # the aeroplane rather than about who is talking to him.
-            # Either rung is evidence he came DOWN here: `landed` is Tower's
-            # and `taxi_in` is Ground's, and the move between them is a handoff,
-            # not a sighting. `Phase.LANDED` catches the same fact on the
-            # separation axis. Only his own report gets him off the strip.
-            if ((ph in ("landed", "taxi_in")
-                 or getattr(other, "phase", None) is Phase.LANDED)
-                    and not getattr(other, "runway_vacated", False)):
-                return other.callsign
-            # AND A DEPARTING AEROPLANE IS ON IT TOO. This asked only about
-            # `landed` -- a man who had come DOWN on the strip -- so the
-            # commonest way to put two aircraft on one runway was invisible:
-            # both of them leaving.
-            #
-            #     15:58:06  Shooter, runway zero seven, cleared for take-off
-            #     15:59:09  Sockeye, runway zero seven, cleared for take-off
-            #     15:59:31  "Shooter is sitting on the runway right now, and
-            #                Tower just cleared me for takeoff"
-            #
-            # 30 August, and the engine issued both. `departure` is the phase
-            # that STRADDLES -- see `phases.STRADDLES`: you are in it from
-            # Tower's first word, through the roll, until Departure lets you
-            # go, "and most of that is spent stationary". So the phase alone
-            # cannot say whether he is still on the tarmac, and the fact that
-            # can is the one `phases` already names: positive radar evidence
-            # that he got airborne. Without it he is still on the runway.
-            #
-            # Still no geometry, which is what makes this buildable at all --
-            # an aerodrome row has a position and a landing heading and no
-            # thresholds. It is a scan of the board, as the rest of this is.
-            if ph == "departure" and not getattr(
-                    other, "has_been_airborne", False):
+            if not self._done_with_it(other):
+                self._take_runway(other)
                 return other.callsign
         return None
 
@@ -3105,6 +3158,10 @@ class Controller:
                      decided=D.Decision(kind="hold_short", to=ac.callsign,
                                         runway=self._runway_in_use(ac)))
             return
+        # THE RUNWAY IS HIS FROM THE CLEARANCE, not from the roll. Recorded as
+        # a decision the engine made -- see `_runway_by` -- so nothing has to
+        # infer it back out of a rung afterwards.
+        self._take_runway(ac)
         ac.sortie_phase = "departure"
         rwy = self._runway_in_use(ac)
         self.say(ac.callsign,
@@ -3623,6 +3680,30 @@ class Controller:
             ac = self.aircraft.get(cs)
             if ac and ac.map_t is not None and self.t >= ac.map_t:
                 self._station_passage(ac)
+
+        # A RUNWAY IS NOT HELD FOR EVER, and the letdown below is the
+        # precedent: a resource one aeroplane holds needs a way out when he
+        # goes quiet, or a pilot who lands and never reports clear seizes the
+        # aerodrome. He is ASKED first -- which is the transmission #216
+        # currently prevents reaching him, so for now it is the release that
+        # matters and the prompt follows when the bridge honours `Tx.to`.
+        for key, cs in list(self._runway_by.items()):
+            if self.t - self._runway_since_by.get(key, 0.0) <= RUNWAY_HOLD_SEC:
+                continue
+            ac = self.aircraft.get(cs)
+            self._anomaly(f"{cs} has held runway {key} for "
+                          f"{RUNWAY_HOLD_SEC // 60} minutes with no report of "
+                          f"being clear -- assuming clear and releasing it")
+            # ASSUME CLEAR; DO NOT DEADLOCK, which is the letdown's phrase for
+            # the same trade one resource over. Freeing the hold alone is not
+            # enough: the adoption pass below would find him still `landed` and
+            # not vacated and hand the runway straight back, so the timeout
+            # would fire for ever and release nothing. The assumption is
+            # RECORDED on the aeroplane, and the anomaly above says it was an
+            # assumption.
+            if ac is not None:
+                ac.runway_vacated = True
+            self._free_runway(key=key)
 
         for key, cs in list(self._letdown_by.items()):
             if self.t - self._letdown_since_by.get(key, 0.0) <= CLEARANCE_TIMEOUT_SEC:
