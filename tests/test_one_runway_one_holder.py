@@ -208,6 +208,28 @@ class WhatRadarSeesBeatsWhatAnybodySaid(unittest.TestCase):
         c.note_on_the_runway(self._fld(c).upper() + " ", [])
         self.assertIsNone(c._on_the_runway(c.get("Waiting 2")))
 
+    def test_a_report_does_not_beat_a_sighting(self):
+        """He says he is clear and Tower can see he is not.
+
+        Before the polygons there was no way to know. Recording it would put
+        the mistake somewhere it OUTLIVES the sighting -- `runway_vacated` is
+        durable, so it would go on freeing the strip after radar went quiet."""
+        c = tower()
+        put(c, "Rolling 1", "landed")
+        c.note_on_the_runway(self._fld(c), ["Rolling 1"])
+        c.taxi_in("Rolling 1")
+        self.assertFalse(c.get("Rolling 1").runway_vacated)
+        self.assertEqual(c._on_the_runway(c.get("Waiting 2")), "Rolling 1")
+
+    def test_but_a_report_still_works_when_nobody_can_see(self):
+        """The honest role of the verbal protocol: it is what Tower has when he
+        cannot see -- no geometry for this map, or a poll that failed."""
+        c = tower()
+        put(c, "Rolling 1", "landed")
+        c.taxi_in("Rolling 1")
+        self.assertTrue(c.get("Rolling 1").runway_vacated)
+        self.assertIsNone(c._on_the_runway(c.get("Waiting 2")))
+
     def test_an_ai_that_never_reports_is_still_seen(self):
         """The case a verbal protocol can never cover."""
         c = tower()

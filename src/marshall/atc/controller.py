@@ -2905,11 +2905,20 @@ class Controller:
         ladder. [#100]
         """
         ac = self.get(cs)
-        # THE ONE THING THAT FREES THE RUNWAY. This method is the pilot saying
-        # he is clear of it; the rung being set to `taxi_in` elsewhere is a
-        # HANDOFF and not a sighting. See `Aircraft.runway_vacated`.
-        ac.runway_vacated = True
-        self._free_runway(ac)
+        # HIS REPORT FREES THE RUNWAY -- UNLESS TOWER CAN SEE IT IS NOT TRUE.
+        #
+        # A pilot saying "clear of the active" while still rolling on it is an
+        # ordinary thing to happen, and before the polygons there was no way to
+        # know. Now there is, and writing down a claim we can watch being false
+        # would put the mistake somewhere it outlives the sighting: `runway_vacated`
+        # is durable, so it would keep freeing the strip long after radar went
+        # quiet. A controller who can see does not take the report on trust.
+        if self._seen_holder(self._key(ac), None) == ac.callsign:
+            self._anomaly(f"{ac.callsign} reports clear of the runway and is "
+                          f"still on it -- not recording him off")
+        else:
+            ac.runway_vacated = True
+            self._free_runway(ac)
         ac.sortie_phase, ac.last_report_t = "taxi_in", self.t
         if not self._owns("ground"):
             # Not his to give. Same shape as Ground refusing a take-off: name

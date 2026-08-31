@@ -139,6 +139,23 @@ def _correlated(session_id: str) -> dict:
         return {}
 
 
+def _watch_the_runways(bridge, ctl, session_id: str) -> None:
+    """Tell the engine who is standing on each of ITS OWN fields' runways.
+
+    Runs whatever the controller's radar capability is -- see the caller. The
+    picture comes from the track cache, which is the sim's truth rather than a
+    radar product, and the polygon restricts what is learned from it to the
+    strip he is looking at.
+    """
+    fields = {getattr(getattr(_p, "aerodrome", None), "name", "")
+              for _p in (ctl.procedure_for(cs) for cs in list(ctl.aircraft))}
+    me = getattr(ctl, "_me", None)
+    if getattr(me, "field", ""):
+        fields.add(me.field)
+    for fld in {f for f in fields if f}:
+        on_the_runway_now(bridge, ctl, fetch_radar(session_id, field=fld), fld)
+
+
 def runways_now(bridge) -> list:
     """The loaded map's runways, fetched once and held.
 
@@ -7119,6 +7136,24 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
             # gate meant. Whether an aeroplane gets turned is a question about
             # HIS approach, asked per aircraft below (`may_vector(_pro)`), and
             # the handoff half above it is not about vectoring at all.
+            # TOWER IS IN THE TOWER AND CAN SEE THE RUNWAY, so this happens
+            # ABOVE the radar gate.
+            #
+            #     "why does verbal stay? Tower is in the tower and can see the
+            #      runway"
+            #
+            # It was written below it, which made a procedural controller blind
+            # to the strip in front of him. `AtcCapability.radar` means no
+            # radar-derived separation AT RANGE -- the 1944 handicap, blind
+            # letdowns, no DME. It does not mean a man in a glass box cannot
+            # see an aeroplane five hundred metres away, and reading it that
+            # way is the same mistake as #180's ATIS letter and #177's `wants`:
+            # a fact trapped inside a gate meant for something else.
+            #
+            # The polygon IS the limit that keeps this honest. It tells him
+            # only about aircraft physically on a strip at his own aerodrome,
+            # which is exactly what a pair of eyes gives you and nothing more.
+            _watch_the_runways(bridge, ctl, session_id)
             if not radar_on:
                 continue
             try:
