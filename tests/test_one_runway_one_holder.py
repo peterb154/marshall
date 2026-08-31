@@ -124,6 +124,39 @@ class TheRunwayHasOneHolder(unittest.TestCase):
         self.assertIsNone(c._on_the_runway(home))
 
 
+class GroundCanClearHimToo(unittest.TestCase):
+    """A pilot who never reports to Tower and just calls Ground for a stand has
+    told somebody he is off the runway.
+
+        "if a pilot doesn't clear himself with tower and just calls ground,
+         ground should also be able to clear him from runway?"
+
+    He should, and the rung is what decides: `intents` already routes a taxi
+    request from an aeroplane that has LANDED to `taxi_in` rather than
+    `request_taxi` (#100) -- one is a taxi to the runway, the other to a stand,
+    and the words do not distinguish them. So the release rides on the request
+    a pilot actually makes at the end of a sortie.
+    """
+
+    def test_asking_ground_for_a_stand_frees_the_runway(self):
+        c = tower()
+        put(c, "Landed 1", "landed")
+        self.assertEqual(c._on_the_runway(c.get("Waiting 2")), "Landed 1")
+        c.taxi_in("Landed 1")
+        self.assertIsNone(c._on_the_runway(c.get("Waiting 2")))
+
+    def test_it_frees_it_even_when_the_seat_cannot_answer(self):
+        """The vacate is a FACT he reported; whether this seat owns parking is
+        a separate question. Tower hearing "request taxi to parking" still
+        learns the aeroplane is off his runway, and refusing to record that
+        would keep the strip blocked because the wrong man was asked."""
+        c = tower()                       # Tower, not Ground
+        put(c, "Landed 1", "landed")
+        c.taxi_in("Landed 1")
+        self.assertTrue(c.get("Landed 1").runway_vacated)
+        self.assertIsNone(c._on_the_runway(c.get("Waiting 2")))
+
+
 class ItAdoptsAnOccupantNobodyRecorded(unittest.TestCase):
     """The holder dict is in memory, like the letdown's; the facts it is built
     from are on the aircraft and durable. So a bridge that comes up mid-rollout,
