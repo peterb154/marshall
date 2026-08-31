@@ -190,15 +190,45 @@ class TestEveryFrequencyReachesSomebody(unittest.TestCase):
                                     f"{s.name} is on {hz}, which is neither VHF "
                                     f"airband nor UHF")
 
-    @T.skip_unless("caucasus", why="the period theatre flies SCR-522s and every "
-                                   "seat on it is VHF; Nevada's seats carry UHF "
-                                   "channels for the F-16, which is correct there")
-    def test_every_frequency_is_tunable_vhf(self):
+    @T.skip_unless("caucasus", why="the SCR-522 is a Caucasus problem: Nevada "
+                                   "has no warbird on its ladder")
+    def test_a_warbird_can_still_reach_every_rung(self):
+        """WHAT THIS USED TO SAY, and why it changed.
+
+        It asserted every Caucasus frequency was VHF, on the premise that "the
+        period theatre flies SCR-522s and every seat on it is VHF". That
+        premise expired: this map now launches F-16s, F-100Ds and Phantoms off
+        Kobuleti, and a Phantom's ARC-164 cannot reach a VHF airband seat at
+        all -- so the map needed UHF and the old rule forbade it.
+
+        The invariant underneath survives, and it is the one worth keeping: a
+        Mustang must still be able to reach EVERY rung. Adding a band for one
+        aeroplane must not take a seat away from another, which is exactly what
+        `Station.channels` is for -- one controller, one conversation, reachable
+        by both sets."""
         for s in R.STATIONS:
-            for hz in s.freqs:
-                with self.subTest(station=s.name, mhz=hz):
-                    self.assertGreaterEqual(hz, 108.0)
-                    self.assertLessEqual(hz, 156.0)
+            with self.subTest(station=s.name):
+                self.assertTrue(
+                    any(108.0 <= hz <= 156.0 for hz in s.freqs),
+                    f"{s.name} has no VHF frequency, so an SCR-522 cannot "
+                    f"reach him at all: {s.freqs}")
+
+    @T.skip_unless("caucasus", why="Nevada's UHF is real and predates this")
+    def test_and_a_single_UHF_radio_can_reach_every_rung_too(self):
+        """The other half, and the reason any of this was added.
+
+            "learned yesterday that the F4 only has 1 UHF radio"
+
+        One radio means he retunes at every handoff rather than monitoring two
+        at once -- which the ladder already asks of everybody. What it cannot
+        survive is a rung with no UHF on it, because that is a controller he
+        can never talk to."""
+        for s in R.STATIONS:
+            with self.subTest(station=s.name):
+                self.assertTrue(
+                    any(225.0 <= hz <= 400.0 for hz in s.freqs),
+                    f"{s.name} has no UHF frequency, so a Phantom cannot "
+                    f"reach him at all: {s.freqs}")
 
 
 class TestTheLadderIsWholeAndOrdered(unittest.TestCase):

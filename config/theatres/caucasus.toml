@@ -97,15 +97,12 @@ note = "Field elevation 32 ft. Landing runway 12 (charted 13/31 today -- magneti
 
 [[fix]]
 name = "KOBULETI"
-ident = "MG"
 x = -317962
 z = 635633
 lat = 41.929922
 lon = 41.863275
-freq_mhz = 124.0
 sector = "Kobuleti Departure"
-navaid_kind = "ndb"
-source = "UG5X aerodrome reference. THE BEACON ON IT IS FICTION, like Batumi's: `MG` on 124.0 was INVENTED for the 1944 scenario -- Kobuleti's real homers are `KT` on 0.870 and `T` on 0.490 and its TACAN is `KBL` 67X, all in the [[navaid]] rows below. Kept because the letdown holds its banished aircraft here on that channel. #163"
+source = "UG5X aerodrome reference. A PLACE, NOT A BEACON -- and it used to carry one. `MG` on 124.0 was invented for the 1944 scenario, and 124.0 is also Batumi Approach's SCR-522 channel, so the two collided. `mission/build.py` had already stopped placing the transmitter -- 'the Kobuleti NDB transmits on 124.000, which is Batumi Approach's frequency. A pilot on Approach heard a beacon instead of a controller, and could not be heard by anybody' -- while this row went on declaring it, which is how the collision survived in the data after being fixed in the mission. Kobuleti has no fictional homer now. Its real ones are `KT` 0.870, `T` 0.490 and TACAN `KBL` 67X in the [[navaid]] rows. A fix with no frequency is a place, which `theatre.beacon_seats` skips by design. #163 #217"
 note = "Field elevation 59 ft. Departure end. This point is 0.61 nm from the [[field]] row's own position, on the runway axis -- see #163, which measured it: one of the two is the runway centre and the other is the 07 threshold."
 
 [[fix]]
@@ -268,43 +265,52 @@ mva_cells = [
 name = "Kobuleti Clearance"
 freq_mhz = 125.1
 role = "clearance"
+channels = [251.1]
 field = "Kobuleti"
 also = ["delivery"]
 voice = "Gregory"
 manner = '''Precise to the point of pedantry, and reads a clearance like a man reading a form -- because that is exactly what it is. Unhurried, slightly officious, mildly satisfied when a read-back is correct and entirely willing to make you do it again when it is not. He will not let a wrong frequency or a wrong altitude past him, ever, and he is polite about it in a way that makes it worse.'''
+source = """FICTION. Kobuleti has no ICAO code (GE-0006) and no AIP entry -- UGKO is Kutaisi, a different airport -- so nothing about this field is published, in either band. 125.1 and the UHF are ours. A real Kobuleti would not staff a clearance seat either; the ladder wants one."""
 
 [[station]]
 name = "Kobuleti Ground"
 freq_mhz = 121.8
 role = "ground"
+channels = [251.2]
 field = "Kobuleti"
 voice = "Justin"
 manner = '''Brisk and strictly territorial. He owns the taxiways and nothing else, and he is scrupulous about the boundary -- you are cleared TO the runway and told to hold short of it, every time, in those words. Ask him for take-off and he will tell you that is Tower's, without warmth and without apology. No wasted syllables; he expects you to keep up.'''
+source = """FICTION, as above: Kobuleti is not a published aerodrome. 121.8 and the UHF are ours."""
 
 [[station]]
 name = "Kobuleti Tower"
 freq_mhz = 133.0
 role = "tower"
 field = "Kobuleti"
-channels = [122.1]
+channels = [262.0, 122.1]
 voice = "Joanna"
 manner = '''Owns the runway and nothing else, and is entirely relaxed about it -- there is rarely a queue. Warm and unhurried on the ground, crisp the moment anything is rolling. She will tell you the wind with a take-off clearance because that is what it is for, and she does not chat while an aeroplane is on the strip.'''
+source = """FICTION for the seat; the VHF is the sim's. 133.0 is what DCS gives Kobuleti as its single ATC radio, so a pilot who tunes the in-game airfield frequency reaches this Tower. UHF 262.000 is DCS's for the same field. 122.1 is the SCR-522's reachable rounding of 133.0, not a second facility."""
 
 [[station]]
 name = "Kobuleti Departure"
 freq_mhz = 123.3
 role = "departure"
+channels = [251.3]
 field = "Kobuleti"
 also = ["approach"]
 voice = "Kevin"
 manner = '''Dry, laconic, and comfortable with silence. A radar man: he tells you what he sees and then stops talking, and he does not fill the gaps. Occasional deadpan humour, never at the pilot's expense and never during anything that matters. If he says "radar contact" and nothing else for four minutes, that is because there is nothing else you need.'''
+source = """FICTION, as above. 123.3 and the UHF are ours."""
 
 [[station]]
 name = "Georgia Center"
 freq_mhz = 139.0
 role = "center"
+channels = [265.0]
 voice = "Brian"
 manner = '''Unhurried and a little remote, like a man with a very large piece of sky and no particular reason to rush. Formal without being stiff. He works in whole minutes and hundreds of miles, so a fifteen-mile problem does not move him. Never chatty, never curt -- just distant, the way a voice sounds when it is not standing at the same airfield you are.'''
+source = """FICTION. There is no such facility: the en-route sector is ours, invented to give the ladder a rung between Departure and Approach. 139.0 and the UHF are ours."""
 
 [[station]]
 name = "Batumi Approach"
@@ -312,31 +318,36 @@ freq_mhz = 124.425
 role = "approach"
 field = "Batumi"
 also = ["departure"]
-channels = [124.0]
+channels = [259.8, 124.0]
 manner = '''Calm, methodical, and entirely unflappable -- the voice you want in the weather. He talks in an even rhythm and never speeds up, because the man on the other end is flying an instrument approach and takes his pace from yours. Warm, but economical: no chat during the talk-down, and every transmission is a number the pilot needs. If something goes wrong he gets quieter and more precise rather than louder. The one controller who is never, under any circumstances, short with anybody.'''
+source = """PUBLISHED. Georgian eAIP UGSB AD 2.18 -- 'APP BATUMI APPROACH 124.425 MHz H24'. 124.0 is the SCR-522's reachable rounding of it and is OURS, not a second published facility. The UHF is ours: the eAIP lists no UHF for Batumi, which is a civil aerodrome."""
 
 [[station]]
 name = "Batumi Tower"
 freq_mhz = 118.6
 role = "tower"
 field = "Batumi"
-channels = [118.0]
+channels = [260.0, 118.0]
 voice = "Joey"
 manner = '''Cheerful and genuinely pleased to see aeroplanes. He has a window and he uses it -- he will tell you the wind is being kind today, or that he has you visual on a two-mile final. Brisk when there is a sequence to run, friendly the rest of the time, and he says "welcome back" to somebody who has just landed out of the weather. Never gushing, and never so chatty that a landing clearance gets buried in it.'''
+source = """PUBLISHED. Georgian eAIP UGSB AD 2.18 -- 'TWR BATUMI TOWER 118.600 MHz H24'. 118.0 is the SCR-522's reachable rounding and is OURS. UHF 260.000 is what DCS gives Batumi as its single ATC radio; the eAIP publishes no UHF."""
 
 [[station]]
 name = "Batumi Ground"
 freq_mhz = 121.9
 role = "ground"
+channels = [259.9]
 field = "Batumi"
 also = ["delivery", "clearance"]
 voice = "Stephen"
 manner = '''Gruff, and has been doing this a very long time. He uses as few words as the job allows and none at all for pleasantries -- "taxi bravo, hold short one three" and nothing after it. Faintly put upon by anyone who needs the taxiways explained, though he will explain them, correctly, every time. Not rude and never unsafe: he simply regards conversation as something that happens on other frequencies. A pilot who thanks him gets "mm-hm".'''
+source = """FICTION. The eAIP is explicit that Batumi has NO ground controller: 'ATC clearance, clearance to start engines and taxi instructions are issued on frequency of Batumi-Tower on 118.600'. This seat exists because the ladder wants one. 121.9 and the UHF are ours."""
 
 [[station]]
 name = "Sentry"
 freq_mhz = 131.0
 role = "overlord"
+channels = [266.0]
 # NOT A RUNG. He is the mission commander, not a step in the ladder, and a
 # pilot flying Kobuleti to Batumi never needs him -- so he keeps a preset
 # ABOVE the ladder rather than a place inside it.
@@ -369,6 +380,7 @@ manner = '''Command, not service. Crisp, directive and impersonal -- she gives a
 # `published_minima = false` is how a procedure says it has no surveyed MSA or
 # MVA table. It used to be said by leaving `field` empty, so the letdown
 # claimed to happen at no aerodrome at all -- two questions, one key.
+source = """FICTION. An OPFOR controller, invented. 131.0 and the UHF are ours. Note 131.0 is also what DCS gives Batumi as its simplified ATC VHF, so a pilot tuning the in-game airfield frequency for Batumi reaches this seat instead -- see #217."""
 
 [[approach]]
 key = "batumi-asr-13"

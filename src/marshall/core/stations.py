@@ -377,6 +377,29 @@ def role_at(stations, role: str, field: str = "") -> Station | None:
     return None
 
 
+def by_name(name: str, stations=None) -> Station | None:
+    """The seat with this name, or None. Matched loosely on the words.
+
+    A fix names its controller in prose -- `sector = "Kobuleti Departure"` --
+    and the station table names him too. They are written by hand in two
+    places, so this compares them the way the rest of the codebase compares
+    names rather than by `==`: "Kobuleti Departure" and "kobuleti departure"
+    are one man, and a lookup that missed on case would silently answer with no
+    frequency, which reads as "not decided" and is transmitted as zero.
+    """
+    from marshall.core import names as _names
+    want = _names.squash(name or "")
+    if not want:
+        return None
+    if stations is None:
+        from marshall.core import route as _R
+        stations = _R.STATIONS
+    for s in stations:
+        if _names.squash(s.name) == want:
+            return s
+    return None
+
+
 def on_frequency(stations, freq_mhz: float) -> Station | None:
     """Who the controller IS on this frequency.
 

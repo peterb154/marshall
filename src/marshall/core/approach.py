@@ -898,8 +898,26 @@ class ApproachProfile:
             # procedure gives its own controller on no frequency rather than
             # raising on a None halfway through an arrival.
             fix = self.navaid or self.aerodrome
-        return (fix.sector or self.controller,
-                fix.freq_mhz if fix.freq_mhz else 0.0)
+        who = fix.sector or self.controller
+        if fix.freq_mhz:
+            return (who, fix.freq_mhz)
+        # A FIX WITH A SEAT AND NO FREQUENCY IS A PLACE SOMEBODY WORKS, and the
+        # frequency is HIS, not the ground's. This returned 0.0 -- "not decided"
+        # -- because under #152 the controller sat ON the beacon and the fix
+        # carried both facts at once.
+        #
+        # Kobuleti stopped carrying one: `MG` on 124.0 was invented for the 1944
+        # scenario and collided with Batumi Approach's SCR-522 channel, so a
+        # banished aircraft was worked on a frequency that reached the wrong
+        # controller. Removing the beacon left the outer hold with a seat and no
+        # number, and a transmission on 0.0 is one nobody hears.
+        #
+        # So ask the map who that seat is. The place names the controller; the
+        # controller owns the frequency. Nothing is invented and no beacon has
+        # to exist for a hold to be worked. [#217]
+        from marshall.core import stations as _st
+        got = _st.by_name(who)
+        return (who, got.freq_mhz if got is not None else 0.0)
 
     # `station_for` AND `station_on` WERE HERE AND ARE DELETED. They live in
     # `core/stations.py` as `role_at` and `on_frequency`, bound to the map by

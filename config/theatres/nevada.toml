@@ -294,6 +294,7 @@ field = "Nellis"
 also = ["delivery"]
 voice = "Gregory"
 manner = "Brisk and procedural. Reads a clearance the way a man reads a form, and will make you read it back again if you fumble it."
+source = """UNCITED. Believed the published Nellis AFB clearance delivery frequency; no citation was recorded when it was written and it has not been checked against DoD FLIP. Treat as unverified rather than as fiction -- Nellis and Tonopah DO publish, unlike the Georgian fields."""
 
 [[station]]
 name = "Nellis Ground"
@@ -302,6 +303,7 @@ role = "ground"
 field = "Nellis"
 voice = "Joey"
 manner = "Unhurried and faintly amused. Knows every taxiway and expects you to know the one he just gave you."
+source = """UNCITED, as above."""
 
 [[station]]
 name = "Nellis Tower"
@@ -311,6 +313,7 @@ field = "Nellis"
 channels = [327.0]
 voice = "Matthew"
 manner = "Clipped. Owns the runway and nothing else, and says so when asked for something that is not his."
+source = """UNCITED, as above. 327.0 is believed the published Nellis Tower UHF."""
 
 [[station]]
 name = "Nellis Departure"
@@ -319,6 +322,7 @@ role = "departure"
 field = "Nellis"
 voice = "Stephen"
 manner = "The same man as Approach, going the other way, and just as short about it."
+source = """UNCITED, as above."""
 
 [[station]]
 name = "Nellis Approach"
@@ -327,6 +331,7 @@ role = "approach"
 field = "Nellis"
 voice = "Stephen"
 manner = "Calm and economical, the way somebody sounds when the terrain is high and he has done this a great many times."
+source = """UNCITED, as above."""
 
 [[station]]
 name = "Silverbow Approach"
@@ -337,6 +342,7 @@ also = ["departure"]
 channels = [233.95]
 voice = "Stephen"
 manner = "Careful about terrain and says so. The valley floor is high and the ridges are higher."
+source = """UNCITED. Believed published for Tonopah (TNX), VHF and UHF both; not checked against DoD FLIP."""
 
 [[station]]
 name = "Silverbow Tower"
@@ -347,6 +353,7 @@ also = ["clearance", "delivery"]
 channels = [257.95]
 voice = "Matthew"
 manner = "Dry and unhurried. Works the runway and the clearances both, because nobody staffs a delivery position out here."
+source = """UNCITED, as above."""
 
 [[station]]
 name = "Silverbow Ground"
@@ -356,6 +363,7 @@ field = "Tonopah"
 channels = [335.5]
 voice = "Joey"
 manner = "Laconic. It is a test range and there is rarely anybody else moving."
+source = """UNCITED, as above."""
 
 [[station]]
 name = "Los Angeles Center"
@@ -405,6 +413,7 @@ manner = "Unhurried and a long way off, working in whole minutes and hundreds of
 # STILL NOT MODELLED, and stated so it cannot be quietly forgotten: SIDs, STARs
 # and every other instrument procedure. Tonopah has an ILS to BOTH ends in the
 # sim -- I-RVP to 15 and I-UVV on 111.700 to 33 -- and only 15 is built.
+source = """UNCITED. A real ARTCC; this sector's frequency was not cited when written."""
 
 [[approach]]
 key = "nellis-ils-21"

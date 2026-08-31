@@ -172,6 +172,22 @@ class Controller(_File):
     name: str
     freq_mhz: float
     role: str
+    # WHERE THIS FREQUENCY CAME FROM, and it is required for the same reason
+    # `Fix.source` is: reference data is seeded, never authored, and a number
+    # nobody can cite is one somebody invented.
+    #
+    # #163 established this for beacons after a fictional ident ended up on a
+    # real aerodrome's row -- "a fictional ident on a real aerodrome's row is
+    # exactly what this field exists to prevent". Frequencies were left out of
+    # it, and they are the same hazard: Batumi APP 124.425 and TWR 118.600 are
+    # the published Georgian eAIP values, and the Ground seat beside them is
+    # ours, because the AIP says Batumi HAS no ground controller and issues
+    # clearance and taxi from Tower. Nothing in the file said which was which.
+    #
+    # SAY "FICTION" IN IT WHEN IT IS FICTION. That word is what a reader greps
+    # for, and it is what tells the next person adding an aerodrome that
+    # inventing a frequency is allowed as long as it is declared.
+    source: str
     field: str = ""
     # The other names this one seat answers to -- at a field with a single
     # radar room, Departure IS Approach.

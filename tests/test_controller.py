@@ -13,6 +13,7 @@ import unittest
 from marshall.atc import controller as atc
 from marshall.atc import equipment as E
 from marshall.core import route as R
+from marshall.core import stations as _st
 from tests import theatre as T
 
 
@@ -318,7 +319,14 @@ class TestChannels(unittest.TestCase):
         texts(self.ctl)
         self.ctl.report_missed("Hawk 1")            # second miss -> banished
         banish = [tx for tx in self.ctl.out if "proceed" in tx.text]
-        self.assertEqual(banish[0].freq_mhz, R.KOBULETI.freq_mhz)
+        # HIS CONTROLLER'S FREQUENCY, not a beacon's. This read
+        # `R.KOBULETI.freq_mhz` -- the fix's own -- because under #152 the
+        # controller sat ON the beacon. Kobuleti's beacon was fiction invented
+        # for the 1944 scenario, on 124.0, which is also Batumi Approach's
+        # SCR-522 channel; it is gone, and the hold is worked by the seat that
+        # owns the place. [#217]
+        who = _st.by_name("Kobuleti Departure")
+        self.assertEqual(banish[0].freq_mhz, who.freq_mhz)
 
     def test_a_single_controller_field_needs_no_handoff(self):
         one = dataclasses.replace(profile(), arrival_fix=None)
@@ -357,7 +365,11 @@ class TestProfileRoundTrip(unittest.TestCase):
         rt = R.profile_from_dict(R.profile_to_dict(profile()))
         self.assertEqual(rt.station(enroute=True), ("Batumi Approach", 128.0))
         self.assertEqual(rt.station(), ("Batumi Tower", 132.0))
-        self.assertEqual(rt.station(banished=True), ("Kobuleti Departure", 124.0))
+        # 124.0 was the invented beacon's; 123.3 is the controller's own. See
+        # `test_a_banished_aircraft_is_worked_on_the_outer_hold`. [#217]
+        self.assertEqual(rt.station(banished=True),
+                         ("Kobuleti Departure",
+                          _st.by_name("Kobuleti Departure").freq_mhz))
 
     def test_a_legacy_row_without_arrival_fix_still_loads(self):
         d = R.profile_to_dict(profile())
