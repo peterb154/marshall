@@ -1,0 +1,31 @@
+-- Where a flight plan STARTS, as a filed fact rather than an inference.
+--
+--     "maybe our flight plans can now include the starting point - rather than
+--      them being inferred from clearance location.. that was always a hack
+--      anyway"
+--
+-- `filing.derived` computed everything a plan needs except this one, and said
+-- why: "NOT `origin`. It is determined at request time -- he calls Clearance
+-- from a parking spot, and where he is standing is not something he should
+-- have had to write down in advance." That was true while the only importer
+-- was a data cartridge, which carries a route and no departure point: the
+-- first waypoint is already airborne, so the field a sortie leaves from was
+-- genuinely absent from what a pilot could hand us.
+--
+-- A DKS design carries `startPoint` -- a position on the ramp, with an
+-- elevation -- so he no longer has to write it down. It was written down for
+-- him, by the tool he plans in. See #218.
+--
+-- WHAT DOES NOT CHANGE is `assigned_plans.origin`, which stays what it always
+-- was: where he ACTUALLY called Clearance from. Two facts, not one. The plan
+-- says where the sortie departs; the clearance says where the aeroplane was
+-- standing when it was issued, and a disagreement between them is worth
+-- hearing about rather than resolving silently -- a pilot filing a Kobuleti
+-- departure and calling Batumi Clearance is on the wrong frequency or at the
+-- wrong field.
+--
+-- NULL is the honest default and stays legal. Every plan filed before this,
+-- and every plan filed from a cartridge after it, has no departure point to
+-- state -- and `clearance.filed()` already treats a plan with no origin as one
+-- that departs anywhere, which is the behaviour those plans have had all along.
+ALTER TABLE flight_plans ADD COLUMN IF NOT EXISTS origin text;

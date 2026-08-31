@@ -50,7 +50,12 @@ from marshall.core.db import pool as get_pool
 #     "the origin should be determined at request time, the destination is the
 #      last point. We should not define an approach in the flight plan. there
 #      should be no cruise alt in flight plan."
-FIELDS = ("name", "label", "legs", "task")
+# `origin` SINCE #218. A cartridge's first waypoint is already airborne, so the
+# field a sortie departs from was genuinely absent from anything a pilot could
+# hand us and had to be inferred from where he called Clearance. A DKS design
+# carries `startPoint`, so it is filed now -- still nullable, and a plan without
+# one still departs anywhere.
+FIELDS = ("name", "label", "legs", "task", "origin")
 
 # A plan's `name` is a key, not prose: it goes in URLs, in migrations and in
 # `assigned_plans.template`.
@@ -91,9 +96,20 @@ def derived(plan: dict) -> dict:
                      which is which is exactly what a single `cruise_ft`
                      column could never say.
 
-    NOT `origin`. It is determined at request time -- he calls Clearance from a
-    parking spot, and where he is standing is not something he should have had
-    to write down in advance.
+    `origin` IS FILED NOW AND USED TO BE INFERRED. This said "it is determined
+    at request time -- he calls Clearance from a parking spot, and where he is
+    standing is not something he should have had to write down in advance",
+    which was true while the only importer was a cartridge: a cartridge carries
+    a route whose first waypoint is already airborne, so the departure field was
+    genuinely absent from anything a pilot could hand us.
+
+    A DKS design carries `startPoint`, so he still does not write it down -- the
+    tool he plans in wrote it for him. It passes through here untouched, NULL
+    when there is none, and a plan without one still departs anywhere.
+
+    It does not replace `assigned_plans.origin`, which stays where he ACTUALLY
+    called Clearance from. Two facts: the plan says where the sortie departs,
+    the clearance says where the aeroplane was standing. See #218.
     """
     legs = [l for l in (plan.get("legs") or []) if isinstance(l, dict)]
     names = [(l.get("fix") or "").strip() for l in legs]
@@ -472,10 +488,11 @@ def file_plan(plan: dict, updating: str = "") -> dict:
     row["legs"] = Json(plan.get("legs") or [])
     with get_pool().connection() as c:
         c.execute(
-            "INSERT INTO flight_plans (name, label, legs, task) "
-            "VALUES (%(name)s, %(label)s, %(legs)s, %(task)s) "
+            "INSERT INTO flight_plans (name, label, legs, task, origin) "
+            "VALUES (%(name)s, %(label)s, %(legs)s, %(task)s, %(origin)s) "
             "ON CONFLICT (name) DO UPDATE SET "
-            "label=EXCLUDED.label, legs=EXCLUDED.legs, task=EXCLUDED.task",
+            "label=EXCLUDED.label, legs=EXCLUDED.legs, task=EXCLUDED.task, "
+            "origin=EXCLUDED.origin",
             row)
     return {"filed": True, "name": row["name"], "warnings": warn}
 

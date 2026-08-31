@@ -98,7 +98,7 @@ class ItKnowsWhereHeIsParked(unittest.TestCase):
         came out Batumi to Batumi, because `dest` defaulted to `start` before
         the route's own aerodromes were consulted."""
         plan = dtc.plan_from_route(
-            okb.waypoints(DESIGN), okb.comms_card(DESIGN), "GeorgiaPhantoms",
+            okb.waypoints(DESIGN), [], "GeorgiaPhantoms",
             origin=okb.origin_from_start(DESIGN, PLACES))
         self.assertEqual(plan["origin"], "Kobuleti")
         self.assertEqual(plan["destination"], "Batumi")
@@ -126,10 +126,91 @@ class WhatTheDesignKnowsBesidesTheRoute(unittest.TestCase):
         self.assertEqual(hp["runway"], "13")
         self.assertEqual(hp["radios"], "131.00/260.00")
 
-    def test_an_empty_comms_card_is_an_answer(self):
-        """Blank is usual, and callers fall back to the route rather than
-        treating it as a failure."""
-        self.assertEqual(okb.comms_card(DESIGN), [])
+    def test_the_comms_card_resolves_its_agency_references(self):
+        """THE FREQUENCIES ARE NOT IN THE DESIGN. Each channel carries an
+        agency id and the card is resolved from the squadron library. I
+        recorded that this could not be done, on the strength of a guessed URL
+        returning 405 -- which is METHOD NOT ALLOWED and was the endpoint
+        saying the path was right and the verb was wrong.
+
+        The resolver is stubbed: a test that reached the network would be
+        testing somebody else's uptime."""
+        library = [{"id": "a1", "name": "Kobuleti CLNC", "frequency": "251.100"},
+                   {"id": "a2", "name": "Batumi TWR", "frequency": "260.000"}]
+        d = json.loads(json.dumps(DESIGN))
+        d["formData"]["co-1-agency1-id"] = "a1"
+        d["formData"]["co-2-agency1-id"] = "a2"
+        got = okb.comms_card(d, resolve=lambda ids, sq: library)
+        self.assertEqual(got[0], {"channel": "1", "agency": "Kobuleti CLNC",
+                                  "freq_mhz": "251.100"})
+        self.assertEqual(got[1]["freq_mhz"], "260.000")
+
+    def test_a_card_that_cannot_be_read_is_not_a_card_that_is_empty(self):
+        """A resolver that fails leaves the channels with whatever the design
+        spells out -- usually nothing -- and must not raise. The caller falls
+        back to the route, which is where both ends come from anyway."""
+        def _boom(ids, sq):
+            raise OSError("no network")
+        self.assertEqual(okb.comms_card(DESIGN, resolve=_boom), [])
+
+
+class HisRadioCardAgainstOurs(unittest.TestCase):
+    """A frequency he cannot reach us on fails silently and in the air: he
+    calls, nobody answers, and neither end knows which of them has the wrong
+    number. The import is the one moment both cards are to hand."""
+
+    class _Seat:
+        def __init__(self, name, field, role, freqs, also=()):
+            self.name, self.field, self.role = name, field, role
+            self.freqs, self.also, self.freq_mhz = freqs, also, freqs[0]
+
+    SEATS = [_Seat("Kobuleti Clearance", "Kobuleti", "clearance", (125.1, 251.1)),
+             _Seat("Kobuleti Tower", "Kobuleti", "tower", (133.0, 262.0)),
+             _Seat("Batumi Tower", "Batumi", "tower", (118.6, 260.0))]
+    ATIS = {"Batumi": 280.0, "Kobuleti": 279.0}
+
+    def _check(self, card):
+        return okb.check_card(card, self.SEATS, self.ATIS)
+
+    def test_a_matching_card_says_nothing(self):
+        self.assertEqual(self._check(
+            [{"channel": "4", "agency": "Kobuleti TWR", "freq_mhz": "262.000"},
+             {"channel": "1", "agency": "Kobuleti ATIS", "freq_mhz": "279.000"}]),
+            [])
+
+    def test_an_abbreviation_is_not_a_disagreement(self):
+        """His card says CLNC and our seat is Clearance. Insisting on one
+        spelling would report every channel and teach him to ignore it."""
+        self.assertEqual(self._check(
+            [{"channel": "2", "agency": "Kobuleti CLNC", "freq_mhz": "251.100"}]),
+            [])
+
+    def test_a_wrong_frequency_is_named_with_both_numbers(self):
+        got = self._check(
+            [{"channel": "8", "agency": "Batumi TWR", "freq_mhz": "131.000"}])
+        self.assertEqual(len(got), 1)
+        self.assertIn("131.000", got[0])
+        self.assertIn("118.600", got[0])
+
+    def test_a_wrong_atis_too(self):
+        got = self._check(
+            [{"channel": "9", "agency": "Batumi ATIS", "freq_mhz": "281.000"}])
+        self.assertEqual(len(got), 1)
+        self.assertIn("280.000", got[0])
+
+    def test_a_facility_this_map_does_not_have_is_left_alone(self):
+        """Squadrons carry agencies for every theatre they fly. A Nevada seat on
+        a Caucasus card is his library being bigger than this sortie."""
+        self.assertEqual(self._check(
+            [{"channel": "6", "agency": "Nellis GND", "freq_mhz": "275.800"}]),
+            [])
+
+    def test_and_so_is_anything_it_cannot_parse(self):
+        """A check that cries wolf is a check somebody turns off."""
+        self.assertEqual(self._check(
+            [{"channel": "7", "agency": "", "freq_mhz": "251.100"},
+             {"channel": "8", "agency": "Batumi TWR", "freq_mhz": "see plate"}]),
+            [])
 
 
 if __name__ == "__main__":

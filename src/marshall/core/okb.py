@@ -121,30 +121,72 @@ def waypoints(design: dict, route_only: bool = True) -> list[dict]:
     return route
 
 
-def comms_card(design: dict) -> list[str]:
-    """The comms card's agencies in channel order, or [] when it is blank.
+AGENCIES = "https://www.digitalkneeboardsimulator.com/api/public/agencies"
 
-    NAMED FOR WHAT DKS CALLS IT, and not `ladder`, which is what the cartridge
-    reader calls its equivalent. Two functions with one name in two format
-    readers reads as symmetry and costs more than it pays: a reader has to
-    check which one is meant, and `tools/unwired.py` could no longer attribute
-    a bare call to either, so `dtc.ladder` came back as reachable only from its
-    own tests.
 
-    EMPTY IS AN ANSWER AND NOT A FAILURE. The card is optional in DKS and the
-    designs seen so far carry channel numbers with no agencies against them, so
-    a caller must fall back to the aerodromes named in the route rather than
-    treat this as an error. See `dtc.ladder`, which reads the equivalent block
-    out of a cartridge and where it is usually filled in.
+def comms_card(design: dict, resolve=None, timeout: float = 15.0) -> list[dict]:
+    """His radio card: channel, agency and frequency, in channel order.
+
+    THE FREQUENCIES ARE NOT IN THE DESIGN. Each channel carries an agency
+    REFERENCE -- `co-1-agency1-id` is set while `co-1-agency1` and `co-1-freq1`
+    are both "" -- and the card is resolved at render time from the squadron's
+    agency library:
+
+        POST /api/public/agencies   {"ids": [...], "squadronId": "..."}
+        -> [{"id": ..., "name": "Kobuleti ATIS", "frequency": "279.000", ...}]
+
+    I RECORDED THAT THIS COULD NOT BE DONE, and it was a misreading. Guessing
+    `/api/public/squadron/<id>/agencies` returned 404 and
+    `/api/public/agencies?squadronId=` returned 405, and I read the pair as "no
+    such endpoint" -- 405 is METHOD NOT ALLOWED and was the endpoint saying the
+    path was right and the verb was wrong. A pilot looking at his own kneeboard
+    could see the frequencies I had just called unreadable.
+
+    WHAT IT IS FOR. This is the pilot's card as HE has it, against a theatre
+    file that is ours, so the two can be compared instead of hoped about: on the
+    design that prompted it every channel agreed with what we publish, which is
+    a thing worth being able to say rather than assume.
+
+    `resolve` is the seam -- tests hand back the library rather than the
+    network. Without one, or when the fetch fails, the channels come back with
+    whatever the design spells out, which is usually the numbers and nothing
+    else. A card that cannot be read is not a card that is empty.
     """
     f = design.get("formData") or {}
-    out, n = [], 1
+    rows, ids = [], []
+    n = 1
     while f.get(f"co-{n}-ch") is not None:
-        who = (f.get(f"co-{n}-agency1") or "").strip()
-        if who:
-            out.append(who)
+        rows.append({"channel": str(f.get(f"co-{n}-ch") or "").strip(),
+                     "agency": (f.get(f"co-{n}-agency1") or "").strip(),
+                     "freq_mhz": (f.get(f"co-{n}-freq1") or "").strip(),
+                     "_id": (f.get(f"co-{n}-agency1-id") or "").strip()})
         n += 1
+    ids = [r["_id"] for r in rows if r["_id"] and not r["agency"]]
+    library = {}
+    if ids:
+        try:
+            got = (resolve(ids, design.get("squadronId") or "")
+                   if resolve is not None
+                   else _agencies(ids, design.get("squadronId") or "", timeout))
+            library = {a.get("id"): a for a in (got or []) if isinstance(a, dict)}
+        except Exception:
+            library = {}
+    out = []
+    for r in rows:
+        a = library.get(r.pop("_id"), {})
+        r["agency"] = r["agency"] or (a.get("name") or "")
+        r["freq_mhz"] = r["freq_mhz"] or (a.get("frequency") or "")
+        if r["agency"] or r["freq_mhz"]:
+            out.append(r)
     return out
+
+
+def _agencies(ids: list[str], squadron: str, timeout: float) -> list:
+    body = json.dumps({"ids": ids, "squadronId": squadron}).encode()
+    req = urllib.request.Request(
+        AGENCIES, data=body, headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read())
 
 
 def facts(design: dict) -> dict:
@@ -218,3 +260,81 @@ def origin_from_start(design: dict, catalogue: dict, nm: float = 3.0) -> str:
         if d_nm <= best_nm:
             best, best_nm = name, d_nm
     return best
+
+
+# What a kneeboard abbreviates a facility to, against the word we use. His card
+# says "Kobuleti CLNC" and our station is "Kobuleti Clearance"; neither is
+# wrong, and a comparison that insisted on one spelling would report every
+# channel as a disagreement and teach a pilot to ignore the check.
+_ROLE_WORDS = {
+    "clnc": "clearance", "cd": "clearance", "del": "clearance",
+    "delivery": "clearance", "gnd": "ground", "twr": "tower",
+    "dep": "departure", "app": "approach", "ctr": "center", "cen": "center",
+    "ctrl": "center", "atis": "atis",
+}
+
+
+def _role_of(agency: str) -> tuple[str, str]:
+    """(field words, role) out of an agency name like "Kobuleti CLNC"."""
+    words = [w for w in re.split(r"[\s/_-]+", (agency or "").strip()) if w]
+    if not words:
+        return "", ""
+    role = _ROLE_WORDS.get(words[-1].lower(), words[-1].lower())
+    return " ".join(words[:-1]).lower(), role
+
+
+def check_card(card: list[dict], stations, atis: dict | None = None) -> list[str]:
+    """Where the pilot's radio card and our theatre disagree. Plain sentences.
+
+        "its a good thing though, to double check the agencies on import. PITA
+         to have something wrong."
+
+    A frequency he cannot reach us on is the worst kind of wrong, because it
+    fails silently and in the air: he calls, nobody answers, and neither end
+    knows which of them is on the wrong number. It is cheap to find here and
+    expensive to find at four hundred knots.
+
+    ONLY WHAT IT CAN JUDGE. A channel naming a facility this map does not have
+    is reported as unknown rather than as a mismatch -- squadrons carry agencies
+    for every theatre they fly, and a Nevada seat on a Caucasus card is his
+    library being bigger than this sortie, not an error. Anything it cannot
+    parse is left alone entirely: a check that cries wolf is a check somebody
+    turns off, which is the same argument `clearance.unbacked` makes.
+
+    `stations` and `atis` are passed in for the reason everything else here
+    takes its facts as arguments -- this module knows nothing about which map
+    is loaded, and a Caucasus frequency judged against Nevada's ladder would be
+    wrong in a way nobody would see.
+    """
+    from marshall.core import names as _names
+    out = []
+    for row in card or []:
+        agency, want = row.get("agency", ""), (row.get("freq_mhz") or "").strip()
+        if not agency or not want:
+            continue
+        try:
+            mhz = float(want)
+        except ValueError:
+            continue
+        field, role = _role_of(agency)
+        if role == "atis":
+            have = [v for k, v in (atis or {}).items()
+                    if _names.squash(k) == _names.squash(field) and v]
+            if have and not any(abs(mhz - float(h)) < 0.0005 for h in have):
+                out.append(f"ch {row.get('channel')}: his card has {agency} on "
+                           f"{want}, we broadcast on "
+                           f"{', '.join(f'{float(h):.3f}' for h in have)}")
+            continue
+        seat = next((s for s in stations
+                     if (role == (getattr(s, "role", "") or "").lower()
+                         or role in [str(a).lower() for a in getattr(s, "also", ())])
+                     and _names.squash(getattr(s, "field", "") or "")
+                     == _names.squash(field)), None)
+        if seat is None:
+            continue                      # not this map's -- see the docstring
+        freqs = [float(f) for f in getattr(seat, "freqs", (seat.freq_mhz,))]
+        if not any(abs(mhz - f) < 0.0005 for f in freqs):
+            out.append(f"ch {row.get('channel')}: his card has {agency} on "
+                       f"{want}, {seat.name} answers on "
+                       f"{', '.join(f'{f:.3f}' for f in freqs)}")
+    return out

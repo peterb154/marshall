@@ -61,7 +61,11 @@ def _pool():
 # `cruise_ft` come back from `filing.derived` -- computed from the legs rather
 # than stored beside them -- and `origin` and `approach` are the CLEARANCE'S,
 # which is why `assigned_plans` has its own columns for them.
-_TEMPLATE_COLS = ("name", "label", "legs", "task")
+# `origin` SINCE #218: a plan may now say where it departs from, because a DKS
+# design carries `startPoint` and a cartridge never did. Still nullable, and a
+# plan without one still departs anywhere -- see `filed()` below, which has
+# filtered on this column since before it existed.
+_TEMPLATE_COLS = ("name", "label", "legs", "task", "origin")
 
 
 def filed() -> list[dict]:

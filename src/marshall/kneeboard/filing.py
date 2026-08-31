@@ -318,13 +318,21 @@ $('#read').onclick = async () => {
   // him nothing; the aeroplane and the crew tell him at a glance whether this
   // is the sortie he meant. A cartridge carries none of that and says nothing.
   const d = res.design;
-  $('#readout').innerHTML = d
+  // WHAT HE IMPORTED, and then what disagrees with us. The second is the half
+  // worth reading: a frequency he cannot reach us on fails silently and in the
+  // air, and this is the one moment his card and our ladder are both to hand.
+  const bad = res.comms || [];
+  $('#readout').innerHTML = (d
     ? '<p class="note">' + [d.name, d.aircraft,
         (d.crew || []).map(c => c.callsign).join(", "),
         d.home_plate && d.home_plate.field
           ? 'recovering ' + d.home_plate.field : ''
       ].filter(Boolean).join(' &middot; ') + '</p>'
-    : '';
+    : '')
+    + (bad.length
+        ? '<p class="bad">Check his radio card:</p><ul class="bad">'
+          + bad.map(b => '<li>' + b + '</li>').join('') + '</ul>'
+        : '');
   LEGS = (res.draft || {}).legs || [];
   // HIS PROSE, where he wrote any. `task` comes off KneeboardNotes and is
   // editable rather than final -- the notes may be a checklist or nothing.

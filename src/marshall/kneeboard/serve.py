@@ -347,8 +347,16 @@ async def _read_design(design: str, body: dict):
     except Exception:
         places = {}
     try:
+        # NO SEATS FROM THE COMMS CARD. `plan_from_route` uses them to name the
+        # two ends, and a cartridge's `Radios` block names OUR stations -- the
+        # ladder it was built from. A DKS card names AGENCIES from the pilot's
+        # squadron library: "Kobuleti CLNC", "Batumi ATIS". Feeding those in
+        # would file a sortie from Kobuleti ATIS to Batumi ATIS.
+        #
+        # The route's own aerodromes and `startPoint` answer instead, which is
+        # what `origin_from_start` is for.
         draft = _dtc.plan_from_route(
-            _okb.waypoints(got), _okb.comms_card(got),
+            _okb.waypoints(got), [],
             (body.get("name") or "").strip() or (got.get("name") or "untitled"),
             label=(body.get("label") or "").strip(),
             origin=_okb.origin_from_start(got, places),
@@ -364,8 +372,26 @@ async def _read_design(design: str, body: dict):
     # pair HIS card carries, and the first real design disagreed with us --
     # 131.00 for Batumi, which is the sim's simplified number, against the
     # published 118.600 our Tower answers on.
-    return JSONResponse({"draft": draft, "design": _okb.facts(got)},
-                        headers=NO_CACHE)
+    # HIS RADIO CARD AGAINST OURS, while he is looking at the import.
+    #
+    #     "its a good thing though, to double check the agencies on import.
+    #      PITA to have something wrong."
+    #
+    # A frequency he cannot reach us on fails silently and in the air: he calls,
+    # nobody answers, and neither end knows which of them has the wrong number.
+    # The design carries the card he will actually dial, so this is the one
+    # moment the two can be compared for free.
+    comms = []
+    try:
+        from marshall.core import catalogue as _c
+        from marshall.core import route as _r
+        comms = _okb.check_card(
+            _okb.comms_card(got), _r.STATIONS,
+            {a.name: a.atis_uhf_mhz for a in _c.aerodromes()})
+    except Exception:
+        comms = []
+    return JSONResponse({"draft": draft, "design": _okb.facts(got),
+                         "comms": comms}, headers=NO_CACHE)
 
 
 @app.post("/dtc")
