@@ -154,6 +154,49 @@ class WhatTheDesignKnowsBesidesTheRoute(unittest.TestCase):
         self.assertEqual(okb.comms_card(DESIGN, resolve=_boom), [])
 
 
+class HisOwnNamesForIt(unittest.TestCase):
+    """A design is already called something and already says what the sortie is
+    for. Making a pilot retype either asks him for a fact the file in front of
+    him already holds."""
+
+    def test_the_design_name_becomes_the_label(self):
+        self.assertEqual(okb.label_from(DESIGN), "GeorgiaPhantoms")
+
+    def test_but_only_when_it_can_be_SAID(self):
+        """`filing._LABEL_OK` allows letters, apostrophes and hyphens and
+        nothing else, for the reason migration 012 records: "Samovar One" and
+        "Samovar Two" are the Alpha One / Alpha Two shape, and a transcriber
+        that hears "won" picks the wrong sortie."""
+        # "GO" is legal -- two letters, and the rule allows it. The rejects
+        # are a SPACE, a DIGIT, one character, and nothing at all.
+        for name in ("Op Deep Strike", "Phantoms 2", "G", ""):
+            with self.subTest(name=name):
+                d = json.loads(json.dumps(DESIGN))
+                d["name"] = name
+                self.assertEqual(okb.label_from(d), "")
+
+    def test_the_task_is_composed_from_his_aimpoints_and_racks(self):
+        """A cartridge has prose to quote; a design has none, so this is built
+        from fields he filled in. `plans.py` scores a spoken request against
+        `task`, so it has to tell two similar sorties apart -- his nouns do
+        that and an invented adjective would not."""
+        self.assertEqual(okb.task_from(DESIGN), "TGT01 Airfiled -- Mk-82")
+
+    def test_a_weapon_is_counted_once_however_many_pylons_carry_it(self):
+        """The racks repeat the same store per station -- Mk-82x6, Mk-82x3 --
+        and what tells sorties apart is WHICH weapon, not how many pylons."""
+        self.assertEqual(okb.task_from(DESIGN).count("Mk-82"), 1)
+
+    def test_nothing_to_say_is_said_as_nothing(self):
+        """Never a word every plan shares: that distinguishes nothing, and
+        `dtc.task_from` refuses the same temptation for the same reason."""
+        d = json.loads(json.dumps(DESIGN))
+        d["formData"]["dmpis"] = []
+        for i in range(1, 12):
+            d["formData"].pop(f"lo-{i}-type", None)
+        self.assertEqual(okb.task_from(d), "")
+
+
 class HisRadioCardAgainstOurs(unittest.TestCase):
     """A frequency he cannot reach us on fails silently and in the air: he
     calls, nobody answers, and neither end knows which of them has the wrong

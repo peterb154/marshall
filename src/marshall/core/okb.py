@@ -338,3 +338,73 @@ def check_card(card: list[dict], stations, atis: dict | None = None) -> list[str
                        f"{want}, {seat.name} answers on "
                        f"{', '.join(f'{f:.3f}' for f in freqs)}")
     return out
+
+
+def task_from(design: dict, limit: int = 120) -> str:
+    """What this sortie is FOR, as one line, out of his own fields.
+
+        "We can probably the the flight plan name and something for the Task
+         from the DKS kneeboard too?"
+
+    A cartridge has `KneeboardNotes` -- free prose the pilot typed -- and
+    `dtc.task_from` quotes it. A design has no prose field, so this is COMPOSED
+    from things he filled in rather than quoted from one he wrote: the DMPI
+    names and descriptions, and the distinct stores on the racks.
+
+    That distinction matters because `task` is what `plans.py` scores a spoken
+    request against, so it has to tell two similar plans apart. His own nouns do
+    that -- "TGT01 Airfiled, Mk-82" is a different sortie from "TGT02 Bridge,
+    GBU-12" -- and an invented adjective would not.
+
+    EMPTY WHEN THERE IS NOTHING, never a word every plan shares. `dtc.task_from`
+    makes the same argument and gives the same reason: "a word every plan shares
+    is a word that distinguishes nothing".
+    """
+    f = design.get("formData") or {}
+    bits: list[str] = []
+    for d in (f.get("dmpis") or []):
+        if not isinstance(d, dict):
+            continue
+        # The name is his label for the aimpoint; the description is what he
+        # says it IS. Both, when they differ -- "TGT01" alone distinguishes
+        # nothing between two designs that both start numbering at one.
+        name = " ".join(str(d.get("name") or "").split())
+        what = " ".join(str(d.get("description") or "").split())
+        joined = f"{name} {what}".strip() if what.lower() != name.lower() else name
+        if joined:
+            bits.append(joined)
+    stores, seen = [], set()
+    n = 1
+    while f.get(f"lo-{n}-station") is not None or n <= 11:
+        kind = " ".join(str(f.get(f"lo-{n}-type") or "").split())
+        # The count rides with the type -- "Mk-82x6" -- and the racks repeat it
+        # per station, so the same weapon appears many times. What tells sorties
+        # apart is WHICH weapon, not how many pylons carry it.
+        # DKS writes the count with a MULTIPLICATION SIGN -- "Mk-82\u00d76" --
+        # and it is spelled by codepoint here because ruff refuses the literal:
+        # it is one of the characters that looks like an ASCII "x" and is not,
+        # which is exactly why it is worth splitting on rather than assuming.
+        head = re.split("[\u00d7xX]", kind)[0].strip() if kind else ""
+        if head and head.lower() not in seen:
+            seen.add(head.lower())
+            stores.append(head)
+        n += 1
+        if n > 40:
+            break
+    if stores:
+        bits.append(", ".join(stores))
+    return " -- ".join(bits)[:limit].rstrip(" ,.;-")
+
+
+def label_from(design: dict) -> str:
+    """The design's own name, when it can be said on a bad channel.
+
+    A label is spoken -- `filing._LABEL_OK` allows letters, apostrophes and
+    hyphens and nothing else, for the reason migration 012 records: "Samovar
+    One" and "Samovar Two" are the Alpha One / Alpha Two shape, and a
+    transcriber that hears "won" picks the wrong sortie and clears a man onto
+    it. So a name with a digit or a space in it is not offered as a label; it is
+    left for the pilot to choose one, which he has always done.
+    """
+    name = " ".join(str(design.get("name") or "").split())
+    return name if re.fullmatch(r"[A-Za-z][A-Za-z'-]{1,23}", name) else ""

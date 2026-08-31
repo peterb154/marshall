@@ -337,6 +337,9 @@ $('#read').onclick = async () => {
   // HIS PROSE, where he wrote any. `task` comes off KneeboardNotes and is
   // editable rather than final -- the notes may be a checklist or nothing.
   if (!$('#tsk').value) $('#tsk').value = (res.draft || {}).task || '';
+  // AND HIS NAME FOR IT, when the design has one that can be said. Only into an
+  // empty box: what he typed is his, and an import must not overwrite it.
+  if (!$('#lab').value) $('#lab').value = (res.draft || {}).label || '';
   $('#draftlegs').innerHTML = legsTable(LEGS);
   $('#verdict').innerHTML = '';
   $('#go').disabled = false;

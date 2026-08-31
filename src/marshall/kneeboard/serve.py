@@ -355,12 +355,21 @@ async def _read_design(design: str, body: dict):
         #
         # The route's own aerodromes and `startPoint` answer instead, which is
         # what `origin_from_start` is for.
+        # HIS NAMES, WHERE HE HAS WRITTEN THEM DOWN. A design is already called
+        # something -- "GeorgiaPhantoms" -- and already says what the sortie is
+        # for, in its aimpoints and its racks. Making a pilot retype either is
+        # asking him for a fact the file in front of him already holds.
+        #
+        # Suggested, never imposed: anything he typed in the form wins, and the
+        # label is only offered when the design's name can be SAID (see
+        # `okb.label_from`).
         draft = _dtc.plan_from_route(
             _okb.waypoints(got), [],
             (body.get("name") or "").strip() or (got.get("name") or "untitled"),
-            label=(body.get("label") or "").strip(),
+            label=(body.get("label") or "").strip() or _okb.label_from(got),
             origin=_okb.origin_from_start(got, places),
-            catalogue=await _published_fixes())
+            catalogue=await _published_fixes(),
+            task=_okb.task_from(got))
     except Exception as e:
         return JSONResponse({"refused": [f"cannot read the route: {e}"]},
                             status_code=400, headers=NO_CACHE)
