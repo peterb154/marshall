@@ -42,6 +42,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 
 from marshall.atc import callsign
+from marshall.core import names
 from marshall.core import route as R
 # WHICH APPROACH HIS WORDS MEAN, and what this map publishes. Imported by
 # name so the engine keeps ONE spelling of each question -- `match_spoken`
@@ -563,6 +564,12 @@ class Controller:
     # evidence that he is done with it.
     _runway_by: dict = field(default_factory=dict)
     _runway_since_by: dict = field(default_factory=dict)
+    # WHO RADAR CAN SEE STANDING ON IT, per field, handed in rather than
+    # reached for. The strongest evidence there is: a report can be forgotten
+    # and a rung can lie, and an aeroplane inside the polygon is on the strip.
+    # Empty means nobody has looked -- NOT that it is clear. See
+    # `note_on_the_runway`.
+    _seen_on_runway: dict = field(default_factory=dict)
     # STATES THAT SHOULD BE IMPOSSIBLE, recorded when they happen anyway.
     #
     # The separation engine has invariants -- one aircraft in the letdown, a
@@ -3077,6 +3084,41 @@ class Controller:
         # an approach. He is not standing on it.
         return True
 
+    def note_on_the_runway(self, field_name: str, who) -> None:
+        """What radar sees standing on one strip. HANDED IN, not fetched.
+
+        The controller owns separation and does no I/O -- the bridge polls the
+        picture already, tests it against the runway polygons the sim gave us
+        (`core.runways`), and hands the answer down. That keeps this engine
+        pure and testable, and it is the shape the rest of the recent bug run
+        kept wanting: something reaching sideways for a fact it should have
+        been handed.
+
+        `None` means nobody looked, and is not the same as nobody being there.
+        A list -- empty or not -- is an observation.
+        """
+        # KEYED ON A SQUASHED NAME, because the two sides reach it differently:
+        # the bridge has a field name off the handoff ladder and the engine has
+        # `_pro(ac).aerodrome.name`. They agree today and a difference in case
+        # or spacing would silently mean "nobody has looked", which reads as a
+        # clear runway.
+        k = names.squash(field_name or "")
+        if who is None:
+            self._seen_on_runway.pop(k, None)
+            return
+        self._seen_on_runway[k] = [str(w) for w in who if w]
+
+    def _seen_holder(self, key: str, ac=None) -> str | None:
+        """The board callsign of somebody radar has on this strip, if any."""
+        for label in self._seen_on_runway.get(names.squash(key)) or []:
+            for other in self.aircraft.values():
+                if other is ac or self._key(other) != key:
+                    continue
+                if names.same(label, getattr(other, "track", "") or "") \
+                        or names.same(label, other.callsign):
+                    return other.callsign
+        return None
+
     def _take_runway(self, ac, who: str = "") -> None:
         """Give the runway to one aeroplane. A FLIGHT IS ONE HOLDER: the key is
         a callsign, and a formation has a single one until it breaks up, so a
@@ -3109,6 +3151,28 @@ class Controller:
         that comes up mid-rollout still finds him.
         """
         k = self._key(ac)
+        # WHAT RADAR SEES BEATS WHAT ANYBODY SAID. An aeroplane inside the
+        # runway polygon is ON it, whatever rung he is on and whether or not he
+        # ever reports clear -- which is the whole answer for AI, who never
+        # say a word, and for the pilot who taxis off in silence.
+        seen = self._seen_on_runway.get(names.squash(k))
+        if seen is not None:
+            there = self._seen_holder(k, ac)
+            if there is not None:
+                self._runway_by.setdefault(k, there)
+                self._runway_since_by.setdefault(k, self.t)
+                return there
+            # RADAR LOOKED AND THE STRIP IS EMPTY. That releases a hold nobody
+            # would otherwise have released: the man who landed and went quiet
+            # used to keep it for five minutes until a timeout ASSUMED him
+            # clear. Now he is seen to be gone, which is not an assumption.
+            held = self._runway_by.get(k)
+            if held is not None and held != getattr(ac, "callsign", None):
+                gone = self.aircraft.get(held)
+                if gone is not None and not self._done_with_it(gone):
+                    gone.runway_vacated = True
+                self._free_runway(key=k)
+            return None
         who = self._runway_by.get(k)
         if who is not None:
             holder = self.aircraft.get(who)

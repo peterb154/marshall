@@ -157,6 +157,67 @@ class GroundCanClearHimToo(unittest.TestCase):
         self.assertIsNone(c._on_the_runway(c.get("Waiting 2")))
 
 
+class WhatRadarSeesBeatsWhatAnybodySaid(unittest.TestCase):
+    """The deterministic answer, handed down from the bridge.
+
+        "since the sim exposes runway geometry - we ought to have a
+         deterministic check to see if anyone is on the runway"
+
+    A report can be forgotten, a rung can lie, and AI aircraft never say a word.
+    An aeroplane inside the runway polygon is on the strip.
+    """
+
+    def _fld(self, c, ac=None):
+        return c._key(ac or c.get("Waiting 2"))
+
+    def test_a_track_on_the_polygon_holds_the_runway(self):
+        c = tower()
+        put(c, "Quiet 1", "taxi_in", vacated=True)     # says he is clear
+        c.note_on_the_runway(self._fld(c), ["Quiet 1"])
+        self.assertEqual(c._on_the_runway(c.get("Waiting 2")), "Quiet 1",
+                         "he is standing on it whatever he reported")
+
+    def test_an_empty_strip_releases_a_hold_nobody_would_have(self):
+        """The man who landed and went quiet used to keep it until a five
+        minute timeout ASSUMED him clear. Seen to be gone is not an
+        assumption."""
+        c = tower()
+        put(c, "Quiet 1", "landed")
+        self.assertEqual(c._on_the_runway(c.get("Waiting 2")), "Quiet 1")
+        c.note_on_the_runway(self._fld(c), [])
+        self.assertIsNone(c._on_the_runway(c.get("Waiting 2")))
+        self.assertTrue(c.get("Quiet 1").runway_vacated)
+
+    def test_nobody_looking_is_not_an_empty_runway(self):
+        """`None` is silence. Reading it as "clear" would make a radar outage
+        clear two aeroplanes onto one strip -- the failure this whole area
+        keeps producing."""
+        c = tower()
+        put(c, "Quiet 1", "landed")
+        c.note_on_the_runway(self._fld(c), [])
+        self.assertIsNone(c._on_the_runway(c.get("Waiting 2")))
+        c.note_on_the_runway(self._fld(c), None)
+        self.assertEqual(c._on_the_runway(c.get("Waiting 2")), "Quiet 1")
+
+    def test_the_field_name_is_matched_loosely(self):
+        """The two sides reach the key differently -- the bridge off the
+        handoff ladder, the engine off `_pro(ac).aerodrome.name`. A difference
+        in case would silently mean "nobody looked", which reads as clear."""
+        c = tower()
+        put(c, "Quiet 1", "landed")
+        c.note_on_the_runway(self._fld(c).upper() + " ", [])
+        self.assertIsNone(c._on_the_runway(c.get("Waiting 2")))
+
+    def test_an_ai_that_never_reports_is_still_seen(self):
+        """The case a verbal protocol can never cover."""
+        c = tower()
+        put(c, "Enfield 1", "landed")       # AI: will never say "clear"
+        c.note_on_the_runway(self._fld(c), ["Enfield 1"])
+        self.assertEqual(c._on_the_runway(c.get("Waiting 2")), "Enfield 1")
+        c.note_on_the_runway(self._fld(c), [])
+        self.assertIsNone(c._on_the_runway(c.get("Waiting 2")))
+
+
 class ItAdoptsAnOccupantNobodyRecorded(unittest.TestCase):
     """The holder dict is in memory, like the letdown's; the facts it is built
     from are on the aircraft and durable. So a bridge that comes up mid-rollout,

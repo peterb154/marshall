@@ -139,6 +139,51 @@ def _correlated(session_id: str) -> dict:
         return {}
 
 
+def runways_now(bridge) -> list:
+    """The loaded map's runways, fetched once and held.
+
+    ONCE, BECAUSE THEY DO NOT MOVE, and a failure is not fatal: with no
+    polygons the engine falls back to what a pilot SAYS, which is how it worked
+    before this existed. An empty answer is retried, because "the sim was not
+    up yet" and "this map has no runways" look identical from here and only one
+    of them is worth believing.
+    """
+    if getattr(bridge, "runways", None):
+        return bridge.runways
+    try:
+        from marshall.feed.runways import from_the_sim
+        got = from_the_sim()
+    except Exception:
+        log.warning("no runway geometry from the sim -- occupancy falls back "
+                    "to what a pilot reports", exc_info=True)
+        return []
+    if got:
+        bridge.runways = got
+        print(f"  runway geometry: {len(got)} strip(s) from the sim", flush=True)
+    return got or []
+
+
+def on_the_runway_now(bridge, ctl, scope, field: str) -> None:
+    """Tell the engine who radar has standing on that field's strip.
+
+    HANDED DOWN, not fetched by the controller. `atc/controller.py` owns
+    separation and does no I/O; the bridge already has the picture, so the
+    geometry is applied here and the ANSWER goes down. Silence -- `None` -- is
+    passed on as silence, because a poll that did not happen must not read as
+    an empty runway.
+    """
+    strips = [r for r in runways_now(bridge)
+              if _names.same(r.field_name, field)]
+    if not strips or not getattr(scope, "ok", False):
+        ctl.note_on_the_runway(field, None)
+        return
+    from marshall.core import runways as _rw
+    seen: list = []
+    for r in strips:
+        seen.extend(_rw.who_is_on(r, getattr(scope, "contacts", []) or []))
+    ctl.note_on_the_runway(field, seen)
+
+
 def fetch_radar(session_id: str = "", url: str = RADAR_URL,
                 timeout: float = 5.0, field: str = "") -> Scope:
     """Grab the current scope (tagged with this session's radar-identified
@@ -1004,6 +1049,10 @@ class Bridge:
         # does not also throw the engine's answer away. See the `keep_him`
         # fallback in `say_it`.
         self.directive_now: str = ""
+        # THE MAP'S RUNWAYS, asked of the sim once. `None` until we have
+        # looked, which is not the same as a map with no runways -- see
+        # `runways_now`.
+        self.runways = None
         # WHO CAME OFF THE BOARD, AND WHAT WAS ON THE SCOPE WHEN HE DID.
         #
         # A release is the one board event with no trace of itself: the entry is
@@ -7139,6 +7188,9 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     if fld not in _seen:
                         _seen[fld] = fetch_radar(session_id,
                                                  field=fld)
+                        # ...AND WHO IS STANDING ON THAT FIELD'S RUNWAY, from
+                        # the same picture. One poll answers both.
+                        on_the_runway_now(bridge, ctl, _seen[fld], fld)
                     return _seen[fld]
 
                 _dropped: list = []
