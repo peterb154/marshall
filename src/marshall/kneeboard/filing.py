@@ -39,15 +39,19 @@ so, in one place, in the row it belongs to.
     "maybe we should just be able to edit the label, but the name key is
      immutable (unless deleted)"
 
-Opening a row gives you its label, its task and a cartridge box that REPLACES
-its steerpoints. All three go back through the same two calls a new plan makes
+Opening a row gives you its label, its task and an import box that REPLACES its
+steerpoints. It takes a DKS kneeboard LINK or a data cartridge, and the server
+decides which by looking at what was pasted -- a design id is a UUID and a
+cartridge is base64, so neither can be mistaken for the other and there is no
+second button to press by mistake. The link is the only way in for an aeroplane
+that cannot export a cartridge, which is every Phantom on the ramp. All three go back through the same two calls a new plan makes
 -- `/plans/check` while you look at it, `/plans` when you press Save -- with
 `updating` naming the row, which is the only thing that distinguishes an
 amendment from a filing. The key was generated from the label once and stays
 put; it is what `assigned_plans.template` points at, and it appears nowhere on
 this page because nobody types it and there is nothing to do with it.
 
-While a cartridge is staged BOTH leg tables are on screen and the map draws the
+While an imported route is staged BOTH leg tables are on screen and the map draws the
 incoming one. Replacing the legs is the largest thing that can be done to a
 plan -- the legs ARE the plan -- so it is shown before it happens rather than
 reported after.
@@ -137,10 +141,14 @@ BODY = """
   <h1>FLIGHT PLANS</h1>
 
   <section class="card">
-    <h2>DKS data cartridge import</h2>
+    <h2>Import a route</h2>
+    <p class="note">Paste a DKS <b>kneeboard link</b> or a <b>data cartridge</b>.
+      A cartridge is an F-16 thing -- an aeroplane that cannot export one, like
+      the Phantom, files by link.</p>
     <textarea id="dtc" spellcheck="false"
-      placeholder="RQsAAB+LCAAAAAAAAAPdVt..."></textarea>
-    <div class="acts"><button id="read" type="button">Read cartridge</button></div>
+      placeholder="https://www.digitalkneeboardsimulator.com/okb?design=...
+or RQsAAB+LCAAAAAAAAAPdVt..."></textarea>
+    <div class="acts"><button id="read" type="button">Read route</button></div>
     <div class="out" id="readout"></div>
   </section>
 
@@ -292,16 +300,31 @@ function drawMap(el, legs) {
     + 'and is not drawn</p>');
 }
 
-// ---- reading a cartridge ---------------------------------------------------
+// ---- reading a route -------------------------------------------------------
 //
-// The server decodes it -- gzip inside base64 -- and hands back a draft. From
-// there it is the ordinary path: `/plans/check` while he looks at it, `/plans`
-// when he presses the button. A cartridge that could file itself would be a
-// second filing path and the two would disagree the first rule that changed.
+// TWO WIRE FORMATS, ONE BOX. The server decides which by looking at what was
+// pasted -- a design id is a UUID and a cartridge is base64, and neither can be
+// mistaken for the other -- so the pilot does not have to tell it, and there is
+// no second button to press by mistake.
+//
+// From there it is the ordinary path either way: `/plans/check` while he looks
+// at it, `/plans` when he presses the button. An importer that could file
+// itself would be a second filing path and the two would disagree the first
+// rule that changed.
 $('#read').onclick = async () => {
   const res = await post('/dtc', {cartridge: $('#dtc').value});
   if (res.refused) { verdict($('#readout'), res); return; }
-  $('#readout').innerHTML = '';
+  // WHAT HE IMPORTED, when the source knows. A design id is a UUID and tells
+  // him nothing; the aeroplane and the crew tell him at a glance whether this
+  // is the sortie he meant. A cartridge carries none of that and says nothing.
+  const d = res.design;
+  $('#readout').innerHTML = d
+    ? '<p class="note">' + [d.name, d.aircraft,
+        (d.crew || []).map(c => c.callsign).join(", "),
+        d.home_plate && d.home_plate.field
+          ? 'recovering ' + d.home_plate.field : ''
+      ].filter(Boolean).join(' &middot; ') + '</p>'
+    : '';
   LEGS = (res.draft || {}).legs || [];
   // HIS PROSE, where he wrote any. `task` comes off KneeboardNotes and is
   // editable rather than final -- the notes may be a checklist or nothing.
@@ -415,15 +438,17 @@ function expand(p) {
     // incoming one, in the same table, before anything is written.
     + (STAGED
         ? '<h2>Steerpoints now</h2>' + legsTable(p.legs || [])
-          + `<h2>Replacing with — ${STAGED.length} from the cartridge</h2>`
+          + `<h2>Replacing with — ${STAGED.length} imported</h2>`
           + legsTable(STAGED)
           + '<div class="acts"><button class="link" id="ed-keep" '
           + 'type="button">keep the ones it has</button></div>'
         : '<h2>Steerpoints</h2>' + legsTable(p.legs || []))
-    + '<h2>Replace steerpoints from a DKS data cartridge</h2>'
+    + '<h2>Replace steerpoints</h2>'
+    + '<p class="note">A DKS kneeboard link or a data cartridge.</p>'
     + '<textarea id="ed-dtc" spellcheck="false" '
-    + 'placeholder="RQsAAB+LCAAAAAAAAAPdVt..."></textarea>'
-    + '<div class="acts"><button id="ed-read" type="button">Read cartridge'
+    + 'placeholder="https://www.digitalkneeboardsimulator.com/okb?design=...'
+    + '&#10;or RQsAAB+LCAAAAAAAAAPdVt..."></textarea>'
+    + '<div class="acts"><button id="ed-read" type="button">Read route'
     + '</button></div>'
     + '<div class="out" id="ed-readout"></div>'
     + '<div class="out" id="ed-verdict"></div>'
