@@ -133,8 +133,19 @@ lon = -115.033
 elevation_ft = 1869
 runway = 209
 ends = [21, 3]
-atis_mhz = 118.4
-atis_uhf_mhz = 281.0
+# NO VHF ATIS, AND THAT IS AUTHENTIC RATHER THAN MISSING.
+#
+#     "nellis has to have a VHF ATIS IRL right?"
+#
+# It does not. Nellis is a USAF base and its ATIS is UHF only -- the FAA's
+# own NFDC lists one line, "ATIS: 270.1 MHz 24 Hours", and AirNav's FAA
+# source data agrees. Tower, Ground, Approach and Departure all carry VHF
+# because civil traffic transits; the ATIS does not.
+#
+# 118.4 was here and was invented. A VHF-only aeroplane at Nellis genuinely
+# cannot get the ATIS, and inventing a frequency so it can is inventing a
+# facility. `atis_mhz` defaults to 0.0, which is the honest answer.
+atis_uhf_mhz = 270.1
 magvar_deg = 12.0
 grid_convergence_deg = 1.16
 note = "Nellis AFB (KLSV). Field elevation 1,869 ft -- a mile above Batumi, which is the first thing here that has never been exercised. 03R/21L 10,051 x 150 ft, ILS on 21L. TACAN LSV 12X. Parallel 03L/21R not modelled. MVA surveyed 10 August."
@@ -290,20 +301,22 @@ mva_cells = [
 name = "Nellis Clearance"
 freq_mhz = 120.9
 role = "clearance"
+channels = [289.4]
 field = "Nellis"
 also = ["delivery"]
 voice = "Gregory"
 manner = "Brisk and procedural. Reads a clearance the way a man reads a form, and will make you read it back again if you fumble it."
-source = """UNCITED. Believed the published Nellis AFB clearance delivery frequency; no citation was recorded when it was written and it has not been checked against DoD FLIP. Treat as unverified rather than as fiction -- Nellis and Tonopah DO publish, unlike the Georgian fields."""
+source = """PUBLISHED. Nellis AFB (KLSV) clearance delivery, 120.9 and 289.4. AirNav KLSV/KTNX airport communications (FAA source data)."""
 
 [[station]]
 name = "Nellis Ground"
 freq_mhz = 121.8
 role = "ground"
+channels = [275.8]
 field = "Nellis"
 voice = "Joey"
 manner = "Unhurried and faintly amused. Knows every taxiway and expects you to know the one he just gave you."
-source = """UNCITED, as above."""
+source = """PUBLISHED. Nellis AFB (KLSV) ground, 121.8 and 275.8. AirNav KLSV/KTNX airport communications (FAA source data)."""
 
 [[station]]
 name = "Nellis Tower"
@@ -313,25 +326,27 @@ field = "Nellis"
 channels = [327.0]
 voice = "Matthew"
 manner = "Clipped. Owns the runway and nothing else, and says so when asked for something that is not his."
-source = """UNCITED, as above. 327.0 is believed the published Nellis Tower UHF."""
+source = """PUBLISHED. Nellis AFB (KLSV) tower, 132.55 and 327.0 -- both were already here and both are correct. AirNav KLSV/KTNX airport communications (FAA source data)."""
 
 [[station]]
 name = "Nellis Departure"
 freq_mhz = 135.1
 role = "departure"
+channels = [350.225]
 field = "Nellis"
 voice = "Stephen"
 manner = "The same man as Approach, going the other way, and just as short about it."
-source = """UNCITED, as above."""
+source = """PUBLISHED. Nellis AFB (KLSV) departure, 135.1 and 350.225. AirNav KLSV/KTNX airport communications (FAA source data)."""
 
 [[station]]
 name = "Nellis Approach"
 freq_mhz = 118.125
 role = "approach"
+channels = [291.725]
 field = "Nellis"
 voice = "Stephen"
 manner = "Calm and economical, the way somebody sounds when the terrain is high and he has done this a great many times."
-source = """UNCITED, as above."""
+source = """PUBLISHED. Nellis AFB (KLSV) approach, 118.125 and 291.725. AirNav KLSV/KTNX airport communications (FAA source data)."""
 
 [[station]]
 name = "Silverbow Approach"
@@ -342,7 +357,7 @@ also = ["departure"]
 channels = [233.95]
 voice = "Stephen"
 manner = "Careful about terrain and says so. The valley floor is high and the ridges are higher."
-source = """UNCITED. Believed published for Tonopah (TNX), VHF and UHF both; not checked against DoD FLIP."""
+source = """PUBLISHED. Tonopah Test Range (KTNX), listed as PTD, 119.45 and 233.95. AirNav KLSV/KTNX airport communications (FAA source data)."""
 
 [[station]]
 name = "Silverbow Tower"
@@ -353,7 +368,7 @@ also = ["clearance", "delivery"]
 channels = [257.95]
 voice = "Matthew"
 manner = "Dry and unhurried. Works the runway and the clearances both, because nobody staffs a delivery position out here."
-source = """UNCITED, as above."""
+source = """PUBLISHED. Tonopah Test Range (KTNX) SILVERBOW TOWER, 124.75 and 257.95. AirNav KLSV/KTNX airport communications (FAA source data)."""
 
 [[station]]
 name = "Silverbow Ground"
@@ -363,7 +378,7 @@ field = "Tonopah"
 channels = [335.5]
 voice = "Joey"
 manner = "Laconic. It is a test range and there is rarely anybody else moving."
-source = """UNCITED, as above."""
+source = """PUBLISHED. Tonopah Test Range (KTNX) SILVERBOW GROUND, 127.25 and 335.5. AirNav KLSV/KTNX airport communications (FAA source data)."""
 
 [[station]]
 name = "Los Angeles Center"
@@ -413,7 +428,7 @@ manner = "Unhurried and a long way off, working in whole minutes and hundreds of
 # STILL NOT MODELLED, and stated so it cannot be quietly forgotten: SIDs, STARs
 # and every other instrument procedure. Tonopah has an ILS to BOTH ends in the
 # sim -- I-RVP to 15 and I-UVV on 111.700 to 33 -- and only 15 is built.
-source = """UNCITED. A real ARTCC; this sector's frequency was not cited when written."""
+source = """UNCITED. A real ARTCC; this sector's frequency was not cited when written and has not been checked."""
 
 [[approach]]
 key = "nellis-ils-21"

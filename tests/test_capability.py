@@ -50,13 +50,37 @@ class ClearanceFollowsTheSeatIncludingWhatItALSOWorks(unittest.TestCase):
         self.assertIn("clearance", capabilities(st.role, st.also))
 
     def test_a_ground_that_also_works_clearance_may_clear(self):
-        # Batumi Ground carries also=("delivery", "clearance"). Reading the
-        # primary role alone would disarm a controller who genuinely does the
-        # job -- the failure in the safe direction, but still a failure.
-        st = next(s for s in R.STATIONS
-                  if s.name == "Batumi Ground")
-        self.assertIn("clearance", st.also)
-        self.assertIn("clearance", capabilities(st.role, st.also))
+        """Reading the primary role alone would disarm a controller who
+        genuinely does the job -- the failure in the safe direction, but still
+        a failure.
+
+        THE EXAMPLE MOVED, THE RULE DID NOT. This used Batumi Ground, which
+        carried `also = ("delivery", "clearance")` because Batumi had no
+        Clearance seat for him to defer to. It has one now, so he stopped
+        claiming the role -- two seats answering "clearance" at one field is
+        the `station_for` first-match fault (#217).
+
+        The seat is CONSTRUCTED here rather than found on a map, because the
+        arrangement it models is not Batumi's: it is the 1944 one, where a
+        single controller answers as tower, ground, approach and departure
+        because the SCR-522 has four buttons and none to spend on splitting
+        him. That folding is the thing under test and it must keep working
+        whichever map is loaded."""
+        one_man = R.Station("Anyfield Ground", 121.8, "ground",
+                            also=("delivery", "clearance"))
+        self.assertIn("clearance", capabilities(one_man.role, one_man.also))
+
+    def test_and_the_period_arrangement_folds_every_role_into_one(self):
+        """The warbird field: one man, every hat, one frequency."""
+        alone = R.Station("Batumi", 132.0, "tower",
+                          also=("ground", "clearance", "approach", "departure"))
+        got = capabilities(alone.role, alone.also)
+        # Capability names are what a seat may DO, not the roles it answers to
+        # -- there is no "approach" capability, there is `vector`. One man on
+        # one frequency must hold both ends of the sortie: the paperwork and
+        # the talk-down.
+        for job in ("clearance", "vector"):
+            self.assertIn(job, got)
 
     def test_a_plain_ground_may_not(self):
         st = next(s for s in R.STATIONS if s.name == "Kobuleti Ground")

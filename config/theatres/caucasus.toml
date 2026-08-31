@@ -313,6 +313,29 @@ manner = '''Unhurried and a little remote, like a man with a very large piece of
 source = """FICTION. There is no such facility: the en-route sector is ours, invented to give the ladder a rung between Departure and Approach. 139.0 and the UHF are ours."""
 
 [[station]]
+name = "Batumi Clearance"
+freq_mhz = 120.5
+role = "clearance"
+field = "Batumi"
+also = ["delivery"]
+channels = [259.7]
+# NOT A RUNG OF THIS SORTIE'S LADDER, and that is the only reason he is not on
+# the card. A pilot flying Kobuleti to Batumi calls Clearance at KOBULETI and
+# arrives at Batumi; you do not ask the field you are landing at for an IFR
+# clearance. So he keeps a preset above the ladder, as Sentry does, and a
+# sortie that DEPARTS Batumi makes him a rung.
+#
+# He exists because a facility belongs to the AERODROME, not to one flight
+# plan. Batumi had Approach, Tower and Ground and no Clearance purely because
+# nobody had ever departed from it -- the same shape as `station_for("tower")`
+# matching the first Tower on the map: a question with one possible answer
+# cannot be answered wrongly, until there are two.
+preset = false
+source = """FICTION. The Georgian eAIP (UGSB AD 2.18) publishes only APP and TWR for Batumi and says clearance to start engines and taxi are issued by Tower on 118.600 -- so this seat, like Batumi Ground beside it, exists because the standard airfield set wants one and not because Batumi has one. 120.5 and 259.7 are ours."""
+voice = "Ruth"
+manner = '''Reads a clearance like a man reading a form, because that is what it is. Unhurried, exact, and entirely willing to make you say it again -- he has all day and rather enjoys the paperwork.'''
+
+[[station]]
 name = "Batumi Approach"
 freq_mhz = 124.425
 role = "approach"
@@ -338,7 +361,13 @@ freq_mhz = 121.9
 role = "ground"
 channels = [259.9]
 field = "Batumi"
-also = ["delivery", "clearance"]
+# HE STOPPED CLAIMING CLEARANCE when a Clearance seat was added beside him.
+# He wore the hat because Batumi had nobody else to; with both of them here,
+# `station_for("clearance", field="Batumi")` had two answers and returned
+# whichever came first -- the same fault the second aerodrome created for
+# `station_for("tower")`. A role is only unique within a field, and only if
+# one seat claims it. [#217]
+also = []
 voice = "Stephen"
 manner = '''Gruff, and has been doing this a very long time. He uses as few words as the job allows and none at all for pleasantries -- "taxi bravo, hold short one three" and nothing after it. Faintly put upon by anyone who needs the taxiways explained, though he will explain them, correctly, every time. Not rude and never unsafe: he simply regards conversation as something that happens on other frequencies. A pilot who thanks him gets "mm-hm".'''
 source = """FICTION. The eAIP is explicit that Batumi has NO ground controller: 'ATC clearance, clearance to start engines and taxi instructions are issued on frequency of Batumi-Tower on 118.600'. This seat exists because the ladder wants one. 121.9 and the UHF are ours."""

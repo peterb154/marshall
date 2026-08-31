@@ -110,7 +110,7 @@ class TestARoleBelongsToAField(unittest.TestCase):
                 ("Batumi", "departure", "Batumi Approach"),
                 ("Batumi", "tower", "Batumi Tower"),
                 ("Batumi", "ground", "Batumi Ground"),
-                ("Batumi", "clearance", "Batumi Ground")):
+                ("Batumi", "clearance", "Batumi Clearance")):
             with self.subTest(field=field, role=role):
                 self.assertEqual(R.station_for(role, field=field).name, want)
 
@@ -353,8 +353,18 @@ class TestTheLadder(unittest.TestCase):
         """Not a rung -- a commander -- but still reachable. He used to fall off
         the end when the card was sliced to four."""
         self.assertIsNone(R.preset_of(R.OVERLORD))
-        last = len(R.PRESET_LADDER) + 1
-        self.assertAlmostEqual(dict(_mb().channels_for(P()))[last], 131.000, places=3)
+        # A BUTTON, NOT THE LAST BUTTON. This asserted he sat at
+        # `len(PRESET_LADDER) + 1`, which was true only while he was the sole
+        # seat off the ladder. Batumi Clearance is another -- a facility the
+        # aerodrome has and this sortie never climbs to -- and it takes that
+        # index, which says nothing about whether Sentry is reachable. The
+        # regression being guarded is him FALLING OFF, so that is what is
+        # asserted. [#217]
+        card = dict(_mb().channels_for(P()))
+        self.assertIn(131.000, [round(hz, 3) for hz in card.values()],
+                      f"Sentry is not on the card at all: {card}")
+        self.assertTrue(all(n <= max(card) for n in card),
+                        "the card has a hole in it")
 
     def test_the_card_is_no_longer_truncated_to_four(self):
         """The regression this replaces: `stations[:4]` silently dropped Batumi

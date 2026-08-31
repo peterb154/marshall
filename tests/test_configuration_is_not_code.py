@@ -501,7 +501,10 @@ class TheFilesAreTheOnlyCopy(unittest.TestCase):
         from marshall.core import route as R
 
         self.assertEqual(R.BATUMI_ILS.kind, "ils")
-        self.assertEqual(len(R.STATIONS), 9)
+        # TEN SINCE #217: Batumi gained the Clearance seat the standard
+        # airfield set wants. It had Approach, Tower and Ground and no
+        # Clearance only because no sortie had ever departed from it.
+        self.assertEqual(len(R.STATIONS), 10)
         self.assertEqual([f.name for f in R.FIELDS], ["Batumi", "Kobuleti"])
 
     def test_one_object_per_thing(self):
