@@ -63,6 +63,16 @@ class HeAsksForIt(unittest.TestCase):
         self.assertEqual(c.get("Sockeye").following_to, "BAR")
         self.assertIn("direct bar", said(c))
 
+    def test_to_a_destination_is_not_a_direct_to(self):
+        """"Request flight following TO Batumi" is the standard phrasing for
+        the whole flight -- the destination he is already routed to. Read as a
+        direct-to it would take him off his route and send him straight at the
+        field, skipping every fix on it."""
+        c = seat()
+        c.request_following("Sockeye", wants="flight following to Batumi")
+        self.assertEqual(c.get("Sockeye").following_to, "")
+        self.assertNotIn("direct", said(c))
+
     def test_naming_nothing_means_his_filed_route(self):
         c = seat()
         c.request_following("Sockeye", wants="request flight following")

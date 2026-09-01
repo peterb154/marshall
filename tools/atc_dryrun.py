@@ -119,9 +119,21 @@ KOBULETI_DEP = [
                 "thousand for five thousand."),
 ]
 
+# FLIGHT FOLLOWING, WHICH IS A CLASSIFIER QUESTION BEFORE IT IS ANYTHING ELSE.
+# The engine half is unit-tested and the geometry has its own sweep; what
+# neither can answer is whether a model reading a real transmission picks
+# `request_following` out of fourteen kinds, and picks it for the CANCEL too --
+# which is the same sentence with a negation in it. That is what this is for.
+FOLLOWING = [
+    ("Sockeye", "Georgia Center, Sockeye, request flight following to Batumi."),
+    ("Sockeye", "Georgia Center, Sockeye, flight following direct BAR."),
+    ("Sockeye", "Center, Sockeye, cancel flight following, going own "
+                "navigation."),
+]
+
 SCRIPTS = {"formation": FORMATION, "single": SINGLE, "visual": VISUAL,
            "clearance": CLEARANCE, "readback": READBACK,
-           "kobuleti": KOBULETI_DEP}
+           "kobuleti": KOBULETI_DEP, "following": FOLLOWING}
 
 
 def run(script, session_id: str, sep_always: bool = True,

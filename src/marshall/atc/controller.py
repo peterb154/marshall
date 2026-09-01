@@ -148,7 +148,16 @@ def _following_target(said: str) -> str:
     """
     words = re.findall(r"[A-Za-z][A-Za-z0-9'-]*", said or "")
     for i, w in enumerate(words[:-1]):
-        if w.lower() in ("direct", "to", "towards", "toward"):
+        # "DIRECT" ONLY, AND NOT "TO". "Request flight following TO Batumi" is
+        # the standard phrasing for the whole flight -- the destination he is
+        # already routed to -- and reading it as a direct-to would take him off
+        # his own route and send him straight at the field, skipping every fix
+        # on it. "Direct BAR" is the explicit one and means what it says.
+        #
+        # Found by running the chain end to end: the grant came back "flight
+        # following approved direct BATUMI" for a man asking to be followed
+        # along a route that ends there.
+        if w.lower() in ("direct", "towards", "toward"):
             nxt = words[i + 1]
             if nxt.lower() not in ("the", "my", "a", "an", "flight", "own"):
                 return nxt.upper()
