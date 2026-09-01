@@ -47,7 +47,6 @@ from marshall.atc.approaches import (
     list_approaches,
     list_flight_plans,
     upsert_approach,
-    upsert_flight_plan,
 )
 from tools.busy import SeatLocks
 from marshall.atc.clearance import clearance_tools, flightplan_tools
@@ -735,11 +734,12 @@ def flightplans_endpoint() -> dict:
     return {"flight_plans": list_flight_plans()}
 
 
-@app.put("/flightplans/{name}")
-def put_flightplan_endpoint(name: str, body: dict) -> dict:
-    upsert_flight_plan(name, body.get("callsign", ""), body["approach"],
-                       body.get("weather", ""), bool(body.get("active", False)))
-    return {"ok": True, "name": name}
+# `PUT /flightplans/{name}` WAS HERE AND IS DELETED. It called
+# `upsert_flight_plan`, which wrote `callsign`, `approach`, `weather` and
+# `active` -- three columns that stopped existing when #142 split a plan from
+# the approach somebody flies it on, so the endpoint raised on every call and
+# nothing ever called it. Filing is `filing.file_plan`, reached through the
+# kneeboard's `/plans`. The GET above stays: it is rung 2 of the identity chain.
 
 
 # The one aircraft state. Who he is, what he wants, what he is doing -- and

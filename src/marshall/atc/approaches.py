@@ -113,19 +113,20 @@ def list_approaches() -> list[dict]:
     return [{"name": n, "field": f} for n, f in rows]
 
 
-def upsert_flight_plan(name: str, callsign: str, approach: str,
-                       weather: str = "", active: bool = False) -> None:
-    _ensure()
-    with get_pool().connection() as c:
-        if active:
-            c.execute("UPDATE flight_plans SET active=false")   # one active at a time
-        c.execute(
-            "INSERT INTO flight_plans (name, callsign, approach, weather, active) "
-            "VALUES (%s, %s, %s, %s, %s) ON CONFLICT (name) DO UPDATE SET "
-            "callsign=EXCLUDED.callsign, approach=EXCLUDED.approach, "
-            "weather=EXCLUDED.weather, active=EXCLUDED.active",
-            (name, callsign, approach, weather, active))
-
+# `upsert_flight_plan` WAS HERE AND IS DELETED. It inserted `callsign`,
+# `approach`, `weather` and `active` into `flight_plans`, and three of those
+# columns stopped existing when #142 split a plan from the approach somebody
+# flies it on. It could not have worked:
+#
+#     ERROR: column "approach" of relation "flight_plans" does not exist
+#
+# Nothing in the repo called it -- it was reachable only over HTTP, as
+# `PUT /flightplans/{name}`, which is deleted with it. Filing goes through
+# `filing.file_plan` and has since #142.
+#
+# `list_flight_plans` below is NOT the same story and stays: it is rung 2 of the
+# identity chain, `agent_atc.filed_plans` reads it every sortie, and its SELECT
+# was corrected at the time.
 
 def list_flight_plans() -> list[dict]:
     """Every filed plan, as the rest of the system speaks about one.
@@ -158,10 +159,15 @@ def list_flight_plans() -> list[dict]:
     from marshall.atc.filing import derived
     _ensure()
     with get_pool().connection() as c:
-        rows = c.execute("SELECT name, label, legs, task FROM flight_plans "
-                         "ORDER BY name").fetchall()
+        rows = c.execute("SELECT name, label, legs, task, origin "
+                         "FROM flight_plans ORDER BY name").fetchall()
+    # `origin` SINCE #218: a plan may say where it DEPARTS from, because a DKS
+    # design carries `startPoint` and a cartridge never did. Carried here so the
+    # bridge sees it -- without it the column would be filed and invisible to
+    # everything reading plans over the wire.
     return [derived({"name": n, "label": lb or "", "legs": lg or [],
-                     "task": tk or ""}) for n, lb, lg, tk in rows]
+                     "task": tk or "", "origin": og or ""})
+            for n, lb, lg, tk, og in rows]
 
 
 def active_flight_plan() -> dict | None:
