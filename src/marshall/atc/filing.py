@@ -57,6 +57,27 @@ from marshall.core.db import pool as get_pool
 # one still departs anywhere.
 FIELDS = ("name", "label", "legs", "task", "origin")
 
+# NO AIRFRAME, AND THAT IS A DECISION RATHER THAN AN OMISSION.
+#
+#     "I'm not sure how a controller would use the ac type, and I kind of want
+#      the planes to be airframe agnostic"
+#
+# A DKS design says `plane: F4E` and it is tempting because it is there. It is
+# not filed. A plan is a route, a level per leg and what the sortie is for;
+# none of those change with the aeroplane flying them, and a controller works
+# aeroplanes rather than types.
+#
+# It would also be a SECOND COPY: the type is on the radar contact already
+# (`tracks.type`, and `asr.Position.type` beside it), so filing it would create
+# a fact with two homes that can disagree -- which is the shape behind most of
+# the recent bug run.
+#
+# WHERE AIRFRAME DOES BELONG is the radio card, and that is a different layer:
+# an SCR-522 has four crystal channels and an ARC-164 has twenty, so
+# `mission/build.py` and `stations.channels_for` are airframe-aware on purpose.
+# What a pilot can REACH is a property of his aeroplane. What he intends to fly
+# is not.
+
 # A plan's `name` is a key, not prose: it goes in URLs, in migrations and in
 # `assigned_plans.template`.
 _NAME_OK = re.compile(r"^[a-z0-9][a-z0-9-]{2,62}$")
