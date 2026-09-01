@@ -8041,3 +8041,50 @@ recorded rather than on the verdict alone.
    negative on items he has already read back.
 
 ---
+
+## [FP-11] Import a route from a DKS kneeboard link, not only a cartridge — #219
+labels: enhancement
+
+**Status:** DONE 1 September, verified through the running page.
+
+**COMMITS CITE `#218` FOR THIS WORK AND NO SUCH ISSUE EXISTED WHEN THEY WERE
+WRITTEN.** Same fault as [RAD-15] above, one number along: I referenced an
+issue I had not filed. The code is corrected to this issue; the trailers cannot
+be.
+
+A data cartridge is an F-16 thing. The Phantoms on the Kobuleti ramp cannot
+export one, so their pilots had no way to hand us a route at all. A DKS design
+is read instead -- not by parsing the page, which serves the words "Loading
+kneeboard..." and a script tag, but from `/api/public/design/<uuid>`, which the
+page's own bundle calls and which needs no key.
+
+It is a better source than the cartridge: decimal degrees rather than
+degrees-and-decimal-minutes strings, targets and threats in their own arrays
+rather than hidden among the route, and a `startPoint` the cartridge has no
+equivalent for.
+
+**ONE PLAN BUILDER, TWO READERS.** Both normalise to `{seq, name, lat, lon,
+alt_ft}` and meet at `dtc.plan_from_route`. Only the kneeboard notes stayed
+format-specific.
+
+**THE PLAN SAYS WHERE IT STARTS NOW** (migration 039). `filing.derived` used to
+say "NOT `origin`... where he is standing is not something he should have had
+to write down in advance", which was true while the only importer was a
+cartridge whose first waypoint is already airborne. The design carries
+`startPoint`, so the tool he plans in wrote it down for him. It does not replace
+`assigned_plans.origin`, which stays where he actually called Clearance from.
+
+**AND THE IMPORT CHECKS HIS RADIO CARD.** The frequencies are not in the design
+-- each channel carries an agency reference, resolved by POST to
+`/api/public/agencies`. I recorded that this could not be done on the strength
+of a guessed URL returning 405, which is METHOD NOT ALLOWED and was the endpoint
+saying the path was right and the verb was wrong. The pilot could see on his own
+kneeboard the frequencies I had just called unreadable.
+
+**Acceptance criteria**
+1. A kneeboard link files a route. (met)
+2. The two ends are right -- `startPoint` names the departure field. (met)
+3. A disagreement between his card and our theatre is reported. (met)
+4. The cartridge path still works.
+
+---

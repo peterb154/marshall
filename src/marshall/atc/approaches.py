@@ -161,7 +161,7 @@ def list_flight_plans() -> list[dict]:
     with get_pool().connection() as c:
         rows = c.execute("SELECT name, label, legs, task, origin "
                          "FROM flight_plans ORDER BY name").fetchall()
-    # `origin` SINCE #218: a plan may say where it DEPARTS from, because a DKS
+    # `origin` SINCE #219: a plan may say where it DEPARTS from, because a DKS
     # design carries `startPoint` and a cartridge never did. Carried here so the
     # bridge sees it -- without it the column would be filed and invisible to
     # everything reading plans over the wire.

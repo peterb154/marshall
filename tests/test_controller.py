@@ -324,7 +324,7 @@ class TestChannels(unittest.TestCase):
         # controller sat ON the beacon. Kobuleti's beacon was fiction invented
         # for the 1944 scenario, on 124.0, which is also Batumi Approach's
         # SCR-522 channel; it is gone, and the hold is worked by the seat that
-        # owns the place. [#217]
+        # owns the place. [#218]
         who = _st.by_name("Kobuleti Departure")
         self.assertEqual(banish[0].freq_mhz, who.freq_mhz)
 
@@ -366,7 +366,7 @@ class TestProfileRoundTrip(unittest.TestCase):
         self.assertEqual(rt.station(enroute=True), ("Batumi Approach", 128.0))
         self.assertEqual(rt.station(), ("Batumi Tower", 132.0))
         # 124.0 was the invented beacon's; 123.3 is the controller's own. See
-        # `test_a_banished_aircraft_is_worked_on_the_outer_hold`. [#217]
+        # `test_a_banished_aircraft_is_worked_on_the_outer_hold`. [#218]
         self.assertEqual(rt.station(banished=True),
                          ("Kobuleti Departure",
                           _st.by_name("Kobuleti Departure").freq_mhz))

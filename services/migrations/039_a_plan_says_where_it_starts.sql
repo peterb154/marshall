@@ -14,7 +14,7 @@
 --
 -- A DKS design carries `startPoint` -- a position on the ramp, with an
 -- elevation -- so he no longer has to write it down. It was written down for
--- him, by the tool he plans in. See #218.
+-- him, by the tool he plans in. See #219.
 --
 -- WHAT DOES NOT CHANGE is `assigned_plans.origin`, which stays what it always
 -- was: where he ACTUALLY called Clearance from. Two facts, not one. The plan

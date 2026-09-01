@@ -50,7 +50,7 @@ from marshall.core.db import pool as get_pool
 #     "the origin should be determined at request time, the destination is the
 #      last point. We should not define an approach in the flight plan. there
 #      should be no cruise alt in flight plan."
-# `origin` SINCE #218. A cartridge's first waypoint is already airborne, so the
+# `origin` SINCE #219. A cartridge's first waypoint is already airborne, so the
 # field a sortie departs from was genuinely absent from anything a pilot could
 # hand us and had to be inferred from where he called Clearance. A DKS design
 # carries `startPoint`, so it is filed now -- still nullable, and a plan without
@@ -130,7 +130,7 @@ def derived(plan: dict) -> dict:
 
     It does not replace `assigned_plans.origin`, which stays where he ACTUALLY
     called Clearance from. Two facts: the plan says where the sortie departs,
-    the clearance says where the aeroplane was standing. See #218.
+    the clearance says where the aeroplane was standing. See #219.
     """
     legs = [l for l in (plan.get("legs") or []) if isinstance(l, dict)]
     names = [(l.get("fix") or "").strip() for l in legs]

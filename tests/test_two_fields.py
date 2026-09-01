@@ -359,7 +359,7 @@ class TestTheLadder(unittest.TestCase):
         # aerodrome has and this sortie never climbs to -- and it takes that
         # index, which says nothing about whether Sentry is reachable. The
         # regression being guarded is him FALLING OFF, so that is what is
-        # asserted. [#217]
+        # asserted. [#218]
         card = dict(_mb().channels_for(P()))
         self.assertIn(131.000, [round(hz, 3) for hz in card.values()],
                       f"Sentry is not on the card at all: {card}")

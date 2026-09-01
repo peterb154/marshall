@@ -20,7 +20,7 @@ That is exactly what 124.0 was doing: Batumi Approach's warbird channel and
 stopped placing the transmitter -- "a pilot on Approach heard a beacon instead
 of a controller, and could not be heard by anybody" -- while the theatre file
 went on declaring the beacon. Fixed in the mission, still true in the data, and
-nothing compared the two lists. Kobuleti has no fictional beacon now. #217
+nothing compared the two lists. Kobuleti has no fictional beacon now. #218
 """
 from __future__ import annotations
 

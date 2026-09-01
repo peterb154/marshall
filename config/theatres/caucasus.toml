@@ -102,7 +102,7 @@ z = 635633
 lat = 41.929922
 lon = 41.863275
 sector = "Kobuleti Departure"
-source = "UG5X aerodrome reference. A PLACE, NOT A BEACON -- and it used to carry one. `MG` on 124.0 was invented for the 1944 scenario, and 124.0 is also Batumi Approach's SCR-522 channel, so the two collided. `mission/build.py` had already stopped placing the transmitter -- 'the Kobuleti NDB transmits on 124.000, which is Batumi Approach's frequency. A pilot on Approach heard a beacon instead of a controller, and could not be heard by anybody' -- while this row went on declaring it, which is how the collision survived in the data after being fixed in the mission. Kobuleti has no fictional homer now. Its real ones are `KT` 0.870, `T` 0.490 and TACAN `KBL` 67X in the [[navaid]] rows. A fix with no frequency is a place, which `theatre.beacon_seats` skips by design. #163 #217"
+source = "UG5X aerodrome reference. A PLACE, NOT A BEACON -- and it used to carry one. `MG` on 124.0 was invented for the 1944 scenario, and 124.0 is also Batumi Approach's SCR-522 channel, so the two collided. `mission/build.py` had already stopped placing the transmitter -- 'the Kobuleti NDB transmits on 124.000, which is Batumi Approach's frequency. A pilot on Approach heard a beacon instead of a controller, and could not be heard by anybody' -- while this row went on declaring it, which is how the collision survived in the data after being fixed in the mission. Kobuleti has no fictional homer now. Its real ones are `KT` 0.870, `T` 0.490 and TACAN `KBL` 67X in the [[navaid]] rows. A fix with no frequency is a place, which `theatre.beacon_seats` skips by design. #163 #218"
 note = "Field elevation 59 ft. Departure end. This point is 0.61 nm from the [[field]] row's own position, on the runway axis -- see #163, which measured it: one of the two is the runway centre and the other is the 07 threshold."
 
 [[fix]]
@@ -366,7 +366,7 @@ field = "Batumi"
 # `station_for("clearance", field="Batumi")` had two answers and returned
 # whichever came first -- the same fault the second aerodrome created for
 # `station_for("tower")`. A role is only unique within a field, and only if
-# one seat claims it. [#217]
+# one seat claims it. [#218]
 also = []
 voice = "Stephen"
 manner = '''Gruff, and has been doing this a very long time. He uses as few words as the job allows and none at all for pleasantries -- "taxi bravo, hold short one three" and nothing after it. Faintly put upon by anyone who needs the taxiways explained, though he will explain them, correctly, every time. Not rude and never unsafe: he simply regards conversation as something that happens on other frequencies. A pilot who thanks him gets "mm-hm".'''
@@ -409,7 +409,7 @@ manner = '''Command, not service. Crisp, directive and impersonal -- she gives a
 # `published_minima = false` is how a procedure says it has no surveyed MSA or
 # MVA table. It used to be said by leaving `field` empty, so the letdown
 # claimed to happen at no aerodrome at all -- two questions, one key.
-source = """FICTION. An OPFOR controller, invented. 131.0 and the UHF are ours. Note 131.0 is also what DCS gives Batumi as its simplified ATC VHF, so a pilot tuning the in-game airfield frequency for Batumi reaches this seat instead -- see #217."""
+source = """FICTION. An OPFOR controller, invented. 131.0 and the UHF are ours. Note 131.0 is also what DCS gives Batumi as its simplified ATC VHF, so a pilot tuning the in-game airfield frequency for Batumi reaches this seat instead -- see #218."""
 
 [[approach]]
 key = "batumi-asr-13"

@@ -914,7 +914,7 @@ class ApproachProfile:
         #
         # So ask the map who that seat is. The place names the controller; the
         # controller owns the frequency. Nothing is invented and no beacon has
-        # to exist for a hold to be worked. [#217]
+        # to exist for a hold to be worked. [#218]
         from marshall.core import stations as _st
         got = _st.by_name(who)
         return (who, got.freq_mhz if got is not None else 0.0)

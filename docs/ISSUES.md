@@ -5210,3 +5210,159 @@ touches #100's ladder and is not a small change.
 4. Nothing that used to arrive still arrives, silently dropped instead.
 
 ---
+
+## [RAD-9] Flight following: vectors along a route, across handoffs — #217
+labels: enhancement, needs-flight-test
+
+**Status:** OPEN. Designed 1 September with the pilot; being built in stages.
+
+A pilot asks for flight following and is given guidance along his route: a
+heading, an altitude and a distance to the next steerpoint, a call when he
+passes one with the next leg's numbers, and a word when he drifts off.
+
+**REQUESTED ON THE RADIO, NEVER FILED.** The default is OWN NAV and the engine
+says nothing unless asked.
+
+    "the reason we don't give guidance on all flights is that in a combat sim,
+     we might not want the nag (own nav)"
+
+That is the whole gate, and it is a better reason than the airspace one: it is
+about not talking over a man in a fight. It also bounds the transmission volume
+and makes the feature impossible to trigger by accident. A flag in the plan was
+considered and rejected -- whether THIS pilot on THIS sortie wants a service is
+a fact about the flight, not about the route, which is the same argument that
+keeps the airframe out of `filing.FIELDS`.
+
+**IT BELONGS TO THE AEROPLANE, WHICH IS WHAT MAKES IT SURVIVE A HANDOFF.**
+`following` is a durable bool on the flight, so an owner change carries it for
+free and the receiving controller inherits a man he is already meant to be
+working. He says so -- "flight following continues" -- which is both realism
+and the thing that makes the transfer machine-checkable: if that line never
+appears in a sortie, the ladder dropped it.
+
+**THE TARGET IS A SEQUENCE OF FIXES, and a filed plan is only the longer case.**
+
+    "could we get flight following without a flight plan, but it's just direct
+     to an airport or fix?"
+
+Yes. "Direct BAR" is a one-leg route. Requiring a filed plan would have made
+the commonest request unserviceable.
+
+**TWO ENDINGS, KEPT APART.** "Resume own navigation" is off vectors and still
+watched; "radar service terminated" is the service over. Collapsing them loses
+a real distinction -- a pilot told the first still expects traffic calls.
+
+**PASSAGE IS THE FIX CROSSING BEHIND THE PERPENDICULAR**, not a distance
+threshold: a fast jet cutting the corner may never come inside any radius worth
+picking. It LATCHES, or a wobble at the fix un-passes it and re-vectors him to
+a point he is behind. And it needs a capture guard, or a pilot who requests
+following while pointing away from his route has every fix declared passed at
+once.
+
+At passage he gets the whole triplet again even when nothing changed:
+
+    "at station passage give the new heading distance and alt even if it's the
+     same. Removes ambiguity"
+
+Which is consistent with the rule against repeating a number he was just given
+rather than an exception to it: repetition WITHIN a leg is noise, restatement
+at a transition is the point.
+
+**OFF COURSE NEEDS THREE SUPPRESSIONS** and the third is what decides whether
+this reads as a controller or a nag:
+
+    hysteresis    alert at X, do not clear until inside Y < X, or he is nagged
+                  on the boundary. Measured on the approach sweep: dithering
+                  went from 0 to 7 without it
+    under vectors "you are left of course" to a man flying the heading we just
+                  gave him. `asr.guide` said exactly that to an aeroplane
+                  climbing away on 330 having just been told to fly 330
+    the turn      at 400 knots and 30 degrees of bank the radius is about 4 nm,
+                  so a 90-degree turn at a fix swings four miles wide of the
+                  new leg before it settles. An alert set at 2 nm fires on
+                  EVERY turn. Suppressed after a passage until established --
+                  cross-track down and stable -- rather than for a fixed time,
+                  because the distance scales with speed
+
+**NOT GATED ON RADAR.** `AtcCapability.radar` looked like the natural gate and
+is dead configuration: `radar = true` is its only occurrence in either theatre
+file and nothing sets it false. The 1944 controller has radar.
+
+**NO VFR/IFR GATE EITHER**, because this system has no such distinction to
+gate on.
+
+**Order of work**
+1. The service and its handoff, with NO geometry -- request, grant, transfer,
+   both terminations. `tools/ladder_rehearsal.py` can score whether it survives
+   the eight rungs before a heading exists, and that is the half that spans
+   seats and therefore the half that breaks.
+2. The geometry, plus a route sweep in the shape of `tools/asr_sweep.py`, still
+   silent. The thresholds above are guesses until it measures them.
+3. The transmissions, through the proactive monitor.
+4. Off course last, with the band tuned by the sweep.
+
+**A DEPENDENCY WORTH HOLDING TO.** The magnetic/true frame boundary should land
+before stage 3. Three separate renderers already forget to convert, and unlike
+the radar picture these headings are FLOWN.
+
+**Acceptance criteria**
+1. Following is requested on the radio, granted, and refused with a reason when
+   there is nothing to follow.
+2. It survives every rung of the ladder, and the receiving controller says so.
+3. Passage fires once per fix, on the perpendicular, and never un-fires.
+4. Every passage call carries heading, distance and altitude.
+5. Off course is silent through a turn and while he is flying our vector.
+6. Both endings are spoken, and the right one for the reason.
+7. Own nav is silent -- a pilot who never asked hears nothing new.
+
+---
+
+## [RAD-15] Every facility needs a UHF, and every frequency needs a provenance — #218
+labels: bug, needs-flight-test
+
+**Status:** DONE, flown 1 September on the pilot's own ARC-164 card, which
+resolved to our numbers on every channel.
+
+**COMMITS OF 31 AUGUST AND 1 SEPTEMBER CITE `#217` FOR THIS WORK AND THAT
+NUMBER IS FLIGHT FOLLOWING.** I wrote a reference to an issue I had not filed,
+in eight places across code, config and tests, and by the time one was filed
+the number had been taken by something else. The whole value of the trailer is
+that "what changed for this, and why" is one click; a number that resolves to
+the wrong issue is worse than no number, because it reads as an answer. The
+code references are corrected to this issue; the commit trailers cannot be, so
+this paragraph is where a reader who followed `#217` out of a commit finds out
+where he actually is.
+
+**THE F-4 HAS ONE UHF RADIO AND THIS MAP HAD NO UHF AT ALL.** Every seat on the
+Caucasus was VHF, so a Phantom could not reach a single controller. There are no
+published UHF frequencies to find for these fields: Batumi's eAIP (UGSB AD 2.18)
+publishes APP 124.425 and TWR 118.600 and no UHF, and Kobuleti is not in the AIP
+-- it has no ICAO code, and UGKO is Kutaisi, a different airport.
+
+So the UHF is ours and says so. `Controller.source` is required now, the way
+`Fix.source` has been since #163 -- "a fix nobody can cite is one somebody
+invented" -- and every seat on both maps begins PUBLISHED, FICTION or UNCITED.
+It paid for itself immediately: the eAIP is explicit that Batumi has NO ground
+controller and issues clearance and taxi from Tower, so our Batumi Ground was
+fiction sitting between two published seats with nothing saying so.
+
+Nevada turned out to be entirely real and was marked UNCITED because nobody had
+checked. FAA NFDC and AirNav agree with every value, and supplied the UHF that
+was missing. Nellis ATIS is 270.1 and there is NO VHF ATIS -- authentic rather
+than absent, and our 118.4 was invented.
+
+**ONE COLLISION, FOUND BY THE NEW CHECK.** 124.0 was Batumi Approach's
+SCR-522 rounding AND `MG`, Kobuleti's invented 1944 homer. `mission/build.py`
+had already found it from the other end and stopped placing the transmitter --
+"a pilot on Approach heard a beacon instead of a controller" -- while the
+theatre file went on declaring the beacon. Fixed in the mission, still true in
+the data, and nothing compared the two lists. Kobuleti has no fictional beacon
+now.
+
+**Acceptance criteria**
+1. A Phantom can reach every rung on UHF. (met -- his card matches ours)
+2. A Mustang can still reach every rung on VHF.
+3. No two things in a theatre share a frequency.
+4. Every station declares whether its numbers are published or invented.
+
+---

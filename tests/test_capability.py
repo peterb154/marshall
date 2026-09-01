@@ -58,7 +58,7 @@ class ClearanceFollowsTheSeatIncludingWhatItALSOWorks(unittest.TestCase):
         carried `also = ("delivery", "clearance")` because Batumi had no
         Clearance seat for him to defer to. It has one now, so he stopped
         claiming the role -- two seats answering "clearance" at one field is
-        the `station_for` first-match fault (#217).
+        the `station_for` first-match fault (#218).
 
         The seat is CONSTRUCTED here rather than found on a map, because the
         arrangement it models is not Batumi's: it is the 1944 one, where a

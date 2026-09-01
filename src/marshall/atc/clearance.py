@@ -61,7 +61,7 @@ def _pool():
 # `cruise_ft` come back from `filing.derived` -- computed from the legs rather
 # than stored beside them -- and `origin` and `approach` are the CLEARANCE'S,
 # which is why `assigned_plans` has its own columns for them.
-# `origin` SINCE #218: a plan may now say where it departs from, because a DKS
+# `origin` SINCE #219: a plan may now say where it departs from, because a DKS
 # design carries `startPoint` and a cartridge never did. Still nullable, and a
 # plan without one still departs anywhere -- see `filed()` below, which has
 # filtered on this column since before it existed.
