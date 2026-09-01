@@ -1,0 +1,31 @@
+-- Whether this flight is receiving FLIGHT FOLLOWING, and where it is being
+-- taken to.
+--
+--     "Perhaps the pilot can request flight following to get this kind of
+--      guidance. It needs to work across handoffs"
+--
+-- ON THE FLIGHT AND NOT ON THE CONTROLLER, which is the whole of "it needs to
+-- work across handoffs". A handoff is an owner change -- `Controller.bind`
+-- moves `owner` and the aeroplane's row is untouched -- so a service recorded
+-- against the AEROPLANE transfers for free, and the receiving seat inherits a
+-- man he is already meant to be working. Recorded against the controller it
+-- would have to be copied at every rung, and the rung it was forgotten at is
+-- where a pilot goes quiet and nobody notices.
+--
+-- OWN NAV IS THE DEFAULT, and false is what that means. The engine says nothing
+-- unless asked:
+--
+--     "the reason we don't give guidance on all flights is that in a combat
+--      sim, we might not want the nag (own nav)"
+--
+-- `following_to` is what he asked to be taken to when he named something --
+-- "flight following direct BAR". Empty means his filed route, which is the
+-- longer case rather than the required one: a pilot with no plan at all can ask
+-- for direct to a fix or a field and be given it.
+--
+-- DURABLE FOR THE SAME REASON `has_been_airborne` IS. A bridge restart
+-- mid-sortie that silently dropped the service would leave a pilot expecting
+-- guidance from a controller who has forgotten he owes it, and nothing anywhere
+-- would say so. See #217.
+ALTER TABLE flights ADD COLUMN IF NOT EXISTS following boolean DEFAULT false;
+ALTER TABLE flights ADD COLUMN IF NOT EXISTS following_to text;

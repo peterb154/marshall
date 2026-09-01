@@ -133,6 +133,27 @@ def _atis_letter_in(phrase: str) -> str:
     return m.group(1) if m else ""
 
 
+def _following_target(said: str) -> str:
+    """The fix or field he asked to be taken to, or "" for his filed route.
+
+    Deliberately thin. A pilot says "flight following direct BAR" or "following
+    to Batumi", and the word after the preposition is the answer; anything
+    cleverer would be a second route parser beside `flights.parse_dissolve` and
+    `approach.match_spoken`, each guessing at the same kind of English.
+
+    An unrecognised word is NOT a target -- it is left empty, which means his
+    filed route, because being taken to a place nobody can resolve is worse
+    than being taken along the route he filed.
+    """
+    words = re.findall(r"[A-Za-z][A-Za-z0-9'-]*", said or "")
+    for i, w in enumerate(words[:-1]):
+        if w.lower() in ("direct", "to", "towards", "toward"):
+            nxt = words[i + 1]
+            if nxt.lower() not in ("the", "my", "a", "an", "flight", "own"):
+                return nxt.upper()
+    return ""
+
+
 @dataclass
 class Aircraft:
     """One entity the controller separates.
@@ -307,6 +328,21 @@ class Aircraft:
     # landing heading and no thresholds -- so this is what a real Tower uses,
     # and it fails SAFE: an aeroplane nobody has heard from holds the runway.
     runway_vacated: bool = False
+
+    # IS HE RECEIVING FLIGHT FOLLOWING, and what is he being taken to.
+    #
+    # A SERVICE BELONGS TO THE AEROPLANE, which is what makes it survive a
+    # handoff: an owner change does not touch this row, so the receiving seat
+    # inherits a man he is already meant to be working. Held on the controller
+    # it would have to be copied at every rung, and the rung it was forgotten
+    # at is where a pilot goes quiet and nobody notices.
+    #
+    # FALSE IS OWN NAV and is the default, because the engine says nothing
+    # unless asked -- in a combat sim the nag is the failure. `following_to` is
+    # empty for "my filed route" and carries a fix or a field when he named one.
+    # [#217]
+    following: bool = False
+    following_to: str = ""
 
     # HOW MANY, which is all a flight report tells you. "Flight of four" is a
     # number; it is not four names, and the engine used to turn it into four by
@@ -847,6 +883,12 @@ class Controller:
             # column exists to stop.
             if row.get("runway_vacated"):
                 ac.runway_vacated = True
+            # ...AND THE SERVICE, or a restart mid-sortie leaves a pilot
+            # expecting guidance from a controller who has forgotten he owes it.
+            if row.get("following"):
+                ac.following = True
+            if row.get("following_to"):
+                ac.following_to = str(row["following_to"])
             if row.get("assigned_ft"):
                 ac.assigned_ft = int(row["assigned_ft"])
             # `cleared_ft` comes off `assigned_ft` -- the level the engine
@@ -2072,6 +2114,20 @@ class Controller:
         extra = self._atis_phrase(ac)
         if extra:
             call = f"{call} {extra}"
+        # AND THE SERVICE HE ARRIVED WITH, said by the seat that inherited him.
+        #
+        #     "It needs to work across handoffs"
+        #
+        # `following` lives on the AEROPLANE, so it crosses a handoff whether or
+        # not anybody mentions it -- but a pilot cannot see a boolean. Saying it
+        # is how he learns the new controller knows he is owed guidance, and it
+        # is the only thing a test can look for: if this line never appears in a
+        # sortie, the ladder dropped the service and nothing else would show it.
+        #
+        # ONLY WHEN HE IS ALREADY BEING FOLLOWED, so a man on own nav -- which
+        # is everybody by default -- hears nothing new. [#217]
+        if self.following_continues(ac.callsign):
+            call = f"{call} Flight following continues."
         # THE LETTER IS A FACT, so it goes across the seam as one.
         #
         #     "he never once said 'advise you have information alpha'"
@@ -2682,6 +2738,74 @@ class Controller:
                                         role="ground", station=gnd.name,
                                         frequency_mhz=gnd.freq_mhz))
         self._try_clear()
+
+    def request_following(self, cs: str, wants: str = "") -> None:
+        """He asks for flight following, or cancels it. OWN NAV IS THE DEFAULT.
+
+            "Perhaps the pilot can request flight following to get this kind of
+             guidance. It needs to work across handoffs"
+
+        ONE INTENT, BOTH DIRECTIONS. "Cancel flight following" is the same
+        sentence with a negation in it, and asking a classifier to tell two
+        nearly identical phrasings apart buys nothing -- the words come through
+        in `wants` and the decision is made here, where it can be tested.
+
+        NOT GATED ON RADAR. `AtcCapability.radar` looked like the natural gate
+        and is dead configuration: `radar = true` is its only occurrence in
+        either theatre file and nothing sets it false. Gating on a dial nobody
+        turns is a branch that has never run.
+
+        NOR ON HAVING A FLIGHT PLAN. "Direct BAR" is a one-leg route, and
+        requiring a filed plan would make the commonest request unserviceable:
+
+            "could we get flight following without a flight plan, but it's just
+             direct to an airport or fix?"
+        """
+        ac = self.get(cs)
+        said = (wants or "").lower()
+        if any(w in said for w in ("cancel", "terminate", "own nav",
+                                   "own navigation", "no longer require")):
+            self.end_following(cs, service_over=True)
+            return
+        ac.following = True
+        # WHAT HE NAMED, IF HE NAMED ANYTHING. Empty means his filed route,
+        # which is the longer case rather than the required one.
+        ac.following_to = _following_target(wants)
+        where = f" direct {ac.following_to}" if ac.following_to else ""
+        self.say(ac.callsign,
+                 f"{self._addr(ac)}, flight following approved{where}.",
+                 decided=D.Decision(kind="following", to=ac.callsign))
+
+    def end_following(self, cs: str, service_over: bool = False) -> None:
+        """Stop. TWO ENDINGS, AND THEY ARE NOT THE SAME THING.
+
+            resume own navigation   the vectors stop, the service continues --
+                                    he is still being watched and still gets
+                                    traffic
+            radar service terminated the SERVICE is over
+
+        Collapsing them loses a distinction a pilot acts on: the first still
+        expects to be told about somebody converging, the second does not.
+        """
+        ac = self.get(cs)
+        if not ac.following and not service_over:
+            return                      # already own nav; nothing to say
+        ac.following, ac.following_to = False, ""
+        word = ("radar service terminated" if service_over
+                else "resume own navigation")
+        self.say(ac.callsign, f"{self._addr(ac)}, {word}.",
+                 decided=D.Decision(kind="following_ends", to=ac.callsign))
+
+    def following_continues(self, cs: str) -> bool:
+        """Does this aeroplane arrive at a new seat already being followed?
+
+        THE RECEIVING CONTROLLER SAYS SO, and that is not decoration: it is the
+        only way a pilot learns the service crossed the handoff, and the only
+        way a test can tell that it did. If the line never appears in a sortie,
+        the ladder dropped it.
+        """
+        return bool(getattr(self.get(cs), "following", False))
+
 
     def request_visual(self, cs: str, field_in_sight: bool = False) -> None:
         """He would like to fly it himself, and in decent weather that is the

@@ -59,6 +59,10 @@ _FIELDS = ("sortie_phase", "on_visual", "approaches_flown", "atis_letter",
            # the same reason: a restart that forgot it would free a runway
            # somebody is standing on. See migration 038. [#170]
            "runway_vacated",
+           # ...AND WHETHER HE IS BEING FOLLOWED. On the aeroplane so a handoff
+           # carries it, and durable so a restart does not drop a service a
+           # pilot is relying on. See migration 040. [#217]
+           "following", "following_to",
            "callsign", "track_name", "srs_guid", "srs_name", "intent",
            "destination", "claimed_size", "controller", "procedure", "runway",
            "cleared", "assigned_ft", "assigned_hdg", "sequence_no",

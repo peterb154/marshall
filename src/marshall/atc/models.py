@@ -130,6 +130,12 @@ class Flight(Base):
     # fact of its own because no RUNG can answer it: `sortie_phase` moves to
     # `taxi_in` when Tower hands him to Ground, while he is still rolling.
     runway_vacated: Mapped[bool | None] = mapped_column(Boolean)
+    # Flight following, and where to. Migration 040. Declared HERE as well as
+    # in `board._FIELDS` because a column that reaches the table and not the
+    # model is exactly what #26 is named for -- and what I did to
+    # `runway_vacated` five days ago.
+    following: Mapped[bool | None] = mapped_column(Boolean)
+    following_to: Mapped[str | None] = mapped_column(Text)
 
     first_seen: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now())

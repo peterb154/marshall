@@ -40,6 +40,7 @@ about a man he can name perfectly well.
 import json
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from marshall import config
@@ -90,7 +91,19 @@ def poll(contacts=(JUST_SLOTTED_IN,), board=()):
     with tempfile.TemporaryDirectory() as d:
         config.BUILD_DIR = Path(d)
         try:
-            A.publish_state(A.Bridge(), Ctl(), scope, "s")
+            # NO NETWORK, AND THAT IS THE WHOLE CLAIM ABOVE. `publish_state`
+            # asks the director which flights hold a clearance
+            # (`GET /flights`), and on a machine where the director is RUNNING
+            # that call succeeds -- so this test read live database rows and
+            # its answer changed with whatever happened to be in them.
+            #
+            # It failed about one run in three on 1 September, drifting with
+            # the day's work, and an intermittent red is worse than a
+            # consistent one: it teaches you to re-run rather than to look.
+            # Stubbed rather than tolerated, because the point of this file is
+            # that everything it asserts is available BEFORE anybody transmits.
+            with mock.patch.object(A, "_get_json", lambda *a, **k: None):
+                A.publish_state(A.Bridge(), Ctl(), scope, "s")
             return json.loads((Path(d) / "control" / "state.json").read_text())
         finally:
             config.BUILD_DIR = old
@@ -600,7 +613,11 @@ class TestEveryContactIsInExactlyOneTable(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             config.BUILD_DIR = Path(d)
             try:
-                A.publish_state(bridge or A.Bridge(), ctl, scope, "s")
+                # NO NETWORK -- the same reason as `poll` above. This helper
+                # publishes state too, and it was the other half of the same
+                # intermittent failure.
+                with mock.patch.object(A, "_get_json", lambda *a, **k: None):
+                    A.publish_state(bridge or A.Bridge(), ctl, scope, "s")
                 return json.loads(
                     (Path(d) / "control" / "state.json").read_text())
             finally:

@@ -76,6 +76,17 @@ class IntentKind(str, Enum):
     REQUEST_TAXI = "request_taxi"               # "ready to taxi"
     REPORT_HOLDING_SHORT = "report_holding_short"   # "holding short one three"
     REQUEST_TAKEOFF = "request_takeoff"         # "ready for departure"
+    # OWN NAV IS THE DEFAULT AND THIS IS HOW HE LEAVES IT. Guidance along a
+    # route is a service a pilot ASKS FOR, and the reason is not the airspace
+    # rules -- this system has no VFR/IFR distinction to hang them on:
+    #
+    #     "the reason we don't give guidance on all flights is that in a combat
+    #      sim, we might not want the nag (own nav)"
+    #
+    # Both directions are one kind, because "cancel following" is the same
+    # sentence with a negation in it and splitting them would ask the model to
+    # tell two nearly identical phrasings apart. `wants` carries which. [#217]
+    REQUEST_FOLLOWING = "request_following"     # "request flight following"
     UNKNOWN = "unknown"             # hand to the LLM fallback, or ask again
 
     @classmethod
@@ -211,6 +222,14 @@ INTENT_SCHEMA = {
                 "departure', 'request take-off', 'ready to go'. Only Tower may "
                 "answer it.\n"
                 "'negative, in cloud', 'IMC'. Set `visual` on this one.\n"
+                "request_following: he asks for FLIGHT FOLLOWING, radar "
+                "following, or 'vectors along my route' -- and the same kind "
+                "when he CANCELS it ('cancel flight following', 'we'll go own "
+                "navigation'). Put his words in `wants` so the engine can tell "
+                "which, and put the fix or field he wants to be taken to there "
+                "as well when he names one ('flight following direct BAR'). "
+                "NOT the same as request_approach, which asks to be brought in "
+                "to land.\n"
                 "unknown: unintelligible, or none of the above. Use it rather "
                 "than inventing a value -- the enum above is exhaustive."),
         },
@@ -552,6 +571,12 @@ def dispatch(ctl: atc.Controller, intent: Intent,
             ctl.report_holding_short(cs)
         case IntentKind.REQUEST_TAKEOFF:
             ctl.request_takeoff(cs)
+        case IntentKind.REQUEST_FOLLOWING:
+            # HIS WORDS GO WITH IT, because one kind carries both directions --
+            # asking and cancelling are the same sentence with a negation in
+            # it, and `wants` is what tells them apart. See
+            # `Controller.request_following`. [#217]
+            ctl.request_following(cs, wants=getattr(intent, "wants", "") or "")
         case _:
             return False
     return True
