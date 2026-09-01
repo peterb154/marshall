@@ -162,6 +162,70 @@ def magnetic(true_deg: float, variation_deg: float) -> float:
     return (true_deg - variation_deg) % 360.0
 
 
+def frames_at(field: str = "") -> tuple[float, float]:
+    """(variation, grid convergence) for a field. PER FIELD, never a constant.
+
+    Every function here takes its offset as an argument for the reason this one
+    exists to serve: "at some point this system works two maps at once, and a
+    Caucasus variation applied to a Nevada heading is a bug nobody would see in
+    a code review". This is the single lookup the renderers share so they cannot
+    each answer it differently -- variation is 6 on the Caucasus, 12 at Nellis
+    and 16 at Tonopah.
+
+    (0.0, 0.0) with no theatre loaded, which says the raw numbers rather than
+    guessing an offset: a test fixture or a probe has no map, and shifting its
+    numbers by a made-up variation would be worse than leaving them alone.
+    """
+    try:
+        from marshall.core import theatre as _t
+        th = _t.current()
+        f = th.field_named(field or th.arrival)
+        return (float(f.variation()),
+                float(getattr(f, "grid_convergence_deg", 0.0) or 0.0))
+    except Exception:
+        return (0.0, 0.0)
+
+
+def spoken_bearing(true_deg: float, variation_deg: float) -> float:
+    """A bearing about to be SAID to a pilot. THE ONE CONVERSION POINT.
+
+    `magnetic()` is the arithmetic and this is the boundary -- the difference
+    matters because the bug was never the formula. `magnetic` is one line, it is
+    correct, and it has been here all along; what went wrong is that calling it
+    was a step each renderer had to REMEMBER, and three of them forgot:
+
+        "8.9 nm on the 075 radial, 5,000 ft, heading 123"
+                        a TRUE bearing, and a radial is magnetic by definition
+                                                  the sim's GRID heading
+
+    Both printed with words that claim a third frame. It survived because at
+    Batumi the two corrections nearly cancel -- convergence 0.0 against a
+    variation of 6 -- and a Nevada controller is 12 degrees out at Nellis and 16
+    at Tonopah.
+
+    SO EVERY RENDERER CALLS THIS ONE, and the name says what it is for: not "the
+    magnetic value of a number" but "the number a pilot is about to hear". A
+    reader who sees a bearing formatted without it has something to ask about.
+    """
+    return magnetic(true_deg, variation_deg)
+
+
+def spoken_heading(grid_deg: float, convergence_deg: float,
+                   variation_deg: float) -> float:
+    """An aircraft's heading about to be SAID. Grid to true to magnetic.
+
+    THREE FRAMES, AND THE SIM REPORTS THE ONE NOBODY FLIES. DCS gives a unit's
+    heading in its own x/z transverse Mercator, which is true only where the
+    grid convergence is zero -- it is 0.0 at both Caucasus fields, which is
+    exactly why printing the raw value has never looked wrong there.
+
+    Doing both steps here rather than leaving the caller to compose them is the
+    point: `grid_to_true` and `magnetic` are each correct and the error was
+    always in whether somebody remembered to apply them.
+    """
+    return magnetic(grid_to_true(grid_deg, convergence_deg), variation_deg)
+
+
 def project_true(origin: tuple[float, float], bearing_true_deg: float,
                  nm: float) -> tuple[float, float]:
     """The point `nm` away from an origin along a TRUE bearing.

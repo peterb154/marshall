@@ -1662,6 +1662,29 @@ def field_of(procedure) -> str:
     return getattr(getattr(procedure, "aerodrome", None), "name", "") or ""
 
 
+def _from_prose(radial_spoken: float, hdg_spoken: float,
+                field: str = "") -> tuple[float, float]:
+    """A radial and a heading read off the PICTURE, back into true.
+
+    THE PROSE IS A BOUNDARY IN BOTH DIRECTIONS. The picture speaks in the frame
+    a pilot is in -- `geo.spoken_bearing` -- while every geometry downstream of
+    an `asr.Position` is true, so a number that crossed out has to cross back.
+
+    Both are the same correction, which is worth saying because it looks like it
+    should not be. The radial went out as `true - variation`; the heading went
+    out as `grid + convergence - variation`, and `grid + convergence` IS true.
+    So one addition serves both, and this REPLACES `true_heading` on the parsed
+    path: applying convergence again here would add it twice.
+
+    The structured path still calls `true_heading`, because it reads the sim's
+    raw grid heading off the contact and has to make the same journey the
+    picture makes for itself.
+    """
+    var, _conv = _geo.frames_at(field)
+    return ((float(radial_spoken) + var) % 360,
+            (float(hdg_spoken) + var) % 360)
+
+
 def true_heading(grid_hdg: float, field: str = "") -> float:
     """A radar heading, out of the sim's grid frame and into true.
 
@@ -1753,8 +1776,9 @@ def radar_fix_by_track(scope: str, track: str, field: str = "") -> object | None
         if _key_name(name) != want:
             continue
         h = float(hdg) if hdg else 0.0
-        return asr.Position(float(nm), float(radial), int(alt.replace(",", "")),
-                            true_heading(h, field),
+        _rad, _hdg = _from_prose(radial, h, field)
+        return asr.Position(float(nm), _rad, int(alt.replace(",", "")),
+                            _hdg,
                             speed_kt=float(kt) if kt else 0.0,
                             type=aircraft_type_on_scope(scope, "") or "")
     return None
@@ -1866,9 +1890,10 @@ def radar_fix(scope: str, cs: str, field: str = "") -> object | None:
                 and C.parse(r[0]).flight.lower() == me.flight.lower()]
     for _tag, nm, radial, alt, hdg, kt in hits:
             h = float(hdg) if hdg else 0.0
-            return asr.Position(float(nm), float(radial),
+            _rad, _hdg = _from_prose(radial, h, field)
+            return asr.Position(float(nm), _rad,
                                 int(alt.replace(",", "")),
-                                true_heading(h, field),
+                                _hdg,
                                 speed_kt=float(kt) if kt else 0.0,
                                 type=aircraft_type_on_scope(scope, cs))
     return None
@@ -1972,9 +1997,10 @@ def radar_fixes(scope: str, field: str = "", ctl=None, picture=None,
     for tag, nm, radial, alt, hdg, kt in _FIX.findall(
             identity.flatten_formation(scope or "")):
         h = float(hdg) if hdg else 0.0
-        out.append((tag, asr.Position(float(nm), float(radial),
+        _rad, _hdg = _from_prose(radial, h, field)
+        out.append((tag, asr.Position(float(nm), _rad,
                                       int(alt.replace(",", "")),
-                                      true_heading(h, field),
+                                      _hdg,
                                       speed_kt=float(kt) if kt else 0.0),
                     scope))
     return out

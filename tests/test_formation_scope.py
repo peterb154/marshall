@@ -99,7 +99,12 @@ class TestTheLeadKeepsHisOwnPosition(unittest.TestCase):
         fix = A.radar_fix_by_track(NEW, "362nd_Sockeye-1")
         self.assertIsNotNone(fix)
         self.assertAlmostEqual(fix.range_nm, 13.5, places=1)
-        self.assertAlmostEqual(fix.radial_deg, 307.0, places=0)
+        # THE FIXTURE IS A PICTURE LINE AND A `Position` IS TRUE. The prose says
+        # 307 because a radial is magnetic -- what the pilot would read -- and
+        # `radial_deg` is the frame the geometry works in, six degrees away on
+        # the Caucasus. The number did not move; the boundary between the two
+        # frames became visible. See `geo.spoken_bearing`.
+        self.assertAlmostEqual(fix.radial_deg, 313.0, places=0)
 
     def test_the_tagged_lookup_agrees_with_the_track_lookup(self):
         by_tag = A.radar_fix(NEW, "Apex")

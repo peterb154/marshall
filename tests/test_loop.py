@@ -33,8 +33,14 @@ from tests import theatre as T
 
 # A manned contact ten miles out, tagged -- the shape the picture takes once the
 # agent has bound the callsign with `identify`.
-SCOPE = ("362nd_sockeye [Pony 1-1] (P-51D-30-NA, manned): 10.0 nm on the 281 "
-         "radial, 4,000 ft, heading 100, 180 knots")
+#
+# THE NUMBERS ARE SPOKEN ONES, because that is what the picture emits: a radial
+# is magnetic by definition and a heading is what the pilot reads. The aeroplane
+# is where it always was -- 281 true, heading 100 -- and these are the same
+# position six degrees the other side of the boundary, so everything computed
+# from it is unchanged. See `geo.spoken_bearing`.
+SCOPE = ("362nd_sockeye [Pony 1-1] (P-51D-30-NA, manned): 10.0 nm on the 275 "
+         "radial, 4,000 ft, heading 094, 180 knots")
 GUID = "pony-guid"
 NAME = "362nd_sockeye"
 
@@ -210,8 +216,9 @@ class TestTheLoopSurvivesTheAwkwardCases(unittest.TestCase):
         self.assertEqual(len(s.asked()), 1)
 
     def test_two_pilots_on_one_frequency_are_kept_apart(self):
+        # Spoken numbers, as above: 090 true is 084 magnetic, 270 is 264.
         other = ("362nd_andre [Falcon 1-1] (F-16C_50, manned): 20.0 nm on the "
-                 "090 radial, 8,000 ft, heading 270, 300 knots")
+                 "084 radial, 8,000 ft, heading 264, 300 knots")
         s = (sortie()
              .say(GUID, NAME, "Batumi Approach, Pony one one, ten miles")
              .radar(SCOPE + " | " + other).replies("RADIO: Pony one one, roger.")

@@ -30,6 +30,7 @@ different ranges, which is the entire point.
 from __future__ import annotations
 
 
+from marshall.core import geo
 from marshall.core import geo as _geo
 # What the sim calls a return, and the one question anybody asks about it.
 from marshall.feed import categories as _cat
@@ -113,7 +114,7 @@ def nm_between(a: dict, b: dict) -> float:
     return range_radial((a["lat"], a["lon"]), b["lat"], b["lon"])[0]
 
 
-def render(contacts: list, origin) -> list[str]:
+def render(contacts: list, origin, field: str = "") -> list[str]:
     """The picture, from THIS controller's field.
 
     Ordered nearest first, which is a controller's own priority and was
@@ -144,6 +145,11 @@ def render(contacts: list, origin) -> list[str]:
             order.append(key)
         groups[key].append((nm, radial, c))
 
+    # THE FRAME A PILOT IS IN, asked once for this field. Everything below is
+    # about to be READ ALOUD: a radial is magnetic by definition and a heading
+    # is what he sees on his HSI, while the numbers arriving here are a TRUE
+    # bearing and the sim's GRID heading. See `geo.spoken_bearing`.
+    var, conv = geo.frames_at(field)
     lines = []
     for key in order:
         members = groups[key]
@@ -154,25 +160,27 @@ def render(contacts: list, origin) -> list[str]:
         others = [c for i, (_, _, c) in enumerate(members) if i != lead_i]
         typ = lead.get("type") or ""
         alt_ft = lead.get("alt_ft") or 0
-        heading = lead.get("heading") or 0
+        heading = geo.spoken_heading(lead.get("heading") or 0, conv, var)
         spd = f", {lead['speed_kt']:.0f} knots" if lead.get("speed_kt") else ""
         head = f"{_label(lead)} ({typ}{_marks(lead)})"
         if others:
             ships = ", ".join(_other_ship(o, lead) for o in others)
             lines.append(
                 f"{head} IN FORMATION with {ships} — "
-                f"{len(members)} ships, lead {nm:.1f} nm on the {radial:03.0f} "
-                f"radial, {alt_ft:,.0f} ft, heading {heading:03.0f}{spd}")
+                f"{len(members)} ships, lead {nm:.1f} nm on the "
+                f"{geo.spoken_bearing(radial, var):03.0f} radial, "
+                f"{alt_ft:,.0f} ft, heading {heading:03.0f}{spd}")
         else:
             lines.append(
-                f"{head}: {nm:.1f} nm on the {radial:03.0f} radial, "
+                f"{head}: {nm:.1f} nm on the "
+                f"{geo.spoken_bearing(radial, var):03.0f} radial, "
                 f"{alt_ft:,.0f} ft, heading {heading:03.0f}{spd}")
     return lines
 
 
-def picture(contacts: list, origin) -> str:
+def picture(contacts: list, origin, field: str = "") -> str:
     """The whole scope as the controller's prompt wants it."""
-    lines = render(contacts, origin)
+    lines = render(contacts, origin, field)
     if lines:
         return " | ".join(lines)
     if contacts and not origin:

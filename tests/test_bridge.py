@@ -421,8 +421,16 @@ class TestAsrContext(unittest.TestCase):
         """
         if radial is None:
             radial = (self.asr.final_crs_true + 180) % 360
-        return (f"Enfield11 [{tag}] (P-51D-30-NA): {nm} nm on the {radial:.0f} "
-                f"radial, {alt:,} ft, heading {self.asr.final_crs_true:.0f}")
+        # THE PROSE IS WHAT A PILOT HEARS, so this helper converts and its
+        # callers go on passing and asserting TRUE -- which is what they mean
+        # and what a `Position` carries. The picture says a radial, and a radial
+        # is magnetic by definition; the same six degrees this docstring already
+        # warns about, now on the other side of the boundary.
+        from marshall.core import geo as _g
+        _var, _conv = _g.frames_at()
+        return (f"Enfield11 [{tag}] (P-51D-30-NA): {nm} nm on the "
+                f"{_g.spoken_bearing(radial, _var):.0f} radial, {alt:,} ft, "
+                f"heading {_g.spoken_heading(self.asr.final_crs_true, _conv, _var):.0f}")
 
     def test_parses_a_tagged_fix(self):
         pos = agent_atc.radar_fix(self.scope(6.4, 304, 2000), "Pony 1-1")

@@ -165,8 +165,14 @@ class TestEstablishedIsWhereHeStops(unittest.TestCase):
         # fixture about one map wearing the shape of a fixture about a rule.
         alt = profile.glidepath_ft_at(nm) if alt is None else alt
         radial = (profile.final_crs_true + 180) % 360
-        return (f"Enfield11 [{tag}] (F-16C_50): {nm} nm on the {radial:.0f} "
-                f"radial, {alt:,} ft, heading {profile.final_crs_true:.0f}")
+        # SPOKEN, like the picture this stands in for -- a radial is magnetic
+        # and a heading is what he reads off his HSI. The caller keeps thinking
+        # in the true frame the profile is written in.
+        from marshall.core import geo as _g
+        _var, _conv = _g.frames_at()
+        return (f"Enfield11 [{tag}] (F-16C_50): {nm} nm on the "
+                f"{_g.spoken_bearing(radial, _var):.0f} radial, {alt:,} ft, "
+                f"heading {_g.spoken_heading(profile.final_crs_true, _conv, _var):.0f}")
 
     def test_the_guidance_context_goes_quiet(self):
         ils = T.the_ils()

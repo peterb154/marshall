@@ -311,9 +311,17 @@ def radar_live(bindings: dict | None = None) -> list[str]:
             who = u.player_name or u.callsign or u.name
             tag = f" [{bindings[who]}]" if who in bindings else ""
             brg, rng = _bearing_range(u.position.lat, u.position.lon)
+            # SPOKEN, like the other two renderers of this sentence. A radial
+            # is magnetic by definition and `u.orientation.heading` is the
+            # sim's GRID heading; this is the cold-cache fallback and would
+            # have been the last one still emitting the old frame.
+            from marshall.core import geo as _g
+            _var, _conv = _g.frames_at()
             lines.append(
-                f"{who}{tag} ({u.type}): {rng:.1f} nm on the {brg:03.0f} radial, "
-                f"{u.position.alt * _M_TO_FT:,.0f} ft, heading {u.orientation.heading:03.0f}")
+                f"{who}{tag} ({u.type}): {rng:.1f} nm on the "
+                f"{_g.spoken_bearing(brg, _var):03.0f} radial, "
+                f"{u.position.alt * _M_TO_FT:,.0f} ft, heading "
+                f"{_g.spoken_heading(u.orientation.heading, _conv, _var):03.0f}")
     return lines
 
 

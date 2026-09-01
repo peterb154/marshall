@@ -47,8 +47,14 @@ LIVE_CONTACT = {
     "speed_kt": 3.6589229157614784e-06, "coalition": 3,
     "callsign": "", "formation": "",
 }
-LIVE_PROSE = ("362nd_sockeye (F-16C_50, manned): 0.4 nm on the 121 radial, "
-              "39 ft, heading 215, 0 knots")
+# MAGNETIC, BOTH NUMBERS. A radial is magnetic by definition and a heading is
+# what a pilot reads off his HSI; this line printed a TRUE bearing (121) and the
+# sim's GRID heading (215) and called them those things. Caucasus variation is
+# 6 East and both fields have zero grid convergence, so both numbers move by
+# the same six degrees here -- which is exactly why it never looked wrong on
+# this map. See `geo.spoken_bearing`.
+LIVE_PROSE = ("362nd_sockeye (F-16C_50, manned): 0.4 nm on the 115 radial, "
+              "39 ft, heading 209, 0 knots")
 
 
 class TestThePortIsFaithful(unittest.TestCase):
@@ -105,8 +111,8 @@ class TestTheOriginIsTheOnlyThingThatMoves(unittest.TestCase):
         forty miles is not, and through prose nobody could ever have seen it."""
         theirs = picture.picture([LIVE_CONTACT], DIRECTOR_ORIGIN)
         ours = picture.picture([LIVE_CONTACT], OUR_BEACON)
-        self.assertIn("121 radial", theirs)
-        self.assertIn("118 radial", ours)
+        self.assertIn("115 radial", theirs)
+        self.assertIn("112 radial", ours)
 
     def test_a_second_field_renders_the_same_contact_its_own_way(self):
         """Senaki is not a second world. Same contacts, different origin."""

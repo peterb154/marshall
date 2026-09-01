@@ -1133,6 +1133,13 @@ def _other_ship(row: list, lead: list, naming: dict, down: set) -> str:
 
 
 def _render(rows: list, bindings: dict) -> list[str]:
+    # THE SAME FRAME QUESTION THE OTHER RENDERERS ASK, asked the same way. This
+    # sentence exists in three places -- here, `atc/picture.py` and
+    # `feed/dcs.py` -- and when the conversion was added to one of them the
+    # other two went on emitting a true bearing called a radial. See
+    # `geo.spoken_bearing`.
+    from marshall.core import geo as _g
+    var, conv = _g.frames_at()
     lines = []
     naming = _unique_labels(rows)
     # WHO THE SIM SAYS IS DOWN, from `Unit.inAir()` on the row itself.
@@ -1205,12 +1212,16 @@ def _render(rows: list, bindings: dict) -> list[str]:
                                for r in group[1:])
             lines.append(
                 f"{label}{tag} ({typ}{manned}) IN FORMATION with {others} — "
-                f"{len(group)} ships, lead {nm:.1f} nm on the {radial:03.0f} "
-                f"radial, {alt_ft:,.0f} ft, heading {heading:03.0f}{spd}")
+                f"{len(group)} ships, lead {nm:.1f} nm on the "
+                f"{_g.spoken_bearing(radial, var):03.0f} radial, "
+                f"{alt_ft:,.0f} ft, "
+                f"heading {_g.spoken_heading(heading, conv, var):03.0f}{spd}")
         else:
             lines.append(
-                f"{label}{tag} ({typ}{manned}): {nm:.1f} nm on the {radial:03.0f} radial, "
-                f"{alt_ft:,.0f} ft, heading {heading:03.0f}{spd}")
+                f"{label}{tag} ({typ}{manned}): {nm:.1f} nm on the "
+                f"{_g.spoken_bearing(radial, var):03.0f} radial, "
+                f"{alt_ft:,.0f} ft, "
+                f"heading {_g.spoken_heading(heading, conv, var):03.0f}{spd}")
     return lines
 
 
