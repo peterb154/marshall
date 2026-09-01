@@ -79,8 +79,41 @@ def _cluster(contacts: list[dict], origin: tuple[float, float]) -> None:
 
 
 def contacts(origin: tuple[float, float] | None = None,
-             bindings: dict | None = None) -> list[dict]:
-    """Every unit the sim currently has, as data.
+             bindings: dict | None = None,
+             categories=None, within_nm: float | None = None) -> list[dict]:
+    """The units the sim currently has, as data. FILTERED IN THE DATABASE.
+
+    IT USED TO BE EVERY ROW, unconditionally, and that does not survive a real
+    mission.
+
+        "contacts being in memory seemed like an issue that wasn't gonna stay
+         well"
+
+    The streamer subscribes to AIRPLANE, HELICOPTER, GROUND and SHIP on purpose
+    -- an overlord tasking a flight against armour needs the armour to exist
+    somewhere the ATC side can see it -- so on a populated map this dragged
+    every tank, truck, SAM and ship into Python on a two-second poll, to draw a
+    picture about aeroplanes.
+
+    THIS IS THE SHAPE POSTGIS IS FOR, and `core/geo.py` says so in the same
+    breath it refuses the calculator case: "PostGIS earns its place when the
+    DATABASE has to FIND or ORDER rows -- which sector contains this aeroplane,
+    what is within ten miles". Both filters here are that question, asked over
+    the `tracks_geog` index rather than by reading everything and discarding it.
+
+        categories   which kinds to return -- `feed.categories.FLYING` for a
+                     controller's scope. None means every kind, which is what
+                     the overlord's half of the same table is for
+        within_nm    a radius from `origin`, when the caller has one. None
+                     means the whole map, because most callers genuinely do
+                     want it and a made-up radius is worse than none
+
+    NO STALENESS FILTER, and that is the whole argument of `SCHEMA.md` in one
+    absence. A row exists until the sim says `gone` or the world restarts; a
+    parked aeroplane never moves, never updates, and used to vanish off the
+    scope fifteen seconds after a pilot climbed into it. A CATEGORY filter is
+    not that: it asks what a thing IS, which never changes, rather than how
+    recently anybody heard about it.
 
     NO STALENESS FILTER, and that is the whole argument of `SCHEMA.md` in one
     absence. A row exists until the sim says `gone` or the world restarts; a
@@ -91,8 +124,8 @@ def contacts(origin: tuple[float, float] | None = None,
     clustering here -- ranges and radials are computed by whoever draws the
     picture, because a controller at another field measures from his own.
     """
-    from geoalchemy2 import Geometry
-    from sqlalchemy import select
+    from geoalchemy2 import Geography, Geometry
+    from sqlalchemy import func, select
 
     from marshall.core import db
     from marshall.core.schema import Track
@@ -100,14 +133,29 @@ def contacts(origin: tuple[float, float] | None = None,
     bindings = bindings or {}
     out: list[dict] = []
     with db.session() as s:
-        for t, lat, lon in s.execute(
-                # CAST TO GEOMETRY. ST_Y/ST_X are geometry functions; on a
-                # geography column Postgres refuses with "function st_y(geography)
-                # does not exist", which reads like a missing extension and is
-                # not. The hand-written SQL this replaces cast it too.
-                select(Track,
-                       Track.geog.cast(Geometry).ST_Y().label("lat"),
-                       Track.geog.cast(Geometry).ST_X().label("lon"))).all():
+        # CAST TO GEOMETRY. ST_Y/ST_X are geometry functions; on a geography
+        # column Postgres refuses with "function st_y(geography) does not
+        # exist", which reads like a missing extension and is not. The
+        # hand-written SQL this replaces cast it too.
+        q = select(Track,
+                   Track.geog.cast(Geometry).ST_Y().label("lat"),
+                   Track.geog.cast(Geometry).ST_X().label("lon"))
+        if categories:
+            # LOWER, because the column is not only written by the streamer:
+            # `tools/ghost_flight.py` paints a row directly and wrote
+            # "Airplane" with a capital, which is the bug `feed.categories`
+            # exists to have exactly one answer to.
+            q = q.where(func.lower(func.coalesce(Track.category, ""))
+                        .in_([str(c).strip().lower() for c in categories]))
+        if within_nm and origin:
+            # ST_DWithin ON GEOGRAPHY, in metres, and index-assisted -- this is
+            # the database FINDING rows, which is the case PostGIS earns.
+            q = q.where(func.ST_DWithin(
+                Track.geog,
+                func.ST_SetSRID(func.ST_MakePoint(origin[1], origin[0]), 4326)
+                    .cast(Geography),
+                float(within_nm) * 1852.0))
+        for t, lat, lon in s.execute(q).all():
             who = t.label or t.name
             out.append({
                 "name": t.name,

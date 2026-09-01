@@ -369,3 +369,74 @@ class TestAnEmptyPictureIsNotAnEmptyScope(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TheDatabaseDoesTheFiltering(unittest.TestCase):
+    """WHAT USED TO COME BACK WAS EVERY ROW, unconditionally.
+
+        "contacts being in memory seemed like an issue that wasn't gonna stay
+         well"
+
+    The streamer subscribes to AIRPLANE, HELICOPTER, GROUND and SHIP on
+    purpose, so an overlord tasking a flight against armour can see the armour.
+    On a populated map that meant every tank, truck, SAM and ship crossing into
+    Python on a two-second poll to draw a picture about aeroplanes.
+
+    Both filters are the question `core/geo.py` says PostGIS earns -- the
+    DATABASE finding rows -- so they are asserted as SQL rather than as a list
+    comprehension somebody could quietly move back into Python.
+    """
+
+    def _sql(self, **kw):
+        from unittest import mock
+        from marshall.core import scope as S
+        seen = {}
+        assert S is not None
+
+        class _S:
+            def __enter__(_s):
+                return _s
+            def __exit__(_s, *a):
+                return False
+            def execute(_s, q):
+                seen["sql"] = str(q).lower()
+                class _R:
+                    def all(_r):
+                        return []
+                return _R()
+
+        # PATCHED AT ITS SOURCE, because `scope.contacts` imports `db` inside
+        # the function -- it is not an attribute of this module to replace.
+        from marshall.core import db as _db
+        with mock.patch.object(_db, "session", lambda: _S()):
+            S.contacts(**kw)
+        return seen.get("sql", "")
+
+    def test_no_filter_asks_for_everything(self):
+        """The default has to stay what it was: the overlord's half of this
+        table is not a mistake."""
+        sql = self._sql()
+        self.assertNotIn("st_dwithin", sql)
+        self.assertNotIn("lower(coalesce", sql)
+
+    def test_categories_become_a_where_clause(self):
+        sql = self._sql(categories=("airplane", "helicopter"))
+        self.assertIn("where", sql)
+        self.assertIn("lower(coalesce", sql)
+
+    def test_a_radius_becomes_st_dwithin(self):
+        """Index-assisted on `tracks_geog`, in metres."""
+        sql = self._sql(origin=(41.6, 41.6), within_nm=50)
+        self.assertIn("st_dwithin", sql)
+
+    def test_a_radius_without_an_origin_filters_nothing(self):
+        """There is nothing to measure from, and inventing a centre would
+        silently hide traffic."""
+        self.assertNotIn("st_dwithin", self._sql(within_nm=50))
+
+    def test_the_category_match_is_case_folded(self):
+        """`tools/ghost_flight.py` paints a row directly and wrote "Airplane"
+        with a capital -- one letter, and the untracked panel could never show
+        a manned aeroplane. `feed.categories` exists to have one answer to
+        that, and this must not reintroduce a case-sensitive comparison."""
+        self.assertIn("lower(", self._sql(categories=("Airplane",)))
+

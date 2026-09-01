@@ -247,7 +247,18 @@ def fetch_radar(session_id: str = "", url: str = RADAR_URL,
         # on this -- but the agent still benefits from seeing a contact named,
         # and a picture that quietly stops naming people is a regression whether
         # or not anything downstream currently parses it.
-        cs = _scope.contacts(origin=origin, bindings=_correlated(session_id))
+        # AIRCRAFT ONLY, FILTERED IN THE DATABASE. A controller's scope is
+        # about aeroplanes; the same table also holds every tank, truck, SAM
+        # and ship the streamer subscribes to, deliberately, so an overlord can
+        # task a flight against armour. Reading all of it to draw this was the
+        # cost that "wasn't gonna stay well" on a populated map.
+        #
+        # `feed.categories.FLYING` and not a fifth copy of the words -- that
+        # module exists because the same two-item list had been written out in
+        # five places and compared case-sensitively in all of them.
+        from marshall.feed import categories as _cat
+        cs = _scope.contacts(origin=origin, bindings=_correlated(session_id),
+                             categories=_cat.FLYING)
         got = {"contacts": cs, "bullseye": _scope.bullseyes(), "picture": ""}
     except Exception:
         got = None
