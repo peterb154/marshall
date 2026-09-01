@@ -156,6 +156,139 @@ def _watch_the_runways(bridge, ctl, session_id: str) -> None:
         on_the_runway_now(bridge, ctl, fetch_radar(session_id, field=fld), fld)
 
 
+def route_for(bridge, ctl, cs: str):
+    """The legs this aeroplane is being followed along, as `following.Leg`s.
+
+    TWO SOURCES AND THE NAMED ONE WINS. "Flight following direct BAR" is a
+    one-leg route and does not need a filed plan at all -- requiring one would
+    have made the commonest request unserviceable. With nothing named, his
+    filed route is the longer case.
+
+    Empty when there is nothing to follow, which the caller must treat as "say
+    nothing" rather than as an error: a man can ask for following before he has
+    filed anything, and being told a heading to nowhere is worse than silence.
+    """
+    from marshall.core.following import Leg
+    ac = ctl.aircraft.get(ctl._resolve(cs))
+    if ac is None:
+        return []
+    want = (getattr(ac, "following_to", "") or "").strip().upper()
+    if want:
+        for f in _fix_catalogue().items():
+            if _key_name(f[0]) == _key_name(want):
+                return [Leg(f[0], float(f[1][0]), float(f[1][1]), 0)]
+        return []
+    for row in filed_plan_rows() or []:
+        if _key_name(row.get("label") or "") != _key_name(
+                getattr(ac, "flight_plan_label", "") or ""):
+            continue
+        out = []
+        for leg in row.get("legs") or []:
+            if leg.get("lat") is None:
+                continue
+            out.append(Leg((leg.get("fix") or "").strip(), float(leg["lat"]),
+                           float(leg["lon"]), int(leg.get("alt_ft") or 0)))
+        return out
+    return []
+
+
+def _fix_catalogue() -> dict:
+    """Published fixes as name -> (lat, lon). The director's, so a name this
+    resolves is one the route checker would also accept."""
+    try:
+        got = _get_json(f"{BASE_URL}/fixes") or {}
+        return {k: (v["lat"], v["lon"]) for k, v in (got.get("fixes") or {}).items()
+                if isinstance(v, dict) and v.get("lat") is not None}
+    except Exception:
+        return {}
+
+
+def follow_him(bridge, ctl, cs: str, scope, transmit) -> list[str]:
+    """One poll of route guidance for one aeroplane. Silent unless there is
+    something to say.
+
+    THE ENGINE DECIDES AND THIS ONLY CHOOSES THE MOMENT. `controller.follow_leg`
+    computes the words and records the decision; what belongs here is WHEN --
+    on passage, on drifting off, and not otherwise. A metronome would be the nag
+    the whole feature is gated to avoid.
+    """
+    from marshall.core import following as _f
+    ac = ctl.aircraft.get(ctl._resolve(cs))
+    if ac is None or not getattr(ac, "following", False):
+        return []
+    # ONCE HE IS ON AN APPROACH THE APPROACH OWNS HIM. Route guidance and a
+    # talkdown are two controllers talking over each other, and the approach is
+    # the one with the runway at the end of it.
+    if ctl._pro(ac) is not None and getattr(ac, "phase", None) is not None \
+            and ac.phase.name in ("CLEARED", "HOLDING", "MISSED"):
+        return []
+    legs = route_for(bridge, ctl, cs)
+    if not legs:
+        return []
+    c = scope.of(getattr(ac, "track", "") or cs) if isinstance(scope, Scope) else None
+    if not c or c.get("lat") is None:
+        return []
+    start = bridge.follow_start.get(cs)
+    now = _f.guide(legs, float(c["lat"]), float(c["lon"]),
+                   int(getattr(ac, "following_leg", 0)), start=start)
+    if now is None:
+        # THE ROUTE IS FLOWN OUT. He is not abandoned -- the service ends in
+        # words, because a pilot who stops hearing from us cannot tell that
+        # from a controller who has forgotten him.
+        ctl.end_following(cs)
+        bridge.follow_said.pop(cs, None)
+        return _drain_following(ctl, cs, transmit)
+    # THE FIRST LEG COMES WITH THE GRANT, or he hears "flight following
+    # approved" and then nothing until he happens to pass a fix. The grant
+    # itself cannot carry it: it is answered on the radio thread, where nobody
+    # has computed a leg yet, and the numbers must be the engine's rather than
+    # the model's. So the first poll after it says the whole triplet, which is
+    # the same thing a passage says. [#217]
+    if cs not in bridge.follow_said:
+        bridge.follow_said[cs] = True
+        ctl.report_passage(cs, now)
+        return _drain_following(ctl, cs, transmit)
+    if now.passed:
+        ac.following_leg = _f.next_index(now, int(ac.following_leg))
+        nxt = _f.guide(legs, float(c["lat"]), float(c["lon"]),
+                       ac.following_leg, start=start)
+        ctl.report_passage(cs, nxt or now)
+        bridge.follow_off.pop(cs, None)
+        return _drain_following(ctl, cs, transmit)
+    was = bool(bridge.follow_off.get(cs))
+    if _f.off_course(now, was):
+        if not was:
+            bridge.follow_off[cs] = True
+            ctl.report_off_course(cs, now)
+            return _drain_following(ctl, cs, transmit)
+    else:
+        bridge.follow_off.pop(cs, None)
+    return []
+
+
+def _drain_following(ctl, cs: str, transmit) -> list[str]:
+    """Put what the engine just queued on the air, unchanged.
+
+    `transmit` is handed in because the radio is a CLOSURE inside the receive
+    loop -- the pool, the lock and the channel map are all captured there, and
+    reaching for them from module scope is what `speak` already refuses to do.
+    Passing it also makes this testable without a radio, which is the whole
+    reason the mile calls are hard to test and these are not.
+
+    STRAIGHT OUT, NOT THROUGH THE MODEL. These are the engine's own numbers --
+    a heading, a distance, a level -- and the one thing that must not happen to
+    them is being paraphrased.
+    """
+    said = []
+    for tx in ctl.take_out():
+        text = for_voice(tx.text)
+        if not text:
+            continue
+        said.append(text)
+        transmit(text)
+    return said
+
+
 def runways_now(bridge) -> list:
     """The loaded map's runways, fetched once and held.
 
@@ -1081,6 +1214,15 @@ class Bridge:
         # looked, which is not the same as a map with no runways -- see
         # `runways_now`.
         self.runways = None
+        # Where each followed aeroplane's first leg begins -- his position when
+        # following was granted. A route's fixes are its ENDS, so the first leg
+        # has no origin without this. And whether he is currently being told he
+        # is off course, which is what makes the hysteresis band work.
+        self.follow_start: dict = {}
+        self.follow_off: dict = {}
+        # Whether he has had his first leg yet. The grant is answered on the
+        # radio thread with no leg computed, so the monitor owes him one.
+        self.follow_said: dict = {}
         # WHO CAME OFF THE BOARD, AND WHAT WAS ON THE SCOPE WHEN HE DID.
         #
         # A release is the one board event with no trace of itself: the entry is
@@ -7318,6 +7460,21 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                     # over.
                     _ac = ctl.aircraft.get(ctl._resolve(cs))
                     _track = getattr(_ac, "track", "") or cs
+                    # ROUTE GUIDANCE FIRST, and above the approach gates below,
+                    # because a man being followed is not on an approach yet --
+                    # `follow_him` stands down as soon as he is cleared for one.
+                    # Silent unless he asked, which is everybody by default.
+                    if getattr(_ac, "following", False):
+                        _fhz = bridge.heard_on.get(ctl._resolve(cs)) or freq_hz
+                        follow_him(
+                            bridge, ctl, cs, scope,
+                            lambda t, _hz=_fhz, _cs=cs: (
+                                print(f"  ATC[fol] {t}", flush=True),
+                                record(session_id, kind="atc/following",
+                                       callsign=_cs, text=t),
+                                _pool.transmit(voice_for(_hz).frames(t),
+                                               channels_of(_hz), AM),
+                                hold_the_channel_for_a_readback()))
                     if is_on_the_ground(scope, _track, pos):
                         if cs in grounded:
                             continue
@@ -7954,6 +8111,15 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
         # an aerodrome, and the button he pressed is what says which aerodrome.
         _on_mhz = (heard_hz or freq_hz) / 1_000_000
         ctl._me = _stations.on_frequency(_seats, _on_mhz)
+        # WHERE HE IS, AND THE BRIDGE, for the one thing that needs both at the
+        # moment he speaks: granting flight following pins the first leg's
+        # origin to his present position, because a route's fixes are its ends.
+        # Attached here rather than threaded through `dispatch`, which takes an
+        # intent and a controller and should not grow a radar picture. [#217]
+        ctl._bridge = bridge
+        _c_now = scope.of(known or "") if isinstance(scope, Scope) else None
+        ctl._last_latlon = ((_c_now.get("lat"), _c_now.get("lon"))
+                            if _c_now and _c_now.get("lat") is not None else None)
 
         # THE CLASSIFIER DECIDES, NOT A REGEX.
         #

@@ -78,6 +78,19 @@ def spell_alt(ft: int) -> str:
     # unreachable while every altitude in the system was a stack level, and
     # appeared the moment the approach started advising heights on final.
     if th == 0:
+        # UNDER A HUNDRED THERE IS NO "HUNDRED" EITHER, and this said one:
+        # `spell_alt(33)` returned " hundred" -- a leading empty word and a
+        # unit that is not there -- which reached the radio as "maintain
+        # hundred" the first time a route leg carried a FIELD ELEVATION rather
+        # than a level. Latent until then because every other caller passes a
+        # level, and levels are round.
+        #
+        # Digit by digit, which is what this system does with every other
+        # number a pilot hears. An altitude below a hundred feet is not a level
+        # anybody is assigned; the caller decides whether to say it at all, and
+        # this only decides how.
+        if hu and hu < 100:
+            return " ".join(DIGITS[c] for c in str(hu))
         return f"{words[hu // 100]} hundred" if hu else "zero"
     thousands = (words[th] if th < 10
                  else " ".join(words[int(c)] or "zero" for c in str(th)))

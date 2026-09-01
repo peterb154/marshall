@@ -62,7 +62,7 @@ _FIELDS = ("sortie_phase", "on_visual", "approaches_flown", "atis_letter",
            # ...AND WHETHER HE IS BEING FOLLOWED. On the aeroplane so a handoff
            # carries it, and durable so a restart does not drop a service a
            # pilot is relying on. See migration 040. [#217]
-           "following", "following_to",
+           "following", "following_to", "following_leg",
            "callsign", "track_name", "srs_guid", "srs_name", "intent",
            "destination", "claimed_size", "controller", "procedure", "runway",
            "cleared", "assigned_ft", "assigned_hdg", "sequence_no",

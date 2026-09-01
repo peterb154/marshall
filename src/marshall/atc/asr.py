@@ -800,4 +800,11 @@ def spoken_range(nm: float) -> str:
     words = ["zero", "one", "two", "three", "four", "five", "six", "seven",
              "eight", "nine", "one zero", "one one", "one two"]
     n = int(round(nm))
-    return words[n] if n < len(words) else str(n)
+    if n < len(words):
+        return words[n]
+    # BEYOND THE LIST, STILL WORDS. This returned `str(n)`, and a bare numeral
+    # is the one thing that must never reach the radio -- card row S12, "never
+    # a spoken numeral". It was unreachable while the only caller was the
+    # talkdown, which starts inside twelve miles; a route call is forty out and
+    # said "40 miles". Same digit-by-digit shape the list above already uses.
+    return " ".join(words[int(c)] for c in str(n))

@@ -418,6 +418,29 @@ def parse(transcript: str, llm=None) -> Intent:
 
 # --- driving the controller -------------------------------------------------
 
+def _mark_following_start(ctl, cs: str) -> None:
+    """Pin the first leg's origin to where he is, from whatever knows it.
+
+    A route's fixes are its ENDS -- `legs[0]` is somewhere to go, not somewhere
+    he has been -- so the first leg has no origin without this.
+
+    Best-effort and silent on failure: with no origin `following.guide` still
+    gives a bearing and a range to the fix, which is the whole of "direct BAR"
+    and is honest about the rest -- no cross-track, because there is no line
+    yet, and claiming zero would read as "on course" to a man who has no
+    course. [#217]
+    """
+    try:
+        from marshall.core.following import Leg
+        bridge = getattr(ctl, "_bridge", None)
+        pos = getattr(ctl, "_last_latlon", None)
+        if bridge is None or pos is None:
+            return
+        bridge.follow_start[cs] = Leg("start", float(pos[0]), float(pos[1]), 0)
+    except Exception:
+        return
+
+
 def dispatch(ctl: atc.Controller, intent: Intent,
              on_ground: bool | None = None) -> bool:
     """Route one Intent to the controller. Returns False if unhandled, so the
@@ -577,6 +600,11 @@ def dispatch(ctl: atc.Controller, intent: Intent,
             # it, and `wants` is what tells them apart. See
             # `Controller.request_following`. [#217]
             ctl.request_following(cs, wants=getattr(intent, "wants", "") or "")
+            # WHERE HE IS NOW IS WHERE THE FIRST LEG BEGINS. A route's fixes
+            # are its ENDS -- `legs[0]` is somewhere to go, not somewhere he
+            # has been -- so without this the first leg has no origin and he
+            # gets a bearing with no course to be off. [#217]
+            _mark_following_start(ctl, cs)
         case _:
             return False
     return True

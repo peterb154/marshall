@@ -190,3 +190,22 @@ def crosstrack_nm(course_deg: float, bearing_to_deg: float,
     with the numbers already in hand.
     """
     return range_nm * math.sin(math.radians(bearing_to_deg - course_deg))
+
+
+def alongtrack_nm(course_deg: float, bearing_to_deg: float,
+                  range_nm: float) -> float:
+    """How far DOWN the course he is, positive ahead of the reference point.
+
+    The cosine partner of `crosstrack_nm` and deliberately beside it: the two
+    are the same decomposition of the same triangle, and separating them is how
+    a second implementation of one of them appears. Same frame rule -- both
+    angles from the same north, or the answer is wrong by the difference and
+    nothing will say so.
+
+    It is what makes waypoint passage answerable. Measured from the leg's START
+    fix, a value greater than the leg's own length means he is beyond the
+    PERPENDICULAR through the end fix -- which is what passing a waypoint means
+    and what a distance threshold cannot express: a fast jet cutting the corner
+    may never come inside any radius worth picking. [#217]
+    """
+    return range_nm * math.cos(math.radians(bearing_to_deg - course_deg))

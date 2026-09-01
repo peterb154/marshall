@@ -136,6 +136,7 @@ class Flight(Base):
     # `runway_vacated` five days ago.
     following: Mapped[bool | None] = mapped_column(Boolean)
     following_to: Mapped[str | None] = mapped_column(Text)
+    following_leg: Mapped[int | None] = mapped_column(Integer)
 
     first_seen: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now())

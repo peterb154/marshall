@@ -42,6 +42,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 
 from marshall.atc import callsign
+from marshall.core import geo
 from marshall.core import names
 from marshall.core import route as R
 # WHICH APPROACH HIS WORDS MEAN, and what this map publishes. Imported by
@@ -343,6 +344,11 @@ class Aircraft:
     # [#217]
     following: bool = False
     following_to: str = ""
+    # WHICH LEG HE HAS REACHED. A latch: `following.next_index` never
+    # decreases, and this is where its answer lives between polls, because
+    # geometry has no memory and a wobble at a fix would otherwise un-pass it.
+    # Migration 041.
+    following_leg: int = 0
 
     # HOW MANY, which is all a flight report tells you. "Flight of four" is a
     # number; it is not four names, and the engine used to turn it into four by
@@ -889,6 +895,8 @@ class Controller:
                 ac.following = True
             if row.get("following_to"):
                 ac.following_to = str(row["following_to"])
+            if row.get("following_leg"):
+                ac.following_leg = int(row["following_leg"])
             if row.get("assigned_ft"):
                 ac.assigned_ft = int(row["assigned_ft"])
             # `cleared_ft` comes off `assigned_ft` -- the level the engine
@@ -2739,6 +2747,108 @@ class Controller:
                                         frequency_mhz=gnd.freq_mhz))
         self._try_clear()
 
+    def _magvar_here(self, ac=None) -> float:
+        """This field's magnetic variation. ONE PLACE, at the speaking boundary.
+
+        Everything in `core.following` is TRUE, because that is the frame the
+        geometry works in and mixing the two is the six-degree error with the
+        numbers already in hand. A pilot flies MAGNETIC. So the conversion
+        happens exactly here, once, on the way to the radio -- and per FIELD,
+        never a theatre constant: it is 12 degrees East at Nellis and 16 at
+        Tonopah, and a Caucasus variation applied to a Nevada heading is a bug
+        nobody would see in a code review. [#217]
+        """
+        try:
+            from marshall.core import theatre as _t
+            th = _t.current()
+            fld = self._key(ac) or getattr(
+                getattr(self, "_me", None), "field", "") or th.arrival
+            return float(th.field_named(fld).variation())
+        except Exception:
+            return 0.0
+
+    def follow_leg(self, cs: str, now, alerting: bool = False) -> str:
+        """What to say to a man on flight following, or "" for nothing.
+
+        THE ENGINE DECIDES AND THE AGENT VOICES, the same seam as the approach
+        talkdown: the numbers are computed here so that `decision.verify` can
+        check they reached the air, rather than composed by a model that has no
+        way to measure a cross-track.
+
+        Returns the words and says nothing itself, because WHEN to speak is the
+        monitor's question and this is only WHAT. A caller with nothing to say
+        gets "" -- own nav is the default and silence is the point of it.
+        """
+        ac = self.get(cs)
+        if not ac.following or now is None:
+            return ""
+        hdg = spell_hdg(geo.magnetic(now.heading_true,
+                                         self._magvar_here(ac)))
+        # `asr.spoken_range` AND NOT A SECOND VOCABULARY. The talkdown has said
+        # distances this way since it was written -- "six miles from the
+        # runway" -- and a route call that spelled them differently would be
+        # the same controller counting two ways in one sortie.
+        from marshall.atc import asr as _asr
+        rng = _asr.spoken_range(now.distance_nm)
+        miles = f"{rng} {'mile' if rng == 'one' else 'miles'}"
+        # A LEVEL, OR NOTHING. The last leg of a route is an AERODROME, and its
+        # "altitude" is the field elevation -- Batumi's is 33 feet. Reading that
+        # out as a level produced "maintain three three", which is not an
+        # instruction anybody can follow.
+        #
+        # The pilot saw the same fact from the other end when the filing page
+        # warned him that a 42-foot leg "is not a round hundred": a leg is a
+        # place AND a level, and for a target or a field the number is the
+        # ground. Nothing downstream can tell which, so the floor is here: below
+        # a thousand feet it is not a cruising level and is not spoken. [#217]
+        alt = (f", maintain {spell_alt(now.alt_ft)}"
+               if now.alt_ft and now.alt_ft >= 1000 else "")
+        return f"direct {now.fix}, heading {hdg}, {miles}{alt}"
+
+    def report_passage(self, cs: str, now) -> None:
+        """He has crossed the fix. Say so, and give the next leg whole.
+
+            "at station passage give the new heading distance and alt even if
+             it's the same. Removes ambiguity"
+
+        Which is consistent with the rule against repeating a number he was just
+        given rather than an exception to it: repetition WITHIN a leg is noise,
+        restatement at a TRANSITION is the point.
+        """
+        ac = self.get(cs)
+        words = self.follow_leg(cs, now)
+        if not words:
+            return
+        self.say(ac.callsign, f"{self._addr(ac)}, {words}.",
+                 decided=D.Decision(
+                     kind="following_leg", to=ac.callsign,
+                     heading_deg=int(round(geo.magnetic(
+                         now.heading_true, self._magvar_here(ac)))),
+                     altitude_ft=now.alt_ft or None))
+
+    def report_off_course(self, cs: str, now) -> None:
+        """Tell him he has drifted. The SIDE is his, as he flies it."""
+        ac = self.get(cs)
+        if not ac.following or now is None:
+            return
+        side = "right" if now.xtk_nm > 0 else "left"
+        hdg = spell_hdg(geo.magnetic(now.heading_true,
+                                         self._magvar_here(ac)))
+        # SPELLED, like every other number a pilot hears. This said "2 miles"
+        # -- a bare numeral, which is the one thing card row S12 forbids -- and
+        # the passage call beside it was already correct, so the two were
+        # spelling the same quantity two ways in one sortie.
+        from marshall.atc import asr as _asr
+        off = _asr.spoken_range(abs(now.xtk_nm))
+        self.say(ac.callsign,
+                 f"{self._addr(ac)}, you are {off} "
+                 f"mile{'' if off == 'one' else 's'} "
+                 f"{side} of course, turn heading {hdg}.",
+                 decided=D.Decision(
+                     kind="off_course", to=ac.callsign,
+                     heading_deg=int(round(geo.magnetic(
+                         now.heading_true, self._magvar_here(ac))))))
+
     def request_following(self, cs: str, wants: str = "") -> None:
         """He asks for flight following, or cancels it. OWN NAV IS THE DEFAULT.
 
@@ -2768,6 +2878,10 @@ class Controller:
             self.end_following(cs, service_over=True)
             return
         ac.following = True
+        # BACK TO THE FIRST LEG. Asking again is asking afresh -- he may have
+        # been somewhere else entirely since the last time, and inheriting a
+        # latch from an abandoned route would start him halfway down it.
+        ac.following_leg = 0
         # WHAT HE NAMED, IF HE NAMED ANYTHING. Empty means his filed route,
         # which is the longer case rather than the required one.
         ac.following_to = _following_target(wants)
@@ -2790,7 +2904,7 @@ class Controller:
         ac = self.get(cs)
         if not ac.following and not service_over:
             return                      # already own nav; nothing to say
-        ac.following, ac.following_to = False, ""
+        ac.following, ac.following_to, ac.following_leg = False, "", 0
         word = ("radar service terminated" if service_over
                 else "resume own navigation")
         self.say(ac.callsign, f"{self._addr(ac)}, {word}.",

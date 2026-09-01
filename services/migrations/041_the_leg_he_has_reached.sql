@@ -1,0 +1,16 @@
+-- Which leg of his route he has reached. A LATCH, and durable.
+--
+-- Passage is the fix crossing behind the perpendicular, and the geometry can
+-- see that on any poll -- but geometry has no memory. Without somewhere to
+-- record it, a wobble at the fix un-passes it and the next poll vectors him
+-- back to a point he is already behind, for ever.
+--
+-- MONOTONIC BY CONSTRUCTION: `following.next_index` never decreases, and this
+-- is where its answer lives between polls. Same shape as `has_been_airborne`,
+-- for the same reason -- a fact that can only go one way and must survive a
+-- restart, because a bridge that came up mid-route and started him again at
+-- leg zero would fly him back down a route he has already flown.
+--
+-- Zero is the first leg and the default, which is right for an aeroplane that
+-- has just been granted following and has not passed anything yet. See #217.
+ALTER TABLE flights ADD COLUMN IF NOT EXISTS following_leg integer DEFAULT 0;

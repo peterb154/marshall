@@ -161,5 +161,86 @@ class ItIsNotGatedOnThingsThatDoNotExist(unittest.TestCase):
         self.assertTrue(c.get("Sockeye").following)
 
 
+class WhatHeIsActuallyTold(unittest.TestCase):
+    """The words, with the numbers the engine computed. The seam is the same as
+    the approach talkdown: the engine decides so `decision.verify` can check the
+    numbers reached the air, and the agent voices."""
+
+    def _followed(self):
+        c = seat("center")
+        c.request_following("Sockeye", wants="request flight following")
+        c.out.clear()
+        return c
+
+    def _leg(self, dist=13.0, alt=10000, xtk=0.0, hdg=28.6):
+        from marshall.core.following import Along
+        return Along(0, "BAR", hdg, dist, alt, xtk, 5.0, 18.5)
+
+    def test_heading_distance_and_level(self):
+        c = self._followed()
+        c.report_passage("Sockeye", self._leg())
+        got = said(c)
+        self.assertIn("direct bar", got)
+        self.assertIn("heading", got)
+        self.assertIn("miles", got)
+        self.assertIn("maintain one zero thousand", got)
+
+    def test_the_heading_is_MAGNETIC(self):
+        """`core.following` works in true because that is the frame the
+        geometry is in; a pilot flies magnetic. The conversion happens once, at
+        the speaking boundary, and these numbers are FLOWN."""
+        c = self._followed()
+        c.report_passage("Sockeye", self._leg(hdg=28.6))
+        # 28.6 true, 6 East -> 023 magnetic, not 029.
+        self.assertIn("zero two three", said(c))
+
+    def test_a_field_elevation_is_not_a_level(self):
+        """The last leg of a route is an AERODROME. Batumi's elevation is 33
+        feet, and reading it out gave "maintain three three"."""
+        c = self._followed()
+        c.report_passage("Sockeye", self._leg(alt=33))
+        self.assertNotIn("maintain", said(c))
+
+    def test_no_bare_numeral_reaches_the_radio(self):
+        """Card row S12. `spoken_range` stopped at twelve because the talkdown
+        never goes further; a route call is forty miles out and said "40"."""
+        c = self._followed()
+        c.report_passage("Sockeye", self._leg(dist=40.0))
+        import re
+        self.assertEqual(re.findall(r"\b\d+\b", said(c)), [])
+
+    def test_off_course_spells_its_distance_too(self):
+        """The passage call was already right and this one said "2 miles" --
+        the same quantity spelled two ways in one sortie, and a bare numeral is
+        what S12 forbids."""
+        import re
+        c = self._followed()
+        c.report_off_course("Sockeye", self._leg(xtk=2.4))
+        self.assertEqual(re.findall(r"\b\d+\b", said(c)), [])
+        self.assertIn("two miles", said(c))
+
+    def test_off_course_names_the_side_as_he_flies_it(self):
+        c = self._followed()
+        c.report_off_course("Sockeye", self._leg(xtk=3.2))
+        self.assertIn("right of course", said(c))
+        c2 = self._followed()
+        c2.report_off_course("Sockeye", self._leg(xtk=-3.2))
+        self.assertIn("left of course", said(c2))
+
+    def test_a_man_on_own_nav_is_told_nothing(self):
+        c = seat("center")
+        c.report_passage("Sockeye", self._leg())
+        c.report_off_course("Sockeye", self._leg(xtk=9.0))
+        self.assertEqual(c.out, [])
+
+    def test_the_engine_records_what_it_decided(self):
+        """A sentence cannot be checked against the air and a decision can --
+        which is the whole of #79."""
+        c = self._followed()
+        c.report_passage("Sockeye", self._leg())
+        self.assertEqual([t.decision.kind for t in c.out if t.decision],
+                         ["following_leg"])
+
+
 if __name__ == "__main__":
     unittest.main()
