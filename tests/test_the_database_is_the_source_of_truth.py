@@ -149,6 +149,37 @@ def _raw_sql() -> dict[str, int]:
     return out
 
 
+class ADurableFieldIsAlsoWRITTEN(unittest.TestCase):
+    """THE FIFTH PLACE. A durable `Aircraft` field needs the migration,
+    `board._FIELDS`, `models.py` and `hydrate` -- and NONE of those write it.
+    The bridge does, in the `_agreed` dict it builds each turn, and a field
+    missing from there reaches the table as its default for ever.
+
+    It is invisible precisely because the other four are right: `hydrate`
+    faithfully restores the default it had just written, so the round trip
+    looks healthy. `runway_vacated` never persisted once between being added
+    and being found; `following` was granted four times on a live sortie and
+    the flight row still read false, while a controller told the pilot he was
+    on own navigation.
+    """
+
+    WRITTEN_BY_THE_BRIDGE = ("sortie_phase", "has_been_airborne",
+                             "runway_vacated", "following", "following_to",
+                             "following_leg", "on_visual", "approaches_flown")
+
+    def test_the_bridge_writes_every_durable_latch(self):
+        import pathlib
+        src = (pathlib.Path(__file__).resolve().parents[1] / "src" / "marshall"
+               / "atc" / "agent_atc.py").read_text()
+        block = src[src.index("_agreed = {}"):]
+        block = block[:block.index("\n\n\n")] if "\n\n\n" in block else block
+        for name in self.WRITTEN_BY_THE_BRIDGE:
+            with self.subTest(field=name):
+                self.assertIn(f'_agreed["{name}"]', block,
+                              f"{name} is durable and nothing writes it -- it "
+                              f"will read as its default for ever")
+
+
 class NoFactLivesOnlyInMemory(unittest.TestCase):
     """Every `Aircraft` field reaches the table or is declared forgettable."""
 

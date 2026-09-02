@@ -197,10 +197,29 @@ def _fix_catalogue() -> dict:
     resolves is one the route checker would also accept."""
     try:
         got = _get_json(f"{BASE_URL}/fixes") or {}
-        return {k: (v["lat"], v["lon"]) for k, v in (got.get("fixes") or {}).items()
-                if isinstance(v, dict) and v.get("lat") is not None}
     except Exception:
         return {}
+    # THE SHAPE IS A PAIR, NOT A DICT, and the names are lower case:
+    #
+    #     {"fixes": {"batumi": [41.609594, 41.600234], "initial": [...]}}
+    #
+    # This was written for `{"lat": ..., "lon": ...}` and filtered every row out
+    # as malformed, so the catalogue was always empty and "flight following
+    # direct BATUMI" could never resolve a target. Silent, because an empty
+    # catalogue is indistinguishable from a map with no published fixes -- and
+    # the caller treats no legs as "say nothing", which is exactly what a pilot
+    # heard for ten minutes.
+    out = {}
+    for name, v in (got.get("fixes") or {}).items():
+        try:
+            if isinstance(v, dict):
+                lat, lon = v["lat"], v["lon"]
+            else:
+                lat, lon = v[0], v[1]
+            out[str(name).upper()] = (float(lat), float(lon))
+        except (KeyError, IndexError, TypeError, ValueError):
+            continue
+    return out
 
 
 def follow_him(bridge, ctl, cs: str, scope, transmit) -> list[str]:
@@ -8405,6 +8424,21 @@ def _run_srs(host: str, freq_mhz: float, voice_id: str = "Matthew",
                 # clearing it is what would re-arm the bug it exists to fix.
                 if _ac.has_been_airborne:
                     _agreed["has_been_airborne"] = True
+                # THE FIFTH PLACE, and the one I did not know existed. A
+                # durable Aircraft field needs the migration, `board._FIELDS`,
+                # `models.py` and `hydrate` -- and none of those WRITE it. This
+                # dict does, and a field missing from here reaches the table as
+                # its default for ever.
+                #
+                # `runway_vacated` had not persisted once since it was added;
+                # `following` was granted four times on 1 September and the
+                # flight row still read false. Both read back correctly, which
+                # is what made it invisible: `hydrate` restored the default it
+                # had just written. [#170] [#217]
+                _agreed["runway_vacated"] = bool(_ac.runway_vacated)
+                _agreed["following"] = bool(getattr(_ac, "following", False))
+                _agreed["following_to"] = getattr(_ac, "following_to", "") or ""
+                _agreed["following_leg"] = int(getattr(_ac, "following_leg", 0))
                 _agreed["on_visual"] = bool(_ac.on_visual)
                 _agreed["approaches_flown"] = int(_ac.approaches or 0)
                 if _ac.atis_letter:

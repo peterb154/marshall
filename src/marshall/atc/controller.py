@@ -1106,6 +1106,15 @@ class Controller:
                  # a live aeroplane aged off the board nine times in one sortie.
                  # A row now carries its own key and there is nothing to match.
                  "track": ac.track,
+                 # WHAT THE AGENT CANNOT SEE HE WILL INVENT, and it did. Tower
+                 # told a pilot parked on the ramp that he was "still on the
+                 # runway" five times, and Center told a man being followed
+                 # that "flight following is traffic advisories only" -- both
+                 # made up, because neither fact was on the strip in front of
+                 # it. The engine knew both. [#170] [#217]
+                 "runway_vacated": bool(getattr(ac, "runway_vacated", False)),
+                 "following": bool(getattr(ac, "following", False)),
+                 "following_to": getattr(ac, "following_to", "") or "",
                  "owner": ac.owner,
                  "intent": ac.intent,
                  # WHICH APPROACH HE IS CLEARED FOR. In the database since the
