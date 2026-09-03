@@ -1878,6 +1878,7 @@ class Controller:
         ac.phase, ac.last_report_t = Phase.CLEARED, self.t
         ac.assigned_ft = None                  # he is not in the stack
         self._set_letdown(ac, ac.callsign)
+        self._the_approach_takes_over(ac)
         return True
 
     def _arriving(self, ac) -> bool:
@@ -2867,6 +2868,33 @@ class Controller:
                      heading_deg=int(round(geo.magnetic(
                          now.heading_true, self._magvar_here(ac))))))
 
+    def _the_approach_takes_over(self, ac) -> bool:
+        """He is on an approach now, so the route guidance is OVER.
+
+            "when an approach is issued - then flight following should be
+             canceled concurrently"
+
+        TWO CONTROLLERS TALKING OVER EACH OTHER is what the alternative is. A
+        man cleared for the ILS is being flown down a procedure; guidance to the
+        next filed steerpoint is a second set of headings for the same aeroplane
+        at the same moment, and the one with a runway at the end of it wins.
+
+        SILENTLY, AND ON PURPOSE. The approach clearance IS the announcement --
+        no real controller appends "flight following terminated" to it, and the
+        one thing worse than an unspoken state change is a second transmission
+        saying what the first one already meant. It is not invisible: `board()`
+        publishes `following`, so the agent sees the service end in the same
+        breath it is handed the clearance, which is the half that was missing
+        when a controller told a followed pilot he was on his own navigation.
+
+        Returns whether it actually cancelled anything, so a caller can tell a
+        cancellation from a no-op without reading the flags back.
+        """
+        if not getattr(ac, "following", False):
+            return False
+        ac.following, ac.following_to, ac.following_leg = False, "", 0
+        return True
+
     def request_following(self, cs: str, wants: str = "") -> None:
         """He asks for flight following, or cancels it. OWN NAV IS THE DEFAULT.
 
@@ -2960,6 +2988,7 @@ class Controller:
         if not self._in_letdown(ac) or self._in_letdown(ac) == ac.callsign:
             self._set_letdown(ac, ac.callsign)
             ac.phase, ac.on_visual, ac.last_report_t = Phase.CLEARED, True, self.t
+            self._the_approach_takes_over(ac)
             if field_in_sight:
                 self.say(ac.callsign,
                          f"{self._addr(ac)}, cleared visual approach runway "
@@ -3936,6 +3965,7 @@ class Controller:
                         f"{requested_by} was HOLDING while holding the "
                         f"letdown -- something demoted a cleared aircraft")
                     ac.phase, ac.last_report_t = Phase.CLEARED, self.t
+                    self._the_approach_takes_over(ac)
                 self.say(requested_by,
                          f"{requested_by}, you are cleared for the approach, "
                          f"continue.")
@@ -3956,6 +3986,7 @@ class Controller:
         ac.phase = Phase.CLEARED
         ac.last_report_t = self.t
         self._set_letdown(ac, ac.callsign)
+        self._the_approach_takes_over(ac)
         self.say(ac.callsign,
                  f"{self._addr(ac)}, cleared {self._approach_name(ac)} runway "
                  f"{getattr(self._pro(ac), 'runway', '') or 'in use'}, "

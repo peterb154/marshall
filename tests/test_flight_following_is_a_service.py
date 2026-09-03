@@ -254,3 +254,67 @@ class WhatHeIsActuallyTold(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheApproachTakesOver(unittest.TestCase):
+    """An approach clearance ENDS the route guidance, in the same breath.
+
+        "when an approach is issued - then flight following should be canceled
+         concurrently"
+
+    Two controllers talking over each other is the alternative: a man cleared
+    for the ILS is being flown down a procedure, and guidance to his next filed
+    steerpoint is a second set of headings for the same aeroplane at the same
+    moment.
+
+    IT USED TO BE A GUARD IN THE BRIDGE. `follow_him` stood down on seeing the
+    phase -- so nothing was transmitted, which looked like enough -- while the
+    aeroplane, the strip and the `flights` row all still read `following`. The
+    agent reads that strip, and a fact left true that the engine had stopped
+    honouring is exactly the shape that had a controller tell a followed pilot
+    he was on his own navigation.
+    """
+
+    def cleared(self, role="approach"):
+        c = seat(role)
+        c.request_following("Sockeye", wants="request flight following")
+        c.report_beacon("Sockeye", altitude_ft=5000)
+        return c
+
+    def test_a_clearance_cancels_it(self):
+        c = self.cleared()
+        self.assertEqual(c.get("Sockeye").phase.name, "CLEARED")
+        self.assertFalse(c.get("Sockeye").following)
+
+    def test_and_clears_the_route_with_it(self):
+        c = self.cleared()
+        ac = c.get("Sockeye")
+        self.assertEqual((ac.following_to, ac.following_leg), ("", 0))
+
+    def test_it_is_not_a_second_transmission(self):
+        """The clearance is the announcement. Nobody appends a termination to
+        it, and a second one would say what the first already meant."""
+        c = self.cleared()
+        c.out.clear()
+        c.report_beacon("Bandit", altitude_ft=6000)
+        self.assertNotIn("own navigation", said(c))
+        self.assertNotIn("service terminated", said(c))
+
+    def test_a_visual_cancels_it_too(self):
+        c = seat("approach")
+        c.request_following("Sockeye", wants="request flight following")
+        c.request_visual("Sockeye", field_in_sight=True)
+        self.assertFalse(c.get("Sockeye").following)
+
+    def test_radar_seeing_him_on_final_cancels_it(self):
+        """He never asked us for the approach -- the scope found him on it --
+        and the service is over just the same."""
+        c = seat("approach")
+        c.request_following("Sockeye", wants="request flight following")
+        c.seen_on_final("Sockeye")
+        self.assertFalse(c.get("Sockeye").following)
+
+    def test_a_man_who_never_asked_is_untouched(self):
+        c = seat("approach")
+        c.report_beacon("Sockeye", altitude_ft=5000)
+        self.assertFalse(c.get("Sockeye").following)

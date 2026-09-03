@@ -238,6 +238,14 @@ def follow_him(bridge, ctl, cs: str, scope, transmit) -> list[str]:
     # ONCE HE IS ON AN APPROACH THE APPROACH OWNS HIM. Route guidance and a
     # talkdown are two controllers talking over each other, and the approach is
     # the one with the runway at the end of it.
+    #
+    # THE CLEARANCE NOW CANCELS THE SERVICE OUTRIGHT -- see
+    # `Controller._the_approach_takes_over` -- so the ordinary arrival never
+    # reaches this line any more; it stood down while the strip still read
+    # `following`, which is how a controller came to tell a followed pilot he
+    # was on his own navigation. What is left here is real: HOLDING is the
+    # stack, which he enters BEFORE anybody clears him, and either phase can be
+    # re-entered by a pilot who asks again after a missed approach.
     if ctl._pro(ac) is not None and getattr(ac, "phase", None) is not None \
             and ac.phase.name in ("CLEARED", "HOLDING", "MISSED"):
         return []
